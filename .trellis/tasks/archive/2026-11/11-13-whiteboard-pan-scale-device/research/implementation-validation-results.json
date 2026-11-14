@@ -1,0 +1,1069 @@
+{
+  "status": "automated-validation-passed",
+  "taskStatus": "in_progress",
+  "manualDeviceValidation": "pending",
+  "guiLaunched": false,
+  "commitCreated": false,
+  "pushPerformed": false,
+  "archived": false,
+  "sourceCommitBaseline": "1b819d2df656f84cb9481b8e7aab1321a31c73ae",
+  "finalSourceSha256": {
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+    "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+  },
+  "artifactSha256": {
+    "Build/ARM64/Debug/Inkeys.exe": "7716d646564cfa73145dfbb2c35b5418e3a48681dc47755f15eda9670abdf12a",
+    "Build/ARM64/Debug/InkeysHeadlessTests.exe": "23f0338c31c1628107b6c2176914e11e506218270a6daefbfaf07168851d940f",
+    "Build/ARM64/Debug/PanScaleValidationFinal/Inkeys.exe": "c3a361ad14c78a6198b0a3fa2f8d325bd465003542ccc5a418b91cd1e36f5c6d",
+    "Build/ARM64/Debug/PanScaleValidationFinal/InkeysHeadlessTests.exe": "c83d56210ffeed674b844f33c5b8a62684edb780ef22f01da6b0b00cb02bd479"
+  },
+  "builds": [
+    {
+      "name": "build-1",
+      "command": [
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+        "InkeysRepo.sln",
+        "/p:Configuration=Debug",
+        "/p:Platform=ARM64",
+        "/m:1",
+        "/nr:false",
+        "/nologo"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 1800,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "4848c9d6c5f712b1d7db07792c883d6a85cbd728c99585ebd6dadd051c0f23c6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "d10b9054865f03bd178b69e42c23da26df3c831868f040f24b606af704bac0ba",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "a8179b2128dd7bd9cd4051d47caaaeaa6a01a693b6b68455f5d8a109fad5f326",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "f04f8fc59b3e797edeca1be8fd128bef100db9ccb3c61e3ecbc0100097418017",
+      "status": "completed",
+      "exitCode": 1,
+      "seconds": 34.937,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "4848c9d6c5f712b1d7db07792c883d6a85cbd728c99585ebd6dadd051c0f23c6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "d10b9054865f03bd178b69e42c23da26df3c831868f040f24b606af704bac0ba",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "a8179b2128dd7bd9cd4051d47caaaeaa6a01a693b6b68455f5d8a109fad5f326",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "b565e00b464035350abcc8851535f38d7d5b17acc2894866843fbcfa2eb7eb7e",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "build-2",
+      "command": [
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+        "InkeysRepo.sln",
+        "/p:Configuration=Debug",
+        "/p:Platform=ARM64",
+        "/m:1",
+        "/nr:false",
+        "/nologo",
+        "/p:OutDir=D:/Project/Inkeys/Repo/Inkeys/Build/ARM64/Debug/PanScaleValidation/"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 1800,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "d4ecf9bf2e3993676ade33a41c9101e1a44047703763d0d6c1d92585e57f5bbe",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "f04f8fc59b3e797edeca1be8fd128bef100db9ccb3c61e3ecbc0100097418017",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 35.172,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "d4ecf9bf2e3993676ade33a41c9101e1a44047703763d0d6c1d92585e57f5bbe",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "b5b8057553d1867d1c24e84f5cd838c5fb5d64f41a6a42a93e9e9e66f25a18ab",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "build-3",
+      "command": [
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+        "InkeysRepo.sln",
+        "/p:Configuration=Debug",
+        "/p:Platform=ARM64",
+        "/m:1",
+        "/nr:false",
+        "/nologo",
+        "/p:OutDir=D:/Project/Inkeys/Repo/Inkeys/Build/ARM64/Debug/PanScaleValidationR3/"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 1800,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "f04f8fc59b3e797edeca1be8fd128bef100db9ccb3c61e3ecbc0100097418017",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 24.875,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "cec9a9aef4c182c0e22bc668a3c393b08b9d20fc1e4d9b87ed7a5c89f58dbfe7",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "build-4",
+      "command": [
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+        "InkeysRepo.sln",
+        "/p:Configuration=Debug",
+        "/p:Platform=ARM64",
+        "/m:1",
+        "/nr:false",
+        "/nologo",
+        "/p:OutDir=D:/Project/Inkeys/Repo/Inkeys/Build/ARM64/Debug/PanScaleValidationFinal/"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 1800,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "f04f8fc59b3e797edeca1be8fd128bef100db9ccb3c61e3ecbc0100097418017",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 23.687,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "560c5fc17bb7dd99c99d207708bc2462bec9ad1750f6fb47794e521570d978a7",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "build-5-default",
+      "command": [
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+        "InkeysRepo.sln",
+        "/p:Configuration=Debug",
+        "/p:Platform=ARM64",
+        "/m:1",
+        "/nr:false",
+        "/nologo"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 1800,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "f04f8fc59b3e797edeca1be8fd128bef100db9ccb3c61e3ecbc0100097418017",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 15.875,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "b7d9841989b7bbcdc010c201143a79d1e370f30c12d864557cd90efdfa33b56f",
+      "sourceUnchangedDuringRun": true
+    }
+  ],
+  "tests": [
+    {
+      "name": "headless-pan-r3",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidationR3\\InkeysHeadlessTests.exe",
+        "--no-window",
+        "--canvas-pan-only"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "4cf99a4683557ff8c4ccca144283d8d0dcb485bfab819eec83fa300ab1982d1c",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 1.047,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "00fe847fad63fe4ce47738dd0ecc92c411ce410aad77c7d9ca03ae384ab5e6e2",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "control-fence-r3",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidationR3\\Inkeys.exe",
+        "--draw3-control-fence-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "8bdbe90f963786da970fb88c9772524ad1cf02e37b51cb8712503256db075eb3",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 1.312,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "77839a0fa03892e3b1a98122772fa3106e741e8a7ea59cc6a1a9b181bf04fe71",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "pan-feel-r3",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidationR3\\Inkeys.exe",
+        "--draw3-canvas-pan-feel-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "8bdbe90f963786da970fb88c9772524ad1cf02e37b51cb8712503256db075eb3",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 2.891,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "c3c3e6975bac0b8998c98a291a72f71e823bf708b8a1e01701238df01e67d9df",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "diagnostic-output-r3",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidationR3\\Inkeys.exe",
+        "--draw3-diagnostic-output-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "8bdbe90f963786da970fb88c9772524ad1cf02e37b51cb8712503256db075eb3",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 1.859,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "8250add60d8b522636b6404c4dd5f3752f485ccfe4ec198c61e64d5bf95fc884",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "config-boundary-r3",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidationR3\\Inkeys.exe",
+        "--config-boundary-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "8bdbe90f963786da970fb88c9772524ad1cf02e37b51cb8712503256db075eb3",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 2.14,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "b19713cdb4bbde5d028df04698187c9204424df04ab99cbfe5bac30c8b0a0216",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "setting-general-r3",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidationR3\\InkeysHeadlessTests.exe",
+        "--no-window",
+        "--setting-general-only"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "4cf99a4683557ff8c4ccca144283d8d0dcb485bfab819eec83fa300ab1982d1c",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 18.313,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "7b97a1f528b354f173efbdc31d3f15c31454671fbdaf3713d46ca9f0bd244e51",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "headless-all-r3",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidationR3\\InkeysHeadlessTests.exe",
+        "--no-window"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 1200,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "4cf99a4683557ff8c4ccca144283d8d0dcb485bfab819eec83fa300ab1982d1c",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 325.265,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "77ef2adf4dab0e70ff947f66ca4f137bdf0404205b3871e6579e0bc2b1b844a5",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "fb1e9279e178a096e1d61db68b110e6165627d471924d7a209480af15f94279e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "72dae0f7baa20710b62b3478a0bad81af35b0bef9e3f3644856fc058ac141891",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "headless-pan-final",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidationFinal\\InkeysHeadlessTests.exe",
+        "--no-window",
+        "--canvas-pan-only"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "c83d56210ffeed674b844f33c5b8a62684edb780ef22f01da6b0b00cb02bd479",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 1.5,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "fdda090ef6fe4c6d088c0defd31f841256c3a406f0fec66dc322cd3bfdb7b056",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "control-fence-final",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidationFinal\\Inkeys.exe",
+        "--draw3-control-fence-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "c3a361ad14c78a6198b0a3fa2f8d325bd465003542ccc5a418b91cd1e36f5c6d",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 1.5,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "b798eae00f234f67dfd80217b1459df3a2503b45b04a3d6c6570fd753c8f0337",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "pan-feel-final",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidationFinal\\Inkeys.exe",
+        "--draw3-canvas-pan-feel-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "c3a361ad14c78a6198b0a3fa2f8d325bd465003542ccc5a418b91cd1e36f5c6d",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 2.922,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "c3c3e6975bac0b8998c98a291a72f71e823bf708b8a1e01701238df01e67d9df",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "diagnostic-output-final",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidationFinal\\Inkeys.exe",
+        "--draw3-diagnostic-output-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "c3a361ad14c78a6198b0a3fa2f8d325bd465003542ccc5a418b91cd1e36f5c6d",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 2.11,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "d0d5487fb40d35f84ecb39508538dce99f06cf83f78f175746d674ac8ddd48a0",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "config-boundary-final",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidationFinal\\Inkeys.exe",
+        "--config-boundary-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "c3a361ad14c78a6198b0a3fa2f8d325bd465003542ccc5a418b91cd1e36f5c6d",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 1.922,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "b19713cdb4bbde5d028df04698187c9204424df04ab99cbfe5bac30c8b0a0216",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "headless-pan-default",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\InkeysHeadlessTests.exe",
+        "--no-window",
+        "--canvas-pan-only"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "23f0338c31c1628107b6c2176914e11e506218270a6daefbfaf07168851d940f",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 1.203,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "04d28a9e80dbe38cc5445cdd0675d394d0225b6fac3a5de4ca8aaf050da473e3",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "control-fence-default",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.exe",
+        "--draw3-control-fence-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "7716d646564cfa73145dfbb2c35b5418e3a48681dc47755f15eda9670abdf12a",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 1.188,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "f3184a08883795ca1e3339d7ef672d368e64c9587e8620af6287f65de374b84e",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "pan-feel-default",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.exe",
+        "--draw3-canvas-pan-feel-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "7716d646564cfa73145dfbb2c35b5418e3a48681dc47755f15eda9670abdf12a",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 2.813,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "4e3aa45ebce8d1147cf8b02c317be4df760484b702c55084f19261809ed8cf74",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "a2553c1a8b8a686538cfecc4e6a26a306865c8b8b0cf6bd00f1800660136757e",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "c3c3e6975bac0b8998c98a291a72f71e823bf708b8a1e01701238df01e67d9df",
+      "sourceUnchangedDuringRun": true
+    }
+  ],
+  "legacyDipProbe": {
+    "scenarioRows": 2240,
+    "bytes": 708090,
+    "byteIdenticalToBaseline": true,
+    "sha256": "c3c3e6975bac0b8998c98a291a72f71e823bf708b8a1e01701238df01e67d9df"
+  },
+  "fullSuiteEvidence": {
+    "run": "headless-all-r3",
+    "exitCode": 0,
+    "seconds": 325.265,
+    "sourceFrozen": true,
+    "finalDifferences": "two comments, fallback reason labels, and corresponding CPU fixture assertions only; other six source files byte-identical",
+    "diff": "Build/Logs/pan-scale-device-2026-11-13/closeout-vs-r3.diff"
+  },
+  "defaultLinkRecovery": {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.ilk",
+    "backup": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-scale-device-2026-11-13\\Inkeys.default-incremental.failed.ilk",
+    "bytes": 268435456,
+    "sha256": "BE62C6FD75E38FBA27EE3D2FD2391283FA03A3245E3B9BCDE064FEA96A4FAC07",
+    "reason": "build-1 LNK1000 IncrBuildImage internal failure; preserve failed generated cache and force a normal full link"
+  },
+  "initialTests": [
+    {
+      "name": "headless-pan",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidation\\InkeysHeadlessTests.exe",
+        "--no-window",
+        "--canvas-pan-only"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "d4ecf9bf2e3993676ade33a41c9101e1a44047703763d0d6c1d92585e57f5bbe",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "38c78692edb21a3e7e1dd43b949605644d3432b9786b0972c5ddd4743e64a4c2",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 1.438,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "d4ecf9bf2e3993676ade33a41c9101e1a44047703763d0d6c1d92585e57f5bbe",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "cd125c8da2b21fe5f90c5039fc491b0bcf139512f6529599594b78d793623e7e",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "control-fence",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidation\\Inkeys.exe",
+        "--draw3-control-fence-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "d4ecf9bf2e3993676ade33a41c9101e1a44047703763d0d6c1d92585e57f5bbe",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "32afd3affd0f51d2cf41eeaa86d926428303cdffca30649de18b0e60050fac3c",
+      "status": "completed",
+      "exitCode": 2,
+      "seconds": 1.75,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "d4ecf9bf2e3993676ade33a41c9101e1a44047703763d0d6c1d92585e57f5bbe",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "5cebeca6dda733183853d6ecc51f2b15c8454faefd48bf6992f10e84499cd21c",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "pan-feel",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidation\\Inkeys.exe",
+        "--draw3-canvas-pan-feel-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "d4ecf9bf2e3993676ade33a41c9101e1a44047703763d0d6c1d92585e57f5bbe",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "32afd3affd0f51d2cf41eeaa86d926428303cdffca30649de18b0e60050fac3c",
+      "status": "completed",
+      "exitCode": 128,
+      "seconds": 3.157,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "d4ecf9bf2e3993676ade33a41c9101e1a44047703763d0d6c1d92585e57f5bbe",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "ace448e0c61a491ae5179601d30fba0e3562702723edea0af66ac91efe426cdb",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "diagnostic-output",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidation\\Inkeys.exe",
+        "--draw3-diagnostic-output-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "d4ecf9bf2e3993676ade33a41c9101e1a44047703763d0d6c1d92585e57f5bbe",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "32afd3affd0f51d2cf41eeaa86d926428303cdffca30649de18b0e60050fac3c",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 1.938,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "d4ecf9bf2e3993676ade33a41c9101e1a44047703763d0d6c1d92585e57f5bbe",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "5a8b9573815ffe78a5c56518d8cca2d7d40f445f343e3b0e65c5cda540d2c522",
+      "sourceUnchangedDuringRun": true
+    },
+    {
+      "name": "config-boundary",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanScaleValidation\\Inkeys.exe",
+        "--config-boundary-test"
+      ],
+      "cwd": "D:\\Project\\Inkeys\\Repo\\Inkeys",
+      "timeoutSeconds": 300,
+      "sourceBefore": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "d4ecf9bf2e3993676ade33a41c9101e1a44047703763d0d6c1d92585e57f5bbe",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "executableSha256": "32afd3affd0f51d2cf41eeaa86d926428303cdffca30649de18b0e60050fac3c",
+      "status": "completed",
+      "exitCode": 0,
+      "seconds": 1.906,
+      "sourceAfter": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "38821510c2fd02158870e481a84071acb48f159357ecfeaba3dd0b9ceff82326",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "e4b47e02527b8c721dc9d5970eefb121c472c9f0595114f1d0e0c9b689c1f2bb",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "d4ecf9bf2e3993676ade33a41c9101e1a44047703763d0d6c1d92585e57f5bbe",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "7c19e9f0e1e43159ba0b14f5f9cfed09414202b498c3d7c0ec524053e343d9a6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": "764eccc7b21dbbd8d3b9907df28321d1c97bfb916d710c2637e35e3bae5fb397",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "95957ff5a92983a176cd77a5dd6eafe1b94995a54efa2339443d7eb72576eaf6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": "7c106cea1d890b5ba2a284834d4e14df7a85dcdffc055ccaca3d50458808b515",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "2ebe7ff40ff31a9010de7139158125a32a9696e945c82927d438283077da6b21"
+      },
+      "logSha256": "b19713cdb4bbde5d028df04698187c9204424df04ab99cbfe5bac30c8b0a0216",
+      "sourceUnchangedDuringRun": true
+    }
+  ],
+  "baseline": {
+    "head": "1b819d2df656f84cb9481b8e7aab1321a31c73ae",
+    "files": {
+      "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": {
+        "sha256": "3a323bbb02a9b8caa69b7d4eabdd660ac02e66b9573b1cf171213cbc81010ed6",
+        "bom": true,
+        "crlf": 1039,
+        "bareLf": 0
+      },
+      "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": {
+        "sha256": "0ba3616c8a5ac4b4333eb2d83511985c23e2fffbed7f71f943ed9ecdea16e94e",
+        "bom": true,
+        "crlf": 428,
+        "bareLf": 0
+      },
+      "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": {
+        "sha256": "a90bcde918e910da4c2b6c0be7840d14117203e6f4bdd20663de3b4f5f04415e",
+        "bom": false,
+        "crlf": 20973,
+        "bareLf": 0
+      },
+      "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": {
+        "sha256": "1b535190e51347d2ba23684dd6d6abfca09039c028176ac6b6b292e2d37f2ea2",
+        "bom": true,
+        "crlf": 2915,
+        "bareLf": 0
+      },
+      "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cppm": {
+        "sha256": "1e0907f613e0f56ba4e0942b15cd0b163a0a5cacd90153e44a86048844776248",
+        "bom": true,
+        "crlf": 453,
+        "bareLf": 0
+      },
+      "Inkeys/Inkeys/Drawing/Draw3/Draw3.SpeedEraser.cpp": {
+        "sha256": "2ae2ca1f657edb5076e846f960b9afc827a1749d12e052dd4c84e5d114dc9f0b",
+        "bom": false,
+        "crlf": 1676,
+        "bareLf": 0
+      },
+      "Inkeys/Inkeys/Drawing/Draw3/Draw3.SpeedEraser.h": {
+        "sha256": "497a6cb9c84f45d77b79f27a735a16255d39137773ffa82102d1ff76cad8ee9f",
+        "bom": false,
+        "crlf": 582,
+        "bareLf": 0
+      },
+      "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": {
+        "sha256": "ab74550156bb3d058d305c8c7c6611b0bd0bad39a3cd2f66a2c3b6dc0b52e62b",
+        "bom": true,
+        "crlf": 3013,
+        "bareLf": 0
+      },
+      "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": {
+        "sha256": "6be3af11eb959c677c97c0a0028c5dc651962851cb4fb54b59d08663e679148a",
+        "bom": true,
+        "crlf": 1324,
+        "bareLf": 0
+      },
+      "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": {
+        "sha256": "c1bfc34cbff12f7c28774275657c1da05eebd0323e6849d5e514cf2d8df0de05",
+        "bom": true,
+        "crlf": 0,
+        "bareLf": 275,
+        "provenance": "HEAD blob before task implementation"
+      }
+    },
+    "provenance": "Current default product binary; old validated product binary no longer present in PanCleanupValidation. Known old logs retained; compare deterministic pan output explicitly.",
+    "executables": {
+      "Build\\ARM64\\Debug\\Inkeys.exe": "f5bbcbb5dc7839c8117a3f51b1a741fc8aa3e147baf1d30e680777ca7cb1425b",
+      "Build\\ARM64\\Debug\\PanCleanupValidation\\InkeysHeadlessTests.exe": "c0de110523506eb361604b18b7ccaf7091757d9f12dfb503d238203b40da3617"
+    },
+    "commands": [
+      {
+        "name": "baseline-pan-feel",
+        "argv": [
+          "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.exe",
+          "--draw3-canvas-pan-feel-test"
+        ],
+        "exitCode": 0,
+        "seconds": 2.39,
+        "log": "Build\\Logs\\pan-scale-device-2026-11-13\\baseline-pan-feel.log",
+        "sha256": "c3c3e6975bac0b8998c98a291a72f71e823bf708b8a1e01701238df01e67d9df"
+      },
+      {
+        "name": "baseline-control-fence",
+        "argv": [
+          "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\Inkeys.exe",
+          "--draw3-control-fence-test"
+        ],
+        "exitCode": 0,
+        "seconds": 0.735,
+        "log": "Build\\Logs\\pan-scale-device-2026-11-13\\baseline-control-fence.log",
+        "sha256": "fd17f1e56f828625eb9f194d6c5646b20b9383b5052b568061c6241feb92a96b"
+      },
+      {
+        "name": "baseline-headless-pan",
+        "argv": [
+          "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanCleanupValidation\\InkeysHeadlessTests.exe",
+          "--no-window",
+          "--canvas-pan-only"
+        ],
+        "exitCode": 0,
+        "seconds": 0.937,
+        "log": "Build\\Logs\\pan-scale-device-2026-11-13\\baseline-headless-pan.log",
+        "sha256": "931a5388f25a065a2279384ea4b0ca76577af4d21d95a2d7ee2a4d5ecb1865e0"
+      }
+    ],
+    "panOutputMatchesLastValidatedBaseline": true
+  }
+}

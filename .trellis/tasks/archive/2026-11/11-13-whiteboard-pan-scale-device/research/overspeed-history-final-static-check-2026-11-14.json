@@ -1,0 +1,9 @@
+{
+  "status": "passed",
+  "sourceHashMatchesValidation": true,
+  "sourceFormatFiles": 8,
+  "linksChecked": 80,
+  "badLinks": [],
+  "finalExecutableExists": true,
+  "specWithinInjectionFileLimit": true
+}

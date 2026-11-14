@@ -6,6 +6,8 @@ module;
 #include <optional>
 #include <windows.h>
 
+#include "../../Drawing/Draw3/Draw3.WhiteboardModel.h"
+
 export module Inkeys.UI.Whiteboard;
 
 export namespace Inkeys::UI::Whiteboard
@@ -153,6 +155,9 @@ export namespace Inkeys::UI::Whiteboard
 	void PublishPageSnapshot(int currentPage, int totalPage, bool switching,
 		std::uint32_t rgb, int pattern, bool unsaved, std::uint64_t generation) noexcept;
 	void PublishPageState(int currentPage, int totalPage, bool switching) noexcept;
+	// Draw3 绘制线程调用：无锁写入最新视口并（仅 Freeze 归属、非 Blank、白板激活时）请求 Freeze 重画相位。
+	// 初始化前/关闭后为空操作；不持锁、不分配、不等待 UI3。
+	void PublishCanvasViewport(const Inkeys::Drawing::Draw3::WhiteboardViewportSample& sample) noexcept;
 	[[nodiscard]] bool Active() noexcept;
 	[[nodiscard]] bool BackgroundPrepared(std::uint64_t revision) noexcept;
 	[[nodiscard]] bool BackgroundMatchesActive(bool active, std::uint64_t revision = 0) noexcept;

@@ -79,6 +79,10 @@ namespace
 		brushColors[BrushColorScope(stateModeWorkspace)] = stateMode.Pen.Brush1.color;
 	}
 	std::atomic_uint64_t stateModeTransitionRevision = 0;
+	// 进入可视化调试时的模式修订；0 表示未进入。任何后续修订变化都使该位自动失效。
+	std::atomic_uint64_t canvasDebugVisualRevision = 0;
+	// 画布调试开关只在本次运行有效，不进入配置；每次启动都是关闭。
+	std::atomic_bool canvasDebugEnabled = false;
 	std::atomic_uint64_t draw3ExitSelectionModeRevision = 0;
 	std::mutex eraserPreferencesMutex;
 	std::mutex palmEraserPreferencesMutex;
@@ -90,6 +94,10 @@ namespace
 		result.thresholdPercent = saved.ThresholdPercent.load();
 		result.recognitionWindowMs = saved.RecognitionWindowMs.load();
 		result.parallelWriting = saved.ParallelWriting.load();
+		result.shape = saved.Shape.load();
+		result.sizeMode = saved.SizeMode.load();
+		result.sizeMethods = { saved.SizeMethodCircle.load(), saved.SizeMethodRectangle.load(), saved.SizeMethodSquare.load() };
+		result.sizeMultiplierPercent = saved.SizeMultiplierPercent.load();
 		const std::array fields{ &saved.Tools.Pen, &saved.Tools.HardPen, &saved.Tools.Highlighter,
 			&saved.Tools.Laser, &saved.Tools.Eraser, &saved.Tools.Shape, &saved.Tools.Brush };
 		for (size_t index = 0; index < fields.size(); ++index) result.tools[index] = fields[index]->load();
@@ -105,6 +113,11 @@ namespace
 		result.automaticPenSupported=AutomaticPenResponseAvailable();
 		result.baseSize=RestoreBaseSize(saved.BaseDiameterDip.load());
 		result.sensitivity=RestoreSensitivity(saved.Sensitivity.load());
+		using namespace Inkeys::Drawing::Draw3;
+		const int shape = saved.Shape.load(), pattern = saved.CursorPattern.load(), theme = saved.CursorTheme.load();
+		result.shape = static_cast<EraserShape>(shape >= 0 && shape <= 2 ? shape : 0);
+		result.cursorPattern = static_cast<EraserCursorPattern>(pattern >= 0 && pattern <= 2 ? pattern : 0);
+		result.cursorTheme = static_cast<EraserCursorTheme>(theme >= 0 && theme <= 1 ? theme : 0);
 		for(size_t i=0;i<fields.size();++i)
 			result.entries[i].kind=RestoreEraserKind(fields[i]->load(),-1,static_cast<InputEntry>(i));
 		result.entries[3].penResponse=RestorePenResponse(saved.PenTipResponse.load(),result.automaticPenSupported);
@@ -615,6 +628,14 @@ namespace
 			CursorModel::CursorDevice::Tablet, cursor.Tablet.load(), legacyMouseStyle, legacyPenStyle);
 		state.cursorSettings.injectedMouseAsTablet = cursor.InjectedMouseAsTablet.load();
 		state.cursorSettings.dotHideOnContact = CursorModel::RestoreDotCursorHideMode(cursor.DotHideOnContact.load());
+		state.cursorSettings.penOpacity = CursorModel::NormalizeCursorOpacityPercent(
+			CursorModel::CursorStyle::Pen, cursor.PenOpacity.load());
+		state.cursorSettings.highlightPenFillOpacity = CursorModel::NormalizeCursorOpacityPercent(
+			CursorModel::CursorStyle::HighlightPen, cursor.HighlightPenFillOpacity.load());
+		state.cursorSettings.dotOpacity = CursorModel::NormalizeCursorOpacityPercent(
+			CursorModel::CursorStyle::Dot, cursor.DotOpacity.load());
+		state.cursorSettings.highlightDotFillOpacity = CursorModel::NormalizeCursorOpacityPercent(
+			CursorModel::CursorStyle::HighlightDot, cursor.HighlightDotFillOpacity.load());
 		state.widthDip = GetPenWidthMetrics(stateMode).resolvedWidthDip;
 		state.colorRgba = ColorRefToRgba(GetPenColor(stateMode));
 		state.shapeTool = GetShapeToolSpec(stateMode);
@@ -624,6 +645,9 @@ namespace
 			IsComputerInteractionMode(stateMode.StateModeSelect);
 		state.autoSaveEnabled = setlist.saveSetting.enable;
 		Inkeys::Drawing::Draw3::PublishProductState(state);
+		// 与工具同锁发布；可视化位由修订推导，因此每次工具变化都会同步更新 Draw3。
+		Inkeys::Drawing::Draw3::ProductHost().SetCanvasDebugOptions(
+			IsCanvasDebugEnabled(), IsCanvasDebugVisualActive());
 	}
 
 	void PublishDraw3State() noexcept
@@ -1171,6 +1195,10 @@ namespace
 			}
 			draw3PresentationExitRefreshPending = false;
 		}
+		// 仅原生 owner 成对显隐成功且场景仍匹配后，通知绘制 owner 回收隐藏辅助窗的读回像素。
+		if (visibility != Inkeys::Window::DrawpadSurfaceVisibility::Presentation &&
+			runtime.auxiliaryReadbackPayloadBytes != 0)
+			Inkeys::Drawing::Draw3::ProductHost().AcknowledgeAuxiliarySurfaceHidden(runtime);
 		LogDraw3PresentationGateReady(runtime, desired.revision, modeRevision);
 		draw3PresentationRetryPending.store(false, std::memory_order_release);
 		if (ExitSelectionHandoffPending() && desired.selectionMode &&
@@ -1284,6 +1312,29 @@ void SetGlobalEraserPreference(int baseDiameterDip, int sensitivity, int automat
 	barUISet.UpdateRendering(false);
 }
 
+void SetEraserCursorPreference(int shape, int pattern, int theme)
+{
+	bool changed = false;
+	{
+		std::scoped_lock lock(eraserPreferencesMutex);
+		auto& saved = Inkeys::config.Drawing.Eraser;
+		const std::array fields{ &saved.Shape, &saved.CursorPattern, &saved.CursorTheme };
+		const std::array values{ shape, pattern, theme };
+		for (size_t index = 0; index < fields.size(); ++index)
+		{
+			if (values[index] == -1) continue;
+			const int value = values[index] >= 0 && values[index] <= (index == 2 ? 1 : 2) ? values[index] : 0;
+			changed |= fields[index]->load() != value;
+			*fields[index] = value;
+		}
+		// 与普通橡皮偏好同一冻结保存队列，页面不再重复排队。
+		if (changed) Inkeys::UI::Setting::RequestConfigWrite();
+	}
+	if (!changed) return;
+	SyncDraw3State();
+	barUISet.UpdateRendering(false);
+}
+
 Inkeys::Drawing::Draw3::PalmEraser::Settings PalmEraserPreferencesSnapshot()
 {
 	std::scoped_lock lock(palmEraserPreferencesMutex);
@@ -1300,6 +1351,12 @@ bool SetPalmEraserPreference(const Inkeys::Drawing::Draw3::PalmEraser::Settings&
 		saved.ThresholdPercent = normalized.thresholdPercent;
 		saved.RecognitionWindowMs = normalized.recognitionWindowMs;
 		saved.ParallelWriting = normalized.parallelWriting;
+		saved.Shape = normalized.shape;
+		saved.SizeMode = normalized.sizeMode;
+		saved.SizeMethodCircle = normalized.sizeMethods[0];
+		saved.SizeMethodRectangle = normalized.sizeMethods[1];
+		saved.SizeMethodSquare = normalized.sizeMethods[2];
+		saved.SizeMultiplierPercent = normalized.sizeMultiplierPercent;
 		const std::array fields{ &saved.Tools.Pen, &saved.Tools.HardPen, &saved.Tools.Highlighter,
 			&saved.Tools.Laser, &saved.Tools.Eraser, &saved.Tools.Shape, &saved.Tools.Brush };
 		for (size_t index = 0; index < fields.size(); ++index) *fields[index] = normalized.tools[index];
@@ -2174,6 +2231,80 @@ bool ToggleFreezeFromButton()
 	return wasActive != isActive;
 }
 
+bool IsCanvasDebugEnabled() noexcept
+{
+	return canvasDebugEnabled.load(std::memory_order_acquire);
+}
+
+bool IsCanvasDebugVisualActive() noexcept
+{
+	const auto entered = canvasDebugVisualRevision.load(std::memory_order_acquire);
+	return entered != 0 && IsCanvasDebugEnabled() &&
+		entered == stateModeTransitionRevision.load(std::memory_order_acquire);
+}
+
+void PublishCanvasDebugOptions() noexcept
+{
+	Inkeys::Drawing::Draw3::ProductHost().SetCanvasDebugOptions(
+		IsCanvasDebugEnabled(), IsCanvasDebugVisualActive());
+}
+
+// 持有 stateModeTransitionMutex。可视化是独立于所有工具的互斥模式：
+// 底层仍借用一个标注工具身份让 Draw3 收到接触，但主栏对外只高亮可视化按钮。
+static void EnterCanvasDebugVisualLocked()
+{
+	if (IsComputerInteractionMode(stateMode.StateModeSelect))
+	{
+		// 选择/穿透下 Draw3 不接收接触；先恢复最近的标注工具身份（不改笔型、宽度和颜色记忆）。
+		auto mode = stateMode.lastAnnotationMode;
+		if (mode != StateModeSelectEnum::IdtPen && mode != StateModeSelectEnum::IdtShape &&
+			mode != StateModeSelectEnum::IdtEraser) mode = StateModeSelectEnum::IdtPen;
+		stateMode.StateModeSelect = mode;
+		stateMode.StateModeSelectTarget = mode;
+		stateMode.StateModeSelectEcho = mode;
+		BackgroundColorMode = mode == StateModeSelectEnum::IdtEraser ? 0 :
+			(computeContrast(GetPenColor(stateMode), RGB(255, 255, 255)) >= 3 ? 0 : 1);
+	}
+	const auto revision = stateModeTransitionRevision.fetch_add(
+		1, std::memory_order_release) + 1;
+	canvasDebugVisualRevision.store(revision, std::memory_order_release);
+}
+
+void SetCanvasDebugEnabled(bool enabled)
+{
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		const bool wasEnabled = IsCanvasDebugEnabled();
+		canvasDebugEnabled.store(enabled, std::memory_order_release);
+		// 关闭等于退出一切画布调试；打开则自动进入可视化，要测试绘制等需自行切换工具。
+		canvasDebugVisualRevision.store(0, std::memory_order_release);
+		if (enabled && !wasEnabled && !WhiteboardSwitching() && !WhiteboardTransactionActive())
+			EnterCanvasDebugVisualLocked();
+		PublishCanvasDebugOptions();
+	}
+	SyncDraw3State();
+	Inkeys::UI::Bar::RefreshToolState();
+}
+
+bool ToggleCanvasDebugVisualFromButton()
+{
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		if (!IsCanvasDebugEnabled() || WhiteboardSwitching() || WhiteboardTransactionActive())
+			return false;
+		if (IsCanvasDebugVisualActive())
+		{
+			// 退出只取消可视化，当前工具与属性保持不变。
+			canvasDebugVisualRevision.store(0, std::memory_order_release);
+			stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+		}
+		else EnterCanvasDebugVisualLocked();
+	}
+	SyncDraw3State();
+	Inkeys::UI::Bar::RefreshToolState();
+	return true;
+}
+
 bool ChangeStateModeToSelection()
 {
 	{
@@ -2283,6 +2414,8 @@ bool ChangeStateModeToPenTool(PenToolSelectionEnum tool)
 		{
 			// 重复点击仍是较新的用户意图，但没有视觉变化时不重复发布 Draw3 命令。
 			stateModeTransitionRevision.fetch_add(1, std::memory_order_release);
+			// 修订变化会使画布调试可视化位失效，单独同步该位。
+			PublishCanvasDebugOptions();
 			return false;
 		}
 		stateMode.laserActive = laser;
@@ -2346,7 +2479,11 @@ static bool SetShapeModeSelectImpl(ShapeModeSelectEnum shape,
 			pattern = draw3::shapes::LinePattern::Solid;
 		else if (shape == ShapeModeSelectEnum::IdtShapeDashedLine1)
 			pattern = draw3::shapes::LinePattern::Dashed;
-		if (stateMode.Shape.ModeSelect == shape && stateMode.Shape.openPattern == pattern) return false;
+		if (stateMode.Shape.ModeSelect == shape && stateMode.Shape.openPattern == pattern)
+		{
+			PublishCanvasDebugOptions(); // 工具意图修订后同步调试可视化状态。
+			return false;
+		}
 		stateMode.Shape.ModeSelect = shape;
 		stateMode.Shape.openPattern = pattern;
 	}

@@ -40,7 +40,8 @@ enum class BarButtonPresetEnum : int
 
 	More,
 	Setting,
-	Pierce
+	Pierce,
+	CanvasDebug
 };
 
 class BarButtonStateClass
@@ -319,6 +320,8 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 		shared_ptr<BarButtonClass> mainRedoButton;
 		// 运行时依附定格，不注册旧 Pierce 持久化 ID。
 		shared_ptr<BarButtonClass> mainPierceButton;
+		// 画布调试可视化入口：运行时插在 A1 工具之后，仅画布调试开启时可见，不进入 FixedButtonsA1。
+		shared_ptr<BarButtonClass> mainCanvasDebugButton;
 		mutable mutex moreSnapshotMutex;
 		BarMoreButtonSnapshotClass moreSnapshot;
 		mutex legacyOrderMutex;

@@ -676,6 +676,182 @@ namespace PptCOM.Tests
             }
         }
 
+        private sealed class ThrowingLifetimeWriter : StringWriter
+        {
+            public override void WriteLine(string value) { throw new IOException("diagnostic output closed"); }
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static WeakReference MakeDiagnosticWeakReference(object window)
+        {
+            var accessor = new MarshalLateBoundComAccessor();
+            object value = null;
+            try
+            {
+                value = accessor.GetProperty(window, "View");
+                return new WeakReference(value);
+            }
+            finally { accessor.Release(value); }
+        }
+
+        private static int RecordCount(string text, string marker)
+        {
+            int count = 0, offset = 0;
+            while ((offset = text.IndexOf(marker, offset, StringComparison.Ordinal)) >= 0)
+            { ++count; offset += marker.Length; }
+            return count;
+        }
+
+        private static void TestLifetimeDiagnostics(NativeApi api)
+        {
+            using (Scope scope = new Scope(api, Profile.WithTypeInfo, "lifetime diagnostics"))
+            using (StringWriter output = new StringWriter())
+            {
+                TextWriter previous = Console.Out;
+                try
+                {
+                    Console.SetOut(output);
+                    PptComDiagnostics.SetEnabled(true);
+                    var accessor = new MarshalLateBoundComAccessor();
+                    object first = null, second = null, view = null, slide = null;
+                    try
+                    {
+                        first = accessor.GetProperty(scope.Application, "ActivePresentation");
+                        second = accessor.GetProperty(scope.Application, "ActivePresentation");
+                        view = accessor.GetProperty(scope.Window, "View");
+                        slide = accessor.GetProperty(view, "Slide");
+                        PptComDiagnostics.Transfer(view, "fixture.view");
+                        accessor.GetProperty(slide, "SlideID");
+                        long nextBefore = scope.Stats(Node.View).NextCalls;
+                        accessor.InvokeMethod(view, "Next");
+                        accessor.SetProperty(view, "LaserPointerEnabled", false);
+                        Check(scope.Stats(Node.View).NextCalls == nextBefore + 1,
+                            "enabled lifetime diagnostics invoke a side-effecting COM command only once");
+                    }
+                    finally
+                    {
+                        accessor.Release(slide); accessor.Release(view);
+                        accessor.Release(second); accessor.Release(first);
+                    }
+                    PptComDiagnostics.Summary("diagnostic-balanced");
+                    string text = output.ToString();
+                    Check(RecordCount(text, "event=acquire ") == 4 && RecordCount(text, "event=release.end ") == 4,
+                        "console ledger counts every same-identity acquisition and single release");
+                    Check(text.Contains("remaining=0") && text.Contains("stage=diagnostic-balanced") &&
+                        text.Contains("balance=0 outstanding=0") && text.Contains("destination=fixture.view"),
+                        "console reports real RCW result, transfer and a balanced summary");
+                    Check(!text.Contains("Deck.ppt") && !text.Contains("C:\\"), "lifetime log does not read or print document identity");
+                    scope.CheckTemporaryBaseline("lifetime diagnostics");
+                }
+                finally { PptComDiagnostics.SetEnabled(false); Console.SetOut(previous); }
+            }
+        }
+
+        private static void TestLifetimeDiagnosticIsolation(NativeApi api)
+        {
+            using (Scope scope = new Scope(api, Profile.WithTypeInfo, "lifetime output isolation"))
+            using (StringWriter output = new StringWriter())
+            {
+                TextWriter previous = Console.Out;
+                try
+                {
+                    var accessor = new MarshalLateBoundComAccessor();
+                    Console.SetOut(output);
+                    PptComDiagnostics.SetEnabled(false);
+                    object view = accessor.GetProperty(scope.Window, "View");
+                    accessor.Release(view);
+                    Check(output.ToString().Length == 0, "disabled lifetime diagnostics emit nothing");
+                    PptComDiagnostics.SetEnabled(true);
+                    Console.SetOut(new ThrowingLifetimeWriter());
+                    view = accessor.GetProperty(scope.Window, "View");
+                    accessor.Release(view);
+                    scope.CheckTemporaryBaseline("throwing lifetime output");
+                    WeakReference weak = MakeDiagnosticWeakReference(scope.Window);
+                    GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+                    Check(!weak.IsAlive, "diagnostic identity table never strongly retains its object key");
+                }
+                finally { PptComDiagnostics.SetEnabled(false); Console.SetOut(previous); }
+            }
+        }
+
+        private static void TestLifetimeConnectionDiagnostics(NativeApi api)
+        {
+            using (Scope scope = new Scope(api, Profile.WithEvents, "lifetime event diagnostics"))
+            using (StringWriter output = new StringWriter())
+            {
+                TextWriter previous = Console.Out;
+                ComEventConnection connection = null;
+                try
+                {
+                    Console.SetOut(output);
+                    PptComDiagnostics.SetEnabled(true);
+                    connection = ComEventConnection.Connect(scope.Application, delegate { });
+                    Require(api.SetEventFault(scope.Id, 2, unchecked((int)0x8001010A), 1));
+                    Check(!connection.TryDisconnect(), "enabled diagnostics preserve failed Unadvise result");
+                    PptComDiagnostics.Summary("diagnostic-cp-pending");
+                    Check(output.ToString().Contains("outstanding=1") && output.ToString().Contains("hr=0x8001010A"),
+                        "failed Unadvise reports the still-owned CP and original HRESULT");
+                    Check(connection.TryDisconnect(), "enabled diagnostics preserve successful retry");
+                    PptComDiagnostics.Summary("diagnostic-cp-balanced");
+                    Check(output.ToString().Contains("balance=0 outstanding=0") &&
+                        scope.Events().PointAcquisitions == 1 && scope.Events().Unadvises == 2,
+                        "diagnostics do not acquire another CP or repeat the native unsubscribe");
+                }
+                finally
+                {
+                    if (connection != null) connection.TryDisconnect();
+                    PptComDiagnostics.SetEnabled(false); Console.SetOut(previous);
+                }
+            }
+        }
+
+        private sealed class DelayingLifetimeWriter : StringWriter
+        {
+            internal long DelayTicks;
+            public override void WriteLine(string value)
+            {
+                long start = Stopwatch.GetTimestamp();
+                System.Threading.Thread.Sleep(20);
+                base.WriteLine(value);
+                DelayTicks += Stopwatch.GetTimestamp() - start;
+            }
+        }
+
+        private static void TestLifetimeCallTiming(NativeApi api)
+        {
+            using (Scope scope = new Scope(api, Profile.WithTypeInfo, "pure COM call timing"))
+            using (var output = new DelayingLifetimeWriter())
+            {
+                var accessor = new MarshalLateBoundComAccessor();
+                object slides = accessor.GetProperty(scope.Presentation, "Slides");
+                TextWriter previous = Console.Out;
+                try
+                {
+                    // 先预热分派；测试验证实际区间，不用固定 COM 延时阈值。
+                    accessor.GetProperty(slides, "Count");
+                    Console.SetOut(output); PptComDiagnostics.SetEnabled(true);
+                    long start = Stopwatch.GetTimestamp();
+                    accessor.GetProperty(slides, "Count");
+                    long wall = Stopwatch.GetTimestamp() - start;
+                    var match = System.Text.RegularExpressions.Regex.Match(output.ToString(),
+                        @"event=call.end[^\r\n]*member=get:Count[^\r\n]*elapsed_ticks=(\d+) frequency=(\d+)");
+                    Check(match.Success, "COM call timing includes elapsed ticks and frequency");
+                    if (match.Success)
+                    {
+                        long actual = long.Parse(match.Groups[1].Value);
+                        Check(long.Parse(match.Groups[2].Value) == Stopwatch.Frequency && actual >= 0 &&
+                            actual <= wall - output.DelayTicks + Stopwatch.Frequency / 1000,
+                            "pure getter timing excludes deliberately slow begin/end console writes");
+                    }
+                }
+                finally
+                {
+                    PptComDiagnostics.SetEnabled(false); Console.SetOut(previous);
+                    accessor.Release(slides);
+                }
+            }
+        }
+
         private static ushort PeMachine(string path)
         {
             using (BinaryReader reader = new BinaryReader(File.OpenRead(path)))
@@ -714,6 +890,10 @@ namespace PptCOM.Tests
                 Case("raw event unadvise retry", delegate { TestRawEventUnadviseRetry(api); });
                 Case("raw event advise failure", delegate { TestRawEventAdviseFailure(api); });
                 Case("event capability unavailable", delegate { TestEventCapabilityUnavailable(api); });
+                Case("lifetime diagnostics", delegate { TestLifetimeDiagnostics(api); });
+                Case("lifetime output isolation", delegate { TestLifetimeDiagnosticIsolation(api); });
+                Case("lifetime event diagnostics", delegate { TestLifetimeConnectionDiagnostics(api); });
+                Case("pure COM call timing", delegate { TestLifetimeCallTiming(api); });
             });
             Console.WriteLine("Native dispatch fixture: " + cases + " cases, " + failures +
                 " failures; deterministic RCW/owner release checked without GC or DLL unload");

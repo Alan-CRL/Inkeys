@@ -1,0 +1,30 @@
+DLL D:\Project\Inkeys\Repo\Inkeys-draw\Inkeys\PptCOM.dll MVID=10078be7-e8d8-48cc-8c19-5720784a5d9c FullCleanup_GC=
+DLL D:\Project\Inkeys\Repo\Inkeys-draw\PptCOM\bin\Release\PptCOM.dll MVID=f5330b8a-2c58-4ee9-ae5a-1e02d9b4a0c6 FullCleanup_GC=Collect,WaitForPendingFinalizers,Collect
+Dispatch fixture machine=0x8664
+try CLEAN
+CLEAN!
+final=False node=Application refs_before_fixture_owner_release=1
+final=False node=Presentation refs_before_fixture_owner_release=1
+final=False node=Window refs_before_fixture_owner_release=1
+final=False node=View refs_before_fixture_owner_release=1
+final=False node=Slides refs_before_fixture_owner_release=1
+final=False node=Slide1 refs_before_fixture_owner_release=1
+final=False node=Slide2 refs_before_fixture_owner_release=1
+final=False node=Slide3 refs_before_fixture_owner_release=1
+final=False node=Navigation refs_before_fixture_owner_release=1
+final=False node=ShowWindows refs_before_fixture_owner_release=1
+PASS production FullCleanup, real event connection and 100 getter/observation cycles; final=False
+Dispatch fixture machine=0x8664
+try CLEAN
+CLEAN!
+final=True node=Application refs_before_fixture_owner_release=1
+final=True node=Presentation refs_before_fixture_owner_release=1
+final=True node=Window refs_before_fixture_owner_release=1
+final=True node=View refs_before_fixture_owner_release=1
+final=True node=Slides refs_before_fixture_owner_release=1
+final=True node=Slide1 refs_before_fixture_owner_release=1
+final=True node=Slide2 refs_before_fixture_owner_release=1
+final=True node=Slide3 refs_before_fixture_owner_release=1
+final=True node=Navigation refs_before_fixture_owner_release=1
+final=True node=ShowWindows refs_before_fixture_owner_release=1
+PASS production FullCleanup, real event connection and 100 getter/observation cycles; final=True

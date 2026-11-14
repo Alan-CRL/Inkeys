@@ -1,0 +1,22 @@
+[
+  {
+    "name": "desktop-autosave",
+    "argument": "--desktop-autosave-only",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.exe",
+    "exe_sha256": "ba0e2e7074a47bb39f2a939ff4f095d068377faed05a7578039753627c102650",
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 1.859,
+    "passed": true
+  },
+  {
+    "name": "presentation-autosave",
+    "argument": "--presentation-autosave-only",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.exe",
+    "exe_sha256": "ba0e2e7074a47bb39f2a939ff4f095d068377faed05a7578039753627c102650",
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 3.219,
+    "passed": true
+  }
+]

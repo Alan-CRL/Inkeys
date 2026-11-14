@@ -1,0 +1,6 @@
+[WindowCandidateNative] failures=0
+[WorkspaceWindowNative] failures=0 notifications=5
+[PageDirectNative] failures=0
+[BarNativeMove] failures=0
+[WhiteboardNative] failures=0 pixels=5
+[PageControlHidden] failures=0

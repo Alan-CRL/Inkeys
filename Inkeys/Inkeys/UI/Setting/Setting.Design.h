@@ -71,8 +71,8 @@ namespace Inkeys::UI::Setting::Design
 		return result;
 	}
 
-	enum class GeneralSection : int { Basic, Appearance, Interaction, Storage, Shortcuts, DesktopShortcuts };
-	inline constexpr size_t GeneralSectionCount = static_cast<size_t>(GeneralSection::DesktopShortcuts) + 1;
+	enum class GeneralSection : int { Basic, Position, Appearance, Interaction, Storage, Shortcuts, DesktopShortcuts, StatusIndicator };
+	inline constexpr size_t GeneralSectionCount = static_cast<size_t>(GeneralSection::StatusIndicator) + 1;
 
 	struct NavigationTween
 	{

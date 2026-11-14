@@ -1,0 +1,211 @@
+{
+  "attachment": "C:\\Users\\alan-\\.codex\\attachments\\c5d97310-dfa6-440a-a4d7-dca0cb31e3c8\\已粘贴的文本.txt",
+  "sha256": "30999aa99ddac1a2db2ba4dc43da8c844fb89e66094fa19c133e55492e839ea7",
+  "bytes": 848437,
+  "lines": 4371,
+  "firstLine": "=6330734 touchId=0 primary=0 via=compat-mouse same=0 sourceReject=1 systemReject=0 positionReject=0 buttonBypass=0",
+  "lastLine": "[CURSOR_TRACE] seq=24537 tick=6341093 thread=8424 raw-mouse device=00000000000100B4 mode=1 flags=0x0 dx=0 dy=0 buttons=0x1 data=0x0 extra=0x0",
+  "releases": [
+    {
+      "line": 393,
+      "release": "[CanvasPan] seq=9621 qpc=63344919596 tid=13672 release released=1 reason=compressed-time raw=(0.00,0.00) selected=(0.00,0.00) boosted=(0.00,0.00) samples=2 span-ms=0.748 age-ms=7.479 rejected=0 reversals=0 timing-resets=0 tail-limit=0.000 tail-limited=0 phase-change=1",
+      "nearestInput": {
+        "line": 391,
+        "text": "[CanvasPan] seq=9619 qpc=63344918540 tid=13672 input ordinal=2149 epoch=5 key=75 class=3 context=3843376640 cursor=21 phase=2 pos-px=(1726.337,708.359) sample-qpc=63344916687 frame-qpc=63344918237 consume-qpc=63344918401 delay-ms=0.171 action=consume timestamp=callback-arrival"
+      },
+      "profileLine": 394,
+      "profile": "[CanvasPan] seq=9622 qpc=63344919637 tid=13672 release-profile source=16728278528 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+    },
+    {
+      "line": 924,
+      "release": "[CanvasPan] seq=9722 qpc=63348968285 tid=13672 release released=1 reason=ready raw=(-2397.74,2202.66) selected=(-964.52,886.05) boosted=(-964.52,886.05) samples=14 span-ms=56.095 age-ms=3.121 rejected=0 reversals=0 timing-resets=0 tail-limit=1309.728 tail-limited=1 phase-change=1",
+      "nearestInput": {
+        "line": 922,
+        "text": "[CanvasPan] seq=9720 qpc=63348964585 tid=13672 input ordinal=2187 epoch=5 key=76 class=3 context=3843376640 cursor=21 phase=2 pos-px=(1610.154,875.868) sample-qpc=63348961443 frame-qpc=63348963597 consume-qpc=63348964245 delay-ms=0.280 action=consume timestamp=callback-arrival"
+      },
+      "profileLine": 925,
+      "profile": "[CanvasPan] seq=9723 qpc=63348968340 tid=13672 release-profile source=16728278528 profile=3 unit=mm selected-motion=(-187.54581,175.36411) tau=0.2 c=350 target-distance=29.781862 duration-s=0.3081465"
+    },
+    {
+      "line": 1478,
+      "release": "[CanvasPan] seq=9876 qpc=63352570616 tid=13672 release released=1 reason=ready raw=(3046.96,-3015.51) selected=(1021.91,-1011.37) boosted=(1021.91,-1011.37) samples=14 span-ms=56.476 age-ms=3.102 rejected=0 reversals=0 timing-resets=0 tail-limit=1437.767 tail-limited=1 phase-change=1",
+      "nearestInput": {
+        "line": 1475,
+        "text": "[CanvasPan] seq=9874 qpc=63352569770 tid=13672 input ordinal=2223 epoch=5 key=77 class=3 context=3843376640 cursor=21 phase=2 pos-px=(1786.280,700.044) sample-qpc=63352567179 frame-qpc=63352569528 consume-qpc=63352569683 delay-ms=0.250 action=consume timestamp=callback-arrival"
+      },
+      "profileLine": 1479,
+      "profile": "[CanvasPan] seq=9877 qpc=63352570667 tid=13672 release-profile source=16728278528 profile=3 unit=mm selected-motion=(198.70552,-200.16653) tau=0.2 c=350 target-distance=33.795631 duration-s=0.3230539"
+    }
+  ],
+  "sequenceGaps": {
+    "CanvasPan": [
+      {
+        "lineBefore": 177,
+        "seqBefore": 9546,
+        "lineAfter": 179,
+        "seqAfter": 9548,
+        "missingCount": 1
+      },
+      {
+        "lineBefore": 836,
+        "seqBefore": 9694,
+        "lineAfter": 838,
+        "seqAfter": 9696,
+        "missingCount": 1
+      }
+    ],
+    "CURSOR_TRACE": [
+      {
+        "lineBefore": 1026,
+        "seqBefore": 21422,
+        "lineAfter": 1029,
+        "seqAfter": 21424,
+        "missingCount": 1
+      },
+      {
+        "lineBefore": 1477,
+        "seqBefore": 21739,
+        "lineAfter": 1484,
+        "seqAfter": 21741,
+        "missingCount": 1
+      },
+      {
+        "lineBefore": 1527,
+        "seqBefore": 21776,
+        "lineAfter": 1529,
+        "seqAfter": 21778,
+        "missingCount": 1
+      },
+      {
+        "lineBefore": 1931,
+        "seqBefore": 22105,
+        "lineAfter": 1932,
+        "seqAfter": 22107,
+        "missingCount": 1
+      },
+      {
+        "lineBefore": 2745,
+        "seqBefore": 22919,
+        "lineAfter": 2746,
+        "seqAfter": 22921,
+        "missingCount": 1
+      },
+      {
+        "lineBefore": 3943,
+        "seqBefore": 24116,
+        "lineAfter": 3944,
+        "seqAfter": 24118,
+        "missingCount": 1
+      }
+    ]
+  },
+  "diagnosticDropOrTruncationLines": [
+    {
+      "line": 178,
+      "text": "[Draw3DiagnosticOutput] dropped=147 full=0 contention=147 closing=0 truncated=0"
+    },
+    {
+      "line": 837,
+      "text": "[Draw3DiagnosticOutput] dropped=148 full=0 contention=148 closing=0 truncated=0"
+    },
+    {
+      "line": 1021,
+      "text": "[Draw3DiagnosticOutput] dropped=149 full=0 contention=149 closing=0 truncated=0"
+    },
+    {
+      "line": 1474,
+      "text": "[Draw3DiagnosticOutput] dropped=150 full=0 contention=150 closing=0 truncated=0"
+    },
+    {
+      "line": 1528,
+      "text": "[Draw3DiagnosticOutput] dropped=151 full=0 contention=151 closing=0 truncated=0"
+    },
+    {
+      "line": 1925,
+      "text": "[Draw3DiagnosticOutput] dropped=152 full=0 contention=152 closing=0 truncated=0"
+    },
+    {
+      "line": 2744,
+      "text": "[Draw3DiagnosticOutput] dropped=153 full=0 contention=153 closing=0 truncated=0"
+    },
+    {
+      "line": 3934,
+      "text": "[Draw3DiagnosticOutput] dropped=154 full=0 contention=154 closing=0 truncated=0"
+    }
+  ],
+  "sourceBeforeReadonlyInvestigation": {
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "39a5c7f80f135a4106d99603169f7b111f8f842689f172fc7139b0af8c672041",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "919a4e19cb5128eee64e828c440b0742aab08a218215f1f92302abd4224168c5",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "85c1d385a7adedd98b0e38076638692c1ce91d2f2cc9b3cc03f709a4747c7ea6",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cpp": "63b8f74be50de9a2dbc0814cef4f38cfc51d66d48f76bcfab4dd9444a8c6a56c",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "d093f41aa8a901cd33ada5e9770c9eaff473e5c8cde65d2d2e874c0c71581579",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "d304f799402735be1afaf54ed84259a6209ff234041581e4a17f964c31fa634a",
+    "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "bb09a28d50c8f6889fb2840377885c746480617365f465853cbf9cc2e831da52",
+    "InkeysHeadlessTests/draw3_contact_tests.cpp": "fe6a17e8b4a89a994a670330096d719060843ced4e05e537b82ba1adafc82d7d"
+  },
+  "inputSummary": {
+    "count": 109,
+    "classes": {
+      "3": 109
+    },
+    "ordinalGaps": [
+      {
+        "before": {
+          "ordinal": 2119,
+          "epoch": 5,
+          "key": 75,
+          "class": 3,
+          "phase": 1,
+          "qpc": 63343707398,
+          "line": 177
+        },
+        "after": {
+          "ordinal": 2121,
+          "epoch": 5,
+          "key": 75,
+          "class": 3,
+          "phase": 1,
+          "qpc": 63343780868,
+          "line": 184
+        }
+      },
+      {
+        "before": {
+          "ordinal": 2176,
+          "epoch": 5,
+          "key": 76,
+          "class": 3,
+          "phase": 1,
+          "qpc": 63348512379,
+          "line": 836
+        },
+        "after": {
+          "ordinal": 2178,
+          "epoch": 5,
+          "key": 76,
+          "class": 3,
+          "phase": 1,
+          "qpc": 63348581293,
+          "line": 853
+        }
+      }
+    ],
+    "visibleHistoryGapLines": []
+  },
+  "userClarification": {
+    "touchTest": "pen far away; fingers only",
+    "status": "user statement; corresponding Touch lifecycle absent from pasted excerpt"
+  },
+  "sourceAfterReadonlyInvestigation": {
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "39a5c7f80f135a4106d99603169f7b111f8f842689f172fc7139b0af8c672041",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "919a4e19cb5128eee64e828c440b0742aab08a218215f1f92302abd4224168c5",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "85c1d385a7adedd98b0e38076638692c1ce91d2f2cc9b3cc03f709a4747c7ea6",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cpp": "63b8f74be50de9a2dbc0814cef4f38cfc51d66d48f76bcfab4dd9444a8c6a56c",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "d093f41aa8a901cd33ada5e9770c9eaff473e5c8cde65d2d2e874c0c71581579",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "d304f799402735be1afaf54ed84259a6209ff234041581e4a17f964c31fa634a",
+    "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "bb09a28d50c8f6889fb2840377885c746480617365f465853cbf9cc2e831da52",
+    "InkeysHeadlessTests/draw3_contact_tests.cpp": "fe6a17e8b4a89a994a670330096d719060843ced4e05e537b82ba1adafc82d7d"
+  },
+  "sourceUnchanged": true,
+  "nativeBuildOrExecutionThisRound": false
+}

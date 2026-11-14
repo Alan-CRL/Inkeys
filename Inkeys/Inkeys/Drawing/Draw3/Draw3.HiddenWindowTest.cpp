@@ -7,7 +7,11 @@
 #include "Draw3.ShaderCompatibility.h"
 
 import Inkeys.Window;
+import Inkeys.Drawing.Draw3.window_control;
+import Inkeys.Drawing.Draw3.contact_input;
 import Inkeys.Drawing.Draw3.renderer;
+import Inkeys.Drawing.Draw3.graphics_initialization;
+import Inkeys.Drawing.Draw3.transparent_presentation;
 import Inkeys.Drawing.Draw3.pen_cursor;
 import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.drawing_controller;
@@ -27,6 +31,7 @@ import draw3.uink_draw3_import;
 #include <cstring>
 #include <d3d11.h>
 #include <dxgi1_2.h>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <json/json.h>
@@ -76,7 +81,8 @@ namespace Inkeys::Drawing::Draw3
 			return false;
 		}
 
-		constexpr UINT kHiddenCaptureProbeMessage = WM_APP + 0x3D4u;
+		// +0x3D4 由生产鼠标 owner 启停握手占用，测试探针不能吞掉它。
+		constexpr UINT kHiddenCaptureProbeMessage = WM_APP + 0x3D5u;
 		LRESULT CALLBACK HiddenDrawpadWindowProc(HWND window, UINT message,
 			WPARAM wParam, LPARAM lParam)
 		{
@@ -121,6 +127,308 @@ namespace Inkeys::Drawing::Draw3
 			spec.visible = false;
 			spec.bindMessages = false;
 		return spec;
+		}
+
+
+		// 不启动 Host/GPU：用真实 HWND -> WindowController -> Coordinator 验证 Win32 兜底生命周期。
+		LRESULT CALLBACK CompatibilityMouseWindowProc(HWND window, UINT message,
+			WPARAM wParam, LPARAM lParam)
+		{
+			auto* controller = reinterpret_cast<WindowController*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+			return controller ? controller->HandleExternalMessage(window, message, wParam, lParam)
+				: DefWindowProcW(window, message, wParam, lParam);
+		}
+
+		bool CheckCompatibilityMouseWindow(int& failures)
+		{
+			const auto beforeFailures = failures;
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			WindowController controller;
+			const std::wstring className = L"Inkeys.Draw3.Hidden.Compatibility." + std::to_wstring(GetCurrentProcessId());
+			WNDCLASSEXW windowClass{};
+			windowClass.cbSize = sizeof(windowClass);
+			windowClass.hInstance = GetModuleHandleW(nullptr);
+			windowClass.lpszClassName = className.c_str();
+			windowClass.lpfnWndProc = CompatibilityMouseWindowProc;
+			const ATOM atom = RegisterClassExW(&windowClass);
+			if (!Check(atom != 0, "compatibility mouse registers hidden fixture", failures)) return false;
+			const HWND window = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+				className.c_str(), L"Inkeys hidden compatibility mouse", WS_POPUP,
+				-32000, -32000, 320, 240, nullptr, nullptr, windowClass.hInstance, nullptr);
+			struct Cleanup
+			{
+				WindowController& controller;
+				HWND window;
+				const WNDCLASSEXW& windowClass;
+				~Cleanup()
+				{
+					(void)controller.SetMouseCompatibilityEnabled(false);
+					controller.DetachExternal();
+					if (window) { SetWindowLongPtrW(window, GWLP_USERDATA, 0); DestroyWindow(window); }
+					UnregisterClassW(windowClass.lpszClassName, windowClass.hInstance);
+				}
+			} cleanup{ controller, window, windowClass };
+			if (!Check(window && !IsWindowVisible(window) && controller.AttachExternal(window),
+				"compatibility fixture attaches a hidden non-activating HWND", failures)) return false;
+			SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&controller));
+			controller.SetInputCoordinator(&input);
+			if (!Check(controller.SetMouseCompatibilityEnabled(true),
+				"compatibility producer starts on its HWND owner", failures)) return false;
+			// GetMessageTime 是生产路径的旧代次屏障；使用新排队消息，不伪造时间或调用私有处理函数。
+			const DWORD started = GetTickCount();
+			const auto tickDeadline = std::chrono::steady_clock::now() + 1s;
+			while (GetTickCount() == started && std::chrono::steady_clock::now() < tickDeadline)
+				std::this_thread::sleep_for(1ms);
+			if (!Check(GetTickCount() != started, "compatibility fixture obtains a new message-time generation", failures)) return false;
+			const auto deadline = std::chrono::steady_clock::now() + 20s;
+			const auto dispatch = [&](UINT message, WPARAM buttons, LPARAM position)
+			{
+				if (std::chrono::steady_clock::now() >= deadline || !PostMessageW(window, message, buttons, position))
+					return Check(false, "compatibility message post stays within hard timeout", failures);
+				MSG queued{};
+				const auto limit = std::chrono::steady_clock::now() + 1s;
+				do
+				{
+					if (PeekMessageW(&queued, window, 0, 0, PM_REMOVE))
+					{
+						DispatchMessageW(&queued);
+						if (queued.message == message) return true;
+					}
+					else std::this_thread::sleep_for(1ms);
+				} while (std::chrono::steady_clock::now() < limit && std::chrono::steady_clock::now() < deadline);
+				return Check(false, "compatibility posted message reaches real window procedure", failures);
+			};
+			const auto takeDown = [&]()
+			{
+				ContactRecord* record = nullptr;
+				for (unsigned n = 0; n < 64 && input.TryDequeue(record); ++n)
+				{
+					if (record) return ContactHandle{ record, record->Generation() };
+					input.AcknowledgeControlWake();
+				}
+				return ContactHandle{};
+			};
+			const auto phaseAt = [&](ContactHandle handle, ContactPhase phase, float x, float y)
+			{
+				ContactSnapshot snapshot;
+				return handle && input.TryReadSnapshot(handle, snapshot) && snapshot.phase == phase
+					&& snapshot.position.x == x && snapshot.position.y == y;
+			};
+			const auto releaseUnexpected = [&](ContactHandle handle)
+			{
+				if (!handle) return;
+				SendMessageW(window, WM_CANCELMODE, 0, 0);
+				input.Recycle(handle);
+			};
+			// 清掉启动时真实按键的隔离位；不查询前台、不产生系统输入。
+			dispatch(WM_LBUTTONUP, 0, MAKELPARAM(20, 30));
+			dispatch(WM_RBUTTONUP, 0, MAKELPARAM(20, 30));
+			controller.SetCanvasPanWorkspace(true);
+			controller.SetSelectionMode(false);
+			controller.SetSelectionMode(true);
+			Check(controller.CanvasPanMode(), "confirmed whiteboard Selection immediately derives the pan gate", failures);
+			// 实际 WM_LBUTTONDOWN 来自客户区；捕获后的拖动可越界，仍须只产生一次终态。
+			const auto dragTerminals = input.DiagnosticsSnapshot().terminalPublished;
+			dispatch(WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(20, 30));
+			auto contact = takeDown();
+			Check(phaseAt(contact, ContactPhase::Down, 20, 30) && GetCapture() == window,
+				"first Down after Move switch is accepted and captures without a publish frame", failures);
+			dispatch(WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(74, 91));
+			Check(phaseAt(contact, ContactPhase::Move, 74, 91), "real WM_MOUSEMOVE preserves client pixel coordinates", failures);
+			dispatch(WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(-12, 260));
+			Check(phaseAt(contact, ContactPhase::Move, -12, 260) && GetCapture() == window,
+				"captured drag leaving the client keeps signed pixel coordinates", failures);
+			dispatch(WM_LBUTTONUP, 0, MAKELPARAM(-10, 262));
+			Check(phaseAt(contact, ContactPhase::Up, -10, 262) && GetCapture() != window &&
+				input.DiagnosticsSnapshot().terminalPublished == dragTerminals + 1,
+				"real button Up closes captured outside drag exactly once", failures);
+			dispatch(WM_LBUTTONUP, 0, MAKELPARAM(-10, 262));
+			Check(input.DiagnosticsSnapshot().terminalPublished == dragTerminals + 1,
+				"duplicate outside Up does not publish another terminal", failures);
+			if (contact) input.Recycle(contact);
+
+			for (const UINT cancel : { WM_CAPTURECHANGED, WM_CANCELMODE, WM_KILLFOCUS, WM_SHOWWINDOW, WM_WINDOWPOSCHANGED })
+			{
+				dispatch(WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(35, 45));
+				contact = takeDown();
+				Check(phaseAt(contact, ContactPhase::Down, 35, 45), "each cancellation starts with a fresh owner", failures);
+				const auto terminals = input.DiagnosticsSnapshot().terminalPublished;
+				WINDOWPOS position{}; position.hwnd = window; position.flags = SWP_HIDEWINDOW | SWP_NOMOVE | SWP_NOSIZE;
+				// 隐藏窗无法再次产生真实 Hide 边沿；发送真实窗口通知验证相同生产取消分支。
+				SendMessageW(window, cancel, 0, cancel == WM_WINDOWPOSCHANGED ? reinterpret_cast<LPARAM>(&position) : 0);
+				Check(phaseAt(contact, ContactPhase::Cancelled, 35, 45) && GetCapture() != window,
+					"capture/focus/cancel/hide notification cancels and releases ownership", failures);
+				SendMessageW(window, cancel, 0, cancel == WM_WINDOWPOSCHANGED ? reinterpret_cast<LPARAM>(&position) : 0);
+				dispatch(WM_LBUTTONUP, 0, MAKELPARAM(35, 45));
+				Check(input.DiagnosticsSnapshot().terminalPublished == terminals + 1,
+					"duplicate cancel and late Up publish exactly one Cancelled terminal", failures);
+				if (contact) input.Recycle(contact);
+			}
+			for (int n = 0; n < 3; ++n)
+			{
+				dispatch(WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(40 + n, 50));
+				contact = takeDown();
+				dispatch(WM_LBUTTONUP, 0, MAKELPARAM(40 + n, 50));
+				Check(phaseAt(contact, ContactPhase::Up, static_cast<float>(40 + n), 50),
+					"rapid Down Up Down retains independent terminal routes", failures);
+				if (contact) input.Recycle(contact);
+			}
+			for (const auto workspace : { Bridge::Workspace::Desktop, Bridge::Workspace::Presentation })
+			{
+				controller.SetCanvasPanWorkspace(workspace == Bridge::Workspace::Whiteboard);
+				dispatch(WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(30, 40));
+				contact = takeDown();
+				Check(!contact && !controller.CanvasPanMode(), "Desktop and PPT Selection isolate real mouse Down", failures);
+				releaseUnexpected(contact);
+				dispatch(WM_LBUTTONUP, 0, MAKELPARAM(30, 40));
+			}
+			controller.SetCanvasPanWorkspace(true);
+			for (const UINT ignored : { WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEWHEEL, WM_MOUSEHWHEEL, WM_LBUTTONDBLCLK, WM_RBUTTONDBLCLK })
+			{
+				dispatch(ignored, 0, MAKELPARAM(30, 40));
+				contact = takeDown();
+				Check(!contact, "middle wheel and double-click never create compatibility contacts", failures);
+				releaseUnexpected(contact);
+			}
+			// 右键 mailbox 有独立设备类型；是否平移由 Controller 决定，不能把 MouseRight 当成左键。
+			dispatch(WM_RBUTTONDOWN, MK_RBUTTON, MAKELPARAM(30, 40));
+			contact = takeDown();
+			Check(contact && contact.record->DeviceType() == InputDeviceType::MouseRight,
+				"right button is tagged MouseRight rather than contaminating MouseLeft", failures);
+			dispatch(WM_RBUTTONUP, 0, MAKELPARAM(30, 40));
+			if (contact) input.Recycle(contact);
+			// Win32 兜底沿用既有单点鼠标降级，不区分笔提升来源；RTS 的 Pen 隔离不适用于此路径。
+			// 在 owner 同线程设置 promoted 签名后 SendMessage，不使用 SendInput 或修改系统笔状态。
+			const LPARAM previousExtra = SetMessageExtraInfo(static_cast<LPARAM>(0xFF515700u));
+			SendMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(30, 40));
+			SetMessageExtraInfo(previousExtra);
+			contact = takeDown();
+			Check(phaseAt(contact, ContactPhase::Down, 30, 40) &&
+				contact.record->DeviceType() == InputDeviceType::MouseLeft && GetCapture() == window,
+				"pen-promoted Down retains the existing single-point MouseLeft fallback", failures);
+			const auto promotedTerminals = input.DiagnosticsSnapshot().terminalPublished;
+			dispatch(WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(60, 70));
+			Check(phaseAt(contact, ContactPhase::Move, 60, 70),
+				"pen-promoted fallback contact follows the compatibility mouse stream", failures);
+			dispatch(WM_LBUTTONUP, 0, MAKELPARAM(60, 70));
+			Check(phaseAt(contact, ContactPhase::Up, 60, 70) && GetCapture() != window &&
+				input.DiagnosticsSnapshot().terminalPublished == promotedTerminals + 1,
+				"pen-promoted fallback contact ends with one mouse terminal", failures);
+			if (contact) input.Recycle(contact);
+			// ResetWorkspace 的生产等价入口：结束白板确认后 Selection 恢复隔离。
+			controller.SetCanvasPanWorkspace(false);
+			dispatch(WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(30, 40));
+			contact = takeDown();
+			Check(!contact && !controller.CanvasPanMode(), "leaving whiteboard restores mouse Selection isolation", failures);
+			releaseUnexpected(contact);
+			dispatch(WM_LBUTTONUP, 0, MAKELPARAM(30, 40));
+			Check(input.DiagnosticsSnapshot().occupiedSlots == 0 && GetCapture() != window && !IsWindowVisible(window),
+				"compatibility fixture ends without slots capture or visible UI", failures);
+			return failures == beforeFailures;
+		}
+
+
+		struct HiddenViewportObservation
+		{
+			std::atomic<std::uint64_t> coordinates = 0;
+			std::atomic<std::uint64_t> publications = 0;
+			std::atomic_bool moving = false;
+			static void Observe(void* context, const WhiteboardViewportSample& sample) noexcept
+			{
+				auto& value = *static_cast<HiddenViewportObservation*>(context);
+				value.coordinates.store(static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(sample.x)) |
+					(static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(sample.y)) << 32), std::memory_order_release);
+				value.moving.store(sample.active && sample.moving, std::memory_order_release);
+				value.publications.fetch_add(1, std::memory_order_release);
+			}
+		};
+
+		bool CheckHiddenControllerMousePan(HWND drawpad, HiddenViewportObservation& viewport,
+			int& failures)
+		{
+			// 生产只在 RTS 初始化失败时选 Win32Mouse；不关闭 RTS、不把合成 mailbox 注入冒充鼠标消息。
+			if (ProductHost().RuntimeSnapshot().inputMode != HostInputMode::Win32Mouse)
+			{
+				Report("SKIP", "real-controller WM_MOUSE pan: Host selected RTS, no safe force-Win32 option");
+				return true;
+			}
+			if constexpr (!kWhiteboardPatternOwnedByFreeze)
+			{
+				Report("SKIP", "real-controller WM_MOUSE pan: Draw3 owner does not publish an observable viewport callback");
+				return true;
+			}
+			const int beforeFailures = failures;
+			auto drawing = ProductHost().ProductBridge().Snapshot();
+			if (!Check(!drawing.selectionMode, "controller mouse smoke starts from drawing mode", failures)) return false;
+			auto move = drawing;
+			move.selectionMode = true;
+			PublishProductState(move);
+			if (!Check(WaitUntil([]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return state.workspace == Bridge::Workspace::Whiteboard && state.selectionMode && state.presentationInputReady;
+			}, 5s), "real controller confirms hidden whiteboard Move admission", failures))
+			{
+				PublishProductState(drawing);
+				return false;
+			}
+			Check(!IsWindowVisible(drawpad), "controller mouse smoke keeps Drawpad hidden", failures);
+			const auto post = [&](UINT message, WPARAM buttons, int x, int y)
+			{
+				return PostMessageW(drawpad, message, buttons, MAKELPARAM(x, y)) != FALSE;
+			};
+			// 真实按键状态只在后端 Start 时锁存；Up 清理该启动隔离，不依赖前台状态。
+			post(WM_LBUTTONUP, 0, 40, 50);
+			post(WM_RBUTTONUP, 0, 40, 50);
+			const auto beforeRight = ProductHost().RuntimeSnapshot();
+			const auto rightPosition = viewport.coordinates.load(std::memory_order_acquire);
+			Check(post(WM_RBUTTONDOWN, MK_RBUTTON, 40, 50) && post(WM_MOUSEMOVE, MK_RBUTTON, 90, 80) &&
+				post(WM_RBUTTONUP, 0, 90, 80), "post real-controller right-button isolation sequence", failures);
+			Check(WaitUntil([beforeRight]
+			{
+				return ProductHost().RuntimeSnapshot().inputRecycled > beforeRight.inputRecycled;
+			}, 5s) && viewport.coordinates.load(std::memory_order_acquire) == rightPosition,
+				"controller recycles MouseRight without changing the viewport", failures);
+			const auto beforeDown = ProductHost().RuntimeSnapshot();
+			const auto beforePosition = viewport.coordinates.load(std::memory_order_acquire);
+			Check(post(WM_LBUTTONDOWN, MK_LBUTTON, 40, 50), "post real WM_LBUTTONDOWN to hidden controller", failures);
+			Check(WaitUntil([&]
+			{
+				return ProductHost().RuntimeSnapshot().inputDownPublished > beforeDown.inputDownPublished &&
+					viewport.moving.load(std::memory_order_acquire);
+			}, 5s), "controller consumes compatibility Down before the first Move", failures);
+			Check(post(WM_MOUSEMOVE, MK_LBUTTON, 104, 86), "post real WM_MOUSEMOVE to hidden controller", failures);
+			Check(WaitUntil([&]
+			{
+				return viewport.publications.load(std::memory_order_acquire) != 0 &&
+					viewport.coordinates.load(std::memory_order_acquire) != beforePosition;
+			}, 5s), "real controller mouse drag changes the page viewport callback", failures);
+			Check(post(WM_LBUTTONUP, 0, 104, 86), "post real WM_LBUTTONUP to hidden controller", failures);
+			Check(WaitUntil([beforeDown]
+			{
+				return ProductHost().RuntimeSnapshot().inputTerminalPublished > beforeDown.inputTerminalPublished;
+			}, 5s), "controller mouse smoke reaches a real terminal", failures);
+			PublishProductState(drawing);
+			const bool exited = Check(WaitUntil([&] { return !ProductHost().RuntimeSnapshot().selectionMode &&
+				!viewport.moving.load(std::memory_order_acquire); }, 5s),
+				"real controller exits Move mode", failures);
+			if (exited)
+			{
+				const auto stopped = viewport.coordinates.load(std::memory_order_acquire);
+				post(WM_MOUSEMOVE, MK_LBUTTON, 170, 120);
+				bool stable = true;
+				const auto deadline = std::chrono::steady_clock::now() + 150ms;
+				do
+				{
+					stable &= viewport.coordinates.load(std::memory_order_acquire) == stopped;
+					std::this_thread::sleep_for(5ms);
+				} while (std::chrono::steady_clock::now() < deadline);
+				Check(stable, "orphan Move after mode exit produces no further viewport movement", failures);
+			}
+			post(WM_LBUTTONUP, 0, 170, 120);
+			Check(!IsWindowVisible(drawpad), "controller mouse smoke finishes without visible UI", failures);
+			return failures == beforeFailures;
 		}
 
 		bool CheckPresentationStyle(HWND drawpad, HostPresentationMode mode, int& failures)
@@ -903,7 +1211,13 @@ namespace Inkeys::Drawing::Draw3
 				scale.pixelWidth=320;scale.pixelHeight=240;scale.logicalOutputKnown=true;
 				options.hiddenTestDisplayScale=scale;
 			}
-			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
+			HiddenViewportObservation viewportObservation;
+			HostRuntimeCallbacks runtimeCallbacks;
+			runtimeCallbacks.context = &viewportObservation;
+			runtimeCallbacks.whiteboardViewportChanged = &HiddenViewportObservation::Observe;
+			// 回调借用本栈对象；异常/提前返回时也先 join Host，再销毁观测存储。
+			struct StopObservedHost { ~StopObservedHost() { StopProduct(); } } stopObservedHost;
+			if (!Check(StartProduct(drawpad, presentation, callbacks, options, runtimeCallbacks),
 				"start real Draw3 host", failures))
 				return false;
 
@@ -1012,6 +1326,17 @@ namespace Inkeys::Drawing::Draw3
 
 			if (exerciseCommands)
 			{
+				// 上段仍处于电脑交互模式；先走正式 Bridge 切回绘图，不能在选择模式下注入并期待落笔。
+				PublishProductState(drawingState);
+				modeSucceeded &= Check(WaitUntil([]
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					return !state.selectionMode && state.lastPresentSucceeded &&
+						state.requestedOutputTarget == HostOutputTarget::PrimaryDrawpad &&
+						state.readyOutputTarget == HostOutputTarget::PrimaryDrawpad &&
+						state.readyOutputRevision == state.requestedOutputRevision &&
+						state.presentedContentRevision == state.contentRevision;
+				}), "command fixture restores real drawing readiness before contact injection", failures);
 				// 通过隐藏 Drawpad 的 WndProc mailbox 注入完整 Down/Move/Up，
 				// 不调用 SendInput，也不绕过真实绘制线程直接访问 Renderer。
 				// Service 诊断跨 Host 启动累计，Host 的 NotFound 每次归零；只比较本次增量。
@@ -1584,7 +1909,30 @@ namespace Inkeys::Drawing::Draw3
 				Bridge::ProductState whiteboardState;whiteboardState.workspace=Bridge::Workspace::Whiteboard;whiteboardState.tool=Bridge::Tool::Pen;whiteboardState.selectionMode=false;
 				PublishProductState(whiteboardState);
 				PublishProductWorkspace(Bridge::Workspace::Whiteboard);
-				modeSucceeded &= Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().workspace==Bridge::Workspace::Whiteboard;}),"switch to hidden whiteboard",failures);
+				const auto adoptWhiteboardStyle = []
+				{
+					const auto state = ProductHost().RuntimeSnapshot();
+					auto desired = ProductHost().ProductBridge().Snapshot();
+					const auto& token = state.whiteboardStyle;
+					// 本 fixture 没有真实 Bar 业务循环；只对同代/同页/同色且已成功呈现的样式走正式回执。
+					if (desired.workspace == Bridge::Workspace::Whiteboard && !state.whiteboardLoadPending &&
+						DrawpadPresentationReady(desired, state) && token.hostGeneration != 0 && token.serial != 0 &&
+						token.hostGeneration == state.hostGeneration && token.generation == state.whiteboardGeneration &&
+						token.generation != 0 && token.page == state.currentPageIndex &&
+						token.backgroundRgb == state.whiteboardTheme.backgroundRgb && desired.whiteboardStyle != token)
+					{
+						desired.whiteboardStyle = token;
+						PublishProductState(desired);
+					}
+					return state; // 新回执仍须下一次由 Host 消费，不能在本次采样伪造准入。
+				};
+				modeSucceeded &= Check(WaitUntil([&]
+				{
+					const auto state = adoptWhiteboardStyle();
+					return state.workspace == Bridge::Workspace::Whiteboard && state.presentationInputReady &&
+						!state.whiteboardLoadPending && DrawpadPresentationReady(whiteboardState, state);
+				}), "switch to hidden whiteboard with a matching adopted style", failures);
+				modeSucceeded &= CheckHiddenControllerMousePan(drawpad, viewportObservation, failures);
 				// 真实 Controller/Host 切页：同布尔内容也必须取得新版本，旧页成功帧不能冒充就绪。
 				const auto firstWhiteboardPage = ProductHost().RuntimeSnapshot().currentPageIndex;
 				const auto switchWhiteboardPage = [&](Bridge::CommandType type, std::size_t page,
@@ -1593,10 +1941,10 @@ namespace Inkeys::Drawing::Draw3
 					const auto before = ProductHost().RuntimeSnapshot();
 					if (!Check(PublishProductCommand(type) == Bridge::CommandResult::Accepted,
 						"whiteboard page command accepted", failures)) return false;
-					if (!Check(WaitUntil([before, page, hasContent, whiteboardState]
+					if (!Check(WaitUntil([before, page, hasContent, whiteboardState, adoptWhiteboardStyle]
 					{
-						const auto state = ProductHost().RuntimeSnapshot();
-						return state.currentPageIndex == page && !state.whiteboardLoadPending &&
+						const auto state = adoptWhiteboardStyle();
+						return state.currentPageIndex == page && !state.whiteboardLoadPending && state.presentationInputReady &&
 							state.currentPageHasContent == hasContent &&
 							state.contentRevision > before.contentRevision &&
 							DrawpadPresentationReady(whiteboardState, state);
@@ -1619,11 +1967,11 @@ namespace Inkeys::Drawing::Draw3
 					firstWhiteboardPage + 1, true, "nonempty whiteboard pages advance content revision");
 
 				// 暖页：物理 Up 尚未到达就完成封口、切页和真实 ready；旧尾事件不能污染新页。
-				const auto waitWhiteboardInputReady = [whiteboardState](std::size_t page)
+				const auto waitWhiteboardInputReady = [whiteboardState, adoptWhiteboardStyle](std::size_t page)
 				{
-					return WaitUntil([whiteboardState, page]
+					return WaitUntil([whiteboardState, page, adoptWhiteboardStyle]
 					{
-						const auto state = ProductHost().RuntimeSnapshot();
+						const auto state = adoptWhiteboardStyle();
 						return state.currentPageIndex == page && !state.whiteboardLoadPending &&
 							!state.commandScenePending && state.presentationInputReady && !state.pen.active &&
 							DrawpadPresentationReady(whiteboardState, state);
@@ -2103,7 +2451,7 @@ namespace Inkeys::Drawing::Draw3
 					"area toggle does not reset mouse fine hover",failures);
 				const SpeedEraser::ContactLengthMetrics syntheticAxis{2,1000,0,30000,true};
 				const SpeedEraser::ContactLengthMetrics syntheticSpan{2,10000,0,30000,true};
-				const auto areaTransform=SpeedEraser::ResolveContactLengthTransform(syntheticAxis,syntheticSpan,1);
+				const auto areaTransform=SpeedEraser::ResolveContactLengthTransform(syntheticAxis,syntheticSpan,1,1);
 				const auto convertedArea=SpeedEraser::ConvertContactArea(300,200,areaTransform,areaTransform);
 				modeSucceeded &= Check(convertedArea.units==SpeedEraser::ContactAreaUnits::CanvasPixels &&
 					std::abs(convertedArea.widthPx-30)<0.001f && std::abs(convertedArea.heightPx-20)<0.001f,
@@ -2506,6 +2854,208 @@ namespace Inkeys::Drawing::Draw3
 		return failures == 0;
 	}
 
+	int RunAuxiliaryPresentationResourceLifecycleTest() noexcept
+	{
+		int failures = 0;
+		try
+		{
+			Inkeys::Window::Service service(64);
+			StyleContext style{ &service };
+			struct StopBeforeWindows
+			{
+				Inkeys::Window::Service& service;
+				~StopBeforeWindows() { StopProduct(); service.StopAndJoin(); }
+			} stop{ service }; // 声明在 style 后：早退也先真 Stop，再销毁回调上下文和 HWND。
+			constexpr int size = 64;
+			const auto suffix = std::to_wstring(GetCurrentProcessId());
+			std::vector<Inkeys::Window::WindowSpec> specs;
+			for (const auto role : { Inkeys::Window::WindowRole::MagnifierHost,
+				Inkeys::Window::WindowRole::Freeze,
+				Inkeys::Window::WindowRole::DrawpadPresentation,
+				Inkeys::Window::WindowRole::Drawpad })
+				specs.push_back(MakeHiddenSpec(role, L"Inkeys.AuxReadback." + suffix + L"." +
+					std::to_wstring(static_cast<unsigned>(role)), DefWindowProcW, size, size));
+			if (!Check(service.Start(specs), "auxiliary lifecycle starts hidden owner HWNDs", failures)) return 1;
+			const HWND drawpad = service.Handle(Inkeys::Window::WindowRole::Drawpad);
+			const HWND auxiliary = service.Handle(Inkeys::Window::WindowRole::DrawpadPresentation);
+			{
+				GraphicsDeviceResources graphics;
+				if (!Check(InitializeGraphicsDevice(graphics, false),
+					"auxiliary lifecycle creates real WARP device", failures)) return 1;
+				InkRenderer renderer;
+				TransparentPresentationController presentation;
+				struct ReleaseFixture
+				{
+					GraphicsDeviceResources& graphics;
+					InkRenderer& renderer;
+					TransparentPresentationController& presentation;
+					~ReleaseFixture()
+					{
+						graphics.context->ClearState();
+						presentation.Shutdown();
+						renderer.ReleaseResources();
+					}
+				} release{ graphics, renderer, presentation };
+				TransparentPresentationOptions options;
+				options.requireMode = true;
+				options.requiredMode = TransparentPresentMode::UlwDirtyRect;
+				options.allowDirectComposition = false;
+				options.enableHardwareAcceleration = false;
+				if (!Check(presentation.Initialize(drawpad, auxiliary, graphics, renderer, size, size,
+					{ &style, &ApplyDrawpadStyle }, options),
+					"auxiliary lifecycle initializes production presenter", failures)) return 1;
+				Check(presentation.AuxiliaryReadbackPayloadBytes() == 0 &&
+					!presentation.AuxiliaryReadbackNeedsFullPresent(),
+					"Primary starts without auxiliary pixels and keeps partial-render eligibility", failures);
+				const RECT smallDirty{ 0, 0, 1, 1 };
+				const auto selected = presentation.SetOutputTarget(TransparentOutputTarget::SelectionUlw);
+				Check(presentation.AuxiliaryReadbackNeedsFullPresent(),
+					"first auxiliary visual needs complete source composition", failures);
+				renderer.ClearRTV(renderer.backBufferRTV.Get(), { 0, 0, 0, 0 });
+				if (!Check(presentation.Present(smallDirty, false, 7),
+					"real auxiliary transparent initial submission", failures)) return 1;
+				const auto clean = presentation.LastPresentObservation();
+				const auto payload = presentation.AuxiliaryReadbackPayloadBytes();
+				Check(clean.fullFrameAllZeroAlpha && !clean.usedDirtyRect &&
+					clean.outputRevision == selected && payload == 2ull * size * size * 4,
+					"lazy readback makes an actual full clean frame and owns both pixel stores", failures);
+				Check(!presentation.ReleaseAuxiliaryReadbackResources(
+					TransparentOutputTarget::SelectionUlw, selected + 1, 7) &&
+					presentation.AuxiliaryReadbackPayloadBytes() == payload,
+					"stale output acknowledgement cannot retire current pixels", failures);
+				if (!Check(service.SetDrawpadSurfaceVisibility(Inkeys::Window::DrawpadSurfaceVisibility::Hidden) &&
+					presentation.ReleaseAuxiliaryReadbackResources(TransparentOutputTarget::SelectionUlw, selected, 7),
+					"matching native hidden acknowledgement retires readback", failures)) return 1;
+				const auto retired = presentation.LastPresentObservation();
+				Check(presentation.AuxiliaryReadbackPayloadBytes() == 0 &&
+					retired.fullFrameAllZeroAlpha && retired.outputRevision == clean.outputRevision &&
+					retired.presentedContentRevision == clean.presentedContentRevision,
+					"retirement preserves the real clean/version proof without synthesizing Present", failures);
+				presentation.SetOutputTarget(TransparentOutputTarget::PrimaryDrawpad);
+				Check(!presentation.AuxiliaryReadbackNeedsFullPresent() &&
+					presentation.Resize(size, size) && presentation.AuxiliaryReadbackPayloadBytes() == 0,
+					"Primary resize does not resurrect auxiliary readback or force full rendering", failures);
+
+				const auto reentered = presentation.SetOutputTarget(TransparentOutputTarget::SelectionUlw);
+				renderer.ClearRTV(renderer.backBufferRTV.Get(), { 0, 0, 0, 0 });
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> marker;
+				D3D11_TEXTURE2D_DESC description{};
+				description.Width = description.Height = description.MipLevels = description.ArraySize = 1;
+				description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+				description.SampleDesc.Count = 1;
+				const std::uint32_t markerPixel = 0xFF804020u;
+				const D3D11_SUBRESOURCE_DATA markerData{ &markerPixel, 4, 0 };
+				if (!Check(SUCCEEDED(graphics.device->CreateTexture2D(&description, &markerData,
+					marker.GetAddressOf())), "create distant real GPU marker", failures)) return 1;
+				graphics.context->CopySubresourceRegion(renderer.backBufferTexture.Get(), 0,
+					48, 48, 0, marker.Get(), 0, nullptr);
+				if (!Check(presentation.Present(smallDirty, false, 8),
+					"reentry submits a real coloured auxiliary frame", failures)) return 1;
+				Check(!presentation.LastPresentObservation().usedDirtyRect &&
+					!presentation.LastPresentObservation().updatedRegionAllZeroAlpha,
+					"new readback scans distant pixels outside caller's partial dirty region", failures);
+				Check(!presentation.ReleaseAuxiliaryReadbackResources(
+					TransparentOutputTarget::SelectionUlw, reentered, 8),
+					"nonblank auxiliary output cannot use the empty-selection retirement gate", failures);
+				const RECT resizedBounds{ -32000, -32000, -32000 + size + 16, -32000 + size + 16 };
+				if (!Check(service.SetBounds(Inkeys::Window::WindowRole::Drawpad, resizedBounds) &&
+					renderer.Resize(presentation.SwapChain(), size + 16, size + 16) &&
+					presentation.Resize(size + 16, size + 16) && presentation.AuxiliaryReadbackPayloadBytes() == 0 &&
+					presentation.AuxiliaryReadbackNeedsFullPresent(),
+					"real resize invalidates storage and requires next auxiliary visual to be full", failures)) return 1;
+				renderer.ClearRTV(renderer.backBufferRTV.Get(), { 0, 0, 0, 0 });
+				if (!Check(presentation.Present(smallDirty, false, 9) &&
+					presentation.LastPresentObservation().fullFrameAllZeroAlpha,
+					"resized auxiliary establishes another real clean frame", failures)) return 1;
+				auto savedBackBuffer = renderer.backBufferTexture;
+				renderer.backBufferTexture.Reset();
+				Check(!presentation.Present(smallDirty, true, 10) && presentation.RecoveryPending() &&
+					!presentation.LastPresentObservation().fullFrameAllZeroAlpha &&
+					!presentation.ReleaseAuxiliaryReadbackResources(TransparentOutputTarget::SelectionUlw, reentered, 10),
+					"real missing-resource failure cannot create clean/retirement proof", failures);
+				renderer.backBufferTexture = savedBackBuffer;
+				savedBackBuffer.Reset(); // 测试备份也不能跨恢复持有旧交换链 buffer。
+				Check(presentation.RecoverFromRuntimeFailure() && presentation.AuxiliaryReadbackPayloadBytes() == 0,
+					"presenter recovery stays lazy for auxiliary pixels", failures);
+			}
+
+			// 下半段经过真实 Host 的 General wake，检查回收不会唤起空白 Present 重建循环。
+			Bridge::ProductState state;
+			state.workspace = Bridge::Workspace::Desktop;
+			state.selectionMode = true;
+			PublishProductState(state);
+			HostStartOptions options{ HostPresentationMode::UlwDirtyRect };
+			options.allowDirectComposition = false;
+			options.enableHardwareAcceleration = false;
+			const HostStyleCallbacks callbacks{ &style, &ApplyDrawpadStyle };
+			if (!Check(StartProduct(drawpad, auxiliary, callbacks, options),
+				"start real auxiliary lifecycle Host", failures)) return 1;
+			const auto waitForClean = [&]
+			{
+				return WaitUntil([]
+				{
+					const auto snapshot = ProductHost().RuntimeSnapshot();
+					return snapshot.firstFrameReady && snapshot.lastPresentSucceeded &&
+						snapshot.requestedOutputTarget == HostOutputTarget::SelectionUlw &&
+						snapshot.readyOutputTarget == HostOutputTarget::SelectionUlw &&
+						snapshot.requestedOutputRevision == snapshot.readyOutputRevision &&
+						snapshot.contentRevision == snapshot.presentedContentRevision &&
+						snapshot.auxiliaryFullFrameClean && snapshot.auxiliaryReadbackPayloadBytes != 0;
+				});
+			};
+			if (!Check(waitForClean(), "Host receives real auxiliary clean and residency", failures)) return 1;
+			auto snapshot = ProductHost().RuntimeSnapshot();
+			const auto cleanRevision = snapshot.readyOutputRevision;
+			const auto cleanContent = snapshot.presentedContentRevision;
+			if (!Check(service.SetDrawpadSurfaceVisibility(Inkeys::Window::DrawpadSurfaceVisibility::Hidden),
+				"native owner acknowledges hidden Host auxiliary surface", failures)) return 1;
+			auto stale = snapshot;
+			++stale.hostGeneration;
+			ProductHost().AcknowledgeAuxiliarySurfaceHidden(stale);
+			std::this_thread::sleep_for(50ms);
+			Check(ProductHost().RuntimeSnapshot().auxiliaryReadbackPayloadBytes != 0,
+				"stale Host generation does not release the current frame", failures);
+			ProductHost().AcknowledgeAuxiliarySurfaceHidden(ProductHost().RuntimeSnapshot());
+			if (!Check(WaitUntil([] { return ProductHost().RuntimeSnapshot().auxiliaryReadbackPayloadBytes == 0; }),
+				"General control wake retires auxiliary pixels", failures)) return 1;
+			const auto afterRelease = ProductHost().RuntimeSnapshot();
+			Check(afterRelease.readyOutputRevision == cleanRevision &&
+				afterRelease.presentedContentRevision == cleanContent && afterRelease.auxiliaryFullFrameClean,
+				"Host resource retirement does not fabricate or invalidate ready/clean state", failures);
+			ProductHost().AcknowledgeAuxiliarySurfaceHidden(afterRelease);
+			std::this_thread::sleep_for(150ms);
+			Check(ProductHost().RuntimeSnapshot().auxiliaryReadbackPayloadBytes == 0 &&
+				ProductHost().RuntimeSnapshot().presentCount == afterRelease.presentCount,
+				"blank General wake stays idle: no Present/rebuild/retire feedback loop", failures);
+			state.selectionMode = false;
+			PublishProductState(state);
+			if (!Check(WaitUntil([]
+			{
+				const auto current = ProductHost().RuntimeSnapshot();
+				return !current.selectionMode && current.readyOutputTarget == HostOutputTarget::PrimaryDrawpad &&
+					current.readyOutputRevision == current.requestedOutputRevision && current.lastPresentSucceeded;
+			}), "Host switches back to real Primary frame", failures)) return 1;
+			Check(ProductHost().RuntimeSnapshot().auxiliaryReadbackPayloadBytes == 0,
+				"Primary visual work leaves auxiliary pixels unallocated", failures);
+			state.selectionMode = true;
+			PublishProductState(state);
+			if (!Check(waitForClean(), "Host auxiliary reentry recreates and really presents", failures)) return 1;
+			ProductHost().AcknowledgeAuxiliarySurfaceHidden(ProductHost().RuntimeSnapshot());
+			Check(WaitUntil([] { return ProductHost().RuntimeSnapshot().auxiliaryReadbackPayloadBytes == 0; }),
+				"Host auxiliary reentry can be retired again", failures);
+			StopProduct();
+			Check(ProductHost().RuntimeSnapshot().auxiliaryReadbackPayloadBytes == 0,
+				"Host shutdown reports no remaining auxiliary pixels", failures);
+		}
+		catch (const std::exception& error)
+		{
+			Report("FAIL", error.what());
+			return 1;
+		}
+		if (failures == 0) Report("PASS", "auxiliary readback lazy allocation, retirement and reentry");
+		return failures == 0 ? 0 : 1;
+	}
+
 	static int RunRendererPixelTestForDriver(D3D_DRIVER_TYPE driver) noexcept
 	{
 		using Microsoft::WRL::ComPtr;
@@ -2517,7 +3067,7 @@ namespace Inkeys::Drawing::Draw3
 		unsigned matrixCases = 0, matrixFailures = 0;
 		unsigned guardedCases = 0, guardedFailures = 0, referenceUnavailable = 0;
 		const char* driverName = driver == D3D_DRIVER_TYPE_HARDWARE ? "hardware" : "warp";
-		std::fprintf(stderr, "[Draw3PixelTest] probe_schema=guarded-20261008 driver=%s expected_cases=105 matrix_expected=69 guarded_expected=18\n",
+		std::fprintf(stderr, "[Draw3PixelTest] probe_schema=guarded-20261008 driver=%s expected_cases=106 matrix_expected=69 guarded_expected=18\n",
 			driver == D3D_DRIVER_TYPE_HARDWARE ? "Hardware" : "WARP");
 		std::fprintf(stderr, "[Draw3PixelTest] driver=%s requested=%s\n", driverName, driverName);
 		const auto logResult = [&](const char* stage, HRESULT result)
@@ -2825,7 +3375,8 @@ namespace Inkeys::Drawing::Draw3
 				visual.appearance.outlineRed = visual.appearance.outlineGreen = visual.appearance.outlineBlue = 184.0f / 255.0f;
 				const auto drawProbe = [&](const char* name, ID3D11Texture2D* texture,
 					ID3D11RenderTargetView* rtv, bool comparison, ID3D11PixelShader* overrideShader = nullptr,
-					PixelExpectation expectation = PixelExpectation::Cursor, bool emitResult = true) -> bool
+					PixelExpectation expectation = PixelExpectation::Cursor, bool emitResult = true,
+					std::vector<unsigned char>* captured = nullptr) -> bool
 				{
 					if (!comparison && !overrideShader) ++productionCases;
 					if (!texture || !rtv || (comparison && !noBlend))
@@ -2856,7 +3407,7 @@ namespace Inkeys::Drawing::Draw3
 						name, viewportCount, viewport.TopLeftX, viewport.TopLeftY, viewport.Width,
 						viewport.Height, viewport.MinDepth, viewport.MaxDepth,
 						renderer.viewportWidth, renderer.viewportHeight, comparison, static_cast<void*>(renderer.pixelShader.Get()));
-					const bool passed = readPixels(name, texture, rtv, expectation, emitResult);
+					const bool passed = readPixels(name, texture, rtv, expectation, emitResult, captured);
 					if (!passed && !comparison && !overrideShader) ++failures;
 					if (statistics)
 					{
@@ -3252,6 +3803,42 @@ namespace Inkeys::Drawing::Draw3
 					Draw3Win7GuardedShader::Sha256, sizeof(Draw3Win7GuardedShader::Bytecode));
 				logResult("CreateGuardedCompletePS", device->CreatePixelShader(Draw3Win7GuardedShader::Bytecode,
 					sizeof(Draw3Win7GuardedShader::Bytecode), nullptr, guardedShader.GetAddressOf()));
+
+				const auto savedCursorAppearance = visual.appearance;
+				visual.appearance.red = 1.0f;
+				visual.appearance.green = visual.appearance.blue = 0.0f;
+				visual.appearance.opacity = 1.0f;
+				visual.appearance.fillAlpha = 0.5f;
+				visual.appearance.outlineWidth = 1.25f;
+				visual.appearance.outerOutlineWidth = 1.0f;
+				visual.appearance.outlineOpacity = 1.0f;
+				visual.appearance.outlineRed = visual.appearance.outlineGreen = visual.appearance.outlineBlue = 0.96f;
+				const auto checkHighlightPixels = [&](const char* name, const std::vector<unsigned char>& pixels)
+				{
+					if (pixels.size() != size * size * 4) { ++failures; return; }
+					const auto at = [&](UINT x, UINT y) { return pixels.data() + (y * size + x) * 4; };
+					const auto* outer = at(48, 64);
+					const auto* light = at(49, 64);
+					const auto* fill = at(64, 64);
+					const bool passed = outer[0] == 0 && outer[1] == 0 && outer[2] == 0 && outer[3] >= 250 &&
+						std::abs(static_cast<int>(light[0]) - 245) <= 2 &&
+						std::abs(static_cast<int>(light[1]) - 245) <= 2 &&
+						std::abs(static_cast<int>(light[2]) - 245) <= 2 && light[3] == 255 &&
+						fill[0] == 0 && fill[1] == 0 && std::abs(static_cast<int>(fill[2]) - 128) <= 1 &&
+						std::abs(static_cast<int>(fill[3]) - 128) <= 1;
+					std::fprintf(stderr, "[Draw3PixelTest] case=%s outer_bgra=(%u,%u,%u,%u) light_bgra=(%u,%u,%u,%u) fill_bgra=(%u,%u,%u,%u) result=%s\n",
+						name, outer[0], outer[1], outer[2], outer[3], light[0], light[1], light[2], light[3],
+						fill[0], fill[1], fill[2], fill[3], passed ? "PASS" : "FAIL");
+					if (!passed) ++failures;
+				};
+				std::vector<unsigned char> highlightProduction, highlightGuarded;
+				drawProbe("offscreen.cursor.highlight.production", offscreen.Get(), offscreenRtv.Get(), false,
+					nullptr, PixelExpectation::Capture, true, &highlightProduction);
+				checkHighlightPixels("offscreen.cursor.highlight.production.pixels", highlightProduction);
+				drawProbe("offscreen.cursor.highlight.guarded", offscreen.Get(), offscreenRtv.Get(), false,
+					guardedShader.Get(), PixelExpectation::Capture, true, &highlightGuarded);
+				checkHighlightPixels("offscreen.cursor.highlight.guarded.pixels", highlightGuarded);
+				visual.appearance = savedCursorAppearance;
 				const auto originalStrokeBlend = renderer.strokeOperatorBlendState;
 				enum class GuardedScenario { Cursor, CursorNoBlend, CursorRetain, Round, Thin, Varying, Highlighter, EraseRetain, DrawRetain };
 				struct GuardedCase { const char* name; GuardedScenario kind; };
@@ -3447,8 +4034,8 @@ namespace Inkeys::Drawing::Draw3
 			logResult("GetDeviceRemovedReason", removed);
 			if (FAILED(removed)) ++failures;
 			std::fprintf(stderr, "[Draw3PixelTest] production_cases=%u failures=%d result=%s\n",
-				productionCases, failures, failures == 0 && productionCases == 4 ? "PASS" : "FAIL");
-			return failures == 0 && productionCases == 4 && guardedCases == 18 && guardedFailures == 0 ? 0 : 1;
+				productionCases, failures, failures == 0 && productionCases == 5 ? "PASS" : "FAIL");
+			return failures == 0 && productionCases == 5 && guardedCases == 18 && guardedFailures == 0 ? 0 : 1;
 		}
 		catch (...)
 		{
@@ -3803,6 +4390,8 @@ namespace Inkeys::Drawing::Draw3
 			renderer.ReleaseResources();
 			return 1;
 		}
+		if (!Check(renderer.EnsureLaserResources(64, 64),
+			"Laser raster test selects its actual texture resources", failures)) return 1;
 		D3D11_BUFFER_DESC unwritableDescription = {};
 		renderer.inkDataBuffer->GetDesc(&unwritableDescription);
 		// 合法的 DEFAULT 缓冲区没有 CPU 写权限，第二层真实 Map 必须失败。
@@ -4049,6 +4638,7 @@ namespace Inkeys::Drawing::Draw3
 		int failures = 0;
 		try
 		{
+			if (!eraserOnly) (void)CheckCompatibilityMouseWindow(failures);
 			Inkeys::Window::Service service(64);
 			const std::wstring processSuffix = std::to_wstring(GetCurrentProcessId());
 			const auto makeSpecs = [&](bool dcompCompatible)

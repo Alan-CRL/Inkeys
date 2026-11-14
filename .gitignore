@@ -53,3 +53,9 @@
 /inkStrokeModelerTest/x64/
 /inkStrokeModelerTest/ARM64/
 /auto upload.bat
+
+# Local verification artifacts of archived Trellis tasks: frozen runtime deployments
+# and byte-for-byte source backups stay on disk and never enter Git.
+/.trellis/tasks/archive/**/validation/before-bin/
+/.trellis/tasks/archive/**/validation/after-bin/
+/.trellis/tasks/archive/**/validation/**/source-before/

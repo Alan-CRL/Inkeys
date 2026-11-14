@@ -1,0 +1,26 @@
+{
+  "PptCOM/PptCOM.cs": {
+    "sha256": "7b05bf915a7c44641f5318f985578abda23eb19acb07b367bf455528cb4197b7",
+    "bom": true,
+    "crlf": 2173,
+    "bare_lf": 0
+  },
+  "PptCOM/ComEventConnection.cs": {
+    "sha256": "83f023a8e57fe7c8c40553e31474793c5387465c1303dbb556cf287b159f6064",
+    "bom": false,
+    "crlf": 227,
+    "bare_lf": 0
+  },
+  "PptCOM.Tests/ManagedCompatibilityTests.cs": {
+    "sha256": "a592a8fda35bd1c73657c82cfe143ccdef7ed10fde3fc60fa14f80ef86385add",
+    "bom": false,
+    "crlf": 2007,
+    "bare_lf": 0
+  },
+  ".trellis/spec/ppt-interop/com-contract.md": {
+    "sha256": "6dac225565dc2f36831bd791fe3582ed661af5db81a4bbb0cf94ffa08e2bbb12",
+    "bom": false,
+    "crlf": 261,
+    "bare_lf": 0
+  }
+}

@@ -1,0 +1,529 @@
+[Draw3Diag][build] id=draw3-Nov  5 2026T09:17:42 arch=ARM64 msvc=1944
+[Draw3Diag][window] event=start-request role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0x150fb2 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=start-request role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=attached role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0x150fb2 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=attached role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][startup] stage=begin hwnd=0x17003a selectionHwnd=0x310cf8
+[Draw3Diag][startup] stage=graphics result=ready hwnd=0x17003a selectionHwnd=0x310cf8 driver=Hardware featureLevel=0xb100
+Trying transparent present mode: DirectCompositionVisualTree
+Trying waitable swapchain in mode DirectCompositionVisualTree.
+Waitable swapchain enabled in mode DirectCompositionVisualTree.
+[DirectCompositionVisualTree] Draw3 created swapchain desc: size=320x240 format=B8G8R8A8_UNORM(87) bufferCount=2 swapEffect=FLIP_SEQUENTIAL alphaMode=PREMULTIPLIED scaling=0 flags=0x40
+Active transparent present mode: DirectCompositionVisualTree
+[Draw3Diag][startup] stage=presenter result=ready mode=DirectCompositionVisualTree renderer=0x229b1151528 size=320x240
+[Draw3Diag][startup] gate=input-ready state=waiting
+[RTS] initialize currentThread=43280 windowThread=52380 digitizer=0xc5 maxTouches=10 tabletWindowFlags=0x1010219
+[RTS] MultiTouchEnabled=true
+[Draw3] Input initialization result=ready input_mode=RtsExtended
+[Draw3Diag][startup] gate=input-ready result=open decision=1 input=1 stopped=0
+[Draw3Diag][startup] stage=controller result=ready renderer=0x229b1151528
+[Draw3Diag][startup] stage=first-frame attempt target=DrawpadPresentation revision=1 size=320x240
+[Draw3Diag][ulw] event=success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 window=(-32000,-32000,-31680,-31760) dib=320x240 staging=320x240 texture=320x240 dirty=(0,0,320,240) full=1 dirtyParameter=null fullUpdateOverride=0 dst=(-32000,-32000) dstSize=320x240 src=(0,0) blend=0,0,255,1 hdcSrc=0xffffffffad014321 flags=0x2 hresult=0x0 error=0
+[Draw3DiagnosticOutput] dropped=1 full=0 contention=1 closing=0 truncated=0
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=DrawpadPresentation revision=1 contentRevision=0 dirty=(0,0,320,240) full=1 hwnd=0x310cf8 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0x9d0306 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][startup] stage=first-frame result=committed target=DrawpadPresentation revision=1 size=320x240
+[Draw3Diag][window] event=first-frame role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0x9d0306 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=first-frame role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[StrokeReconnect] enabled=true window_ms=80 prediction_endpoint_base_px=4 prediction_relative=0.35 beyond_horizon_ratio=0.75 extrapolation_angle_deg=35 terminal_direction_corridor_angle_deg=35 in_horizon_terminal_gap_ms=35 in_horizon_terminal_angle_deg=15 in_horizon_terminal_speed_ratio=[0.5,2] comparison_epsilon_px=0.5 predicted_base_max_px=64 predicted_adaptive_max_px=256 adaptive_distance_speed_ratio=1.75 adaptive_relative=0.5 fallback_angle_deg=35 fallback_max_distance_px=32 fallback_speed_ratio=[0.35,2.75] candidates=8 manual_test=false simulation=false simulation_interval_ms=[180,520] simulation_drop_ms=[20,70] inverted_pen_eraser=true
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=Drawpad revision=2 contentRevision=0 dirty=(0,0,320,240) full=1 hwnd=0x17003a result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0x9d0306 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=DrawpadPresentation revision=3 contentRevision=0 dirty=(0,0,320,240) full=1 hwnd=0x310cf8 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=1 pid=37076 tid=52380 owner=0x310cf8 previous=0x9d0306 style=0x96000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Page] key=0 action=append current=2 count=2 path=empty
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=Drawpad revision=4 contentRevision=0 dirty=(0,0,320,240) full=1 hwnd=0x17003a result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0x9d0306 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Page] key=8 action=previous current=1 count=2 path=empty
+[Undo] page=1 result=noop reason=empty
+[Page] key=0 action=next current=2 count=2 path=composition_rebuild
+[Page] key=8 action=previous current=1 count=2 path=empty
+[Undo] page=1 result=noop reason=empty
+[Undo] page=1 result=noop reason=empty
+[Undo] page=1 item=0 path=composition_cache hot_remaining=0 history_end=true
+[Undo] page=1 result=noop reason=empty
+[Undo] page=1 result=noop reason=empty
+[Redo] page=1 item=0 base=trusted_l2 path=direct_draw hot_rearmed=true redo_remaining=0
+[Undo] page=1 item=1 path=hot_preimage hot_remaining=1
+[Undo] page=1 item=0 path=hot_preimage hot_remaining=0 history_end=true
+[Undo] page=1 result=noop reason=empty
+[Page] key=0 action=next current=2 count=2 path=composition_rebuild
+[Page] key=8 action=previous current=1 count=2 path=composition_cache
+[Undo] page=1 item=1 path=composition_rebuild hot_remaining=0
+[Undo] page=1 item=0 path=composition_cache hot_remaining=0 history_end=true
+[Undo] page=1 result=noop reason=empty
+[Redo] page=1 item=0 base=trusted_l2 path=direct_draw hot_rearmed=true redo_remaining=1
+[Page] key=0 action=next current=2 count=2 path=composition_cache
+[Page] key=8 action=previous current=1 count=2 path=composition_rebuild
+[Redo] page=1 item=1 base=trusted_l2 path=direct_draw hot_rearmed=true redo_remaining=0
+[Redo] page=1 item=0 base=trusted_l2 path=direct_draw hot_rearmed=true redo_remaining=1
+[Redo] page=1 item=1 base=trusted_l2 path=direct_draw hot_rearmed=true redo_remaining=0
+[Undo] page=1 item=1 path=hot_preimage hot_remaining=1
+[Undo] page=1 item=0 path=hot_preimage hot_remaining=0 history_end=true
+[Undo] page=1 result=noop reason=empty
+[Redo] page=1 result=noop reason=empty
+[Redo] page=1 result=noop reason=empty
+[Draw3.Input] action=admission reasons=80 desired=2 actual=0 session=11 target=1
+[Draw3.Input] action=admission reasons=592 desired=2 actual=0 session=11 target=1
+[Draw3.Input] action=admission reasons=80 desired=2 actual=0 session=11 target=1
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=11 target=1
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=11 target=1
+[Draw3.Input] action=admission reasons=128 desired=0 actual=2 session=0 target=0
+[Draw3.Input] action=admission reasons=640 desired=0 actual=2 session=0 target=0
+[Draw3.Input] action=admission reasons=128 desired=0 actual=2 session=0 target=0
+[Draw3.Input] action=admission reasons=0 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=80 desired=2 actual=0 session=11 target=2
+[Draw3.Input] action=admission reasons=592 desired=2 actual=0 session=11 target=2
+[Draw3.Input] action=admission reasons=80 desired=2 actual=0 session=11 target=2
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=11 target=2
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=11 target=2
+[Undo] page=1 result=noop reason=empty
+[Undo] page=1 result=noop reason=empty
+[Undo] page=1 item=0 path=composition_cache hot_remaining=0 history_end=true
+[Undo] page=1 result=noop reason=empty
+[Redo] page=1 item=0 base=trusted_l2 path=direct_draw hot_rearmed=true redo_remaining=0
+[Undo] page=1 item=1 path=hot_preimage hot_remaining=1
+[Undo] page=1 item=0 path=hot_preimage hot_remaining=0 history_end=true
+[Undo] page=1 result=noop reason=empty
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=3
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=11 target=3
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=3
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=11 target=3
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=11 target=3
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=4
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=11 target=4
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=4
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=11 target=4
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=11 target=4
+[Undo] page=1 item=1 path=composition_rebuild hot_remaining=0
+[Undo] page=1 item=0 path=composition_cache hot_remaining=0 history_end=true
+[Undo] page=1 result=noop reason=empty
+[Redo] page=1 item=0 base=trusted_l2 path=direct_draw hot_rearmed=true redo_remaining=1
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=5
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=11 target=5
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=5
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=11 target=5
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=11 target=5
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=6
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=11 target=6
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=6
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=11 target=6
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=11 target=6
+[Redo] page=1 item=1 base=trusted_l2 path=direct_draw hot_rearmed=true redo_remaining=0
+[Redo] page=1 item=0 base=trusted_l2 path=direct_draw hot_rearmed=true redo_remaining=1
+[Redo] page=1 item=1 base=trusted_l2 path=direct_draw hot_rearmed=true redo_remaining=0
+[Undo] page=1 item=1 path=hot_preimage hot_remaining=1
+[Undo] page=1 item=0 path=hot_preimage hot_remaining=0 history_end=true
+[Undo] page=1 result=noop reason=empty
+[Redo] page=1 result=noop reason=empty
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=7
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=11 target=7
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=7
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=11 target=7
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=11 target=7
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=8
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=11 target=8
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=8
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=11 target=8
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=11 target=8
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=21 target=9
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=21 target=9
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=21 target=9
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=21 target=9
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=21 target=9
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=21 target=10
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=21 target=10
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=21 target=10
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=21 target=10
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=21 target=10
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=21 target=11
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=21 target=12
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=21 target=12
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=21 target=12
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=21 target=12
+[Draw3.Input] action=admission reasons=96 desired=2 actual=2 session=21 target=12
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=21 target=12
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=21 target=12
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=13
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=11 target=13
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=11 target=13
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=11 target=13
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=11 target=13
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=22 target=14
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=22 target=14
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=22 target=14
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=22 target=14
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=22 target=14
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=22 target=15
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=22 target=15
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=22 target=15
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=22 target=15
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=22 target=15
+[Draw3.Input] action=admission reasons=128 desired=1 actual=2 session=0 target=0
+[Draw3.Input] action=admission reasons=640 desired=1 actual=2 session=0 target=0
+[Draw3.Input] action=admission reasons=2688 desired=1 actual=2 session=0 target=0
+[Draw3.Input] action=admission reasons=2176 desired=1 actual=2 session=0 target=0
+[Draw3.Input] action=admission reasons=2048 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Page] key=0 action=append current=2 count=2 path=empty
+[Draw3.Input] action=admission reasons=2048 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2054 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Page] key=page action=absolute current=1 count=2 path=empty
+[Draw3.Input] action=admission reasons=2048 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2054 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Page] key=page action=absolute current=2 count=2 path=empty
+[Draw3.Input] action=admission reasons=2048 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Page] key=0 action=append current=3 count=3 path=empty
+[Draw3.Input] action=admission reasons=2048 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2054 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Page] key=page action=absolute current=2 count=3 path=empty
+[Draw3.Input] action=admission reasons=2048 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2054 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Page] key=page action=absolute current=1 count=3 path=empty
+[Draw3.Input] action=admission reasons=2048 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Page] key=8 result=noop reason=first current=1 count=3
+[Draw3.Input] action=admission reasons=2048 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2054 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2050 desired=1 actual=1 session=0 target=0
+[Page] key=page action=absolute current=2 count=3 path=empty
+[Draw3.Input] action=admission reasons=2048 desired=1 actual=1 session=0 target=0
+[Undo] page=2 result=noop reason=empty
+[Redo] page=2 result=noop reason=empty
+[InkHistory] resize generation=42 path=empty
+[Draw3.Input] action=admission reasons=2049 desired=1 actual=1 session=0 target=0
+[Draw3Diag][build] id=draw3-Nov  5 2026T09:17:42 arch=ARM64 msvc=1944
+[Draw3Diag][window] event=start-request role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=start-request role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=attached role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=attached role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][startup] stage=begin hwnd=0x17003a selectionHwnd=0x310cf8
+[Draw3Diag][startup] stage=graphics result=ready hwnd=0x17003a selectionHwnd=0x310cf8 driver=Hardware featureLevel=0xb100
+Trying transparent present mode: DirectCompositionVisualTree
+Trying waitable swapchain in mode DirectCompositionVisualTree.
+Waitable swapchain enabled in mode DirectCompositionVisualTree.
+[DirectCompositionVisualTree] Draw3 created swapchain desc: size=384x256 format=B8G8R8A8_UNORM(87) bufferCount=2 swapEffect=FLIP_SEQUENTIAL alphaMode=PREMULTIPLIED scaling=0 flags=0x40
+Active transparent present mode: DirectCompositionVisualTree
+[Draw3Diag][startup] stage=presenter result=ready mode=DirectCompositionVisualTree renderer=0x229b1151528 size=384x256
+[Draw3Diag][startup] gate=input-ready state=waiting
+[RTS] initialize currentThread=43280 windowThread=52380 digitizer=0xc5 maxTouches=10 tabletWindowFlags=0x1010219
+[RTS] MultiTouchEnabled=true
+[Draw3] Input initialization result=ready input_mode=RtsExtended
+[Draw3Diag][startup] gate=input-ready result=open decision=1 input=1 stopped=0
+[Draw3Diag][startup] stage=controller result=ready renderer=0x229b1151528
+[Draw3Diag][startup] stage=first-frame attempt target=DrawpadPresentation revision=1 size=384x256
+[Draw3Diag][ulw] event=success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 window=(44,56,428,312) dib=384x256 staging=384x256 texture=384x256 dirty=(0,0,384,256) full=1 dirtyParameter=null fullUpdateOverride=0 dst=(44,56) dstSize=384x256 src=(0,0) blend=0,0,255,1 hdcSrc=0xfffffffff101115a flags=0x2 hresult=0x0 error=0
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=DrawpadPresentation revision=1 contentRevision=0 dirty=(0,0,384,256) full=1 hwnd=0x310cf8 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][startup] stage=first-frame result=committed target=DrawpadPresentation revision=1 size=384x256
+[Draw3Diag][window] event=first-frame role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=first-frame role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3.Input] action=admission reasons=80 desired=2 actual=0 session=31 target=16
+[StrokeReconnect] enabled=true window_ms=80 prediction_endpoint_base_px=4 prediction_relative=0.35 beyond_horizon_ratio=0.75 extrapolation_angle_deg=35 terminal_direction_corridor_angle_deg=35 in_horizon_terminal_gap_ms=35 in_horizon_terminal_angle_deg=15 in_horizon_terminal_speed_ratio=[0.5,2] comparison_epsilon_px=0.5 predicted_base_max_px=64 predicted_adaptive_max_px=256 adaptive_distance_speed_ratio=1.75 adaptive_relative=0.5 fallback_angle_deg=35 fallback_max_distance_px=32 fallback_speed_ratio=[0.35,2.75] candidates=8 manual_test=false simulation=false simulation_interval_ms=[180,520] simulation_drop_ms=[20,70] inverted_pen_eraser=true
+[Draw3.Input] action=admission reasons=592 desired=2 actual=0 session=31 target=16
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=Drawpad revision=2 contentRevision=1 dirty=(0,0,384,256) full=1 hwnd=0x17003a result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3.Input] action=admission reasons=80 desired=2 actual=0 session=31 target=16
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=31 target=16
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=31 target=16
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=31 target=17
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=31 target=17
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=31 target=17
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=31 target=17
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=31 target=17
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=31 target=18
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=31 target=18
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=31 target=18
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=31 target=18
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=31 target=18
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=31 target=19
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=31 target=19
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=31 target=19
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=31 target=19
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=31 target=19
+[Undo] page=4 item=0 path=hot_preimage hot_remaining=0 history_end=true
+[Redo] page=4 item=0 base=trusted_l2 path=direct_draw hot_rearmed=true redo_remaining=0
+[Undo] page=4 result=noop reason=empty
+[Undo] page=4 result=noop reason=empty
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=31 target=20
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=31 target=20
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=31 target=20
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=31 target=20
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=31 target=20
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=31 target=21
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=31 target=21
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=31 target=21
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=31 target=21
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=31 target=21
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=22
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=22
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=22
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=22
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=22
+[Draw3.Input] action=admission reasons=1 desired=2 actual=2 session=32 target=22
+[Draw3Diag][build] id=draw3-Nov  5 2026T09:17:42 arch=ARM64 msvc=1944
+[Draw3Diag][window] event=start-request role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=start-request role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=attached role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=attached role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][startup] stage=begin hwnd=0x17003a selectionHwnd=0x310cf8
+[Draw3Diag][startup] stage=graphics result=ready hwnd=0x17003a selectionHwnd=0x310cf8 driver=Hardware featureLevel=0xb100
+Trying transparent present mode: DirectCompositionVisualTree
+Trying waitable swapchain in mode DirectCompositionVisualTree.
+Waitable swapchain enabled in mode DirectCompositionVisualTree.
+[DirectCompositionVisualTree] Draw3 created swapchain desc: size=384x256 format=B8G8R8A8_UNORM(87) bufferCount=2 swapEffect=FLIP_SEQUENTIAL alphaMode=PREMULTIPLIED scaling=0 flags=0x40
+Active transparent present mode: DirectCompositionVisualTree
+[Draw3Diag][startup] stage=presenter result=ready mode=DirectCompositionVisualTree renderer=0x229b1151528 size=384x256
+[Draw3Diag][startup] gate=input-ready state=waiting
+[RTS] initialize currentThread=43280 windowThread=52380 digitizer=0xc5 maxTouches=10 tabletWindowFlags=0x1010219
+[RTS] MultiTouchEnabled=true
+[Draw3] Input initialization result=ready input_mode=RtsExtended
+[Draw3Diag][startup] gate=input-ready result=open decision=1 input=1 stopped=0
+[Draw3Diag][startup] stage=controller result=ready renderer=0x229b1151528
+[Draw3Diag][startup] stage=first-frame attempt target=DrawpadPresentation revision=1 size=384x256
+[Draw3Diag][ulw] event=success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 window=(44,56,428,312) dib=384x256 staging=384x256 texture=384x256 dirty=(0,0,384,256) full=1 dirtyParameter=null fullUpdateOverride=0 dst=(44,56) dstSize=384x256 src=(0,0) blend=0,0,255,1 hdcSrc=0xffffffffa30136db flags=0x2 hresult=0x0 error=0
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=DrawpadPresentation revision=1 contentRevision=0 dirty=(0,0,384,256) full=1 hwnd=0x310cf8 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][startup] stage=first-frame result=committed target=DrawpadPresentation revision=1 size=384x256
+[Draw3Diag][window] event=first-frame role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=first-frame role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3.Input] action=admission reasons=80 desired=2 actual=0 session=32 target=23
+[StrokeReconnect] enabled=true window_ms=80 prediction_endpoint_base_px=4 prediction_relative=0.35 beyond_horizon_ratio=0.75 extrapolation_angle_deg=35 terminal_direction_corridor_angle_deg=35 in_horizon_terminal_gap_ms=35 in_horizon_terminal_angle_deg=15 in_horizon_terminal_speed_ratio=[0.5,2] comparison_epsilon_px=0.5 predicted_base_max_px=64 predicted_adaptive_max_px=256 adaptive_distance_speed_ratio=1.75 adaptive_relative=0.5 fallback_angle_deg=35 fallback_max_distance_px=32 fallback_speed_ratio=[0.35,2.75] candidates=8 manual_test=false simulation=false simulation_interval_ms=[180,520] simulation_drop_ms=[20,70] inverted_pen_eraser=true
+[Draw3.Input] action=admission reasons=592 desired=2 actual=0 session=32 target=23
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=Drawpad revision=2 contentRevision=1 dirty=(0,0,384,256) full=1 hwnd=0x17003a result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3.Input] action=admission reasons=80 desired=2 actual=0 session=32 target=23
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=23
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=23
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=24
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=24
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=24
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=24
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=24
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=25
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=25
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=25
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=25
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=25
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=26
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=26
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=26
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=26
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=26
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=27
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=27
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=27
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=27
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=27
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=28
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=28
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=DrawpadPresentation revision=3 contentRevision=7 dirty=(0,0,384,256) full=1 hwnd=0x310cf8 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=28
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=28
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=28
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=29
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=29
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=29
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=29
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=29
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=30
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=30
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=30
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=30
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=30
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=31
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=31
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=31
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=31
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=31
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=32
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=32
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=32
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=32
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=32
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=33
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=33
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=33
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=33
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=33
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=34
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=34
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=34
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=34
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=34
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=35
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=35
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=35
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=35
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=35
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=36
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=36
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=36
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=36
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=36
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=37
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=37
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=37
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=37
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=37
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=38
+[Draw3.Input] action=admission reasons=592 desired=2 actual=2 session=32 target=38
+[Draw3.Input] action=admission reasons=80 desired=2 actual=2 session=32 target=38
+[Draw3.Input] action=admission reasons=64 desired=2 actual=2 session=32 target=38
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=32 target=38
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=Drawpad revision=4 contentRevision=19 dirty=(0,0,384,256) full=1 hwnd=0x17003a result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3.Input] action=admission reasons=128 desired=0 actual=2 session=0 target=0
+[Draw3.Input] action=admission reasons=640 desired=0 actual=2 session=0 target=0
+[Draw3.Input] action=admission reasons=128 desired=0 actual=2 session=0 target=0
+[Draw3.Input] action=admission reasons=0 desired=0 actual=0 session=0 target=0
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=DrawpadPresentation revision=5 contentRevision=20 dirty=(0,0,384,256) full=1 hwnd=0x310cf8 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3.Input] action=admission reasons=1 desired=0 actual=0 session=0 target=0
+[Draw3Diag][build] id=draw3-Nov  5 2026T09:17:42 arch=ARM64 msvc=1944
+[Draw3Diag][window] event=start-request role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=start-request role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=attached role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=attached role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][startup] stage=begin hwnd=0x17003a selectionHwnd=0x310cf8
+[Draw3Diag][startup] stage=graphics result=ready hwnd=0x17003a selectionHwnd=0x310cf8 driver=Hardware featureLevel=0xb100
+Trying transparent present mode: DirectCompositionVisualTree
+Trying waitable swapchain in mode DirectCompositionVisualTree.
+Waitable swapchain enabled in mode DirectCompositionVisualTree.
+[DirectCompositionVisualTree] Draw3 created swapchain desc: size=384x256 format=B8G8R8A8_UNORM(87) bufferCount=2 swapEffect=FLIP_SEQUENTIAL alphaMode=PREMULTIPLIED scaling=0 flags=0x40
+Active transparent present mode: DirectCompositionVisualTree
+[Draw3Diag][startup] stage=presenter result=ready mode=DirectCompositionVisualTree renderer=0x229b1151528 size=384x256
+[Draw3Diag][startup] gate=input-ready state=waiting
+[RTS] initialize currentThread=43280 windowThread=52380 digitizer=0xc5 maxTouches=10 tabletWindowFlags=0x1010219
+[RTS] MultiTouchEnabled=true
+[Draw3] Input initialization result=ready input_mode=RtsExtended
+[Draw3Diag][startup] gate=input-ready result=open decision=1 input=1 stopped=0
+[Draw3Diag][startup] stage=controller result=ready renderer=0x229b1151528
+[Draw3Diag][startup] stage=first-frame attempt target=DrawpadPresentation revision=1 size=384x256
+[Draw3Diag][ulw] event=success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 window=(44,56,428,312) dib=384x256 staging=384x256 texture=384x256 dirty=(0,0,384,256) full=1 dirtyParameter=null fullUpdateOverride=0 dst=(44,56) dstSize=384x256 src=(0,0) blend=0,0,255,1 hdcSrc=0x1a0136db flags=0x2 hresult=0x0 error=0
+[Draw3DiagnosticOutput] dropped=4 full=0 contention=4 closing=0 truncated=0
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][startup] stage=first-frame result=committed target=DrawpadPresentation revision=1 size=384x256
+[Draw3Diag][window] event=first-frame role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=first-frame role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[StrokeReconnect] enabled=true window_ms=80 prediction_endpoint_base_px=4 prediction_relative=0.35 beyond_horizon_ratio=0.75 extrapolation_angle_deg=35 terminal_direction_corridor_angle_deg=35 in_horizon_terminal_gap_ms=35 in_horizon_terminal_angle_deg=15 in_horizon_terminal_speed_ratio=[0.5,2] comparison_epsilon_px=0.5 predicted_base_max_px=64 predicted_adaptive_max_px=256 adaptive_distance_speed_ratio=1.75 adaptive_relative=0.5 fallback_angle_deg=35 fallback_max_distance_px=32 fallback_speed_ratio=[0.35,2.75] candidates=8 manual_test=false simulation=false simulation_interval_ms=[180,520] simulation_drop_ms=[20,70] inverted_pen_eraser=true
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=Drawpad revision=2 contentRevision=0 dirty=(0,0,384,256) full=1 hwnd=0x17003a result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][present] event=success mode=DirectCompositionVisualTree target=DrawpadPresentation revision=3 contentRevision=0 dirty=(0,0,384,256) full=1 hwnd=0x310cf8 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x17003a valid=1 visible=1 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x96000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3.Input] action=admission reasons=1 desired=0 actual=0 session=0 target=0
+[Draw3Diag][build] id=draw3-Nov  5 2026T09:17:42 arch=ARM64 msvc=1944
+[Draw3Diag][window] event=start-request role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=start-request role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=attached role=Drawpad hwnd=0x17003a valid=1 visible=0 pid=37076 tid=52380 owner=0x310cf8 previous=0xc0d80 style=0x86000000 exStyle=0x8200080 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][window] event=attached role=DrawpadPresentation hwnd=0x310cf8 valid=1 visible=0 pid=37076 tid=52380 owner=0x3f1216 previous=0x17003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(44,56,428,312) client=(0,0,384,256)
+[Draw3Diag][startup] stage=begin hwnd=0x17003a selectionHwnd=0x310cf8
+[Draw3Diag][startup] stage=graphics result=ready hwnd=0x17003a selectionHwnd=0x310cf8 driver=Hardware featureLevel=0xb100
+Trying transparent present mode: UlwDirtyRect
+ConfigureWindow failed in mode UlwDirtyRect exStyle=0x8200080 lastError=0
+[Draw3Diag][startup] stage=presenter result=failed mode=UlwDirtyRect renderer=0x229b1151528 size=384x256
+[Draw3Diag][build] id=draw3-Nov  5 2026T09:17:42 arch=ARM64 msvc=1944
+[Draw3Diag][window] event=start-request role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0x242134a style=0x86000000 exStyle=0x8000080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=start-request role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=attached role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0x242134a style=0x86000000 exStyle=0x8000080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=attached role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][startup] stage=begin hwnd=0x18003a selectionHwnd=0x320cf8
+[Draw3Diag][startup] stage=graphics result=ready hwnd=0x18003a selectionHwnd=0x320cf8 driver=Hardware featureLevel=0xb100
+Trying transparent present mode: UlwDirtyRect
+Trying waitable swapchain in mode UlwDirtyRect.
+Waitable swapchain enabled in mode UlwDirtyRect.
+[UlwDirtyRect] Draw3 created swapchain desc: size=320x240 format=B8G8R8A8_UNORM(87) bufferCount=2 swapEffect=FLIP_SEQUENTIAL alphaMode=UNSPECIFIED scaling=0 flags=0x40
+Active transparent present mode: UlwDirtyRect
+[Draw3Diag][startup] stage=presenter result=ready mode=UlwDirtyRect renderer=0x229b1151528 size=320x240
+[Draw3Diag][startup] gate=input-ready state=waiting
+[RTS] initialize currentThread=43280 windowThread=38184 digitizer=0xc5 maxTouches=10 tabletWindowFlags=0x1010219
+[RTS] MultiTouchEnabled=true
+[Draw3] Input initialization result=ready input_mode=RtsExtended
+[Draw3Diag][startup] gate=input-ready result=open decision=1 input=1 stopped=0
+[Draw3Diag][startup] stage=controller result=ready renderer=0x229b1151528
+[Draw3Diag][startup] stage=first-frame attempt target=DrawpadPresentation revision=1 size=320x240
+[Draw3Diag][ulw] event=success role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 window=(-32000,-32000,-31680,-31760) dib=320x240 staging=320x240 texture=320x240 dirty=(0,0,320,240) full=1 dirtyParameter=null fullUpdateOverride=0 dst=(-32000,-32000) dstSize=320x240 src=(0,0) blend=0,0,255,1 hdcSrc=0x74012c2e flags=0x2 hresult=0x0 error=0
+[Draw3Diag][present] event=success mode=UlwDirtyRect target=DrawpadPresentation revision=1 contentRevision=0 dirty=(0,0,320,240) full=1 hwnd=0x320cf8 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0xa10306 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][startup] stage=first-frame result=committed target=DrawpadPresentation revision=1 size=320x240
+[Draw3Diag][window] event=first-frame role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0xa10306 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=first-frame role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[StrokeReconnect] enabled=true window_ms=80 prediction_endpoint_base_px=4 prediction_relative=0.35 beyond_horizon_ratio=0.75 extrapolation_angle_deg=35 terminal_direction_corridor_angle_deg=35 in_horizon_terminal_gap_ms=35 in_horizon_terminal_angle_deg=15 in_horizon_terminal_speed_ratio=[0.5,2] comparison_epsilon_px=0.5 predicted_base_max_px=64 predicted_adaptive_max_px=256 adaptive_distance_speed_ratio=1.75 adaptive_relative=0.5 fallback_angle_deg=35 fallback_max_distance_px=32 fallback_speed_ratio=[0.35,2.75] candidates=8 manual_test=false simulation=false simulation_interval_ms=[180,520] simulation_drop_ms=[20,70] inverted_pen_eraser=true
+[Draw3Diag][ulw] event=success role=Drawpad hwnd=0x18003a valid=1 visible=0 style=0x86000000 exStyle=0x8080080 windowRectOk=1 window=(-32000,-32000,-31680,-31760) dib=320x240 staging=320x240 texture=320x240 dirty=(0,0,320,240) full=1 dirtyParameter=null fullUpdateOverride=0 dst=(-32000,-32000) dstSize=320x240 src=(0,0) blend=0,0,255,1 hdcSrc=0x47013955 flags=0x2 hresult=0x0 error=0
+[Draw3Diag][present] event=success mode=UlwDirtyRect target=Drawpad revision=2 contentRevision=0 dirty=(0,0,320,240) full=1 hwnd=0x18003a result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0xa10306 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][present] event=success mode=UlwDirtyRect target=DrawpadPresentation revision=3 contentRevision=0 dirty=(0,0,320,240) full=1 hwnd=0x320cf8 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x18003a valid=1 visible=1 pid=37076 tid=38184 owner=0x320cf8 previous=0xa10306 style=0x96000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3.Input] action=admission reasons=1 desired=0 actual=0 session=0 target=0
+[Draw3Diag][build] id=draw3-Nov  5 2026T09:17:42 arch=ARM64 msvc=1944
+[Draw3Diag][window] event=start-request role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0x242134a style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=start-request role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][build] id=draw3-Nov  5 2026T09:17:42 arch=ARM64 msvc=1944
+[Draw3Diag][window] event=start-request role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0x242134a style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=start-request role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][build] id=draw3-Nov  5 2026T09:17:42 arch=ARM64 msvc=1944
+[Draw3Diag][window] event=start-request role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0x242134a style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=start-request role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=attached role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0x242134a style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=attached role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][startup] stage=begin hwnd=0x18003a selectionHwnd=0x320cf8
+[Draw3Diag][startup] stage=graphics result=ready hwnd=0x18003a selectionHwnd=0x320cf8 driver=Hardware featureLevel=0xb100
+Trying transparent present mode: UlwDirtyRect
+Trying waitable swapchain in mode UlwDirtyRect.
+Waitable swapchain enabled in mode UlwDirtyRect.
+[UlwDirtyRect] Draw3 created swapchain desc: size=320x240 format=B8G8R8A8_UNORM(87) bufferCount=2 swapEffect=FLIP_SEQUENTIAL alphaMode=UNSPECIFIED scaling=0 flags=0x40
+Active transparent present mode: UlwDirtyRect
+[Draw3Diag][startup] stage=presenter result=ready mode=UlwDirtyRect renderer=0x229b1151528 size=320x240
+[Draw3Diag][startup] gate=input-ready state=waiting
+[RTS] initialize currentThread=43280 windowThread=38184 digitizer=0xc5 maxTouches=10 tabletWindowFlags=0x1010219
+[RTS] MultiTouchEnabled=true
+[Draw3] Input initialization result=ready input_mode=RtsExtended
+[Draw3Diag][startup] gate=input-ready result=open decision=1 input=1 stopped=0
+[Draw3Diag][startup] stage=controller result=ready renderer=0x229b1151528
+[Draw3Diag][startup] stage=first-frame attempt target=DrawpadPresentation revision=1 size=320x240
+[Draw3Diag][ulw] event=success role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 window=(-32000,-32000,-31680,-31760) dib=320x240 staging=320x240 texture=320x240 dirty=(0,0,320,240) full=1 dirtyParameter=null fullUpdateOverride=0 dst=(-32000,-32000) dstSize=320x240 src=(0,0) blend=0,0,255,1 hdcSrc=0xffffffffbc013955 flags=0x2 hresult=0x0 error=0
+[Draw3Diag][present] event=success mode=UlwDirtyRect target=DrawpadPresentation revision=1 contentRevision=0 dirty=(0,0,320,240) full=1 hwnd=0x320cf8 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0xa20306 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][startup] stage=first-frame result=committed target=DrawpadPresentation revision=1 size=320x240
+[Draw3Diag][window] event=first-frame role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0xa20306 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=first-frame role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[StrokeReconnect] enabled=true window_ms=80 prediction_endpoint_base_px=4 prediction_relative=0.35 beyond_horizon_ratio=0.75 extrapolation_angle_deg=35 terminal_direction_corridor_angle_deg=35 in_horizon_terminal_gap_ms=35 in_horizon_terminal_angle_deg=15 in_horizon_terminal_speed_ratio=[0.5,2] comparison_epsilon_px=0.5 predicted_base_max_px=64 predicted_adaptive_max_px=256 adaptive_distance_speed_ratio=1.75 adaptive_relative=0.5 fallback_angle_deg=35 fallback_max_distance_px=32 fallback_speed_ratio=[0.35,2.75] candidates=8 manual_test=false simulation=false simulation_interval_ms=[180,520] simulation_drop_ms=[20,70] inverted_pen_eraser=true
+[Draw3Diag][ulw] event=success role=Drawpad hwnd=0x18003a valid=1 visible=0 style=0x86000000 exStyle=0x8080080 windowRectOk=1 window=(-32000,-32000,-31680,-31760) dib=320x240 staging=320x240 texture=320x240 dirty=(0,0,320,240) full=1 dirtyParameter=null fullUpdateOverride=0 dst=(-32000,-32000) dstSize=320x240 src=(0,0) blend=0,0,255,1 hdcSrc=0xffffffff9b012c2e flags=0x2 hresult=0x0 error=0
+[Draw3Diag][present] event=success mode=UlwDirtyRect target=Drawpad revision=2 contentRevision=0 dirty=(0,0,320,240) full=1 hwnd=0x18003a result=0x0
+[Draw3DiagnosticOutput] dropped=5 full=0 contention=5 closing=0 truncated=0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0xa20306 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][present] event=success mode=UlwDirtyRect target=DrawpadPresentation revision=3 contentRevision=0 dirty=(0,0,320,240) full=1 hwnd=0x320cf8 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x18003a valid=1 visible=1 pid=37076 tid=38184 owner=0x320cf8 previous=0xa20306 style=0x96000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Page] key=0 action=append current=2 count=2 path=empty
+[Draw3Diag][present] event=success mode=UlwDirtyRect target=Drawpad revision=4 contentRevision=0 dirty=(0,0,320,240) full=1 hwnd=0x18003a result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0x18003a valid=1 visible=0 pid=37076 tid=38184 owner=0x320cf8 previous=0xa20306 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x320cf8 valid=1 visible=0 pid=37076 tid=38184 owner=0x401216 previous=0x18003a style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31680,-31760) client=(0,0,320,240)
+[Page] key=8 action=previous current=1 count=2 path=empty
+[Undo] page=1 result=noop reason=empty

@@ -1,0 +1,23 @@
+[SnapshotLifetime] case=observer-clear-keeps-capacity-control watched_buffers=1 released_buffers=1 watched_bytes=1048576 released_bytes=1048576 overflow=0
+[SnapshotLifetime] case=desktop-success-unpolled worker_held_buffers=5
+[SnapshotLifetime] case=desktop-success-unpolled watched_buffers=5 released_buffers=5 watched_bytes=3145992 released_bytes=3145992 overflow=0
+[SnapshotLifetime] case=desktop-load-last-consumer watched_buffers=4 released_buffers=4 watched_bytes=1573128 released_bytes=1573128 overflow=0
+[SnapshotLifetime] case=desktop-write-failure-unpolled worker_held_buffers=5
+[SnapshotLifetime] case=desktop-write-failure-unpolled watched_buffers=5 released_buffers=5 watched_bytes=3145992 released_bytes=3145992 overflow=0
+[SnapshotLifetime] case=desktop-index-failure-unpolled worker_held_buffers=5
+[SnapshotLifetime] case=desktop-index-failure-unpolled watched_buffers=5 released_buffers=5 watched_bytes=3145992 released_bytes=3145992 overflow=0
+[SnapshotLifetime] case=desktop-index-retry-unpolled watched_buffers=5 released_buffers=5 watched_bytes=3145992 released_bytes=3145992 overflow=0
+[SnapshotLifetime] case=desktop-stop-drain watched_buffers=5 released_buffers=5 watched_bytes=3145992 released_bytes=3145992 overflow=0
+[SnapshotLifetime] case=whiteboard-success-unpolled watched_buffers=5 released_buffers=5 watched_bytes=3145992 released_bytes=3145992 overflow=0
+[SnapshotLifetime] case=whiteboard-failure-unpolled watched_buffers=5 released_buffers=5 watched_bytes=3145992 released_bytes=3145992 overflow=0
+[SnapshotLifetime] case=presentation-success-unpolled worker_held_buffers=6
+[SnapshotLifetime] case=presentation-success-unpolled watched_buffers=6 released_buffers=6 watched_bytes=3146144 released_bytes=3146144 overflow=0
+[SnapshotLifetime] case=presentation-load-last-consumer watched_buffers=8 released_buffers=8 watched_bytes=3146256 released_bytes=3146256 overflow=0
+[SnapshotLifetime] case=presentation-index-failure-unpolled worker_held_buffers=6
+[SnapshotLifetime] case=presentation-index-failure-unpolled watched_buffers=6 released_buffers=6 watched_bytes=3146144 released_bytes=3146144 overflow=0
+[SnapshotLifetime] case=presentation-worker-exception-unpolled watched_buffers=6 released_buffers=6 watched_bytes=3146144 released_bytes=3146144 overflow=0
+[SnapshotLifetime] case=presentation-pending-replaced watched_buffers=6 released_buffers=6 watched_bytes=3146144 released_bytes=3146144 overflow=0
+[SnapshotLifetime] case=presentation-first-unpolled watched_buffers=6 released_buffers=6 watched_bytes=3146144 released_bytes=3146144 overflow=0
+[SnapshotLifetime] case=presentation-latest-unpolled watched_buffers=6 released_buffers=6 watched_bytes=3146144 released_bytes=3146144 overflow=0
+[SnapshotLifetime] case=presentation-stop-drain watched_buffers=6 released_buffers=6 watched_bytes=3146144 released_bytes=3146144 overflow=0
+[SnapshotLifetime] failures=0

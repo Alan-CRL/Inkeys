@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/native-desktop/draw3-shaders.md", "reason": "着色器与 Win7 字节码"}
+{"file": ".trellis/spec/native-desktop/draw3-cursors.md", "reason": "光标绘制合同"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "橡皮几何与笔划合同"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板存储与历史"}
+{"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "主栏橡皮属性面板"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "设置绘制页"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "配置与 i18n"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "构建与 Win7 兼容"}
+{"file": ".trellis/tasks/11-07-palm-eraser-phase2/research/codex-eraser-shapes.md", "reason": "形状管线调查证据"}
+{"file": ".trellis/tasks/11-07-palm-eraser-phase2/research/codex-settings-config.md", "reason": "设置与配置调查证据"}

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Inkeys 橡皮光标 · 方案预览 v2</title>
+<style>
+  body { font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif; margin: 0; background: #f3f4f6; color: #1f2937; }
+  header { padding: 20px 28px 6px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  h3 { font-size: 14px; margin: 10px 0 2px; }
+  p.note { margin: 4px 0; font-size: 13px; color: #4b5563; line-height: 1.6; }
+  .bar { position: sticky; top: 0; z-index: 5; background: #ffffffee; backdrop-filter: blur(6px); border-bottom: 1px solid #e5e7eb;
+         padding: 10px 28px; display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+  .seg { display: inline-flex; border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: #fff; padding: 5px 9px; cursor: pointer; font: inherit; }
+  .seg button.on { background: #2563eb; color: #fff; }
+  main { padding: 8px 28px 48px; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 16px; margin: 14px 0; }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; margin-left: 6px; }
+  .grid { display: grid; grid-template-columns: 70px repeat(6, auto); gap: 6px 10px; align-items: center; margin-top: 8px; }
+  .grid .h { font-size: 12px; color: #6b7280; text-align: center; }
+  .grid .rh { font-size: 12px; color: #374151; }
+  canvas { display: block; border-radius: 6px; }
+  .strip { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; align-items: flex-end; }
+  .strip figure { margin: 0; font-size: 11px; color: #6b7280; text-align: center; }
+  /* 设置页样式卡模拟（WinUI3 风格） */
+  .settings { border-radius: 10px; padding: 16px; margin-top: 10px; max-width: 760px; }
+  .settings.light { background: #f3f3f3; color: #1b1b1b; }
+  .settings.dark { background: #202020; color: #ffffff; }
+  .scard { border-radius: 8px; padding: 14px 16px; }
+  .light .scard { background: #fbfbfb; border: 1px solid #e5e5e5; }
+  .dark .scard { background: #2b2b2b; border: 1px solid #1d1d1d; }
+  .stitle { font-size: 14px; }
+  .sdesc { font-size: 12px; opacity: .72; margin-top: 2px; }
+  .picker { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .picker .divider { width: 1px; align-self: stretch; margin: 4px 10px; }
+  .light .picker .divider { background: #d6d6d6; } .dark .picker .divider { background: #3d3d3d; }
+  .opt { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .opt .tile { width: 72px; height: 72px; border-radius: 8px; display: grid; place-items: center; position: relative; transition: background .12s; }
+  .light .opt .tile { background: #ffffff; box-shadow: inset 0 0 0 1px #e0e0e0; }
+  .dark .opt .tile { background: #323232; box-shadow: inset 0 0 0 1px #3c3c3c; }
+  .light .opt:hover .tile { background: #f6f6f6; } .dark .opt:hover .tile { background: #3a3a3a; }
+  /* 选中环：外 2px 强调色 + 1px 内间隙，与 WinUI3 选中/焦点视觉一致 */
+  .opt.on .tile::after { content: ""; position: absolute; inset: -3px; border-radius: 10px; border: 2px solid var(--accent); }
+  .light { --accent: #005fb8; } .dark { --accent: #60cdff; }
+  .opt .lbl { font-size: 12px; opacity: .85; }
+  .opt.on .lbl { opacity: 1; font-weight: 600; }
+  code { background: #f3f4f6; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>橡皮光标方案 v2：圆角（DIP）· 三种内置纹样 · 设置选择器</h1>
+  <p class="note">绘制与着色器同公式（形状距离 + <code>saturate(0.5 − d)</code> 1px AA + 白填充/浅灰 207 描边 + 整体不透明度）。光标与预览为圆角矩形，<b>实际擦除区域仍为无圆角矩形</b>。尺寸列为“同档圆形直径（设备 px）”，矩形/正方形按等面积换算；圆角 = 圆角 DIP × 缩放，且不超过短边一半。</p>
+</header>
+
+<div class="bar">
+  <span>背景</span><span class="seg" id="bgSeg"></span>
+  <span>状态</span><span class="seg" id="stateSeg"></span>
+  <span>圆角</span><span class="seg" id="cornerSeg"></span>
+  <span>缩放</span><span class="seg" id="scaleSeg"></span>
+  <span>纹样颜色</span><span class="seg" id="colorSeg"></span>
+</div>
+<main id="main"></main>
+
+<script>
+const SIZES = [16, 24, 32, 48, 96, 160];
+const SHAPES = [ { key: 'circle', name: '圆形' }, { key: 'rect', name: '竖长矩形' }, { key: 'square', name: '正方形' } ];
+const BACKGROUNDS = [ { key: 'white', name: '白板' }, { key: 'black', name: '黑板' }, { key: 'ink', name: '墨迹上' }, { key: 'desk', name: '桌面' } ];
+const STATES = [ { key: 0.5, name: '悬停 0.5' }, { key: 1.0, name: '接触 1.0' } ];
+const CORNERS = [ { key: 4, name: '4 DIP' }, { key: 6, name: '6 DIP' }, { key: 8, name: '8 DIP' }, { key: 10, name: '10 DIP' } ];
+const SCALES = [ { key: 1, name: '100%' }, { key: 1.5, name: '150%' }, { key: 2, name: '200%' } ];
+const COLORS = [ { key: 207, name: '浅灰 207（现抓手）' }, { key: 150, name: '中灰 150' }, { key: 'blue', name: '强调蓝' } ];
+let bg = 'white', opacity = 0.5, cornerDip = 6, scale = 1.5, colorKey = 207;
+
+const RING = 207 / 255, OUTLINE_RATIO = 0.04;
+function markColor() { return colorKey === 'blue' ? [59/255, 130/255, 246/255] : [colorKey/255, colorKey/255, colorKey/255]; }
+
+function sat(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+function cov(d) { return sat(0.5 - d); }
+function len(x, y) { return Math.sqrt(x * x + y * y); }
+
+// ---------- 形状 ----------
+function geometry(shapeKey, diameter) {
+  const r = diameter / 2;
+  if (shapeKey === 'rect') return { hx: r * 0.7236012546, hy: r * 1.0854018818 };
+  if (shapeKey === 'square') return { hx: r * 0.8862269255, hy: r * 0.8862269255 };
+  return { hx: r, hy: r, circle: true };
+}
+function roundRectDist(x, y, hx, hy, c) {
+  const qx = Math.abs(x) - (hx - c), qy = Math.abs(y) - (hy - c);
+  return len(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - c;
+}
+function shapeDist(g, x, y) {
+  if (g.circle) return len(x, y) - g.hx;
+  return roundRectDist(x, y, g.hx, g.hy, Math.min(cornerDip * scale, Math.min(g.hx, g.hy)));
+}
+
+// ---------- 纹样基元（均为常数次运算，可直接移植 PS） ----------
+function capsule(px, py, ax, ay, bx, by, r) {
+  const pax = px - ax, pay = py - ay, bax = bx - ax, bay = by - ay;
+  const h = sat((pax * bax + pay * bay) / (bax * bax + bay * bay));
+  return len(pax - bax * h, pay - bay * h) - r;
+}
+function vCapsule(x, y, radius, halfHeight) {
+  const s = Math.max(halfHeight - radius, 0);
+  return len(x, y - Math.max(-s, Math.min(s, y))) - radius;
+}
+// iq 不等半径胶囊（笔尖细、笔尾粗）。
+function unevenCapsule(px, py, ax, ay, bx, by, ra, rb) {
+  px -= ax; py -= ay; bx -= ax; by -= ay;
+  const h = bx * bx + by * by;
+  let qx = (px * by - py * bx) / h, qy = (px * bx + py * by) / h;
+  qx = Math.abs(qx);
+  const b = ra - rb, cx = Math.sqrt(Math.max(h - b * b, 0)), cy = b;
+  const k = cx * qy - cy * qx, m = cx * qx + cy * qy, n = qx * qx + qy * qy;
+  if (k < 0) return Math.sqrt(h * n) - ra;
+  if (k > cx) return Math.sqrt(h * (n + 1 - 2 * qy)) - rb;
+  return m - ra;
+}
+function star(x, y, R, n = 0.5, roundFrac = 0.06) {
+  const k = R * roundFrac, rr = R - k;
+  const ax = Math.abs(x) + 1e-4, ay = Math.abs(y) + 1e-4;
+  const px = Math.pow(ax / rr, n), py = Math.pow(ay / rr, n);
+  const u = px + py - 1;
+  if (u < -0.35) return -8; if (u > 0.35) return 8;
+  return u / Math.max(len(n * px / ax, n * py / ay), 1e-4) - k;
+}
+// 圆弧（中心角 a0→a1，半径 R，线宽半径 t），用于“擦痕”。
+function arc(x, y, R, a0, a1, t) {
+  const mid = (a0 + a1) / 2, half = (a1 - a0) / 2;
+  const c = Math.cos(-mid), s = Math.sin(-mid);
+  const lx = x * c - y * s, ly = x * s + y * c;
+  const ang = Math.atan2(ly, lx);
+  if (Math.abs(ang) <= half) return Math.abs(len(lx, ly) - R) - t;
+  const ex = R * Math.cos(half), ey = R * Math.sin(half) * Math.sign(ly || 1);
+  return len(lx - ex, ly - ey) - t;
+}
+
+// ---------- 三类纹样（坐标单位：短边 S；y 向下） ----------
+// 1) 现有抓手（默认）
+function patGrips(x, y, S) {
+  return Math.min(vCapsule(x + 0.12 * S, y, 0.05 * S, 0.24 * S), vCapsule(x - 0.12 * S, y, 0.05 * S, 0.24 * S));
+}
+// 2) Inkeys 简化图标：屏幕 + 斜笔（几何取自 Inkeys/src/UI/logo1.svg，256 视口，屏幕 139×100、笔宽约 27）。
+function logoParts(x, y, S, widthRatio) {
+  const k = widthRatio * S / 139;            // logo 单位 → px
+  const lx = x / k, ly = y / k;               // 以屏幕中心为原点的 logo 坐标
+  const screen = roundRectDist(lx, ly, 69.5, 50, 9);
+  const pen = unevenCapsule(lx, ly, -29, 66, 33, -63, 4.5, 13.5);
+  return { k, screen, pen };
+}
+function patLogoSolid(x, y, S) {   // 实心屏幕 + 间隙 + 实心笔
+  const { k, screen, pen } = logoParts(x, y, S, 0.50);
+  const gap = 7;
+  return k * Math.min(Math.max(screen, -(pen - gap)), pen);
+}
+function patLogoLine(x, y, S) {    // 屏幕描边 + 间隙 + 实心笔
+  const { k, screen, pen } = logoParts(x, y, S, 0.52);
+  const ring = Math.abs(screen + 6) - 6;
+  const gap = 7;
+  return k * Math.min(Math.max(ring, -(pen - gap)), pen);
+}
+// 3) 角落星光的“充实”版本
+function patD1(x, y, S) {          // 星光 + 光泽双斜线
+  const a = star(x - 0.15 * S, y + 0.15 * S, 0.12 * S);
+  const b = S >= 40 ? star(x - 0.31 * S, y - 0.00 * S, 0.05 * S) : 8;
+  const g1 = capsule(x, y, -0.27 * S, 0.17 * S, -0.13 * S, 0.03 * S, 0.026 * S);
+  const g2 = capsule(x, y, -0.16 * S, 0.26 * S, -0.06 * S, 0.16 * S, 0.026 * S);
+  return Math.min(a, b, g1, g2);
+}
+function patD2(x, y, S) {          // 星群：大小错落、整体均衡
+  let d = star(x - 0.13 * S, y + 0.13 * S, 0.13 * S);
+  if (S >= 40) {
+    d = Math.min(d, star(x + 0.15 * S, y - 0.14 * S, 0.085 * S));
+    d = Math.min(d, star(x - 0.27 * S, y - 0.17 * S, 0.045 * S));
+    d = Math.min(d, star(x + 0.24 * S, y + 0.22 * S, 0.035 * S));
+  }
+  return d;
+}
+function patD3(x, y, S) {          // 星光 + 擦痕弧
+  let d = star(x - 0.15 * S, y + 0.15 * S, 0.12 * S);
+  if (S >= 40) d = Math.min(d, star(x - 0.31 * S, y, 0.05 * S));
+  d = Math.min(d, arc(x - 0.15 * S, y + 0.15 * S, 0.30 * S, 1.75, 3.45, 0.028 * S));
+  if (S >= 40) d = Math.min(d, arc(x - 0.15 * S, y + 0.15 * S, 0.40 * S, 1.95, 3.15, 0.022 * S));
+  return d;
+}
+
+const PATTERNS = {
+  grips: { name: '抓手（现有，默认）', fn: patGrips, minS: 0 },
+  logo1: { name: 'Inkeys 图标 · 实心屏幕', fn: patLogoSolid, minS: 24 },
+  logo2: { name: 'Inkeys 图标 · 描边屏幕', fn: patLogoLine, minS: 24 },
+  d1: { name: '星光 D1 · 星 + 光泽双斜线', fn: patD1, minS: 20 },
+  d2: { name: '星光 D2 · 错落星群', fn: patD2, minS: 20 },
+  d3: { name: '星光 D3 · 星 + 擦痕弧', fn: patD3, minS: 20 },
+};
+
+function cursorPixel(patKey, g, S, x, y, op) {
+  const d = shapeDist(g, x, y);
+  const outer = cov(d);
+  if (outer <= 0) return null;
+  const inner = cov(d + S * OUTLINE_RATIO);
+  const ringA = Math.max(0, outer - inner) * op, fillA = inner * op;
+  let a = ringA + fillA;
+  let r = (ringA * RING + fillA) / a, gg = r, b = r;
+  const pat = PATTERNS[patKey];
+  if (pat && S >= pat.minS) {
+    const m = Math.min(cov(pat.fn(x, y, S)), inner);
+    if (m > 0) {
+      const c = patKey === 'grips' ? [RING, RING, RING] : markColor();
+      r += m * (c[0] - r); gg += m * (c[1] - gg); b += m * (c[2] - b);
+      a += m * (op - a);
+    }
+  }
+  return [r, gg, b, a];
+}
+
+function paintBg(ctx, w, h, key) {
+  if (key === 'white') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); return; }
+  if (key === 'black') { ctx.fillStyle = '#1e2a24'; ctx.fillRect(0, 0, w, h); return; }
+  if (key === 'ink') {
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.lineCap = 'round';
+    for (const [c, t] of [['#e11d48', .18], ['#111827', .5], ['#2563eb', .8]]) {
+      ctx.strokeStyle = c; ctx.lineWidth = Math.max(3, h * .09); ctx.beginPath();
+      ctx.moveTo(-4, h * t + h * .15); ctx.bezierCurveTo(w * .3, h * t - h * .2, w * .7, h * t + h * .25, w + 4, h * t - h * .1); ctx.stroke();
+    }
+    return;
+  }
+  if (key === 'tileLight') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h); return; }
+  if (key === 'tileDark') { ctx.fillStyle = '#323232'; ctx.fillRect(0, 0, w, h); return; }
+  const gr = ctx.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#1d4f8f'); gr.addColorStop(1, '#6fb1e6');
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#f9fafb'; ctx.fillRect(w * .45, h * .1, w * .6, h * .55);
+}
+
+function tile(patKey, shapeKey, diameter, bgKey, op, fixed) {
+  const g = geometry(shapeKey, diameter), S = 2 * Math.min(g.hx, g.hy);
+  const dpr = window.devicePixelRatio || 1;
+  const w = fixed ? Math.round(fixed * dpr) : Math.ceil(2 * Math.max(g.hx, 22) + 20);
+  const h = fixed ? Math.round(fixed * dpr) : Math.ceil(2 * Math.max(g.hy, 22) + 20);
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  cv.style.width = (w / dpr) + 'px'; cv.style.height = (h / dpr) + 'px';
+  const ctx = cv.getContext('2d'); paintBg(ctx, w, h, bgKey);
+  const img = ctx.getImageData(0, 0, w, h), px = img.data, cx = w / 2, cy = h / 2;
+  for (let j = 0; j < h; ++j) for (let i = 0; i < w; ++i) {
+    const c = cursorPixel(patKey, g, S, i + .5 - cx, j + .5 - cy, op); if (!c) continue;
+    const o = (j * w + i) * 4, a = c[3];
+    px[o] = c[0] * 255 * a + px[o] * (1 - a); px[o + 1] = c[1] * 255 * a + px[o + 1] * (1 - a); px[o + 2] = c[2] * 255 * a + px[o + 2] * (1 - a);
+  }
+  ctx.putImageData(img, 0, 0);
+  return cv;
+}
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+function patternCard(patKey, desc, tagText) {
+  const card = el('section', 'card');
+  const h = el('h2', null, PATTERNS[patKey].name); if (tagText) h.appendChild(el('span', 'tag', tagText));
+  card.append(h, el('p', 'note', desc));
+  const grid = el('div', 'grid'); grid.appendChild(el('div', 'h', ''));
+  for (const s of SIZES) grid.appendChild(el('div', 'h', s + ' px'));
+  for (const sh of SHAPES) { grid.appendChild(el('div', 'rh', sh.name)); for (const s of SIZES) grid.appendChild(tile(patKey, sh.key, s, bg, opacity)); }
+  card.appendChild(grid);
+  const strip = el('div', 'strip');
+  for (const b of BACKGROUNDS) for (const st of STATES) {
+    const f = el('figure'); f.appendChild(tile(patKey, 'rect', 84, b.key, st.key)); f.appendChild(el('figcaption', null, `${b.name} · ${st.name}`)); strip.appendChild(f);
+  }
+  card.appendChild(strip);
+  return card;
+}
+
+function cornerCard() {
+  const card = el('section', 'card');
+  card.append(el('h2', null, '① 圆角大小（DIP，随缩放）'),
+    el('p', 'note', '上方工具栏切换圆角与缩放；此处同一形状并排四档圆角（当前缩放下）。纹样为抓手，仅看外形舒适度。实际擦除区域始终为同尺寸的直角矩形。'));
+  const grid = el('div', 'strip');
+  const saved = cornerDip;
+  for (const c of [4, 6, 8, 10]) for (const sh of ['rect', 'square']) {
+    cornerDip = c;
+    const f = el('figure'); f.appendChild(tile('grips', sh, 96, 'white', 1.0)); f.appendChild(el('figcaption', null, `${sh === 'rect' ? '矩形' : '正方形'} · ${c} DIP`)); grid.appendChild(f);
+  }
+  cornerDip = saved;
+  card.appendChild(grid);
+  return card;
+}
+
+// 设置页“擦除样式”选择器模拟：左三形状 | 分割线 | 右三纹样（按当前形状绘制），点击切换。
+const pick = { shape: 'circle', pattern: 'grips', sparkle: 'd3', logo: 'logo1' };
+function pickerCard() {
+  const card = el('section', 'card');
+  card.append(el('h2', null, '④ 设置-绘制-橡皮 · “擦除样式”选择器模拟（Part C）'),
+    el('p', 'note', '整块按钮即预览，点击选择，选中项外圈为强调色环（WinUI3）。左：三种形状（显示当前纹样）；分割线；右：三种内置纹样（以当前形状显示）。下方可切换第 2、3 个纹样采用哪个候选。'));
+  const ctrl = el('div', 'bar'); ctrl.style.position = 'static'; ctrl.style.padding = '6px 0'; ctrl.style.border = '0'; ctrl.style.background = 'transparent';
+  const mk = (label, items, key) => {
+    ctrl.appendChild(el('span', null, label)); const seg = el('span', 'seg');
+    for (const [k, n] of items) { const b = el('button', pick[key] === k ? 'on' : '', n); b.onclick = () => { pick[key] = k; render(); }; seg.appendChild(b); }
+    ctrl.appendChild(seg);
+  };
+  mk('图标候选', [['logo1', '实心屏幕'], ['logo2', '描边屏幕']], 'logo');
+  mk('星光候选', [['d1', 'D1'], ['d2', 'D2'], ['d3', 'D3']], 'sparkle');
+  card.appendChild(ctrl);
+  const resolve = p => p === 'logo' ? pick.logo : p === 'sparkle' ? pick.sparkle : 'grips';
+  for (const theme of ['light', 'dark']) {
+    const wrap = el('div', 'settings ' + theme), sc = el('div', 'scard');
+    sc.append(el('div', 'stitle', '擦除样式'), el('div', 'sdesc', '选择橡皮形状与光标纹样。实际擦除区域为所选形状（矩形无圆角）。'));
+    const row = el('div', 'picker');
+    const opt = (on, canvas, label, onclick) => { const o = el('div', 'opt' + (on ? ' on' : '')); const t = el('div', 'tile'); t.appendChild(canvas); o.append(t, el('div', 'lbl', label)); o.onclick = onclick; return o; };
+    const bgKey = theme === 'light' ? 'tileLight' : 'tileDark';
+    for (const sh of SHAPES) row.appendChild(opt(pick.shape === sh.key, tile(resolve(pick.pattern), sh.key, sh.key === 'rect' ? 50 : 54, bgKey, 1.0, 64), sh.name, () => { pick.shape = sh.key; render(); }));
+    row.appendChild(el('div', 'divider'));
+    for (const [p, label] of [['grips', '经典'], ['logo', 'Inkeys'], ['sparkle', '星光']])
+      row.appendChild(opt(pick.pattern === p, tile(resolve(p), pick.shape, pick.shape === 'rect' ? 50 : 54, bgKey, 1.0, 64), label, () => { pick.pattern = p; render(); }));
+    sc.appendChild(row); wrap.appendChild(sc); card.appendChild(wrap);
+  }
+  return card;
+}
+
+function render() {
+  const m = document.getElementById('main'); m.innerHTML = '';
+  m.appendChild(cornerCard());
+  const sec = el('section', 'card'); sec.append(el('h2', null, '② 三种内置纹样'), el('p', 'note', '纹样颜色在顶部切换（抓手保持现有浅灰 207）。显隐：抓手始终显示；Inkeys 图标短边 < 24px 隐藏；星光 < 20px 隐藏，< 40px 只留主星/主元素。'));
+  m.appendChild(sec);
+  m.appendChild(patternCard('grips', '保留现有两条竖胶囊（半径 0.05S、半高 0.24S、横偏移 ±0.12S），作为默认。矩形/正方形以短边 S 为基准。', '默认'));
+  m.appendChild(patternCard('logo1', '纯色实心：屏幕圆角矩形 + 斜向钢笔（尖细尾粗），笔与屏幕之间留一道空隙，类似 ClassIn 的纯色品牌标。宽约 0.50S。', 'Inkeys 候选 1'));
+  m.appendChild(patternCard('logo2', '屏幕改为描边框、钢笔实心，更接近原 logo 的轮廓感，稍轻盈。宽约 0.52S。', 'Inkeys 候选 2'));
+  m.appendChild(patternCard('d1', '在 D 的右上主星 + 小星基础上，左下加两道平行“光泽”短斜线，形成对角呼应，画面更满且仍保持中心通透。', '星光候选'));
+  m.appendChild(patternCard('d2', '四颗大小错落的星分布在两条对角线上，主星偏左下、次星偏右上，整体均衡、视觉密度最高。', '星光候选'));
+  m.appendChild(patternCard('d3', '主星 + 小星，再以主星为圆心画一长一短两道弧线，像橡皮擦过的轨迹与反光，动感最强。', '星光候选 · 推荐'));
+  m.appendChild(pickerCard());
+}
+function seg(id, items, get, set) {
+  const s = document.getElementById(id);
+  for (const it of items) { const b = el('button', get() === it.key ? 'on' : '', it.name); b.onclick = () => { set(it.key); [...s.children].forEach(c => c.classList.remove('on')); b.classList.add('on'); render(); }; s.appendChild(b); }
+}
+seg('bgSeg', BACKGROUNDS, () => bg, v => bg = v);
+seg('stateSeg', STATES, () => opacity, v => opacity = v);
+seg('cornerSeg', CORNERS, () => cornerDip, v => cornerDip = v);
+seg('scaleSeg', SCALES, () => scale, v => scale = v);
+seg('colorSeg', COLORS, () => colorKey, v => colorKey = v);
+render();
+</script>
+</body>
+</html>

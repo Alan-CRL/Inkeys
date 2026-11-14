@@ -1,0 +1,11 @@
+{
+  "args": [
+    "--save-snapshot-lifetime-only",
+    "--unexpected"
+  ],
+  "exit_code": 90,
+  "expected_exit": 90,
+  "passed": true,
+  "seconds": 0.062,
+  "exe_sha256": "2fdcd9e2ac37ea8201598672657e8196c9d568206fad6ae23d1429ca586af797"
+}

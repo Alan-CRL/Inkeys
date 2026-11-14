@@ -75,6 +75,12 @@ namespace Inkeys::Drawing::Draw3
 				kContactSlotsPerBlock * kContactSlotsPerBlock;
 		}
 
+		bool IsNavigationDevice(InputDeviceType device) noexcept
+		{
+			// Pen/倒置笔共用真实有序历史；是否漫游仍由唯一消费者的 Selection 准入决定。
+			return device == InputDeviceType::Touch || device == InputDeviceType::MouseLeft || device == InputDeviceType::Pen;
+		}
+
 		bool HasFinitePosition(const ContactSnapshot& snapshot) noexcept
 		{
 			const double x = snapshot.position.x;
@@ -234,6 +240,12 @@ namespace Inkeys::Drawing::Draw3
 			record.phase_.Store(static_cast<uint32_t>(ContactPhase::Down));
 			record.sequence_.Store(snapshot.sequence);
 			SetRoute(record, generation, ProducerState::Initializing);
+		}
+
+		static void SetNavigationIdentity(ContactRecord& record, uint64_t epoch, uint64_t ordinal) noexcept
+		{
+			record.navigationEpoch_ = epoch;
+			record.navigationSequence_ = ordinal;
 		}
 
 		static bool Matches(const ContactRecord& record, uint32_t tabletContextId, uint32_t contactId) noexcept
@@ -453,8 +465,9 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		}
 
-		void SignalWake() noexcept
+		void SignalWake(bool interruptFrame = true) noexcept
 		{
+			if (interruptFrame) frameWakeGeneration.fetch_add(1, std::memory_order_release);
 			wakeGeneration.fetch_add(1, std::memory_order_release);
 			if (wakeEvent) SetEvent(wakeEvent);
 		}
@@ -522,6 +535,23 @@ namespace Inkeys::Drawing::Draw3
 			ContactBlock* owner = ContactRecordAccess::OwnerBlock(record);
 			const uint32_t bit = ContactRecordAccess::OwnerBit(record);
 			if (owner && bit != 0) owner->freeMask.fetch_or(bit, std::memory_order_release);
+		}
+
+		// 调用方持 navigationMutex；固定环不在 producer 上分配内存或输出日志。
+		void AppendNavigation(ContactRecord& record, uint64_t generation, ContactSnapshot snapshot) noexcept
+		{
+			if (!IsNavigationDevice(record.DeviceType())) return;
+			if (navigationCount == navigationEvents.size())
+			{
+				navigationDropped += navigationCount;
+				navigationBegin = navigationCount = 0;
+				++navigationEpoch; // 缺口使整个旧手势失效，不能以残存点启动高速惯性。
+			}
+			ContactSnapshot latest;
+			if (ContactRecordAccess::ReadSnapshot(record, latest)) snapshot.sequence = latest.sequence;
+			navigationEvents[(navigationBegin + navigationCount++) % navigationEvents.size()] =
+				{ { &record, generation }, snapshot, ++navigationPublished,
+					downEnqueuedCount.load(std::memory_order_acquire) };
 		}
 
 		bool EnqueueDown(ContactRecord* record) noexcept
@@ -614,6 +644,11 @@ namespace Inkeys::Drawing::Draw3
 			}
 			snapshot.phase = phase;
 			ContactRecordAccess::PublishSnapshot(record, snapshot);
+			if (IsNavigationDevice(record.DeviceType()))
+			{
+				std::scoped_lock lock(navigationMutex);
+				AppendNavigation(record, expectedGeneration, snapshot);
+			}
 			ContactRecordAccess::UnlockWriter(record);
 			bool closed = ContactRecordAccess::TrySetExactState(record, expectedGeneration,
 				ProducerState::Closing, quarantined ? ProducerState::Free : ProducerState::ConsumerOwned);
@@ -651,6 +686,12 @@ namespace Inkeys::Drawing::Draw3
 			return count;
 		}
 
+		mutable std::mutex navigationMutex;
+		std::array<ContactNavigationEvent, kContactNavigationHistoryCapacity> navigationEvents{};
+		size_t navigationBegin = 0, navigationCount = 0;
+		uint64_t navigationEpoch = 1, navigationPublished = 0, navigationDropped = 0;
+		std::atomic<uint64_t> frameWakeGeneration = 0;
+		uint64_t frameWaitObservedGeneration = 0; // 只由绘制消费者访问。
 		const size_t slotCapacity;
 		const size_t queueCapacity;
 		IngressQueue queue;
@@ -724,6 +765,9 @@ namespace Inkeys::Drawing::Draw3
 		return ContactRecordAccess::Generation(*this);
 	}
 
+	uint64_t ContactRecord::NavigationEpoch() const noexcept { return navigationEpoch_; }
+	uint64_t ContactRecord::NavigationSequence() const noexcept { return navigationSequence_; }
+
 	ContactInputCoordinator::ContactInputCoordinator()
 		: impl_(std::make_unique<ContactInputCoordinatorImpl>(ComputeDefaultSlotCapacity()))
 	{
@@ -758,14 +802,29 @@ namespace Inkeys::Drawing::Draw3
 			? 1 : previousGeneration + 1;
 		ContactSnapshot admitted = snapshot;
 		admitted.admissionRevision = impl_->admissionRevision.load(std::memory_order_acquire);
-		ContactRecordAccess::Initialize(
-			*record, tabletContextId, contactId, deviceType, admitted, generation);
-		ContactRecordAccess::SetState(*record, ProducerState::Producing);
-		if (impl_->EnqueueDown(record))
 		{
-			impl_->Count(impl_->downPublished);
-			impl_->SignalWake();
-			return true;
+			// Down 从公开 Producing 到导航事件发布共用一个截面；Move/Up 不能抢在 Down 前面。
+			// 此处不持 record writer；锁序为 navigation -> ingress，Move/Up 为 writer -> navigation。
+			std::scoped_lock lock(impl_->navigationMutex);
+			ContactRecordAccess::Initialize(
+				*record, tabletContextId, contactId, deviceType, admitted, generation);
+			// 满环先切 epoch，让这个新 Down 可以属于完整的新手势。
+			if (IsNavigationDevice(deviceType) && impl_->navigationCount == impl_->navigationEvents.size())
+			{
+				impl_->navigationDropped += impl_->navigationCount;
+				impl_->navigationBegin = impl_->navigationCount = 0;
+				++impl_->navigationEpoch;
+			}
+			ContactRecordAccess::SetNavigationIdentity(*record, impl_->navigationEpoch, impl_->navigationPublished + 1);
+			ContactRecordAccess::SetState(*record, ProducerState::Producing);
+			if (impl_->EnqueueDown(record))
+			{
+				admitted.phase = ContactPhase::Down;
+				impl_->AppendNavigation(*record, generation, admitted);
+				impl_->Count(impl_->downPublished);
+				impl_->SignalWake();
+				return true;
+			}
 		}
 		impl_->AbortUnqueuedDown(*record, generation); // 入队失败也不能与已经进入的 Move/Up 争用复用。
 		impl_->Count(impl_->downRejected);
@@ -780,6 +839,17 @@ namespace Inkeys::Drawing::Draw3
 		if (!located || !ContactRecordAccess::TryLockWriter(*located.record))
 		{
 			impl_->Count(impl_->moveContended);
+			if (located && IsNavigationDevice(located.record->DeviceType()))
+			{
+				std::scoped_lock lock(impl_->navigationMutex);
+				if (ContactRecordAccess::HasRoute(*located.record, located.generation, ProducerState::Producing))
+				{
+					// 可检测的 producer 丢点不能继续使用缺口两侧估速；绘制仍保留旧的非阻塞丢 Move 合同。
+					impl_->navigationDropped += impl_->navigationCount + 1;
+					impl_->navigationBegin = impl_->navigationCount = 0;
+					++impl_->navigationEpoch;
+				}
+			}
 			return false;
 		}
 		if (!ContactRecordAccess::HasRoute(
@@ -793,6 +863,11 @@ namespace Inkeys::Drawing::Draw3
 		ContactSnapshot moveSnapshot = snapshot;
 		moveSnapshot.phase = ContactPhase::Move;
 		ContactRecordAccess::PublishSnapshot(*located.record, moveSnapshot);
+		if (IsNavigationDevice(located.record->DeviceType()))
+		{
+			std::scoped_lock lock(impl_->navigationMutex);
+			impl_->AppendNavigation(*located.record, located.generation, moveSnapshot);
+		}
 		const bool routeStillMatches = ContactRecordAccess::HasRoute(
 			*located.record, located.generation, ProducerState::Producing);
 		ContactRecordAccess::UnlockWriter(*located.record);
@@ -804,7 +879,7 @@ namespace Inkeys::Drawing::Draw3
 		impl_->Count(impl_->movePublished);
 		// 活动帧仍合并 Move；只有即将休眠的唯一消费者订阅一次通知。
 		if (impl_->idleMoveWakeArmed.exchange(false, std::memory_order_acq_rel))
-			impl_->SignalWake();
+			impl_->SignalWake(false);
 		return true;
 	}
 
@@ -844,6 +919,30 @@ namespace Inkeys::Drawing::Draw3
 			RouteState(routeAfter) != ProducerState::ConsumerOwned) return false;
 		snapshot = candidate;
 		return true;
+	}
+
+	ContactNavigationHistoryStatus ContactInputCoordinator::NavigationHistoryStatus() const noexcept
+	{
+		std::scoped_lock lock(impl_->navigationMutex);
+		return { impl_->navigationEpoch, impl_->navigationPublished, impl_->navigationDropped, impl_->navigationCount };
+	}
+
+	ContactNavigationHistoryStatus ContactInputCoordinator::DrainNavigationHistory(std::vector<ContactNavigationEvent>& events)
+	{
+		events.clear();
+		// 预留发生在锁外；producer 只等待有界复制，不等待分配或业务消费。
+		events.reserve(kContactNavigationHistoryCapacity);
+		std::scoped_lock lock(impl_->navigationMutex);
+		const uint64_t downConsumed = impl_->downDequeuedCount.load(std::memory_order_acquire);
+		while (impl_->navigationCount)
+		{
+			const auto& event = impl_->navigationEvents[impl_->navigationBegin];
+			if (event.downWatermark > downConsumed) break;
+			events.push_back(event);
+			impl_->navigationBegin = (impl_->navigationBegin + 1) % impl_->navigationEvents.size();
+			--impl_->navigationCount;
+		}
+		return { impl_->navigationEpoch, impl_->navigationPublished, impl_->navigationDropped, impl_->navigationCount };
 	}
 
 	void ContactInputCoordinator::Recycle(ContactHandle handle) noexcept
@@ -1144,6 +1243,9 @@ namespace Inkeys::Drawing::Draw3
 #if defined(DRAW3_CONTACT_TESTING)
 		impl_->commandFallbackMissHookForTesting.store(nullptr, std::memory_order_relaxed);
 #endif
+		impl_->navigationBegin = impl_->navigationCount = 0;
+		++impl_->navigationEpoch;
+		impl_->frameWaitObservedGeneration = impl_->frameWakeGeneration.load(std::memory_order_relaxed);
 		impl_->deferredIngressRecord = nullptr;
 		impl_->deferredIngressPending.store(false, std::memory_order_relaxed);
 		ContactRecord* discarded = nullptr;
@@ -1224,6 +1326,12 @@ namespace Inkeys::Drawing::Draw3
 		double timeoutMilliseconds) noexcept
 	{
 		impl_->Count(impl_->activeWaits);
+		const uint64_t observed = impl_->frameWakeGeneration.load(std::memory_order_acquire);
+		if (observed != impl_->frameWaitObservedGeneration)
+		{
+			impl_->frameWaitObservedGeneration = observed;
+			return; // 包含工作阶段到达的 Down/Up，不能只观察开始等待之后的唤醒。
+		}
 		if (timeoutMilliseconds <= 0.0 || impl_->qpcFrequency <= 0) return;
 
 		LARGE_INTEGER now = {};
@@ -1233,6 +1341,12 @@ namespace Inkeys::Drawing::Draw3
 			now.QuadPart, impl_->qpcFrequency, timeoutMilliseconds, deadline)) return;
 		for (;;)
 		{
+			const auto current = impl_->frameWakeGeneration.load(std::memory_order_acquire);
+			if (current != observed)
+			{
+				impl_->frameWaitObservedGeneration = current;
+				return;
+			}
 			QueryPerformanceCounter(&now);
 			const int64_t remainingTicks = deadline - now.QuadPart;
 			if (remainingTicks <= 0) return;

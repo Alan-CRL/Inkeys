@@ -1,0 +1,33 @@
+[
+  {
+    "path": "inkStrokeModelerTestTests\\contact_input_tests.cpp",
+    "utf8": true,
+    "bom": true,
+    "crlf": 3635,
+    "bare_lf": 0,
+    "bom_matches_head": true
+  },
+  {
+    "path": "inkStrokeModelerTestTests\\desktop_autosave_tests.cpp",
+    "utf8": true,
+    "bom": true,
+    "crlf": 1049,
+    "bare_lf": 0,
+    "bom_matches_head": true
+  },
+  {
+    "path": "inkStrokeModelerTestTests\\presentation_autosave_tests.cpp",
+    "utf8": true,
+    "bom": true,
+    "crlf": 3791,
+    "bare_lf": 0,
+    "bom_matches_head": true
+  },
+  {
+    "path": "inkStrokeModelerTestTests\\snapshot_lifetime_probe.h",
+    "utf8": true,
+    "bom": true,
+    "crlf": 122,
+    "bare_lf": 0
+  }
+]

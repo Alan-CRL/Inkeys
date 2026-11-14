@@ -1,0 +1,25 @@
+# 第5项资源回落的定位补充
+
+## Freeze
+
+`IdtFreezeFrame.cpp`目前局部DibSurface在thread入口整屏resize、clear并真实提交后上报FreezeFirstFrameCommitted；while循环后才析构。所有Recall/PPT/Freeze分支复用同一DIB和预填的ULW结构。空闲分支只clear/submit，WhiteboardFreezeSurfaceOwned时直接continue，所以像素常驻。
+
+最小实现可将ensure/transparent-submit/reset收口在原线程，保留启动透明首帧和状态报告，在初始提交后以及功能退出的成功透明提交后释放DIB。再次活跃时恢复同一尺寸（必要时读显示快照），同步更新sizeWnd/ulwi.hdcSrc；不能有指向旧DC的后续提交，失败不能报告已提交。白板拥有共享HWND时，Freeze仅归还自有像素且不发布透明帧干扰白板。注意offSignal、IsActive、FreezeRecall与FreezePPT的组合、活跃内层循环退出后原show_freeze_window标志以及PptSign较小资源的准备时机。
+
+保持窗口固定1px高度预留、现有SetBounds/ReportFailure/FreezeFirstFrameCommitted合同，不改状态枚举/设备/进度权重。加入最窄生命周期回归，必须真正创建和归还DIB并覆盖所有权/再入；如果测试无需真正HWND的helper路径不足以验证提交，则配合既有隐藏原生窗口测试，明确范围。
+
+## Whiteboard
+
+`Whiteboard.cpp::RenderBackground`在218行已InactiveCommitted则Idle；在CommitBackgroundInactive、没有Held、以及服务真实Hide+CompleteBackgroundInactive后也直接Idle。backgroundScene到Shutdown才Reset/ReleaseDeviceResources（约591行）。应在真正完成inactive/hidden证明且DiscardBackgroundSubmission后释放该client目标，失效renderedBackgroundTarget/必要几何缓存以保证重入完整构建。不改变backgroundState的request/held/native generation校验，不重置文稿、主题、页面事务、共享WARP epoch。
+
+最小化不是workspace退出，但背景隐藏时可回收可再生target；恢复时应Invalidate并走现有先构建/提交后ready的门，不能因为held仍active就漏掉重绘，也不能destroy共享Freeze HWND。现有RunHiddenBackgroundTests在本文件439行及.cppm中已有入口，可补实际target退役/重入断言。
+
+## Bar / PageControl
+
+`Bar.RenderLoop.cpp`约9654–9683已避免冷启动为未打开面板预分配，但capacitySize使用历史max保留。只在布局/收起/停靠等动画确定完成、不会再引用旧backing时，按当前必需容量收缩明显过大的目标；避免每个idle frame重建或清光小缓存。若更安全的收缩条件需新增状态，应记录具体门，不扩大为调度架构重写。
+
+`PageControl.cpp`约2538后ResolveStableBackingSize保留backingCapacity；隐藏完成后停止呈现，常规不释放scene。可在真实隐藏+动画完成+无pending/旧输入承诺的边界释放该client资源并将backingCapacity复位最小，下次显示仍完整重绘、重新发布native/input ready。ReleaseDeviceResources已有接口，不释放共同device。需要保留正在完成的手势/捕获和PPT页面提交门。
+
+## 所有权与验证
+
+第5项实现代理独占IdtFreezeFrame.cpp/.h、Whiteboard.cpp/.cppm以及必要Bar/PageControl文件和该功能已有测试；不能动IdtMain（由Setting代理注册新CLI）、Renderer/Controller（Laser代理）、Host/TransparentPresentation/IdtState（ULW代理）。如需接口修改通过代理协调。主会话统一构建与运行；不要自行启动验证进程，以免污染采样。

@@ -84,6 +84,8 @@ namespace Inkeys::Launch
 	}
 
 	inline constexpr wchar_t HandoffPrefix[] = L"--inkeys-startup-handoff=";
+	// v1 继续等待父进程；v2 仅供同镜像普通重启在旧窗口隐藏后接任。
+	enum class HandoffMode { ParentExit, RestartHidden };
 	struct alignas(8) Packet
 	{
 		DWORD version = 1, parentPid = 0, childPid = 0, byteSize = 65576;
@@ -129,7 +131,7 @@ namespace Inkeys::Launch
 		const auto* view = static_cast<const Packet*>(MapViewOfFile(mapping.Get(), FILE_MAP_READ, 0, 0, sizeof(Packet)));
 		if (!view) return -1;
 		Packet packet; std::memcpy(&packet, view, sizeof(packet)); UnmapViewOfFile(view);
-		if (packet.version != 1 || packet.byteSize != sizeof(Packet) || packet.childPid != GetCurrentProcessId() || !packet.root[0]
+		if ((packet.version != 1 && packet.version != 2) || packet.byteSize != sizeof(Packet) || packet.childPid != GetCurrentProcessId() || !packet.root[0]
 			|| packet.root[ARRAYSIZE(packet.root) - 1] || !packet.parent || !packet.presence || !packet.ready) return -1;
 		if (packet.parent > (std::numeric_limits<std::uintptr_t>::max)() || packet.presence > (std::numeric_limits<std::uintptr_t>::max)()
 			|| packet.ready > (std::numeric_limits<std::uintptr_t>::max)()) return -1;
@@ -140,6 +142,9 @@ namespace Inkeys::Launch
 			|| WaitForSingleObject(parent.Get(), 0) != WAIT_TIMEOUT
 			|| !WithinRoot(Image(parent.Get()), root) || !WithinRoot(Image(), root)
 			|| !IsPresence(lease.Get(), PresenceName(root))) return -1;
+		// 提前接任不适用于更新/提权：必须仍是同一镜像、同一物理安装目录。
+		if (packet.version == 2 && (!Equal(Image(parent.Get()), Image())
+			|| PresenceName(Directory(Image())) != PresenceName(root))) return -1;
 		// installer的物理目录准入必须在Ready之前完成；否则父已退出后再发现冲突会丢失整个交接。
 		const auto physicalName=PresenceName(Directory(Image()));
 		if(physicalName.empty())return -1;
@@ -149,9 +154,9 @@ namespace Inkeys::Launch
 			if(!physical.Get() || error==ERROR_ALREADY_EXISTS)return -1;
 			physicalPresence.Reset(physical.Release());
 		}
-		// 先确认已验真的连续占位，再等精确父进程退出；不能把Ready放在等待之后。
+		// 先确认已验真的连续占位；v1仍等精确父退出，v2不等待仍在监督旧实例的helper。
 		if (!SetEvent(ready.Get())) return -1;
-		if (WaitForSingleObject(parent.Get(), INFINITE) != WAIT_OBJECT_0) return -1;
+		if (packet.version == 1 && WaitForSingleObject(parent.Get(), INFINITE) != WAIT_OBJECT_0) return -1;
 		logicalRoot = root; presence.Reset(lease.Release()); adopted = true; return 1;
 	}
 	enum class Admission { Accepted, Duplicate, Error };
@@ -207,8 +212,10 @@ namespace Inkeys::Launch
 		Packet* view = nullptr;
 		std::wstring name;
 		HANDLE sourceParent = nullptr;
+		HandoffMode mode;
 	public:
-		Handoff(HANDLE parent = GetCurrentProcess()) : sourceParent(parent)
+		Handoff(HANDLE parent = GetCurrentProcess(), HandoffMode handoffMode = HandoffMode::ParentExit)
+			: sourceParent(parent), mode(handoffMode)
 		{
 			if (!presence.Get() || logicalRoot.empty() || logicalRoot.size() >= 32768) return;
 			GUID guid{}; wchar_t text[40]{};
@@ -226,19 +233,21 @@ namespace Inkeys::Launch
 		bool Publish(HANDLE child)
 		{
 			if (!Valid()) return false;
+			if (mode == HandoffMode::RestartHidden && (GetProcessId(sourceParent) != GetCurrentProcessId()
+				|| !Equal(Image(child), Image()) || PresenceName(Directory(Image())) != PresenceName(logicalRoot))) return false;
 			HANDLE remoteParent = nullptr, remoteLease = nullptr, remoteReady = nullptr;
 			if (!DuplicateHandle(GetCurrentProcess(), sourceParent, child, &remoteParent, SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, 0)
 				|| !DuplicateHandle(GetCurrentProcess(), presence.Get(), child, &remoteLease, 0, FALSE, DUPLICATE_SAME_ACCESS)
 				|| !DuplicateHandle(GetCurrentProcess(), ready.Get(), child, &remoteReady, EVENT_MODIFY_STATE, FALSE, 0)) return false;
-			Packet packet; packet.parentPid = GetProcessId(sourceParent); packet.childPid = GetProcessId(child);
+			Packet packet; packet.version = mode == HandoffMode::RestartHidden ? 2u : 1u; packet.parentPid = GetProcessId(sourceParent); packet.childPid = GetProcessId(child);
 			packet.parent = reinterpret_cast<std::uintptr_t>(remoteParent); packet.presence = reinterpret_cast<std::uintptr_t>(remoteLease);
 			packet.ready = reinterpret_cast<std::uintptr_t>(remoteReady);
 			wcscpy_s(packet.root, logicalRoot.c_str()); std::memcpy(view, &packet, sizeof(packet)); MemoryBarrier(); return true;
 		}
-		bool Wait(HANDLE child)
+		bool Wait(HANDLE child, DWORD timeout = 10000)
 		{
 			const HANDLE waits[]{ ready.Get(), child };
-			return WaitForMultipleObjects(2, waits, FALSE, 10000) == WAIT_OBJECT_0;
+			return WaitForMultipleObjects(2, waits, FALSE, timeout) == WAIT_OBJECT_0;
 		}
 	};
 
@@ -377,6 +386,13 @@ namespace Inkeys::Launch
 			if(!CreateProcessW(target.c_str(),command.data(),nullptr,nullptr,FALSE,CREATE_SUSPENDED|CREATE_NO_WINDOW,nullptr,nullptr,&startup,&created)) return true;
 			Handle process(created.hProcess), thread(created.hThread);
 			const bool published=handoff.Publish(process.Get()); trace("parent Publish",published);
+			if (published && count == 3 && args[2] == L"unknown-version")
+			{
+				Handle packetMapping(OpenFileMappingW(FILE_MAP_WRITE, FALSE, handoff.Arguments().substr(ARRAYSIZE(HandoffPrefix) - 1).c_str()));
+				auto* packet = packetMapping.Get() ? static_cast<Packet*>(MapViewOfFile(packetMapping.Get(), FILE_MAP_WRITE, 0, 0, sizeof(Packet))) : nullptr;
+				if (!packet) return true;
+				packet->version = 3; UnmapViewOfFile(packet);
+			}
 			const bool resumed=published && ResumeThread(thread.Get())!=static_cast<DWORD>(-1);trace("parent Resume",resumed);
 			const bool ready=resumed && handoff.Wait(process.Get());trace("parent Ready",ready);
 			if(ready) {result=0;return true;}
@@ -414,6 +430,7 @@ namespace Inkeys::Launch
 		ok=retained && !std::filesystem::exists(std::filesystem::path(root)/L"adopted.pid",error) && ok;
 		std::fprintf(stderr,"[SingleInstanceCase] installer conflict retained-parent=%d ok=%d\n",retained,ok);
 		physicalBlocker.Reset();
+		ok=ok && run(L"--single-instance-test-parent unknown-version",code) && code==1;
 		ok=ok && run(L"--single-instance-test-parent",code) && code==0;
 		DWORD childPid=0;
 		for(unsigned attempt=0;ok && !childPid && attempt<100;++attempt)

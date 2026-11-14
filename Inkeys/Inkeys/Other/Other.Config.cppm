@@ -391,6 +391,16 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SelectAndClickThroughMode, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, IconOrder, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ExpandDirectionAdjustment, 1) \
+				GROUP(Workspace, \
+					GROUP(Ppt, \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, AutoDockMask, 1) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Direction, 0) \
+					) \
+					GROUP(Whiteboard, \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, AutoDockMask, 1) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Direction, 0) \
+					) \
+				) \
 				GROUP(AutoCollapse, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Drawing, 1) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Erasing, 0) \
@@ -437,6 +447,14 @@ GROUP(UI, \
 		) \
 		GROUP(Whiteboard, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<WhiteboardThemePreference>, DefaultTheme, WhiteboardThemePreference{}) \
+			GROUP(PanInertia, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enabled, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Mouse, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Touchpad, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Touch, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Pen, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PenTail, false) \
+			) \
 		) \
 		GROUP(Haptics, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Drawing, true) \
@@ -451,8 +469,15 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Tablet, -1) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InjectedMouseAsTablet, false) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, DotHideOnContact, 1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PenOpacity, 50) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, HighlightPenFillOpacity, 50) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, DotOpacity, 25) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, HighlightDotFillOpacity, 50) \
 		) \
 		GROUP(Eraser, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Shape, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, CursorPattern, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, CursorTheme, 0) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Automatic, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, BaseDiameterDip, 32) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Sensitivity, 1) \
@@ -469,6 +494,12 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ThresholdPercent, 100) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, RecognitionWindowMs, 150) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ParallelWriting, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Shape, -1) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SizeMode, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SizeMethodCircle, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SizeMethodRectangle, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SizeMethodSquare, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SizeMultiplierPercent, 100) \
 			GROUP(Tools, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Pen, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, HardPen, true) \
@@ -484,6 +515,8 @@ GROUP(UI, \
 		GROUP(Inkeys3, \
 			GROUP(Draw3, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnect, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnectTouch, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnectPenTail, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableDirectComposition, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableHardwareAcceleration, true) \
@@ -495,6 +528,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Haptics, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchArea, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Cursor, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CanvasPan, false) \
 			) \
 			GROUP(UI3, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ThemeMode, ThemeModeDark) 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, BackgroundOpacity, ResidentBackgroundOpacityThemeDefault) 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ContentOpacity, ResidentContentOpacityDefault) \
@@ -507,6 +541,7 @@ GROUP(UI, \
 				GROUP(Debug, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, false) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowFrameRate, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DelayWaitingOperations, false) \
 				) \
 				GROUP(EdgeLighting, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
@@ -515,6 +550,12 @@ GROUP(UI, \
 				GROUP(Animation, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, SpeedRate, 1.0) \
+				) \
+				GROUP(StatusIndicator, \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptSlideshow, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SuperTop, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, NewVersion, true) \
 				) \
 			) \
 		) \
@@ -562,6 +603,8 @@ namespace Inkeys
 		Inkeys::Config& operator=(const Inkeys::Config& other);
 
 		bool ReadAll();
+		// 最近一次 ReadAll 读到的原文件是否含该点分路径（区分“键缺失”与“值为默认”，供一次性迁移）。
+		[[nodiscard]] bool ReadAllHasValue(std::string_view dottedPath) const;
 		// 启动准入可只读所选偏好，禁止兼容布局迁移写盘。
 		bool ReadMini(std::initializer_list<std::string_view> paths, bool readOnly = false);
 		bool Write();

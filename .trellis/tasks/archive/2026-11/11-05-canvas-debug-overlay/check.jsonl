@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "Draw3 render thread, dirty-rect and overlay rules, perf constraints"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "Rendering/UI conventions for desktop native layer"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "Contact input pipeline, ContactSnapshot, ingress rules"}
+{"file": ".trellis/spec/native-desktop/palm-eraser.md", "reason": "Palm eraser threshold used for solid/dashed contact box"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "Config ownership, UI3 debug contract, i18n workflow"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Host to DrawingController option plumbing"}
+{"file": ".trellis/spec/native-desktop/canvas-freeze-boundaries.md", "reason": "Freeze toggle pattern and canvas state boundaries"}
+{"file": ".trellis/spec/native-desktop/ui3-render-diagnostics.md", "reason": "Existing frame-rate diagnostics (OneSecondFrameRate) to reuse semantics"}

@@ -138,7 +138,7 @@ namespace Inkeys::UI::StartupPreview::Drawing
 		double ratio, float opacity, bool failed, bool light = false)
 	{
 		// 生产和离屏验证共用模式选择，避免测试重新实现另一份分支。
-		return placement == StartupPlacement::CenteredBottomBar
+		return !StartupPlacementIsFolded(placement)
 			? DrawLinear(context, track, fill, width, height, scale, ratio, opacity, failed, light)
 			: DrawRing(context, ringStroke, track, fill,
 				D2D1::Point2F(width * .5f, height * .5f), scale, ratio, opacity, failed, light);

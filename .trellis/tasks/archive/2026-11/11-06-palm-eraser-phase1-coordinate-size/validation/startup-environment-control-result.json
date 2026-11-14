@@ -1,0 +1,10 @@
+{
+  "exitCode": 0,
+  "arguments": [
+    "--no-window",
+    "--startup-preview-only"
+  ],
+  "sha256": "8DEF299F61EF2DB92C45BF23AB66565A40A82CAA46E8733B51D87121768D7990",
+  "stdout": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-06-palm-eraser-phase1-coordinate-size\\validation\\startup-environment-control.stdout.log",
+  "stderr": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-06-palm-eraser-phase1-coordinate-size\\validation\\startup-environment-control.stderr.log"
+}

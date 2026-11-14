@@ -1,0 +1,3 @@
+[Draw3TouchDiscardIdentity] PASS: captured key survives Up/Cancel and same-slot reuse
+[Draw3SingleTouchReconnect] PASS: actual match/model handoff and independent-touch rejection
+[Draw3Palm] PASS: CPU promotion, exact ownership, observation admission, deadline and real model continuation; no GPU/HWND

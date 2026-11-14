@@ -1,0 +1,71 @@
+
+  compilation object save succeeded; see D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkPixelShader.cso
+  compilation object save succeeded; see D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkVertexShader.cso
+  compilation object save succeeded; see D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\laserParticleUpdateCS.cso
+  compilation object save succeeded; see D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\laserParticleEmitCS.cso
+  Scanning sources for module dependencies...
+  inkStrokeModelerTest.vcxproj -> D:\Project\Inkeys\Repo\Inkeys\ARM64\Debug\inkStrokeModelerTest.exe
+  Scanning sources for module dependencies...
+  desktop_autosave_tests.cpp
+  presentation_autosave_tests.cpp
+  contact_input_tests.cpp
+  Compiling...
+  desktop_autosave_tests.cpp
+  presentation_autosave_tests.cpp
+  contact_input_tests.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Business\PenWidthPolicy.hpp(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'contact_input_tests.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\variant(863,32):
+      This diagnostic occurred in the compiler generated function 'ink::stroke_model::KalmanPredictorParams::KalmanPredictorParams(void)'
+      D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\contact_input_tests.cpp(854,35):
+      see reference to function 'ink::stroke_model::KalmanPredictorParams::KalmanPredictorParams(void)'
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'contact_input_tests.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\variant(863,32):
+      This diagnostic occurred in the compiler generated function 'ink::stroke_model::KalmanPredictorParams::ConfidenceParams::ConfidenceParams(void)'
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\variant(863,32):
+      see reference to function 'ink::stroke_model::KalmanPredictorParams::ConfidenceParams::ConfidenceParams(void)'
+  
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3505,26): error C2601: 'MakeLifetimeSnapshot': local function definitions are illegal [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3476,1):
+      this line contains a '{' which has not yet been matched
+  
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3517,7): error C2601: 'LifetimeWorkerGate': local function definitions are illegal [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3476,1):
+      this line contains a '{' which has not yet been matched
+  
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3523,7): error C2601: 'TestPresentationSnapshotLifetime': local function definitions are illegal [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3476,1):
+      this line contains a '{' which has not yet been matched
+  
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3593,7): error C2601: 'TestPresentationReplacementLifetime': local function definitions are illegal [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3476,1):
+      this line contains a '{' which has not yet been matched
+  
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3534,28): error C2065: 'LifetimeWorkerGate': undeclared identifier [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3541,47): error C3861: 'MakeLifetimeSnapshot': identifier not found [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3601,27): error C2065: 'LifetimeWorkerGate': undeclared identifier [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3607,45): error C3861: 'MakeLifetimeSnapshot': identifier not found [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3612,46): error C3861: 'MakeLifetimeSnapshot': identifier not found [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3615,46): error C3861: 'MakeLifetimeSnapshot': identifier not found [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3781,2): error C3861: 'TestPresentationSnapshotLifetime': identifier not found [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3782,2): error C3861: 'TestPresentationSnapshotLifetime': identifier not found [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3785,2): error C3861: 'TestPresentationSnapshotLifetime': identifier not found [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3786,2): error C3861: 'TestPresentationReplacementLifetime': identifier not found [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3787,2): error C3861: 'TestPresentationSnapshotLifetime': identifier not found [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]

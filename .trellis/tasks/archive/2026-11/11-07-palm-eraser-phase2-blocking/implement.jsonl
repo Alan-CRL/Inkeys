@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/palm-eraser.md", "reason": "手掌识别、屏蔽、续接合同"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "输入生命周期与 Up/Cancel 合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 约定与最小修改"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "文案与 i18n 流程"}
+{"file": ".trellis/tasks/11-07-palm-eraser-phase2/research/codex-palm-blocking.md", "reason": "现状调查证据"}

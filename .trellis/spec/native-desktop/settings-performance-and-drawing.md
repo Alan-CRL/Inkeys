@@ -126,3 +126,7 @@ Correct：新笔锁存 mode/correction，Reset、全部 Predict 判断及 Finali
 Wrong：点击后再调用CanvasInformation取新快照，或仅复制已换行显示的可见片段。
 
 Correct：绘制与复制复用同一局部完整字符串；只在user点击标准按钮时交给现有ImGui剪贴板接口。
+
+## 白板拖动惯性（多设备漫游）
+
+“绘制 → 通用”在预测设置之后、橡皮组之前新增“白板拖动惯性”，使用现有 ToggleRow + InlineCheckboxes 五类输入。总开关默认开、鼠标/笔尾默认关、触控板/触摸/笔默认开；父关闭收起但保留子偏好，子项可全关。设置Changed及启动经Host同代快照发布，owner应用，只有真实变化唤醒；热禁停对应coast而不取消held跟手，重新开启不复活旧速度。2026-11-12起PTP扩展暂时停用，触控板子项仅保留偏好，不代表当前设备能力；本轮不为停用另改UI或文案。完整字段/线程/输入/验证合同见 [canvas-pan.md](canvas-pan.md)，不要添加重启生效说明或新二级页。

@@ -1,0 +1,86 @@
+{
+  "status": "pass",
+  "fullSuiteSnapshot": {
+    "record": "headless-all-final.result.json",
+    "exitCode": 0,
+    "seconds": 444.156,
+    "sourceFrozenDuringFullSuite": true
+  },
+  "finalSpecialtyRecord": "check-delivery-verification.json",
+  "changedSinceFullSuite": {
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": {
+      "fullSuite": "4eb6c0bcf2ff6f56c91f95632e3ff94170040e8f8325df36e096f53c9cd29037",
+      "final": "da3939dca085acc22f39569e9b94a338fd609f18d07c05a3a2f8e540637a9a40"
+    },
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": {
+      "fullSuite": "75e0e59e2569401157d5ffbec87cd2f91d44c445539d5bc1af4f0f274f30c57b",
+      "final": "f7084e6f9ec254cac9552623beb052302a1737a698f3be38ea89d000647ea02d"
+    },
+    "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": {
+      "fullSuite": "8f7b2b3f739a41e077c6e25558fbf1270a19dc16ecc873636abb81da3568e266",
+      "final": "b1270087bf41f67d4f19b737307365e5b75153cbfa0ae5b50f83bb706041dd05"
+    }
+  },
+  "unchangedSources": 6,
+  "reuseReason": "Only Touch core two followups, their existing canvas regressions and production pan-feel assertion sampling boundary changed. Final complete solution and all affected five specialties passed. Unrelated full headless module results reused; final byte snapshot was not rerun through all WARP/settings tests.",
+  "format": {
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": {
+      "utf8": true,
+      "bomPreserved": true,
+      "allCrlf": true,
+      "sha256": "da3939dca085acc22f39569e9b94a338fd609f18d07c05a3a2f8e540637a9a40"
+    },
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": {
+      "utf8": true,
+      "bomPreserved": true,
+      "allCrlf": true,
+      "sha256": "97a4893e61ed811640977d062578d5ac046b063d278a7940bb615dea3498c97c"
+    },
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": {
+      "utf8": true,
+      "bomPreserved": true,
+      "allCrlf": true,
+      "sha256": "f7084e6f9ec254cac9552623beb052302a1737a698f3be38ea89d000647ea02d"
+    },
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cpp": {
+      "utf8": true,
+      "bomPreserved": true,
+      "allCrlf": true,
+      "sha256": "63b8f74be50de9a2dbc0814cef4f38cfc51d66d48f76bcfab4dd9444a8c6a56c"
+    },
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": {
+      "utf8": true,
+      "bomPreserved": true,
+      "allCrlf": true,
+      "sha256": "d093f41aa8a901cd33ada5e9770c9eaff473e5c8cde65d2d2e874c0c71581579"
+    },
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.RealtimeStylus.cpp": {
+      "utf8": true,
+      "bomPreserved": true,
+      "allCrlf": true,
+      "sha256": "88d8a8c4429ae75b480de38b685f5ba875a20c1f6331afd86713fd618456a105"
+    },
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": {
+      "utf8": true,
+      "bomPreserved": true,
+      "allCrlf": true,
+      "sha256": "d304f799402735be1afaf54ed84259a6209ff234041581e4a17f964c31fa634a"
+    },
+    "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": {
+      "utf8": true,
+      "bomPreserved": true,
+      "allCrlf": true,
+      "sha256": "b1270087bf41f67d4f19b737307365e5b75153cbfa0ae5b50f83bb706041dd05"
+    },
+    "InkeysHeadlessTests/draw3_contact_tests.cpp": {
+      "utf8": true,
+      "bomPreserved": true,
+      "allCrlf": true,
+      "sha256": "fe6a17e8b4a89a994a670330096d719060843ced4e05e537b82ba1adafc82d7d"
+    }
+  },
+  "diffEvidence": [
+    "check-followups.diff",
+    "check-feel-scroll-boundary.diff"
+  ]
+}

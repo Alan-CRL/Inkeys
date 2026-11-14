@@ -1,0 +1,8 @@
+{
+  "exitCode": 0,
+  "startedUtc": "2026-11-04T16:27:10.943129+00:00",
+  "endedUtc": "2026-11-04T16:27:33.4178316+00:00",
+  "budgetSeconds": 1200,
+  "msbuild": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+  "configuration": "Debug|ARM64"
+}

@@ -1584,7 +1584,7 @@ namespace Inkeys::Drawing::Draw3
 				completion.status = PresentationPersistenceStatus::SourceChanged;
 				return completion;
 			}
-			const auto imported = ImportApplicationOwnedPresentation(*read.document,
+			auto imported = ImportApplicationOwnedPresentation(*read.document,
 				MakeExpectation(*found, request.target));
 			const auto indexedWorkspaceGuid = ParseUInkGuid(found->workspaceGuid);
 			if (!imported.snapshot || !indexedWorkspaceGuid ||
@@ -1593,7 +1593,8 @@ namespace Inkeys::Drawing::Draw3
 				completion.status = PresentationPersistenceStatus::Invalid;
 				return completion;
 			}
-			Draw3UInkExportSnapshot projected = *imported.snapshot;
+			// 校验后接管独占的导入快照，后续区间投影不再需要导入结果。
+			Draw3UInkExportSnapshot projected = std::move(*imported.snapshot);
 			if (request.kind == PresentationLoadKind::PreviousInterval)
 			{
 				if (!request.pageGuid)

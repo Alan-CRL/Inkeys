@@ -1,0 +1,4 @@
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"配置持久化与国际化生成合同"}
+{"file":".trellis/spec/native-desktop/startup-preview.md","reason":"复用慢速成功入口并保持失败注入独立"}
+{"file":".trellis/spec/native-desktop/whiteboard.md","reason":"白板翻页与真实呈现及取消边界"}
+{"file":".trellis/spec/ppt-interop/native-session-ui3.md","reason":"PPT 导航等待及会话隔离合同"}

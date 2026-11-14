@@ -1,0 +1,41 @@
+{
+  "id": "restart-shutdown-investigation",
+  "name": "restart-shutdown-investigation",
+  "title": "重启交接与设置退出竞态修复收尾",
+  "description": "回溯记录普通重启提前交接、已知更新等待、设置关停竞态修复与关闭采集探针；26轮复测已被用户接受，剩余退出长尾作为后续调查项保留，本次结束归档。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "native-desktop",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-05",
+  "completedAt": "2026-11-05",
+  "branch": "chore/ui",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "407f91951f91c35fdbf35c627a8f8af48d399faf",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "Inkeys/Inkeys/UI/Setting/Setting.cpp",
+    "Inkeys/Inkeys/Helper/ShutdownSupervisor.cpp",
+    "Inkeys/Launch/IdtSingleInstance.h",
+    "Scripts/Start-ShutdownDiagnostic.ps1",
+    "Scripts/Start-ShutdownDiagnostic.cmd"
+  ],
+  "notes": "用户接受当前修复及26轮复测并要求结束归档。探针保留且默认关闭；PPT/窗口/main后长尾明确延后，未宣称全部解决。事后补录，不归档其他历史任务。",
+  "meta": {
+    "retrospective_record": true,
+    "validation_result": "build_headless_and_user26_passed",
+    "completion_scope": "accepted_fixes_with_explicit_deferred_tail",
+    "probe_retained_default_off": true,
+    "work_commits": [
+      "1b0db5fc56a55610677a6838eef7670b1fc06daa",
+      "407f91951f91c35fdbf35c627a8f8af48d399faf"
+    ]
+  }
+}

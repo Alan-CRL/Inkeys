@@ -9,7 +9,6 @@
 
 namespace { std::string uiDiagnosticText; bool uiDiagnosticProviderReadable=false; }
 #include "../Inkeys/Inkeys/UI/Bar/Bar.Haptics.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.BusyRing.h"
 #include "../Inkeys/Inkeys/Window/Window.MessageDispatch.h"
 
 #include <iostream>
@@ -775,17 +774,6 @@ namespace
             fake.ok = TRUE;
             RoutedTouch::Testing::SetPointerQuery(nullptr);
             FakePointer::Current() = nullptr;
-        }
-        {
-            // 白板翻页转圈：短暂切换不闪烁，超过延迟才可见；角度只由已用时间推导。
-            namespace Bar = Inkeys::UI::Bar;
-            check(!Bar::BusyRingVisible(true, 0.0) && !Bar::BusyRingVisible(true, 0.29) && Bar::BusyRingVisible(true, 0.30) && Bar::BusyRingVisible(true, 5.0),
-                "Busy ring waits for the delay before showing during a whiteboard page switch");
-            check(!Bar::BusyRingVisible(false, 5.0), "Busy ring is never shown when the switch is not in progress");
-            check(Bar::BusyRingAngleDegrees(-1.0) == 0.0 && Bar::BusyRingAngleDegrees(0.0) == 0.0
-                && std::abs(Bar::BusyRingAngleDegrees(Bar::BusyRingPeriodSeconds / 4) - 90.0) < 1e-9
-                && std::abs(Bar::BusyRingAngleDegrees(Bar::BusyRingPeriodSeconds * 3 + Bar::BusyRingPeriodSeconds / 2) - 180.0) < 1e-6,
-                "Busy ring angle is derived from elapsed time and wraps every period");
         }
         return failures;
     }

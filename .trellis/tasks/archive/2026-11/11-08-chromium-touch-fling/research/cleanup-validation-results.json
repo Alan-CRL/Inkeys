@@ -1,0 +1,209 @@
+{
+  "date": "2026-11-13",
+  "baseline": {
+    "head": "241f1f44d23175e05fc1da4ecd1e29da67722414",
+    "exit_code": 0,
+    "seconds": 2.703,
+    "exe_sha256": "f12e5853586cd0be65f128b9b0df57d0151fe749fe797daa87e692bc4d0dd339",
+    "output_sha256": "c3c3e6975bac0b8998c98a291a72f71e823bf708b8a1e01701238df01e67d9df",
+    "scenario_rows": 2240
+  },
+  "build_attempts": [
+    {
+      "command": [
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\InkeysRepo.sln",
+        "/p:Configuration=Debug",
+        "/p:Platform=ARM64",
+        "/m:1",
+        "/nr:false",
+        "/nologo"
+      ],
+      "timeout_seconds": 1800,
+      "status": "completed",
+      "exit_code": 1,
+      "seconds": 65.297,
+      "source_sha256": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "3a323bbb02a9b8caa69b7d4eabdd660ac02e66b9573b1cf171213cbc81010ed6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "0ba3616c8a5ac4b4333eb2d83511985c23e2fffbed7f71f943ed9ecdea16e94e",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "6be3af11eb959c677c97c0a0028c5dc651962851cb4fb54b59d08663e679148a"
+      },
+      "source_unchanged_during_build": true,
+      "log": "Build\\Logs\\pan-cleanup-2026-11-13\\build.log"
+    },
+    {
+      "command": [
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\InkeysRepo.sln",
+        "/p:Configuration=Debug",
+        "/p:Platform=ARM64",
+        "/m:1",
+        "/nr:false",
+        "/nologo"
+      ],
+      "timeout_seconds": 1800,
+      "execution": "host environment; same toolchain/source/config as sandbox attempt",
+      "status": "completed",
+      "exit_code": 1,
+      "seconds": 13.297,
+      "source_sha256": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "3a323bbb02a9b8caa69b7d4eabdd660ac02e66b9573b1cf171213cbc81010ed6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "0ba3616c8a5ac4b4333eb2d83511985c23e2fffbed7f71f943ed9ecdea16e94e",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "6be3af11eb959c677c97c0a0028c5dc651962851cb4fb54b59d08663e679148a"
+      },
+      "source_unchanged_during_build": true,
+      "log": "Build\\Logs\\pan-cleanup-2026-11-13\\build-host.log"
+    },
+    {
+      "command": [
+        "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\InkeysRepo.sln",
+        "/p:Configuration=Debug",
+        "/p:Platform=ARM64",
+        "/p:OutDir=D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanCleanupValidation\\",
+        "/m:1",
+        "/nr:false",
+        "/nologo"
+      ],
+      "timeout_seconds": 1800,
+      "execution": "host environment; only command-line output directory changed",
+      "validation_dir": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanCleanupValidation",
+      "status": "completed",
+      "exit_code": 0,
+      "seconds": 51.156,
+      "source_sha256": {
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "3a323bbb02a9b8caa69b7d4eabdd660ac02e66b9573b1cf171213cbc81010ed6",
+        "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "0ba3616c8a5ac4b4333eb2d83511985c23e2fffbed7f71f943ed9ecdea16e94e",
+        "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "6be3af11eb959c677c97c0a0028c5dc651962851cb4fb54b59d08663e679148a"
+      },
+      "source_unchanged_during_build": true,
+      "log": "Build\\Logs\\pan-cleanup-2026-11-13\\build-validation-output.log"
+    }
+  ],
+  "static": {
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": {
+      "sha256": "3a323bbb02a9b8caa69b7d4eabdd660ac02e66b9573b1cf171213cbc81010ed6",
+      "bom": true,
+      "crlf": true
+    },
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": {
+      "sha256": "0ba3616c8a5ac4b4333eb2d83511985c23e2fffbed7f71f943ed9ecdea16e94e",
+      "bom": true,
+      "crlf": true
+    },
+    "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": {
+      "sha256": "6be3af11eb959c677c97c0a0028c5dc651962851cb4fb54b59d08663e679148a",
+      "bom": true,
+      "crlf": true
+    },
+    "retained_constants_unchanged": 26
+  },
+  "tests": [
+    {
+      "name": "headless-pan",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanCleanupValidation\\InkeysHeadlessTests.exe",
+        "--no-window",
+        "--canvas-pan-only"
+      ],
+      "timeout_seconds": 180,
+      "status": "completed",
+      "exit_code": 0,
+      "seconds": 1.406,
+      "exe_sha256": "c0de110523506eb361604b18b7ccaf7091757d9f12dfb503d238203b40da3617",
+      "stdout_sha256": "0d31370fc7b2723a40e832c9719d68b0d8a9577be46abd61b508db213134ccdb",
+      "log": "Build\\Logs\\pan-cleanup-2026-11-13\\headless-pan.log"
+    },
+    {
+      "name": "control-fence",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanCleanupValidation\\Inkeys.exe",
+        "--draw3-control-fence-test"
+      ],
+      "timeout_seconds": 180,
+      "status": "completed",
+      "exit_code": 0,
+      "seconds": 2.063,
+      "exe_sha256": "1ebeadc363f26fb1ecd23aaa62c92739316e88ecf44cf00c731f652fe0ef94d5",
+      "stdout_sha256": "fd17f1e56f828625eb9f194d6c5646b20b9383b5052b568061c6241feb92a96b",
+      "log": "Build\\Logs\\pan-cleanup-2026-11-13\\control-fence.log"
+    },
+    {
+      "name": "pan-feel",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanCleanupValidation\\Inkeys.exe",
+        "--draw3-canvas-pan-feel-test"
+      ],
+      "timeout_seconds": 180,
+      "status": "completed",
+      "exit_code": 0,
+      "seconds": 2.406,
+      "exe_sha256": "1ebeadc363f26fb1ecd23aaa62c92739316e88ecf44cf00c731f652fe0ef94d5",
+      "stdout_sha256": "c3c3e6975bac0b8998c98a291a72f71e823bf708b8a1e01701238df01e67d9df",
+      "log": "Build\\Logs\\pan-cleanup-2026-11-13\\pan-feel.log",
+      "baseline_scenario_rows": 2240,
+      "after_scenario_rows": 2240,
+      "all_scenario_rows_identical": true,
+      "entire_stdout_identical": true
+    },
+    {
+      "name": "config-boundary",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanCleanupValidation\\Inkeys.exe",
+        "--config-boundary-test"
+      ],
+      "timeout_seconds": 180,
+      "status": "completed",
+      "exit_code": 0,
+      "seconds": 2.14,
+      "exe_sha256": "1ebeadc363f26fb1ecd23aaa62c92739316e88ecf44cf00c731f652fe0ef94d5",
+      "stdout_sha256": "b19713cdb4bbde5d028df04698187c9204424df04ab99cbfe5bac30c8b0a0216",
+      "log": "Build\\Logs\\pan-cleanup-2026-11-13\\config-boundary.log"
+    },
+    {
+      "name": "setting-general",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanCleanupValidation\\InkeysHeadlessTests.exe",
+        "--no-window",
+        "--setting-general-only"
+      ],
+      "timeout_seconds": 180,
+      "status": "completed",
+      "exit_code": 0,
+      "seconds": 35.734,
+      "exe_sha256": "c0de110523506eb361604b18b7ccaf7091757d9f12dfb503d238203b40da3617",
+      "stdout_sha256": "7b97a1f528b354f173efbdc31d3f15c31454671fbdaf3713d46ca9f0bd244e51",
+      "log": "Build\\Logs\\pan-cleanup-2026-11-13\\setting-general.log"
+    },
+    {
+      "name": "diagnostic-output",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanCleanupValidation\\Inkeys.exe",
+        "--draw3-diagnostic-output-test"
+      ],
+      "timeout_seconds": 180,
+      "status": "completed",
+      "exit_code": 0,
+      "seconds": 1.813,
+      "exe_sha256": "1ebeadc363f26fb1ecd23aaa62c92739316e88ecf44cf00c731f652fe0ef94d5",
+      "stdout_sha256": "514e054a9787805555f0ae597cfff1c64781290f8fdfc669728d5ae973892389",
+      "log": "Build\\Logs\\pan-cleanup-2026-11-13\\diagnostic-output.log"
+    },
+    {
+      "name": "headless-all",
+      "command": [
+        "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanCleanupValidation\\InkeysHeadlessTests.exe",
+        "--no-window"
+      ],
+      "timeout_seconds": 1200,
+      "status": "completed",
+      "exit_code": 0,
+      "seconds": 498.469,
+      "exe_sha256": "c0de110523506eb361604b18b7ccaf7091757d9f12dfb503d238203b40da3617",
+      "stdout_sha256": "f8a2c092ecfc12a4eb5216392cf799974fb20e7881d195c5216da6425877f832",
+      "log": "Build\\Logs\\pan-cleanup-2026-11-13\\headless-all.log"
+    }
+  ],
+  "review": "Independent trellis-check: no definite defect or blocker; no changes by reviewer.",
+  "scope": "Current accepted hand feel unchanged; physical scale and PTP deferred; no GUI/push."
+}

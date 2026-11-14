@@ -15,12 +15,15 @@
 - [bar-icons.md](bar-icons.md)：Bar SVG 图标设计语言、占位色着色、专属资源映射与 lint/预览流程。
 - [setting-motion.md](setting-motion.md)：Setting页面入场、条件块、稳定正文轨道、开屏标题栏及resize/材质连续性。
 - [whiteboard.md](whiteboard.md)：白板初版菜单、每页主题、UInk分页存储与底栏恢复合同。
+- [canvas-pan.md](canvas-pan.md)：白板导航事件顺序、可靠释放、向量惯性与独立诊断开关。
+- [canvas-pan-release-quality.md](canvas-pan-release-quality.md)：释放支持、Touch空间进展/停止年龄、boost与呈现速度分工。
 - [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。
 - [input-and-ink.md](input-and-ink.md)：RTS、鼠标归一化、多点触控、墨迹合成和历史记录。
 - [ui-pointer-session.md](ui-pointer-session.md)：Bar/PPT 私有 Raw Mouse、WM_TOUCH 来源会话、窗口外拖动与取消合同。
 - [mouse-hook-and-autocollapse.md](mouse-hook-and-autocollapse.md)：有界鼠标 Hook、PPT 滚轮业务入口与独立 Inkeys3 自动收起策略。
 - [keyboard-shortcuts.md](keyboard-shortcuts.md)：固定快捷键、按压归属、启动同步、条件画布命令与清空选择事务。
 - [desktop-shortcuts.md](desktop-shortcuts.md)：桌面快捷方式名称、双开关保障、main.json 配置与设置 FIFO 合同。
+- [memory-resource-lifecycle.md](memory-resource-lifecycle.md)：Setting图片配方、Laser按工具持有、辅助ULW隐藏回执及Freeze/白板/隐藏UI资源退役合同。
 - [errors-logging-and-resources.md](errors-logging-and-resources.md)：错误传播、日志、COM/DirectX/Win32 资源生命周期。
 - [canvas-freeze-boundaries.md](canvas-freeze-boundaries.md)：Draw3 标准流隔离、PPT IoError 有限重试、橡皮 idle Move 握手与 Setting 隐藏输入会话。
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、二十语言映射、菜单排序与热切换、国际化生成链及字体资源归属。

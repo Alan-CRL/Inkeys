@@ -1,0 +1,14 @@
+[Draw3CursorPixels] shader=production dpi=96 appearance=(13.00,19.50) hotspot=(8.0,8.0) bbox=(8,8,21,28) visible=(13,20) count=128 no_hwnd=1
+[Draw3CursorPixels] shader=production dpi=144 appearance=(19.50,29.25) hotspot=(8.0,8.0) bbox=(8,8,27,38) visible=(19,30) count=276 no_hwnd=1
+[Draw3CursorEdge] shader=production dpi=192 edge_bgra=(0,0,0,255) fill_bgra=(255,255,255,255) no_hwnd=1
+[Draw3CursorPixels] shader=production dpi=192 appearance=(26.00,39.00) hotspot=(8.0,8.0) bbox=(8,8,33,47) visible=(25,39) count=469 no_hwnd=1
+[Draw3CursorPixels] shader=production dpi=264 appearance=(35.75,53.62) hotspot=(8.0,8.0) bbox=(8,8,42,62) visible=(34,54) count=875 no_hwnd=1
+[Draw3CursorPixels] shader=guarded dpi=96 appearance=(13.00,19.50) hotspot=(8.0,8.0) bbox=(8,8,21,28) visible=(13,20) count=128 no_hwnd=1
+[Draw3CursorPixels] shader=guarded dpi=144 appearance=(19.50,29.25) hotspot=(8.0,8.0) bbox=(8,8,27,38) visible=(19,30) count=276 no_hwnd=1
+[Draw3CursorEdge] shader=guarded dpi=192 edge_bgra=(0,0,0,255) fill_bgra=(255,255,255,255) no_hwnd=1
+[Draw3CursorPixels] shader=guarded dpi=192 appearance=(26.00,39.00) hotspot=(8.0,8.0) bbox=(8,8,33,47) visible=(25,39) count=469 no_hwnd=1
+[Draw3CursorPixels] shader=guarded dpi=264 appearance=(35.75,53.62) hotspot=(8.0,8.0) bbox=(8,8,42,62) visible=(34,54) count=875 no_hwnd=1
+[Draw3Upload] mode=dynamic_discard completed
+[Draw3Upload] mode=dynamic_append completed
+[Draw3Upload] mode=DEFAULT completed
+[Draw3Upload] PASS failures=0 no_hwnd=1 no_swapchain=1

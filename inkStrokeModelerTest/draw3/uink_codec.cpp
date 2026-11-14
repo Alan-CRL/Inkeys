@@ -1334,6 +1334,20 @@ namespace draw3::uink
 			return true;
 		}
 
+		bool DecodeInkeysInkPrivateFields(const msgpack::object& object, UInkInk& ink,
+			DecodeContext& context)
+		{
+			// UInk 1.1 升为官方字段；旧 DecodeInk 不解释此同层私有键。
+			if (!ValidateMap(object, { "inkeysEraserShape" }, context, "ink")) return false;
+			const auto* field = FindField(object, "inkeysEraserShape");
+			if (!field) return true;
+			uint32_t shape = 0;
+			if (!ReadUInt32(*field, shape, context, "ink.inkeysEraserShape") ||
+				shape > 2 || ink.effectiveKind != UInkInkKind::Erase) return false;
+			ink.eraserShape = static_cast<uint8_t>(shape);
+			return true;
+		}
+
 		bool DecodeInkPoint(const msgpack::object& object, UInkInkPoint& point,
 			bool advanced, bool unknownInkType, DecodeContext& context,
 			const std::string& path)
@@ -2396,7 +2410,8 @@ namespace draw3::uink
 		}
 	}
 
-	UInkReadResult DecodeUInk(std::span<const std::byte> bytes, const UInkReadLimits& limits)
+	UInkReadResult DecodeUInk(std::span<const std::byte> bytes, const UInkReadLimits& limits,
+		bool readInkeysPrivateFields)
 	{
 		UInkReadResult result;
 		try
@@ -2678,6 +2693,8 @@ namespace draw3::uink
 					{
 						UInkInk ink;
 						valid = DecodeInk(handle.get(), ink, context);
+						if (valid && readInkeysPrivateFields)
+							valid = DecodeInkeysInkPrivateFields(handle.get(), ink, context);
 						if (valid) valid = appendContent(UInkContent(std::move(ink)));
 					}
 				}

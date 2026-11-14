@@ -1,0 +1,9 @@
+{
+  "exitCode": 1,
+  "startedUtc": "2026-11-05T01:38:47.6538541+00:00",
+  "endedUtc": "2026-11-05T01:39:58.0718868+00:00",
+  "budgetSeconds": 1200,
+  "msbuild": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\arm64\\MSBuild.exe",
+  "solution": "InkeysRepo.sln",
+  "configuration": "Debug|ARM64"
+}

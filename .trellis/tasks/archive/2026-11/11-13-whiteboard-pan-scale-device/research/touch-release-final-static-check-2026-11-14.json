@@ -1,0 +1,18 @@
+{
+  "status": "passed",
+  "finalSourceAndFormatFiles": 9,
+  "linksChecked": 156,
+  "brokenLinks": [],
+  "contexts": {
+    "implement.jsonl": {
+      "total": 119331,
+      "maxFile": 31433
+    },
+    "check.jsonl": {
+      "total": 126869,
+      "maxFile": 31433
+    }
+  },
+  "executableExists": true,
+  "fullSuiteReuseDocumented": true
+}

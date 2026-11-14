@@ -1,0 +1,30 @@
+{
+  "id": "readme-docs-refresh",
+  "name": "readme-docs-refresh",
+  "title": "优化 README 与相关说明文档",
+  "description": "在 dev 分支重写/修正 README（先简体中文，后英文）及编译说明等相关文档",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-09",
+  "completedAt": "2026-11-10",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-09-readme-hero-banner",
+    "11-09-readme-third-party",
+    "11-09-readme-build-guide"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

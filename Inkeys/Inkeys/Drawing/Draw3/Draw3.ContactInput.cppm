@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <memory>
 #include <type_traits>
+#include <vector>
 
 export module Inkeys.Drawing.Draw3.contact_input;
 
@@ -118,6 +119,8 @@ export namespace Inkeys::Drawing::Draw3
 		InputDeviceType DeviceType() const noexcept;
 		const ContactSnapshot& DownSnapshot() const noexcept;
 		uint64_t Generation() const noexcept;
+		uint64_t NavigationEpoch() const noexcept;
+		uint64_t NavigationSequence() const noexcept;
 
 	private:
 		friend struct ContactRecordAccess;
@@ -126,6 +129,7 @@ export namespace Inkeys::Drawing::Draw3
 		IdtAtomic<uint32_t> contactId_;
 		IdtAtomic<uint32_t> deviceType_;
 		ContactSnapshot downSnapshot_ = {};
+		uint64_t navigationEpoch_ = 0, navigationSequence_ = 0; // Down 发布前锁存，生命周期内不变。
 		IdtAtomic<float> x_;
 		IdtAtomic<float> y_;
 		IdtAtomic<float> pressure_;
@@ -152,6 +156,20 @@ export namespace Inkeys::Drawing::Draw3
 		uint64_t generation = 0;
 
 		explicit operator bool() const noexcept { return record != nullptr; }
+	};
+
+	// 导航独立历史保留回调级真样本，绘制仍消费原 latest mailbox。
+	inline constexpr size_t kContactNavigationHistoryCapacity = 2048;
+	struct ContactNavigationEvent
+	{
+		ContactHandle handle;
+		ContactSnapshot snapshot;
+		uint64_t ordinal = 0, downWatermark = 0;
+	};
+	struct ContactNavigationHistoryStatus
+	{
+		uint64_t epoch = 1, published = 0, dropped = 0;
+		size_t pending = 0;
 	};
 
 	// 仅供无窗口测试：在 route 真正进入 Closing 后由测试线程显式放行。
@@ -221,6 +239,9 @@ export namespace Inkeys::Drawing::Draw3
 
 		// 读取 generation 匹配的跨字段一致快照。
 		bool TryReadSnapshot(ContactHandle handle, ContactSnapshot& snapshot) const noexcept;
+		// 仅取 Down 已被唯一消费者出队的连续前缀，不能越过尚未登记的拓扑。
+		ContactNavigationHistoryStatus DrainNavigationHistory(std::vector<ContactNavigationEvent>& events);
+		ContactNavigationHistoryStatus NavigationHistoryStatus() const noexcept;
 		// 绘制线程归还已完成 slot；若 producer 仍在 Closing，则交出 handle 由其终态回收。
 		void Recycle(ContactHandle handle) noexcept;
 		// 被拒收或收尾的 contact 保留物理 route 到终态；Closing 竞态由 producer 延后回收。
@@ -274,7 +295,7 @@ export namespace Inkeys::Drawing::Draw3
 		uint64_t CaptureWakeGeneration() const noexcept;
 		// 等待 generation 变化或帧预算到期；返回 true 表示被输入/控制请求打断。
 		bool WaitForWake(uint64_t observedGeneration, double timeoutMilliseconds) noexcept;
-		// 等到活动帧预算耗尽；期间的输入/控制唤醒只合并状态，不能突破锁帧上限。
+		// 普通 Move 保持锁帧；Down/终态/控制请求提前返回，供消费者及时停止/切换导航。
 		void WaitForFrameDeadline(double timeoutMilliseconds) noexcept;
 		// 指标会话显式启用/关闭输入计数。
 		void EnableDiagnostics(bool enabled) noexcept;

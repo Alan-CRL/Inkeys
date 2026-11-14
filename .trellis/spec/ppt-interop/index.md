@@ -15,7 +15,7 @@
 | `Inkeys/IdtPlug-in.h::PptInfoStateStruct/PptImgStruct` | `【直接确认】` raw 页码及 legacy DibSurface 缓存；后者不再拥有生产页事务 |
 | `Inkeys/IdtDrawpadFacade.cpp` / `Draw3.*` | `【直接确认】` 生产画布入口与文稿/SlideID slot、输入边界、成功呈现；旧 IdtDrawpad.cpp 不参与编译 |
 
-详细 ABI 见 [com-contract.md](com-contract.md)；当前生产会话、位置保存、页码/输入门禁和主栏确认见 [native-session-ui3.md](native-session-ui3.md)。
+详细 ABI、逐级 COM 获取/子先父后释放及 ConsoleOutput.PptCOM 生命周期日志合同见 [com-contract.md](com-contract.md)；当前生产会话、位置保存、页码/输入门禁和主栏确认见 [native-session-ui3.md](native-session-ui3.md)。
 
 ## 当前端到端数据流
 
@@ -57,4 +57,4 @@ IdtMain: COM + activation context + PptCOM.dll
 2. 若改变 `Initialization` 或共享状态，核对 native/C# 整数宽度、地址稳定性、读写同步和退出后解引用。
 3. 若改变绑定/恢复，分别检查 PowerPoint 与 WPS、事件与轮询、busy、放映结束、文档切换和 Office 退出。
 4. 若改变页码语义，追踪 `COM session/descriptor → native target → Draw3 Present → PptInfoStateBuffer → PPT UI commit → input ready`，不能只验证控件文字。
-5. PptCOM 独立生成 DLL/TLB，接口变更时维护者手动同步至 Inkeys，再按 `AGENTS.md` 用完整 `InkeysRepo.sln` 验证 native；静态文档审计不能替代该构建。
+5. **修改 `PptCOM/PptCOM.cs` 或其他托管源码后，即使只改实现也必须先重建 PptCOM，再手动将 `PptCOM/bin/Release/PptCOM.dll` 拷贝到 `Inkeys/PptCOM.dll`。** TLB 变化时同步同次生成的 `PptCOM.tlb`；拷贝后确认 DLL 哈希一致，保留旧时间戳时触发资源重编译，再构建完整 `InkeysRepo.sln` 并核对 EXE 内嵌 DLL 哈希。构建不会自动完成这次拷贝；不能只提交源码或旧随附 DLL。

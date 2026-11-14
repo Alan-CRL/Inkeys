@@ -365,13 +365,14 @@ PumpBridgeState();
 
 - 当前页内容真值唯一来自当前 interval 的 `CanvasRuntimeHistory::LastVisibleItem()`：存在可见 Stroke 时有内容，否则无内容。Pen、Highlighter、Shape 和 Eraser 都算 Stroke 内容；Laser 与 UInk Clear marker 不算；Eraser 即使把视觉画面擦空仍算。
 - DrawingController 在文档初始化、Stored Stroke 成功进入 runtime history、Undo/Redo 成功、Clear 和页面切换后检查内容；跨文档/页槽切换即使 `hasContent` 不变也发布新的 `contentRevision`。Host 必须把 `(hasContent, contentRevision)` 当成完整载荷：任一字段变化都存储、通知 `WaitForContentRevision` 并推进 runtime wake；两者都相同才幂等跳过。每次成功 Present 记录实际目标、输出 revision 和对应内容 revision，Selection 显隐仍要求 `presentedContentRevision == contentRevision`，不得用新呈现版本反向伪造目标。
-- presentation 使用桥接 selectionMode：绘制只显示主 Drawpad；选择/穿透先把最终 backbuffer 全量提交到辅助 ULW，再隐藏主窗并显示辅助窗；选择无内容时只有辅助完整帧 alpha 全零才隐藏两窗。换窗前必须满足请求/就绪 target 与 revision 一致且 `presentedContentRevision == contentRevision`。
+- presentation 使用桥接 selectionMode：绘制只显示主 Drawpad；选择/穿透先把最终 backbuffer 全量提交到辅助 ULW，再隐藏主窗并显示辅助窗；选择无内容时只有辅助完整帧 alpha 全零才隐藏两窗。换窗前必须满足请求/就绪 target 与 revision 一致且 `presentedContentRevision == contentRevision`。白板例外：`SelectionUsesAuxiliaryOutput(selection, workspace) = selection && workspace != Whiteboard`，白板 Selection 即"移动"模式，输出仍是主 Drawpad、Drawpad 不穿透，Touch/鼠标左键 Down 由控制器作为画布平移触点处理（见 [runtime-and-rendering.md](../native/runtime-and-rendering.md#scenario-free-canvas-navigation-and-predictive-recovery)）；上述辅助 ULW 切换只适用于桌面/PPT。
 - Window Service 用批量窗口位置命令确保两窗互斥可见；失败时先隐藏两窗再收敛到唯一目标。主 Drawpad 不得动态切换 `WS_EX_TRANSPARENT`。
 - Bar 仅在“选择+无内容”隐藏 Eraser/Geometry/Recall 等绘制按钮；选择+有内容与其他工具保持完整布局。合并式选择沿现有语义，分离式非选择状态显示“选择(清空)”并在 Clear Accepted 后进入选择；独立 Pierce 仅按[选择与穿透合同](configuration-i18n-and-assets.md#选择与穿透操作模式合同)注入运行时主栏，旧持久化 Pierce ID 与 `penetrate.select` 不恢复。
 - Clear 只在 UInk canonical `Canvas.content` 中是 append-only Type 6 操作；活动 runtime 必须清空 `InkCanvas` Stroke、替换为 fresh history/raster token 并全量清理 GPU/瞬态资源。保存成功后释放 fallback，Undo 到 floor 时再按 Desktop locator 或 PPT page/ordinal 物化最近目标区间；该画布可逐笔撤空，但不能再跨越更早 Clear。
 - Clear 成功后仍分配新的 raster token，丢弃不兼容的热前像、composition GPU cache/维护、恢复计划和 trusted L2，并重置 Laser/粒子/光标/瞬态层后全量透明呈现；CPU history、当前 viewport 和其他页面保留。Undo 隐藏 Clear 并恢复旧 Stroke，Redo 重新显示 Clear 并清空。
 - 清空按钮采用两步语义：有内容时单击只发布 Clear 并保持模式；无内容且非选择时单击进入选择；空页已选择时使用统一 Disable 灰色且不响应。绘制或穿透有内容时双击由第一击已接受的 Clear 资格使第二击直接进入选择，不等待异步内容回报；发布失败时第二击重试 Clear。Clear 不进入 300ms toggle 点击合并。
-- `timeBeginPeriod(1)` 只在进入非选择模式时幂等尝试；回到选择或绘制线程退出时，仅对成功 begin 配对 `timeEndPeriod(1)`。begin 失败后同一次绘制停留不重试，必须离开并重新进入绘制模式。
+- `timeBeginPeriod(1)` 只在进入非选择模式时幂等尝试；回到选择或绘制线程退出时，仅对成功 begin 配对 `timeEndPeriod(1)`。begin 失败后同一次绘制停留不重试，必须离开并重新进入绘制模式。例外：白板移动模式的平移/惯性活动期间（`SelectionReleasesTimerPeriod(selectionMode, canvasPanActive)` 为 false）保持 1 ms 计时器，空闲的 Selection 仍整段释放。
+- 2026-11-08当前产品导航由CanvasPanDynamics持有，ContactInput导航历史与DrawingController统一截面连接；真实尾段估速、向量摩擦和当前残余投影取代阶段1逐字Chromium规则。门禁、笔仲裁、视口/tile/背景不变；见[平移规范](canvas-pan.md)。
 
 ### 4. Validation & Error Matrix
 
@@ -525,3 +526,14 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 - 生产无窗口probe只证明实际共用拒收操作、ContactInputCoordinator/DrainIngressBatch或Host实际准入接缝；私有Run/Service未动态执行部分另做源码审查，不冒充真实Win32/RTS设备/任务栏实测。
 
 - 过渡准入setter绑定真实HostGeneration及请求epoch：旧run的相同数字epoch不能设置或撤销新Host的门。完成只撤自身Pending原因，不能清加载、恢复、停止或fatal原因；最小化Whiteboard继续闭门，恢复使用新视图版本。工具完成凭据读取owner实际appliedProductRevision/appliedTool，不用Bridge已发布revision冒充应用成功。
+
+## 画布调试选项通路（2026-11-05）
+
+- 通路：设置页/启动同步/状态位变化 → `Host::SetCanvasDebugOptions` → `DrawingController::canvasDebugOptions_`（仅绘制线程读取，Host 原子即可，未加 WindowControl 原子）。
+- “可视化模式”位以**进入时的 state-mode revision** 保存：`IsCanvasDebugVisualActive()` = 开关开且该 revision 仍为当前。任何工具/模式切换都会 bump revision 从而自动退出，无需逐个改 `ChangeStateModeTo*`；开关关闭也会清除。
+- 注意：同笔/同形状重复点击会 bump revision 但不走 `SyncDraw3State`，这两条路径需显式 `PublishCanvasDebugOptions()`。
+- 已知限制：绘制设备或笔宽上下文变化也会 bump revision 并静默退出可视化模式，A1 按钮状态下次 Bar 刷新才同步。
+- 可视化与选择/绘制/橡皮/几何/穿透互斥：底层虽借用一个标注工具身份让 Draw3 收到接触，Bar 在可视化期间必须把这些工具按钮显示为未选中（`ApplyMainPresentationLocked`、各 `Update*ButtonStyle`、`PresetHoming`、橡皮属性栏），且它们的点击处理不能把“底层身份 == 当前工具”当作已选中（否则只会展开属性栏而不 bump revision，无法退出）。打开“画布调试”开关会自动进入可视化（`SetCanvasDebugEnabled` → `EnterCanvasDebugVisualLocked`）；启动时已持久化为开启则不自动进入。
+- 实现细节与探测接触合同见 `native/runtime-and-rendering.md` 同名场景。
+- 调试板接触表读取的是绘制线程的 `ContactSnapshot`:`source.kind` → `Src`,`record->TabletContextId()/ContactId()` → `Id`,整体输入通路取自 Host 的 `HostInputMode`(经 `SetCanvasDebugInputMode` 下发,数值 1/2/3 = RTS 扩展/RTS 基础 X/Y/Win32 鼠标)。鼠标兼容通路的 contact 没有 RTS 编号。速度在 Overlay 内由相邻快照测得,不是管线里的估计值。
+- 调试板位置:锚点为“最大板子(全部列、满行数)在画布内居中”的左上角,`left = max(0, (canvasW - capacityW) / 2)`、`top = max(0, (canvasH - capacityH) / 2)`;内容变化只改右端、下端,不要再按当前尺寸居中(否则每次增减行整块板子会跳动并扩大脏区)。输入到上屏延迟在 `Present` 成功且非调试自刷新帧之后用 `OnPresented(QPC)` 结算。

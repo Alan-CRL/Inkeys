@@ -1,0 +1,52 @@
+[
+  {
+    "name": "desktop-autosave",
+    "argument": "--desktop-autosave-only",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.exe",
+    "exe_sha256": "2fdcd9e2ac37ea8201598672657e8196c9d568206fad6ae23d1429ca586af797",
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 2.125,
+    "passed": true
+  },
+  {
+    "name": "presentation-autosave",
+    "argument": "--presentation-autosave-only",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.exe",
+    "exe_sha256": "2fdcd9e2ac37ea8201598672657e8196c9d568206fad6ae23d1429ca586af797",
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 3.25,
+    "passed": true
+  },
+  {
+    "name": "uink-file",
+    "argument": "--uink-file-only",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.exe",
+    "exe_sha256": "2fdcd9e2ac37ea8201598672657e8196c9d568206fad6ae23d1429ca586af797",
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 71.25,
+    "passed": true
+  },
+  {
+    "name": "uink-presentation",
+    "argument": "--uink-presentation-only",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.exe",
+    "exe_sha256": "2fdcd9e2ac37ea8201598672657e8196c9d568206fad6ae23d1429ca586af797",
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.062,
+    "passed": true
+  },
+  {
+    "name": "release-tail-cpu",
+    "argument": "--release-tail-tests-only",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.exe",
+    "exe_sha256": "2fdcd9e2ac37ea8201598672657e8196c9d568206fad6ae23d1429ca586af797",
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.078,
+    "passed": true
+  }
+]

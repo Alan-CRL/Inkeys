@@ -34,6 +34,8 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> startupEnvironmentDiagnosticsEnabled = false;
 		constexpr size_t kCursorDiagnosticCapacity = DiagnosticOutput::RecordCapacity;
 		std::atomic<bool> cursorDiagnosticsEnabled = false;
+		std::atomic<bool> canvasPanDiagnosticsEnabled = false;
+		std::atomic<uint64_t> canvasPanDiagnosticSequence = 0;
 		std::atomic<uint64_t> cursorDiagnosticSequence = 0;
 
 		void WriteFastConsoleLine(const char* text, DWORD length)
@@ -811,31 +813,54 @@ namespace Inkeys::Drawing::Draw3
 #endif
 	}
 
+	void SetCanvasPanDiagnosticsEnabled(bool enabled) noexcept
+	{
+		if (canvasPanDiagnosticsEnabled.exchange(enabled, std::memory_order_acq_rel) == enabled) return;
+		const DWORD previousError = GetLastError();
+		if (enabled)
+		{
+			LARGE_INTEGER frequency{};
+			QueryPerformanceFrequency(&frequency);
+			LogCanvasPan("enabled schema=1 qpc-frequency=%lld capacity=%zu timestamp=callback-arrival unit=DIP build=%s-%s",
+				frequency.QuadPart, DiagnosticOutput::RecordCapacity, __DATE__, __TIME__);
+		}
+		else DiagnosticOutput::Text(DiagnosticOutput::Stream::Output, "[CanvasPan] disabled\r\n", true);
+		SetLastError(previousError);
+	}
+
+	bool CanvasPanDiagnosticsEnabled() noexcept
+	{
+		return canvasPanDiagnosticsEnabled.load(std::memory_order_acquire) &&
+			DiagnosticOutput::Available(DiagnosticOutput::Stream::Output, true);
+	}
+
 	void LogCanvasPan(const char* format, ...) noexcept
 	{
-	#if defined(DRAW3_RTS_DIAGNOSTICS)
-		if (!rtsTraceEnabled.load(std::memory_order_acquire)) return;
-		if (!format) return;
-		char buffer[768] = {};
-		constexpr char prefix[] = "[CanvasPan] ";
-		std::memcpy(buffer, prefix, sizeof(prefix) - 1);
+		// 产品独立开关：关闭或无输出端时不取时钟、不格式化，也不依赖旧RTS编译宏。
+		if (!format || !CanvasPanDiagnosticsEnabled()) return;
+		const DWORD previousError = GetLastError();
+		LARGE_INTEGER now{};
+		QueryPerformanceCounter(&now);
+		char buffer[DiagnosticOutput::TextCapacity] = {};
+		const int prefix = std::snprintf(buffer, sizeof(buffer), "[CanvasPan] seq=%llu qpc=%lld tid=%lu ",
+			static_cast<unsigned long long>(canvasPanDiagnosticSequence.fetch_add(1, std::memory_order_relaxed) + 1),
+			now.QuadPart, static_cast<unsigned long>(GetCurrentThreadId()));
+		if (prefix <= 0 || static_cast<size_t>(prefix) >= sizeof(buffer) - 3)
+		{ SetLastError(previousError); return; }
+		const size_t prefixLength = static_cast<size_t>(prefix);
+		const size_t bodyCapacity = sizeof(buffer) - prefixLength - 3;
 		va_list arguments;
 		va_start(arguments, format);
-		constexpr size_t prefixLength = sizeof(prefix) - 1;
-		constexpr size_t bodyCapacity = sizeof(buffer) - prefixLength - 3;
 		const int bodyLength = std::vsnprintf(buffer + prefixLength,
 			bodyCapacity + 1, format, arguments);
 		va_end(arguments);
-		if (bodyLength < 0) return;
-		const size_t used = prefixLength + (std::min)(
-			bodyCapacity, static_cast<size_t>(bodyLength));
-		buffer[used] = '\r';
-		buffer[used + 1] = '\n';
-		buffer[used + 2] = '\0';
-		DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, buffer, used + 2, true);
-	#else
-		(void)format;
-	#endif
+		if (bodyLength < 0) { SetLastError(previousError); return; }
+		const size_t used = prefixLength + (std::min)(bodyCapacity, static_cast<size_t>(bodyLength));
+		buffer[used] = '\r'; buffer[used + 1] = '\n'; buffer[used + 2] = '\0';
+		// 保留真实截断信号，复用输出器的[truncated]与丢弃统计，不静默截短记录。
+		DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, buffer,
+			static_cast<size_t>(bodyLength) > bodyCapacity ? sizeof(buffer) : used + 2, true);
+		SetLastError(previousError);
 	}
 
 	void LogHResult(const char* step, HRESULT result)

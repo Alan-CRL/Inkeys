@@ -1,0 +1,50 @@
+[
+  {
+    "name": "parked-desktop-exit",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-parked-desktop-exit-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.813,
+    "passed": true
+  },
+  {
+    "name": "parked-ppt-retained",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-parked-ppt-retained-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.094,
+    "passed": true
+  },
+  {
+    "name": "loaded-retained-install",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-loaded-retained-install-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 0.078,
+    "passed": true
+  },
+  {
+    "name": "whiteboard-storage",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-whiteboard-storage-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 56.547,
+    "passed": true
+  }
+]

@@ -1,0 +1,1164 @@
+
+  Scanning sources for module dependencies...
+  RenderPipeline.cppm
+  Whiteboard.cpp
+  PageControl.cpp
+  Ppt.cppm
+  imgui_impl_dx11.cpp
+  MessageBox.Window.cpp
+  Window.Legacy.cpp
+  Ppt.cpp
+  Window.cppm
+  PageControl.cppm
+  Window.cpp
+  RenderPipeline.cpp
+  IdtConfiguration.cpp
+  IdtFreezeFrame.cpp
+  IdtDrawpadFacade.cpp
+  IdtState.cpp
+  IdtI18n.cpp
+  Bar.Button.cppm
+  IdtPlug-in.cpp
+  Bar.Animation.cppm
+  IdtStart.cpp
+  Bar.ToggleClickCoalescer.cppm
+  Helper.CrashHandler.cpp
+  Bar.Button.cpp
+  Bar.Scene.cppm
+  Bar.Scene.cpp
+  Bar.Initialization.cpp
+  Bar.Interaction.cpp
+  IdtMain.cpp
+  Bar.MultiTarget.Test.cpp
+  Bar.Layout.cppm
+  Bar.EraserAttribute.cpp
+  Bar.EraserAttribute.Test.cpp
+  Bar.RecallAttribute.cpp
+  Bar.Main.cppm
+  Bar.Main.cpp
+  Bar.Rendering.cppm
+  Bar.Rendering.cpp
+  Bar.State.cpp
+  Bar.Presentation.Test.cpp
+  Bar.RenderLoop.cpp
+  Bar.UI.cppm
+  Bar.UI.cpp
+  Setting.Shell.cpp
+  Setting.cpp
+  Setting.Pages.cpp
+  Setting.EraserDemoGpu.cpp
+  uink_draw3_export.cppm
+  uink_draw3_export.cpp
+  uink_draw3_import.cpp
+  Draw3.AutoSave.cpp
+  uink_draw3_import.cppm
+  Draw3.AutoSave.cppm
+  Draw3.PresentationAutoSave.cpp
+  Draw3.PresentationAutoSave.cppm
+  Draw3.DrawingController.cpp
+  Draw3.DrawingController.cppm
+  Draw3.InkDocument.cpp
+  Draw3.TransparentPresentation.cpp
+  Draw3.InkHistory.cppm
+  Draw3.StrokeGeometry.cpp
+  Draw3.Renderer.cppm
+  Draw3.InkDocument.cppm
+  Draw3.RuntimeMetrics.cpp
+  Draw3.WindowControl.cpp
+  Draw3.WindowControl.cppm
+  Draw3.InkHistory.cpp
+  Draw3.Renderer.cpp
+  Draw3.Bridge.cpp
+  Draw3.HiddenWindowTest.cpp
+  Draw3.FailedCleanupFixture.cpp
+  Draw3.Host.cpp
+  Draw3.Presentation.cpp
+  PptSession.cpp
+  Draw3.Product.cpp
+  Compiling...
+  RenderPipeline.cppm
+  Window.cppm
+  MessageBox.Window.cpp
+  IdtI18n.cpp
+  Bar.Animation.cppm
+  IdtDrawpadFacade.cpp
+  IdtConfiguration.cpp
+  imgui_impl_dx11.cpp
+  IdtStart.cpp
+  Setting.Pages.cpp
+  Ppt.cppm
+  Bar.ToggleClickCoalescer.cppm
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\MessageBox\MessageBox.Window.cpp(482,40): warning C4838: conversion from 'int' to 'const UINT' requires a narrowing conversion [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\MessageBox\MessageBox.Window.cpp(483,14): warning C4838: conversion from 'int' to 'const UINT' requires a narrowing conversion [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  Setting.EraserDemoGpu.cpp
+  Setting.Shell.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDrawpadFacade.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDrawpadFacade.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtDrawpadFacade.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtStart.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtStart.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtStart.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtConfiguration.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtConfiguration.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtConfiguration.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtI18n.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtI18n.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtI18n.cpp')
+  
+  uink_draw3_export.cppm
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Pages.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Pages.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Pages.cpp')
+  
+  Draw3.InkDocument.cppm
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Shell.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Shell.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Shell.cpp')
+  
+  Draw3.Renderer.cppm
+  Draw3.Bridge.cpp
+  Draw3.Presentation.cpp
+  PptSession.cpp
+  Draw3.Product.cpp
+  Window.cpp
+  RenderPipeline.cpp
+  StartupPreview.cpp
+  PageControl.cppm
+  IdtFreezeFrame.cpp
+  Ui3PresentationFixtureAuth.cpp
+  Helper.CrashHandler.cppm
+  IdtMagnification.cpp
+  Bar.Animation.cpp
+  Bar.EraserAttributeMotion.cppm
+  uink_draw3_export.cpp
+  Bar.UI.cppm
+  Bar.Scene.cppm
+  uink_draw3_import.cppm
+  Setting.Base.cppm
+  Draw3.WhiteboardStore.cppm
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtFreezeFrame.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtFreezeFrame.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtFreezeFrame.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.CrashHandler.cppm')
+  
+  (compiling source file 'IdtMagnification.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.CrashHandler.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.CrashHandler.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMagnification.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMagnification.cpp')
+  
+  Draw3.InkHistory.cppm
+  Draw3.InkDocument.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cppm')
+  
+  Draw3.InkPrediction.cppm
+  Draw3.RendererLaser.cpp
+  Draw3.Renderer.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Base.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Base.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Base.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.Renderer.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.Renderer.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.Renderer.cpp')
+  
+  Draw3.RendererPrimitives.cpp
+  Draw3.RendererSnapshot.cpp
+  Draw3.TransparentPresentation.cppm
+  MouseHook.cpp
+  Window.Legacy.cpp
+  Bar.Layout.cppm
+  Helper.CrashHandler.cpp
+  Bar.RecallAttributeMotion.cppm
+  Bar.Button.cppm
+  Bar.RenderingAttribute.cppm
+  ShutdownSupervisor.cpp
+  Setting.Widgets.cppm
+  uink_draw3_import.cpp
+  Draw3.AutoSave.cppm
+  Draw3.WhiteboardStore.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Input/MouseHook.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Input/MouseHook.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Input/MouseHook.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Window/Window.Legacy.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Window/Window.Legacy.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Window/Window.Legacy.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.CrashHandler.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.CrashHandler.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Helper/Helper.CrashHandler.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Layout.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Layout.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Layout.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderingAttribute.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderingAttribute.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderingAttribute.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Widgets.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Widgets.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Widgets.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Helper\Helper.CrashHandler.cpp(15,31): warning C5202: a global module fragment can only contain preprocessor directives [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  Draw3.PresentationAutoSave.cppm
+  Draw3.InkHistory.cpp
+  Draw3.InkHistoryGpu.cppm
+  Draw3.RealtimeStylus.cpp
+  Draw3.StrokeGeometry.cpp
+  Draw3.PerformanceProbe.cpp
+  Draw3.TransparentPresentation.cpp
+  Draw3.HistoryProbe.cpp
+  Draw3.AutoSave.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.StrokeGeometry.cpp')
+  
+  Draw3.PresentationAutoSave.cpp
+  Draw3.InkHistoryGpu.cpp
+  Draw3.WindowControl.cppm
+  Draw3.FailedCleanupFixture.cpp
+  Setting.cppm
+  Bar.Rendering.cppm
+  Draw3.DrawingController.cppm
+  Draw3.InkPrediction.cpp
+  Draw3.RuntimeMetrics.cpp
+C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xutility(4813,18): warning C4244: '=': conversion from 'const wchar_t' to 'char', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.FailedCleanupFixture.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xutility(4813,18):
+      the template instantiation context (the oldest one first) is
+          D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.FailedCleanupFixture.cpp(1254,28):
+          see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_const_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+          with
+          [
+              _Elem=wchar_t,
+              _Iter=std::_String_const_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+              _Alloc=std::allocator<char>
+          ]
+              D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.FailedCleanupFixture.cpp(1254,5):
+              see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'Inkeys::Shutdown::`anonymous-namespace'::CheckDesktopReaderBoundaries'
+          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xstring(812,17):
+          see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<const wchar_t*,const wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+          with
+          [
+              _Size_type=unsigned __int64,
+              _Iter=const wchar_t *,
+              _Sent=const wchar_t *,
+              _Size=unsigned __int64
+          ]
+          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xstring(968,18):
+          see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<const wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+          with
+          [
+              _OutIt=char *,
+              _Size=unsigned __int64,
+              _InIt=const wchar_t *,
+              _SizeTy=unsigned __int64
+          ]
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.InkPrediction.cpp')
+  
+  Draw3.WindowControl.cpp
+  Draw3.Host.cpp
+  Draw3.HiddenWindowTest.cpp
+  Draw3.DrawingController.cpp
+  Setting.Widgets.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+  Bar.Main.cppm
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8536,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8541,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8543,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8667,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Widgets.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Widgets.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.Widgets.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cppm')
+  
+  Bar.Zoom.cppm
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Zoom.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Zoom.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Zoom.cppm')
+  
+  Bar.cppm
+  Bar.Interaction.cpp
+  Ppt.cpp
+  PageControl.cpp
+  Whiteboard.cpp
+  Bar.Initialization.cpp
+  IdtMain.cpp
+  Bar.cpp
+  IdtState.cpp
+  IdtPlug-in.cpp
+  Bar.MultiTarget.Test.cpp
+  Bar.Scene.cpp
+  Bar.Button.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Initialization.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Initialization.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Initialization.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtState.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtState.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtState.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMain.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMain.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMain.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.MultiTarget.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.MultiTarget.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.MultiTarget.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Interaction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Interaction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Interaction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Whiteboard/Whiteboard.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Whiteboard/Whiteboard.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Whiteboard/Whiteboard.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Ppt/Ppt.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Ppt/Ppt.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Ppt/Ppt.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/PageControl/PageControl.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/PageControl/PageControl.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/PageControl/PageControl.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3451,26): warning C4244: '=': conversion from 'const _Ty' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3451,26): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3451,26): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3451,26): warning C4244:             _Ty=float [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3451,26): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  Bar.RecallAttribute.cpp
+  Bar.EraserAttribute.cpp
+  Bar.Main.cpp
+  Bar.EraserAttribute.Test.cpp
+  Bar.Presentation.Test.cpp
+  Bar.Rendering.cpp
+  Bar.RenderLoop.cpp
+  Bar.UI.cpp
+  Setting.cpp
+  Bar.State.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cpp')
+  
+  (compiling source file 'Inkeys/UI/Bar/Bar.RecallAttribute.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RecallAttribute.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RecallAttribute.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Presentation.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Presentation.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Presentation.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.State.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.State.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.State.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderLoop.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderLoop.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderLoop.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(1833,43): warning C4244: 'argument': conversion from 'float' to 'UINT32', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(1991,42): warning C4244: 'argument': conversion from 'float' to 'UINT32', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(2437,43): warning C4244: 'argument': conversion from 'float' to 'UINT32', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(3346,4): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(3367,10): warning C4267: 'argument': conversion from 'size_t' to 'UINT32', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2173,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2173,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2207,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2207,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2241,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2241,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2275,96): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2275,71): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2310,100): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2310,75): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2344,100): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2344,74): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2371,99): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2371,74): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2403,101): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Setting\Setting.cpp(2403,75): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  stroke_modeler.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+  params.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/params.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/params.cc')
+  
+  types.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244: 'initializing': conversion from '_Ty' to 'T', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:             _Ty=int [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         and [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:             T=float [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/types.cc')
+      D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14):
+      the template instantiation context (the oldest one first) is
+          D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\types.cc(32,47):
+          see reference to function template instantiation 'absl::lts_20250512::StatusOr<float>::StatusOr<int,0>(U &&)' being compiled
+          with
+          [
+              U=int
+          ]
+              D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\types.cc(32,47):
+              see the first reference to 'absl::lts_20250512::StatusOr<float>::StatusOr' in 'ink::stroke_model::Vec2::AbsoluteAngleTo'
+          D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\statusor.h(425,17):
+          see reference to function template instantiation 'absl::lts_20250512::StatusOr<float>::StatusOr<_Ty>(std::in_place_t,_Ty &&)' being compiled
+          with
+          [
+              _Ty=int
+          ]
+          D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\statusor.h(689,11):
+          see reference to function template instantiation 'absl::lts_20250512::internal_statusor::StatusOrData<T>::StatusOrData<_Ty>(std::in_place_t,_Ty &&)' being compiled
+          with
+          [
+              T=float,
+              _Ty=int
+          ]
+  
+  internal_types.cc
+  loop_contraction_mitigation_modeler.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+  position_modeler.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(31,21): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244: 'initializing': conversion from 'const _Ty' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244:             _Ty=double [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244: 'initializing': conversion from 'const _Ty' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244:             _Ty=double [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(67,38): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(68,38): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  stylus_state_modeler.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\stylus_state_modeler.cc(56,77): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\stylus_state_modeler.cc(59,70): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  utils.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.cc(34,37): warning C4305: 'initializing': truncation from 'double' to 'const float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.cc(74,75): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  wobble_smoother.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\wobble_smoother.cc(48,56): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\wobble_smoother.cc(54,62): warning C4244: '+=': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\wobble_smoother.cc(58,65): warning C4244: '-=': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  kalman_predictor.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(35,12): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(165,16): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(202,24): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(282,19): warning C4244: 'return': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  stroke_end_predictor.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+  axis_predictor.cc
+  kalman_filter.cc
+  terminal_tail_reconstructor.cc
+  Inkeys.vcxproj -> D:\Project\Inkeys\Repo\Inkeys\Build\ARM64\Debug\Inkeys.exe
+  PptCOM -> D:\Project\Inkeys\Repo\Inkeys\PptCOM\bin\Release\PptCOM.dll
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+  
+  Assembly exported to 'D:\Project\Inkeys\Repo\Inkeys\PptCOM\bin\Release\PptCOM.tlb'
+  PptCOM.Tests -> D:\Project\Inkeys\Repo\Inkeys\PptCOM.Tests\bin\Release\PptCOM.Tests.exe
+  Scanning sources for module dependencies...
+  Bar.Animation.cppm
+  RenderPipeline.cppm
+  Bar.ToggleClickCoalescer.cppm
+  RenderPipeline.cpp
+  PageControl.cppm
+  Ppt.cppm
+  Bar.Scene.cppm
+  MessageBox.Window.cpp
+  Draw3.Presentation.cpp
+  PptSession.cpp
+  Draw3.Bridge.cpp
+  ppt_session_tests.cpp
+  Window.cpp
+  Setting.EraserDemoGpu.cpp
+  setting_home_warp_tests.cpp
+  Window.cppm
+  Setting.Shell.cpp
+  imgui_impl_dx11.cpp
+  draw3_bridge_tests.cpp
+  setting_design_tests.cpp
+  toggle_click_coalescer_tests.cpp
+  Setting.Pages.cpp
+  speed_eraser_tests.cpp
+  draw3_contact_tests.cpp
+  eraser_attribute_tests.cpp
+  message_box_tests.cpp
+  ui3_input_tests.cpp
+  presentation_descriptor_tests.cpp
+  Compiling...
+  Bar.ToggleClickCoalescer.cppm
+  Bar.Animation.cppm
+  Draw3.Presentation.cpp
+  Draw3.Bridge.cpp
+  ppt_session_tests.cpp
+  PptSession.cpp
+  Ppt.cppm
+  Window.cppm
+  Setting.EraserDemoGpu.cpp
+  setting_home_warp_tests.cpp
+  RenderPipeline.cppm
+  MessageBox.Window.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\MessageBox\MessageBox.Window.cpp(482,40): warning C4838: conversion from 'int' to 'const UINT' requires a narrowing conversion [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\MessageBox\MessageBox.Window.cpp(483,14): warning C4838: conversion from 'int' to 'const UINT' requires a narrowing conversion [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  imgui_impl_dx11.cpp
+  Setting.Shell.cpp
+  Setting.Pages.cpp
+  setting_design_tests.cpp
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\setting_home_warp_tests.cpp(509,14): warning C4457: declaration of 'renderer' hides function parameter [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\setting_home_warp_tests.cpp(431,53):
+      see declaration of 'renderer'
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\setting_home_warp_tests.cpp(1741,15): warning C4456: declaration of 'transaction' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\setting_home_warp_tests.cpp(1700,14):
+      see declaration of 'transaction'
+  
+  draw3_contact_tests.cpp
+  draw3_bridge_tests.cpp
+  presentation_descriptor_tests.cpp
+  speed_eraser_tests.cpp
+  ui3_input_tests.cpp
+  message_box_tests.cpp
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\draw3_contact_tests.cpp(61,45): warning C4324: 'Inkeys::Drawing::Draw3::ContactRecord': structure was padded due to alignment specifier [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/UI/Setting/Setting.Shell.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(53,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file 'setting_design_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(66,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file 'setting_design_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\HiMsg\HiMsg\HiMsg.hpp(78,4): warning C4201: nonstandard extension used: nameless struct/union [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file 'setting_design_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1473,14): warning C4456: declaration of 'hover' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1382,13):
+      see declaration of 'hover'
+  
+  RenderPipeline.cpp
+  Bar.Scene.cppm
+  Bar.Animation.cpp
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\draw3_bridge_tests.cpp(1103,19): warning C4456: declaration of 'command' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\draw3_bridge_tests.cpp(1070,11):
+      see declaration of 'command'
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\draw3_bridge_tests.cpp(1121,19): warning C4456: declaration of 'command' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\draw3_bridge_tests.cpp(1070,11):
+      see declaration of 'command'
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1695,14): warning C4456: declaration of 'contact' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1385,13):
+      see declaration of 'contact'
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1796,14): warning C4456: declaration of 'x' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1346,9):
+      see declaration of 'x'
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1866,14): warning C4456: declaration of 'area' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1156,13):
+      see declaration of 'area'
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1883,14): warning C4456: declaration of 'x' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1346,9):
+      see declaration of 'x'
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1885,14): warning C4456: declaration of 'area' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1156,13):
+      see declaration of 'area'
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1891,14): warning C4456: declaration of 'rotated' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1209,15):
+      see declaration of 'rotated'
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1892,14): warning C4456: declaration of 'rotatedConfig' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1211,13):
+      see declaration of 'rotatedConfig'
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1976,63): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1976,51): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1982,59): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(1982,49): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(2099,61): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(2099,50): warning C4244: 'argument': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(2166,44): warning C4324: 'Inkeys::Drawing::Draw3::ContactRecord': structure was padded due to alignment specifier [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/UI/Setting/Setting.Pages.cpp')
+  
+  StartupPreview.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file 'setting_design_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file 'setting_design_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  (compiling source file 'setting_design_tests.cpp')
+  
+  PageControl.cppm
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\speed_eraser_tests.cpp(297,1): warning C4702: unreachable code [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  Window.cpp
+  bar_theme_tests.cpp
+  animation_tests.cpp
+  toggle_click_coalescer_tests.cpp
+  render_scheduler_tests.cpp
+  bar_logo_tests.cpp
+  setting_session_state_tests.cpp
+  ppt_ui_tests.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.h(94,1): warning C4702: unreachable code [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+  whiteboard_ui_tests.cpp
+  bar_display_transition_tests.cpp
+  page_control_tests.cpp
+  Bar.EraserAttributeMotion.cppm
+  window_tests.cpp
+  eraser_attribute_tests.cpp
+  Bar.RecallAttributeMotion.cppm
+  recall_attribute_tests.cpp
+  InkeysHeadlessTests.vcxproj -> D:\Project\Inkeys\Repo\Inkeys\Build\ARM64\Debug\InkeysHeadlessTests.exe

@@ -36,7 +36,9 @@ Draw3 Host 在图形资源准备后才选择 RTS 或 Win32Mouse 输入，退出�
 
 ### 3. Contracts
 - Touch Down 临时接管视觉归属为 Touch，隐藏系统箭头与旧 Pen/Mouse 主光标；持久 `cursorOwner_` 不写 Touch。Touch Up/Cancel 不恢复旧 Hover，直到可确认的新 Pen 样本或真实 Mouse/TouchPad 消息接管。各活动 Touch 橡皮圆环仍按自己的 runtime 生成，Up 后随 runtime 清除。
-- Touch Pan 已由真实 Mouse 接管时，后续 Touch 指头不清 Mouse 样本；Pan 结束后若 Mouse 样本仍有效，保留 Mouse 归属。Pen 新 Hover/Contact 解除 Touch 抑制，Win7 不依赖新 Pointer API 才能恢复笔光标。
+- Touch Pan 已由真实 Mouse 接管时，后续 Touch 指头不清 Mouse 样本；Pan 结束后若 Mouse 样本仍有效，保留 Mouse 归属。Pen 新 Hover/Contact 解除 Touch 抑制，Win7 不依赖新 Pointer API 才能恢复笔光标。2026-11-06 起 Touch Pan 只指白板移动模式下由 Touch 持有且仍有手按住的画布平移（`SetTouchPanActive` 由 `CanvasPanInput::TouchPanHeld()` 驱动）；鼠标左键拖动平移不进入该状态，保持系统箭头，平移合同见 [runtime-and-rendering.md](../native/runtime-and-rendering.md#scenario-free-canvas-navigation-and-predictive-recovery)。
+- 2026-11-08多设备续接：移动模式加入Pen/PenTail真实导航，IsNavigationDevice同一producer predicate接受Pen Down/Move/终态，绘制latest保持；合法Pen不被suppressed误计或持续mailbox自我Stop，hover不急停。Touch持有互斥/笔suppression与可靠尾段保持。2026-11-12确认DM与RTS同HWND Activate/Enable冲突可破坏原接触链，故当前PTP双指扩展停用，WindowController禁止DM owner进入COM/Activate；不得把INPUT/EXPLICITHITTEST、SetContact或独立DM HWND初始化成功当作RTS共存证明。Mouse/Touch/Pen/PenTail继续使用既有RTS producer；设置及保留数值协议见[平移规范](canvas-pan.md)。
+- 2026-11-13尺度与身份续接：MotionContext在有序Down选择，可信直接Touch/屏幕Pen用mm，其它或失效用DIP，回退仍考虑桌面/大屏模式。producer完整contact发布与绘制latest保持；RTS binding新增每Down稳定PenFeedbackContact token旁路，失败/取消/终态独立闭合。窗口RTS权威结果不借lastKnownSource清Pointer-local latch，样本/身份/抑制发布与组合读取同短锁，UI/触觉在锁外；具体API、fallback和测试合同集中在[平移规范](canvas-pan.md)。
 - Touch/Pen 提升的 `WM_MOUSE*` 先用 promoted 签名、消息时间屏障与可用的 `INPUT_MESSAGE_SOURCE.deviceType` 过滤；`IMDT_MOUSE/IMDT_TOUCHPAD` 可立即接管。Win7 来源不可用时保留 RTS Touch 与旧过滤链，不使用固定延时压制真实鼠标。
 - API 成功返回 `device=IMDT_UNAVAILABLE + origin=IMO_SYSTEM` 的 `WM_MOUSEMOVE` 在触摸抑制仍有效或持久owner为Pen时必须拒绝；Pen清样本后仍受保护。不论按键位、触点坐标是否一致或距离 Touch/Pen终态多久，均不创建 Mouse 样本、不改变 owner。明确 Mouse/TouchPad 来源继续走既有接管策略。
 - 来源 API 缺失/失败或其它未知来源仍保留已有位置回退；API 查询失败不能被当成已确认的系统注入。Win7 的真实设备行为仍需单独实测。
@@ -295,18 +297,18 @@ if (!snapshot.eraser.needsAnimation) CheckFrameSequenceStops();
 ## Scenario: RTS Touch contact-area metadata and relative-length conversion
 
 ### 1. Scope / Trigger
-Applies when reading RTS WIDTH/HEIGHT, interpreting PROPERTY_METRICS or logging TouchArea diagnostics. In this 2026-09-14 metadata scope, speed response, size curves, DIP defaults, area multiplier/ceiling, input position collection and EDID semantics were frozen. The 2026-09-23 Touch physical-scene curve above supersedes only that historical speed-response freeze.
+Applies when reading RTS WIDTH/HEIGHT, interpreting PROPERTY_METRICS or logging TouchArea diagnostics. In this 2026-09-14 metadata scope, speed response, size curves, DIP defaults, area multiplier/ceiling, input position collection and EDID semantics were frozen. The 2026-09-23 Touch physical-scene curve above supersedes only that historical speed-response freeze. The 2026-11-06 palm phase 1 supersedes only the old relative-length formula below; the packet position source (shared scale from `GetAllTabletContextIds()[0]`, validated on many devices), speed curves, EDID semantics and auxiliary floor policy remain unchanged.
 
 ### 2. Signatures
-- `ResolveContactLengthTransform(axis, span, positionScale)` returns per-axis status, span-to-axis and span-to-canvas factors.
+- `ResolveContactLengthTransform(axis, span, inkToCanvasScale, inkToDigitizerScale)` returns per-axis status, span-to-axis and span-to-canvas factors. Both scales are explicit; the current context factor has no default.
 - `ConvertContactArea(rawWidth, rawHeight, widthTransform, heightTransform)` preserves raw values; unknown/invalid metadata leaves pixel values unknown.
 - `RealTimeStylusInput::TraceTouchAreaDiagnostics(source)` reads cached contexts only; an empty source lists Touch contexts, a supplied source requires matching context and generation.
 
 ### 3. Contracts
 - Actual returned packet properties determine GUID, index, units, resolution and declared range. Requested properties are not proof of returned support.
-- For supported inch/centimeter units: `spanToAxis = axisResolution / spanResolution * spanUnitCm / axisUnitCm`; `spanToCanvas = spanToAxis * abs(positionScale)`. PositionScale is the existing packet-XY-to-canvas linear mapping.
+- For supported inch/centimeter units: `spanToAxis = axisResolution / spanResolution * spanUnitCm / axisUnitCm`; `spanToCanvas = spanToAxis * abs(inkToCanvasScale / inkToDigitizerScale)`. inkToCanvasScale is the existing shared packet-XY-to-canvas scale; inkToDigitizerScale is the current context's own GetPacketDescriptionData factor (ink to digitizer) and must be inverted after producing native axis units. Both are baked at decoder publication; packets only multiply cached factors.
 - Different resolutions and convertible length units are valid relationships, not failures. DEFAULT is unknown; angular or undocumented extended unit semantics are not guessed.
-- Width/height are lengths, never translated positions. Do not subtract logical minima or multiply the context ink-to-digitizer factor again. The existing position path is untouched.
+- Width/height are lengths, never translated positions. Do not subtract logical minima or apply position translation. Packet X/Y already use ink space and only multiply inkToCanvasScale; do not divide their position by the device factor.
 - CanvasPixels is set only for an explained conversion and in-range finite packet values. DIP conversion occurs once in the existing controller. Bounds/aspect/outlier/startup/idle/history policies remain unchanged.
 - Conversion status crosses the existing contact snapshot with raw/converted values. Unknown units, invalid resolutions, invalid declared ranges, unsupported units and bad transforms have separate diagnostic reasons.
 - Runtime tracing copies the existing bounded RTS cache under its reader gate and a short plugin-lifetime guard, then formats outside both locks. No per-packet hardware query or log. Enabling diagnostics replays cached Touch metadata; source/generation changes refresh it at most once a second.
@@ -323,21 +325,24 @@ Applies when reading RTS WIDTH/HEIGHT, interpreting PROPERTY_METRICS or logging 
 | Invalid resolution/range or unsupported units | No usable canvas dimensions; exact metadata reason |
 | Packet outside declared range or nonfinite | Reject, not clamp into an acceptable finger |
 | Nonzero logical origin / reflected position axis | Relative length ignores translation and uses absolute linear scale |
+| Current device factor below/equal/above 1 | Apply its inverse once, independently on X and Y |
+| Axis resolution and device factor both multiplied by k | Equivalent contact size remains unchanged |
+| Zero/nonfinite device factor | InvalidDigitizerScale → InvalidTransform, no CanvasPixels |
 | 96/144/192 DPI / anisotropic axes | One per-axis DIP conversion; unchanged auxiliary floor formula |
 | Diagnostic enabled after context creation | Dump cached Touch properties without rebuilding/querying hardware |
 | Source context/generation no longer cached | Report no matching Touch, not another device |
 
 ### 5. Good / Base / Bad Cases
-- Good: an explicitly declared tenfold resolution difference produces a tenfold ratio, independently of observed sample magnitude.
+- Good: a tenfold re-encoding of native axis resolution and ink-to-digitizer factor cancels out, preserving the same contact size; differing WIDTH/HEIGHT resolutions still use their declared ratio.
 - Base: metadata remains unknown, so area assistance stays off while speed erasing and raw diagnostics still work.
 - Bad: divide by 10/100 because a value looks too large, assume all packet properties share the context scaling factor, or relabel unverified numbers as pixels.
 
 ### 6. Tests Required
-Use the production converter in headless tests for unit/resolution/range/DPI cases and pass its synthetic output through the existing hidden eraser ingress tests. Preserve no-Move expiry, point erasing, old radii, new geometry, undo/redo and persistence checks. Synthetic success is not Surface packet acceptance.
+Use the production converter in headless tests for unit/resolution/range/DPI/device-factor cases and the device re-encoding invariant. The RTS shared-scale compatibility helper must independently assert unchanged packet positions and corrected contact dimensions. Do not add revision checks, window-mapping refreshes or system queries to the RTS hot path for this formula. Existing hidden eraser ingress tests require separate window-test authorization. Preserve no-Move expiry, point erasing, old radii, new geometry, undo/redo and persistence checks. Synthetic success is not Surface packet acceptance.
 
 ### 7. Wrong vs Correct
-- Wrong: `rawWidth * contextScaleX` followed by an equality-only metrics check.
-- Correct: resolve the width-to-X length relationship from returned metrics, then apply the cached position linear mapping exactly once.
+- Wrong: `rawWidth * contextScaleX`, or `rawWidth * spanToAxis * inkToCanvasScale` without the digitizer-to-ink inverse.
+- Correct: resolve the width-to-X relationship from returned metrics, divide by the current context ink-to-digitizer factor, then apply the cached ink-to-canvas linear mapping once; precompute at decoder publication, not per packet.
 
 References: [PROPERTY_METRICS](https://learn.microsoft.com/en-us/windows/win32/api/tpcshrd/ns-tpcshrd-property_metrics), [PROPERTY_UNITS](https://learn.microsoft.com/en-us/windows/win32/api/tpcshrd/ne-tpcshrd-property_units), [GetPacketDescriptionData](https://learn.microsoft.com/en-us/windows/win32/api/rtscom/nf-rtscom-irealtimestylus-getpacketdescriptiondata).
 
@@ -716,7 +721,7 @@ Win7 输入已发布并被 controller 消费，而连续笔/橡皮操作的 ULW 
 
 ### 2. Signatures
 - Controller 内部 `AdoptReconnectedContact(RuntimeStroke&, ContactHandle) noexcept` 是成功重连的身份赋值接缝。
-- `CanvasTouchKey(handle)` 使用 tablet context/contact ID；`CanvasTouchGestureState::OnTouchUp(key)` 必须收到当前物理接触的 key。
+- `CanvasTouchKey(handle)` 使用 tablet context/contact ID；`CanvasTouchGestureState::OnTouchUp(key)` 必须收到当前物理接触的 key。2026-11-06 注：180 ms 双指手势 FSM 已随平移重构删除，平移触点改由 `CanvasPanInput` 以单调唯一的 `panKey` 跟踪；本节"手势 key"条款只适用于绘制模式 Touch 仍保留的 `touchGestureKey` 簿记（如 `RejectIndependentTouch` 退休被拒触点），该簿记若随后也被删除，接管只需更新 `runtime.handle`。
 
 ### 3. Contracts
 - 新 Down 在匹配重连前已登记自己的手势身份；接管必须同时更新 runtime.handle 和 runtime.touchGestureKey，Touch 取新 handle 的 key，非 Touch 保持0。

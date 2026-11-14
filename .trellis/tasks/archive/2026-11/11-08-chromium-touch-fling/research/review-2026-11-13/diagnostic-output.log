@@ -1,0 +1,3 @@
+[Draw3DiagnosticOutput] backpressure stream=stdout accepted=1025 full=5931 contention=1237 cancel=1 stop_ms=109
+[Draw3DiagnosticOutput] backpressure stream=stderr accepted=1025 full=5990 contention=1178 cancel=1 stop_ms=109
+[Draw3DiagnosticOutput] result=PASS failures=0 production_queue=1 real_pipe=1 hwnd=0

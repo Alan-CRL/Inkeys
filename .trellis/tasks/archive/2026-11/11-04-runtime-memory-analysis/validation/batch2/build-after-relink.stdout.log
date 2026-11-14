@@ -1,0 +1,22 @@
+
+  Scanning sources for module dependencies...
+  Inkeys.vcxproj -> D:\Project\Inkeys\Repo\Inkeys\Build\ARM64\Debug\Inkeys.exe
+  PptCOM -> D:\Project\Inkeys\Repo\Inkeys\PptCOM\bin\Release\PptCOM.dll
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+  
+  Assembly exported to 'D:\Project\Inkeys\Repo\Inkeys\PptCOM\bin\Release\PptCOM.tlb'
+  PptCOM.Tests -> D:\Project\Inkeys\Repo\Inkeys\PptCOM.Tests\bin\Release\PptCOM.Tests.exe
+  Scanning sources for module dependencies...
+  draw3_bridge_tests.cpp
+  Compiling...
+  draw3_bridge_tests.cpp
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\draw3_bridge_tests.cpp(1103,19): warning C4456: declaration of 'command' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\draw3_bridge_tests.cpp(1070,11):
+      see declaration of 'command'
+  
+D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\draw3_bridge_tests.cpp(1121,19): warning C4456: declaration of 'command' hides previous local declaration [D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\InkeysHeadlessTests.vcxproj]
+      D:\Project\Inkeys\Repo\Inkeys\InkeysHeadlessTests\draw3_bridge_tests.cpp(1070,11):
+      see declaration of 'command'
+  
+  InkeysHeadlessTests.vcxproj -> D:\Project\Inkeys\Repo\Inkeys\Build\ARM64\Debug\InkeysHeadlessTests.exe

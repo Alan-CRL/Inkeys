@@ -1,0 +1,24 @@
+# 第二批辅助 ULW 最小方案
+
+目标为辅助读回像素在普通空白桌面或不再呈现辅助窗时可归还；有墨迹且辅助窗正在显示时保留。三层、双device、HWND/owner/系统穿透与现有ready门不变。
+
+## 变更边界与状态流
+
+- TransparentPresentation：辅助UlwDirtyRectPresenter只初始化HWND/device/context元数据，首次真实Present才建立staging与DIB。资源新建/尺寸变化后的首帧一律完整复制和ULW提交，不用部分脏区填一张新DIB。
+- 新的DiscardAuxiliaryReadbackResources只接受当前成功present对应的output/content revision，要求辅助HWND实际隐藏；选择目标还需已有真实全透明完整帧证明。仅归还像素，不清理HWND/状态/上次真实Present观察。失败或过期请求只保留资源，不改变ready。
+- HostRuntimeSnapshot记录auxiliaryReadbackPayloadBytes（staging+DIB名义字节，不是OS实测）。实际Present后更新，回收后置0；只用于资源所有权观测和避免无资源时再发布回收wake。
+- IdtState在现有成对显隐事务成功且最新bridge/mode仍匹配后，对于Hidden或Primary请求回收。请求携带host generation、applied product、输出/content revision、成功Present计数及尺寸，不直接操作D3D/GDI。
+- Host沿已有General control wake消费请求；重验running/generation/bridge/当前输出与成功帧/内容/尺寸，选择目标还重验无内容及clean，再在绘制owner回收。无需新线程或Controller修改。
+- Resize对已回收的辅助缓冲只更新元数据，不能闲置重建；下一次辅助Present在准确尺寸上完整准备和真实提交。
+
+## 验证计划
+
+新严格harness入口 --draw3-auxiliary-resource-lifecycle-test / RunAuxiliaryPresentationResourceLifecycleTest。使用真实WARP、两块不可见layered HWND与正式TransparentPresentationController，验证：初始化无辅助像素；透明full frame取得真实clean和payload；隐藏且匹配请求回收但证明不变；过期/有内容/失败不回收；再入有色内容即使调用者只给小dirty也先全帧；resize不空闲建回；随后完整清洁和再次回收。主会话统一构建/运行。
+
+文件仅TransparentPresentation.cpp/.cppm、Host.cpp/.h、IdtState.cpp、HiddenWindowTest.cpp/.h。IdtMain由Setting代理注册CLI；Renderer/Controller由Laser代理，不双写。保持原BOM/CRLF和适量中文注释。
+
+## 已实现的内部字段/校验
+
+HostRuntimeSnapshot::auxiliaryReadbackPayloadBytes为名义staging+DIB字节；呈现后、resize、回收和stop更新。AcknowledgeAuxiliarySurfaceHidden复制hostGeneration、appliedProductRevision、readyOutputRevision、presentedContentRevision、successfulPresentCount和尺寸到有界单槽请求，沿General wake由owner再校验；无资源时不发布。Controller仅对已有非空dirty且requested为Selection时提升完整合成，资源空缺不制造帧；Primary保持原dirty路径。唯一调用点由Laser代理加在frameDirty clamp后。
+
+新增回归同时使用正式TransparentPresentationController和真实Host/WindowService；验证远端单像素超出调用dirty仍被首次完整读回、失败不能产生clean证明、过期host请求不回收、回收wake后150ms提交次数稳定、Primary无aux持有及重入归还。未运行，等待主会话统一构建和执行。

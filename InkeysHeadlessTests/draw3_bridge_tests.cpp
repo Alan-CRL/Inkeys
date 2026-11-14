@@ -153,6 +153,19 @@ namespace
 				beforeMode.cursorSettings.dotHideOnContact != afterMode.cursorSettings.dotHideOnContact,
 				"dot contact hide mode alone publishes a new immutable cursor revision")) ++failures;
 		}
+		const auto beforeOpacity = bridge.Snapshot();
+		auto opacityOnly = beforeOpacity;
+		opacityOnly.cursorSettings.penOpacity = 75;
+		bridge.PublishState(opacityOnly);
+		const auto afterOpacity = bridge.Snapshot();
+		if (!Expect(beforeOpacity.cursorSettings.penOpacity == 50 &&
+			beforeOpacity.cursorSettings.highlightPenFillOpacity == 50 &&
+			beforeOpacity.cursorSettings.dotOpacity == 25 &&
+			beforeOpacity.cursorSettings.highlightDotFillOpacity == 50 &&
+			afterOpacity.revision == beforeOpacity.revision + 1 &&
+			afterOpacity.cursorSettings == opacityOnly.cursorSettings &&
+			afterOpacity.cursorSettings.dotOpacity == beforeOpacity.cursorSettings.dotOpacity,
+			"cursor opacity uses independent defaults and publishes an immutable single-field revision")) ++failures;
 	}
 
 	void TestMouseCursorToolProjection(int& failures)
@@ -848,6 +861,14 @@ namespace
 			&& !SelectionUsesAuxiliaryOutput(true, Workspace::Whiteboard)
 			&& !SelectionUsesAuxiliaryOutput(false, Workspace::Whiteboard),
 			"whiteboard selection stays on the primary drawpad")) ++failures;
+		// 只有白板移动模式平移画布；桌面/PPT 的 Selection 与所有绘制工具都不平移。
+		if (!Expect(MoveModePansCanvas(true, Workspace::Whiteboard)
+			&& !MoveModePansCanvas(false, Workspace::Whiteboard)
+			&& !MoveModePansCanvas(true, Workspace::Desktop)
+			&& !MoveModePansCanvas(true, Workspace::Presentation)
+			&& !MoveModePansCanvas(false, Workspace::Desktop)
+			&& !MoveModePansCanvas(false, Workspace::Presentation),
+			"only whiteboard Move mode pans the canvas")) ++failures;
 		if (!Expect(ResolveDrawpadPresentationSurface(true, false, true) ==
 			DrawpadPresentationSurface::Hidden,
 			"clean empty selection hides both drawpad surfaces")) ++failures;

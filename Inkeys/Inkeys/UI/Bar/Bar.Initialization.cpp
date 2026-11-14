@@ -69,12 +69,14 @@ bool BarUISetClass::InitializeStartupPlacement(Inkeys::UI::StartupPlacement plac
 {
 	// 只在渲染注册前调用，底部吸附状态通过类自身维护，不暴露 protected 字段。
 	startupPlacement = Inkeys::UI::NormalizeStartupPlacement(static_cast<int>(placement));
-	const bool floating = startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar;
+	// floating 在此表示“折叠为单个主按钮”；居中顶栏是展开的 Floating 形态。
+	const bool floating = Inkeys::UI::StartupPlacementIsFolded(startupPlacement);
+	const bool docked = Inkeys::UI::StartupPlacementDocksToBottom(startupPlacement);
 	barState.fold = floating;
-	bottomDockMode.store(floating ? Inkeys::UI::Bar::BarBottomDockMode::Floating
-		: Inkeys::UI::Bar::BarBottomDockMode::BottomDocked, memory_order_relaxed);
-	bottomDockCenterMode.store(floating ? Inkeys::UI::Bar::BarBottomDockCenterMode::Free
-		: Inkeys::UI::Bar::BarBottomDockCenterMode::Centered, memory_order_relaxed);
+	bottomDockMode.store(docked ? Inkeys::UI::Bar::BarBottomDockMode::BottomDocked
+		: Inkeys::UI::Bar::BarBottomDockMode::Floating, memory_order_relaxed);
+	bottomDockCenterMode.store(docked ? Inkeys::UI::Bar::BarBottomDockCenterMode::Centered
+		: Inkeys::UI::Bar::BarBottomDockCenterMode::Free, memory_order_relaxed);
 	return floating;
 }
 
@@ -314,7 +316,7 @@ namespace Inkeys::UI::Bar
 			mainX = static_cast<double>(barUISet.barWindow.x + barUISet.barWindow.w - 80 - 50) / barUISet.barStyle.zoom;
 			mainY = static_cast<double>(barUISet.barWindow.y + barUISet.barWindow.h - 80 - 200) / barUISet.barStyle.zoom;
 		}
-		if (barUISet.startupPlacement != Inkeys::UI::StartupPlacement::CenteredBottomBar)
+		if (Inkeys::UI::StartupPlacementIsFolded(barUISet.startupPlacement))
 		{
 			const auto snapshot = Inkeys::Display::GetSnapshot();
 			const auto* monitor = snapshot ? snapshot->Primary() : nullptr;

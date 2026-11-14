@@ -1,0 +1,17 @@
+{
+  "production_control_flow_matches_HEAD_after_removing_only_GC_and_diagnostics": true,
+  "normalization": "ignore comments/whitespace; normalize one-statement braces equally on both versions",
+  "cp_disconnect_classifier_matches_HEAD": true,
+  "gc_collect_calls": 2,
+  "gc_wait_for_pending_finalizers_calls": 1,
+  "format_checks": "original UTF-8/BOM/CRLF preserved",
+  "removed_candidate_markers": [
+    "presentationCloseBinding",
+    "presentationClosedBinding",
+    "closeObservationDeferred",
+    "DeferStaleShowObservation",
+    "ConsumeCloseObservationDeferral",
+    "0x800706BA"
+  ],
+  "baseline_commit": "e73673f7b1c91fd13cc5a4a946960d7b9934c646"
+}

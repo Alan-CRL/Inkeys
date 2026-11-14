@@ -5,6 +5,7 @@
 #endif
 
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.EraserCursor.h"
 #include "Draw3.CursorSettings.h"
 
 #include <atomic>
@@ -21,7 +22,8 @@ export namespace Inkeys::Drawing::Draw3
 		Rectangle,
 		EraserGripCircle,
 		PenIcon,
-		Arrow
+		Arrow,
+		EraserSprite
 	};
 
 	// 描述应用内瞬态光标外观；颜色分量使用 [0,1]，尺寸使用画布像素。
@@ -36,6 +38,8 @@ export namespace Inkeys::Drawing::Draw3
 		float opacity = 1.0f;
 		float fillAlpha = 0.5f;
 		float outlineWidth = 0.5f;
+		// 仅高亮样式使用：最外圈纯黑边的物理像素宽度，向内占用原轮廓。
+		float outerOutlineWidth = 0.0f;
 		float outlineRed = 184.0f / 255.0f;
 		float outlineGreen = 184.0f / 255.0f;
 		float outlineBlue = 184.0f / 255.0f;
@@ -44,6 +48,10 @@ export namespace Inkeys::Drawing::Draw3
 		// 图形中心相对输入热点的偏移；笔形左上尖端仍精确对应原 sample。
 		float centerOffsetX = 0.0f;
 		float centerOffsetY = 0.0f;
+		// 精灵配方与动态尺寸分开；移动和档内缩放不触发烘焙。
+		EraserCursorAppearance eraserCursor = {};
+		float eraserBaseShortSide = 0.0f;
+		float eraserDpiScale = 1.0f;
 	};
 
 	// 仅表示持久 cursor owner；Touch 只可作为事件类型，不得长期接管 owner。
@@ -145,6 +153,17 @@ export namespace Inkeys::Drawing::Draw3
 			DrawingCursorDiagnosticVisualReason::None;
 	};
 
+	// 每个真实 RTS Down 独立凭据；不与设备代次或 WM_POINTER pointerId 混用。
+	enum class PenFeedbackPhase : uint8_t { Down, Up, Cancelled };
+	struct PenFeedbackContact
+	{
+		uint64_t token = 0;
+		uint32_t tabletContextId = 0, cursorId = 0;
+		uint64_t sourceGeneration = 0;
+		int64_t downQpc = 0;
+		PenFeedbackPhase phase = PenFeedbackPhase::Down;
+	};
+
 	// RTS 通过窄接口发布完整 Pen 光标样本，避免输入模块依赖窗口实现。
 	class DrawingCursorEventSink
 	{
@@ -157,6 +176,11 @@ export namespace Inkeys::Drawing::Draw3
 		virtual void NotifyTouchContactEnd() noexcept = 0;
 		virtual void PublishPenCursorSample(const DrawingCursorSample& sample) noexcept = 0;
 		virtual void ClearPenCursorSample() noexcept = 0;
+		// 旧 sink 默认沿用 latest 语义；窗口实现可按真实 token 隔离笔划反馈。
+		virtual void NotifyPenFeedbackContact(const PenFeedbackContact&) noexcept {}
+		virtual void PublishPenCursorSampleForContact(const DrawingCursorSample& sample,
+			uint64_t) noexcept { PublishPenCursorSample(sample); }
+		virtual void ClearPenCursorSampleForContact(uint64_t) noexcept { ClearPenCursorSample(); }
 	};
 
 	bool IsValidDrawingCursorAppearance(const DrawingCursorAppearance& appearance) noexcept;
@@ -185,7 +209,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool penSampleValid, bool mouseSampleValid,
 		bool mouseUsesSystemCursor = true, bool touchPanActive = false,
 		bool realMouseTakeoverDuringTouchPan = false,
-		bool mouseSampleIsTablet = false) noexcept;
+		bool mouseSampleIsTablet = false, bool canvasPanMode = false) noexcept;
 	// Touch 仅暂时接管视觉；真实 Mouse 接管活动 Pan 时仍保持优先。
 	DrawingCursorPointerAuthority ResolveDrawingCursorVisualAuthority(
 		DrawingCursorPointerAuthority persistentOwner, bool touchCursorSuppressed,
@@ -266,7 +290,7 @@ export namespace Inkeys::Drawing::Draw3
 	// 触摸接触点的软/硬笔光标；None 不生成 visual，由调用方逐接触调用，抬起后随 runtime 消失。
 	DrawingCursorVisual MakeTouchPenDrawingCursorVisual(float x, float y,
 		const DrawingCursorAppearance& penAppearance, CursorStyle style,
-		float dpiScale = 1.0f) noexcept;
+		float dpiScale = 1.0f, const CursorSettings* productSettings = nullptr) noexcept;
 	// 计算包含 1px AA 和 shader quad padding 的画布内脏区。
 	RECT DrawingCursorVisualBounds(const DrawingCursorVisual& visual,
 		int canvasWidth, int canvasHeight) noexcept;

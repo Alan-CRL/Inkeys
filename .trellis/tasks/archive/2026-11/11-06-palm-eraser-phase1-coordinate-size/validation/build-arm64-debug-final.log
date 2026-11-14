@@ -1,0 +1,284 @@
+
+  PptCOM -> D:\Project\Inkeys\Repo\Inkeys\PptCOM\bin\Release\PptCOM.dll
+  Scanning sources for module dependencies...
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+  
+  Assembly exported to 'D:\Project\Inkeys\Repo\Inkeys\PptCOM\bin\Release\PptCOM.tlb'
+  PptCOM.Tests -> D:\Project\Inkeys\Repo\Inkeys\PptCOM.Tests\bin\Release\PptCOM.Tests.exe
+  Draw3.RealtimeStylus.cpp
+  Compiling...
+  Draw3.DrawingController.cpp
+  Draw3.RealtimeStylus.cpp
+  Bar.Main.cppm
+  Draw3.Host.cpp
+  Draw3.HiddenWindowTest.cpp
+  Draw3.PerformanceProbe.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8655,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8660,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8662,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8786,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  Bar.Zoom.cppm
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Zoom.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Zoom.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Zoom.cppm')
+  
+  Bar.cppm
+  Ppt.cpp
+  Bar.Scene.cpp
+  IdtState.cpp
+  IdtPlug-in.cpp
+  IdtMain.cpp
+  PageControl.cpp
+  Whiteboard.cpp
+  Bar.Button.cpp
+  Bar.Initialization.cpp
+  Bar.MultiTarget.Test.cpp
+  Bar.cpp
+  Bar.Interaction.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Initialization.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Initialization.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Initialization.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.MultiTarget.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.MultiTarget.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.MultiTarget.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtState.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtState.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtState.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Button.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Interaction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Interaction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Interaction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtPlug-in.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Ppt/Ppt.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Ppt/Ppt.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Ppt/Ppt.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMain.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMain.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'IdtMain.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Whiteboard/Whiteboard.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Whiteboard/Whiteboard.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Whiteboard/Whiteboard.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/PageControl/PageControl.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/PageControl/PageControl.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/PageControl/PageControl.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3539,26): warning C4244: '=': conversion from 'const _Ty' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3539,26): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3539,26): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3539,26): warning C4244:             _Ty=float [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\IdtMain.cpp(3539,26): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  Bar.EraserAttribute.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.cpp')
+  
+  Bar.EraserAttribute.Test.cpp
+  Bar.RecallAttribute.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RecallAttribute.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RecallAttribute.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RecallAttribute.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.EraserAttribute.Test.cpp')
+  
+  Bar.Main.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Main.cpp')
+  
+  Bar.State.cpp
+  Bar.Presentation.Test.cpp
+  Bar.Rendering.cpp
+  Bar.UI.cpp
+  Bar.RenderLoop.cpp
+  Setting.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.State.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.State.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.State.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Rendering.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Presentation.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Presentation.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.Presentation.Test.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderLoop.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderLoop.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.RenderLoop.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Bar/Bar.UI.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/Setting/Setting.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(1833,43): warning C4244: 'argument': conversion from 'float' to 'UINT32', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(1991,42): warning C4244: 'argument': conversion from 'float' to 'UINT32', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(2437,43): warning C4244: 'argument': conversion from 'float' to 'UINT32', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(3346,4): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\UI\Bar\Bar.Rendering.cpp(3367,10): warning C4267: 'argument': conversion from 'size_t' to 'UINT32', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  
+    Version 14.44.35229.0
+  
+    ExceptionCode            = C0000005
+    ExceptionFlags           = 00000000
+    ExceptionAddress         = 00007FF6ABDF5510 (00007FF6ABC90000) "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\bin\HostArm64\arm64\link.exe"
+    NumberParameters         = 00000002
+    ExceptionInformation[ 0] = 0
+    ExceptionInformation[ 1] = 6800630061004B
+  
+LINK : fatal error LNK1000: Internal error during IncrBuildImage [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]

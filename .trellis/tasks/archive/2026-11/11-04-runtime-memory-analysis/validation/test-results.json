@@ -1,0 +1,103 @@
+[
+  {
+    "name": "uink-file",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.exe",
+    "args": [
+      "--uink-file-only"
+    ],
+    "exit_code": 1,
+    "duration_seconds": 100.313,
+    "timeout": false
+  },
+  {
+    "name": "uink-presentation",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.exe",
+    "args": [
+      "--uink-presentation-only"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 0.062,
+    "timeout": false
+  },
+  {
+    "name": "parked-desktop-exit",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-04-runtime-memory-analysis\\validation\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-parked-desktop-exit-test"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 0.375,
+    "timeout": false
+  },
+  {
+    "name": "parked-ppt-retained",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-04-runtime-memory-analysis\\validation\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-parked-ppt-retained-test"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 0.094,
+    "timeout": false
+  },
+  {
+    "name": "loaded-retained-install",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-04-runtime-memory-analysis\\validation\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-loaded-retained-install-test"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 0.094,
+    "timeout": false
+  },
+  {
+    "name": "whiteboard-storage",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-04-runtime-memory-analysis\\validation\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-whiteboard-storage-test"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 78.39,
+    "timeout": false
+  },
+  {
+    "name": "device-policy",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-04-runtime-memory-analysis\\validation\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-device-policy-test"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 0.125,
+    "timeout": false
+  },
+  {
+    "name": "renderer-pixel-warp",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-04-runtime-memory-analysis\\validation\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-renderer-pixel-test"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 2.531,
+    "timeout": false
+  },
+  {
+    "name": "renderer-pixel-hardware",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\.trellis\\tasks\\11-04-runtime-memory-analysis\\validation\\after-bin\\Inkeys.exe",
+    "args": [
+      "--draw3-renderer-pixel-test-hardware"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 4.969,
+    "timeout": false
+  },
+  {
+    "name": "startup-progress",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\InkeysHeadlessTests.exe",
+    "args": [
+      "--no-window",
+      "--startup-preview-only"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 7.656,
+    "timeout": false
+  }
+]

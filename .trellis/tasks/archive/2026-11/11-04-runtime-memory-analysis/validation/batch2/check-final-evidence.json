@@ -1,0 +1,12 @@
+{
+  "final_source_diff_sha256": "4897fd11ec746c5133b9206e93f77603064085a7584b648cf5c30c2923d39ed3",
+  "final_exe_sha256": "e7757bbabd297cd5f75e6401d99d531d3539ac91e4c1bbd880df05e3d22f4dc4",
+  "pdb_age": 7,
+  "latest_tests_passed": 25,
+  "bulk_tests_file": "tests-final/test-results.json",
+  "confirmation_tests_file": "tests-confirmation-final/test-results-page-control-hidden-ui-idle-capacity.json",
+  "normal_memory_before_MiB": 510.849609375,
+  "normal_memory_after_MiB": 429.345703125,
+  "normal_memory_saved_MiB": 81.50390625,
+  "quality_gate": "passed"
+}

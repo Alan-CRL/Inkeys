@@ -1,0 +1,439 @@
+{
+  "status": "passed",
+  "version": "repair-final",
+  "exportSha256": {
+    "Draw3.CanvasNavigation.cpp": "4eb6c0bcf2ff6f56c91f95632e3ff94170040e8f8325df36e096f53c9cd29037",
+    "Draw3.CanvasNavigation.cppm": "97a4893e61ed811640977d062578d5ac046b063d278a7940bb615dea3498c97c"
+  },
+  "currentLockedSourceMatchesExport": {
+    "Draw3.CanvasNavigation.cpp": true,
+    "Draw3.CanvasNavigation.cppm": true
+  },
+  "allSixResultObjectsEqualCandidate3": {
+    "4": true,
+    "25": true,
+    "26": true,
+    "64": true,
+    "47-48": true,
+    "186-188": true
+  },
+  "nativeRecord": {
+    "version": "repair-final",
+    "compiler": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostarm64\\arm64\\cl.exe",
+    "profile": "TouchPhysical",
+    "isolatedNoPreviousFling": true,
+    "commands": [
+      {
+        "argv": [
+          "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostarm64\\arm64\\cl.exe",
+          "/nologo",
+          "/std:c++20",
+          "/EHsc",
+          "/MD",
+          "/utf-8",
+          "/Od",
+          "/c",
+          "/interface",
+          "/TP",
+          "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\Draw3.CanvasNavigation.cppm",
+          "/ifcOutputD:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\native\\navigation.ifc",
+          "/FoD:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\native\\interface.obj"
+        ],
+        "exit": 0,
+        "seconds": 0.5929999999971187
+      },
+      {
+        "argv": [
+          "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostarm64\\arm64\\cl.exe",
+          "/nologo",
+          "/std:c++20",
+          "/EHsc",
+          "/MD",
+          "/utf-8",
+          "/Od",
+          "/c",
+          "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\Draw3.CanvasNavigation.cpp",
+          "/referenceInkeys.Drawing.Draw3.canvas_navigation=D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\native\\navigation.ifc",
+          "/FoD:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\native\\implementation.obj"
+        ],
+        "exit": 0,
+        "seconds": 0.5
+      },
+      {
+        "argv": [
+          "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostarm64\\arm64\\cl.exe",
+          "/nologo",
+          "/std:c++20",
+          "/EHsc",
+          "/MD",
+          "/utf-8",
+          "/Od",
+          "/c",
+          "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\probe.cpp",
+          "/referenceInkeys.Drawing.Draw3.canvas_navigation=D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\native\\navigation.ifc",
+          "/DHAS_PROFILE=1",
+          "/DHAS_SOURCE=1",
+          "/DHAS_REASON=1",
+          "/FoD:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\native\\probe.obj"
+        ],
+        "exit": 0,
+        "seconds": 0.6410000000032596
+      },
+      {
+        "argv": [
+          "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostarm64\\arm64\\cl.exe",
+          "/nologo",
+          "/std:c++20",
+          "/EHsc",
+          "/MD",
+          "/utf-8",
+          "/Od",
+          "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\native\\probe.obj",
+          "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\native\\implementation.obj",
+          "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\native\\interface.obj",
+          "/FeD:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-release-2026-11-14\\history\\repair-final\\native\\probe.exe",
+          "/link",
+          "/SUBSYSTEM:CONSOLE"
+        ],
+        "exit": 0,
+        "seconds": 0.125
+      }
+    ],
+    "cases": {
+      "4": {
+        "exit": 0,
+        "completeFixture": true,
+        "stdout": "{\"reason\":\"ready\",\"coasting\":true,\"heldAtEnd\":0,\"rawDip\":[2452.23047,-2110.10522],\"selectedDip\":[2452.23047,-2110.10522],\"initialDip\":[2452.23047,-2110.10522],\"releaseAgeMs\":8.2953,\"glideDip\":[565.201981,-486.347214],\"glideMmMagnitude\":146.09365,\"frames\":177,\"appliedHeldDeltaDip\":[189.525558,-156.411393],\"ackAttempts\":9,\"ackAccepted\":9,\"touchDecision\":{\"mode\":\"measured\",\"reasonEnum\":7,\"responseEnum\":1,\"handMotion\":[476.822601,-417.624969],\"seedMotion\":[476.822601,-417.624969],\"tau\":0.3,\"deceleration\":200,\"distanceBudget\":0,\"addedResidual\":false,\"boostSuppressed\":false}}\n",
+        "stderr": "",
+        "result": {
+          "reason": "ready",
+          "coasting": true,
+          "heldAtEnd": 0,
+          "rawDip": [
+            2452.23047,
+            -2110.10522
+          ],
+          "selectedDip": [
+            2452.23047,
+            -2110.10522
+          ],
+          "initialDip": [
+            2452.23047,
+            -2110.10522
+          ],
+          "releaseAgeMs": 8.2953,
+          "glideDip": [
+            565.201981,
+            -486.347214
+          ],
+          "glideMmMagnitude": 146.09365,
+          "frames": 177,
+          "appliedHeldDeltaDip": [
+            189.525558,
+            -156.411393
+          ],
+          "ackAttempts": 9,
+          "ackAccepted": 9,
+          "touchDecision": {
+            "mode": "measured",
+            "reasonEnum": 7,
+            "responseEnum": 1,
+            "handMotion": [
+              476.822601,
+              -417.624969
+            ],
+            "seedMotion": [
+              476.822601,
+              -417.624969
+            ],
+            "tau": 0.3,
+            "deceleration": 200,
+            "distanceBudget": 0,
+            "addedResidual": false,
+            "boostSuppressed": false
+          }
+        }
+      },
+      "25": {
+        "exit": 0,
+        "completeFixture": true,
+        "stdout": "{\"reason\":\"ready\",\"coasting\":true,\"heldAtEnd\":0,\"rawDip\":[1196.58911,-4719.03027],\"selectedDip\":[702.96405,-2772.30347],\"initialDip\":[702.96405,-2772.30347],\"releaseAgeMs\":4.7321,\"glideDip\":[158.433784,-624.820435],\"glideMmMagnitude\":127.441859,\"frames\":169,\"appliedHeldDeltaDip\":[78.0609054,-406.757813],\"ackAttempts\":12,\"ackAccepted\":12,\"touchDecision\":{\"mode\":\"measured\",\"reasonEnum\":7,\"responseEnum\":1,\"handMotion\":[136.687454,-548.685059],\"seedMotion\":[136.687454,-548.685059],\"tau\":0.3,\"deceleration\":200,\"distanceBudget\":0,\"addedResidual\":false,\"boostSuppressed\":false}}\n",
+        "stderr": "",
+        "result": {
+          "reason": "ready",
+          "coasting": true,
+          "heldAtEnd": 0,
+          "rawDip": [
+            1196.58911,
+            -4719.03027
+          ],
+          "selectedDip": [
+            702.96405,
+            -2772.30347
+          ],
+          "initialDip": [
+            702.96405,
+            -2772.30347
+          ],
+          "releaseAgeMs": 4.7321,
+          "glideDip": [
+            158.433784,
+            -624.820435
+          ],
+          "glideMmMagnitude": 127.441859,
+          "frames": 169,
+          "appliedHeldDeltaDip": [
+            78.0609054,
+            -406.757813
+          ],
+          "ackAttempts": 12,
+          "ackAccepted": 12,
+          "touchDecision": {
+            "mode": "measured",
+            "reasonEnum": 7,
+            "responseEnum": 1,
+            "handMotion": [
+              136.687454,
+              -548.685059
+            ],
+            "seedMotion": [
+              136.687454,
+              -548.685059
+            ],
+            "tau": 0.3,
+            "deceleration": 200,
+            "distanceBudget": 0,
+            "addedResidual": false,
+            "boostSuppressed": false
+          }
+        }
+      },
+      "26": {
+        "exit": 0,
+        "completeFixture": true,
+        "stdout": "{\"reason\":\"ready\",\"coasting\":true,\"heldAtEnd\":0,\"rawDip\":[-1171.07886,5243.625],\"selectedDip\":[-746.91803,3344.40186],\"initialDip\":[-746.91803,3344.40186],\"releaseAgeMs\":50.0174,\"glideDip\":[-174.295074,780.423523],\"glideMmMagnitude\":158.133192,\"frames\":181,\"appliedHeldDeltaDip\":[-144.79538,525.557679],\"ackAttempts\":14,\"ackAccepted\":14,\"touchDecision\":{\"mode\":\"measured\",\"reasonEnum\":7,\"responseEnum\":1,\"handMotion\":[-145.23407,661.912842],\"seedMotion\":[-145.23407,661.912842],\"tau\":0.3,\"deceleration\":200,\"distanceBudget\":0,\"addedResidual\":false,\"boostSuppressed\":true}}\n",
+        "stderr": "",
+        "result": {
+          "reason": "ready",
+          "coasting": true,
+          "heldAtEnd": 0,
+          "rawDip": [
+            -1171.07886,
+            5243.625
+          ],
+          "selectedDip": [
+            -746.91803,
+            3344.40186
+          ],
+          "initialDip": [
+            -746.91803,
+            3344.40186
+          ],
+          "releaseAgeMs": 50.0174,
+          "glideDip": [
+            -174.295074,
+            780.423523
+          ],
+          "glideMmMagnitude": 158.133192,
+          "frames": 181,
+          "appliedHeldDeltaDip": [
+            -144.79538,
+            525.557679
+          ],
+          "ackAttempts": 14,
+          "ackAccepted": 14,
+          "touchDecision": {
+            "mode": "measured",
+            "reasonEnum": 7,
+            "responseEnum": 1,
+            "handMotion": [
+              -145.23407,
+              661.912842
+            ],
+            "seedMotion": [
+              -145.23407,
+              661.912842
+            ],
+            "tau": 0.3,
+            "deceleration": 200,
+            "distanceBudget": 0,
+            "addedResidual": false,
+            "boostSuppressed": true
+          }
+        }
+      },
+      "64": {
+        "exit": 0,
+        "completeFixture": true,
+        "stdout": "{\"reason\":\"ready\",\"coasting\":true,\"heldAtEnd\":0,\"rawDip\":[0,0],\"selectedDip\":[-409.148712,92.5857544],\"initialDip\":[-409.148712,92.5857544],\"releaseAgeMs\":10.7075,\"glideDip\":[-45.259903,10.2418108],\"glideMmMagnitude\":9.03096233,\"frames\":62,\"appliedHeldDeltaDip\":[-45.2599335,10.2418146],\"ackAttempts\":1,\"ackAccepted\":1,\"touchDecision\":{\"mode\":\"distance-bounded\",\"reasonEnum\":9,\"responseEnum\":2,\"handMotion\":[0,0],\"seedMotion\":[-79.556694,18.3242626],\"tau\":0.3,\"deceleration\":200,\"distanceBudget\":9.03096781,\"addedResidual\":false,\"boostSuppressed\":true}}\n",
+        "stderr": "",
+        "result": {
+          "reason": "ready",
+          "coasting": true,
+          "heldAtEnd": 0,
+          "rawDip": [
+            0,
+            0
+          ],
+          "selectedDip": [
+            -409.148712,
+            92.5857544
+          ],
+          "initialDip": [
+            -409.148712,
+            92.5857544
+          ],
+          "releaseAgeMs": 10.7075,
+          "glideDip": [
+            -45.259903,
+            10.2418108
+          ],
+          "glideMmMagnitude": 9.03096233,
+          "frames": 62,
+          "appliedHeldDeltaDip": [
+            -45.2599335,
+            10.2418146
+          ],
+          "ackAttempts": 1,
+          "ackAccepted": 1,
+          "touchDecision": {
+            "mode": "distance-bounded",
+            "reasonEnum": 9,
+            "responseEnum": 2,
+            "handMotion": [
+              0,
+              0
+            ],
+            "seedMotion": [
+              -79.556694,
+              18.3242626
+            ],
+            "tau": 0.3,
+            "deceleration": 200,
+            "distanceBudget": 9.03096781,
+            "addedResidual": false,
+            "boostSuppressed": true
+          }
+        }
+      },
+      "47-48": {
+        "exit": 0,
+        "completeFixture": true,
+        "stdout": "{\"reason\":\"ready\",\"coasting\":true,\"heldAtEnd\":0,\"rawDip\":[-8005.39111,706.509399],\"selectedDip\":[-6687.64893,590.213074],\"initialDip\":[-6687.64893,590.213074],\"releaseAgeMs\":7.9185,\"glideDip\":[-1718.1674,151.63554],\"glideMmMagnitude\":335.433363,\"frames\":225,\"appliedHeldDeltaDip\":[-98.2307892,10.2538795],\"ackAttempts\":2,\"ackAccepted\":2,\"touchDecision\":{\"mode\":\"short-supported\",\"reasonEnum\":7,\"responseEnum\":1,\"handMotion\":[-1300.37622,116.813004],\"seedMotion\":[-1300.37622,116.813004],\"tau\":0.3,\"deceleration\":200,\"distanceBudget\":0,\"addedResidual\":false,\"boostSuppressed\":false}}\n",
+        "stderr": "",
+        "result": {
+          "reason": "ready",
+          "coasting": true,
+          "heldAtEnd": 0,
+          "rawDip": [
+            -8005.39111,
+            706.509399
+          ],
+          "selectedDip": [
+            -6687.64893,
+            590.213074
+          ],
+          "initialDip": [
+            -6687.64893,
+            590.213074
+          ],
+          "releaseAgeMs": 7.9185,
+          "glideDip": [
+            -1718.1674,
+            151.63554
+          ],
+          "glideMmMagnitude": 335.433363,
+          "frames": 225,
+          "appliedHeldDeltaDip": [
+            -98.2307892,
+            10.2538795
+          ],
+          "ackAttempts": 2,
+          "ackAccepted": 2,
+          "touchDecision": {
+            "mode": "short-supported",
+            "reasonEnum": 7,
+            "responseEnum": 1,
+            "handMotion": [
+              -1300.37622,
+              116.813004
+            ],
+            "seedMotion": [
+              -1300.37622,
+              116.813004
+            ],
+            "tau": 0.3,
+            "deceleration": 200,
+            "distanceBudget": 0,
+            "addedResidual": false,
+            "boostSuppressed": false
+          }
+        }
+      },
+      "186-188": {
+        "exit": 0,
+        "completeFixture": false,
+        "stdout": "{\"reason\":\"ready\",\"coasting\":true,\"heldAtEnd\":0,\"rawDip\":[53.2662163,-19.7419605],\"selectedDip\":[53.2662163,-19.7419605],\"initialDip\":[53.2662163,-19.7419605],\"releaseAgeMs\":41.356,\"glideDip\":[1.31466675,-0.487258136],\"glideMmMagnitude\":0.27321515,\"frames\":13,\"appliedHeldDeltaDip\":[-396.334045,1.39869621],\"ackAttempts\":53,\"ackAccepted\":52,\"touchDecision\":{\"mode\":\"measured\",\"reasonEnum\":7,\"responseEnum\":1,\"handMotion\":[10.3573198,-3.90726304],\"seedMotion\":[10.3573198,-3.90726304],\"tau\":0.3,\"deceleration\":200,\"distanceBudget\":0,\"addedResidual\":false,\"boostSuppressed\":false}}\n",
+        "stderr": "",
+        "result": {
+          "reason": "ready",
+          "coasting": true,
+          "heldAtEnd": 0,
+          "rawDip": [
+            53.2662163,
+            -19.7419605
+          ],
+          "selectedDip": [
+            53.2662163,
+            -19.7419605
+          ],
+          "initialDip": [
+            53.2662163,
+            -19.7419605
+          ],
+          "releaseAgeMs": 41.356,
+          "glideDip": [
+            1.31466675,
+            -0.487258136
+          ],
+          "glideMmMagnitude": 0.27321515,
+          "frames": 13,
+          "appliedHeldDeltaDip": [
+            -396.334045,
+            1.39869621
+          ],
+          "ackAttempts": 53,
+          "ackAccepted": 52,
+          "touchDecision": {
+            "mode": "measured",
+            "reasonEnum": 7,
+            "responseEnum": 1,
+            "handMotion": [
+              10.3573198,
+              -3.90726304
+            ],
+            "seedMotion": [
+              10.3573198,
+              -3.90726304
+            ],
+            "tau": 0.3,
+            "deceleration": 200,
+            "distanceBudget": 0,
+            "addedResidual": false,
+            "boostSuppressed": false
+          }
+        }
+      }
+    },
+    "executableSha256": "7cdc2d3c6ff88a21a417fc07d07947c9ce4f1fa0b9011db7db56e7824221a7a4"
+  },
+  "buildLogSha256": "2e1b1c23763da67975ddde082f54aec8b653c1d9eb9c488c3d530ca5141b4184",
+  "probeSha256": "f0e1a584f8b7aa5bb4248bbc784d4f872b30d8a32206051e34ef190498eab45c",
+  "runnerSha256": "eb5b4f969c2a78795fbdba5070577272b231fab190f80e360bd4698e9b5311e3",
+  "actualApplyAck": true,
+  "noPriorFling": true,
+  "notControllerProductionProbe": true,
+  "case31OmittedForMissingBoundaries": true,
+  "case186188ApproximateForMissingInputs": true,
+  "previousVersionsNotRerun": true
+}

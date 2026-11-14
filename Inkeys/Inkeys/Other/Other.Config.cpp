@@ -293,6 +293,13 @@ namespace
 		}
 	};
 
+// 只接受 32 位整数；浮点、布尔、字符串及超宽整数统一返回 -1，不能窄化成有效值。
+int ReadNarrowInt(const Json::Value& jsonValue)
+{
+	const bool integerType = jsonValue.type() == Json::intValue || jsonValue.type() == Json::uintValue;
+	return integerType && jsonValue.isInt() ? jsonValue.asInt() : -1;
+}
+
 bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSizeKind& outSize)
 		{
 			if (!jsonValue.isString()) return false;
@@ -601,11 +608,26 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 
 				if (JoinPath(groupPath, name) == "UI.Bar.StartupPlacement")
 				{
-					// 启动位置只接受整数 0..2；非法类型或超宽整数不能窄化成有效位置。
-					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
-					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
-					value = candidate >= 0 && candidate <= 2 ? candidate : 0;
+					// 启动位置只接受整数 0..6；非法类型或超宽整数不能窄化成有效位置。
+					const int candidate = ReadNarrowInt(*jsonValue);
+					value = candidate >= 0 && candidate <= 6 ? candidate : 0;
 					return;
+				}
+
+				{
+					const auto workspacePath = JoinPath(groupPath, name);
+					const bool workspaceMask = workspacePath == "UI.Bar.Workspace.Ppt.AutoDockMask"
+						|| workspacePath == "UI.Bar.Workspace.Whiteboard.AutoDockMask";
+					const bool workspaceDirection = workspacePath == "UI.Bar.Workspace.Ppt.Direction"
+						|| workspacePath == "UI.Bar.Workspace.Whiteboard.Direction";
+					if (workspaceMask || workspaceDirection)
+					{
+						// 场景进入策略：掩码仅低 4 位、方向仅 0..2；非法类型或越界回默认值。
+						const int candidate = ReadNarrowInt(*jsonValue);
+						const bool accepted = workspaceMask ? candidate >= 0 && candidate <= 15 : candidate >= 0 && candidate <= 2;
+						value = accepted ? candidate : defaultValue.load();
+						return;
+					}
 				}
 
 				const auto path = JoinPath(groupPath, name);
@@ -676,12 +698,50 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 						? candidate : defaultValue.load();
 					return;
 				}
+				if (path == "Drawing.Eraser.Shape" || path == "Drawing.Eraser.CursorPattern" || path == "Drawing.Eraser.CursorTheme")
+				{
+					// 必须先检查原始整数类型和宽度，防止窄化后误命中合法枚举。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					const int maximum = path == "Drawing.Eraser.CursorTheme" ? 1 : 2;
+					value = candidate >= 0 && candidate <= maximum ? candidate : defaultValue.load();
+					return;
+				}
+				if (path == "Drawing.PalmEraser.Shape")
+				{
+					// -1 为跟随普通橡皮，0..2 为独立形状；非整数或越界回落默认（跟随）。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -2;
+					value = candidate >= -1 && candidate <= 2 ? candidate : defaultValue.load();
+					return;
+				}
+				if (path == "Drawing.PalmEraser.SizeMode" || path == "Drawing.PalmEraser.SizeMethodCircle"
+					|| path == "Drawing.PalmEraser.SizeMethodRectangle" || path == "Drawing.PalmEraser.SizeMethodSquare"
+					|| path == "Drawing.PalmEraser.SizeMultiplierPercent")
+				{
+					// 大小偏好先验原始整数类型和宽度，非法类型或越界值恢复各自默认值。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					const bool multiplier = path == "Drawing.PalmEraser.SizeMultiplierPercent";
+					const int minimum = multiplier ? 25 : 0;
+					const int maximum = multiplier ? 300 : path == "Drawing.PalmEraser.SizeMode" ? 2 : 3;
+					value = candidate >= minimum && candidate <= maximum ? candidate : defaultValue.load();
+					return;
+				}
 				if (path == "Drawing.Cursor.DotHideOnContact")
 				{
 					// 四态设备选择只接受窄整数，拒绝布尔、浮点和超宽数值。
 					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
 					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
 					value = candidate >= 0 && candidate <= 3 ? candidate : defaultValue.load();
+					return;
+				}
+				if (path == "Drawing.Cursor.PenOpacity" || path == "Drawing.Cursor.HighlightPenFillOpacity" ||
+					path == "Drawing.Cursor.DotOpacity" || path == "Drawing.Cursor.HighlightDotFillOpacity")
+				{
+					// 百分比只接受窄整数；非法输入恢复各字段自己的 schema 默认值。
+					const int candidate = ReadNarrowInt(*jsonValue);
+					value = candidate >= 25 && candidate <= 100 ? candidate : defaultValue.load();
 					return;
 				}
 				if (path == "Drawing.Cursor.Mouse" || path == "Drawing.Cursor.Touch" ||
@@ -902,6 +962,23 @@ namespace Inkeys
 			hasReadAllDocument = false;
 		}
 		return readOk;
+	}
+
+	bool Config::ReadAllHasValue(std::string_view dottedPath) const
+	{
+		shared_lock<shared_mutex> lock(rwMutex);
+		if (!hasReadAllDocument) return false;
+		const Json::Value* node = &readAllDocument;
+		std::size_t begin = 0;
+		while (begin <= dottedPath.size())
+		{
+			const std::size_t end = (std::min)(dottedPath.find('.', begin), dottedPath.size());
+			const std::string key(dottedPath.substr(begin, end - begin));
+			if (!node->isObject() || !node->isMember(key)) return false;
+			node = &(*node)[key];
+			begin = end + 1;
+		}
+		return true;
 	}
 
 	bool Config::ReadMini(std::initializer_list<std::string_view> paths, bool readOnly)

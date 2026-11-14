@@ -314,6 +314,7 @@ namespace Inkeys::Drawing::Draw3
 
 	bool InkRenderer::EnsureLaserIncrementalCoverageResources()
 	{
+		if (!LaserResourcesAvailable()) return false;
 		if (laserIncrementalCoverageEnabled_) return true;
 		if (laserIncrementalCoverageUnavailable_ || viewportWidth <= 0.0f || viewportHeight <= 0.0f)
 			return false;

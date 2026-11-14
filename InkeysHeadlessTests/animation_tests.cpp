@@ -73,6 +73,8 @@ int RunDraw3RtsStartupTests();
 int RunDraw3MouseInputTests();
 int RunSpeedEraserTests();
 int RunPalmEraserTests();
+int RunCanvasDebugTests();
+int RunDraw3CanvasPanTests();
 int RunPenWidthTests();
 int RunEraserAttributeTests();
 int RunRecallAttributeTests();
@@ -84,6 +86,7 @@ int RunDesktopShortcutConfigTests();
 int RunKeyboardShortcutInputTests();
 int RunAutoCollapseInteractionTests();
 int RunMouseHookTransportTests();
+int RunStatusIndicatorTests();
 
 namespace
 {
@@ -1732,6 +1735,8 @@ int main(int argc, char** argv)
 	bool settingFontPagesOnly = false;
 	bool settingEraserOnly = false;
 	bool palmEraserOnly = false;
+	bool canvasDebugOnly = false;
+	bool canvasPanOnly = false;
 	bool settingEraserDemoOnly = false;
 	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
@@ -1754,6 +1759,8 @@ int main(int argc, char** argv)
 		settingFontPagesOnly |= argument == "--setting-font-pages-only";
 		settingEraserOnly |= argument == "--setting-eraser-only";
 		palmEraserOnly |= argument == "--palm-eraser-only";
+		canvasDebugOnly |= argument == "--canvas-debug-only";
+		canvasPanOnly |= argument == "--canvas-pan-only";
 		settingEraserDemoOnly |= argument == "--setting-eraser-demo-only";
 		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
 		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
@@ -1804,6 +1811,8 @@ int main(int argc, char** argv)
 		return failures == 0 ? 0 : 1;
 	}
 	if (palmEraserOnly) return RunPalmEraserTests() == 0 ? 0 : 1;
+	if (canvasDebugOnly) return RunCanvasDebugTests() == 0 ? 0 : 1;
+	if (canvasPanOnly) return RunDraw3CanvasPanTests() == 0 ? 0 : 1;
 	if (settingEraserDemoOnly)
 	{
 		const int settings = RunSettingDesignTests(false, true), demo = RunSettingEraserDemoTests();
@@ -1876,6 +1885,8 @@ int main(int argc, char** argv)
 	failureCount += RunUpdateSecurityTests();
 	failureCount += RunSpeedEraserTests();
 	failureCount += RunPalmEraserTests();
+	failureCount += RunCanvasDebugTests();
+	failureCount += RunDraw3CanvasPanTests();
 	failureCount += RunPenWidthTests();
 	failureCount += RunEraserAttributeTests();
 	failureCount += RunRecallAttributeTests();
@@ -1887,6 +1898,7 @@ int main(int argc, char** argv)
 	failureCount += RunKeyboardShortcutInputTests();
 	failureCount += RunAutoCollapseInteractionTests();
 	failureCount += RunMouseHookTransportTests();
+	failureCount += RunStatusIndicatorTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

@@ -1,0 +1,7 @@
+[2026-11-13 output excerpt; full run: 2112 rows, exit=0; SHA256 in results.json]
+[Draw3PanFeel] scenario=tap-rest fps=30 scale=1.000000,1.000000 delivery=frame max_dv_dip_s=0.000000 max_delta_px=0.000000 stop_ms=0.000000 glide_dip=0.000000 remaining_friction_dip=0.000000 release_dip_s=0.000000 release_ratio=-1.000000 residual_px=0.000000 locked_error_px=0.000000 nonfinite=0 failures=0
+[Draw3PanFeel] scenario=tap-coast fps=30 scale=1.000000,1.000000 delivery=frame max_dv_dip_s=2999.993896 max_delta_px=100.000000 stop_ms=0.000000 glide_dip=0.000000 remaining_friction_dip=0.000000 release_dip_s=0.000000 release_ratio=-1.000000 residual_px=0.000000 locked_error_px=0.000000 nonfinite=0 failures=0
+[... 2108 scenario rows omitted from this excerpt ...]
+[Draw3PanFeel] scenario=mouse-capture-loss fps=240 scale=0.750000,0.500000 delivery=subframe max_dv_dip_s=3000.000244 max_delta_px=16.666687 stop_ms=0.000000 glide_dip=0.000000 remaining_friction_dip=0.000000 release_dip_s=0.000000 release_ratio=-1.000000 residual_px=0.000000 locked_error_px=0.000041 nonfinite=0 failures=0
+[Draw3PanFeel] scenario=mouse-cancel fps=240 scale=0.750000,0.500000 delivery=subframe max_dv_dip_s=3000.000244 max_delta_px=16.666687 stop_ms=0.000000 glide_dip=0.000000 remaining_friction_dip=0.000000 release_dip_s=0.000000 release_ratio=-1.000000 residual_px=0.000000 locked_error_px=0.000041 nonfinite=0 failures=0
+[Draw3PanFeel] PASS failures=0 rows=2112 no_gpu=1 no_hwnd=1

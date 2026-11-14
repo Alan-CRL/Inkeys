@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <numbers>
 
 namespace Inkeys::Drawing::Draw3::PalmEraser
 {
@@ -24,6 +23,10 @@ namespace Inkeys::Drawing::Draw3::PalmEraser
 	{
 		if (settings.thresholdPercent < 1 || settings.thresholdPercent > 400) settings.thresholdPercent = 100;
 		settings.recognitionWindowMs = RestoreRecognitionWindowMs(settings.recognitionWindowMs);
+		if (settings.shape < -1 || settings.shape > 2) settings.shape = -1;
+		if (settings.sizeMode < 0 || settings.sizeMode > 2) settings.sizeMode = 0;
+		for (auto& method : settings.sizeMethods) if (method < 0 || method > 3) method = 0;
+		if (settings.sizeMultiplierPercent < 25 || settings.sizeMultiplierPercent > 300) settings.sizeMultiplierPercent = 100;
 		return settings;
 	}
 
@@ -85,11 +88,56 @@ namespace Inkeys::Drawing::Draw3::PalmEraser
 		return radius + std::max(radius * 0.15f, 4.0f);
 	}
 
+	double ContactEraserDiameter(EraserShape shape, int method, double width, double height, int multiplierPercent) noexcept
+	{
+		if (!Positive(width) || !Positive(height) || method < 0 || method > 3 || multiplierPercent <= 0) return 0;
+		constexpr double pi = 3.14159265358979323846;
+		const double area = width * height;
+		double size = 0, equivalentFactor = 1;
+		if (shape == EraserShape::Circle)
+		{
+			switch (method)
+			{
+			case 0: size = std::sqrt(area); break;
+			case 1: size = 2 * std::sqrt(area / pi); break;
+			case 2: size = (std::min)(width, height); break;
+			case 3: size = std::sqrt(width * width + height * height); break;
+			}
+		}
+		else if (shape == EraserShape::Rectangle)
+		{
+			switch (method)
+			{
+			case 0: size = std::sqrt(area / 1.5); break;
+			case 1: size = std::sqrt(pi * area / 6); break;
+			case 2: size = (std::min)(width, height / 1.5); break;
+			case 3: size = (std::max)(width, height / 1.5); break;
+			}
+			equivalentFactor = std::sqrt(pi / 6);
+		}
+		else if (shape == EraserShape::Square)
+		{
+			switch (method)
+			{
+			case 0: size = std::sqrt(pi * area) / 2; break;
+			case 1: size = std::sqrt(area); break;
+			case 2: size = (std::min)(width, height); break;
+			case 3: size = (std::max)(width, height); break;
+			}
+			equivalentFactor = std::sqrt(pi) / 2;
+		}
+		// 标量仍为等面积圆直径；100% 不参与乘除，保留圆形默认路径的逐位结果。
+		if (multiplierPercent != 100) size *= multiplierPercent / 100.0;
+		if (equivalentFactor != 1) size /= equivalentFactor;
+		return Positive(size) ? size : 0;
+	}
+
 	void State::Begin(const Settings& preferences, const Scale& displayScale, ToolCategory tool,
-		int64_t contactDownQpc, int64_t frequency, bool recognitionBlocked) noexcept
+		int64_t contactDownQpc, int64_t frequency, bool recognitionBlocked, EraserShape followedShape) noexcept
 	{
 		*this = {};
 		settings = NormalizeSettings(preferences);
+		shape = ResolveShape(settings, followedShape);
 		scale = displayScale;
 		blocked = recognitionBlocked;
 		downQpc = deadlineQpc = contactDownQpc;
@@ -116,7 +164,10 @@ namespace Inkeys::Drawing::Draw3::PalmEraser
 		if (std::max(width, height) / std::min(width, height) > 3.5) return false;
 		const double area = width * height;
 		if (area <= maximumAreaPx) return false;
-		const double diameter = 2.0 * std::sqrt(area / std::numbers::pi);
+		// 识别仍用外框 W×H，定尺独立采用 Down 锁存形状对应的方法。
+		const double diameter = settings.sizeMode == 0
+			? ContactEraserDiameter(shape, settings.sizeMethods[static_cast<size_t>(shape)], width, height, settings.sizeMultiplierPercent)
+			: std::sqrt(area); // 固定方式忽略接触定尺偏好，保留原面积样本校验，实际大小由 owner 锁存。
 		if (!Positive(diameter) || diameter > std::numeric_limits<float>::max()) return false;
 
 		maximumAreaPx = area;

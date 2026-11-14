@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>状态指示器 v2 预览</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font: 13px "Microsoft YaHei UI", "Segoe UI", sans-serif; background: #111; color: #ddd; display: flex; height: 100vh; }
+  #side { width: 300px; padding: 12px 14px; box-sizing: border-box; overflow: auto; background: #1b1b1b; border-right: 1px solid #333; }
+  #side h1 { font-size: 15px; margin: 0 0 6px; }
+  #side h2 { font-size: 12px; color: #9a9a9a; margin: 14px 0 6px; font-weight: 600; }
+  #side p { color: #8a8a8a; margin: 4px 0; line-height: 1.5; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; align-items: center; }
+  button { background: #2a2a2a; color: #ddd; border: 1px solid #3c3c3c; border-radius: 4px; padding: 4px 8px; cursor: pointer; font: inherit; }
+  button:hover { background: #333; }
+  label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+  input[type=range] { width: 120px; }
+  #stageWrap { flex: 1; position: relative; overflow: hidden; }
+  canvas { display: block; }
+  #log { font: 11px Consolas, monospace; color: #888; white-space: pre-wrap; }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font: 11px Consolas, monospace; color: #9a9a9a; }
+</style>
+</head>
+<body>
+<div id="side">
+  <h1>主栏状态指示器 v2</h1>
+  <p>按 2026-11-04 决策复刻：圆角矩形、主栏材质、强调色图标/文字/边框、胶囊中心压主按钮边框、紧凑同心弧、灵动收起、遮挡式组合成。尺寸单位为 DIP。</p>
+
+  <h2>外观</h2>
+  <div class="row">
+    <label><input type="radio" name="theme" value="dark" checked>深色</label>
+    <label><input type="radio" name="theme" value="light">浅色</label>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" id="expanded" checked>主栏展开</label>
+    <label><input type="checkbox" id="flip">倒转（主栏在上方）</label>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" id="lighting" checked>光影（光晕）</label>
+    <label><input type="checkbox" id="drawing">绘制态（隐藏环）</label>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" id="bounds" checked>显示窗口边界</label>
+    <label><input type="checkbox" id="displayAccent" checked>强调色按材质校正</label>
+  </div>
+  <div class="row"><label>动画速率 <input type="range" id="speed" min="0.1" max="2" step="0.05" value="1"></label><span id="speedV">1.00</span></div>
+  <div class="row"><label>缩放 <input type="range" id="zoom" min="1" max="2.5" step="0.05" value="1.6"></label><span id="zoomV">1.60</span></div>
+
+  <h2>状态源</h2>
+  <div class="row">
+    <button data-add="ppt">PPT 放映</button>
+    <button data-add="wps">WPS 放映</button>
+    <button data-add="top">超级置顶</button>
+  </div>
+  <div class="row">
+    <button data-add="ver">新版本（静默下载）</button>
+    <button data-add="notify">通知</button>
+    <button data-add="long">超长文本</button>
+  </div>
+  <div class="row">
+    <button data-add="random">随机</button>
+    <button data-add="five">连加 5 个</button>
+    <button data-add="fill">加满 25</button>
+  </div>
+  <div class="row">
+    <button id="retire">注销最新持久</button>
+    <button id="clear">清空</button>
+    <button id="pause">暂停/继续</button>
+  </div>
+
+  <h2>交互</h2>
+  <p>点胶囊：提前收起（通知直接退场）。点单个方块：就地重新展开。点多个方块之一：同心弧展开；弧上点选展开胶囊，再点收起；点空白 / 主按钮或 3s 无交互收回。</p>
+
+  <h2>参数</h2>
+  <div class="kv" id="params"></div>
+  <h2>状态</h2>
+  <div id="log"></div>
+</div>
+<div id="stageWrap"><canvas id="stage"></canvas></div>
+
+<script>
+const ICONS = /*ICONS*/{};
+const ICON_PATHS = Object.fromEntries(Object.entries(ICONS).map(([k, d]) => [k, new Path2D(d)]));
+
+// ---------- 设计参数（DIP） ----------
+const P = {
+  mainSize: 80, mainN: 3, barGap: 10, barWidth: 380, barHeight: 80, barRadius: 8,
+  windowOutset: 8,               // 原窗口 = 主栏内容外扩（阴影/光影包络）
+  capH: 30, capR: 6, capIcon: 18, capGap: 6, capText: 13, capMax: 160,
+  stackStep: 4, stackLayers: 3,
+  dockSize: 18, dockR: 4, dockIcon: 12, dockStep: 6, dockInset: 14, dockOpacity: 0.5,
+  fanSize: 28, fanR: 6, fanIcon: 17, fanGap: 4, fanClear: 6, fanLayerGap: 32, fanSpan: 130,
+  ringW: 1.5, glow: 6, breath: 1.6,
+  hold: 3.0, fanAutoClose: 3.0,
+  enter: 0.42, dismiss: 0.30, exit: 0.28,
+  // 弹簧：ω 角频率、ζ 阻尼比（<1 欠阻尼，有轻微过冲）
+  morph: { w: 20, z: 0.62 }, flight: { w: 13, z: 0.74 }, slot: { w: 18, z: 0.72 }, bump: { w: 26, z: 0.35 },
+  fanSpring: { w: 16, z: 0.7 }, select: { w: 20, z: 0.7 },
+  flightDelay: 0.10, flightLift: 12,
+};
+document.getElementById('params').innerHTML = Object.entries(P).filter(([, v]) => typeof v === 'number')
+  .map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
+
+// ---------- 工具 ----------
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const outBack = t => { const c1 = 1.70158, c3 = c1 + 1; t = clamp(t, 0, 1); return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const inBack = t => { const c1 = 1.70158, c3 = c1 + 1; t = clamp(t, 0, 1); return c3 * t * t * t - c1 * t * t; };
+const inOutSine = t => (1 - Math.cos(Math.PI * clamp(t, 0, 1))) / 2;
+const outSine = t => Math.sin(clamp(t, 0, 1) * Math.PI / 2);
+
+class Spring {
+  constructor(x = 0, cfg = P.slot) { this.x = x; this.v = 0; this.t = x; this.cfg = cfg; }
+  set(t) { this.t = t; return this; }
+  jump(x) { this.x = this.t = x; this.v = 0; return this; }
+  step(dt) {
+    let rem = dt;
+    while (rem > 1e-6) {
+      const h = Math.min(rem, 1 / 240); rem -= h;
+      const { w, z } = this.cfg;
+      const a = -w * w * (this.x - this.t) - 2 * z * w * this.v;
+      this.v += a * h; this.x += this.v * h;
+    }
+  }
+  get settled() { return Math.abs(this.x - this.t) < 0.002 && Math.abs(this.v) < 0.02; }
+}
+
+// OKLab/OKLCH：按材质校正强调显示色（深底提亮、浅底压暗）。
+function srgbToLin(c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+function linToSrgb(c) { c = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; return Math.round(clamp(c, 0, 1) * 255); }
+function toOklch(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = srgbToLin(n >> 16 & 255), g = srgbToLin(n >> 8 & 255), b = srgbToLin(n & 255);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const L = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
+  const A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+  const B = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+  return [L, Math.hypot(A, B), Math.atan2(B, A)];
+}
+function fromOklch([L, C, H]) {
+  const A = C * Math.cos(H), B = C * Math.sin(H);
+  const l = Math.pow(L + 0.3963377774 * A + 0.2158037573 * B, 3);
+  const m = Math.pow(L - 0.1055613458 * A - 0.0638541728 * B, 3);
+  const s = Math.pow(L - 0.0894841775 * A - 1.2914855480 * B, 3);
+  const r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+  const g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+  const b = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
+  return [linToSrgb(r), linToSrgb(g), linToSrgb(b)];
+}
+const accentCache = new Map();
+function displayAccent(hex, light) {
+  if (!ui.displayAccent) { const n = parseInt(hex.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+  const key = hex + light;
+  if (!accentCache.has(key)) {
+    const [L, C, H] = toOklch(hex);
+    // 深色主栏底 #181818：L 至少 0.72；浅色雾白底：L 至多 0.52。色度限制避免出界发脏。
+    const target = light ? [Math.min(L, 0.52), Math.min(C, 0.17), H] : [Math.max(L, 0.72), Math.min(C, 0.16), H];
+    accentCache.set(key, fromOklch(target));
+  }
+  return accentCache.get(key);
+}
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+function rrPath(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r); ctx.arcTo(x, y, x + r, y, r); ctx.closePath();
+}
+function superPoints(cx, cy, a, b, n, count = 192) {
+  // 从顶部中点顺时针，与 D2D 进度段起点一致。
+  const pts = [];
+  for (let i = 0; i <= count; i++) {
+    const t = -Math.PI / 2 + 2 * Math.PI * i / count;
+    const c = Math.cos(t), s = Math.sin(t);
+    pts.push([cx + a * Math.sign(c) * Math.pow(Math.abs(c), 2 / n), cy + b * Math.sign(s) * Math.pow(Math.abs(s), 2 / n)]);
+  }
+  return pts;
+}
+function superRadius(theta, a, n) {
+  const c = Math.abs(Math.cos(theta)), s = Math.abs(Math.sin(theta));
+  return a / Math.pow(Math.pow(c, n) + Math.pow(s, n), 1 / n);
+}
+function superEdgeY(dx, a, n) { return a * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(dx) / a, n)), 1 / n); }
+
+// ---------- UI 状态 ----------
+const ui = { theme: 'dark', expanded: true, flip: false, lighting: true, drawing: false, bounds: true, displayAccent: true, speed: 1, zoom: 1.6 };
+document.querySelectorAll('input[name=theme]').forEach(r => r.onchange = () => ui.theme = r.value);
+for (const id of ['expanded', 'flip', 'lighting', 'drawing', 'bounds', 'displayAccent'])
+  document.getElementById(id).onchange = e => { ui[id] = e.target.checked; accentCache.clear(); };
+document.getElementById('speed').oninput = e => { ui.speed = +e.target.value; document.getElementById('speedV').textContent = ui.speed.toFixed(2); };
+document.getElementById('zoom').oninput = e => { ui.zoom = +e.target.value; document.getElementById('zoomV').textContent = ui.zoom.toFixed(2); };
+
+const canvas = document.getElementById('stage'), ctx = canvas.getContext('2d');
+const measureCtx = document.createElement('canvas').getContext('2d');
+const FONT = '"Microsoft YaHei UI", "Segoe UI", sans-serif';
+function textWidth(t) { measureCtx.font = `bold ${P.capText}px ${FONT}`; return measureCtx.measureText(t).width; }
+
+// ---------- 几何：主栏 ----------
+function geometry() {
+  const Z = ui.zoom, W = canvas.width / devicePixelRatio / Z, H = canvas.height / devicePixelRatio / Z;
+  const totalW = P.mainSize + (ui.expanded ? P.barGap + P.barWidth : 0);
+  const left = (W - totalW) / 2;
+  const cy = ui.flip ? 120 : H - 140;
+  const main = { cx: left + P.mainSize / 2, cy, a: P.mainSize / 2 };
+  const bar = ui.expanded ? { x: left + P.mainSize + P.barGap, y: cy - P.barHeight / 2, w: P.barWidth, h: P.barHeight } : null;
+  const content = { l: left, t: cy - P.mainSize / 2, r: left + totalW, b: cy + P.mainSize / 2 };
+  const base = { l: content.l - P.windowOutset, t: content.t - P.windowOutset, r: content.r + P.windowOutset, b: content.b + P.windowOutset };
+  const dir = ui.flip ? 1 : -1;                      // 胶囊/方块向外方向
+  return { W, H, main, bar, base, dir, edgeY: ui.flip ? cy + P.mainSize / 2 : cy - P.mainSize / 2 };
+}
+
+// ---------- 模型 ----------
+const SOURCES = {
+  ppt: { text: '放映模式', color: '#C43E1C', icon: 'barStatusSlideshow', life: 'persist' },
+  wps: { text: '放映模式', color: '#E8352B', icon: 'barStatusSlideshow', life: 'persist' },
+  top: { text: '超级置顶', color: '#1F4FB8', icon: 'barStatusPin', life: 'persist' },
+  ver: { text: '新版本', color: '#2EA043', icon: 'barStatusNewVersion', life: 'persist', progress: true },
+  notify: { text: '已保存', color: '#008FAD', icon: 'barStatusBell', life: 'notify' },
+  long: { text: '这是一条用于检查三秒内完整滚动的超长状态提示', color: '#9B59B6', icon: 'barStatusInfo', life: 'persist' },
+};
+const RANDOM_COLORS = ['#C43E1C', '#E8352B', '#1F4FB8', '#2EA043', '#9B59B6', '#E09D12', '#008FAD', '#CC4780'];
+const RANDOM_TEXTS = ['OK', '放映模式', '超级置顶', 'Download', '这是一条用于检查三秒内完整滚动的超长状态提示', 'A very long status message to exercise scrolling'];
+const RANDOM_ICONS = Object.keys(ICONS);
+
+let entries = [], serial = 0, dockSerial = 0, now = 0;
+const fan = { open: false, p: new Spring(0, P.fanSpring), deadline: 0, selected: 0, frozen: [] };
+const ring = { owner: 0, color: '#2EA043', op: new Spring(0, { w: 14, z: 1 }), colorMix: 1, from: '#2EA043' };
+let pointer = { x: -1, y: -1, down: 0, hover: 0 };
+
+function add(kind) {
+  if (entries.filter(e => !e.leaving).length >= 25) return;
+  let spec;
+  if (kind === 'random') {
+    spec = { text: RANDOM_TEXTS[Math.random() * RANDOM_TEXTS.length | 0], color: RANDOM_COLORS[Math.random() * 8 | 0],
+      icon: RANDOM_ICONS[Math.random() * RANDOM_ICONS.length | 0], life: Math.random() < 0.25 ? 'notify' : 'persist', progress: Math.random() < 0.3 };
+  } else spec = { ...SOURCES[kind] };
+  const e = {
+    id: ++serial, ...spec, textW: textWidth(spec.text), phase: 'expanded', born: now,
+    appear: 0, holding: false, holdEnd: 0, holdStart: 0,
+    stack: new Spring(queueLength(), P.slot),
+    width: new Spring(0, P.morph), flight: new Spring(0, P.flight), bump: new Spring(1, P.bump),
+    slot: new Spring(0, P.slot), landed: false, flightStart: 0, vanish: 0, select: new Spring(0, P.select),
+    progress: spec.progress ? 0 : -1, progressStart: now, presence: 1,
+    stackW: new Spring(0, P.slot),
+  };
+  e.fullW = capsuleWidth(e);
+  e.width.jump(e.fullW);
+  const q0 = expandedQueue()[0];
+  e.stackW.jump(q0 ? q0.stackW.x : e.fullW);
+  entries.push(e);
+}
+function capsuleWidth(e) {
+  const pad = (P.capH - 17) / 2;   // 同底栏指示器：高度扣除文字高度后的余量作内边距
+  return clamp(pad + P.capIcon + P.capGap + e.textW + pad + 2, P.capH, P.capMax);
+}
+function textClipWidth(e) { const pad = (P.capH - 17) / 2; return e.fullW - pad * 2 - P.capIcon - P.capGap - 2; }
+const expandedQueue = () => entries.filter(e => e.phase === 'expanded');
+const queueLength = () => expandedQueue().length;
+const docked = () => entries.filter(e => e.phase === 'docked' || (e.phase === 'collapsing' && e.landed) || e.phase === 'reexpand');
+function dockOrder() {
+  // 新的在右（slot 0），旧的依次向左。
+  return entries.filter(e => e.dockSerial && !(e.phase === 'exiting' && e.vanish >= 1)).sort((a, b) => b.dockSerial - a.dockSerial);
+}
+
+function collapse(e) {
+  if (e.phase !== 'expanded' && e.phase !== 'reexpand') return;
+  if (e.life === 'notify') { e.phase = 'dismissing'; e.vanish = 0; return; }
+  e.phase = 'collapsing'; e.width.set(P.capH); e.flightStart = now + P.flightDelay / ui.speed; e.flight.jump(0); e.landed = false;
+  e.wasReexpand = !!e.reexpandFrom;
+}
+function retireNewest() {
+  const list = entries.filter(e => e.life === 'persist' && e.phase !== 'exiting').sort((a, b) => b.id - a.id);
+  if (list[0]) { list[0].phase = 'exiting'; list[0].vanish = 0; }
+}
+
+// ---------- 推进 ----------
+function advance(dt) {
+  const sdt = dt * ui.speed;
+  now += dt;
+  // 队首计时：最前者到达位置后开始 3s
+  const q = expandedQueue();
+  q.forEach((e, i) => { e.stack.set(i); e.stackW.set(i === 0 ? e.fullW : q[0].fullW); });
+  const front = q[0];
+  if (front && !front.holding && front.stack.x < 0.05 && front.appear > 0.6) { front.holding = true; front.holdStart = now; front.holdEnd = now + P.hold; }
+  for (const e of entries) {
+    e.appear = Math.min(1, e.appear + sdt / P.enter);
+    e.stack.step(sdt); e.stackW.step(sdt); e.bump.step(sdt); e.select.step(sdt);
+    if (e.phase === 'expanded' && e.holding && now >= e.holdEnd) collapse(e);
+    if (e.phase === 'reexpand') {
+      e.width.step(sdt); e.flight.step(sdt);
+      if (e.holding && now >= e.holdEnd) collapse(e);
+    }
+    if (e.phase === 'collapsing') {
+      e.width.step(sdt);
+      if (now >= e.flightStart) { e.flight.set(1); e.flight.step(sdt); }
+      if (!e.landed && e.flight.x >= 0.97) {
+        e.landed = true;
+        if (!e.dockSerial) e.dockSerial = ++dockSerial;
+        e.bump.v = 1.6;    // 着陆轻弹
+      }
+      if (e.landed && e.flight.settled && e.width.settled) { e.phase = 'docked'; e.reexpandFrom = null; }
+    }
+    if (e.phase === 'dismissing' || e.phase === 'exiting') e.vanish = Math.min(1, e.vanish + sdt / (e.phase === 'dismissing' ? P.dismiss : P.exit));
+    if (e.progress >= 0 && e.progress < 1) e.progress = clamp((now - e.progressStart) / 6, 0, 1);
+    if (e.progress >= 1 && !e.progressDoneAt) e.progressDoneAt = now;
+  }
+  entries = entries.filter(e => !((e.phase === 'dismissing' || e.phase === 'exiting') && e.vanish >= 1));
+  // 停靠槽：只有已着陆者占位，着陆瞬间其余方块才让位。
+  dockOrder().filter(e => e.landed || e.phase === 'docked' || e.phase === 'reexpand' || e.phase === 'exiting')
+    .forEach((e, i) => e.slot.set(i));
+  for (const e of entries) e.slot.step(sdt);
+  // 同心弧
+  const dockCount = entries.filter(e => e.phase === 'docked').length;
+  if (fan.open && (dockCount < 2 || now >= fan.deadline)) closeFan();
+  fan.p.step(sdt);
+  // 环：随最前可读者
+  const ringOwner = front && front.holding ? front : null;
+  if (ringOwner && ringOwner.id !== ring.owner) { ring.from = currentRingColor(); ring.color = ringOwner.color; ring.colorMix = 0; ring.owner = ringOwner.id; }
+  ring.colorMix = Math.min(1, ring.colorMix + sdt / 0.3);
+  ring.op.set(ringOwner && !ui.drawing ? 1 : 0); ring.op.step(sdt);
+  if (!ringOwner && ring.op.x < 0.01) ring.owner = 0;
+}
+function currentRingColor() { return ring.colorMix >= 1 ? ring.color : ring.color; }
+function openFan() { fan.open = true; fan.deadline = now + P.fanAutoClose; fan.p.set(1); fan.selected = 0;
+  fan.frozen = dockOrder().filter(e => e.phase === 'docked').map(e => e.id); }
+function closeFan() { fan.open = false; fan.p.set(0); for (const e of entries) e.select.set(0); fan.selected = 0; }
+
+// ---------- 布局：每帧输出绘制项（自下而上） ----------
+function layout(G) {
+  const items = [];
+  const L = ui.theme === 'light';
+  const cx = G.main.cx, edgeY = G.edgeY, dir = G.dir, a = G.main.a;
+  // 停靠位：竖直中心落在超椭圆边框上、靠右端；夹入原窗口
+  const dockX0 = cx + a - P.dockInset;
+  const dockEdgeY = G.main.cy + dir * superEdgeY(dockX0 - cx, a, P.mainN);
+  const dockPoint = slot => {
+    let x = dockX0 - slot * P.dockStep, y = dockEdgeY;
+    x = Math.max(x, G.base.l + P.dockSize / 2);
+    y = dir < 0 ? Math.max(y, G.base.t + P.dockSize / 2) : Math.min(y, G.base.b - P.dockSize / 2);
+    return [x, y];
+  };
+  // 同心弧位置（对称于正上 / 倒转正下）
+  const fanIds = fan.frozen.length ? fan.frozen : dockOrder().filter(e => e.phase === 'docked').map(e => e.id);
+  const R0 = superRadius(50 * Math.PI / 180, a, P.mainN) + P.fanClear + P.fanSize / 2;
+  // 每层按弧长紧挨放置；k=0 为最新，落在最右侧
+  const fanSlots = [];
+  for (let i = 0, layer = 0; i < fanIds.length; layer++) {
+    const R = R0 + layer * P.fanLayerGap, step = (P.fanSize + P.fanGap) / R;
+    const m = Math.min(Math.floor((P.fanSpan * Math.PI / 180) / step) + 1, fanIds.length - i);
+    for (let j = 0; j < m; j++) fanSlots.push([R, Math.PI / 2 - ((m - 1) / 2 - j) * step]);
+    i += m;
+  }
+  const fanPoint = id => {
+    const k = fanIds.indexOf(id); if (k < 0) return null;
+    const [R, th] = fanSlots[k];
+    return [cx + R * Math.cos(th), G.main.cy + dir * R * Math.sin(th)];
+  };
+
+  const capsuleRect = (e, w, cxCap, cyCap) => ({ x: cxCap - e.fullW / 2, y: cyCap - P.capH / 2, w, h: P.capH, r: P.capR });
+
+  for (const e of entries) {
+    const accent = displayAccent(e.color, L);
+    const base = { id: e.id, e, accent };
+    const appearS = lerp(0.35, 1, outBack(e.appear)), appearO = outSine(e.appear);
+    if (e.phase === 'expanded' || e.phase === 'dismissing' || (e.phase === 'exiting' && !e.dockSerial)) {
+      const layerPos = Math.min(e.stack.x, P.stackLayers);
+      const cyCap = edgeY + dir * layerPos * P.stackStep;
+      // 后排与队首等宽，只在外侧露出一条强调色边；补位到队首时再展开到自身宽度
+      const w = e.phase === 'expanded' ? e.stackW.x : e.fullW;
+      const rect = { x: cx - w / 2, y: cyCap - P.capH / 2, w, h: P.capH, r: P.capR };
+      let s = appearS, o = appearO;
+      if (e.phase === 'dismissing') { s *= Math.max(0, 1 - inBack(e.vanish)); o *= 1 - inOutSine(e.vanish); }
+      if (e.phase === 'exiting') { s *= 1 - 0.5 * inOutSine(e.vanish); o *= 1 - inOutSine(e.vanish); }
+      const front = expandedQueue()[0] === e;
+      items.push({ ...base, kind: 'capsule', rect, scale: s, pivot: [cx, edgeY], opacity: o, textOpacity: 1, z: 300 - e.stack.x * 10,
+        front, scroll: scrollOffset(e), hit: e.phase === 'expanded' ? 'capsule' : null, overflow: true });
+      continue;
+    }
+    if (e.phase === 'collapsing' || e.phase === 'reexpand') {
+      // 形变：宽度向图标收缩（左端图标不动）；飞行：贝塞尔弧线飞向停靠槽
+      const full = capsuleRect(e, e.fullW, cx, edgeY);
+      const w = clamp(e.width.x, P.capH * 0.9, e.fullW * 1.06);
+      const morph = clamp((e.fullW - e.width.x) / Math.max(1, e.fullW - P.capH), 0, 1.1);
+      const start = [full.x + P.capH / 2, edgeY];
+      // 新的总是落在最右（槽 0），着陆后其余方块才让位
+      const end = dockPoint(e.landed ? e.slot.x : 0);
+      const p = e.flight.x;
+      const ctrl = [(start[0] + end[0]) / 2, Math.min(start[1], end[1]) * (dir < 0 ? 1 : 0) + Math.max(start[1], end[1]) * (dir < 0 ? 0 : 1) + dir * P.flightLift];
+      const q = clamp(p, 0, 1.2), u = 1 - q;
+      const pos = [u * u * start[0] + 2 * u * q * ctrl[0] + q * q * end[0], u * u * start[1] + 2 * u * q * ctrl[1] + q * q * end[1]];
+      const size = lerp(P.capH, P.dockSize, clamp(p, 0, 1));
+      const radius = lerp(P.capR, P.dockR, clamp(p, 0, 1));
+      const flying = p > 0.001;
+      const opacity = lerp(1, P.dockOpacity, smooth(0.55, 1, p));
+      if (!flying) {
+        const rect = { x: full.x, y: full.y, w, h: P.capH, r: P.capR };
+        items.push({ ...base, kind: 'capsule', rect, scale: 1, pivot: [cx, edgeY], opacity: 1, textOpacity: 1 - smooth(0, 0.7, morph), z: 320,
+          front: true, scroll: scrollOffset(e), hit: 'capsule', overflow: true });
+      } else {
+        const sc = e.bump.x;
+        items.push({ ...base, kind: 'tile', cx: pos[0], cy: pos[1], size: size * sc, r: radius, icon: lerp(P.capIcon, P.dockIcon, clamp(p, 0, 1)),
+          opacity, z: e.landed ? 200 + e.dockSerial * 0.001 : 330, hit: null, overflow: true });
+      }
+      continue;
+    }
+    // 停靠 / 退出中的已停靠项 / 弧
+    const fp = fan.p.x, fanGeo = clamp(fp, 0, 1.2);
+    let [x, y] = dockPoint(e.slot.x);
+    let size = P.dockSize, r = P.dockR, icon = P.dockIcon, opacity = P.dockOpacity, z = 100 + e.dockSerial * 0.001;
+    const fpnt = fanPoint(e.id);
+    if (fp > 0.001 && fpnt) {
+      const k = fanIds.indexOf(e.id), stagger = clamp(fp * 1.15 - k * 0.012, 0, 1.2);
+      x = lerp(x, fpnt[0], stagger); y = lerp(y, fpnt[1], stagger);
+      size = lerp(P.dockSize, P.fanSize, clamp(stagger, 0, 1.15)); r = lerp(P.dockR, P.fanR, clamp(stagger, 0, 1));
+      icon = lerp(P.dockIcon, P.fanIcon, clamp(stagger, 0, 1));
+      opacity = lerp(P.dockOpacity, 1, smooth(0, 0.6, fp)); z = 400 + k * 0.01;
+    }
+    let s = e.bump.x;
+    if (e.phase === 'exiting') { s *= 1 - 0.5 * inOutSine(e.vanish); opacity *= 1 - inOutSine(e.vanish); }
+    const sel = e.select.x;
+    if (sel > 0.001) {
+      // 弧上选中：以方块为中心左右展开为胶囊
+      const w = lerp(size, e.fullW, clamp(sel, 0, 1.08));
+      const rect = { x: x - w / 2, y: y - lerp(size, P.capH, clamp(sel, 0, 1)) / 2, w, h: lerp(size, P.capH, clamp(sel, 0, 1)), r: lerp(r, P.capR, clamp(sel, 0, 1)) };
+      const cxL = clamp(rect.x, 4, G.W - rect.w - 4) - rect.x; rect.x += cxL;
+      items.push({ ...base, kind: 'capsule', rect, scale: 1, pivot: [x, y], opacity: 1, textOpacity: smooth(0.3, 1, sel), z: 600,
+        front: true, scroll: scrollOffset(e, now - (e.selectStart || now)), hit: 'fan', overflow: true, iconLeft: true });
+      continue;
+    }
+    items.push({ ...base, kind: 'tile', cx: x, cy: y, size: size * s, r, icon, opacity, z, hit: fp > 0.5 ? 'fan' : 'dock', overflow: fp > 0.001,
+      hover: pointer.hover === e.id, pressed: pointer.down === e.id });
+  }
+  items.sort((p, q) => p.z - q.z);
+  return items;
+}
+function scrollOffset(e, elapsed) {
+  const clip = textClipWidth(e), over = e.textW - clip;
+  if (over <= 0) return 0;
+  const t = elapsed !== undefined ? elapsed : (e.holding ? now - e.holdStart : 0);
+  const travel = P.hold - P.enter - 0.6;
+  return over * clamp((t - 0.3) / travel, 0, 1);
+}
+
+// ---------- 绘制 ----------
+function material(L) {
+  return L ? { fill: [251, 251, 251], fillA: 0.92, frame: [139, 139, 139], frameA: 0.18, text: [26, 26, 26], hover: [0, 0, 0, 0.06], shadow: 'rgba(0,0,0,0.08)' }
+           : { fill: [24, 24, 24], fillA: 0.8, frame: [255, 255, 255], frameA: 0.18, text: [255, 255, 255], hover: [255, 255, 255, 0.10], shadow: null };
+}
+function itemShape(it) {
+  if (it.kind === 'tile') { const s = it.size; return { x: it.cx - s / 2, y: it.cy - s / 2, w: s, h: s, r: it.r * (s / Math.max(1, it.size)) }; }
+  const r = it.rect, s = it.scale, px = it.pivot[0], py = it.pivot[1];
+  return { x: px + (r.x - px) * s, y: py + (r.y - py) * s, w: r.w * s, h: r.h * s, r: r.r * s };
+}
+function drawBackdrop(G) {
+  const g = ctx.createLinearGradient(0, 0, G.W, G.H);
+  g.addColorStop(0, '#3a5a7a'); g.addColorStop(0.5, '#7b6a8f'); g.addColorStop(1, '#c79a6a');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, G.W, G.H);
+  ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(40, 40, G.W * 0.45, G.H * 0.35);
+  ctx.fillStyle = '#222'; ctx.font = `600 22px ${FONT}`; ctx.fillText('课件内容 / 桌面', 60, 80);
+  for (let i = 0; i < 6; i++) { ctx.fillStyle = `hsl(${i * 60},60%,55%)`; ctx.fillRect(G.W * 0.55 + i * 40, 60 + (i % 2) * 40, 30, G.H * 0.7); }
+}
+function drawMainBar(G, M) {
+  const { main, bar } = G;
+  if (bar) {
+    ctx.beginPath(); rrPath(ctx, bar.x, bar.y, bar.w, bar.h, P.barRadius);
+    ctx.fillStyle = rgba(M.fill, M.fillA); ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = rgba(M.frame, M.frameA); ctx.stroke();
+    // 占位按钮（判断弧遮挡观感）
+    for (let i = 0; i < 5; i++) {
+      const bx = bar.x + 10 + i * 75;
+      ctx.beginPath(); rrPath(ctx, bx, bar.y + 5, 70, 70, 4); ctx.fillStyle = rgba(M.text, 0.05); ctx.fill();
+      ctx.beginPath(); ctx.arc(bx + 35, bar.y + 30, 11, 0, 7); ctx.fillStyle = rgba(M.text, 0.7); ctx.fill();
+      ctx.fillStyle = rgba(M.text, 0.85); ctx.font = `bold 13px ${FONT}`; ctx.textAlign = 'center';
+      ctx.fillText(['选择', '画笔', '橡皮', '更多', '白板'][i], bx + 35, bar.y + 62); ctx.textAlign = 'left';
+    }
+  }
+  const pts = superPoints(main.cx, main.cy, main.a, main.a, P.mainN);
+  ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+  const mainLight = ui.theme === 'light' && ui.expanded;
+  const MM = material(mainLight);
+  ctx.fillStyle = rgba(MM.fill, mainLight ? MM.fillA : 0.6 + (ui.expanded ? 0.2 : 0)); ctx.fill();
+  ctx.lineWidth = 1; ctx.strokeStyle = rgba(MM.frame, MM.frameA); ctx.stroke();
+  // logo 占位
+  ctx.beginPath(); ctx.arc(main.cx, main.cy, 16, 0, 7); ctx.fillStyle = mainLight ? '#00a99d' : '#58ffec'; ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1;
+  return pts;
+}
+function strokeGlow(color, width, draw) {
+  if (ui.lighting) {
+    ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = P.glow * ui.zoom * devicePixelRatio; ctx.lineWidth = width; ctx.strokeStyle = color;
+    draw(); ctx.globalAlpha *= 0.7; draw(); ctx.restore();
+  }
+  ctx.lineWidth = width; ctx.strokeStyle = color; draw();
+}
+function drawRing(G, pts) {
+  const L = ui.theme === 'light' && ui.expanded;
+  // 进度环
+  for (const e of entries) {
+    if (e.progress < 0 || ui.drawing) continue;
+    const doneFade = e.progressDoneAt ? 1 - clamp((now - e.progressDoneAt - P.hold) / 0.3, 0, 1) : 1;
+    if (doneFade <= 0) continue;
+    const c = rgba(displayAccent(e.color, L), doneFade * (e.progress >= 1 ? 0.75 + 0.25 * Math.cos(now * 2 * Math.PI / P.breath) : 1));
+    const n = Math.max(2, Math.round((pts.length - 1) * e.progress));
+    strokeGlow(c, P.ringW, () => { ctx.beginPath(); ctx.lineCap = 'round'; for (let i = 0; i <= n; i++) i ? ctx.lineTo(...pts[i]) : ctx.moveTo(...pts[i]); ctx.stroke(); });
+    return;
+  }
+  if (ring.op.x <= 0.01) return;
+  const breath = 0.55 + 0.45 * (0.5 + 0.5 * Math.cos(now * 2 * Math.PI / P.breath));
+  const c = rgba(displayAccent(ring.color, L), clamp(ring.op.x, 0, 1) * breath);
+  strokeGlow(c, P.ringW, () => { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.stroke(); });
+}
+function drawIcon(name, x, y, size, color) {
+  const p = ICON_PATHS[name]; if (!p) return;
+  ctx.save(); ctx.translate(x, y); ctx.scale(size / 24, size / 24); ctx.fillStyle = color; ctx.fill(p, 'evenodd'); ctx.restore();
+}
+function drawItem(it, M) {
+  const s = itemShape(it);
+  if (s.w <= 0.5 || it.opacity <= 0.002) return;
+  const pressScale = it.pressed ? 0.95 : 1;
+  ctx.save();
+  ctx.globalAlpha = clamp(it.opacity, 0, 1);
+  if (pressScale !== 1) { const cx = s.x + s.w / 2, cy = s.y + s.h / 2; ctx.translate(cx, cy); ctx.scale(pressScale, pressScale); ctx.translate(-cx, -cy); }
+  if (M.shadow) { ctx.save(); ctx.shadowColor = M.shadow; ctx.shadowBlur = 6 * ui.zoom * devicePixelRatio; ctx.shadowOffsetY = 2 * ui.zoom * devicePixelRatio;
+    ctx.beginPath(); rrPath(ctx, s.x, s.y, s.w, s.h, s.r); ctx.fillStyle = rgba(M.fill, M.fillA); ctx.fill(); ctx.restore(); }
+  ctx.beginPath(); rrPath(ctx, s.x, s.y, s.w, s.h, s.r); ctx.fillStyle = rgba(M.fill, M.fillA); ctx.fill();
+  if (it.hover) { ctx.fillStyle = `rgba(${M.hover.join(',')})`; ctx.fill(); }
+  // 1 DIP 强调色边框（主栏同粗细）；光影开启时带柔和光晕
+  ctx.beginPath(); rrPath(ctx, s.x + 0.5, s.y + 0.5, s.w - 1, s.h - 1, Math.max(0, s.r - 0.5));
+  if (ui.lighting) { ctx.save(); ctx.shadowColor = rgba(it.accent, 0.55); ctx.shadowBlur = 4 * ui.zoom * devicePixelRatio; ctx.lineWidth = 1; ctx.strokeStyle = rgba(it.accent, 0.9); ctx.stroke(); ctx.restore(); }
+  else { ctx.lineWidth = 1; ctx.strokeStyle = rgba(it.accent, 0.9); ctx.stroke(); }
+  const color = rgba(it.accent, 1);
+  if (it.kind === 'tile') {
+    const isz = it.icon * (s.w / Math.max(1, it.size));
+    drawIcon(it.e.icon, s.x + (s.w - isz) / 2, s.y + (s.h - isz) / 2, isz, color);
+  } else {
+    const sc = s.h / P.capH, pad = (P.capH - 17) / 2 * sc;
+    const isz = P.capIcon * sc;
+    const iconX = s.x + (P.capH * sc - isz) / 2;
+    drawIcon(it.e.icon, iconX, s.y + (s.h - isz) / 2, isz, color);
+    if (it.textOpacity > 0.01) {
+      // 文字：裁入圆角矩形内侧；滚动时两端渐隐，不再有硬矩形切口
+      const tx0 = s.x + pad + isz + P.capGap * sc, tx1 = s.x + s.w - pad;
+      const clipW = Math.max(0, tx1 - tx0);
+      const fullClip = textClipWidth(it.e) * sc;
+      const overflow = it.e.textW * sc > fullClip + 0.5;
+      ctx.save();
+      ctx.beginPath(); rrPath(ctx, s.x + 1, s.y + 1, s.w - 2, s.h - 2, Math.max(0, s.r - 1)); ctx.clip();
+      ctx.beginPath(); ctx.rect(tx0 - 2, s.y, clipW + 4, s.h); ctx.clip();
+      const off = document.createElement('canvas');
+      const dpr = devicePixelRatio * ui.zoom;
+      off.width = Math.ceil((clipW + 4) * dpr); off.height = Math.ceil(s.h * dpr);
+      const o = off.getContext('2d'); o.scale(dpr, dpr);
+      o.font = `bold ${P.capText * sc}px ${FONT}`; o.textBaseline = 'middle'; o.fillStyle = color;
+      const textX = overflow ? 2 - it.scroll * sc : 2 + Math.max(0, (fullClip - it.e.textW * sc) / 2);
+      o.fillText(it.e.text, textX, s.h / 2 + 0.5);
+      if (overflow) {
+        o.globalCompositeOperation = 'destination-in';
+        const f = 8 * sc / (clipW + 4);
+        const g = o.createLinearGradient(0, 0, clipW + 4, 0);
+        const sc0 = it.scroll > 0.5 ? 0 : 1, sc1 = it.scroll < it.e.textW - textClipWidth(it.e) - 0.5 ? 0 : 1;
+        g.addColorStop(0, `rgba(0,0,0,${sc0})`); g.addColorStop(f, '#000'); g.addColorStop(1 - f, '#000'); g.addColorStop(1, `rgba(0,0,0,${sc1})`);
+        o.fillStyle = g; o.fillRect(0, 0, clipW + 4, s.h);
+      }
+      ctx.globalAlpha *= it.textOpacity;
+      ctx.drawImage(off, tx0 - 2, s.y, clipW + 4, s.h);
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+function clipOutShapes(shapes) {
+  // 逐个求交：结果 = 全幅 − ∪上层外形，下层永不透出上层
+  for (const s of shapes) {
+    ctx.beginPath(); ctx.rect(-1e4, -1e4, 2e4, 2e4); rrPath(ctx, s.x, s.y, s.w, s.h, s.r); ctx.clip('evenodd');
+  }
+}
+let lastItems = [];
+function render() {
+  const G = geometry();
+  const Z = ui.zoom * devicePixelRatio;
+  ctx.setTransform(Z, 0, 0, Z, 0, 0);
+  drawBackdrop(G);
+  const pts = drawMainBar(G, material(ui.theme === 'light' && ui.expanded));
+  drawRing(G, pts);
+  const items = layout(G); lastItems = items;
+  const M = material(ui.theme === 'light' && ui.expanded);
+  const shapes = items.map(itemShape);
+  for (let i = 0; i < items.length; i++) {
+    ctx.save();
+    clipOutShapes(shapes.slice(i + 1).filter((s, k) => items[i + 1 + k].opacity > 0.05));
+    drawItem(items[i], M);
+    ctx.restore();
+  }
+  if (ui.bounds) {
+    ctx.setLineDash([4, 3]); ctx.lineWidth = 1 / ui.zoom;
+    ctx.strokeStyle = '#4af'; ctx.strokeRect(G.base.l, G.base.t, G.base.r - G.base.l, G.base.b - G.base.t);
+    let vb = { ...G.base };
+    items.filter(it => it.overflow).map(itemShape).forEach(s => { vb.l = Math.min(vb.l, s.x - 6); vb.t = Math.min(vb.t, s.y - 6); vb.r = Math.max(vb.r, s.x + s.w + 6); vb.b = Math.max(vb.b, s.y + s.h + 6); });
+    ctx.strokeStyle = '#f84'; ctx.strokeRect(vb.l, vb.t, vb.r - vb.l, vb.b - vb.t);
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#4af'; ctx.font = `10px Consolas`; ctx.fillText('原窗口', G.base.l + 2, G.base.b + 12);
+    ctx.fillStyle = '#f84'; ctx.fillText('当前视口', vb.l + 2, vb.t - 4);
+  }
+  document.getElementById('log').textContent = entries.map(e => `${e.id} ${e.phase.padEnd(10)} ${e.text.slice(0, 8)}`).join('\n') + `\n同心弧 ${fan.open ? '展开' : '收起'}`;
+}
+
+// ---------- 交互 ----------
+function toDip(ev) { const r = canvas.getBoundingClientRect(); return [(ev.clientX - r.left) / ui.zoom, (ev.clientY - r.top) / ui.zoom]; }
+function hitTest(x, y) {
+  for (let i = lastItems.length - 1; i >= 0; i--) {
+    const it = lastItems[i]; if (!it.hit || it.opacity < 0.05) continue;
+    const s = itemShape(it); const pad = it.kind === 'tile' && it.hit === 'dock' ? Math.max(0, (24 - s.w) / 2) : 0;
+    if (x >= s.x - pad && x <= s.x + s.w + pad && y >= s.y - pad && y <= s.y + s.h + pad) return it;
+  }
+  return null;
+}
+canvas.addEventListener('pointermove', ev => { const [x, y] = toDip(ev); const h = hitTest(x, y); pointer.hover = h && h.kind === 'tile' ? h.id : 0; canvas.style.cursor = h ? 'pointer' : 'default'; });
+canvas.addEventListener('pointerleave', () => pointer.hover = 0);
+canvas.addEventListener('pointerdown', ev => {
+  const [x, y] = toDip(ev); const h = hitTest(x, y);
+  pointer.down = h ? h.id : 0;
+  if (!h && fan.open) closeFan();
+});
+canvas.addEventListener('pointerup', ev => {
+  const [x, y] = toDip(ev); const h = hitTest(x, y); const id = pointer.down; pointer.down = 0;
+  if (!h || h.id !== id) return;
+  pointer.hover = 0;   // 点击后不移动则没有悬停态
+  const e = h.e;
+  if (h.hit === 'capsule') { collapse(e); return; }
+  if (e.icon === 'barStatusNewVersion' && (h.hit === 'dock' || h.hit === 'fan')) { flash(`跳转：设置 → 软件版本`); if (fan.open) closeFan(); return; }
+  const dockedNow = entries.filter(d => d.phase === 'docked');
+  if (h.hit === 'dock') {
+    if (dockedNow.length === 1) { reexpand(e); return; }
+    openFan(); return;
+  }
+  if (h.hit === 'fan') {
+    fan.deadline = now + P.fanAutoClose;
+    if (fan.selected === e.id) { e.select.set(0); fan.selected = 0; return; }
+    for (const d of entries) d.select.set(0);
+    if (fan.selected) { fan.selected = 0; return; }   // 再点其他圆形：收起选中
+    e.select.set(1); e.selectStart = now; fan.selected = e.id;
+  }
+});
+function reexpand(e) {
+  // 逆向：从停靠位飞回锚点，再展开文字
+  e.phase = 'reexpand'; e.reexpandFrom = true; e.holding = true; e.holdStart = now; e.holdEnd = now + P.hold;
+  e.flight.x = 1; e.flight.set(0); e.width.jump(P.capH); e.width.set(e.fullW);
+  e.slot.jump(0);
+}
+let flashText = '', flashUntil = 0;
+function flash(t) { flashText = t; flashUntil = now + 1.5; }
+
+document.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
+  const k = b.dataset.add;
+  if (k === 'five') for (let i = 0; i < 5; i++) add('random');
+  else if (k === 'fill') while (entries.filter(e => !e.leaving).length < 25) add('random');
+  else add(k);
+});
+document.getElementById('retire').onclick = retireNewest;
+document.getElementById('pause').onclick = () => paused = !paused;
+document.getElementById('clear').onclick = () => { entries = []; closeFan(); };
+
+function resize() {
+  const wrap = document.getElementById('stageWrap');
+  canvas.width = wrap.clientWidth * devicePixelRatio; canvas.height = wrap.clientHeight * devicePixelRatio;
+  canvas.style.width = wrap.clientWidth + 'px'; canvas.style.height = wrap.clientHeight + 'px';
+}
+window.addEventListener('resize', resize); resize();
+let last = performance.now(), paused = false;
+if (location.search.includes('bare')) { const sd = document.getElementById('side'); sd.style.display = 'none'; resize(); }
+function frame(t) {
+  const dt = Math.min(0.05, (t - last) / 1000); last = t;
+  if (!paused) advance(dt);
+  render();
+  if (now < flashUntil) { ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(20, 20, 220, 30); ctx.fillStyle = '#fff'; ctx.font = `13px ${FONT}`; ctx.fillText(flashText, 30, 40); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+add('ppt');
+</script>
+</body>
+</html>

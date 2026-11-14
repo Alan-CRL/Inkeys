@@ -18,8 +18,10 @@ module;
 #include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.EraserCursor.h"
 #include "Draw3.PalmEraser.h"
 #include "Draw3.PenDiagnostics.h"
+#include "Draw3.CanvasPanSettings.h"
 
 export module Inkeys.Drawing.Draw3.drawing_controller;
 
@@ -64,6 +66,7 @@ export namespace Inkeys::Drawing::Draw3
 	int RunPresentationCurrentLoadRetryProbe() noexcept;
 	// 无 HWND：复用 Run 的 ingress 批次函数验证命令屏障前后不吞新 Down。
 	int RunDraw3ControlFenceProductionProbe() noexcept;
+	int RunCanvasPanFeelProductionProbe() noexcept;
 	// 无 HWND：复用生产手掌转换、邻域准入与接续身份接缝。
 	int RunPalmEraserProductionProbe() noexcept;
 	// 无 HWND、无磁盘：真实 Coordinator/CPU history 验证 Run 共用内容 proof 接缝。
@@ -110,6 +113,8 @@ export namespace Inkeys::Drawing::Draw3
 		void (*whiteboardThemeEdited)(void*, WhiteboardTheme) noexcept = nullptr;
 		void (*recoveryChanged)(void*, const CanvasRecoveryState&) noexcept = nullptr;
 		bool (*recoveryRetryAllowed)(void*, std::uint64_t) noexcept = nullptr;
+		// 绘制线程直接调用：白板当前页视口变化（平移/翻页/冷页恢复/进入或离开白板）。必须无锁、不等待。
+		void (*whiteboardViewportChanged)(void*, const WhiteboardViewportSample&) noexcept = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。
@@ -126,17 +131,31 @@ export namespace Inkeys::Drawing::Draw3
 		bool SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept;
 		InputWidthModeSettings GetInputWidthModeSettings() const noexcept;
 		// 通用偏好成组发布，仅由之后开始的独立笔画锁存。
+		void SetCanvasPanInertiaOptions(CanvasPanInertiaOptions options) noexcept;
 		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled,
 			InkPredictionMode predictionMode) noexcept;
 		// 控制倒转 Pen 是否在画笔/荧光笔下临时作为橡皮；只影响之后开始的笔画。
 		void SetInvertedPenEraserEnabled(bool enabled) noexcept;
 		// 由 Host 绘制 owner 应用；每个新独立触点再锁存。
 		void SetPalmEraserOptions(const PalmEraser::Settings& options) noexcept;
+		// 阶段 C 从配置桥接此入口；只影响之后的新笔划。
+		void SetEraserShape(EraserShape shape) noexcept;
+		// Host 绘制 owner 接入阶段 C；形状只影响新 Down，纹样/明暗即时更新。
+		void SetEraserCursorAppearance(EraserCursorAppearance appearance) noexcept;
+		// 画布调试：enabled 为设置开关，visual 为可视化模式（visual 仅在 enabled 时生效）。
+		// 可视化模式下新 contact 不建笔、不擦除、不触发手掌橡皮、不写历史，只登记为调试探测接触。
+		void SetCanvasDebugOptions(bool enabled, bool visual) noexcept;
+		// 整体输入通路（与 HostInputMode 数值一致：0 不可用，1 RTS 扩展，2 RTS 基础 X/Y，3 Win32 鼠标），仅用于调试板显示。
+		void SetCanvasDebugInputMode(uint8_t mode) noexcept;
+		bool GetCanvasDebugEnabled() const noexcept;
+		bool GetCanvasDebugVisual() const noexcept;
 		bool GetInvertedPenEraserEnabled() const noexcept;
 		void SetDrawingHapticsEnabled(bool enabled) noexcept { drawingHapticsEnabled_ = enabled; }
 		// 即时控制 Touch 断触修正；关闭时已有候选会立即按正常 Up 收尾。
 		void SetInterruptedStrokeReconnectEnabled(bool enabled) noexcept;
 		bool GetInterruptedStrokeReconnectEnabled() const noexcept;
+		// bit0 触摸，bit1 笔尾；总开关关闭时无效。
+		void SetInterruptedStrokeReconnectDevices(uint32_t mask) noexcept;
 		// 即时控制普通 Pen/Highlighter 落笔时是否继续显示应用内光标。
 		void SetDrawingCursorDuringContactEnabled(bool enabled) noexcept;
 		bool GetDrawingCursorDuringContactEnabled() const noexcept;
@@ -172,7 +191,10 @@ export namespace Inkeys::Drawing::Draw3
 		void Run();
 	private:
 		bool CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable = false);
-		bool PresentFrame(RECT dirty, bool presentFull);
+		// 在 backbuffer 已合成内容之下补画白板点阵/网格；仅白板工作区且主题非 Blank 时生效。
+		// dirty 必须是刚由 L2 重新拷贝的矩形（under 混合不幂等）。
+		void DrawWhiteboardPatternUnder(RECT dirty);
+		bool PresentFrame(RECT dirty, bool presentFull, int64_t* presentReturnQpc = nullptr);
 
 		ContactInputCoordinator& input_;
 		WindowController& window_;
@@ -183,13 +205,20 @@ export namespace Inkeys::Drawing::Draw3
 		InputWidthModeSettingsState inputWidthModeSettings_;
 		// 位0/1为多指/尾修正，位2..3为预测模式；默认开/开/Kalman。
 		std::atomic<uint32_t> generalDrawingOptions_ = 11;
+		std::atomic<uint32_t> canvasPanInertiaOptions_ = CanvasPanInertiaOptions{}.Encode();
 		PalmEraser::Settings palmEraserOptions_;
+		std::atomic<EraserShape> eraserShape_ = EraserShape::Circle;
+		EraserCursorAppearance eraserCursorAppearance_ = {}; // 仅绘制 owner 访问。
+		// 位0=画布调试开关，位1=可视化模式；关闭时绘制线程只多一次原子读取。
+		std::atomic<uint32_t> canvasDebugOptions_ = 0;
+		std::atomic<uint8_t> canvasDebugInputMode_ = 0;
 		std::atomic<bool> invertedPenEraserEnabled_ = true;
 		std::atomic<bool> interruptedStrokeReconnectEnabled_ = true;
+		std::atomic<uint32_t> interruptedStrokeReconnectDevices_ = 3;
 		std::atomic<bool> drawingCursorDuringContactEnabled_ = false;
 		std::atomic<bool> translucentInkCursorEnabled_ = false;
-		// 位 2 为产品策略已接入；位 0/1 保存原始鼠标/笔类型，按实际工具临时投影。
-		std::atomic<uint32_t> cursorSettings_ = 0;
+		// 低位保存设备样式与产品策略，高位保存四种样式的独立百分比。
+		std::atomic<uint64_t> cursorSettings_ = 0;
 		std::atomic<bool> laserParticlesEnabled_ = false;
 		std::atomic<bool> laserMultiTouchDrawingEnabled_ = false;
 		std::atomic<double> laserHoldDurationSeconds_ = 1.0;
@@ -209,5 +238,9 @@ export namespace Inkeys::Drawing::Draw3
 		bool lastPresentSucceeded_ = false;
 		bool graphicsRecoveryPending_ = false;
 		std::uint64_t currentContentRevision_ = 0;
+		// 白板背景纹理的帧状态（仅绘制线程）：Run() 每轮在合成前同步，值取当前页主题。
+		bool whiteboardPatternWorkspace_ = false;
+		std::uint8_t whiteboardPatternKind_ = 0; // WhiteboardPattern 数值，0 = Blank。
+		std::uint32_t whiteboardPatternRgb_ = 0;
 	};
 }

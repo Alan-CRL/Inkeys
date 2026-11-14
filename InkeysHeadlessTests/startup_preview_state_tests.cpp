@@ -141,7 +141,8 @@ namespace
 		// 预期值由案例明确给出，不重复生产类型判断；通过真实 JSON 写入和 Mini/All 读取验证。
 		const std::pair<Json::Value, int> cases[] = {
 			{ Json::Value(), 0 }, { Json::Value(-1), 0 },
-			{ Json::Value(0), 0 }, { Json::Value(1), 1 }, { Json::Value(2), 2 }, { Json::Value(3), 0 },
+			{ Json::Value(0), 0 }, { Json::Value(1), 1 }, { Json::Value(2), 2 }, { Json::Value(3), 3 },
+			{ Json::Value(4), 4 }, { Json::Value(5), 5 }, { Json::Value(6), 6 }, { Json::Value(7), 0 },
 			{ Json::Value(Json::UInt(1)), 1 }, { Json::Value(Json::UInt(2)), 2 },
 			{ Json::Value(1.0), 0 }, { Json::Value(2.0), 0 }, { Json::Value(1.5), 0 },
 			{ Json::Value(true), 0 }, { Json::Value(false), 0 },
@@ -199,6 +200,33 @@ namespace
 					frozen.barZoom, frozen.uiBaseScale).height == std::lround(expectedHeight * 1.25),
 				"full config read cannot mutate frozen startup scale mode or multiplier")) ++failures;
 		}
+		{
+			// 场景进入策略：掩码仅 0..15，方向仅 0..2，非法类型或越界回默认值。
+			struct WorkspaceCase { Json::Value mask, direction; int expectedMask, expectedDirection; };
+			const WorkspaceCase workspaceCases[] = {
+				{ Json::Value(6), Json::Value(2), 6, 2 }, { Json::Value(15), Json::Value(0), 15, 0 },
+				{ Json::Value(16), Json::Value(3), 1, 0 }, { Json::Value(-1), Json::Value(-1), 1, 0 },
+				{ Json::Value("x"), Json::Value(true), 1, 0 }, { Json::Value(1.0), Json::Value(1.0), 1, 0 } };
+			for (const auto& item : workspaceCases)
+			{
+				Json::Value document(Json::objectValue);
+				for (const char* scene : { "Ppt", "Whiteboard" })
+				{
+					document["UI"]["Bar"]["Workspace"][scene]["AutoDockMask"] = item.mask;
+					document["UI"]["Bar"]["Workspace"][scene]["Direction"] = item.direction;
+				}
+				Inkeys::Config all;
+				const auto& workspace = all.UI.Bar.Workspace;
+				if (!Expect(write(document) && all.ReadAll()
+					&& workspace.Ppt.AutoDockMask.load() == item.expectedMask && workspace.Ppt.Direction.load() == item.expectedDirection
+					&& workspace.Whiteboard.AutoDockMask.load() == item.expectedMask && workspace.Whiteboard.Direction.load() == item.expectedDirection,
+					"workspace entry policy config rejects illegal masks and directions")) ++failures;
+			}
+			Inkeys::Config defaults;
+			if (!Expect(defaults.UI.Bar.Workspace.Ppt.AutoDockMask.load() == 1 && defaults.UI.Bar.Workspace.Ppt.Direction.load() == 0
+				&& defaults.UI.Bar.Workspace.Whiteboard.AutoDockMask.load() == 1 && defaults.UI.Bar.Workspace.Whiteboard.Direction.load() == 0,
+				"workspace entry policy defaults to the bottom-bar state and no direction change")) ++failures;
+		}
 		Json::Value document(Json::objectValue);
 		document["UI"]["Bar"]["StartupPlacement"] = 1;
 		if (!Expect(write(document), "write frozen-startup fixture")) return failures + 1;
@@ -211,12 +239,12 @@ namespace
 			&& config.UI.Bar.StartupPlacement.load() == 2
 			&& frozen.startupPlacement == StartupPlacement::BottomLeftFloating,
 			"full config read cannot mutate this startup's frozen Preview choice")) ++failures;
-		for (int placement = 0; placement != 3; ++placement)
+		for (int placement = 0; placement != 7; ++placement)
 		{
 			config.UI.Bar.StartupPlacement = placement;
 			Inkeys::Config payload;
 			payload = config; // 与设置FIFO相同的值快照，不引用活动config。
-			config.UI.Bar.StartupPlacement = (placement + 1) % 3;
+			config.UI.Bar.StartupPlacement = (placement + 1) % 7;
 			const bool saved = payload.Write();
 			Inkeys::Config next;
 			if (!Expect(saved && next.ReadMini({ "UI.Bar.StartupPlacement" })
@@ -262,6 +290,69 @@ namespace
 			if (!Expect(EqualRect(&preview, &formal) && formal.bottom == desktopLine,
 				"centered Preview and formal Bar share raised/hidden/side taskbar line at independent UI scale")) ++failures;
 		}
+		// 新增落点：居中顶栏贴工作区上沿并水平居中，悬浮窗底栏居中保持 24 DIP 底边距。
+		for (const auto placement : { StartupPlacement::CenteredTopBarRight, StartupPlacement::CenteredTopBarLeft })
+		{
+			const auto top = ResolveStartupPlacementBounds(placement, monitor, work, 471.0, 81.0, 1.25, 1.25);
+			if (!Expect(top.top == work.top && top.bottom - top.top == std::lround(81.0 * 1.25)
+				&& std::abs((top.left + top.right) - (monitor.left + monitor.right)) <= 1,
+				"centered top bar sits on the work-area top edge and is horizontally centered")) ++failures;
+		}
+		{
+			const auto center = ResolveStartupPlacementBounds(StartupPlacement::FloatingBottomCenter, monitor, work, 81.0, 81.0, 1.25, 1.25);
+			if (!Expect(work.bottom - center.bottom == std::lround(24.0 * 1.25)
+				&& std::abs((center.left + center.right) - (monitor.left + monitor.right)) <= 1,
+				"floating bottom-center keeps the 24 DIP bottom margin and monitor-centered X")) ++failures;
+		}
+		return failures;
+	}
+
+	int RunStartupPlacementMappingTests()
+	{
+		using namespace Inkeys::UI;
+		int failures = 0;
+		for (int value = 0; value <= 6; ++value)
+		{
+			const auto placement = NormalizeStartupPlacement(value);
+			const int type = StartupPlacementType(placement), position = StartupPlacementPosition(placement);
+			if (!Expect(static_cast<int>(placement) == value && position < StartupPlacementPositionCount(type)
+				&& StartupPlacementFromSelection(type, position) == placement,
+				"startup placement round-trips through the type/position selection")) ++failures;
+		}
+		if (!Expect(NormalizeStartupPlacement(7) == StartupPlacement::CenteredBottomBar
+			&& NormalizeStartupPlacement(-1) == StartupPlacement::CenteredBottomBar
+			&& StartupPlacementDocksToBottom(StartupPlacement::CenteredBottomBarLeft)
+			&& !StartupPlacementDocksToBottom(StartupPlacement::CenteredTopBarRight)
+			&& !StartupPlacementIsFolded(StartupPlacement::CenteredTopBarLeft)
+			&& StartupPlacementIsFolded(StartupPlacement::FloatingBottomCenter)
+			&& StartupPlacementOpensRight(StartupPlacement::CenteredBottomBar)
+			&& !StartupPlacementOpensRight(StartupPlacement::CenteredBottomBarLeft)
+			&& !StartupPlacementOpensRight(StartupPlacement::BottomRightFloating),
+			"startup placement traits keep legacy values and classify the new placements")) ++failures;
+		return failures;
+	}
+
+	int RunWorkspaceEntryPolicyTests()
+	{
+		using namespace Inkeys::UI::Bar;
+		int failures = 0;
+		const struct { BarBottomDockMode mode; bool folded; int bit; } states[] = {
+			{ BarBottomDockMode::BottomDocked, false, BarWorkspaceAutoDockBottom },
+			{ BarBottomDockMode::BottomDocked, true, BarWorkspaceAutoDockBottomFolded },
+			{ BarBottomDockMode::Floating, false, BarWorkspaceAutoDockFloating },
+			{ BarBottomDockMode::Floating, true, BarWorkspaceAutoDockFloatingFolded } };
+		for (int mask = 0; mask <= 15; ++mask)
+			for (const auto& state : states)
+				if (!Expect(ShouldTakeOverBarWorkspaceEntry(mask, state.mode, state.folded) == ((mask & state.bit) != 0),
+					"workspace entry takeover follows exactly the checked pre-entry states")) ++failures;
+		if (!Expect(NormalizeBarWorkspaceAutoDockMask(-1) == BarWorkspaceAutoDockMaskDefault
+			&& NormalizeBarWorkspaceAutoDockMask(16) == BarWorkspaceAutoDockMaskDefault
+			&& ShouldTakeOverBarWorkspaceEntry(BarWorkspaceAutoDockMaskDefault, BarBottomDockMode::BottomDocked, false)
+			&& !ShouldTakeOverBarWorkspaceEntry(BarWorkspaceAutoDockMaskDefault, BarBottomDockMode::Floating, false),
+			"default mask only takes over the expanded bottom bar")) ++failures;
+		if (!Expect(ResolveBarWorkspaceEntrySide(0, true) && !ResolveBarWorkspaceEntrySide(0, false)
+			&& ResolveBarWorkspaceEntrySide(1, false) && !ResolveBarWorkspaceEntrySide(2, true),
+			"main-button direction keeps, forces right or forces left expansion")) ++failures;
 		return failures;
 	}
 
@@ -766,7 +857,7 @@ int RunStartupPreviewStateTests()
 {
 	using namespace Inkeys::UI::StartupPreview;
 	using namespace std::chrono_literals;
-	int failures = RunStartupPlacementConfigTests() + RunStartupPlacementGeometryTests() + RunStartupPreviewPixelTests() + RunStartupEffectTests();
+	int failures = RunStartupPlacementConfigTests() + RunStartupPlacementGeometryTests() + RunStartupPlacementMappingTests() + RunWorkspaceEntryPolicyTests() + RunStartupPreviewPixelTests() + RunStartupEffectTests();
 
 	if (!Expect(DefaultMainBarBodyWidthDip == 380.0
 		&& DefaultCachedStartupBarWidthDip == 470.0

@@ -550,6 +550,7 @@ protected:
 
 	friend class BarUISetClass;
 	friend class BarRenderLoopCoordinator;
+	friend class BarStatusIndicatorPanel;
 };
 
 // 输入几何均为像素；主栏保留每层独立合成，编辑器可对整枚Thumb统一淡出。

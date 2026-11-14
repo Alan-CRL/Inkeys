@@ -1,0 +1,4 @@
+# Frozen runtime deployments and byte-for-byte source backup are local verification artifacts.
+/before-bin/
+/after-bin/
+/batch2/source-before/

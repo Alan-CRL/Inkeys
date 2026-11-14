@@ -1,0 +1,143 @@
+{
+  "scenario_observations": [
+    {
+      "case": "observer-clear-keeps-capacity-control",
+      "watched_buffers": 1,
+      "released_buffers": 1,
+      "watched_bytes": 1048576,
+      "released_bytes": 1048576,
+      "overflow": 0
+    },
+    {
+      "case": "desktop-success-unpolled",
+      "watched_buffers": 5,
+      "released_buffers": 5,
+      "watched_bytes": 3145992,
+      "released_bytes": 3145992,
+      "overflow": 0
+    },
+    {
+      "case": "desktop-load-last-consumer",
+      "watched_buffers": 4,
+      "released_buffers": 4,
+      "watched_bytes": 1573128,
+      "released_bytes": 1573128,
+      "overflow": 0
+    },
+    {
+      "case": "desktop-write-failure-unpolled",
+      "watched_buffers": 5,
+      "released_buffers": 5,
+      "watched_bytes": 3145992,
+      "released_bytes": 3145992,
+      "overflow": 0
+    },
+    {
+      "case": "desktop-index-failure-unpolled",
+      "watched_buffers": 5,
+      "released_buffers": 5,
+      "watched_bytes": 3145992,
+      "released_bytes": 3145992,
+      "overflow": 0
+    },
+    {
+      "case": "desktop-index-retry-unpolled",
+      "watched_buffers": 5,
+      "released_buffers": 5,
+      "watched_bytes": 3145992,
+      "released_bytes": 3145992,
+      "overflow": 0
+    },
+    {
+      "case": "desktop-stop-drain",
+      "watched_buffers": 5,
+      "released_buffers": 5,
+      "watched_bytes": 3145992,
+      "released_bytes": 3145992,
+      "overflow": 0
+    },
+    {
+      "case": "whiteboard-success-unpolled",
+      "watched_buffers": 5,
+      "released_buffers": 5,
+      "watched_bytes": 3145992,
+      "released_bytes": 3145992,
+      "overflow": 0
+    },
+    {
+      "case": "whiteboard-failure-unpolled",
+      "watched_buffers": 5,
+      "released_buffers": 5,
+      "watched_bytes": 3145992,
+      "released_bytes": 3145992,
+      "overflow": 0
+    },
+    {
+      "case": "presentation-success-unpolled",
+      "watched_buffers": 6,
+      "released_buffers": 6,
+      "watched_bytes": 3146144,
+      "released_bytes": 3146144,
+      "overflow": 0
+    },
+    {
+      "case": "presentation-load-last-consumer",
+      "watched_buffers": 8,
+      "released_buffers": 8,
+      "watched_bytes": 3146256,
+      "released_bytes": 3146256,
+      "overflow": 0
+    },
+    {
+      "case": "presentation-index-failure-unpolled",
+      "watched_buffers": 6,
+      "released_buffers": 6,
+      "watched_bytes": 3146144,
+      "released_bytes": 3146144,
+      "overflow": 0
+    },
+    {
+      "case": "presentation-worker-exception-unpolled",
+      "watched_buffers": 6,
+      "released_buffers": 6,
+      "watched_bytes": 3146144,
+      "released_bytes": 3146144,
+      "overflow": 0
+    },
+    {
+      "case": "presentation-pending-replaced",
+      "watched_buffers": 6,
+      "released_buffers": 6,
+      "watched_bytes": 3146144,
+      "released_bytes": 3146144,
+      "overflow": 0
+    },
+    {
+      "case": "presentation-first-unpolled",
+      "watched_buffers": 6,
+      "released_buffers": 6,
+      "watched_bytes": 3146144,
+      "released_bytes": 3146144,
+      "overflow": 0
+    },
+    {
+      "case": "presentation-latest-unpolled",
+      "watched_buffers": 6,
+      "released_buffers": 6,
+      "watched_bytes": 3146144,
+      "released_bytes": 3146144,
+      "overflow": 0
+    },
+    {
+      "case": "presentation-stop-drain",
+      "watched_buffers": 6,
+      "released_buffers": 6,
+      "watched_bytes": 3146144,
+      "released_bytes": 3146144,
+      "overflow": 0
+    }
+  ],
+  "service_observations": 16,
+  "negative_controls": 1,
+  "scope": "Actual frees of registered original snapshot vectors/points; other temporary copies audited statically; no claim of full live heap or immediate OS decommit."
+}

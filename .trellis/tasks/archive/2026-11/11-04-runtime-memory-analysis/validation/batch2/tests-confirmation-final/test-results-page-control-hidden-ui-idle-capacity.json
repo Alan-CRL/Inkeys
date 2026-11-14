@@ -1,0 +1,26 @@
+[
+  {
+    "name": "ui-idle-capacity",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--ui3-idle-capacity-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 1.0,
+    "passed": true
+  },
+  {
+    "name": "page-control-hidden",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+    "args": [
+      "--page-control-hidden-test"
+    ],
+    "expected_exit": 0,
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 5.766,
+    "passed": true
+  }
+]

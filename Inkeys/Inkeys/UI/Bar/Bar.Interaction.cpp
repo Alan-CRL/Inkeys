@@ -3136,6 +3136,7 @@ namespace
 	void ProcessBarPointerLeave()
 	{
 		if (barUISet.geometryAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
+		barUISet.statusIndicator.ResetPointerFeedback();
 		const auto idle = Inkeys::UI::Bar::SnapshotPptIdleInput();
 		UpdatePptIdleInput(false, idle.pressed);
 		if (barUISet.eraserAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
@@ -5281,6 +5282,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		geometry.thicknessFinePress = geometry.thicknessMediumPress = geometry.thicknessCoarsePress = false;
 		barState.moreClosePress = false; BarColorPickerEntryPressed = false;
 		barUISet.geometryAttribute.ResetPointerFeedback();
+		barUISet.statusIndicator.ResetPointerFeedback();
 		barUISet.eraserAttribute.ResetPointerFeedback(); barUISet.recallAttribute.ResetPointerFeedback();
 		CancelThicknessFineDialSelection();
 		CloseThicknessSlider(true); CloseColorPicker(true); ClosePenTypeMenu();
@@ -6522,6 +6524,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										case BarButtonPresetEnum::Recall:
 										case BarButtonPresetEnum::Redo:
 										case BarButtonPresetEnum::Pierce:
+										case BarButtonPresetEnum::CanvasDebug:
 											Inkeys::UI::Bar::NotifyPptBusinessAction(); break;
 										default: break;
 										}
@@ -8475,6 +8478,15 @@ public:
 
 			if (barUISet.constructionPrompt.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg)))
 				continue;
+			bool statusAccepted=false;
+			if(barUISet.statusIndicator.Pointer(barUISet,msg,IsBarPointerCancelMessage(msg),IsBarTouchPointerMessage(msg),&statusAccepted))
+			{
+				if(statusAccepted){AcceptBarButtonFeedback();SuppressHoverUntilPointerMove();}
+				if(hoveredMainBarButton){StopMainBarButtonHover(hoveredMainBarButton,true);hoveredMainBarButton=nullptr;}
+				if(hoveredIndependentButton!=IndependentHoverTargetEnum::None)
+				{StopIndependentHover(hoveredIndependentButton,true);hoveredIndependentButton=IndependentHoverTargetEnum::None;}
+				continue;
+			}
 			bool auxiliaryButtonAccepted = false;
 			if (barUISet.geometryAttribute.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), IsBarTouchPointerMessage(msg), &auxiliaryButtonAccepted))
 			{
@@ -8683,6 +8695,7 @@ void BarUISetClass::Interact()
 			const auto observed = sharedInputMailbox.Revision();
 			PollGlobalMouseInput();
 			auto deadline = PumpSharedInteraction(context, InteractionClock::now());
+			deadline=(std::min)(deadline,statusIndicator.PollDeadline(InteractionClock::now()));
 			if (routine.Done()) continue;
 			// Hook 保留 250ms 安全租约，100ms 仅续租/收包，不请求渲染；Raw/桌面检查仅活动手势轮询。
 			deadline = (std::min)(deadline, InteractionClock::now() + std::chrono::milliseconds(

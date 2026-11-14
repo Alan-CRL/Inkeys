@@ -1,0 +1,126 @@
+{
+  "configuration": "Debug|ARM64",
+  "screen_example": [
+    2880,
+    1920
+  ],
+  "statistics": "Mean of two independent process tail-20-sample medians (~5s)",
+  "after_prefix": "after-stable",
+  "desktop": {
+    "tail_private_median": {
+      "before_MiB": 510.849609375,
+      "after_MiB": 429.345703125,
+      "saved_MiB": 81.50390625,
+      "percent": 15.954579342776853
+    },
+    "tail_working_set_median": {
+      "before_MiB": 516.18359375,
+      "after_MiB": 435.359375,
+      "saved_MiB": 80.82421875,
+      "percent": 15.65803712644635
+    },
+    "peak_private_bytes": {
+      "before_MiB": 514.87890625,
+      "after_MiB": 434.185546875,
+      "saved_MiB": 80.693359375,
+      "percent": 15.672298553209568
+    },
+    "peak_working_set_bytes": {
+      "before_MiB": 522.375,
+      "after_MiB": 440.77734375,
+      "saved_MiB": 81.59765625,
+      "percent": 15.62051328068916
+    }
+  },
+  "runs": [
+    {
+      "phase": "before",
+      "run": 1,
+      "exe_sha256": "9b16dcc496c6cf69f717bcf0532ed6de347a4ecb9177a1d82873702d4cd22acb",
+      "private_MiB": 511.3359375,
+      "working_set_MiB": 515.28515625,
+      "gdi_handles": 32,
+      "samples": 239,
+      "cleanup_exit": 6
+    },
+    {
+      "phase": "before",
+      "run": 2,
+      "exe_sha256": "9b16dcc496c6cf69f717bcf0532ed6de347a4ecb9177a1d82873702d4cd22acb",
+      "private_MiB": 510.36328125,
+      "working_set_MiB": 517.08203125,
+      "gdi_handles": 34,
+      "samples": 239,
+      "cleanup_exit": 6
+    },
+    {
+      "phase": "after",
+      "run": 1,
+      "exe_sha256": "e7757bbabd297cd5f75e6401d99d531d3539ac91e4c1bbd880df05e3d22f4dc4",
+      "private_MiB": 430.56640625,
+      "working_set_MiB": 434.03125,
+      "gdi_handles": 28,
+      "samples": 240,
+      "cleanup_exit": 6
+    },
+    {
+      "phase": "after",
+      "run": 2,
+      "exe_sha256": "e7757bbabd297cd5f75e6401d99d531d3539ac91e4c1bbd880df05e3d22f4dc4",
+      "private_MiB": 428.125,
+      "working_set_MiB": 436.6875,
+      "gdi_handles": 28,
+      "samples": 239,
+      "cleanup_exit": 6
+    }
+  ],
+  "whiteboard_phases": {
+    "before": {
+      "desktop": {
+        "private_MiB": 508.55859375,
+        "working_set_MiB": 515.6484375,
+        "gdi_handles": 32
+      },
+      "whiteboard": {
+        "private_MiB": 513.3515625,
+        "working_set_MiB": 544.48828125,
+        "gdi_handles": 41
+      },
+      "returned": {
+        "private_MiB": 512.84375,
+        "working_set_MiB": 545.765625,
+        "gdi_handles": 41
+      }
+    },
+    "after": {
+      "desktop": {
+        "private_MiB": 429.62109375,
+        "working_set_MiB": 434.703125,
+        "gdi_handles": 28
+      },
+      "whiteboard": {
+        "private_MiB": 390.4296875,
+        "working_set_MiB": 421.62109375,
+        "gdi_handles": 35
+      },
+      "returned": {
+        "private_MiB": 432.0078125,
+        "working_set_MiB": 442.7109375,
+        "gdi_handles": 31
+      }
+    }
+  },
+  "whiteboard_return_increase": {
+    "before": {
+      "private_MiB": 4.28515625,
+      "working_set_MiB": 30.1171875,
+      "gdi_handles": 9
+    },
+    "after": {
+      "private_MiB": 2.38671875,
+      "working_set_MiB": 8.0078125,
+      "gdi_handles": 3
+    }
+  },
+  "cleanup_note": "Owned-window WM_CLOSE may stop Drawpad Host and return development code6; not an exit0 correctness assertion."
+}

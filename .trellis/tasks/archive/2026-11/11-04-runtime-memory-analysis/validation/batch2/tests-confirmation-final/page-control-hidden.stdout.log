@@ -1,0 +1,6 @@
+[PageControlDrag][tid=55324] down surface=bottom-left region=page immediate=0 start=(-29675,-29035) position=(0.0,0.0)
+[PageControlDrag][tid=55324] threshold surface=bottom-left start=(-29675,-29035) current=(-29630,-29070) result=dragging
+[PageControlDrag][tid=55324] up surface=bottom-left pair=bottom revision=5 dragged=1 pending=1 persist=1 position=(70.0,55.0) suppressed_direct=0 suppressed_lock_busy=0
+[PageControlDrag][tid=55324] down surface=bottom-left region=page immediate=0 start=(-29605,-29090) position=(70.0,55.0)
+[PageControlDrag][tid=55324] threshold surface=bottom-left start=(-29605,-29090) current=(-29560,-29125) result=dragging
+[PageControlDrag][tid=55324] up surface=bottom-left pair=bottom revision=8 dragged=1 pending=1 persist=1 position=(140.0,110.0) suppressed_direct=0 suppressed_lock_busy=0

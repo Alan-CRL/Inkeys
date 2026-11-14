@@ -1,0 +1,5 @@
+{
+  "pid": 37076,
+  "action": "stop-known-failing-sweep",
+  "reason": "First confirmed fixture precondition omitted drawing-state restore; cascaded page/undo waits. Original logs preserved; rerun after corrected fixture."
+}

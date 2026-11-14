@@ -1,0 +1,52 @@
+[Draw3Diag][device] driver=WARP levels=11_1,11_0 attempt=preferred hresult=0x0
+Trying transparent present mode: UlwDirtyRect
+Trying waitable swapchain in mode UlwDirtyRect.
+Waitable swapchain enabled in mode UlwDirtyRect.
+[UlwDirtyRect] Draw3 created swapchain desc: size=64x64 format=B8G8R8A8_UNORM(87) bufferCount=2 swapEffect=FLIP_SEQUENTIAL alphaMode=UNSPECIFIED scaling=0 flags=0x40
+Active transparent present mode: UlwDirtyRect
+[Draw3Diag][ulw] event=success role=DrawpadPresentation hwnd=0x100bb2 valid=1 visible=0 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 window=(-32000,-32000,-31936,-31936) dib=64x64 staging=64x64 texture=64x64 dirty=(0,0,64,64) full=1 dirtyParameter=null fullUpdateOverride=0 dst=(-32000,-32000) dstSize=64x64 src=(0,0) blend=0,0,255,1 hdcSrc=0xffffffff87014d7d flags=0x2 hresult=0x0 error=0
+[Draw3Diag][ulw] stage=resource result=failed hresult=0x0
+[Draw3Diag][ulw] event=failure role=DrawpadPresentation hwnd=0x100bb2 valid=1 visible=0 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 window=(-32000,-32000,-31920,-31920) dib=80x80 staging=80x80 texture=80x80 dirty=(0,0,1,1) full=1 dirtyParameter=null fullUpdateOverride=0 dst=(-32000,-32000) dstSize=80x80 src=(0,0) blend=0,0,255,1 hdcSrc=0xffffffff89014d7d flags=0x2 hresult=0x0 error=0
+Present failed in mode UlwDirtyRect
+Trying transparent present mode: UlwDirtyRect
+Trying waitable swapchain in mode UlwDirtyRect.
+Waitable swapchain enabled in mode UlwDirtyRect.
+[UlwDirtyRect] Draw3 created swapchain desc: size=80x80 format=B8G8R8A8_UNORM(87) bufferCount=2 swapEffect=FLIP_SEQUENTIAL alphaMode=UNSPECIFIED scaling=0 flags=0x40
+Active transparent present mode: UlwDirtyRect
+[Draw3Diag][build] id=draw3-Nov  5 2026T09:17:42 arch=ARM64 msvc=1944
+[Draw3Diag][window] event=start-request role=Drawpad hwnd=0xb0d80 valid=1 visible=0 pid=44040 tid=31664 owner=0x100bb2 previous=0x150fb2 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31920,-31920) client=(0,0,80,80)
+[Draw3DiagnosticOutput] dropped=1 full=0 contention=1 closing=0 truncated=0
+[Draw3Diag][window] event=attached role=Drawpad hwnd=0xb0d80 valid=1 visible=0 pid=44040 tid=31664 owner=0x100bb2 previous=0x150fb2 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31920,-31920) client=(0,0,80,80)
+[Draw3Diag][window] event=attached role=DrawpadPresentation hwnd=0x100bb2 valid=1 visible=0 pid=44040 tid=31664 owner=0x9c0306 previous=0xb0d80 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31920,-31920) client=(0,0,80,80)
+[Draw3Diag][startup] stage=begin hwnd=0xb0d80 selectionHwnd=0x100bb2
+[Draw3Diag][device] driver=WARP levels=11_1,11_0 attempt=preferred hresult=0x0
+[Draw3Diag][startup] stage=graphics result=ready hwnd=0xb0d80 selectionHwnd=0x100bb2 driver=WARP featureLevel=0xb100
+Trying transparent present mode: UlwDirtyRect
+Trying waitable swapchain in mode UlwDirtyRect.
+Waitable swapchain enabled in mode UlwDirtyRect.
+[UlwDirtyRect] Draw3 created swapchain desc: size=80x80 format=B8G8R8A8_UNORM(87) bufferCount=2 swapEffect=FLIP_SEQUENTIAL alphaMode=UNSPECIFIED scaling=0 flags=0x40
+Active transparent present mode: UlwDirtyRect
+[Draw3Diag][startup] stage=presenter result=ready mode=UlwDirtyRect renderer=0x1d7f4151528 size=80x80
+[Draw3Diag][startup] gate=input-ready state=waiting
+[RTS] initialize currentThread=45204 windowThread=31664 digitizer=0xc5 maxTouches=10 tabletWindowFlags=0x1010219
+[RTS] MultiTouchEnabled=true
+[Draw3] Input initialization result=ready input_mode=RtsExtended
+[Draw3Diag][startup] gate=input-ready result=open decision=1 input=1 stopped=0
+[Draw3Diag][startup] stage=controller result=ready renderer=0x1d7f4151528
+[Draw3Diag][startup] stage=first-frame attempt target=DrawpadPresentation revision=1 size=80x80
+[Draw3Diag][ulw] event=success role=DrawpadPresentation hwnd=0x100bb2 valid=1 visible=0 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 window=(-32000,-32000,-31920,-31920) dib=80x80 staging=80x80 texture=80x80 dirty=(0,0,80,80) full=1 dirtyParameter=null fullUpdateOverride=0 dst=(-32000,-32000) dstSize=80x80 src=(0,0) blend=0,0,255,1 hdcSrc=0xffffffff94014d7d flags=0x2 hresult=0x0 error=0
+[Draw3Diag][present] event=success mode=UlwDirtyRect target=DrawpadPresentation revision=1 contentRevision=0 dirty=(0,0,80,80) full=1 hwnd=0x100bb2 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0xb0d80 valid=1 visible=0 pid=44040 tid=31664 owner=0x100bb2 previous=0x1a1198 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31920,-31920) client=(0,0,80,80)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x100bb2 valid=1 visible=0 pid=44040 tid=31664 owner=0x9c0306 previous=0xb0d80 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31920,-31920) client=(0,0,80,80)
+[Draw3Diag][startup] stage=first-frame result=committed target=DrawpadPresentation revision=1 size=80x80
+[Draw3Diag][window] event=first-frame role=Drawpad hwnd=0xb0d80 valid=1 visible=0 pid=44040 tid=31664 owner=0x100bb2 previous=0x1a1198 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31920,-31920) client=(0,0,80,80)
+[Draw3Diag][window] event=first-frame role=DrawpadPresentation hwnd=0x100bb2 valid=1 visible=0 pid=44040 tid=31664 owner=0x9c0306 previous=0xb0d80 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31920,-31920) client=(0,0,80,80)
+[StrokeReconnect] enabled=true window_ms=80 prediction_endpoint_base_px=4 prediction_relative=0.35 beyond_horizon_ratio=0.75 extrapolation_angle_deg=35 terminal_direction_corridor_angle_deg=35 in_horizon_terminal_gap_ms=35 in_horizon_terminal_angle_deg=15 in_horizon_terminal_speed_ratio=[0.5,2] comparison_epsilon_px=0.5 predicted_base_max_px=64 predicted_adaptive_max_px=256 adaptive_distance_speed_ratio=1.75 adaptive_relative=0.5 fallback_angle_deg=35 fallback_max_distance_px=32 fallback_speed_ratio=[0.35,2.75] candidates=8 manual_test=false simulation=false simulation_interval_ms=[180,520] simulation_drop_ms=[20,70] inverted_pen_eraser=true
+[Draw3Diag][ulw] event=success role=Drawpad hwnd=0xb0d80 valid=1 visible=0 style=0x86000000 exStyle=0x8080080 windowRectOk=1 window=(-32000,-32000,-31920,-31920) dib=80x80 staging=80x80 texture=80x80 dirty=(0,0,80,80) full=1 dirtyParameter=null fullUpdateOverride=0 dst=(-32000,-32000) dstSize=80x80 src=(0,0) blend=0,0,255,1 hdcSrc=0xffffffff93013b7f flags=0x2 hresult=0x0 error=0
+[Draw3Diag][present] event=success mode=UlwDirtyRect target=Drawpad revision=2 contentRevision=0 dirty=(0,0,80,80) full=1 hwnd=0xb0d80 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0xb0d80 valid=1 visible=0 pid=44040 tid=31664 owner=0x100bb2 previous=0x1a1198 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31920,-31920) client=(0,0,80,80)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x100bb2 valid=1 visible=0 pid=44040 tid=31664 owner=0x9c0306 previous=0xb0d80 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31920,-31920) client=(0,0,80,80)
+[Draw3Diag][present] event=success mode=UlwDirtyRect target=DrawpadPresentation revision=3 contentRevision=0 dirty=(0,0,80,80) full=1 hwnd=0x100bb2 result=0x0
+[Draw3Diag][window] event=present-success role=Drawpad hwnd=0xb0d80 valid=1 visible=0 pid=44040 tid=31664 owner=0x100bb2 previous=0x1a1198 style=0x86000000 exStyle=0x8080080 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31920,-31920) client=(0,0,80,80)
+[Draw3Diag][window] event=present-success role=DrawpadPresentation hwnd=0x100bb2 valid=1 visible=0 pid=44040 tid=31664 owner=0x9c0306 previous=0xb0d80 style=0x86000000 exStyle=0x80800a0 windowRectOk=1 clientRectOk=1 window=(-32000,-32000,-31920,-31920) client=(0,0,80,80)
+[Draw3.Input] action=admission reasons=1 desired=0 actual=0 session=0 target=0

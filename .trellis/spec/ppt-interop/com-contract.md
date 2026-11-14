@@ -51,12 +51,13 @@ JSON schema version 1 恰含 `schemaVersion/provider/status/fullName/presentatio
 - 常规文稿/页/拓扑属性、集合和命令必须由生产 C# `dynamic` 访问；字符串 accessor 只是测试/分派边界，不能以 `InvokeMember` 充当 dynamic。只有逐成员有证据说明 dynamic 无法实现的能力才允许包装例外；busy 不触发另一访问方式重复执行有副作用命令。
 - **HWND 标量例外**：用户确认历史测试中 dynamic 无法取得 HWND，PIA 元数据亦标为 FRestricted；沿用借用的类型接口标量读取，不要求普通 dynamic 前置重试。包装不可用时仅用有文稿/COM绑定进程与放映窗口关联证据的 Win32 后备；标题唯一或前台窗口不足以证明身份。借用窗口 RCW 不额外释放；未知窗口不阻断已确认COM场次的对象定向基础控制。
 - application、active presentation 和 slide-show window 由 service owner 长期持有，reader/类型标量包装只借用，reader 不释放。`View`、`View.Slide`、`Slides` 及每个 `Slides.Item(i)` 是本次获取的 temporary；必须在 `finally` 按子到父每次恰好 `ReleaseComObject` 一次，不得 `foreach`、链式 COM 属性或 temporary `FinalReleaseComObject`。
+- 禁止通过 `xx.yy.zz` 跨过中间 COM 对象；必须分别取得具名 `a = xx.yy`、`b = a.zz`，并在 `finally` 中先释放 b 再释放 a。不能因访问最终为标量就省略中间对象的显式释放。
 - 每次ROT/COM对象返回都是独立acquisition，即使同identity也须单次释放或明确转移；managed赋值/as/cast只是alias。去重列表不得再次释放已释放/转移的同一笔取得；转移到root后清空临时槽。Next/Previous/Exit的View及总览Navigation也必须具名/finally释放，不能保留链式temporary。
 - 事件例外使用内部raw IDispatch sink和显式IConnectionPoint/cookie，不让通用CLR事件包装将入站VARIANT物化为RCW。Invoke只派发DISPID/纯值hint，长期root由owner自行取得；Find/Advise失败自动轮询。成功的CP取得只转移一次，Unadvise成功或明确服务器断连后才Release该取得。
 - 失败解绑的CP/cookie/sink停用并转入静态retirement registry，由当前或后续service owner锁外重试；native重建server不能丢掉这笔所有权。首次解绑失败后，最终停止再作最多3轮显式重试，仍失败返回-1并记录未完成/保留可重试lease，不能伪称已释放；外部COM已阻塞的调用不能用本地超时撤销。
 - 文稿 `FullName/Name` 不能随稳定拓扑永久缓存：相同 COM identity 可被另存或首次保存；fast 复用前必须由 owner dynamic 重新确认身份。跨放映 session 首次重新完整验证，身份 busy/失败不能把旧路径发布为可信新身份；不以单独增加 binding revision 绕过正常事件绑定生命周期。
 - 当前页的 `SlideIndex` 和 `SlideID` 必须来自同一个 `View.Slide` acquisition。完整 topology 必须用 `for (1..Count) + Slides.Item(i)` 读取，校验当前 SlideIndex 顺序、正 SlideID、唯一性及当前 ID 对应；descriptor 中的数组顺序只表示本次 COM 的当前页顺序，不能把顺序变化当成 SlideID 身份变化。任一读取失败不得返回部分 `slideIds`。
-- `FullCleanup` 由 owner 在旧 binding 请求失效且在途使用结束后执行：先推进 `bindingRevision`/纯值状态，再逐项解绑事件并按 window -> presentation -> application 释放持有。不得靠 `GC.Collect/WaitForPendingFinalizers`、循环Release或共享RCW的FinalRelease补漏；每笔取得必须已配平。取消某一事件失败不能阻断其他订阅清理。
+- `FullCleanup` 由 owner 在旧 binding 请求失效且在途使用结束后执行：先推进 `bindingRevision`/纯值状态，再逐项解绑事件并按 window -> presentation -> application 释放持有。显式释放、root 字段清空及页码重置后，保留原有 `GC.Collect → GC.WaitForPendingFinalizers → GC.Collect` 兼容收尾；每笔取得仍须显式配平，不以 GC、循环Release或共享RCW的FinalRelease替代。取消某一事件失败不能阻断其他订阅清理。
 - managed 在缓存/数组分配前限制单个 identity 的 UTF-8 长度不超过 32 KiB、页数不超过 10,000；native 再对 JSON 设置 1 MiB UTF-8 payload、32 KiB identity 和 10,000 页上限，并严格校验 schema/status/数值/唯一 SlideID。
 - 有效 shared 页已变而 descriptor 仍是上一页，或 descriptor 为 `TransientBusy` 时，只有 descriptor bindingRevision 与 Bridge 当前 target 相同才可暂存旧画布且不发 ready；新 binding 首次 busy/unavailable 必须隔离，不能把 A 画布留给 B。
 
@@ -160,7 +161,7 @@ native 调用处可见 `_com_error` 处理。`【合理推断】` 新调用应�
 - 事件与轮询更新；
 - `TryGetBusyComErrorCode` 区分Office暂忙；descriptor独立约100ms重试，不受稳定3秒复核阻挡，慢维护约500ms；COM调用本身阻塞不在调度上界内；
 - `FullCleanup`、`SafeRelease` 及循环对象释放；
-- WPS 与 PowerPoint 均按实际 acquisition/事件连接配平，不保留历史 FinalRelease/强制GC补漏；提供方确需例外时先记录证据并单独审查。
+- WPS 与 PowerPoint 均按实际 acquisition/事件连接配平；FullCleanup 显式清理后保留原三步强制 GC 收尾，不对共享 RCW 使用 FinalRelease 补漏。
 - COM线程诊断不得调用会写入当前线程IErrorInfo的Marshal.GetHRForException。使用ExternalException.ErrorCode读取已知错误，普通managed异常明确未知；否则原生调用只返回HRESULT时，CLR可能重抛前序日志保存的无关异常而错误分类busy。测试人为设置ErrorInfo后须finally恢复并配平原始指针。
 
 `【历史/兼容】` 这些分支证明代码考虑过多个 Office/WPS 版本，不证明每个组合仍在发布测试范围。
@@ -194,5 +195,70 @@ native 调用处可见 `_com_error` 处理。`【合理推断】` 新调用应�
 2. 使用 TLB 可稳定表达且 C#/native 宽度一致的参数；unsafe 指针变化需单独审查生命周期与同步。
 3. 由 `PptCOM.csproj` 重新生成 TLB，不手工修改生成包装或复制产物。
 4. 明确 `CheckCOM` 是信息标识还是强制版本门，再决定常量和 native 行为；不要假装当前已有比较策略。
-5. DLL/TLB 在 PptCOM 自身输出目录生成，工程间无依赖和自动复制。接口变更须显式交接同次 DLL/TLB，再按 `AGENTS.md` 使用完整 `InkeysRepo.sln` 验证 native `#import`；发布 CI 的 artifact 交接合同见 [build-and-compatibility.md](../native-desktop/build-and-compatibility.md)。
+5. DLL/TLB 在 PptCOM 自身输出目录生成，工程间无依赖和自动复制。实现或接口变更均须手动同步新 DLL 到 `Inkeys/PptCOM.dll`；TLB 有变化时同步同次产物。拷贝保留旧时间戳时须触发资源重编译，并用 `.github/scripts/release-artifacts.ps1::Assert-EmbeddedPptCom` 核对 EXE 内嵌哈希，再按 `AGENTS.md` 用完整 `InkeysRepo.sln` 验证；发布 CI 的 artifact 交接合同见 [build-and-compatibility.md](../native-desktop/build-and-compatibility.md)。
 6. PowerPoint、WPS、busy、结束/重开、切文档和 Inkeys 退出是建议验证范围；正式支持矩阵仍由维护者确认。
+
+
+## Scenario: COM 生命周期控制台诊断
+
+### 1. Scope / Trigger
+
+用户设备出现 Office 关闭后残留、对象释放无法配平或事件解绑失败时，使用内部 PptComDiagnostics。入口跟随既有 ConsoleOutput.PptCOM / SetConsoleOutputEnabled，修改开关后重启。无需额外环境变量，不能修改 COM ABI。
+
+### 2. Signatures
+
+```csharp
+PptComDiagnostics.Acquired(object value, string source, object parent = null, long call = 0, long elapsedTicks = -1);
+PptComDiagnostics.Transfer(object value, string destination);
+int PptComDiagnostics.Release(object value, string source);
+PptComDiagnostics.Summary(string stage);
+```
+
+getter/Item、ROT 与 FindConnectionPoint 记录已有对象返回，Release 返回原 Marshal.ReleaseComObject 的计数。调用前后日志将未返回的 COM 调用定位到具体 member；不得为日志重做 getter/命令。
+
+### 3. Contracts
+
+- `[PptComLife] v=1` 行含 seq/pid/tid/qpc/event；启用行含模块 MVID，方便核对实际加载版本。
+- obj/parent/target 是当前进程内的弱托管对象标识，不是 IUnknown 地址或提供方文稿身份。不调用 GetIUnknownForObject 做日志身份查询。
+- acquire/transfer/release.begin/release.end 对应每次取得、转移与一次实际释放；transfer 不增加取得计数。remaining 是 RCW 剩余计数，不是原生 AddRef 总数，非零不授权再次 Release。
+- summary 含 acquired/released/balance/outstanding/untracked_release/release_failures/dropped/output_failures；outstanding 行给出每个仍有已跟踪取得的对象及最后来源/转移信息。重绑时被选中的新 bestApp 等仍可能合法存活，不能将正 balance 一概当泄漏。
+- ConditionalWeakTable 仅以弱键关联 RCW；独立待清理字典最多 4096 项且只保存纯值 Entry，不保存 RCW/委托/COM 属性。掉项、未知释放、失败输出均需显式呈现，不能宣称完整配平。
+- 诊断关闭时 getter/Item/命令直接走原分派；Release 仍只调用一次原 API。诊断不额外读取 Office 属性、不增加 AddRef/Release、不输出文稿名/路径，输出失败不改变业务异常/线程 IErrorInfo。
+- owner.maintenance/service.stop/service.finally/cleanup.begin/gc.begin/gc.end/service.end 只记录当前纯值快照和已有 root。状态含 generation；回滚候选后不再输出 close_binding/closed_binding，也不再使用关闭延后/最终退休策略。
+- COM 事件诊断在回调中只入最多 64 条的纯值队列，由 owner 每轮最多输出 64 条，连续生产不能饿死 owner；office.event 的 event_qpc/event_tid 是通知现场，行头 qpc/tid 是实际输出现场。event_dropped 非零表示事件日志不完整，不能使控制台写入阻塞 Office 回调。
+- getter/Item/命令/Release/Unadvise 的 elapsed_ticks 从 begin 输出返回后开始，到实际调用返回或抛出后立即锁存，再进行输出；frequency 为 Stopwatch.Frequency。不能拿两个输出 qpc 之差当纯 COM 执行时间。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 诊断结果 |
+| --- | --- |
+| 同 RCW 重复返回 | 每次 acquire 各记一笔，分别 Release；不按 identity 去重取得 |
+| getter/命令失败 | call.fail 给出原 HRESULT 与异常类型；不改 IErrorInfo、不重复调用 |
+| Unadvise busy | 输出原 cookie、HRESULT 与待清理数量；仍按原策略重试并保留 lease |
+| 输出流关闭/抛异常 | 吞掉诊断输出异常，output_failures 增加；COM 操作照原语义执行 |
+| 日志不完整或 dropped/untracked_release 非零 | 明确视为不完整，不能据 summary 宣称全部底层对象已释放 |
+
+### 5. Good / Base / Bad Cases
+
+Good：控制台开启后，保留获取→转移→释放与关闭后的日志，结合 service-end 汇总定位 root/CP。
+Base：控制台关闭时无新日志，原有联动行为与每次取得/释放次数保持。
+Bad：日志为读取对象名称而触发 COM、使用强引用字典保活 RCW，或对 remaining 非零循环 Release。
+
+### 6. Tests Required
+
+真实 IDispatch 夹具覆盖重复同 identity 取得/释放、原 RCW 计数、命令恰次执行、事件 busy 与成功重试、disabled 静默、输出抛异常、弱键不保活真实 RCW、慢输出不计入调用耗时；已有线程 IErrorInfo marker 保持不变。保留既有 owner/断连/末文稿 Count0 回归，以及回调不执行控制台 I/O 的诊断测试；已撤回候选新增的关闭延后、2031直接退休和0x800706BA分类，不再将对应测试列为当前实现合同。真实 Office 退出由用户设备结果另行确认。
+
+### 7. Wrong vs Correct
+
+```csharp
+// Wrong：为诊断额外获得 COM 指针；日志本身改变引用。
+IntPtr identity = Marshal.GetIUnknownForObject(value);
+// Correct：只记录已经返回的对象，不再向 Office 获取对象或属性。
+PptComDiagnostics.Acquired(value, "get:View");
+```
+
+## 调查结论与后续架构边界
+
+2026-11-14用户实机已确认：旧PowerPoint清理中的Unadvise或CP Release可同步等待数十秒，旧进程尚在时重启Inkeys却能立即联动新文稿。当前先回退候选行为，仅保留FullCleanup三行GC与诊断；同步服务链仍存在该阻塞，不能标为已修复。证据和用户决策见 `.trellis/tasks/archive/2026-11/11-14-pptcom-release-regression/research/rollback-to-gc-and-diagnostics.md`。
+
+用户确定后续采用多线程动态绑定，使旧绑定清理与新绑定建立可并行推进，当前尚未实施。届时必须覆盖：旧清理被闸门阻塞时新绑定仍可Active、旧回调/命令/页码不得污染新session、每笔COM取得只有一个清理所有者、失败lease不丢失及线程/待清理任务有界；不能仅以最终计数配平代替进度验收。

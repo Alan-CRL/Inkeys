@@ -221,6 +221,8 @@ export namespace draw3::uink
 		std::vector<UInkInkPoint> points;
 		bool renderOnlyWhenLatest = false;
 		std::optional<UInkExtra> extra;
+		// UInk 1.1 升为官方字段；当前为可忽略的笔划私有扩展。
+		uint8_t eraserShape = 0;
 	};
 
 	struct UInkShapePoint

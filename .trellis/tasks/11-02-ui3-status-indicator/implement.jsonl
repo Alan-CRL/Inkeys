@@ -1,0 +1,13 @@
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "UI3 Bar render loop, dirty-region transaction, viewport/envelope, hover/press, edge lighting, font sizing contracts"}
+{"file": ".trellis/spec/native-desktop/bar-theme-material.md", "reason": "Main button material weights, resident surface/content opacity, edge-light color rules"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "main.json schema, deploy.json migration, i18n sync/check workflow, SVG resources"}
+{"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "Direct settings entry (ShowSpeedEraser) and entry-animation fade rule to mirror for software version"}
+{"file": ".trellis/spec/ppt-interop/native-session-ui3.md", "reason": "PPT session begin/end edges and whiteboard committed-scene semantics"}
+{"file": ".trellis/spec/native-desktop/ui-pointer-session.md", "reason": "Pointer session rules for new bar hit targets"}
+{"file": ".trellis/spec/native-desktop/pen-haptics.md", "reason": "Haptics contract for new clickable bar elements"}
+{"file": ".trellis/spec/native-desktop/single-instance-and-startup-handoff.md", "reason": "SuperTop startup and update restart handoff"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ module and code style"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Build/validation command and platform"}
+{"file": ".trellis/tasks/11-02-ui3-status-indicator/research/bar-rendering.md", "reason": "Main button geometry, draw order, theme, animation, viewport, hit-test research"}
+{"file": ".trellis/tasks/11-02-ui3-status-indicator/research/settings.md", "reason": "Settings rows, draft/events, debug page, config, ShowSpeedEraser chain"}
+{"file": ".trellis/tasks/11-02-ui3-status-indicator/research/status-sources.md", "reason": "PPT/WPS, SuperTop, update state and progress sources"}

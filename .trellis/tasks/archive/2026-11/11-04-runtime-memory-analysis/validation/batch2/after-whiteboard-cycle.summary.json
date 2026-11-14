@@ -1,0 +1,4233 @@
+{
+  "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\MemoryDiagnostics\\batch2\\after-bin\\Inkeys.exe",
+  "sha256": "dbef71c337ebe10ee83e6ac289bc0abb29595666734df2e7883504bca282b680",
+  "pid": 26004,
+  "exit_code": 6,
+  "forced_cleanup": false,
+  "failure": null,
+  "statistics": {
+    "desktop": {
+      "private_bytes": 450387968,
+      "working_set_bytes": 459796480,
+      "gdi_handles": 28
+    },
+    "whiteboard": {
+      "private_bytes": 408961024,
+      "working_set_bytes": 444391424,
+      "gdi_handles": 35
+    },
+    "returned": {
+      "private_bytes": 452931584,
+      "working_set_bytes": 466444288,
+      "gdi_handles": 31
+    }
+  },
+  "events": [
+    {
+      "action": "command_pipe_whiteboard",
+      "seconds": 20.094,
+      "pid": 20544
+    },
+    {
+      "action": "whiteboard_anchor_visible",
+      "seconds": 20.422,
+      "hwnd": 4526614,
+      "class": "Inkeys1;{5453fa60-ff3c-2e70-8775-8f96e5c7453e}",
+      "exstyle": 786464,
+      "visible": true
+    },
+    {
+      "action": "close_whiteboard_anchor",
+      "seconds": 45.594,
+      "hwnd": 4526614,
+      "class": "Inkeys1;{5453fa60-ff3c-2e70-8775-8f96e5c7453e}",
+      "exstyle": 786464,
+      "visible": true
+    },
+    {
+      "action": "returned_desktop_anchor",
+      "seconds": 45.844,
+      "hwnd": 4526614,
+      "class": "Inkeys1;{5453fa60-ff3c-2e70-8775-8f96e5c7453e}",
+      "exstyle": 134742184,
+      "visible": false
+    },
+    {
+      "action": "forwarder_exit",
+      "exit_code": 0
+    }
+  ],
+  "regions": [
+    {
+      "elapsed_seconds": 1.0,
+      "phase": "desktop",
+      "totals": {
+        "private_commit": 418004992,
+        "mapped_commit": 94298112,
+        "image_commit": 495595520,
+        "other_commit": 0,
+        "reserve_address_bytes": 4959588352
+      },
+      "large_regions": [
+        {
+          "base": "0x24593200000",
+          "bytes": 1576960,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24593390000",
+          "bytes": 2101248,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24594880000",
+          "bytes": 1388544,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24594b20000",
+          "bytes": 3387392,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24595010000",
+          "bytes": 11014144,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24595aa0000",
+          "bytes": 4198400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24595eb0000",
+          "bytes": 1048576,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24596000000",
+          "bytes": 11010048,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24596c79000",
+          "bytes": 1142784,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597010000",
+          "bytes": 4198400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597510000",
+          "bytes": 3346432,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597900000",
+          "bytes": 5455872,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24598000000",
+          "bytes": 33447936,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x2459a4f0000",
+          "bytes": 1413120,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x2459a6a0000",
+          "bytes": 18083840,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459c6f0000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459d710000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459e720000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459f730000",
+          "bytes": 64000000,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x245a3600000",
+          "bytes": 22110208,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a5400000",
+          "bytes": 11403264,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a7000000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a8530000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a9a60000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245aaf90000",
+          "bytes": 11403264,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245aba70000",
+          "bytes": 4800512,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245abf10000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245ad430000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245ae960000",
+          "bytes": 22122496,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245afe80000",
+          "bytes": 22118400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b13a0000",
+          "bytes": 14319616,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b37d0000",
+          "bytes": 1396736,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b3bf2000",
+          "bytes": 1830912,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245b3f22000",
+          "bytes": 5255168,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245b48c0000",
+          "bytes": 22110208,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245cf000000",
+          "bytes": 8388608,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff47a8e0000",
+          "bytes": 1609728,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff69d6f1000",
+          "bytes": 30527488,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff69f40e000",
+          "bytes": 5738496,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff69fb2a000",
+          "bytes": 63574016,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff86be41000",
+          "bytes": 2256896,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff88701d000",
+          "bytes": 19935232,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff892539000",
+          "bytes": 8966144,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8942b0000",
+          "bytes": 8785920,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff895837000",
+          "bytes": 1568768,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff8959b7000",
+          "bytes": 11968512,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff898962000",
+          "bytes": 8826880,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8991cd000",
+          "bytes": 3334144,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8b6071000",
+          "bytes": 2519040,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8b6391000",
+          "bytes": 3493888,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8b66e6000",
+          "bytes": 5398528,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8b6cf1000",
+          "bytes": 1187840,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8dee71000",
+          "bytes": 4476928,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8df2b6000",
+          "bytes": 1236992,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8fd0e1000",
+          "bytes": 8990720,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8fd974000",
+          "bytes": 2338816,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9385f1000",
+          "bytes": 4804608,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff938a86000",
+          "bytes": 1228800,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff967531000",
+          "bytes": 2707456,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff977911000",
+          "bytes": 3112960,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff977c09000",
+          "bytes": 1146880,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9882f5000",
+          "bytes": 1187840,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff98c511000",
+          "bytes": 1261568,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff98c881000",
+          "bytes": 1085440,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff995401000",
+          "bytes": 2478080,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff995711000",
+          "bytes": 1097728,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99a4ff000",
+          "bytes": 2224128,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff99a761000",
+          "bytes": 2187264,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99dd60000",
+          "bytes": 11386880,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a0721000",
+          "bytes": 1429504,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a1b81000",
+          "bytes": 37363712,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a3f23000",
+          "bytes": 3018752,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a4206000",
+          "bytes": 5103616,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff9a46e5000",
+          "bytes": 5074944,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff9a5aa1000",
+          "bytes": 7168000,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a6177000",
+          "bytes": 11329536,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a9661000",
+          "bytes": 1495040,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a97ce000",
+          "bytes": 1433600,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a9e71000",
+          "bytes": 1277952,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ab4d1000",
+          "bytes": 3284992,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ac1a1000",
+          "bytes": 3420160,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ac5d1000",
+          "bytes": 1908736,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ada31000",
+          "bytes": 5890048,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9adfcf000",
+          "bytes": 3280896,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9ae361000",
+          "bytes": 3256320,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ae67c000",
+          "bytes": 1216512,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9aea11000",
+          "bytes": 3444736,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9aee71000",
+          "bytes": 3575808,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9af1da000",
+          "bytes": 1114112,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9af341000",
+          "bytes": 1605632,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9af7a1000",
+          "bytes": 14327808,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b054b000",
+          "bytes": 4173824,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b2a91000",
+          "bytes": 2293760,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b3cb1000",
+          "bytes": 1339392,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b3ff1000",
+          "bytes": 1720320,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4221000",
+          "bytes": 3215360,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4532000",
+          "bytes": 3289088,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b4ae1000",
+          "bytes": 1056768,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4f81000",
+          "bytes": 1388544,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b51a1000",
+          "bytes": 1425408,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b5451000",
+          "bytes": 12009472,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b5fc5000",
+          "bytes": 2879488,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b6d71000",
+          "bytes": 1716224,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b74b1000",
+          "bytes": 1708032,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b76bd000",
+          "bytes": 3543040,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b7a91000",
+          "bytes": 1355776,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b7c41000",
+          "bytes": 5267456,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b8147000",
+          "bytes": 1310720,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b8311000",
+          "bytes": 2150400,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b85a1000",
+          "bytes": 1814528,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b8911000",
+          "bytes": 3190784,
+          "type": "image_commit",
+          "protect": "0x20"
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 16.094,
+      "phase": "desktop",
+      "totals": {
+        "private_commit": 416686080,
+        "mapped_commit": 93552640,
+        "image_commit": 495710208,
+        "other_commit": 0,
+        "reserve_address_bytes": 4995846144
+      },
+      "large_regions": [
+        {
+          "base": "0x24593200000",
+          "bytes": 1576960,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24593390000",
+          "bytes": 2101248,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24594880000",
+          "bytes": 1388544,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24594b20000",
+          "bytes": 3387392,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24595010000",
+          "bytes": 11014144,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24595aa0000",
+          "bytes": 4198400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24595eb0000",
+          "bytes": 1048576,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24596000000",
+          "bytes": 11010048,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24596c79000",
+          "bytes": 1142784,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597010000",
+          "bytes": 4198400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597510000",
+          "bytes": 3346432,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597900000",
+          "bytes": 5455872,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24598099000",
+          "bytes": 32821248,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x2459a4f0000",
+          "bytes": 1413120,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x2459a6a0000",
+          "bytes": 18067456,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459c6f0000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459d710000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459e720000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459f730000",
+          "bytes": 64000000,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x245a3600000",
+          "bytes": 22110208,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a5400000",
+          "bytes": 11403264,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a7000000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a8530000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a9a60000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245aaf90000",
+          "bytes": 11403264,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245aba70000",
+          "bytes": 4800512,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245abf10000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245ad430000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245ae960000",
+          "bytes": 22122496,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245afe80000",
+          "bytes": 22118400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b13a0000",
+          "bytes": 14319616,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b37d0000",
+          "bytes": 1396736,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b3bf2000",
+          "bytes": 1830912,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245b3f22000",
+          "bytes": 5255168,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245b48c0000",
+          "bytes": 22110208,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b5de0000",
+          "bytes": 2367488,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245cf000000",
+          "bytes": 8388608,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff47a8e0000",
+          "bytes": 1609728,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff69d6f1000",
+          "bytes": 30527488,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff69f40e000",
+          "bytes": 5738496,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff69fb2a000",
+          "bytes": 63574016,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff86be41000",
+          "bytes": 2256896,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff88701d000",
+          "bytes": 19935232,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff892539000",
+          "bytes": 8966144,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8942b0000",
+          "bytes": 8785920,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff895837000",
+          "bytes": 1568768,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff8959b7000",
+          "bytes": 11968512,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff898962000",
+          "bytes": 8826880,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8991cd000",
+          "bytes": 3334144,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8b6071000",
+          "bytes": 2519040,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8b6391000",
+          "bytes": 3493888,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8b66e6000",
+          "bytes": 5398528,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8b6cf1000",
+          "bytes": 1187840,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8dee71000",
+          "bytes": 4476928,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8df2b6000",
+          "bytes": 1236992,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8fd0e1000",
+          "bytes": 8990720,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8fd974000",
+          "bytes": 2338816,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9385f1000",
+          "bytes": 4804608,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff938a86000",
+          "bytes": 1228800,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff967531000",
+          "bytes": 2707456,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff977911000",
+          "bytes": 3112960,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff977c09000",
+          "bytes": 1146880,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9882f5000",
+          "bytes": 1187840,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff98c511000",
+          "bytes": 1261568,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff98c881000",
+          "bytes": 1085440,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff995401000",
+          "bytes": 2478080,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff995711000",
+          "bytes": 1097728,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99a4ff000",
+          "bytes": 2224128,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff99a761000",
+          "bytes": 2187264,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99dd60000",
+          "bytes": 11386880,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a0721000",
+          "bytes": 1429504,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a1b81000",
+          "bytes": 37363712,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a3f23000",
+          "bytes": 3018752,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a4206000",
+          "bytes": 5103616,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff9a46e5000",
+          "bytes": 5074944,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff9a5aa1000",
+          "bytes": 7168000,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a6177000",
+          "bytes": 11329536,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a9661000",
+          "bytes": 1495040,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a97ce000",
+          "bytes": 1433600,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a9e71000",
+          "bytes": 1277952,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ab4d1000",
+          "bytes": 3284992,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ac1a1000",
+          "bytes": 3420160,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ac5d1000",
+          "bytes": 1908736,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ada31000",
+          "bytes": 5890048,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9adfcf000",
+          "bytes": 3280896,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9ae361000",
+          "bytes": 3256320,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ae67c000",
+          "bytes": 1216512,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9aea11000",
+          "bytes": 3444736,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9aee71000",
+          "bytes": 3575808,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9af1da000",
+          "bytes": 1114112,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9af341000",
+          "bytes": 1605632,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9af7a1000",
+          "bytes": 14327808,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b054b000",
+          "bytes": 4173824,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b2a91000",
+          "bytes": 2293760,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b3cb1000",
+          "bytes": 1339392,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b3ff1000",
+          "bytes": 1720320,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4221000",
+          "bytes": 3215360,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4532000",
+          "bytes": 3289088,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b4ae1000",
+          "bytes": 1056768,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4f81000",
+          "bytes": 1388544,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b51a1000",
+          "bytes": 1425408,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b5451000",
+          "bytes": 12009472,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b5fc5000",
+          "bytes": 2879488,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b6d71000",
+          "bytes": 1716224,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b74b1000",
+          "bytes": 1708032,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b76bd000",
+          "bytes": 3543040,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b7a91000",
+          "bytes": 1355776,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b7c41000",
+          "bytes": 5267456,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b8147000",
+          "bytes": 1310720,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b8311000",
+          "bytes": 2150400,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b85a1000",
+          "bytes": 1814528,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b8911000",
+          "bytes": 3190784,
+          "type": "image_commit",
+          "protect": "0x20"
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 31.187,
+      "phase": "whiteboard",
+      "totals": {
+        "private_commit": 375132160,
+        "mapped_commit": 117751808,
+        "image_commit": 505409536,
+        "other_commit": 0,
+        "reserve_address_bytes": 5016043520
+      },
+      "large_regions": [
+        {
+          "base": "0x24593200000",
+          "bytes": 1576960,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24593390000",
+          "bytes": 2101248,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24594880000",
+          "bytes": 1388544,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24594b20000",
+          "bytes": 3387392,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24595010000",
+          "bytes": 11014144,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24595aa0000",
+          "bytes": 4198400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24595eb0000",
+          "bytes": 1048576,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24596000000",
+          "bytes": 11010048,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24596c79000",
+          "bytes": 1142784,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597010000",
+          "bytes": 4198400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597510000",
+          "bytes": 3346432,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597900000",
+          "bytes": 1572864,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597c60000",
+          "bytes": 1916928,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24598099000",
+          "bytes": 32382976,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x2459a4f0000",
+          "bytes": 1413120,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x2459a6a0000",
+          "bytes": 18067456,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459c6f0000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459d710000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459e720000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459f730000",
+          "bytes": 64000000,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x245a3600000",
+          "bytes": 22110208,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a5400000",
+          "bytes": 11403264,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a7000000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a8530000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a9a60000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245aaf90000",
+          "bytes": 11403264,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245aba70000",
+          "bytes": 4800512,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245abf10000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245ad430000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b13a0000",
+          "bytes": 14843904,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b3bf2000",
+          "bytes": 1830912,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245b3f22000",
+          "bytes": 5255168,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245b4570000",
+          "bytes": 2670592,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b5de0000",
+          "bytes": 2498560,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245cf000000",
+          "bytes": 8388608,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245d2000000",
+          "bytes": 22118400,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245d3520000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x7ff47a8e0000",
+          "bytes": 1609728,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff69d6f1000",
+          "bytes": 30527488,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff69f40e000",
+          "bytes": 5738496,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff69fb2a000",
+          "bytes": 63574016,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff86be41000",
+          "bytes": 2256896,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff88701d000",
+          "bytes": 19935232,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff892539000",
+          "bytes": 8966144,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8942b0000",
+          "bytes": 8785920,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff895837000",
+          "bytes": 1568768,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff8959b7000",
+          "bytes": 11968512,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff898962000",
+          "bytes": 8826880,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8991cd000",
+          "bytes": 3334144,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8b6071000",
+          "bytes": 2519040,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8b6391000",
+          "bytes": 3493888,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8b66e6000",
+          "bytes": 5398528,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8b6cf1000",
+          "bytes": 1187840,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8dee71000",
+          "bytes": 4476928,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8df2b6000",
+          "bytes": 1236992,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8fd0e1000",
+          "bytes": 8990720,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8fd974000",
+          "bytes": 2338816,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9385f1000",
+          "bytes": 4804608,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff938a86000",
+          "bytes": 1228800,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff967531000",
+          "bytes": 2707456,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9775b1000",
+          "bytes": 2019328,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff977911000",
+          "bytes": 3112960,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff977c09000",
+          "bytes": 1146880,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9882f5000",
+          "bytes": 1187840,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff98c511000",
+          "bytes": 1261568,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff98c881000",
+          "bytes": 1085440,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff995401000",
+          "bytes": 2478080,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff995711000",
+          "bytes": 1097728,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99a4ff000",
+          "bytes": 2224128,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff99a761000",
+          "bytes": 2187264,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99dd60000",
+          "bytes": 11386880,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff99f4d1000",
+          "bytes": 3649536,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99f84c000",
+          "bytes": 1314816,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a0721000",
+          "bytes": 1429504,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a1b81000",
+          "bytes": 37363712,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a3f23000",
+          "bytes": 3018752,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a4206000",
+          "bytes": 5103616,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff9a46e5000",
+          "bytes": 5074944,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff9a5aa1000",
+          "bytes": 7168000,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a6177000",
+          "bytes": 11329536,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a9661000",
+          "bytes": 1495040,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a97ce000",
+          "bytes": 1433600,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a9e71000",
+          "bytes": 1277952,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ab4d1000",
+          "bytes": 3284992,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ac1a1000",
+          "bytes": 3420160,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ac5d1000",
+          "bytes": 1908736,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ada31000",
+          "bytes": 5890048,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9adfcf000",
+          "bytes": 3280896,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9ae361000",
+          "bytes": 3256320,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ae67c000",
+          "bytes": 1216512,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9aea11000",
+          "bytes": 3444736,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9aee71000",
+          "bytes": 3575808,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9af1da000",
+          "bytes": 1114112,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9af341000",
+          "bytes": 1605632,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9af7a1000",
+          "bytes": 14327808,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b054b000",
+          "bytes": 4173824,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b2a91000",
+          "bytes": 2293760,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b3cb1000",
+          "bytes": 1339392,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b3ff1000",
+          "bytes": 1720320,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4221000",
+          "bytes": 3215360,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4532000",
+          "bytes": 3289088,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b4ae1000",
+          "bytes": 1056768,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4f81000",
+          "bytes": 1388544,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b51a1000",
+          "bytes": 1425408,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b5451000",
+          "bytes": 12009472,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b5fc5000",
+          "bytes": 2879488,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b6d71000",
+          "bytes": 1716224,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b74b1000",
+          "bytes": 1708032,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b76bd000",
+          "bytes": 3543040,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b7a91000",
+          "bytes": 1355776,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b7c41000",
+          "bytes": 5267456,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b8147000",
+          "bytes": 1310720,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b8311000",
+          "bytes": 2150400,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b85a1000",
+          "bytes": 1814528,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b8911000",
+          "bytes": 3190784,
+          "type": "image_commit",
+          "protect": "0x20"
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 46.359,
+      "phase": "returned",
+      "totals": {
+        "private_commit": 419606528,
+        "mapped_commit": 95416320,
+        "image_commit": 505409536,
+        "other_commit": 0,
+        "reserve_address_bytes": 5016334336
+      },
+      "large_regions": [
+        {
+          "base": "0x24593200000",
+          "bytes": 1576960,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24593390000",
+          "bytes": 2101248,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24594880000",
+          "bytes": 1388544,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24594b20000",
+          "bytes": 3387392,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24595010000",
+          "bytes": 11014144,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24595aa0000",
+          "bytes": 4198400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24595eb0000",
+          "bytes": 1048576,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24596000000",
+          "bytes": 11010048,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24596c79000",
+          "bytes": 1142784,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597010000",
+          "bytes": 4198400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597510000",
+          "bytes": 3346432,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597900000",
+          "bytes": 2506752,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24598099000",
+          "bytes": 32391168,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x2459a4f0000",
+          "bytes": 1413120,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x2459a6a0000",
+          "bytes": 18067456,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459c6f0000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459d710000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459e720000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459f730000",
+          "bytes": 64000000,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x245a3600000",
+          "bytes": 22110208,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a5400000",
+          "bytes": 11403264,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a7000000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a8530000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a9a60000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245aaf90000",
+          "bytes": 11403264,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245aba70000",
+          "bytes": 4800512,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245abf10000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245ad430000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245afff0000",
+          "bytes": 2883584,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b13a0000",
+          "bytes": 14958592,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b3bf2000",
+          "bytes": 1830912,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245b3f22000",
+          "bytes": 5255168,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245b4800000",
+          "bytes": 22122496,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b5de0000",
+          "bytes": 2498560,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245cf000000",
+          "bytes": 8388608,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245d3520000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245d4a40000",
+          "bytes": 22118400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x7ff47a8e0000",
+          "bytes": 1609728,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff69d6f1000",
+          "bytes": 30527488,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff69f40e000",
+          "bytes": 5738496,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff69fb2a000",
+          "bytes": 63574016,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff86be41000",
+          "bytes": 2256896,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff88701d000",
+          "bytes": 19935232,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff892539000",
+          "bytes": 8966144,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8942b0000",
+          "bytes": 8785920,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff895837000",
+          "bytes": 1568768,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff8959b7000",
+          "bytes": 11968512,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff898962000",
+          "bytes": 8826880,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8991cd000",
+          "bytes": 3334144,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8b6071000",
+          "bytes": 2519040,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8b6391000",
+          "bytes": 3493888,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8b66e6000",
+          "bytes": 5398528,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8b6cf1000",
+          "bytes": 1187840,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8dee71000",
+          "bytes": 4476928,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8df2b6000",
+          "bytes": 1236992,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8fd0e1000",
+          "bytes": 8990720,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8fd974000",
+          "bytes": 2338816,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9385f1000",
+          "bytes": 4804608,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff938a86000",
+          "bytes": 1228800,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff967531000",
+          "bytes": 2707456,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9775b1000",
+          "bytes": 2019328,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff977911000",
+          "bytes": 3112960,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff977c09000",
+          "bytes": 1146880,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9882f5000",
+          "bytes": 1187840,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff98c511000",
+          "bytes": 1261568,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff98c881000",
+          "bytes": 1085440,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff995401000",
+          "bytes": 2478080,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff995711000",
+          "bytes": 1097728,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99a4ff000",
+          "bytes": 2224128,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff99a761000",
+          "bytes": 2187264,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99dd60000",
+          "bytes": 11386880,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff99f4d1000",
+          "bytes": 3649536,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99f84c000",
+          "bytes": 1314816,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a0721000",
+          "bytes": 1429504,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a1b81000",
+          "bytes": 37363712,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a3f23000",
+          "bytes": 3018752,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a4206000",
+          "bytes": 5103616,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff9a46e5000",
+          "bytes": 5074944,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff9a5aa1000",
+          "bytes": 7168000,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a6177000",
+          "bytes": 11329536,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a9661000",
+          "bytes": 1495040,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a97ce000",
+          "bytes": 1433600,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a9e71000",
+          "bytes": 1277952,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ab4d1000",
+          "bytes": 3284992,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ac1a1000",
+          "bytes": 3420160,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ac5d1000",
+          "bytes": 1908736,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ada31000",
+          "bytes": 5890048,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9adfcf000",
+          "bytes": 3280896,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9ae361000",
+          "bytes": 3256320,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ae67c000",
+          "bytes": 1216512,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9aea11000",
+          "bytes": 3444736,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9aee71000",
+          "bytes": 3575808,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9af1da000",
+          "bytes": 1114112,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9af341000",
+          "bytes": 1605632,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9af7a1000",
+          "bytes": 14327808,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b054b000",
+          "bytes": 4173824,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b2a91000",
+          "bytes": 2293760,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b3cb1000",
+          "bytes": 1339392,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b3ff1000",
+          "bytes": 1720320,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4221000",
+          "bytes": 3215360,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4532000",
+          "bytes": 3289088,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b4ae1000",
+          "bytes": 1056768,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4f81000",
+          "bytes": 1388544,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b51a1000",
+          "bytes": 1425408,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b5451000",
+          "bytes": 12009472,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b5fc5000",
+          "bytes": 2879488,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b6d71000",
+          "bytes": 1716224,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b74b1000",
+          "bytes": 1708032,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b76bd000",
+          "bytes": 3543040,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b7a91000",
+          "bytes": 1355776,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b7c41000",
+          "bytes": 5267456,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b8147000",
+          "bytes": 1310720,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b8311000",
+          "bytes": 2150400,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b85a1000",
+          "bytes": 1814528,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b8911000",
+          "bytes": 3190784,
+          "type": "image_commit",
+          "protect": "0x20"
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 61.375,
+      "phase": "returned",
+      "totals": {
+        "private_commit": 419082240,
+        "mapped_commit": 95416320,
+        "image_commit": 505409536,
+        "other_commit": 0,
+        "reserve_address_bytes": 5014761472
+      },
+      "large_regions": [
+        {
+          "base": "0x24593200000",
+          "bytes": 1576960,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24593390000",
+          "bytes": 2101248,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24594880000",
+          "bytes": 1388544,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24594b20000",
+          "bytes": 3387392,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24595010000",
+          "bytes": 11014144,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24595aa0000",
+          "bytes": 4198400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24595eb0000",
+          "bytes": 1048576,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24596000000",
+          "bytes": 11010048,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24596c79000",
+          "bytes": 1142784,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597010000",
+          "bytes": 4198400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597510000",
+          "bytes": 3346432,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597900000",
+          "bytes": 2506752,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24598099000",
+          "bytes": 32382976,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x2459a4f0000",
+          "bytes": 1413120,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x2459a6a0000",
+          "bytes": 18067456,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459c6f0000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459d710000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459e720000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459f730000",
+          "bytes": 64000000,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x245a3600000",
+          "bytes": 22110208,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a5400000",
+          "bytes": 11403264,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a7000000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a8530000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a9a60000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245aaf90000",
+          "bytes": 11403264,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245aba70000",
+          "bytes": 4800512,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245abf10000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245ad430000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245afff0000",
+          "bytes": 2883584,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b13a0000",
+          "bytes": 14843904,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b3bf2000",
+          "bytes": 1830912,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245b3f22000",
+          "bytes": 5255168,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245b4800000",
+          "bytes": 22122496,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b5de0000",
+          "bytes": 2498560,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245cf000000",
+          "bytes": 8388608,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245d3520000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245d4a40000",
+          "bytes": 22118400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x7ff47a8e0000",
+          "bytes": 1609728,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff69d6f1000",
+          "bytes": 30527488,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff69f40e000",
+          "bytes": 5738496,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff69fb2a000",
+          "bytes": 63574016,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff86be41000",
+          "bytes": 2256896,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff88701d000",
+          "bytes": 19935232,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff892539000",
+          "bytes": 8966144,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8942b0000",
+          "bytes": 8785920,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff895837000",
+          "bytes": 1568768,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff8959b7000",
+          "bytes": 11968512,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff898962000",
+          "bytes": 8826880,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8991cd000",
+          "bytes": 3334144,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8b6071000",
+          "bytes": 2519040,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8b6391000",
+          "bytes": 3493888,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8b66e6000",
+          "bytes": 5398528,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8b6cf1000",
+          "bytes": 1187840,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8dee71000",
+          "bytes": 4476928,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8df2b6000",
+          "bytes": 1236992,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8fd0e1000",
+          "bytes": 8990720,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8fd974000",
+          "bytes": 2338816,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9385f1000",
+          "bytes": 4804608,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff938a86000",
+          "bytes": 1228800,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff967531000",
+          "bytes": 2707456,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9775b1000",
+          "bytes": 2019328,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff977911000",
+          "bytes": 3112960,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff977c09000",
+          "bytes": 1146880,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9882f5000",
+          "bytes": 1187840,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff98c511000",
+          "bytes": 1261568,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff98c881000",
+          "bytes": 1085440,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff995401000",
+          "bytes": 2478080,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff995711000",
+          "bytes": 1097728,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99a4ff000",
+          "bytes": 2224128,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff99a761000",
+          "bytes": 2187264,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99dd60000",
+          "bytes": 11386880,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff99f4d1000",
+          "bytes": 3649536,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99f84c000",
+          "bytes": 1314816,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a0721000",
+          "bytes": 1429504,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a1b81000",
+          "bytes": 37363712,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a3f23000",
+          "bytes": 3018752,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a4206000",
+          "bytes": 5103616,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff9a46e5000",
+          "bytes": 5074944,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff9a5aa1000",
+          "bytes": 7168000,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a6177000",
+          "bytes": 11329536,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a9661000",
+          "bytes": 1495040,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a97ce000",
+          "bytes": 1433600,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a9e71000",
+          "bytes": 1277952,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ab4d1000",
+          "bytes": 3284992,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ac1a1000",
+          "bytes": 3420160,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ac5d1000",
+          "bytes": 1908736,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ada31000",
+          "bytes": 5890048,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9adfcf000",
+          "bytes": 3280896,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9ae361000",
+          "bytes": 3256320,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ae67c000",
+          "bytes": 1216512,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9aea11000",
+          "bytes": 3444736,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9aee71000",
+          "bytes": 3575808,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9af1da000",
+          "bytes": 1114112,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9af341000",
+          "bytes": 1605632,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9af7a1000",
+          "bytes": 14327808,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b054b000",
+          "bytes": 4173824,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b2a91000",
+          "bytes": 2293760,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b3cb1000",
+          "bytes": 1339392,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b3ff1000",
+          "bytes": 1720320,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4221000",
+          "bytes": 3215360,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4532000",
+          "bytes": 3289088,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b4ae1000",
+          "bytes": 1056768,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4f81000",
+          "bytes": 1388544,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b51a1000",
+          "bytes": 1425408,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b5451000",
+          "bytes": 12009472,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b5fc5000",
+          "bytes": 2879488,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b6d71000",
+          "bytes": 1716224,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b74b1000",
+          "bytes": 1708032,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b76bd000",
+          "bytes": 3543040,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b7a91000",
+          "bytes": 1355776,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b7c41000",
+          "bytes": 5267456,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b8147000",
+          "bytes": 1310720,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b8311000",
+          "bytes": 2150400,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b85a1000",
+          "bytes": 1814528,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b8911000",
+          "bytes": 3190784,
+          "type": "image_commit",
+          "protect": "0x20"
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 76.422,
+      "phase": "returned",
+      "totals": {
+        "private_commit": 419106816,
+        "mapped_commit": 73293824,
+        "image_commit": 505409536,
+        "other_commit": 0,
+        "reserve_address_bytes": 5014736896
+      },
+      "large_regions": [
+        {
+          "base": "0x24593200000",
+          "bytes": 1576960,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24593390000",
+          "bytes": 2101248,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24594880000",
+          "bytes": 1388544,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24594b20000",
+          "bytes": 3387392,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x24595010000",
+          "bytes": 11014144,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24595aa0000",
+          "bytes": 4198400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24595eb0000",
+          "bytes": 1048576,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24596000000",
+          "bytes": 11010048,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24596c79000",
+          "bytes": 1142784,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597010000",
+          "bytes": 4198400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597510000",
+          "bytes": 3346432,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24597900000",
+          "bytes": 2506752,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x24598099000",
+          "bytes": 32382976,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x2459a4f0000",
+          "bytes": 1413120,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x2459a6a0000",
+          "bytes": 18067456,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459c6f0000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459d710000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459e720000",
+          "bytes": 16785408,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x2459f730000",
+          "bytes": 64000000,
+          "type": "private_commit",
+          "protect": "0x404"
+        },
+        {
+          "base": "0x245a3600000",
+          "bytes": 22110208,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a5400000",
+          "bytes": 11403264,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a7000000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a8530000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245a9a60000",
+          "bytes": 22216704,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245aaf90000",
+          "bytes": 11403264,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245aba70000",
+          "bytes": 4800512,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245ad430000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245afff0000",
+          "bytes": 2883584,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b13a0000",
+          "bytes": 14843904,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b3bf2000",
+          "bytes": 1830912,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245b3f22000",
+          "bytes": 5255168,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245b4800000",
+          "bytes": 22122496,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245b5de0000",
+          "bytes": 2498560,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245cf000000",
+          "bytes": 8388608,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x245d3520000",
+          "bytes": 22122496,
+          "type": "mapped_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x245d4a40000",
+          "bytes": 22118400,
+          "type": "private_commit",
+          "protect": "0x4"
+        },
+        {
+          "base": "0x7ff47a8e0000",
+          "bytes": 1609728,
+          "type": "mapped_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff69d6f1000",
+          "bytes": 30527488,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff69f40e000",
+          "bytes": 5738496,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff69fb2a000",
+          "bytes": 63574016,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff86be41000",
+          "bytes": 2256896,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff88701d000",
+          "bytes": 19935232,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff892539000",
+          "bytes": 8966144,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8942b0000",
+          "bytes": 8785920,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff895837000",
+          "bytes": 1568768,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff8959b7000",
+          "bytes": 11968512,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff898962000",
+          "bytes": 8826880,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8991cd000",
+          "bytes": 3334144,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8b6071000",
+          "bytes": 2519040,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8b6391000",
+          "bytes": 3493888,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8b66e6000",
+          "bytes": 5398528,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8b6cf1000",
+          "bytes": 1187840,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8dee71000",
+          "bytes": 4476928,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8df2b6000",
+          "bytes": 1236992,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff8fd0e1000",
+          "bytes": 8990720,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff8fd974000",
+          "bytes": 2338816,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9385f1000",
+          "bytes": 4804608,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff938a86000",
+          "bytes": 1228800,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff967531000",
+          "bytes": 2707456,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9775b1000",
+          "bytes": 2019328,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff977911000",
+          "bytes": 3112960,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff977c09000",
+          "bytes": 1146880,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9882f5000",
+          "bytes": 1187840,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff98c511000",
+          "bytes": 1261568,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff98c881000",
+          "bytes": 1085440,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff995401000",
+          "bytes": 2478080,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff995711000",
+          "bytes": 1097728,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99a4ff000",
+          "bytes": 2224128,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff99a761000",
+          "bytes": 2187264,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99dd60000",
+          "bytes": 11386880,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff99f4d1000",
+          "bytes": 3649536,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff99f84c000",
+          "bytes": 1314816,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a0721000",
+          "bytes": 1429504,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a1b81000",
+          "bytes": 37363712,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a3f23000",
+          "bytes": 3018752,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a4206000",
+          "bytes": 5103616,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff9a46e5000",
+          "bytes": 5074944,
+          "type": "image_commit",
+          "protect": "0x8"
+        },
+        {
+          "base": "0x7ff9a5aa1000",
+          "bytes": 7168000,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a6177000",
+          "bytes": 11329536,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a9661000",
+          "bytes": 1495040,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9a97ce000",
+          "bytes": 1433600,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9a9e71000",
+          "bytes": 1277952,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ab4d1000",
+          "bytes": 3284992,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ac1a1000",
+          "bytes": 3420160,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ac5d1000",
+          "bytes": 1908736,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ada31000",
+          "bytes": 5890048,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9adfcf000",
+          "bytes": 3280896,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9ae361000",
+          "bytes": 3256320,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9ae67c000",
+          "bytes": 1216512,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9aea11000",
+          "bytes": 3444736,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9aee71000",
+          "bytes": 3575808,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9af1da000",
+          "bytes": 1114112,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9af341000",
+          "bytes": 1605632,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9af7a1000",
+          "bytes": 14327808,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b054b000",
+          "bytes": 4173824,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b2a91000",
+          "bytes": 2293760,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b3cb1000",
+          "bytes": 1339392,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b3ff1000",
+          "bytes": 1720320,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4221000",
+          "bytes": 3215360,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4532000",
+          "bytes": 3289088,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b4ae1000",
+          "bytes": 1056768,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b4f81000",
+          "bytes": 1388544,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b51a1000",
+          "bytes": 1425408,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b5451000",
+          "bytes": 12009472,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b5fc5000",
+          "bytes": 2879488,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b6d71000",
+          "bytes": 1716224,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b74b1000",
+          "bytes": 1708032,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b76bd000",
+          "bytes": 3543040,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b7a91000",
+          "bytes": 1355776,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b7c41000",
+          "bytes": 5267456,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b8147000",
+          "bytes": 1310720,
+          "type": "image_commit",
+          "protect": "0x2"
+        },
+        {
+          "base": "0x7ff9b8311000",
+          "bytes": 2150400,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b85a1000",
+          "bytes": 1814528,
+          "type": "image_commit",
+          "protect": "0x20"
+        },
+        {
+          "base": "0x7ff9b8911000",
+          "bytes": 3190784,
+          "type": "image_commit",
+          "protect": "0x20"
+        }
+      ]
+    }
+  ],
+  "sample_count": 312
+}

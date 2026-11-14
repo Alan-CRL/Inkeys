@@ -6,7 +6,7 @@
 ## 2. Signatures
 - `Config.AllowMultipleInstances: IdtAtomic<bool> = false`；`Config::ReadMini(paths, bool readOnly=false)`。早期读取该键必须传true，不能触发旧Bar布局迁移写盘。缺键/非法bool/读取失败回缺省false。
 - `Inkeys::Launch::Acquire(root, allow) -> Admission::{Accepted,Duplicate,Error}`；`Adopt() -> 0/1/-1`（无包/验真并接任/失败）；`Handoff::{Arguments,Publish,Wait}`；`StartReplacement(image, extraArguments={})`（扩展参数只允许空或 `-Whiteboard`）。
-- `Packet`固定版本、byteSize与uint64句柄字段，布局/offset/size静态断言。不能用uintptr_t做跨架构wire字段；接收端转换前检查本机指针范围。
+- `Packet`保持固定byteSize与uint64句柄布局；v1/`HandoffMode::ParentExit`等父退出，v2/`RestartHidden`仅供同镜像、同物理根目录的普通重启提前接任。布局/offset/size静态断言。不能用uintptr_t做跨架构wire字段；接收端转换前检查本机指针范围。
 - VERSIONINFO `StringFileInfo/080404b0/StartupHandoffProtocol = 1`。三态 `Protocol::{Current,Legacy,Unsupported}`，未知/坏资源/查询失败不可当Legacy。
 - `--inkeys-startup-handoff=Local\Inkeys.Handoff.<nonce>`只承载短寿命包名，不构成豁免。消费后从`LaunchState::commandLine`剔除。
 
@@ -17,8 +17,8 @@
 - presence为内核对象存活引用，不依赖mutex线程ownership或文件锁；RAII/进程死亡关闭最后句柄。交接连续DuplicateHandle，不释放后重抢。
 - 接收方在Ready前校验固定包尺寸/版本/句柄范围、childPID、精确父PID/镜像目录、父仍存活且SYNCHRONIZE可用、目录ID与lease、Mutant类型和完整对象名。跨installer的物理guard也在Ready前建立，失败不得回执。
 - 对象名以`OpenMutex(Local+预期fileID名)`的reference实际解析结果为准；不能硬编码BaseNamedObjects，因为受限runner可能使用AppContainerNamedObjects。NtQueryObject动态解析，有限缓冲与指针范围检查，错误closed，不能仅比较名称后缀。
-- Ready成功后父才允许退出。child等精确父HANDLE signaled后才进入业务；main已Adopt成功则不再二次准入，避免Ready后再次否决。失败只终止本次精确child，不清理未知文件或已有实例。
-- 正常Restart/CrashTry通过原监督器精确等旧进程，沿原绝对deadline；监督器显式继承原lease，之后把它转给新child，关闭多开后仍允许合法替换已有的一份实例。
+- Ready成功后交接父才允许退出。v1 child等精确父HANDLE signaled后才进入业务；v2 child完成全部验真并Ready后可直接进入业务，不等仍在监督旧进程的helper。main已Adopt成功则不再二次准入，避免Ready后再次否决。失败只终止本次精确child，不清理未知文件或已有实例。
+- 普通Restart由监督器按精确旧父句柄与PID枚举顶层窗口，确认全部不再可见后仅拉起一次；枚举失败不提前放行。新child走v2接任，监督器继续监督旧进程至原绝对deadline。待更新状态通过`IdtAtomic<AutomaticUpdateStateEnum>`发布；已知`UpdateRestart`选择`Intent::UpdateRestart`，与CrashTry一样等精确旧父退出后才拉起，仍用v1交接。各路径都显式接力原lease，关闭多开后仍允许合法替换已有的一份实例。
 - SuperTop区分两个Ready：final先恢复仅做Adopt预检并等helper；helper收到新handoffReady后才发布原RootReady/等Accepted/等原root真正退出；helper退出才放行final业务。不能在final尚未验真时让原root先退。
 - update/rollback保留原路径、哈希、指令原子写、备份和回滚校验。Current目标走Ready协议；明确无标记的旧目标用暂停创建+显式复制lease+恢复兼容，不在新协议失败后自动降级。旧目标自身后续SuperTop不理解新协议，不能宣称新lease覆盖其后续所有进程；兼容桥只确认OS创建/注入/恢复，不等于旧应用完整初始化。
 - legacy直接启动installer仍走原验真/兼容等待；逻辑根准入拒绝直接退出，不进入删除有效update.json的fail清理。installer物理guard在根重新绑定期间也保持。
@@ -31,19 +31,22 @@
 | 伪造/重复/过期handoff | 不Ready，不让原实例退场 |
 | 不同架构接力 | 固定wire布局，句柄越界拒绝 |
 | installer物理guard冲突 | Ready前失败，原实例保留 |
-| 父未死或仅有QUERY权限 | 不提前初始化；缺SYNCHRONIZE在Ready前拒绝 |
+| v1父未死或仅有QUERY权限 | 不提前初始化；缺SYNCHRONIZE在Ready前拒绝 |
+| 普通重启旧窗口尚可见/枚举失败 | 不提前拉起；隐藏后v2可先于旧父及helper退出进入业务 |
+| 已知更新重启/崩溃重启 | 等旧父真正退出后拉起；未知待更新由新进程沿已有更新等待与超时分支处理 |
 | 同目录别名 | fileID归属一致，不能仅路径字符串比较 |
 | 未知协议标记 | 明确不兼容，不降级普通启动 |
 | helper超时/取消/创建失败 | 原实例继续/降级，不能迟到启动第二份 |
 
 ## 5. Good / Base / Bad Cases
-Good：parent→relay→child一直持同一lease，child确认后等精确父退出；允许模式也持presence。
+Good：parent→relay→child一直持同一lease；v1等精确父退出，普通重启v2在旧界面隐藏后接任，旧清理仍受原截止监督；允许模式也持presence。
 Base：普通缺键配置false、单份启动成功；不同物理目录独立。
 Bad：SuperTopComplete永久豁免；等固定2秒当精确退出；先Ready再检查物理guard；旧handoff参数转发到下一跳；将旧目标无Ready当作失败强杀。
 
 ## 6. Tests Required
 - `Inkeys.exe --single-instance-tests`：私有copy真实两跳、并发barrier、不同目录、allow/deny、坏包、最后引用释放、私有VERSIONINFO三态。
 - `Inkeys.exe --shutdown-supervisor-tests --instance-lease-only`：真实监督链接力，driver另持SYNCHRONIZE-only引用，替换不被误拦。
+- `Inkeys.exe --shutdown-supervisor-tests --ordinary-restart-only`：隐藏屏障前不拉起、旧父/helper仍存活时新child已Adopt、自然/强制退场只拉起一次、握手阻塞不延长外部监督截止；已知更新与崩溃均等旧父死亡。隐藏屏障为私有无窗口测试条件，不能代替GUI显隐顺序验收。
 - `--config-boundary-test`：严格默认、bool往返、readOnly Mini旧布局字节不变；`--supertop-token-failure-test`：原无UAC token/握手失败合同。
 - `InkeysHeadlessTests.exe --setting-general-only --no-window`：真实三语General安全条目位置和键盘开关事件。
 - GUI subsystem CLI必须显式进程等待并取真实ExitCode（例如Start-Process -Wait -PassThru -WindowStyle Hidden），不能用PowerShell直接&后旧LASTEXITCODE冒充成功。

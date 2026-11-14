@@ -1,0 +1,7 @@
+{
+  "name": "uink-file-retry",
+  "exit_code": 0,
+  "duration_seconds": 101.843,
+  "reason": "Missing TestResults/release-hardening fixture base was created; no source or config change",
+  "original_first_error": "CreateFile lease on missing TestResults returned ERROR_FILE_NOT_FOUND=2; missing child returned ERROR_PATH_NOT_FOUND=3"
+}

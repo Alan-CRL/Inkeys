@@ -1,0 +1,624 @@
+{
+  "attachment": "C:\\Users\\alan-\\.codex\\attachments\\c5d97310-dfa6-440a-a4d7-dca0cb31e3c8\\已粘贴的文本.txt",
+  "sha256": "30999aa99ddac1a2db2ba4dc43da8c844fb89e66094fa19c133e55492e839ea7",
+  "bytes": 848437,
+  "lines": 4371,
+  "counts": {
+    "touch_navigation_class1": {
+      "count": 0,
+      "lines": []
+    },
+    "touch_begin": {
+      "count": 0,
+      "lines": []
+    },
+    "touch_end": {
+      "count": 0,
+      "lines": []
+    },
+    "touch_position": {
+      "count": 0,
+      "lines": []
+    },
+    "touch_count_nonzero": {
+      "count": 0,
+      "lines": []
+    },
+    "touch_suppressed_true": {
+      "count": 0,
+      "lines": []
+    },
+    "rts_known_touch": {
+      "count": 0,
+      "lines": []
+    },
+    "rts_unknown_device0_placeholder": {
+      "count": 6,
+      "lines": [
+        138,
+        387,
+        660,
+        916,
+        1202,
+        1470
+      ]
+    },
+    "rts_touch_batch": {
+      "count": 0,
+      "lines": []
+    },
+    "touch_pan_reject": {
+      "count": 0,
+      "lines": []
+    },
+    "touch_mouse_source_type4": {
+      "count": 0,
+      "lines": []
+    }
+  },
+  "cachedTouchKnownCount": 171,
+  "cachedTouchUnique": [
+    [
+      1267,
+      1180,
+      6330734,
+      0,
+      0,
+      "compat-mouse"
+    ]
+  ],
+  "firstKnown": {
+    "line": 6,
+    "event": 3004,
+    "known": 1,
+    "x": 1267,
+    "y": 1180,
+    "tick": 6330734,
+    "id": 0,
+    "primary": 0,
+    "via": "compat-mouse"
+  },
+  "lastKnown": {
+    "line": 1623,
+    "event": 3174,
+    "known": 1,
+    "x": 1267,
+    "y": 1180,
+    "tick": 6330734,
+    "id": 0,
+    "primary": 0,
+    "via": "compat-mouse"
+  },
+  "firstUnknown": {
+    "line": 1640,
+    "event": 3175,
+    "known": 0,
+    "x": 1267,
+    "y": 1180,
+    "tick": 6330734,
+    "id": 0,
+    "primary": 0,
+    "via": "compat-mouse"
+  },
+  "syntheticConditionalRisk": {
+    "TouchPhysical": {
+      "unit": "mm",
+      "frequency": 10000000,
+      "cap": 2400,
+      "burstArrival": {
+        "reason": "compressed-time",
+        "remainingSamples": 1,
+        "spanMs": 0.0,
+        "resetCount": 10,
+        "resets": [
+          {
+            "index": 1,
+            "qpc": 1001000,
+            "dtMs": 0.1,
+            "distance": 1,
+            "allowedDistance": 0.24024011920928956
+          },
+          {
+            "index": 3,
+            "qpc": 1084330,
+            "dtMs": 0.1,
+            "distance": 1,
+            "allowedDistance": 0.24024059604644776
+          },
+          {
+            "index": 5,
+            "qpc": 1167660,
+            "dtMs": 0.1,
+            "distance": 1,
+            "allowedDistance": 0.24024107288360597
+          },
+          {
+            "index": 7,
+            "qpc": 1250990,
+            "dtMs": 0.1,
+            "distance": 1,
+            "allowedDistance": 0.24024154972076417
+          },
+          {
+            "index": 9,
+            "qpc": 1334320,
+            "dtMs": 0.1,
+            "distance": 1,
+            "allowedDistance": 0.24024202655792237
+          },
+          {
+            "index": 11,
+            "qpc": 1417650,
+            "dtMs": 0.1,
+            "distance": 1,
+            "allowedDistance": 0.24024250339508058
+          },
+          {
+            "index": 13,
+            "qpc": 1500980,
+            "dtMs": 0.1,
+            "distance": 1,
+            "allowedDistance": 0.24024298023223878
+          },
+          {
+            "index": 15,
+            "qpc": 1584310,
+            "dtMs": 0.1,
+            "distance": 1,
+            "allowedDistance": 0.24024345706939698
+          },
+          {
+            "index": 17,
+            "qpc": 1667640,
+            "dtMs": 0.1,
+            "distance": 1,
+            "allowedDistance": 0.24024393390655518
+          },
+          {
+            "index": 19,
+            "qpc": 1750970,
+            "dtMs": 0.1,
+            "distance": 1,
+            "allowedDistance": 0.2402444107437134
+          }
+        ],
+        "overallObservedSpeed": 253.00611209502378
+      },
+      "uniformArrivalSameEndpointsAndDuration": {
+        "reason": "ready",
+        "remainingSamples": 14,
+        "spanMs": 51.382200000000005,
+        "resetCount": 0,
+        "resets": [],
+        "overallObservedSpeed": 253.00611209502378
+      },
+      "samplesBurst": [
+        [
+          1000000,
+          0
+        ],
+        [
+          1001000,
+          1
+        ],
+        [
+          1083330,
+          2
+        ],
+        [
+          1084330,
+          3
+        ],
+        [
+          1166660,
+          4
+        ],
+        [
+          1167660,
+          5
+        ],
+        [
+          1249990,
+          6
+        ],
+        [
+          1250990,
+          7
+        ],
+        [
+          1333320,
+          8
+        ],
+        [
+          1334320,
+          9
+        ],
+        [
+          1416650,
+          10
+        ],
+        [
+          1417650,
+          11
+        ],
+        [
+          1499980,
+          12
+        ],
+        [
+          1500980,
+          13
+        ],
+        [
+          1583310,
+          14
+        ],
+        [
+          1584310,
+          15
+        ],
+        [
+          1666640,
+          16
+        ],
+        [
+          1667640,
+          17
+        ],
+        [
+          1749970,
+          18
+        ],
+        [
+          1750970,
+          19
+        ]
+      ],
+      "samplesUniform": [
+        [
+          1000000,
+          0
+        ],
+        [
+          1039525,
+          1
+        ],
+        [
+          1079049,
+          2
+        ],
+        [
+          1118574,
+          3
+        ],
+        [
+          1158099,
+          4
+        ],
+        [
+          1197624,
+          5
+        ],
+        [
+          1237148,
+          6
+        ],
+        [
+          1276673,
+          7
+        ],
+        [
+          1316198,
+          8
+        ],
+        [
+          1355723,
+          9
+        ],
+        [
+          1395247,
+          10
+        ],
+        [
+          1434772,
+          11
+        ],
+        [
+          1474297,
+          12
+        ],
+        [
+          1513822,
+          13
+        ],
+        [
+          1553346,
+          14
+        ],
+        [
+          1592871,
+          15
+        ],
+        [
+          1632396,
+          16
+        ],
+        [
+          1671921,
+          17
+        ],
+        [
+          1711445,
+          18
+        ],
+        [
+          1750970,
+          19
+        ]
+      ],
+      "upAgeMs": 2,
+      "isActualUserTouchTrace": false,
+      "productionCppExecuted": false
+    },
+    "TouchFallback": {
+      "unit": "system-DIP",
+      "frequency": 10000000,
+      "cap": 12000,
+      "burstArrival": {
+        "reason": "compressed-time",
+        "remainingSamples": 1,
+        "spanMs": 0.0,
+        "resetCount": 10,
+        "resets": [
+          {
+            "index": 1,
+            "qpc": 1001000,
+            "dtMs": 0.1,
+            "distance": 5,
+            "allowedDistance": 1.2012005960464478
+          },
+          {
+            "index": 3,
+            "qpc": 1084330,
+            "dtMs": 0.1,
+            "distance": 5,
+            "allowedDistance": 1.2012029802322388
+          },
+          {
+            "index": 5,
+            "qpc": 1167660,
+            "dtMs": 0.1,
+            "distance": 5,
+            "allowedDistance": 1.2012053644180298
+          },
+          {
+            "index": 7,
+            "qpc": 1250990,
+            "dtMs": 0.1,
+            "distance": 5,
+            "allowedDistance": 1.2012077486038208
+          },
+          {
+            "index": 9,
+            "qpc": 1334320,
+            "dtMs": 0.1,
+            "distance": 5,
+            "allowedDistance": 1.2012101327896119
+          },
+          {
+            "index": 11,
+            "qpc": 1417650,
+            "dtMs": 0.1,
+            "distance": 5,
+            "allowedDistance": 1.2012125169754029
+          },
+          {
+            "index": 13,
+            "qpc": 1500980,
+            "dtMs": 0.1,
+            "distance": 5,
+            "allowedDistance": 1.201214901161194
+          },
+          {
+            "index": 15,
+            "qpc": 1584310,
+            "dtMs": 0.1,
+            "distance": 5,
+            "allowedDistance": 1.201217285346985
+          },
+          {
+            "index": 17,
+            "qpc": 1667640,
+            "dtMs": 0.1,
+            "distance": 5,
+            "allowedDistance": 1.201219669532776
+          },
+          {
+            "index": 19,
+            "qpc": 1750970,
+            "dtMs": 0.1,
+            "distance": 5,
+            "allowedDistance": 1.201222053718567
+          }
+        ],
+        "overallObservedSpeed": 1265.0305604751188
+      },
+      "uniformArrivalSameEndpointsAndDuration": {
+        "reason": "ready",
+        "remainingSamples": 14,
+        "spanMs": 51.382200000000005,
+        "resetCount": 0,
+        "resets": [],
+        "overallObservedSpeed": 1265.0305604751188
+      },
+      "samplesBurst": [
+        [
+          1000000,
+          0
+        ],
+        [
+          1001000,
+          5
+        ],
+        [
+          1083330,
+          10
+        ],
+        [
+          1084330,
+          15
+        ],
+        [
+          1166660,
+          20
+        ],
+        [
+          1167660,
+          25
+        ],
+        [
+          1249990,
+          30
+        ],
+        [
+          1250990,
+          35
+        ],
+        [
+          1333320,
+          40
+        ],
+        [
+          1334320,
+          45
+        ],
+        [
+          1416650,
+          50
+        ],
+        [
+          1417650,
+          55
+        ],
+        [
+          1499980,
+          60
+        ],
+        [
+          1500980,
+          65
+        ],
+        [
+          1583310,
+          70
+        ],
+        [
+          1584310,
+          75
+        ],
+        [
+          1666640,
+          80
+        ],
+        [
+          1667640,
+          85
+        ],
+        [
+          1749970,
+          90
+        ],
+        [
+          1750970,
+          95
+        ]
+      ],
+      "samplesUniform": [
+        [
+          1000000,
+          0
+        ],
+        [
+          1039525,
+          5
+        ],
+        [
+          1079049,
+          10
+        ],
+        [
+          1118574,
+          15
+        ],
+        [
+          1158099,
+          20
+        ],
+        [
+          1197624,
+          25
+        ],
+        [
+          1237148,
+          30
+        ],
+        [
+          1276673,
+          35
+        ],
+        [
+          1316198,
+          40
+        ],
+        [
+          1355723,
+          45
+        ],
+        [
+          1395247,
+          50
+        ],
+        [
+          1434772,
+          55
+        ],
+        [
+          1474297,
+          60
+        ],
+        [
+          1513822,
+          65
+        ],
+        [
+          1553346,
+          70
+        ],
+        [
+          1592871,
+          75
+        ],
+        [
+          1632396,
+          80
+        ],
+        [
+          1671921,
+          85
+        ],
+        [
+          1711445,
+          90
+        ],
+        [
+          1750970,
+          95
+        ]
+      ],
+      "upAgeMs": 2,
+      "isActualUserTouchTrace": false,
+      "productionCppExecuted": false
+    }
+  },
+  "caveat": "No actual Touch lifecycle is visible. User says observed Touch problem occurs with pen far away, fingers only. Synthetic arithmetic demonstrates conditional guard behavior only; it cannot identify their actual Touch failure."
+}

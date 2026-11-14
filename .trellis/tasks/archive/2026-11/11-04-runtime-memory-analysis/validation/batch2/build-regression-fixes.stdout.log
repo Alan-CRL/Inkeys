@@ -1,0 +1,60 @@
+
+  Scanning sources for module dependencies...
+  PageControl.cpp
+  Draw3.HiddenWindowTest.cpp
+  Draw3.DrawingController.cpp
+  Compiling...
+  Draw3.DrawingController.cpp
+  PageControl.cpp
+  Draw3.HiddenWindowTest.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(221,58): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp')
+  
+  (compiling source file 'Inkeys/UI/PageControl/PageControl.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(273,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/PageControl/PageControl.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\hashlib++\hl_hashwrapper.h(308,22): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  (compiling source file 'Inkeys/UI/PageControl/PageControl.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8636,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8641,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8643,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.DrawingController.cpp(8767,7): warning C4834: discarding return value of function with [[nodiscard]] attribute [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  
+    Version 14.44.35229.0
+  
+    ExceptionCode            = C0000005
+    ExceptionFlags           = 00000000
+    ExceptionAddress         = 00007FF6DF4E5510 (00007FF6DF380000) "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\bin\HostArm64\arm64\link.exe"
+    NumberParameters         = 00000002
+    ExceptionInformation[ 0] = 0
+    ExceptionInformation[ 1] = 6800630061004B
+  
+LINK : fatal error LNK1000: Internal error during IncrBuildImage [D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys.vcxproj]
+  PptCOM -> D:\Project\Inkeys\Repo\Inkeys\PptCOM\bin\Release\PptCOM.dll
+  Microsoft (R) .NET Framework Assembly to Type Library Converter 4.8.9037.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+  
+  Assembly exported to 'D:\Project\Inkeys\Repo\Inkeys\PptCOM\bin\Release\PptCOM.tlb'
+  PptCOM.Tests -> D:\Project\Inkeys\Repo\Inkeys\PptCOM.Tests\bin\Release\PptCOM.Tests.exe

@@ -1,0 +1,14 @@
+[DrawpadSurface] event=window-created requested=hidden role=Drawpad hwnd=0x0 owner=0x0 previous=0x0 valid=0 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=0 bounds=(0,0,0,0)
+[DrawpadSurface] event=window-created requested=hidden role=DrawpadPresentation hwnd=0x100BB2 owner=0x9C0306 previous=0x150FB2 valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31936,-31936)
+[DrawpadSurface] event=window-created requested=hidden role=Drawpad hwnd=0xB0D80 owner=0x100BB2 previous=0x150FB2 valid=1 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31936,-31936)
+[DrawpadSurface] event=window-created requested=hidden role=DrawpadPresentation hwnd=0x100BB2 owner=0x9C0306 previous=0xB0D80 valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31936,-31936)
+[RTS] attempt=1 profile=Extended stage=ready hr=0x00000000 initialized=1 cleanup=not-needed
+[DrawpadSurface] event=window-destroying requested=hidden role=Drawpad hwnd=0xB0D80 owner=0x100BB2 previous=0x491002 valid=1 visible=0 topmost=0 layered=1 transparent=0 error=0 boundsOk=1 bounds=(-32000,-32000,-31920,-31920)
+[DrawpadSurface] event=window-destroying requested=hidden role=DrawpadPresentation hwnd=0x100BB2 owner=0x9C0306 previous=0xB0D80 valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31920,-31920)
+[DrawpadSurface] event=window-destroyed requested=hidden role=Drawpad hwnd=0x0 owner=0x0 previous=0x0 valid=0 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=0 bounds=(0,0,0,0)
+[DrawpadSurface] event=window-destroyed requested=hidden role=DrawpadPresentation hwnd=0x100BB2 owner=0x9C0306 previous=0x491002 valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31920,-31920)
+[DrawpadSurface] event=window-destroying requested=hidden role=Drawpad hwnd=0x0 owner=0x0 previous=0x0 valid=0 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=0 bounds=(0,0,0,0)
+[DrawpadSurface] event=window-destroying requested=hidden role=DrawpadPresentation hwnd=0x100BB2 owner=0x9C0306 previous=0x491002 valid=1 visible=0 topmost=0 layered=1 transparent=1 error=0 boundsOk=1 bounds=(-32000,-32000,-31920,-31920)
+[DrawpadSurface] event=window-destroyed requested=hidden role=Drawpad hwnd=0x0 owner=0x0 previous=0x0 valid=0 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=0 bounds=(0,0,0,0)
+[DrawpadSurface] event=window-destroyed requested=hidden role=DrawpadPresentation hwnd=0x0 owner=0x0 previous=0x0 valid=0 visible=0 topmost=0 layered=0 transparent=0 error=0 boundsOk=0 bounds=(0,0,0,0)
+[Draw3Hidden] PASS: auxiliary readback lazy allocation, retirement and reentry

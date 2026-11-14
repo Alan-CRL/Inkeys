@@ -1,0 +1,6 @@
+{"file":".trellis/spec/native-desktop/draw3-cursors.md","reason":"核对四种样式、设备/Touch 隔离、透明度、跨 DPI 与 Win7 guarded 验证。"}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"核对严格配置读取、冻结写盘、NoUpload 和二十语言完整性。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对 Config 到 renderer 的快照一致性、CPU/HLSL 和瞬态层边界。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"核对共享常量/helper、SliderResetAction 和所有协议镜像。"}
+{"file":".trellis/spec/shaders/cpu-gpu-contracts.md","reason":"核对三层 coverage、透明度、buffer 字段和 premultiplied 输出。"}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"核对最终构建、headless、生成输出和未实测平台声明。"}

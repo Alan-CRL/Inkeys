@@ -290,7 +290,7 @@ namespace Inkeys::UI::Setting
 		}
 	};
 
-	enum class SettingOpenTarget : std::uint8_t { Current, SpeedEraser };
+	enum class SettingOpenTarget : std::uint8_t { Current, SpeedEraser, SoftwareVersion };
 	struct SettingOpenRequest
 	{
 		std::uint64_t serial = 0, showSerial = 0, hideSerial = 0;

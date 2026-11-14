@@ -1,0 +1,12 @@
+[
+  {
+    "name": "snapshot-lifetime",
+    "argument": "--save-snapshot-lifetime-only",
+    "exe": "D:\\Project\\Inkeys\\Repo\\Inkeys\\ARM64\\Debug\\inkStrokeModelerTestTests.exe",
+    "exe_sha256": "2fdcd9e2ac37ea8201598672657e8196c9d568206fad6ae23d1429ca586af797",
+    "exit_code": 0,
+    "timed_out": false,
+    "seconds": 32.047,
+    "passed": true
+  }
+]

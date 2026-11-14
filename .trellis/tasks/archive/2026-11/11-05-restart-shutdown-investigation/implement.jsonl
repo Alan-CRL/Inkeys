@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "规范入口；Settings关停契约按需读取errors-logging-and-resources.md对应小节，完整文件超过32KB不直接注入"}
+{"file": ".trellis/spec/native-desktop/single-instance-and-startup-handoff.md", "reason": "普通R/更新U/崩溃X交接的已实现合同"}

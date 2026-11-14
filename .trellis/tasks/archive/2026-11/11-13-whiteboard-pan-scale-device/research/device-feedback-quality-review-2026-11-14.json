@@ -1,0 +1,315 @@
+{
+  "type": "read-only source-log correlation and offline arithmetic; not native or hardware execution",
+  "snapshotSha256": "540b3817922dd1832aadafc97f53c61d6e7e2e0412f36e15d896b581e54ff94a",
+  "frequencyAssumption": 10000000,
+  "coordinatePrecision": "log-rounded to three decimals in px",
+  "scriptSha256": "3dc99bda42898ac0ac16db58da14dc110e5b0022b1f3a3984e1ecefcab1d3fe6",
+  "examples": [
+    {
+      "key": 74,
+      "source": 6417293376,
+      "qualityLine": 37847,
+      "context": {
+        "line": 37679,
+        "profile": 1,
+        "dipPerPixel": [
+          0.5,
+          0.5
+        ],
+        "motionPerDip": [
+          0.19444445,
+          0.19791666
+        ]
+      },
+      "release": {
+        "line": 37846,
+        "seq": 11430,
+        "reason": "ready",
+        "rawDipPerSecond": [
+          -803.55,
+          735.29
+        ],
+        "selectedDipPerSecond": [
+          -88.77,
+          81.23
+        ]
+      },
+      "rawSpeedMmPerSecond": 213.5195998577844,
+      "A": {
+        "line": 37826,
+        "qpc": 111454022867,
+        "phase": 1,
+        "positionPx": [
+          1166.891,
+          1088.958
+        ]
+      },
+      "B": {
+        "line": 37831,
+        "qpc": 111454128869,
+        "phase": 1,
+        "positionPx": [
+          1166.891,
+          1088.958
+        ]
+      },
+      "C": {
+        "line": 37836,
+        "qpc": 111454194013,
+        "phase": 1,
+        "positionPx": [
+          1166.891,
+          1088.958
+        ]
+      },
+      "batchesABC": [
+        {
+          "line": 37825,
+          "context": 2122326080,
+          "cursor": 14,
+          "reported": 1,
+          "retained": 1,
+          "published": 1
+        },
+        {
+          "line": 37830,
+          "context": 2122326080,
+          "cursor": 14,
+          "reported": 1,
+          "retained": 1,
+          "published": 1
+        },
+        {
+          "line": 37835,
+          "context": 2122326080,
+          "cursor": 14,
+          "reported": 1,
+          "retained": 1,
+          "published": 1
+        }
+      ],
+      "AB": {
+        "dtMs": 10.600200000000001,
+        "distanceMm": 0.0,
+        "projectedMm": 0.0,
+        "floatErrorMm": 3.730540232984386e-05,
+        "recomputedUpperMmPerSecond": 23.588202507743304
+      },
+      "BC": {
+        "dtMs": 6.5144,
+        "distanceMm": 0.0,
+        "projectedMm": 0.0,
+        "floatErrorMm": 3.730540232984386e-05,
+        "recomputedUpperMmPerSecond": 38.382835516069235
+      },
+      "loggedSupportUpperMmPerSecond": 23.588203,
+      "recomputedSupportUpperMmPerSecond": 23.588202507743304,
+      "idealNoBoostTailMm": 1.1084198198470334,
+      "idealDurationMs": 99.46734887459931
+    },
+    {
+      "key": 90,
+      "source": 6417293376,
+      "qualityLine": 41043,
+      "context": {
+        "line": 40831,
+        "profile": 1,
+        "dipPerPixel": [
+          0.5,
+          0.5
+        ],
+        "motionPerDip": [
+          0.19444445,
+          0.19791666
+        ]
+      },
+      "release": {
+        "line": 41042,
+        "seq": 13292,
+        "reason": "ready",
+        "rawDipPerSecond": [
+          790.79,
+          -81.29
+        ],
+        "selectedDipPerSecond": [
+          123.04,
+          -12.65
+        ]
+      },
+      "rawSpeedMmPerSecond": 154.60412561911775,
+      "A": {
+        "line": 41022,
+        "qpc": 111494938801,
+        "phase": 1,
+        "positionPx": [
+          2298.255,
+          870.728
+        ]
+      },
+      "B": {
+        "line": 41027,
+        "qpc": 111495021597,
+        "phase": 1,
+        "positionPx": [
+          2298.255,
+          870.728
+        ]
+      },
+      "C": {
+        "line": 41032,
+        "qpc": 111495125549,
+        "phase": 1,
+        "positionPx": [
+          2298.255,
+          870.728
+        ]
+      },
+      "batchesABC": [
+        {
+          "line": 41021,
+          "context": 2122326080,
+          "cursor": 20,
+          "reported": 1,
+          "retained": 1,
+          "published": 1
+        },
+        {
+          "line": 41026,
+          "context": 2122326080,
+          "cursor": 20,
+          "reported": 1,
+          "retained": 1,
+          "published": 1
+        },
+        {
+          "line": 41031,
+          "context": 2122326080,
+          "cursor": 20,
+          "reported": 1,
+          "retained": 1,
+          "published": 1
+        }
+      ],
+      "AB": {
+        "dtMs": 8.2796,
+        "distanceMm": 0.0,
+        "projectedMm": 0.0,
+        "floatErrorMm": 5.709646186407433e-05,
+        "recomputedUpperMmPerSecond": 30.201956212556805
+      },
+      "BC": {
+        "dtMs": 10.3952,
+        "distanceMm": 0.0,
+        "projectedMm": 0.0,
+        "floatErrorMm": 5.709646186407433e-05,
+        "recomputedUpperMmPerSecond": 24.05528532307184
+      },
+      "loggedSupportUpperMmPerSecond": 24.055285,
+      "recomputedSupportUpperMmPerSecond": 24.05528532307184,
+      "idealNoBoostTailMm": 1.1482423796407986,
+      "idealDurationMs": 101.13905362134588
+    },
+    {
+      "key": 108,
+      "source": 6417293376,
+      "qualityLine": 44667,
+      "context": {
+        "line": 44475,
+        "profile": 1,
+        "dipPerPixel": [
+          0.5,
+          0.5
+        ],
+        "motionPerDip": [
+          0.19444445,
+          0.19791666
+        ]
+      },
+      "release": {
+        "line": 44666,
+        "seq": 15372,
+        "reason": "ready",
+        "rawDipPerSecond": [
+          138.0,
+          1886.68
+        ],
+        "selectedDipPerSecond": [
+          8.71,
+          119.01
+        ]
+      },
+      "rawSpeedMmPerSecond": 374.3682994347174,
+      "A": {
+        "line": 44641,
+        "qpc": 111542517736,
+        "phase": 1,
+        "positionPx": [
+          1218.52,
+          1650.898
+        ]
+      },
+      "B": {
+        "line": 44646,
+        "qpc": 111542623620,
+        "phase": 1,
+        "positionPx": [
+          1218.52,
+          1650.898
+        ]
+      },
+      "C": {
+        "line": 44656,
+        "qpc": 111542687859,
+        "phase": 1,
+        "positionPx": [
+          1234.847,
+          1920.832
+        ]
+      },
+      "batchesABC": [
+        {
+          "line": 44640,
+          "context": 2122326080,
+          "cursor": 18,
+          "reported": 1,
+          "retained": 1,
+          "published": 1
+        },
+        {
+          "line": 44645,
+          "context": 2122326080,
+          "cursor": 18,
+          "reported": 1,
+          "retained": 1,
+          "published": 1
+        },
+        {
+          "line": 44650,
+          "context": 2122326080,
+          "cursor": 18,
+          "reported": 1,
+          "retained": 1,
+          "published": 1
+        }
+      ],
+      "AB": {
+        "dtMs": 10.5884,
+        "distanceMm": 0.0,
+        "projectedMm": 0.0,
+        "floatErrorMm": 4.8113481304543975e-05,
+        "recomputedUpperMmPerSecond": 23.61551084511249
+      },
+      "BC": {
+        "dtMs": 6.4239,
+        "distanceMm": 26.759339562580614,
+        "projectedMm": 26.75728777024781,
+        "floatErrorMm": 5.0857468328633975e-05,
+        "recomputedUpperMmPerSecond": 4204.26206104115
+      },
+      "loggedSupportUpperMmPerSecond": 23.615511,
+      "recomputedSupportUpperMmPerSecond": 23.61551084511249,
+      "idealNoBoostTailMm": 1.110732666029091,
+      "idealDurationMs": 99.56534312507759
+    }
+  ]
+}

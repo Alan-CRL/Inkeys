@@ -238,6 +238,7 @@ namespace PptCOM
         public void SetConsoleOutputEnabled(bool enabled)
         {
             // 托管 Console 独立开关，避免 Draw3 分配控制台后带出 PptCOM 日志。
+            PptComDiagnostics.SetEnabled(enabled);
             if (!enabled)
             {
                 Console.SetOut(TextWriter.Null);
@@ -249,6 +250,8 @@ namespace PptCOM
             {
                 Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
                 Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
+                var module = typeof(PptCOMServer).Module;
+                PptComDiagnostics.Event("enabled", "module=" + module.ModuleVersionId);
             }
             catch
             {
@@ -442,6 +445,25 @@ namespace PptCOM
             }
         }
 
+        // 仅取纯值快照和弱对象标识，不能为诊断额外读取 Office 或增加 COM 引用。
+        private void TraceComState(string stage, string reason)
+        {
+            if (!PptComDiagnostics.Enabled) return;
+            try
+            {
+                SlideShowObservationStamp stamp = slideShowSession.Capture();
+                PptComDiagnostics.Event(stage, "owner=" + PptComDiagnostics.Reference(this) +
+                    " reason=" + reason + " binding=" + Interlocked.Read(ref presentationBindingRevision) +
+                    " session=" + stamp.Session + " generation=" + stamp.Generation +
+                    " lifecycle=" + stamp.Lifecycle + " hwnd=" + stamp.Window +
+                    " app=" + PptComDiagnostics.Reference((object)pptApplication) +
+                    " presentation=" + PptComDiagnostics.Reference((object)pptActivePresentation) +
+                    " window=" + PptComDiagnostics.Reference((object)pptSlideShowWindow) +
+                    " events=" + (bindingEvents ? 1 : 0) + " pending_cp=" + ComEventRetirementRegistry.PendingCount);
+            }
+            catch { }
+        }
+
         // 过程函数
         private void ReleaseRotTemporary(object value)
         {
@@ -470,7 +492,7 @@ namespace PptCOM
             {
                 try
                 {
-                    Marshal.ReleaseComObject(comObj);
+                    PptComDiagnostics.Release(comObj, "ROT");
                 }
                 catch { }
             }
@@ -503,6 +525,7 @@ namespace PptCOM
             // final 与重绑分开标记；仅包裹原清理，不改变顺序、取得或释放次数。
             using (PptPerfTrace.Begin(final ? "cleanup-final" : "cleanup-rebind"))
             {
+                TraceComState("cleanup.begin", final ? "final" : "rebind");
                 // 先让 native 无法消费旧 binding，再解绑事件和释放长期 RCW。
                 using (PptPerfTrace.Begin("cleanup-invalidate"))
                 {
@@ -541,6 +564,14 @@ namespace PptCOM
                     *pptCurrentPage = -1;
                 }
                 catch { }
+
+                // 显式释放 COM 引用后强制 GC，保留原有 Office/WPS 资源清理收尾。
+                TraceComState("gc.begin", final ? "final" : "rebind");
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                TraceComState("gc.end", final ? "final" : "rebind");
+                PptComDiagnostics.Summary(final ? "cleanup-final" : "cleanup-rebind");
 
                 using (PptPerfTrace.Begin("cleanup-message-after"))
                     try { Console.WriteLine("CLEAN!"); } catch { }
@@ -873,6 +904,8 @@ namespace PptCOM
         private void DispatchBoundEvent(long binding, int kind)
         {
             // cleanup 在解绑前推进 binding；旧连接点重入的通知不能污染新 binding。
+            if (PptComDiagnostics.Enabled)
+                PptComDiagnostics.QueueOfficeEvent(binding, Interlocked.Read(ref presentationBindingRevision), kind);
             if (binding != Interlocked.Read(ref presentationBindingRevision)) return;
             if (kind == 2013) SlideShowChange(null);
             else if (kind == 2011) SlideShowBegin(null);
@@ -951,10 +984,12 @@ namespace PptCOM
                 if (DeferRotScan(pending, ref bestApp, ref bestPriority, ref targetPriority, ref deferred)) return null;
                 int hr = runningObjectTableProvider == null
                     ? GetRunningObjectTable(0, out rot) : runningObjectTableProvider(out rot);
+                PptComDiagnostics.Acquired(rot, "ROT.table");
                 if (hr != 0 || rot == null) return null;
 
                 if (DeferRotScan(pending, ref bestApp, ref bestPriority, ref targetPriority, ref deferred)) return null;
                 rot.EnumRunning(out enumMoniker);
+                PptComDiagnostics.Acquired(enumMoniker, "ROT.enumerator");
                 if (enumMoniker == null) return null;
                 if (DeferRotScan(pending, ref bestApp, ref bestPriority, ref targetPriority, ref deferred)) return null;
 
@@ -978,8 +1013,10 @@ namespace PptCOM
 
                     try
                     {
+                        PptComDiagnostics.Acquired(moniker[0], "ROT.moniker");
                         if (DeferRotScan(pending, ref bestApp, ref bestPriority, ref targetPriority, ref deferred)) return null;
                         CreateBindCtx(0, out bindCtx);
+                        PptComDiagnostics.Acquired(bindCtx, "ROT.bind-context");
                         moniker[0].GetDisplayName(bindCtx, null, out displayName);
                         if (DeferRotScan(pending, ref bestApp, ref bestPriority, ref targetPriority, ref deferred)) return null;
 
@@ -993,6 +1030,7 @@ namespace PptCOM
                         if (looksLikePresentationFile || isApplicationMoniker)
                         {
                             rot.GetObject(moniker[0], out comObject);
+                            PptComDiagnostics.Acquired(comObject, "ROT.object");
                             if (DeferRotScan(pending, ref bestApp, ref bestPriority, ref targetPriority, ref deferred)) return null;
                             if (comObject != null)
                             {
@@ -1187,6 +1225,7 @@ namespace PptCOM
                 ReleaseRotTemporary(rot);
             }
 
+            PptComDiagnostics.Transfer(bestApp, "ROT.selected");
             return bestApp;
         }
         private void MaintainBinding()
@@ -1220,8 +1259,10 @@ namespace PptCOM
                 if (!rebind) return;
                 FullCleanup();
                 pptApplication = bestApp;
+                PptComDiagnostics.Transfer((object)pptApplication, "root.application");
                 bestApp = null; // 唯一一次所有权转移，其余 ROT 返回即使同 identity 仍由 finally 配平。
                 pptActivePresentation = presentationAccessor.GetProperty((object)pptApplication, "ActivePresentation");
+                PptComDiagnostics.Transfer((object)pptActivePresentation, "root.presentation");
                 BindEvents();
                 Interlocked.Exchange(ref showObservationPending, 1);
             }
@@ -1275,6 +1316,7 @@ namespace PptCOM
 
         private unsafe void MarkBindingDisconnected(SlideShowObservationStamp stamp)
         {
+            TraceComState("binding.disconnected", "confirmed");
             if (!slideShowSession.ObserveWindow(stamp,
                 Interlocked.Read(ref presentationBindingRevision), false, false, 0)) return;
             *pptCurrentPage = *pptTotalPage = -1;
@@ -1339,7 +1381,7 @@ namespace PptCOM
                 bool samePresentation;
                 using (PptPerfTrace.Begin("observe-presentation-identity"))
                     samePresentation = AreComObjectsEqual(activePresentation, (object)pptActivePresentation);
-                if (!samePresentation) return false;
+                if (!samePresentation) { TraceComState("binding.changed", "active-presentation"); return false; }
                 int showCount = -1;
                 try { using (PptPerfTrace.Begin("observe-show-count")) showCount = GetSlideShowWindowsCount((object)pptApplication); }
                 catch (Exception error) { if (!IsMissingComMember(error)) throw; }
@@ -1412,6 +1454,7 @@ namespace PptCOM
                     {
                         object oldWindow = (object)pptSlideShowWindow;
                         pptSlideShowWindow = freshWindow;
+                        PptComDiagnostics.Transfer((object)pptSlideShowWindow, "root.window");
                         freshWindow = null; // 只在实际安装时转移；同 identity 的临时返回仍在 finally 释放。
                         using (PptPerfTrace.Begin("observe-retired-window-release")) SafeRelease(oldWindow);
                     }
@@ -1456,6 +1499,7 @@ namespace PptCOM
         public unsafe int PptComService()
         {
             Console.WriteLine("PPT Monitor ReStarted");
+            TraceComState("service.begin", "start");
             slideShowOwner.Start();
             forcePolling = true;
             *pptCurrentPage = *pptTotalPage = -1;
@@ -1464,10 +1508,12 @@ namespace PptCOM
             {
                 while (Thread.VolatileRead(ref *offSignal) == 0)
                 {
+                    PptComDiagnostics.FlushOfficeEvents();
                     // 先取得最新场次/页面，再让有界命令先于非必要 descriptor，避免旧 stamp 驱动新 Office 状态。
                     // 快速事件只重读绑定对象；ROT 仍保持约 500ms 慢维护，所有 root 都由本 owner 使用。
                     if (Interlocked.Exchange(ref showObservationPending, 0) != 0 &&
-                        pptApplication != null && !ObserveBoundShow()) break;
+                        pptApplication != null && !ObserveBoundShow())
+                    { TraceComState("service.stop", "event-observation-ended"); break; }
                     ProcessSlideShowExitRequests();
                     using (PptPerfTrace.Begin("descriptor")) RefreshPresentationDescriptorIfNeeded(false);
                     ProcessSlideShowExitRequests();
@@ -1483,9 +1529,11 @@ namespace PptCOM
                     {
                         RetryRetiredEventConnections();
                         using (PptPerfTrace.Begin("maintain-binding")) MaintainBinding();
-                        if (pptApplication == null || pptActivePresentation == null) break;
+                        if (pptApplication == null || pptActivePresentation == null)
+                        { TraceComState("service.stop", "no-binding"); break; }
                         Interlocked.Exchange(ref showObservationPending, 0);
-                        if (!ObserveBoundShow()) break;
+                        if (!ObserveBoundShow())
+                        { TraceComState("service.stop", "maintenance-observation-ended"); break; }
                         ProcessSlideShowExitRequests();
                         using (PptPerfTrace.Begin("descriptor")) RefreshPresentationDescriptorIfNeeded(false);
                         ProcessSlideShowExitRequests();
@@ -1498,17 +1546,20 @@ namespace PptCOM
                         if (!TryGetBusyComErrorCode(error, out code)) throw;
                         ObserveUnknown(slideShowSession.Capture());
                     }
+                    TraceComState("owner.maintenance", "tick");
                     slideShowOwner.MaintenanceCompleted();
                 }
             }
             catch (Exception error)
             {
+                PptComDiagnostics.CallFailed(0, (object)pptApplication, "service", error);
                 Console.WriteLine("[PptCOM] owner-failed hr=0x" + ComFailure.ErrorCode(error).ToString("X8"));
             }
             finally
             {
                 using (PptPerfTrace.Begin("shutdown-managed-finally"))
                 {
+                    TraceComState("service.finally", Thread.VolatileRead(ref *offSignal) == 0 ? "binding-ended" : "off-signal");
                     using (PptPerfTrace.Begin("shutdown-mailbox-stop")) slideShowOwner.Stop();
                     FullCleanup(true);
                     // 停止只做有界解除重试；外部 COM 持续拒绝时保留 CP/cookie，不假称已释放。
@@ -1521,6 +1572,9 @@ namespace PptCOM
                     }
                 }
             }
+            PptComDiagnostics.FlushOfficeEvents();
+            TraceComState("service.end", ComEventRetirementRegistry.PendingCount == 0 ? "released" : "pending-events");
+            PptComDiagnostics.Summary("service-end");
             return ComEventRetirementRegistry.PendingCount == 0 ? 0 : -1;
         }
 

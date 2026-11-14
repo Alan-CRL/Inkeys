@@ -1,0 +1,10 @@
+未运行
+
+当前 Codex runner 无法启动 PowerShell / Python / exe。本文件不伪称黄金值已执行。
+主 Agent 请运行：
+python -I .trellis/tasks/11-08-chromium-touch-fling/research/sim/chromium_fling.py
+将标准输出回填本文件；退出码必须为0。脚本只用 json/math 标准库。
+
+公式：LSQ2 使用 newest-time=0 的1,t,t²列，QR求导系数b1；曲线 a=96*2.7559e-5 DIP/ms²，d=(v/1000)²/(2a)，duration=min(2,maxabs(v)/2300)，bounds=floor(viewport*boost*3)，P1按初速斜率修正；Bezier 11点初猜+4次Newton+二分，epsilon=1e-7。
+
+重要：脚本以Python double独立复算，Chromium float/TimeDelta舍入差异由主Agent与C++实测核对。第二轮已裁决：Provider首次scroll径向扣15（少于3指逐指扣后平均），controller结束帧不补发。纯曲线终点黄金值不变；脚本仅同步裁决说明，数值公式未改，本轮仍未执行Python。

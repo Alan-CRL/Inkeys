@@ -1,0 +1,1215 @@
+
+  compilation object save succeeded; see D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkPixelShader.cso
+  compilation object save succeeded; see D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkVertexShader.cso
+  compilation object save succeeded; see D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\laserParticleUpdateCS.cso
+  compilation object save succeeded; see D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\laserParticleEmitCS.cso
+  Scanning sources for module dependencies...
+  graphics_initialization.cpp
+  haptic_feedback.cppm
+  contact_input.cppm
+  canvas_navigation.cpp
+  canvas_navigation.cppm
+  graphics_initialization.cppm
+  diagnostics.cppm
+  drawing_controller.cppm
+  haptic_feedback.cpp
+  diagnostics.cpp
+  contact_input.cpp
+  drawing_controller.cpp
+  ink_document.cppm
+  ink_document.cpp
+  uink_codec.cpp
+  uink_model.cpp
+  uink_model.cppm
+  uink_codec_encode.cpp
+  uink_codec.cppm
+  uink_file.cpp
+  uink_file.cppm
+  uink_draw3_export.cpp
+  uink_draw3_export.cppm
+  uink_draw3_import.cpp
+  uink_draw3_capture.cpp
+  uink_draw3_import.cppm
+  uink_draw3_capture.cppm
+  ink_history.cpp
+  ink_history.cppm
+  ink_history_gpu.cppm
+  ink_history_gpu.cpp
+  ink_prediction.cpp
+  stroke_geometry.cpp
+  win7_compat.cpp
+  ink_prediction.cppm
+  laser_particles.cpp
+  laser_particles.cppm
+  laser_particle_system.cpp
+  pen_cursor.cpp
+  pen_cursor.cppm
+  realtime_stylus.cpp
+  realtime_stylus.cppm
+  runtime_metrics.cpp
+  runtime_metrics.cppm
+  renderer.cpp
+  renderer_primitives.cpp
+  renderer_laser.cpp
+  renderer_snapshot.cpp
+  renderer.cppm
+  transparent_presentation.cppm
+  transparent_presentation.cpp
+  window_control.cpp
+  window_performance_hud.cpp
+  window_control.cppm
+  main.cpp
+  Compiling...
+  graphics_initialization.cppm
+  haptic_feedback.cppm
+  ink_document.cppm
+  canvas_navigation.cppm
+  uink_model.cppm
+  win7_compat.cpp
+  laser_particles.cppm
+  pen_cursor.cppm
+  contact_input.cppm
+  diagnostics.cppm
+  haptic_feedback.cpp
+  ink_history.cppm
+  canvas_navigation.cpp
+  ink_document.cpp
+  uink_codec.cppm
+  uink_draw3_export.cppm
+  uink_model.cpp
+  pen_cursor.cpp
+  realtime_stylus.cppm
+  contact_input.cpp
+  laser_particles.cpp
+  diagnostics.cpp
+  graphics_initialization.cpp
+  uink_codec.cpp
+  uink_draw3_export.cpp
+  uink_draw3_import.cppm
+  uink_file.cppm
+  uink_codec_encode.cpp
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\draw3\uink_draw3_import.cppm(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  uink_draw3_capture.cppm
+  runtime_metrics.cppm
+  window_control.cppm
+  laser_particle_system.cpp
+  ink_history.cpp
+  uink_draw3_capture.cpp
+  runtime_metrics.cpp
+  renderer.cppm
+  uink_file.cpp
+  uink_draw3_import.cpp
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\draw3\uink_draw3_import.cpp(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  window_control.cpp
+  window_performance_hud.cpp
+  renderer_primitives.cpp
+  renderer_laser.cpp
+  renderer.cpp
+  ink_history_gpu.cppm
+  ink_prediction.cppm
+  renderer_snapshot.cpp
+  transparent_presentation.cppm
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cppm')
+  
+  transparent_presentation.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cppm')
+  
+  stroke_geometry.cpp
+  realtime_stylus.cpp
+  drawing_controller.cppm
+  ink_history_gpu.cpp
+  ink_prediction.cpp
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/ink_prediction.cpp')
+  
+  main.cpp
+  drawing_controller.cpp
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/drawing_controller.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/drawing_controller.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/drawing_controller.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/drawing_controller.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/drawing_controller.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/drawing_controller.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/drawing_controller.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file 'draw3/drawing_controller.cpp')
+  
+  stroke_modeler.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+  params.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/params.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/params.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/params.cc')
+  
+  types.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/types.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244: 'initializing': conversion from '_Ty' to 'T', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:             _Ty=int [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         and [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:             T=float [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/types.cc')
+      D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14):
+      the template instantiation context (the oldest one first) is
+          D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\types.cc(32,47):
+          see reference to function template instantiation 'absl::lts_20250512::StatusOr<float>::StatusOr<int,0>(U &&)' being compiled
+          with
+          [
+              U=int
+          ]
+              D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\types.cc(32,47):
+              see the first reference to 'absl::lts_20250512::StatusOr<float>::StatusOr' in 'ink::stroke_model::Vec2::AbsoluteAngleTo'
+          D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\statusor.h(425,17):
+          see reference to function template instantiation 'absl::lts_20250512::StatusOr<float>::StatusOr<_Ty>(std::in_place_t,_Ty &&)' being compiled
+          with
+          [
+              _Ty=int
+          ]
+          D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\statusor.h(689,11):
+          see reference to function template instantiation 'absl::lts_20250512::internal_statusor::StatusOrData<T>::StatusOrData<_Ty>(std::in_place_t,_Ty &&)' being compiled
+          with
+          [
+              T=float,
+              _Ty=int
+          ]
+  
+  internal_types.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/internal_types.cc')
+  
+  loop_contraction_mitigation_modeler.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+  position_modeler.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(31,21): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244: 'initializing': conversion from 'const _Ty' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244:             _Ty=double [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244: 'initializing': conversion from 'const _Ty' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244:             _Ty=double [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(67,38): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(68,38): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  stylus_state_modeler.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\stylus_state_modeler.cc(56,77): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\stylus_state_modeler.cc(59,70): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  utils.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.cc(34,37): warning C4305: 'initializing': truncation from 'double' to 'const float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.cc(74,75): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  wobble_smoother.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\wobble_smoother.cc(48,56): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\wobble_smoother.cc(54,62): warning C4244: '+=': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\wobble_smoother.cc(58,65): warning C4244: '-=': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  kalman_predictor.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(35,12): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(165,16): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(202,24): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(282,19): warning C4244: 'return': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  stroke_end_predictor.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+  axis_predictor.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_filter/axis_predictor.cc')
+  
+  kalman_filter.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_filter/kalman_filter.cc')
+  
+  terminal_tail_reconstructor.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\inkStrokeModelerTest.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/terminal_tail_reconstructor.cc')
+  
+  inkStrokeModelerTest.vcxproj -> D:\Project\Inkeys\Repo\Inkeys\ARM64\Debug\inkStrokeModelerTest.exe
+  Scanning sources for module dependencies...
+  modeler_adaptive_tail_tests.cpp
+  highlighter_geometry_tests.cpp
+  laser_incremental_coverage_tests.cpp
+  ink_document_tests.cpp
+  desktop_autosave_tests.cpp
+  canvas_navigation_tests.cpp
+  modeler_tail_tests.cpp
+  contact_input_tests.cpp
+  presentation_autosave_tests.cpp
+  modeler_baseline_tests.cpp
+  ink_history_tests.cpp
+  thin_stroke_gpu_tests.cpp
+  pen_cursor_tests.cpp
+  uink_tests.cpp
+  Draw3.DiagnosticOutput.cpp
+  Draw3.AutoSave.cppm
+  Draw3.AutoSave.cpp
+  runtime_benchmark.cpp
+  uink_page_file_tests.cpp
+  Draw3.Presentation.cpp
+  Draw3.WhiteboardStore.cpp
+  Draw3.WhiteboardStore.cppm
+  Draw3.PresentationAutoSave.cpp
+  Draw3.PresentationAutoSave.cppm
+  contact_input.cpp
+  contact_input.cppm
+  diagnostics.cppm
+  diagnostics.cpp
+  haptic_feedback.cpp
+  haptic_feedback.cppm
+  canvas_navigation.cpp
+  canvas_navigation.cppm
+  ink_document.cpp
+  uink_codec.cpp
+  uink_model.cppm
+  ink_document.cppm
+  uink_model.cpp
+  uink_codec_encode.cpp
+  uink_codec.cppm
+  uink_page_file.cpp
+  uink_draw3_export.cpp
+  uink_file.cpp
+  uink_page_file.cppm
+  uink_draw3_import.cpp
+  uink_file.cppm
+  uink_draw3_export.cppm
+  uink_draw3_import.cppm
+  ink_history.cpp
+  uink_draw3_capture.cppm
+  uink_draw3_capture.cpp
+  ink_history_gpu.cpp
+  ink_history_gpu.cppm
+  ink_history.cppm
+  pen_cursor.cpp
+  pen_cursor.cppm
+  runtime_metrics.cpp
+  realtime_stylus.cppm
+  renderer_primitives.cpp
+  renderer.cpp
+  runtime_metrics.cppm
+  renderer_laser.cpp
+  realtime_stylus.cpp
+  renderer_snapshot.cpp
+  renderer.cppm
+  laser_particles.cpp
+  laser_particle_system.cpp
+  laser_particles.cppm
+  stroke_geometry.cpp
+  ink_prediction.cpp
+  win7_compat.cpp
+  ink_prediction.cppm
+  Compiling...
+  thin_stroke_gpu_tests.cpp
+  runtime_benchmark.cpp
+  modeler_adaptive_tail_tests.cpp
+  Draw3.Presentation.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.Presentation.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.Presentation.cpp')
+  
+  contact_input.cppm
+  uink_model.cppm
+  pen_cursor.cppm
+  haptic_feedback.cppm
+  ink_document.cppm
+  diagnostics.cppm
+  Draw3.DiagnosticOutput.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.Presentation.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.Presentation.cpp')
+  
+  canvas_navigation.cppm
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Business\PenWidthPolicy.hpp(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.Presentation.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_adaptive_tail_tests.cpp')
+  
+  win7_compat.cpp
+  laser_particles.cppm
+  diagnostics.cpp
+  ink_document.cpp
+  ink_document_tests.cpp
+  canvas_navigation_tests.cpp
+  contact_input.cpp
+  uink_model.cpp
+  pen_cursor_tests.cpp
+  canvas_navigation.cpp
+  haptic_feedback.cpp
+  uink_codec.cppm
+  uink_draw3_export.cppm
+  ink_history.cppm
+  pen_cursor.cpp
+  realtime_stylus.cppm
+  Draw3.WhiteboardStore.cppm
+  renderer.cppm
+  laser_particles.cpp
+  ink_history.cpp
+  runtime_metrics.cppm
+  uink_draw3_import.cppm
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\draw3\uink_draw3_import.cppm(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  uink_draw3_capture.cppm
+  uink_codec.cpp
+  uink_codec_encode.cpp
+  uink_file.cppm
+  laser_particle_system.cpp
+  uink_draw3_export.cpp
+  Draw3.PresentationAutoSave.cppm
+  Draw3.AutoSave.cppm
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.AutoSave.cppm')
+  
+  uink_draw3_import.cpp
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTest\draw3\uink_draw3_import.cpp(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  uink_draw3_capture.cpp
+  ink_history_gpu.cppm
+  renderer.cpp
+  runtime_metrics.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.AutoSave.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.AutoSave.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Business\PenWidthPolicy.hpp(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.AutoSave.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Business\PenWidthPolicy.hpp(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cppm')
+  
+  renderer_primitives.cpp
+  renderer_laser.cpp
+  renderer_snapshot.cpp
+  ink_prediction.cppm
+  ink_history_tests.cpp
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cppm')
+  
+  desktop_autosave_tests.cpp
+  presentation_autosave_tests.cpp
+  Draw3.AutoSave.cpp
+  Draw3.PresentationAutoSave.cpp
+  uink_page_file.cppm
+  uink_tests.cpp
+  uink_file.cpp
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cppm')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Business\PenWidthPolicy.hpp(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\Inkeys\Business\PenWidthPolicy.hpp(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationAutoSave.cpp')
+  
+  modeler_baseline_tests.cpp
+  highlighter_geometry_tests.cpp
+  modeler_tail_tests.cpp
+  laser_incremental_coverage_tests.cpp
+  contact_input_tests.cpp
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_baseline_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_tail_tests.cpp')
+  
+C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xutility(4813,18): warning C4244: '=': conversion from 'const wchar_t' to 'char', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'presentation_autosave_tests.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xutility(4813,18):
+      the template instantiation context (the oldest one first) is
+          D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3513,32):
+          see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_const_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+          with
+          [
+              _Elem=wchar_t,
+              _Iter=std::_String_const_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+              _Alloc=std::allocator<char>
+          ]
+              D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\presentation_autosave_tests.cpp(3513,2):
+              see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'RunPresentationAutoSaveSessionChild'
+          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xstring(812,17):
+          see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<const wchar_t*,const wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+          with
+          [
+              _Size_type=unsigned __int64,
+              _Iter=const wchar_t *,
+              _Sent=const wchar_t *,
+              _Size=unsigned __int64
+          ]
+          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xstring(968,18):
+          see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<const wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+          with
+          [
+              _OutIt=char *,
+              _Size=unsigned __int64,
+              _InIt=const wchar_t *,
+              _SizeTy=unsigned __int64
+          ]
+  
+  ink_history_gpu.cpp
+C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xutility(4813,18): warning C4244: '=': conversion from 'const wchar_t' to 'char', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'uink_tests.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xutility(4813,18):
+      the template instantiation context (the oldest one first) is
+          D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\uink_tests.cpp(2707,51):
+          see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_const_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+          with
+          [
+              _Elem=wchar_t,
+              _Iter=std::_String_const_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+              _Alloc=std::allocator<char>
+          ]
+              D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\uink_tests.cpp(2707,37):
+              see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in '`anonymous-namespace'::TestCleanupOwnership::<lambda_4>::operator ()'
+          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xstring(812,17):
+          see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<const wchar_t*,const wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+          with
+          [
+              _Size_type=unsigned __int64,
+              _Iter=const wchar_t *,
+              _Sent=const wchar_t *,
+              _Size=unsigned __int64
+          ]
+          C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\xstring(968,18):
+          see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<const wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+          with
+          [
+              _OutIt=char *,
+              _Size=unsigned __int64,
+              _InIt=const wchar_t *,
+              _SizeTy=unsigned __int64
+          ]
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_baseline_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_baseline_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_baseline_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_baseline_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_baseline_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_baseline_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_baseline_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_tail_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_tail_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_tail_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_tail_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_tail_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_tail_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'modeler_tail_tests.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'contact_input_tests.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\variant(863,32):
+      This diagnostic occurred in the compiler generated function 'ink::stroke_model::KalmanPredictorParams::KalmanPredictorParams(void)'
+      D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\contact_input_tests.cpp(850,35):
+      see reference to function 'ink::stroke_model::KalmanPredictorParams::KalmanPredictorParams(void)'
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file 'contact_input_tests.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\variant(863,32):
+      This diagnostic occurred in the compiler generated function 'ink::stroke_model::KalmanPredictorParams::ConfidenceParams::ConfidenceParams(void)'
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.44.35207\include\variant(863,32):
+      see reference to function 'ink::stroke_model::KalmanPredictorParams::ConfidenceParams::ConfidenceParams(void)'
+  
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\modeler_tail_tests.cpp(361,23): warning C4244: '=': conversion from 'size_t' to 'double', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\modeler_tail_tests.cpp(362,23): warning C4244: '=': conversion from 'size_t' to 'double', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  Draw3.WhiteboardStore.cpp
+  uink_page_file_tests.cpp
+  uink_page_file.cpp
+  realtime_stylus.cpp
+  ink_prediction.cpp
+  stroke_geometry.cpp
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/ink_prediction.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/stroke_geometry.cpp')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../inkStrokeModelerTest/draw3/stroke_geometry.cpp')
+  
+  stroke_modeler.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/stroke_modeler.cc')
+  
+  params.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/params.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/params.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/params.cc')
+  
+  types.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/types.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244: 'initializing': conversion from '_Ty' to 'T', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:             _Ty=int [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         and [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:             T=float [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/types.cc')
+      D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\internal\statusor_internal.h(253,14):
+      the template instantiation context (the oldest one first) is
+          D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\types.cc(32,47):
+          see reference to function template instantiation 'absl::lts_20250512::StatusOr<float>::StatusOr<int,0>(U &&)' being compiled
+          with
+          [
+              U=int
+          ]
+              D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\types.cc(32,47):
+              see the first reference to 'absl::lts_20250512::StatusOr<float>::StatusOr' in 'ink::stroke_model::Vec2::AbsoluteAngleTo'
+          D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\statusor.h(425,17):
+          see reference to function template instantiation 'absl::lts_20250512::StatusOr<float>::StatusOr<_Ty>(std::in_place_t,_Ty &&)' being compiled
+          with
+          [
+              _Ty=int
+          ]
+          D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\status\statusor.h(689,11):
+          see reference to function template instantiation 'absl::lts_20250512::internal_statusor::StatusOrData<T>::StatusOrData<_Ty>(std::in_place_t,_Ty &&)' being compiled
+          with
+          [
+              T=float,
+              _Ty=int
+          ]
+  
+  internal_types.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/internal_types.cc')
+  
+  loop_contraction_mitigation_modeler.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/loop_contraction_mitigation_modeler.cc')
+  
+  position_modeler.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/position_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(31,21): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244: 'initializing': conversion from 'const _Ty' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244:             _Ty=double [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(32,15): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244: 'initializing': conversion from 'const _Ty' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244:         with [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244:         [ [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244:             _Ty=double [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(48,25): warning C4244:         ] [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(67,38): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\position_modeler.cc(68,38): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  stylus_state_modeler.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/stylus_state_modeler.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\stylus_state_modeler.cc(56,77): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\stylus_state_modeler.cc(59,70): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  utils.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/utils.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.cc(34,37): warning C4305: 'initializing': truncation from 'double' to 'const float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.cc(74,75): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  wobble_smoother.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/wobble_smoother.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\wobble_smoother.cc(48,56): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\wobble_smoother.cc(54,62): warning C4244: '+=': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\wobble_smoother.cc(58,65): warning C4244: '-=': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  kalman_predictor.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(35,12): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(165,16): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(202,24): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc(282,19): warning C4244: 'return': conversion from 'float' to 'int', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  stroke_end_predictor.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(235,23): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\params.h(280,43): warning C4305: 'initializing': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(40,26): warning C4244: 'return': conversion from 'int' to 'float', possible loss of data [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(69,34): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(70,40): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(78,14): warning C4305: '+=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\utils.h(80,14): warning C4305: '-=': truncation from 'double' to 'float' [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/stroke_end_predictor.cc')
+  
+  axis_predictor.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_filter/axis_predictor.cc')
+  
+  kalman_filter.cc
+D:\Project\Inkeys\Repo\Inkeys\Inkeys\additional\ink_stroke_modeler\internal\prediction\kalman_filter\matrix.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/internal/prediction/kalman_filter/kalman_filter.cc')
+  
+  terminal_tail_reconstructor.cc
+D:\Project\Inkeys\Repo\Inkeys\VcpkgInstalled\Arm64\arm64-windows-static-v143\include\absl\base\nullability.h(1,1): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss [D:\Project\Inkeys\Repo\Inkeys\inkStrokeModelerTestTests\inkStrokeModelerTestTests.vcxproj]
+  (compiling source file '../Inkeys/additional/ink_stroke_modeler/terminal_tail_reconstructor.cc')
+  
+  inkStrokeModelerTestTests.vcxproj -> D:\Project\Inkeys\Repo\Inkeys\ARM64\Debug\inkStrokeModelerTestTests.exe

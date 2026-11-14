@@ -1,84 +1,186 @@
-The development of this software makes use of a number of excellent third-party open source libraries. We would like to express our sincere gratitude to the contributors of these open source projects. Below is a non-exhaustive list of third-party components included in this software and their license information:
+The development of this software makes use of a number of excellent third-party open source libraries. We would like to express our sincere gratitude to the contributors of these projects. Below is the list of third-party code libraries that this software currently uses or has used in the past, together with their license information.
+
+License: SPDX identifier of the license under which the component is used.
+Copyright: quoted verbatim from the license file shipped with the component. Where the license text contains no copyright line, this is stated explicitly.
+Usage: how the component is used on the dev branch.
+  - vcpkg: fetched by vcpkg at build time; its source is not included in this repository.
+  - Bundled source: the source code is kept in this repository under Inkeys/additional/.
+  - Git submodule: included as a Git submodule.
+  - Distributed with the program: embedded in the program as a binary.
+  - No longer used: no longer compiled or linked on the dev branch; kept here for the historical record.
+
+This list is a summary only. The license text of each component prevails.
 
 Component: abseil/abseil-cpp (https://github.com/abseil/abseil-cpp)
-License: Apache License 2.0
-Copyright / Notes: 
-
-Component: aksalj/hashlibpp (https://github.com/aksalj/hashlibpp)
-License: See accompanying file(s)
-Copyright / Notes: Copyright (c) 2007-2011 Benjamin Gr¸delbach
-
-Component: Alan-CRL/DesktopDrawpadBlocker (https://github.com/Alan-CRL/DesktopDrawpadBlocker)
-License: GNU General Public License v3.0
-Copyright / Notes: 
+License: Apache-2.0
+Copyright: The license text contains no copyright line.
+Usage: vcpkg
 
 Component: cameron314/concurrentqueue (https://github.com/cameron314/concurrentqueue)
-License: See accompanying file(s)
-Copyright / Notes: Copyright (c) 2013-2016, Cameron Desrochers. All rights reserved.
+License: BSD-2-Clause OR BSL-1.0
+Copyright: Copyright (c) 2013-2016, Cameron Desrochers. All rights reserved.
+Usage: vcpkg
 
 Component: efficient/libcuckoo (https://github.com/efficient/libcuckoo)
-License: See accompanying file(s)
-Copyright / Notes: Copyright (C) 2013, Carnegie Mellon University and Intel Corporation
+License: Apache-2.0
+Copyright: Copyright (C) 2013, Carnegie Mellon University and Intel Corporation
+Usage: vcpkg
+
+Component: FreeType 2.14.3 (https://freetype.org)
+License: FTL OR GPL-2.0-or-later (used under the FreeType Project License)
+Copyright: Copyright 1996-2002, 2006 by David Turner, Robert Wilhelm, and Werner Lemberg
+Usage: vcpkg
+Notes: Portions of this software are copyright (C) 1996-2026 The FreeType Project (www.freetype.org). All rights reserved. Full bundled notices: Inkeys/additional/imgui/misc/freetype/LICENSE.freetype.txt
 
 Component: gabime/spdlog (https://github.com/gabime/spdlog)
-License: MIT License
-Copyright / Notes: Copyright (c) 2016 Gabi Melman.
-
-Component: google/ink-stroke-modeler (https://github.com/google/ink-stroke-modeler)
-License: Apache License 2.0
-Copyright / Notes: 
-
-Component: lukaasm/ImFluent (https://github.com/lukaasm/ImFluent)
-License: MIT License
-Copyright / Notes: Copyright (c) 2026 lukaasm
+License: MIT
+Copyright: Copyright (c) 2016 - present, Gabi Melman and spdlog contributors.
+Usage: vcpkg
 
 Component: martinus/unordered_dense (https://github.com/martinus/unordered_dense)
-License: MIT License
-Copyright / Notes: Copyright (c) 2022 Martin Leitner-Ankerl
+License: MIT
+Copyright: Copyright (c) 2022 Martin Leitner-Ankerl
+Usage: vcpkg
 
-Component: mohabouje/WinToast (https://github.com/mohabouje/WinToast)
-License: MIT License
-Copyright / Notes: Copyright (C) 2016-2023 WinToast v1.3.0 - Mohammed Boujemaoui <mohabouje@gmail.com>
+Component: msgpack/msgpack-c (https://github.com/msgpack/msgpack-c)
+License: BSL-1.0
+Copyright: Copyright (C) 2008-2015 FURUHASHI Sadayuki
+Usage: vcpkg
 
-Component: nothings/stb (https://github.com/nothings/stb)
-License: MIT License
-Copyright / Notes: Copyright (c) 2017 Sean Barrett
+Component: Neargye/magic_enum (https://github.com/Neargye/magic_enum)
+License: MIT
+Copyright: Copyright (c) 2019 - 2024 Daniil Goncharov
+Usage: vcpkg
 
-Component: ocornut/imgui (https://github.com/ocornut/imgui)
-License: MIT License
-Copyright / Notes: Copyright (c) 2014-2025 Omar Cornut
+Component: open-source-parsers/jsoncpp (https://github.com/open-source-parsers/jsoncpp)
+License: MIT
+Copyright: Copyright (c) 2007-2010 Baptiste Lepilleur and The JsonCpp Authors
+Usage: vcpkg
 
 Component: openssl/openssl (https://github.com/openssl/openssl)
-License: Apache License 2.0
-Copyright / Notes: Copyright (c) 1998-2025 The OpenSSL Project Authors. Copyright (c) 1995-1998 Eric A. Young, Tim J. Hudson. All rights reserved.
+License: Apache-2.0
+Copyright: The license text contains no copyright line.
+Usage: vcpkg
 
 Component: sammycage/lunasvg (https://github.com/sammycage/lunasvg)
-License: MIT License
-Copyright / Notes: Copyright (c) 2007-2010 Baptiste Lepilleur and The JsonCpp Authors
-
-Component: sammycage/plutovg (https://github.com/sammycage/plutovg)
-License: MIT License
-Copyright / Notes: Copyright (c) 2020-2025 Samuel Ugochukwu <sammycageagle@gmail.com>
+License: MIT
+Copyright: Copyright (c) 2020-2025 Samuel Ugochukwu <sammycageagle@gmail.com>
+Usage: vcpkg
 
 Component: yhirose/cpp-httplib (https://github.com/yhirose/cpp-httplib)
-License: MIT License
-Copyright / Notes: Copyright (c) 2017 yhirose
+License: MIT
+Copyright: Copyright (c) 2017 yhirose
+Usage: vcpkg
+
+Component: aksalj/hashlibpp (https://github.com/aksalj/hashlibpp)
+License: BSD-2-Clause
+Copyright: Copyright (c) 2007-2011 Benjamin Grüdelbach
+Usage: Bundled source (Inkeys/additional/hashlib++)
+
+Component: MD5 implementation (RFC 1321), included in hashlib++
+License: RSA-MD
+Copyright: Copyright (C) 1991-2, RSA Data Security, Inc. Created 1991. All rights reserved.
+Usage: Bundled source (Inkeys/additional/hashlib++/hl_md5.cpp)
+
+Component: SHA-1 implementation (RFC 3174), included in hashlib++
+License: See the license notice in the source file.
+Copyright: Copyright (C) The Internet Society (2001). All Rights Reserved.
+Usage: Bundled source (Inkeys/additional/hashlib++/hl_sha1.cpp)
+
+Component: SHA-2 implementation by Aaron D. Gifford, included in hashlib++
+License: BSD-3-Clause
+Copyright: Copyright (c) 2000-2001, Aaron D. Gifford All rights reserved.
+Usage: Bundled source (Inkeys/additional/hashlib++/hl_sha256.cpp)
+
+Component: google/ink-stroke-modeler (https://github.com/google/ink-stroke-modeler)
+License: Apache-2.0
+Copyright: Copyright 2022 Google LLC
+Usage: Bundled source (Inkeys/additional/ink_stroke_modeler)
+
+Component: lukaasm/ImFluent (https://github.com/lukaasm/ImFluent)
+License: MIT
+Copyright: Copyright (c) 2026 lukaasm
+Usage: Bundled source (Inkeys/additional/imfluent)
+
+Component: mohabouje/WinToast (https://github.com/mohabouje/WinToast)
+License: MIT
+Copyright: Copyright (C) 2016-2023 WinToast v1.3.0 - Mohammed Boujemaoui <mohabouje@gmail.com>
+Usage: Bundled source (Inkeys/additional/wintoastlib)
+
+Component: nothings/stb (https://github.com/nothings/stb)
+License: MIT OR Unlicense
+Copyright: Copyright (c) 2017 Sean Barrett
+Usage: Bundled source (Inkeys/additional/stbimage)
+
+Component: ocornut/imgui (https://github.com/ocornut/imgui)
+License: MIT
+Copyright: Copyright (c) 2014-2026 Omar Cornut
+Usage: Bundled source (Inkeys/additional/imgui)
 
 Component: Zip Utils (https://www.codeproject.com/Articles/7530/Zip-Utils-Clean-Elegant-Simple-Cplusplus-Win)
-License: 
-Copyright / Notes: 
+License: See the project page.
+Copyright: No license file is bundled (the source is attributed to Lucian Wischik).
+Usage: Bundled source (Inkeys/additional/ziputils)
+
+Component: Info-ZIP, included in Zip Utils (http://www.info-zip.org)
+License: Info-ZIP
+Copyright: Copyright (c) 1990-1999 Info-ZIP. All rights reserved.
+Usage: Bundled source (Inkeys/additional/ziputils/zip.cpp)
+
+Component: zlib, included in Zip Utils (https://zlib.net)
+License: Zlib
+Copyright: Copyright (C) 1995-1998 Jean-loup Gailly and Mark Adler
+Usage: Bundled source (Inkeys/additional/ziputils/unzip.cpp)
+
+Component: unzip 0.15 by Gilles Vollant, included in Zip Utils
+License: See the license notice in the source file.
+Copyright: Copyright 1998 Gilles Vollant
+Usage: Bundled source (Inkeys/additional/ziputils/unzip.cpp)
+
+Component: Alan-CRL/HiMsg (https://github.com/Alan-CRL/HiMsg)
+License: MIT
+Copyright: Copyright (c) 2026 Alan-CRL
+Usage: Git submodule (Inkeys/additional/HiMsg)
+
+Component: Alan-CRL/DesktopDrawpadBlocker (https://github.com/Alan-CRL/DesktopDrawpadBlocker)
+License: GPL-3.0
+Copyright: No license file is bundled.
+Usage: Distributed with the program (Inkeys/exe/DesktopDrawpadBlocker.exe)
+
+Component: cmdwtf/imgui_toggle (https://github.com/cmdwtf/imgui_toggle)
+License: 0BSD
+Copyright: Copyright © 2022 nitz — chris marc dailey https://cmd.wtf
+Usage: No longer used (source still present in Inkeys/additional/imgui)
+
+Component: Microsoft DirectX SDK (June 2010)
+License: Microsoft Software License Terms
+Copyright: No license file is bundled.
+Usage: No longer used (headers still present in Inkeys/additional/Microsoft DirectX SDK (June 2010))
 
 Component: zouhuidong/HiEasyX (https://github.com/zouhuidong/HiEasyX)
-License: MIT License
-Copyright / Notes: Copyright (c) 2022 zouhuidong
+License: MIT
+Copyright: Copyright (c) 2022 zouhuidong
+Usage: No longer used
 
-For the complete list of all third-party libraries used by this software and their corresponding license files, please refer to the following links:
+Component: EasyX (https://easyx.cn/)
+License: EasyX license terms published on the official EasyX website
+Copyright: No license file is bundled.
+Usage: No longer used
 
-Main component notices (NOTICE):
-./NOTICE
+Component: OpenCV 4.10.0 (https://github.com/opencv/opencv)
+License: Apache-2.0
+Copyright: The license text contains no copyright line. The upstream COPYRIGHT file states:
+  Copyright (C) 2000-2022, Intel Corporation, all rights reserved.
+  Copyright (C) 2009-2011, Willow Garage Inc., all rights reserved.
+  Copyright (C) 2009-2016, NVIDIA Corporation, all rights reserved.
+  Copyright (C) 2010-2013, Advanced Micro Devices, Inc., all rights reserved.
+  Copyright (C) 2015-2023, OpenCV Foundation, all rights reserved.
+  Copyright (C) 2008-2016, Itseez Inc., all rights reserved.
+  Copyright (C) 2019-2023, Xperience AI, all rights reserved.
+  Copyright (C) 2019-2022, Shenzhen Institute of Artificial Intelligence and Robotics for Society, all rights reserved.
+  Copyright (C) 2022-2023, Southern University of Science And Technology, all rights reserved.
+  Third party copyrights are property of their respective owners.
+Usage: No longer used
 
 Third-party license files:
 ./ThirdpartyLicenses/
-Component: FreeType 2.14.3 (https://freetype.org/)
-License: FreeType Project License (FTL); full bundled notices in Inkeys/additional/imgui/misc/freetype/LICENSE.freetype.txt
-Copyright / Notes: Portions of this software are copyright (C) 1996-2026 The FreeType Project (www.freetype.org). All rights reserved.

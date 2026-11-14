@@ -1,0 +1,121 @@
+{
+  "logSnapshot": {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanOverspeedValidation\\console.log",
+    "snapshot": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-device-feedback-2026-11-14\\console.snapshot.log",
+    "initialBytes": 28479321,
+    "snapshotBytes": 28479321,
+    "sourceBytesAfter": 28479321,
+    "sourceStableDuringCopy": true,
+    "snapshotSha256": "540b3817922dd1832aadafc97f53c61d6e7e2e0412f36e15d896b581e54ff94a",
+    "sourceUntouched": true
+  },
+  "lineCount": 133090,
+  "classReasonCounts": {
+    "2/disabled": 21,
+    "1/ready": 118,
+    "3/ready": 26,
+    "1/few-samples": 2,
+    "1/slow-or-stationary": 1,
+    "4/disabled": 44
+  },
+  "phaseSummary": {
+    "pre-pen": {
+      "releaseCount": 32,
+      "reasons": {
+        "ready": 32
+      },
+      "profilesAvailable": 32,
+      "shorterThan3mm": 11,
+      "distanceMedianMm": 183.50284,
+      "qualityRecordsAvailable": 31,
+      "supportLimited": 10
+    },
+    "post-pen-pre-tail": {
+      "releaseCount": 89,
+      "reasons": {
+        "few-samples": 2,
+        "ready": 86,
+        "slow-or-stationary": 1
+      },
+      "profilesAvailable": 81,
+      "shorterThan3mm": 27,
+      "distanceMedianMm": 197.9513,
+      "qualityRecordsAvailable": 83,
+      "supportLimited": 41
+    },
+    "post-tail": {
+      "releaseCount": 0,
+      "reasons": {},
+      "profilesAvailable": 0,
+      "shorterThan3mm": 0,
+      "distanceMedianMm": null,
+      "qualityRecordsAvailable": 0,
+      "supportLimited": 0
+    }
+  },
+  "phaseCaveat": "descriptive first-Pen timing only; actions not standardized; missing profile lines not treated as zero",
+  "touchContextInvariance": {
+    "contextsWithReleaseQualityKey": 114,
+    "values": {
+      "profile": [
+        "1"
+      ],
+      "unit": [
+        "1"
+      ],
+      "mapped": [
+        "1"
+      ],
+      "reason": [
+        "trusted-physical"
+      ],
+      "mode": [
+        "1"
+      ],
+      "dip-per-pixel": [
+        "(0.5,0.5)"
+      ],
+      "motion-per-dip": [
+        "(0.19444445,0.19791666)"
+      ],
+      "w": [
+        "0"
+      ],
+      "G": [
+        "1"
+      ]
+    }
+  },
+  "sourceBefore": {
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "53c0d39719b0abbcd3505a07ea0f2c76243d1a53329076f09850495fc62b583b",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "01fdfee1e735db1e6ffc5496a4c8068df89ea9a2fd5a3fc304deb1b2bfdbb329",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "4b685d9272a4682b60513c692712ea2e3757a613705406f5c1bfd00091f2c7a5",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cpp": "63b8f74be50de9a2dbc0814cef4f38cfc51d66d48f76bcfab4dd9444a8c6a56c",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "d093f41aa8a901cd33ada5e9770c9eaff473e5c8cde65d2d2e874c0c71581579",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "d304f799402735be1afaf54ed84259a6209ff234041581e4a17f964c31fa634a",
+    "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "a1cfc28c70b96988b0f70da5f180a19e3189c2b47320883f0a85734fb2725429",
+    "InkeysHeadlessTests/draw3_contact_tests.cpp": "fe6a17e8b4a89a994a670330096d719060843ced4e05e537b82ba1adafc82d7d"
+  },
+  "sourceAfter": {
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "53c0d39719b0abbcd3505a07ea0f2c76243d1a53329076f09850495fc62b583b",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "01fdfee1e735db1e6ffc5496a4c8068df89ea9a2fd5a3fc304deb1b2bfdbb329",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "4b685d9272a4682b60513c692712ea2e3757a613705406f5c1bfd00091f2c7a5",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cpp": "63b8f74be50de9a2dbc0814cef4f38cfc51d66d48f76bcfab4dd9444a8c6a56c",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "d093f41aa8a901cd33ada5e9770c9eaff473e5c8cde65d2d2e874c0c71581579",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "d304f799402735be1afaf54ed84259a6209ff234041581e4a17f964c31fa634a",
+    "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "a1cfc28c70b96988b0f70da5f180a19e3189c2b47320883f0a85734fb2725429",
+    "InkeysHeadlessTests/draw3_contact_tests.cpp": "fe6a17e8b4a89a994a670330096d719060843ced4e05e537b82ba1adafc82d7d"
+  },
+  "sourceUnchanged": true,
+  "productExecutionThisRound": false,
+  "userFeedback": {
+    "screenPen": "normal",
+    "touch": "intermittent perceptually absent inertia, may seem worse after pen use; user uncertain about causality",
+    "penTail": "may not have fully pressed; alternatively relative motion after grab; user leans first"
+  },
+  "detailedResearch": [
+    "device-feedback-touch-2026-11-14.md",
+    "device-feedback-quality-review-2026-11-14.md",
+    "device-feedback-pen-tail-2026-11-14.md"
+  ]
+}

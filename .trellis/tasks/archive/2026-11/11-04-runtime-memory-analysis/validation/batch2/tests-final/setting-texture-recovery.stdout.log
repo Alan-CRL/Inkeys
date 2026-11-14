@@ -1,0 +1,3 @@
+[setting-texture-recovery] scale=1.0 active_slots=11 resident_cpu_bytes=16384 hwnd=0
+[setting-texture-recovery] scale=2.0 active_slots=11 resident_cpu_bytes=16384 hwnd=0
+[setting-texture-recovery] failures=0 hwnd=0

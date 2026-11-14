@@ -1,10 +1,11 @@
 ﻿#include "IdtImage.h"
 
 //drawpad画笔
-Inkeys::Graphics::DibSurface alpha_drawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //临时画板
+// 旧 Draw2 整屏画板已无生产消费者，仅保留空对象兼容历史代码。
+Inkeys::Graphics::DibSurface alpha_drawpad; //临时画板
 Inkeys::Graphics::DibSurface putout; //主画板上叠加的控件内容
-Inkeys::Graphics::DibSurface tester(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //图形绘制画板
-Inkeys::Graphics::DibSurface pptdrawpad(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)); //PPT控件画板
+Inkeys::Graphics::DibSurface tester; //图形绘制画板
+Inkeys::Graphics::DibSurface pptdrawpad; //PPT控件画板
 
 int recall_image_recond, recall_image_reference;
 shared_mutex RecallImageManipulatedSm;

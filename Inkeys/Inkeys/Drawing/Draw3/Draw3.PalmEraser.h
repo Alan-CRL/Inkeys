@@ -15,9 +15,19 @@ namespace Inkeys::Drawing::Draw3::PalmEraser
 		int recognitionWindowMs = 150;
 		bool parallelWriting = true;
 		std::array<bool, 7> tools{ true, true, true, true, true, true, true };
+		// 手掌独立擦除形状：-1 跟随普通橡皮，0..2 对应 EraserShape。
+		int shape = -1;
+		int sizeMode = 0;
+		std::array<int, 3> sizeMethods{};
+		int sizeMultiplierPercent = 100;
 		friend bool operator==(const Settings&, const Settings&) = default;
 	};
 	Settings NormalizeSettings(Settings settings) noexcept;
+	// 独立 Down 时确定擦除形状；跟随时沿用同次锁存的普通橡皮形状。
+	inline EraserShape ResolveShape(const Settings& settings, EraserShape followed) noexcept
+	{
+		return settings.shape >= 0 && settings.shape <= 2 ? static_cast<EraserShape>(settings.shape) : followed;
+	}
 	int RestoreRecognitionWindowMs(int saved) noexcept;
 
 	struct Scale
@@ -33,18 +43,21 @@ namespace Inkeys::Drawing::Draw3::PalmEraser
 	Scale ResolvePreviewScale(const SpeedEraser::DisplayScale& display) noexcept;
 	double ThresholdAreaPixels(const Settings& settings, const Scale& scale) noexcept;
 	float ExclusionRadius(float diameterPx) noexcept;
+	double ContactEraserDiameter(EraserShape shape, int method, double width, double height, int multiplierPercent) noexcept;
 
 	struct State
 	{
 		Settings settings;
 		Scale scale;
+		EraserShape shape = EraserShape::Circle;
 		bool eligible = false, blocked = false, active = false, locked = true;
 		double maximumAreaPx = 0;
 		float diameterPx = 0;
 		int64_t downQpc = 0, deadlineQpc = 0;
 
 		void Begin(const Settings& preferences, const Scale& displayScale, ToolCategory tool,
-			int64_t contactDownQpc, int64_t frequency, bool recognitionBlocked = false) noexcept;
+			int64_t contactDownQpc, int64_t frequency, bool recognitionBlocked = false,
+			EraserShape followedShape = EraserShape::Circle) noexcept;
 		// 可在副本上观察，原工具到橡皮的准备成功后再由 owner 提交该副本。
 		bool Observe(const SpeedEraser::ContactAreaSample& sample, int64_t sampleQpc) noexcept;
 		bool Advance(int64_t nowQpc) noexcept;
