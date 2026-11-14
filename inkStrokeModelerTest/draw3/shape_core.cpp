@@ -57,8 +57,9 @@ namespace
 	{
 		const auto& tool = c.tool;
 		if (static_cast<uint32_t>(tool.preset) > static_cast<uint32_t>(PresetKind::Pyramid) ||
-			tool.sides < kMinRegularSides || tool.sides > kMaxRegularSides || !Finite(tool.rectangleCornerRadius) || tool.rectangleCornerRadius < 0 ||
-			!Finite(c.start) || !Finite(c.end) || (c.legacyArrow && tool.preset != PresetKind::Arrow) || !ValidPlanarConstraint(tool))
+			tool.sides < kMinRegularSides || tool.sides > kMaxRegularSides ||
+			((tool.preset == PresetKind::Prism || tool.preset == PresetKind::Pyramid) && tool.sides > kMaxSolidSides) || !Finite(tool.rectangleCornerRadius) || tool.rectangleCornerRadius < 0 ||
+			!Finite(c.start) || !Finite(c.end) || !ValidPlanarConstraint(tool))
 		{ error = "invalid construction parameters"; return false; }
 		if (tool.preset >= PresetKind::Polyline) return ExpandAdvanced(c, style, out, error);
 		if (!std::holds_alternative<std::monostate>(c.parameters) && !std::holds_alternative<VertexConstruction>(c.parameters))
@@ -81,7 +82,7 @@ namespace
 		const float t = std::min(start.y, end.y), b = std::max(start.y, end.y);
 		const float w = r - l, h = b - t, cx = l + w * .5f, cy = t + h * .5f;
 		if (tool.preset != PresetKind::Line && tool.preset != PresetKind::Arrow &&
-			tool.preset != PresetKind::Circle && tool.preset != PresetKind::RegularPolygon && !centeredTriangle &&
+			tool.preset != PresetKind::Circle && tool.preset != PresetKind::RegularPolygon && tool.preset != PresetKind::Parallelogram && !centeredTriangle &&
 			!std::holds_alternative<VertexConstruction>(c.parameters) && !(w > 0 && h > 0))
 		{ error = "empty construction"; return false; }
 		switch (tool.preset)
@@ -94,8 +95,8 @@ namespace
 			out.kind = Kind::Compound;
 			ShapePart shaft; shaft.id = 1; shaft.kind = Kind::Line;
 			shaft.geometry.start = start; shaft.geometry.end = end;
-			// 新箭头只随线宽改变头部；v2旧文件显式保留原规则。
-			const float head = c.legacyArrow ? std::min(length * .4f, std::max(length * .2f, style.width * 3)) : style.width * 3;
+			// 箭头头部只随线宽改变。
+			const float head = style.width * 3;
 			const Vec2 direction{ (end.x - start.x) / length, (end.y - start.y) / length };
 			const Vec2 base{ end.x - direction.x * head, end.y - direction.y * head };
 			ShapePart tip; tip.id = 2; tip.kind = Kind::Polyline; tip.style = style;
@@ -129,7 +130,12 @@ namespace
 			out.geometry.vertices = centeredTriangle ? RegularPolygonVertices(start,end,3) : std::vector<Vec2>{ { cx,t }, { r,b }, { l,b } };
 			break;
 		case PresetKind::Parallelogram:
-			out.kind = Kind::Polygon; out.geometry.vertices = { { l + w * .25f,t }, { r,t }, { r - w * .25f,b }, { l,b } }; break;
+			{
+			// 固定模板的长对角线与手势重合，允许任意方向起笔。
+			const Vec2 d{end.x-start.x,end.y-start.y}, m{(start.x+end.x)*.5f,(start.y+end.y)*.5f};
+			const Vec2 q{-d.x*.125f-d.y*.375f,-d.y*.125f+d.x*.375f};
+			out.kind = Kind::Polygon; out.geometry.vertices = {start,{m.x+q.x,m.y+q.y},end,{m.x-q.x,m.y-q.y}}; break;
+			}
 		case PresetKind::Rhombus:
 			out.kind = Kind::Polygon; out.geometry.vertices = { { cx,t }, { r,cy }, { cx,b }, { l,cy } }; break;
 		case PresetKind::Trapezoid:
@@ -447,19 +453,13 @@ ValidationResult Validate(const ShapeObject& object, const Registry& registry)
 		if (!ExpandPreset(*object.construction, object.style, expected, error)) return { error };
 		if (object.legacyKind != LegacyKind::None || object.kind != expected.kind || object.creationMode != expected.creationMode ||
 			!SameGeometry(object.geometry, expected.geometry) ||
-			(object.parts.size() != expected.parts.size() && object.construction->tool.preset != PresetKind::Cone))
+			object.parts.size() != expected.parts.size())
 			return { "construction does not match derived geometry" };
 		if ((object.construction->tool.preset == PresetKind::RegularPolygon ||
 			object.construction->tool.preset == PresetKind::Cube) && !Similarity(object.transform))
 			return { "regular polygon requires uniform orthogonal transform" };
-		if (!SameParts(object,expected))
-		{
-			// v3旧圆锥仍严格核验旧派生数据，渲染/后续编辑统一使用修正后的切线。
-			ShapeObject legacy;
-			if (object.construction->tool.preset != PresetKind::Cone ||
-				!ExpandAdvanced(*object.construction,object.style,legacy,error,.25f,true) || !SameParts(object,legacy))
-				return { "construction does not match derived parts" };
-		}
+		if (object.construction->tool.preset >= PresetKind::Cuboid && (object.transform.m12 != 0 || object.transform.m21 != 0 || object.transform.m11 != object.transform.m22 || object.transform.m11 <= 0)) return { "solid requires fixed textbook projection" };
+		if (!SameParts(object,expected)) return { "construction does not match derived parts" };
 	}
 	if (object.legacyKind != LegacyKind::None)
 	{
@@ -494,21 +494,6 @@ ValidationResult Validate(const ShapeObject& object, const Registry& registry)
 		if (!validation) return validation;
 	}
 	return {};
-}
-std::optional<ShapeObject> NormalizeLegacyPolygonSolid(const ShapeObject& object, std::string* error)
-{
-	auto fail = [&](const char* reason) -> std::optional<ShapeObject> { SetError(error,reason); return std::nullopt; };
-	if (!object.construction || (object.construction->tool.preset != PresetKind::Prism && object.construction->tool.preset != PresetKind::Pyramid))
-		return fail("not a legacy polygon solid");
-	ShapeObject legacy; std::string failure;
-	if (!ExpandAdvanced(*object.construction,object.style,legacy,failure,.25f,false,true) || object.legacyKind != LegacyKind::None ||
-		object.kind != legacy.kind || object.creationMode != legacy.creationMode || !SameGeometry(object.geometry,legacy.geometry) || !SameParts(object,legacy))
-		return fail("legacy polygon solid parts do not match old derivation");
-	auto normalized = MakeConstructedShape(*object.construction,object.style,object.id,object.revision,error);
-	if (!normalized) return std::nullopt;
-	normalized->transform = object.transform; normalized->editDepthAnchor = object.editDepthAnchor;
-	if (!Validate(*normalized)) return fail("normalized polygon solid is invalid");
-	SetError(error,{}); return normalized;
 }
 Auxiliary SupportedAuxiliary(PresetKind preset) noexcept
 {
@@ -781,14 +766,6 @@ std::optional<ShapeObject> MakeConstructedShape(const Construction& construction
 	// 模板不支持的辅助位不进入构造对象，也不传播到复合部件样式。
 	object.style.auxiliary = style.auxiliary & SupportedAuxiliary(construction.tool.preset);
 	object.construction = construction;
-	const auto* solid = std::get_if<SolidConstruction>(&construction.parameters);
-	if (construction.tool.preset == PresetKind::Cube && (!solid || !solid->oblique))
-	{
-		// 正面方形角也是参数真值，避免控制点仍落在未投影的raw矩形内。
-		const float side = std::max(std::abs(construction.end.x - construction.start.x),std::abs(construction.end.y - construction.start.y));
-		object.construction->end = {construction.start.x + (construction.end.x < construction.start.x ? -side : side),
-			construction.start.y + (construction.end.y < construction.start.y ? -side : side)};
-	}
 	std::string failure;
 	if (!ValidStyle(style) || !ExpandPreset(*object.construction, object.style, object, failure))
 	{ SetError(error, failure.empty() ? "invalid construction style" : failure); return std::nullopt; }

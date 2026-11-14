@@ -274,14 +274,14 @@
 		UINK_CHECK(state, DecodeInkeysShapeMetadata(malformed).status == Draw3ShapeMetadataStatus::Invalid);
 		malformed = metadata;
 		*field(malformed, "version") = Value(uint64_t{ 1 });
-		UINK_CHECK(state, DecodeInkeysShapeMetadata(malformed).status == Draw3ShapeMetadataStatus::Invalid);
+		UINK_CHECK(state, DecodeInkeysShapeMetadata(malformed).status == Draw3ShapeMetadataStatus::UnsupportedVersion);
 		malformed = metadata;
 		*field(malformed, "construction") = Value(UInkMessagePackValue::Map{});
 		UINK_CHECK(state, DecodeInkeysShapeMetadata(malformed).status == Draw3ShapeMetadataStatus::Invalid);
 		malformed = EncodeInkeysShapeMetadata(*canvas.strokes.front().shape);
 		*field(malformed, "version") = Value(uint64_t{ 99 });
 		UINK_CHECK(state, DecodeInkeysShapeMetadata(malformed).status == Draw3ShapeMetadataStatus::UnsupportedVersion);
-		// v2 复合引用不能退回 v1，也不能在支持的版本里偷偷丢弃构造信息。
+		// 当前复合引用不能混入退役版本。
 		auto mismatch = *exported.document;
 		bool testedReference = false;
 		for (auto& content : mismatch.canvases[0].content)
@@ -305,20 +305,19 @@
 		const auto fallback = ImportDraw3UInkDocument(unknown);
 		UINK_CHECK(state, fallback.snapshot && !fallback.diagnostics.empty() && fallback.snapshot->canvases[0].strokes.size() == wireCount);
 		UINK_CHECK(state, ImportDraw3UInkDocument(standard).status == Draw3UInkImportStatus::Success);
-		// v3–v5参数覆盖曲线、逐点与全部空间模板；标准降级仍能被无扩展读取器显示。
+		// v7参数覆盖曲线、逐点与全部空间模板；标准降级仍能被无扩展读取器显示。
 		auto advancedSnapshot = snapshot; advancedSnapshot.canvases[0].strokes.clear();
 		for (uint32_t value = uint32_t(PresetKind::Polyline); value <= uint32_t(PresetKind::Pyramid); ++value)
 		{
 			const auto preset = static_cast<PresetKind>(value);
-			for (uint32_t sides : { 3u,5u,12u,14u }) for (float sign : { -1.0f,1.0f })
+			for (uint32_t sides : { 3u,5u,6u,8u }) for (float sign : { -1.0f,1.0f })
 			{
 				Construction c; c.tool = { preset,preset == PresetKind::Polyline || preset == PresetKind::Polygon ? CreationMode::Points : CreationMode::MultiStage,sides };
 				c.start = { 30,70 }; c.end = { 130,110 };
 				if (preset == PresetKind::Polyline || preset == PresetKind::Polygon)
 					c.parameters = VertexConstruction{ { { 10,10 },{ 100,10 },{ 45,40 },{ 100,100 },{ 10,100 } } };
 				else if (preset == PresetKind::Arc || preset == PresetKind::Sector) c.parameters = ArcConstruction{ sign * 4.4f };
-				else if (preset == PresetKind::Cuboid || preset == PresetKind::Cube) c.parameters = SolidConstruction{ { sign * 23,-32 },0 };
-				else c.parameters = SolidConstruction{ {},sign * 60 };
+				else c = MakeSolidConstruction(c.tool,c.start,c.end,sign * 60);
 				ShapeStyle style; style.width = 5; style.linePattern = LinePattern::DashDot;
 				style.strokeOpacity = .55f; style.strokeRgb = 0x123456;
 				auto id = Guid("70000000-0000-4000-8000-00000000f042").Bytes(); id[15] = static_cast<uint8_t>(advancedSnapshot.canvases[0].strokes.size());
@@ -339,7 +338,7 @@
 		if (advancedExport.document)
 		{
 			UInkEditingSession futureSession; futureSession.document = *advancedExport.document;
-			const auto advancedPath = temporary.File(L"advanced-shapes-v3.uink");
+			const auto advancedPath = temporary.File(L"advanced-shapes-v7.uink");
 			UINK_CHECK(state, SaveUInkFile(advancedPath, futureSession, options).status == UInkSaveStatus::Committed);
 			const auto advancedRead = ReadUInkFile(advancedPath);
 			UINK_CHECK(state, advancedRead.status == UInkReadStatus::Complete && advancedRead.document);
@@ -386,146 +385,24 @@
 				UINK_CHECK(state,free); if (free)
 				{
 					auto wire = EncodeInkeysShapeMetadata(*free); const auto decoded = DecodeInkeysShapeMetadata(wire);
-					UINK_CHECK(state,std::get<uint64_t>(field(wire,"version")->value)==3 && decoded.shape==free);
+					UINK_CHECK(state,std::get<uint64_t>(field(wire,"version")->value)==7 && decoded.shape==free);
 				}
 			}
 		}
 		for (auto preset : {PresetKind::Prism,PresetKind::Pyramid})
 		{
-			Construction c; c.tool = {preset,CreationMode::MultiStage,14}; c.start = {30,70}; c.end = {130,110};
-			c.parameters = SolidConstruction{{},-80,.75f};
+			auto c = MakeSolidConstruction({preset,CreationMode::MultiStage,8},{30,70},{130,110},-80);
 			const auto object = MakeConstructedShape(c,{},v5Id(static_cast<uint8_t>(v5Objects.size() + 1)),4);
 			UINK_CHECK(state,object); if (object) v5Objects.push_back(*object);
 		}
 		for (const auto& object : v5Objects)
 		{
 			auto encoded = EncodeInkeysShapeMetadata(object);
-			UINK_CHECK(state,std::get<uint64_t>(field(encoded,"version")->value) == 5);
+			UINK_CHECK(state,std::get<uint64_t>(field(encoded,"version")->value) == 7);
 			const auto decoded = DecodeInkeysShapeMetadata(encoded);
 			UINK_CHECK(state,decoded.status == Draw3ShapeMetadataStatus::Valid && decoded.shape == object);
 		}
-		auto legacyWire = [&](const ShapeObject& object,uint64_t version)
-		{
-			auto wire = EncodeInkeysShapeMetadata(object); *field(wire,"version") = Value(version);
-			auto& tool = std::get<UInkMessagePackValue::Map>(field(*field(wire,"construction"),"tool")->value);
-			tool.erase(std::remove_if(tool.begin(),tool.end(),[](const auto& pair)
-			{ return std::get<std::string>(pair.first.value) == "constraint"; }),tool.end());
-			auto& parameters = std::get<UInkMessagePackValue::Array>(field(*field(wire,"construction"),"parameters")->value);
-			auto& fields = std::get<UInkMessagePackValue::Array>(parameters[1].value);
-			if (fields.size() == 3) fields.pop_back();
-			if (version == 3)
-			{
-				auto& map = std::get<UInkMessagePackValue::Map>(wire.value);
-				map.erase(std::remove_if(map.begin(),map.end(),[](const auto& pair) { return std::get<std::string>(pair.first.value) == "aux"; }),map.end());
-			}
-			return wire;
-		};
-		for (auto preset : {PresetKind::Prism,PresetKind::Pyramid})
-		{
-			Construction c; c.tool = {preset,CreationMode::MultiStage,5}; c.start = {30,70}; c.end = {130,110};
-			c.parameters = SolidConstruction{{},-60};
-			const auto current = MakeConstructedShape(c,{},v5Id(20 + uint8_t(preset)),21); UINK_CHECK(state,current); if (!current) continue;
-			std::vector<Vec2> base; const double dx = c.end.x - c.start.x, dy = 2 * (c.end.y - c.start.y);
-			for (uint32_t i = 0; i < c.tool.sides; ++i)
-			{
-				const double angle = 6.28318530717958647692 * i / c.tool.sides;
-				base.push_back({static_cast<float>(c.start.x + dx * std::cos(angle) - dy * std::sin(angle)),
-					static_cast<float>(c.start.y + (dx * std::sin(angle) + dy * std::cos(angle)) * .5)});
-			}
-			ShapeObject legacy = *current; legacy.parts.clear(); std::vector<bool> hidden(base.size());
-			auto edge = [&](Vec2 a,Vec2 b,bool dashed)
-			{
-				ShapePart part; part.id = static_cast<uint32_t>(legacy.parts.size() + 1); part.kind = Kind::Polyline;
-				part.geometry.vertices = {a,b}; if (dashed) { part.style = legacy.style; part.style->linePattern = LinePattern::Dashed; }
-				legacy.parts.push_back(std::move(part));
-			};
-			const bool above = std::get<SolidConstruction>(c.parameters).height < 0;
-			for (size_t i = 0; i < base.size(); ++i)
-			{
-				const auto next = (i + 1) % base.size(); hidden[i] = above ? base[next].x > base[i].x : base[next].x < base[i].x;
-				edge(base[i],base[next],hidden[i]);
-				if (preset == PresetKind::Prism) edge({base[i].x,base[i].y - 60},{base[next].x,base[next].y - 60},false);
-			}
-			for (size_t i = 0; i < base.size(); ++i)
-				edge(base[i],{preset == PresetKind::Prism ? base[i].x : c.start.x,preset == PresetKind::Prism ? base[i].y - 60 : c.start.y - 60},
-					hidden[i] && hidden[(i + base.size() - 1) % base.size()]);
-			for (uint64_t version : {3u,4u})
-			{
-				const auto decoded = DecodeInkeysShapeMetadata(legacyWire(legacy,version));
-				UINK_CHECK(state,decoded.status == Draw3ShapeMetadataStatus::Valid && decoded.shape == current);
-				auto corrupt = legacy; corrupt.parts[0].geometry.vertices[0].x += 1;
-				UINK_CHECK(state,DecodeInkeysShapeMetadata(legacyWire(corrupt,version)).status == Draw3ShapeMetadataStatus::Invalid);
-			}
-		}
-		// 旧锥顶在底面投影内时仍有四部件：读取兼容，保存统一成当前两部件，不能写出自拒绝文件。
-		for (float height : {-40.f,-20.f,20.f,40.f})
-		{
-			Construction c; c.tool = {PresetKind::Cone,CreationMode::MultiStage}; c.start = {20,30}; c.end = {140,110}; c.parameters = SolidConstruction{{},height};
-			const auto normal = MakeConstructedShape(c,{},Guid("70000000-0000-4000-8000-00000000f045").Bytes(),21);
-			UINK_CHECK(state,normal && normal->parts.size() == 2); if (!normal) continue;
-			auto legacy = *normal; legacy.transform = {0,1,-1,0,250,10};
-			for (float x : {20.f,140.f})
-			{
-				ShapePart edge; edge.id = static_cast<uint32_t>(legacy.parts.size() + 1); edge.kind = Kind::Polyline;
-				edge.geometry.vertices = {{x,70},{80,70 + height}}; legacy.parts.push_back(edge);
-			}
-			const auto decoded = DecodeInkeysShapeMetadata(EncodeInkeysShapeMetadata(legacy));
-			UINK_CHECK(state,decoded.shape == legacy && decoded.shape->parts.size() == 4); if (!decoded.shape) continue;
-			auto savedSnapshot = snapshot; savedSnapshot.canvases[0].strokes.clear();
-			Draw3UInkStrokeSnapshot stroke; stroke.style.kind = Draw3UInkStrokeKind::Shape; stroke.shape = decoded.shape;
-			savedSnapshot.canvases[0].strokes.push_back(stroke);
-			const auto saved = ExportDraw3SnapshotToUInk(savedSnapshot);
-			UINK_CHECK(state,saved.document && saved.document->canvases[0].content.size() == 2); if (!saved.document) continue;
-			// 复原旧四部件分组，确认导入计数仍以旧根为准，不因写出规范化而拒绝旧文件。
-			auto oldFile = *saved.document; auto& oldParts = oldFile.canvases[0].content;
-			oldParts.push_back(oldParts[1]); oldParts.push_back(oldParts[1]);
-			for (size_t i = 0; i < oldParts.size(); ++i)
-			{
-				auto& part = std::get<UInkShape>(oldParts[i]); part.contentId = static_cast<uint32_t>(i);
-				auto& root = part.extra->front().second;
-				if (!i)
-				{
-					root = EncodeInkeysShapeMetadata(legacy); auto& map = std::get<UInkMessagePackValue::Map>(root.value);
-					map.emplace_back(Value(std::string("partIndex")),Value(uint64_t{0})); map.emplace_back(Value(std::string("partCount")),Value(uint64_t{4}));
-				}
-				else { *field(root,"partIndex") = Value(uint64_t(i)); *field(root,"partCount") = Value(uint64_t{4}); }
-				if (i >= 2)
-				{
-					UInkLineGeometry line;
-					for (auto point : legacy.parts[i].geometry.vertices) { const auto world = ApplyTransform(legacy.transform,point); line.points.push_back({world.x,world.y}); }
-					part.declaredShapeType = 1; part.geometry = std::move(line); part.stroke->dashArray.clear();
-				}
-			}
-			const auto oldRead = ImportDraw3UInkDocument(oldFile);
-			UINK_CHECK(state,oldRead.snapshot && oldRead.snapshot->canvases[0].strokes[0].shape == legacy);
-			UInkEditingSession savedSession; savedSession.document = *saved.document;
-			const auto savedPath = temporary.File((L"legacy-small-cone-" + std::to_wstring(static_cast<int>(height)) + L".uink").c_str());
-			UINK_CHECK(state,SaveUInkFile(savedPath,savedSession,options).status == UInkSaveStatus::Committed);
-			const auto loaded = ReadUInkFile(savedPath); UINK_CHECK(state,loaded.document); if (!loaded.document) continue;
-			const auto imported = ImportDraw3UInkDocument(*loaded.document);
-			auto expected = *normal; expected.transform = legacy.transform;
-			UINK_CHECK(state,imported.snapshot && imported.snapshot->canvases[0].strokes.size() == 1 && imported.snapshot->canvases[0].strokes[0].shape == expected);
-			GeometryResult before,after;
-			UINK_CHECK(state,BuildGeometry(legacy,before) && BuildGeometry(expected,after) && before.bounds == after.bounds && before.parts.size() == after.parts.size());
-			for (size_t i = 0; i < (std::min)(before.parts.size(),after.parts.size()); ++i)
-				UINK_CHECK(state,before.parts[i].paths[0].points == after.parts[i].paths[0].points);
-		}
-		// 解码路径不经过工厂：旧Cube的raw对角可能为35x100，显示与零位移编辑仍须为100x100。
-		for (float x : {-1.f,1.f}) for (float y : {-1.f,1.f})
-		{
-			Construction c; c.tool = {PresetKind::Cube,CreationMode::MultiStage}; c.start = {20,30}; c.end = {20 + x * 35,30 + y * 100}; c.parameters = SolidConstruction{{30,-40},0};
-			auto cube = MakeConstructedShape(c,{},Guid("70000000-0000-4000-8000-00000000f046").Bytes()); UINK_CHECK(state,cube); if (!cube) continue;
-			cube->construction = c;
-			const auto decoded = DecodeInkeysShapeMetadata(EncodeInkeysShapeMetadata(*cube)); UINK_CHECK(state,decoded.shape == cube); if (!decoded.shape) continue;
-			const auto handles = BuildEditHandles(*decoded.shape);
-			const auto corner = std::find_if(handles.begin(),handles.end(),[](const EditHandle& h) { return h.id == 1001; });
-			UINK_CHECK(state,corner != handles.end()); if (corner == handles.end()) continue;
-			UINK_CHECK(state,corner->position == (Vec2{20 + x * 100,30 + y * 100}));
-			const auto unchanged = EditShape(*decoded.shape,1001,corner->position,corner->position,2);
-			UINK_CHECK(state,unchanged && unchanged->parts == decoded.shape->parts && unchanged->transform == decoded.shape->transform && unchanged->style == decoded.shape->style);
-			if (unchanged) UINK_CHECK(state,unchanged->construction->end == corner->position);
-		}
-		// v4辅助部件写入真实文件；根被旧读取器忽略后，标准点/虚线仍完整可见。
+		// 辅助部件写入真实文件；根被旧读取器忽略后，标准点/虚线仍完整可见。
 		auto auxiliarySnapshot = snapshot; auxiliarySnapshot.canvases[0].strokes.clear();
 		size_t auxiliaryWireCount = 0;
 		for (auto preset : {PresetKind::Circle,PresetKind::Ellipse,PresetKind::Rectangle,PresetKind::RoundedRectangle,
@@ -572,7 +449,7 @@
 				if (part.declaredShapeType == 0 && part.stroke && part.stroke->dashArray == std::vector<float>{12,18}) ++diagonals;
 				part.extra.reset(); // 不改undoId，模拟第三方只留下标准部件。
 				auto& metadata = std::get<UInkShape>(unknown.canvases[0].content[i]).extra->front().second;
-				UINK_CHECK(state,std::get<uint64_t>(field(metadata,"version")->value) == 4);
+				UINK_CHECK(state,std::get<uint64_t>(field(metadata,"version")->value) == 7);
 				*field(metadata,"version") = Value(uint64_t{99}); // 模拟v3读取器不认识v4。
 			}
 			UINK_CHECK(state,dots == 4 && diagonals == 10); // 纯Fill的椭圆不导出辅助点，但保留aux位。
@@ -611,78 +488,38 @@
 			auto missing = *auxiliaryExport.document; missing.canvases[0].content.pop_back();
 			UINK_CHECK(state,ImportDraw3UInkDocument(missing).status != Draw3UInkImportStatus::Success);
 		}
-		for (auto preset : {PresetKind::Circle,PresetKind::Ellipse})
+		// 开发期私有格式统一走标准降级，不再恢复其构造语义。
+		for (uint64_t version = 1; version <= 6; ++version)
 		{
-			const auto oldShape = MakePresetShape({preset,DefaultCreationMode(preset)},{20,30},{140,110},{},Guid("70000000-0000-4000-8000-00000000f045").Bytes());
-			UINK_CHECK(state,oldShape); if (!oldShape) continue;
-			auto v3 = EncodeInkeysShapeMetadata(*oldShape);
-			UINK_CHECK(state,std::get<uint64_t>(field(v3,"version")->value) == 3 && !field(v3,"aux"));
-			for (uint64_t version : {1u,2u,3u})
+			auto retired = EncodeInkeysShapeMetadata(*freeTriangle);
+			*field(retired,"version") = Value(version);
+			UINK_CHECK(state,DecodeInkeysShapeMetadata(retired).status == Draw3ShapeMetadataStatus::UnsupportedVersion);
+			if (advancedExport.document)
 			{
-				auto legacy = v3; *field(legacy,"version") = Value(version);
-				if (version == 1)
-				{
-					auto& map = std::get<UInkMessagePackValue::Map>(legacy.value);
-					map.erase(std::remove_if(map.begin(),map.end(),[](const auto& pair) { return std::get<std::string>(pair.first.value) == "construction"; }),map.end());
-				}
-				if (version == 2)
-				{
-					auto& map = std::get<UInkMessagePackValue::Map>(field(legacy,"construction")->value);
-					map.erase(std::remove_if(map.begin(),map.end(),[](const auto& pair) { const auto& key = std::get<std::string>(pair.first.value); return key == "parameters" || key == "legacyArrow"; }),map.end());
-				}
-				const auto decoded = DecodeInkeysShapeMetadata(legacy); GeometryResult aux;
-				UINK_CHECK(state,decoded.shape && decoded.shape->style.auxiliary == Auxiliary::None && BuildAuxiliaryGeometry(*decoded.shape,aux) && aux.parts.empty());
+				auto retiredDocument = *advancedExport.document;
+				for (auto& content : retiredDocument.canvases[0].content)
+					*field(std::get<UInkShape>(content).extra->front().second,"version") = Value(version);
+				const auto fallback = ImportDraw3UInkDocument(retiredDocument);
+				UINK_CHECK(state,fallback.snapshot && !fallback.diagnostics.empty() &&
+					fallback.snapshot->canvases[0].strokes.size() == retiredDocument.canvases[0].content.size());
 			}
-		}
-		// 人工重建v2 wire，保留旧箭头公式；重存v3仍不能改变外观或根/引用版本。
-		Construction oldArrow{ { PresetKind::Arrow,CreationMode::Drag },{ 0,0 },{ 100,0 } }; oldArrow.legacyArrow = true;
-		auto old = MakeConstructedShape(oldArrow, {}, Guid("70000000-0000-4000-8000-00000000f043").Bytes(), 9);
-		UINK_CHECK(state, old);
-		if (old)
-		{
-			auto legacyMetadata = EncodeInkeysShapeMetadata(*old); *field(legacyMetadata, "version") = Value(uint64_t{ 2 });
-			auto& constructionMap = std::get<UInkMessagePackValue::Map>(field(legacyMetadata, "construction")->value);
-			constructionMap.erase(std::remove_if(constructionMap.begin(), constructionMap.end(), [](const auto& pair)
-				{ const auto& key = std::get<std::string>(pair.first.value); return key == "parameters" || key == "legacyArrow"; }), constructionMap.end());
-			const auto restoredLegacy = DecodeInkeysShapeMetadata(legacyMetadata);
-			UINK_CHECK(state, restoredLegacy.status == Draw3ShapeMetadataStatus::Valid && restoredLegacy.shape == old);
-			const auto resaved = DecodeInkeysShapeMetadata(EncodeInkeysShapeMetadata(*old));
-			UINK_CHECK(state, resaved.status == Draw3ShapeMetadataStatus::Valid && resaved.shape == old);
-			auto oldSnapshot = advancedSnapshot; oldSnapshot.canvases[0].strokes.resize(1); oldSnapshot.canvases[0].strokes[0].shape = old;
-			auto oldExport = ExportDraw3SnapshotToUInk(oldSnapshot);
-			UINK_CHECK(state, oldExport.document);
-			if (oldExport.document)
-			{
-				for (size_t i = 0; i < oldExport.document->canvases[0].content.size(); ++i)
-				{
-					auto& wire = std::get<UInkShape>(oldExport.document->canvases[0].content[i]).extra->front().second;
-					*field(wire, "version") = Value(uint64_t{ 2 });
-					if (!i)
-					{
-						auto& fields = std::get<UInkMessagePackValue::Map>(field(wire, "construction")->value);
-						fields.erase(std::remove_if(fields.begin(), fields.end(), [](const auto& pair)
-							{ const auto& key = std::get<std::string>(pair.first.value); return key == "parameters" || key == "legacyArrow"; }), fields.end());
-					}
-				}
-				const auto oldImport = ImportDraw3UInkDocument(*oldExport.document);
-				UINK_CHECK(state, oldImport.snapshot && oldImport.snapshot->canvases[0].strokes[0].shape == old);
-			}
+
 		}
 
-		// v6 构造参数与等腰顶角必须完整往返，不借标准部件重猜编辑约束。
+		// v7 构造参数与等腰顶角必须完整往返，不借标准部件重猜编辑约束。
 		for (auto preset : {PresetKind::Cuboid,PresetKind::Cube,PresetKind::Cylinder,PresetKind::Cone,PresetKind::Prism,PresetKind::Pyramid})
 		{
 			ToolSpec tool{preset,CreationMode::MultiStage}; tool.sides=7;
 			auto construction=MakeSolidConstruction(tool,{80,80},{180,130},-150);
 			auto& solid=std::get<SolidConstruction>(construction.parameters);
-			solid.baseRotation=.3f;solid.projectionAngle=.9f;
+			solid.baseRotation=.3f;solid.mirrored=true;
 			if(preset==PresetKind::Prism || preset==PresetKind::Pyramid)solid.offset={20,15};
 			const auto object=MakeConstructedShape(construction,{},Guid("70000000-0000-4000-8000-00000000f044").Bytes(),3);
 			UINK_CHECK(state,object);
 			if(object)
 			{
 				auto wire=EncodeInkeysShapeMetadata(*object);
-				UINK_CHECK(state,std::get<uint64_t>(field(wire,"version")->value)==6);
+				UINK_CHECK(state,std::get<uint64_t>(field(wire,"version")->value)==7);
 				auto decoded=DecodeInkeysShapeMetadata(wire);
 				UINK_CHECK(state,decoded.shape==object);
 			}

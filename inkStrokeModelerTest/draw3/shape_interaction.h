@@ -44,7 +44,6 @@ namespace draw3::shapes
 		Vec2 down_;
 		BuildOptions options_;
 		Vec2 lastValid_, anglePoint_;
-		std::optional<Vec2> depthAnchor_;
 		float lastAngle_ = 0, angleDelta_ = 0, lastValidAngle_ = 0;
 		bool angleActive_ = false, canCommit_ = false;
 	};
@@ -64,6 +63,7 @@ namespace draw3::shapes
 		bool ConfirmDrag(Vec2 rawDown, Vec2 rawUp, std::string* error = nullptr);
 		// 已确认顶点优先命中；调整期间不追加新点。
 		bool BeginPointEdit(Vec2 down, float radius);
+		bool BeginPointEditAt(size_t index, Vec2 down);
 		bool CancelPointEdit();
 		const std::vector<Vec2>& Points() const noexcept { return points_; }
 		bool Back();

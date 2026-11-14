@@ -253,3 +253,32 @@ shape-core-only、生产shape core、renderer像素、UInk/冷历史/自动保�
 
 ### 7. Wrong vs Correct
 Wrong：以屏幕深度向量冒充立方体真实边长；每个圆底细分段重新起虚线。Correct：使用模型边长派生投影；连续可见性圆弧聚合后统一计算弧长。
+
+
+## 第三轮构造与私有协议合同（2026-11-14，替代冲突旧条款）
+
+### Scope / Trigger
+新建和编辑参数图形、构造中点编辑、UInk私有构造读取写入。用户明确开发期新图形未发布，删除v1–v6专门兼容；已发布直线矩形和通用标准几何路径保留。
+
+### Signatures
+`SolidConstruction { height, baseSize, baseRotation, mirrored, offset }`；`ConstructionSession::BeginPointEditAt(size_t, Vec2)`；`ShapeUiActionKind::ConstructionBeginPointEdit/ConstructionPreviewPointEdit/ConstructionCommitPointEdit/ConstructionCancelPointEdit`。
+
+### Contracts
+- v7为唯一支持的inkeysShape私有版本；solid参数数组依次height、baseSize、baseRotation、mirrored、offset。构造map四字段tool/start/end/parameters，不再写legacyArrow。未知/退役版本返回UnsupportedVersion，走标准几何，不恢复构造。
+- 投影先模型Z旋转，再应用x'=x±y/(2√2)、y'=-y/(2√2)+height，height负值向上。mirrored选择横向符号；不保留俯仰和屏幕二维旋转。
+- 方体首笔按外接矩形宽高分解对应短对角线：宽=|dx|+|dy|、深=2√2|dy|；镜像取dx*dy<0，四象限交换端点保持同一几何。Cube投影拟合模型正方形、高度绝对值=边长。
+- 底面柄在逆投影空间同时径向等比缩放与Z旋转，长方体保持比例；圆底仅改半径。模型offset随旋转一起投影，正形锁定offset=0。
+- 逐点工具的UI命中发送明确的顶点编辑动作，不依赖跨线程HTTRANSPARENT转发触控；Begin固定顶点索引和手势票据，Preview可合并，Commit/Cancel保序，调整后session仍活跃。
+- 棱柱/锥3–8，正多边形3–14；三个工具会话默认6，各自记忆，不持久化工具默认值。
+
+### Validation & Error Matrix
+非有限参数、零底面/高度、Cube非等边、正形非零offset、立体二维旋转、越界棱数均拒绝。v7字段缺失或派生几何不一致为Invalid；版本非7为UnsupportedVersion。过零拖动不终止手势，退化帧不提交非法对象。
+
+### Good / Base / Bad Cases
+正常：斜棱锥Z旋转后offset同步且重载不变。基线：新立体旋转0、offset0，正形开关默认关闭。错误：为了保持旧v3外观恢复旧投影，或把圆底强行改水平长轴。
+
+### Tests Required
+核心四象限/翻向/逐边遮挡、生产Bridge动作续画、v7保存重载与历史、退役版本标准降级、已发布线矩形回归。必须分别报告CPU helper、完整控制器隐藏窗口、UI离屏及未执行的实机验证。
+
+### Wrong vs Correct
+错误：仅测试BeginPointEdit即认定触控可拖点。正确：UI呈现命中→Bridge保序→同一构造会话→实际预览→继续加点逐层断言。

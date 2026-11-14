@@ -24,10 +24,13 @@
     "11-05-shape-ux-edit-visual",
     "11-05-shape-ux-edit-interaction",
     "11-05-shape-ux-construction-prompt",
-    "11-05-shape-ux-icons"
+    "11-05-shape-ux-icons",
+    "11-14-shape-round3-interaction",
+    "11-14-shape-round3-planar",
+    "11-14-shape-round3-solid-storage"
   ],
   "parent": "10-17-shape-selection-system",
   "relatedFiles": [],
-  "notes": "2026-11-14 第二轮已获用户明确实施批准，基于3731e3ab修正15项需求。实现及自动回归全部完成，待用户实机观感验收；不commit、不push、不归档，最终验证见research/round2-verification.md。",
+  "notes": "第三轮实现与自动验证完成，基线ec1d5138；完整ARM64构建、核心/生产/隐藏输入/UI/存储回归通过。待实机观感验收，保持in_progress，不commit/push/归档。见research/round3-verification.md。",
   "meta": {}
 }

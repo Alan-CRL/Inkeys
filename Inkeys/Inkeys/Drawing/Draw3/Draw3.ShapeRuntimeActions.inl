@@ -377,7 +377,7 @@ auto publishShapeUi = [&]()
 		snapshot.identity.session = shapeUi.construction->identity.session;
 		snapshot.identity.objectId = shapeUi.construction->identity.objectId;
 		snapshot.construction = shapeUi.construction->session.Status();
-		snapshot.constructionContactActive = shapeUi.construction->contactActive;
+		snapshot.constructionContactActive = shapeUi.construction->contactActive || shapeUi.construction->pointGesture.has_value();
 		if (draw3::shapes::GetToolCapabilities(shapeUi.construction->tool.preset).points)
 		{
 			snapshot.object = shapeUi.construction->preview;
@@ -386,7 +386,7 @@ auto publishShapeUi = [&]()
 			for (size_t i = 0; i < points.size(); ++i)
 				snapshot.handles.push_back({1000u + static_cast<uint32_t>(i),draw3::shapes::EditHandleKind::Vertex,points[i]});
 		}
-		if (shapeUi.construction->contactActive) { snapshot.construction.canBack = false; snapshot.construction.canForward = false; snapshot.construction.canComplete = false; }
+		if (snapshot.constructionContactActive) { snapshot.construction.canBack = false; snapshot.construction.canForward = false; snapshot.construction.canComplete = false; }
 	}
 	else
 	{
@@ -401,7 +401,7 @@ auto publishShapeUi = [&]()
 			snapshot.identity.session = shapeUi.editor.identity.session;
 			snapshot.identity.objectId = snapshot.object->id; snapshot.identity.objectRevision = snapshot.object->revision;
 			snapshot.editGestureActive = shapeUi.editor.gestureActive;
-			if (shapeUi.published && shapeUi.published->object == snapshot.object && shapeUi.published->displayScale == snapshot.displayScale)
+			if (shapeUi.published && !shapeUi.published->drawingPreview && shapeUi.published->object == snapshot.object && shapeUi.published->displayScale == snapshot.displayScale)
 			{ snapshot.bounds = shapeUi.published->bounds; snapshot.frameRect = shapeUi.published->frameRect; snapshot.handles = shapeUi.published->handles; }
 			else
 			{
@@ -411,6 +411,21 @@ auto publishShapeUi = [&]()
 			}
 		}
 	}
+	if (!snapshot.object) for (const auto* runtime : active)
+	{
+		if (!runtime || runtime->ended || !runtime->shape.object ||
+			runtime->shape.tool.preset != draw3::shapes::PresetKind::Triangle ||
+			runtime->shape.tool.constraint != draw3::shapes::PlanarConstraint::Isosceles) continue;
+		// 首拖只发布标记的几何真值；不能创建构造步骤、控制点输入或保存额外斜杠。
+		snapshot.drawingPreview = true; snapshot.object = runtime->shape.object;
+		snapshot.identity.objectId = snapshot.object->id; snapshot.identity.objectRevision = snapshot.object->revision;
+		snapshot.bounds = runtime->shape.renderData.bounds;
+		for (const auto& handle : draw3::shapes::BuildEditHandles(*snapshot.object,{snapshot.displayScale,.25f}))
+			if (handle.kind == draw3::shapes::EditHandleKind::Vertex) snapshot.handles.push_back(handle);
+		break;
+	}
+	// 构造加点/移点只改会话历史，不伪造文档revision；白板副本同步后才向UI发布当前帧。
+	if (publishHistoryAvailability()) publishWhiteboard();
 	PublishShapeRuntimeSnapshot(shapeUi,std::move(snapshot));
 };
 auto updateConstructionPreview = [&](ShapeConstructionRuntime& state)
@@ -502,7 +517,7 @@ beginShapeContact = [&](RuntimeStroke& runtime)
 		shapeUi.construction = std::move(state);
 	}
 	auto& state = *shapeUi.construction;
-	if (state.contactActive || state.cancelled) return false; // 一个构造会话只接受一根正在绘制的物理接触。
+	if (state.contactActive || state.pointGesture || state.cancelled) return false; // 一个构造会话只接受一根正在绘制的物理接触。
 	state.contactActive = true; runtime.shape.construction = shapeUi.construction;
 	PrepareRuntimeConstructionContact(runtime,scene.displayScale);
 	runtime.shape.id = state.identity.objectId; runtime.shape.tool = state.tool; runtime.shape.style = state.style;
@@ -522,6 +537,7 @@ finishShapeContact = [&](RuntimeStroke& runtime)
 auto backShapeConstruction = [&](RECT& dirty)
 {
 	if (!shapeUi.construction) return;
+	shapeUi.construction->pointGesture.reset();
 	UnionRectInPlace(dirty,shapeBoundsRect(shapeUi.construction->renderData.bounds));
 	if (shapeUi.construction->session.Back()) (void)updateConstructionPreview(*shapeUi.construction);
 	shapeUi.constructionVisualDirty = true; publishShapeUi();
@@ -529,6 +545,7 @@ auto backShapeConstruction = [&](RECT& dirty)
 auto forwardShapeConstruction = [&](RECT& dirty)
 {
 	if (!shapeUi.construction) return;
+	shapeUi.construction->pointGesture.reset();
 	UnionRectInPlace(dirty,shapeBoundsRect(shapeUi.construction->renderData.bounds));
 	if (shapeUi.construction->session.Forward()) (void)updateConstructionPreview(*shapeUi.construction);
 	shapeUi.constructionVisualDirty = true; publishShapeUi();
@@ -540,6 +557,18 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 	if (action.kind == ShapeUiActionKind::CloseEditor && shapeUi.construction &&
 		action.identity.session == shapeUi.construction->identity.session && action.identity.objectId == shapeUi.construction->identity.objectId)
 	{ endCanvasFocus(CanvasFocusEndReason::Escape,dirty); publishShapeUi(); return; }
+	if (IsConstructionPointAction(action.kind))
+	{
+		if (!shapeUi.construction) return;
+		UnionRectInPlace(dirty,shapeBoundsRect(shapeUi.construction->renderData.bounds));
+		if (ApplyConstructionPointAction(*shapeUi.construction,shapeUi.published.get(),action,scene.identity,nextShapeRevision))
+		{
+			shapeUi.constructionVisualDirty = true;
+			if (IsShapePreviewAction(action.kind)) ++shapePreviewSlot.executedThisFrame;
+			publishShapeUi();
+		}
+		return;
+	}
 	const bool constructionAction = action.kind == ShapeUiActionKind::ConstructionComplete ||
 		action.kind == ShapeUiActionKind::ConstructionBack || action.kind == ShapeUiActionKind::ConstructionForward ||
 		action.kind == ShapeUiActionKind::ConstructionCancel;

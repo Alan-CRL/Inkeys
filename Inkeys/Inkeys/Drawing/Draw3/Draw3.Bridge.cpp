@@ -170,7 +170,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		if (static_cast<std::uint8_t>(state_.workspace) != action.identity.workspace)
 			return CommandResult::Unsupported;
 		auto& metrics = ShapePreviewMetrics();
-		if (action.kind == ShapeUiActionKind::PreviewEdit)
+		if (IsShapePreviewAction(action.kind))
 		{
 			// 最新预览槽：同一手势未消费的预览直接被覆盖；遇到普通画布命令、同会话终结/其他意图则不得跨越合并。
 			std::size_t pendingPreviews = 0;
@@ -179,7 +179,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 				if (it->type != CommandType::ShapeInteraction) break;
 				if (!it->shapeAction) continue;
 				const auto& old = *it->shapeAction;
-				if (old.kind != ShapeUiActionKind::PreviewEdit)
+				if (!IsShapePreviewAction(old.kind))
 				{
 					if (old.identity.session == action.identity.session) break;
 					continue;
@@ -208,7 +208,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 			command.shapeAction = std::move(stamped);
 			if (state_.workspace == Workspace::Presentation) command.presentationTarget = state_.presentationTarget;
 			commands_.push_back(std::move(command)); ++nextSequence_;
-			if (action.kind == ShapeUiActionKind::PreviewEdit) metrics.published.fetch_add(1, std::memory_order_relaxed);
+			if (IsShapePreviewAction(action.kind)) metrics.published.fetch_add(1, std::memory_order_relaxed);
 			return CommandResult::Accepted;
 		}
 		catch (...) { return CommandResult::QueueFull; }

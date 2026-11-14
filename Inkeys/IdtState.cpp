@@ -2402,7 +2402,7 @@ draw3::shapes::ToolSpec GetShapeToolSpec(const StateModeClass& snapshot) noexcep
 	result.creationMode = result.preset == PresetKind::Circle ? snapshot.Shape.circleMode :
 		result.preset == PresetKind::Triangle && result.constraint == PlanarConstraint::Equilateral ? CreationMode::CenterRadius :
 		DefaultCreationMode(result.preset);
-	result.sides = snapshot.Shape.polygonSides;
+	result.sides = result.preset == draw3::shapes::PresetKind::Prism ? snapshot.Shape.prismSides : result.preset == draw3::shapes::PresetKind::Pyramid ? snapshot.Shape.pyramidSides : snapshot.Shape.polygonSides;
 	return result;
 }
 
@@ -2575,8 +2575,11 @@ bool SetShapePolygonSidesIfRevision(std::uint32_t sides, std::uint64_t expected)
 	if (sides < draw3::shapes::kMinRegularSides || sides > draw3::shapes::kMaxRegularSides) return false;
 	return ChangeShapeProperty(expected, [&] {
 		if (!draw3::shapes::GetToolCapabilities(GetShapeToolSpec(stateMode).preset).regularSides) return false;
-		const bool changed = stateMode.Shape.polygonSides != sides;
-		stateMode.Shape.polygonSides = sides; return changed;
+		const auto preset = GetShapeToolSpec(stateMode).preset;
+		if (preset != draw3::shapes::PresetKind::RegularPolygon && sides > 8) return false;
+		// 三种工具只在当前进程内分别记忆边数。
+		auto& value = preset == draw3::shapes::PresetKind::Prism ? stateMode.Shape.prismSides : preset == draw3::shapes::PresetKind::Pyramid ? stateMode.Shape.pyramidSides : stateMode.Shape.polygonSides;
+		const bool changed = value != sides; value = sides; return changed;
 	});
 }
 
@@ -2614,7 +2617,7 @@ int RunShapeToolStateProductionTest() noexcept
 	{
 		ChangeStateModeToShape();
 		const auto defaults = GetStateModeSnapshot();
-		check(defaults.Shape.circleMode == CreationMode::CenterRadius && defaults.Shape.polygonSides == 3 &&
+		check(defaults.Shape.circleMode == CreationMode::CenterRadius && defaults.Shape.polygonSides == 6 && defaults.Shape.prismSides == 6 && defaults.Shape.pyramidSides == 6 &&
 			defaults.Shape.triangleConstraint == PlanarConstraint::Free && defaults.Shape.trapezoidConstraint == PlanarConstraint::Free &&
 			defaults.Shape.fillMode == draw3::shapes::FillMode::Outline, "session defaults");
 		{
@@ -2691,12 +2694,14 @@ int RunShapeToolStateProductionTest() noexcept
 			(void)SetShapePolygonSidesIfRevision(n, StateModeTransitionRevision());
 			check(GetShapeToolSpec(GetStateModeSnapshot()).sides == n, "3 to14 sides");
 		}
-		// 空间正多边形复用同一份边数状态，描边限制不应覆盖平面图形记住的填充。
+		// 棱柱和棱锥独立记忆边数，描边限制不应覆盖平面图形记住的填充。
 		(void)SetShapeFillModeIfRevision(draw3::shapes::FillMode::OutlineAndFill, StateModeTransitionRevision());
 		for (const auto solid : { PresetKind::Prism, PresetKind::Pyramid })
 		{
 			(void)SetShapeToolPresetIfRevision(solid, StateModeTransitionRevision());
-			for (unsigned sides = 3; sides <= 14; ++sides)
+			check(GetShapeToolSpec(GetStateModeSnapshot()).sides == 6,"each solid starts with six independent sides");
+			check(!SetShapePolygonSidesIfRevision(9,StateModeTransitionRevision()),"solid side count stops at eight");
+			for (unsigned sides = 3; sides <= 8; ++sides)
 			{
 				(void)SetShapePolygonSidesIfRevision(sides, StateModeTransitionRevision());
 				check(GetShapeToolSpec(GetStateModeSnapshot()).sides == sides, "solid base sides projected");
@@ -2706,6 +2711,7 @@ int RunShapeToolStateProductionTest() noexcept
 				"solid rejects fill mutation");
 		}
 		(void)SetShapeToolPresetIfRevision(PresetKind::RegularPolygon, StateModeTransitionRevision());
+		check(GetShapeToolSpec(GetStateModeSnapshot()).sides == 14,"polygon remembers fourteen across both solid tools");
 		check(GetShapeFillMode(GetStateModeSnapshot()) == draw3::shapes::FillMode::OutlineAndFill,
 			"solid outline restriction retains closed fill memory");
 		const auto before = GetStateModeVersionedSnapshot();

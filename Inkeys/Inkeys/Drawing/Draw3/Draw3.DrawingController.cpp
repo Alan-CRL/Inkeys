@@ -2995,6 +2995,24 @@ namespace Inkeys::Drawing::Draw3
 			}
 			state.preview = std::move(object); state.renderData = std::move(data); return true;
 		}
+		bool ApplyConstructionPointAction(ShapeConstructionRuntime& state, const ShapeUiSnapshot* published,
+			const ShapeUiAction& action, const ShapeUiIdentity& scene,
+			const std::function<uint64_t(const draw3::shapes::ObjectId&,uint64_t)>& allocate)
+		{
+			if (!IsConstructionPointAction(action.kind) || !ShapeConstructionActionIdentityMatches(state,published,action,scene)) return false;
+			if (action.kind == ShapeUiActionKind::ConstructionBeginPointEdit)
+			{
+				if (action.handleId < 1000 || !state.session.BeginPointEditAt(action.handleId - 1000,action.down)) return false;
+				state.pointGesture = action; return true;
+			}
+			if (!state.pointGesture) return false;
+			// 预览更新会推进快照generation；后续终结仍使用Down的票据，不能因此丢失Up。
+			if (action.kind == ShapeUiActionKind::ConstructionCancelPointEdit) state.session.CancelPointEdit();
+			else if (action.kind == ShapeUiActionKind::ConstructionCommitPointEdit) state.session.ConfirmDrag(action.down,action.point);
+			else state.session.PreviewDrag(action.down,action.point);
+			if (action.kind != ShapeUiActionKind::ConstructionPreviewPointEdit) state.pointGesture.reset();
+			return RefreshConstructionRuntimePreview(state,allocate);
+		}
 		// Run和无窗口生产测试共用：真实Up只确认当前阶段，最后一步才允许普通创建提交。
 		bool ConfirmRuntimeConstructionContact(RuntimeStroke& runtime)
 		{
@@ -11762,11 +11780,18 @@ namespace Inkeys::Drawing::Draw3
 						canUndo = true;
 				}
 			}
-			if (canUndo == publishedCanUndo && canRedo == publishedCanRedo) return;
+			// 命令分派优先操作当前构造，主栏可用性也必须读取同一会话，而不是后面的文档历史。
+			if (shapeUi.construction && shapeUi.construction->session.Status().active)
+			{
+				const auto status = shapeUi.construction->session.Status();
+				canUndo = status.canBack; canRedo = status.canForward;
+			}
+			if (canUndo == publishedCanUndo && canRedo == publishedCanRedo) return false;
 			publishedCanUndo = canUndo;
 			publishedCanRedo = canRedo;
 			if (observer_.historyAvailabilityChanged)
 				observer_.historyAvailabilityChanged(observer_.context, canUndo, canRedo);
+			return true;
 		};
 		auto publishContentState = [&]()
 		{
@@ -16259,7 +16284,7 @@ namespace Inkeys::Drawing::Draw3
 				if (command.type == CanvasCommandType::ShapeInteraction)
 				{
 					// 预览进最新槽，批次末每帧最多执行一次；其他意图保持原 FIFO。
-					if (command.shapeAction && command.shapeAction->kind == ShapeUiActionKind::PreviewEdit)
+					if (command.shapeAction && IsShapePreviewAction(command.shapeAction->kind))
 					{
 						if (auto flush = shapePreviewSlot.AcceptPreview(command.shapeAction)) processShapeUiAction(*flush,frameDirty);
 						continue;

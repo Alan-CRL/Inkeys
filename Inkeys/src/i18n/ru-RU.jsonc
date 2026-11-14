@@ -160,6 +160,7 @@
         "CategoryRegularLabel": "Основные",
         "CategorySolidLabel": "3D",
         "CategoryCoordinateFunctionLabel": "Координаты и функции",
+        "AuxCircleCenterLabel": "Центр окружности",
         "AuxCenterLabel": "Центр",
         "AuxFociLabel": "Фокусы",
         "AuxDiagonalsLabel": "Диагонали",

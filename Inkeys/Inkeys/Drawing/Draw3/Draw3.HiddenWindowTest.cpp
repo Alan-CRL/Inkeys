@@ -4243,6 +4243,11 @@ namespace Inkeys::Drawing::Draw3
 			HostStartOptions options{ HostPresentationMode::UlwDirtyRect };
 			options.allowDirectComposition = false;
 			options.enableHiddenTestContactInjection = true;
+			// 白板退出需有真实持久化worker；仅写本次构建产物旁的独立测试目录。
+			wchar_t imagePath[MAX_PATH]{};
+			if (!GetModuleFileNameW(nullptr,imagePath,MAX_PATH)) return 1;
+			const auto storageRoot=std::filesystem::path(imagePath).parent_path()/(L"ShapeFocus-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64()));
+			std::filesystem::create_directories(storageRoot);options.autoSaveRoot=storageRoot.wstring();
 			if (!Check(StartProduct(drawpad, presentation, callbacks, options), "SF01 real Host starts", failures)) return 1;
 			Bridge::ProductState state;
 			state.tool = Bridge::Tool::Shape;
@@ -4302,6 +4307,22 @@ namespace Inkeys::Drawing::Draw3
 				}
 				return false;
 			};
+			// 在编辑器首次发布的同一个绘制线程回调读取Host真值，不用轮询等可用性最终变为true。
+			struct AvailabilityProbe
+			{
+				std::atomic_uint missingUndo{0}, observedEditors{0};
+				~AvailabilityProbe() { SetShapeUiRefreshCallback(nullptr,nullptr); }
+			} availabilityProbe;
+			SetShapeUiRefreshCallback([](void* context) noexcept
+			{
+				auto& probe = *static_cast<AvailabilityProbe*>(context);
+				const auto snapshot = ProductShapeUiSnapshot();
+				if (snapshot && snapshot->object && !snapshot->construction.active && !snapshot->drawingPreview)
+				{
+					++probe.observedEditors;
+					if (!ProductHost().RuntimeSnapshot().canUndo) ++probe.missingUndo;
+				}
+			},&availabilityProbe);
 			ResetShapePreviewMetrics();
 			if (!drawShape(40, 40, "SF03 completed rectangle opens editor with the object only in the focus layer")) return 1;
 			// 手势：Begin + 40 次 Preview + Commit；全程无页面复制、无清缓存、无 tile 重放。
@@ -4310,7 +4331,7 @@ namespace Inkeys::Drawing::Draw3
 				const draw3::shapes::EditHandle* handle = nullptr;
 				// 取右下角缩放点向外拖，保证候选始终是有效矩形。
 				if (snapshot) for (const auto& h : snapshot->handles)
-					if (h.kind == draw3::shapes::EditHandleKind::Scale && (!handle || h.position.x + h.position.y > handle->position.x + handle->position.y)) handle = &h;
+					if ((h.kind == draw3::shapes::EditHandleKind::Scale || h.kind == draw3::shapes::EditHandleKind::Vertex) && (!handle || h.position.x + h.position.y > handle->position.x + handle->position.y)) handle = &h;
 				if (!Check(snapshot && handle, "SF04 editor exposes a scale handle", failures)) return 1;
 				const auto before = SnapshotShapePreviewMetrics();
 				const auto restores = CompositionRestoreCallsTotal();
@@ -4432,6 +4453,72 @@ namespace Inkeys::Drawing::Draw3
 				verify();
 				Check(ProductHost().RuntimeSnapshot().currentPageHasContent, "SF26 resized page still contains the shape", failures);
 			}
+			// 同一真实Host路径覆盖立即Undo与CloseEditor+Undo FIFO；均不等待编辑器动画或定时器。
+			for (auto workspace : {Bridge::Workspace::Desktop,Bridge::Workspace::Whiteboard})
+			{
+				if (workspace != state.workspace)
+				{
+					state.workspace = workspace; PublishProductState(state); PublishProductWorkspace(workspace);
+					Check(WaitUntil([&]{ const auto s=ProductHost().RuntimeSnapshot();return s.workspace==workspace&&!s.whiteboardLoadPending&&!s.commandScenePending; },3s),"SF27 hidden workspace ready",failures);
+					// 真实产品由IdtState确认主题token；独立fixture也必须完成同一门禁，不能绕过准入。
+					state.whiteboardStyle=ProductHost().RuntimeSnapshot().whiteboardStyle;PublishProductState(state);
+					Check(WaitUntil([]{return ProductHost().RuntimeSnapshot().presentationInputReady;},3s),"SF27 matching whiteboard theme acknowledged",failures);
+				}
+				for (bool closeFirst : {false,true})
+				{
+					if (!drawShape(60,60,"SF28 immediate Undo fixture opens editor")) continue;
+					const auto before = ProductHost().RuntimeSnapshot();
+					Check(before.canUndo,"SF29 Undo already available before CloseEditor or any wait",failures);
+					const auto begin = std::chrono::steady_clock::now();
+					if(closeFirst){ShapeUiAction close;close.kind=ShapeUiActionKind::CloseEditor;close.identity=ProductShapeUiSnapshot()->identity;Check(publish(close),"SF30 immediate checkmark accepted",failures);}
+					Check(PublishProductCommand(Bridge::CommandType::Undo)==Bridge::CommandResult::Accepted,"SF31 immediate Undo accepted",failures);
+					Check(WaitUntil([&]{const auto s=ProductHost().RuntimeSnapshot();return s.undoCommandCount>before.undoCommandCount&&s.canRedo&&editorClosed();},3s),"SF32 immediate Undo executes and exposes Redo",failures);
+					std::fprintf(stderr,"[Draw3Hidden] shape-undo workspace=%u close=%u elapsed_us=%lld\n",unsigned(workspace),unsigned(closeFirst),static_cast<long long>(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-begin).count()));
+				}
+			}
+			// 控件动作与下一条物理接触在真实Run中交替，覆盖上一轮helper测试未经过的生产分派。
+			state.shapeTool.preset=draw3::shapes::PresetKind::Polygon;state.shapeTool.creationMode=draw3::shapes::CreationMode::Points;
+			PublishProductState(state);const auto desired=ProductHost().ProductBridge().Snapshot().revision;
+			Check(WaitUntil([&]{return ProductHost().RuntimeSnapshot().appliedProductRevision>=desired;},3s),"SF35 point tool applied",failures);
+			unsigned expectedPoints=0;
+			for(auto point : {POINT{50,50},POINT{160,50},POINT{160,160}})
+			{
+				++expectedPoints;send(HiddenTestContactPhase::Down,point.x,point.y);send(HiddenTestContactPhase::Up,point.x,point.y);
+				Check(WaitUntil([&]{const auto s=ProductShapeUiSnapshot();return s&&s->construction.active&&!s->constructionContactActive&&s->handles.size()==expectedPoints;},3s),"SF36 physical point confirmed",failures);
+			}
+			const auto construction=ProductShapeUiSnapshot();
+			if(construction&&construction->construction.active&&construction->handles.size()==3)
+			{
+				ShapeUiAction drag;drag.identity=construction->identity;drag.handleId=1000;drag.down={50,50};drag.point={65,70};
+				drag.kind=ShapeUiActionKind::ConstructionBeginPointEdit;Check(publish(drag),"SF37 point handle Down accepted",failures);
+				drag.kind=ShapeUiActionKind::ConstructionPreviewPointEdit;Check(publish(drag),"SF38 point handle Move accepted",failures);
+				drag.kind=ShapeUiActionKind::ConstructionCommitPointEdit;Check(publish(drag),"SF39 point handle Up accepted",failures);
+				const auto pointIs=[&](float x,float y){const auto s=ProductShapeUiSnapshot();return s&&s->construction.active&&!s->constructionContactActive&&s->handles.size()==3&&s->handles[0].position==draw3::shapes::Vec2{x,y};};
+				Check(WaitUntil([&]{return pointIs(65,70);},3s),"SF40 point edit preserves construction and vertex count",failures);
+				Check(ProductHost().RuntimeSnapshot().canUndo,"SF41 main-bar equivalent Undo gate is enabled for construction edit",failures);
+				PublishProductCommand(Bridge::CommandType::Undo);Check(WaitUntil([&]{return pointIs(50,50);},3s),"SF41 construction edit Undo through real command dispatcher",failures);
+				Check(ProductHost().RuntimeSnapshot().canRedo,"SF42 main-bar equivalent Redo gate follows construction session",failures);
+				PublishProductCommand(Bridge::CommandType::Redo);Check(WaitUntil([&]{return pointIs(65,70);},3s),"SF42 construction edit Redo through real command dispatcher",failures);
+				send(HiddenTestContactPhase::Down,50,160);send(HiddenTestContactPhase::Up,50,160);
+				Check(WaitUntil([]{const auto s=ProductShapeUiSnapshot();return s&&s->construction.active&&!s->constructionContactActive&&s->handles.size()==4;},3s),"SF43 drawing continues after control-point edit",failures);
+				const auto ready=ProductShapeUiSnapshot();ShapeUiAction finish;finish.identity=ready->identity;finish.kind=ShapeUiActionKind::ConstructionComplete;publish(finish);
+				Check(WaitUntil(editorOpen,3s),"SF44 completed adjusted polygon enters ordinary editor",failures);
+			}
+			send(HiddenTestContactPhase::Down,80,80);
+			Check(WaitUntil([]{const auto s=ProductShapeUiSnapshot();return s&&s->construction.active&&s->constructionContactActive;},3s),"SF44b new construction becomes current command target",failures);
+			Check(!ProductHost().RuntimeSnapshot().canUndo,"SF44c zero-step construction cannot accidentally Undo earlier document object",failures);
+			send(HiddenTestContactPhase::Cancelled,80,80);
+			Check(WaitUntil([]{const auto s=ProductShapeUiSnapshot();return s&&!s->construction.active&&ProductHost().RuntimeSnapshot().canUndo;},3s),"SF44d construction cancel immediately restores document Undo availability",failures);
+			state.shapeTool.preset=draw3::shapes::PresetKind::Triangle;state.shapeTool.creationMode=draw3::shapes::CreationMode::Drag;
+			state.shapeTool.constraint=draw3::shapes::PlanarConstraint::Isosceles;PublishProductState(state);
+			const auto triangleRevision=ProductHost().ProductBridge().Snapshot().revision;
+			Check(WaitUntil([&]{return ProductHost().RuntimeSnapshot().appliedProductRevision>=triangleRevision;},3s),"SF45 triangle tool applied",failures);
+			send(HiddenTestContactPhase::Down,50,50);send(HiddenTestContactPhase::Move,180,160);
+			Check(WaitUntil([]{const auto s=ProductShapeUiSnapshot();return s&&s->drawingPreview&&s->object&&s->handles.size()==3&&!s->construction.active;},3s),"SF46 first triangle drag publishes read-only equal-side marker geometry",failures);
+			send(HiddenTestContactPhase::Up,180,160);
+			Check(WaitUntil([]{const auto s=ProductShapeUiSnapshot();return s&&s->object&&!s->drawingPreview&&!s->construction.active&&s->frameRect.valid&&std::any_of(s->handles.begin(),s->handles.end(),[](const auto& h){return h.kind==draw3::shapes::EditHandleKind::Rotate;});},3s),"SF47 same-position triangle Up restores completed editor frame and rotation handle",failures);
+			Check(availabilityProbe.observedEditors>0 && availabilityProbe.missingUndo==0,"SF33 every initial editor publication already has Undo in Host snapshot",failures);
+			Check(!IsWindowVisible(drawpad)&&!IsWindowVisible(presentation),"SF34 fixture windows remain invisible",failures);
 			StopProduct();
 		}
 		catch (...)

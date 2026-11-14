@@ -457,6 +457,7 @@ void BarButtonSetClass::PresetInitialization()
 							barUISet.barState.moreExpanded = false;
 							barUISet.barState.drawAttribute = false;
 						}
+						if (open) barUISet.recallAttribute.Close(barUISet);
 						barUISet.barState.geometryAttribute = open;
 					}
 				};

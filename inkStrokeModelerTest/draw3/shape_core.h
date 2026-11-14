@@ -33,7 +33,7 @@ namespace draw3::shapes
 	enum class CreationMode : uint32_t { Drag, CenterRadius, Points, MultiStage, Parameters };
 	enum class PresetKind : uint32_t { Line, Arrow, Rectangle, RoundedRectangle, Circle, Ellipse, Triangle, Parallelogram, Rhombus, Trapezoid, RegularPolygon,
 		Polyline, Polygon, Arc, Sector, Cuboid, Cube, Cylinder, Cone, Prism, Pyramid };
-	inline constexpr uint32_t kMinRegularSides = 3, kMaxRegularSides = 14;
+	inline constexpr uint32_t kMinRegularSides = 3, kMaxRegularSides = 14, kMaxSolidSides = 8;
 	enum class FillMode : uint32_t { Outline, Fill, OutlineAndFill };
 	enum class PlanarConstraint : uint32_t { Free, Isosceles, Equilateral };
 	enum class Auxiliary : uint8_t { None = 0, Center = 1, Foci = 2, Diagonals = 4 };
@@ -56,17 +56,13 @@ namespace draw3::shapes
 	};
 	struct VertexConstruction { std::vector<Vec2> vertices; bool operator==(const VertexConstruction&) const = default; };
 	struct ArcConstruction { float sweepRadians = 0; bool operator==(const ArcConstruction&) const = default; };
-	inline constexpr float kDefaultSolidBaseProjection = .5f;
-	inline constexpr float kMinSolidBaseProjection = .05f, kMaxSolidBaseProjection = 1.0f;
 	struct SolidConstruction
 	{
-		Vec2 depth; // 长方体/正方体的投影向量，不冒充真实边长。
-		float height = 0; // 圆柱/圆锥/棱柱/棱锥的局部竖直高度。
-		float baseProjection = kDefaultSolidBaseProjection; // 棱柱/棱锥未旋转底面的局部 y 投影比。
-		bool oblique = false; // 旧对象保留原投影；新对象显式使用斜二测。
+		float height = 0; // 屏幕竖直高度，负值向上。
 		Vec2 baseSize;
-		float baseRotation = 0, projectionAngle = .7853981634f, projectionScale = .5f;
-		Vec2 offset; // 顶面相对底面的模型空间偏移。
+		float baseRotation = 0; // 模型空间绕Z轴旋转，投影视角固定。
+		bool mirrored = false; // false为右上45度，true为左上135度，斜轴长度恒为一半。
+		Vec2 offset; // 顶面/锥顶的模型空间偏移，随底面一起绕Z旋转。
 		bool operator==(const SolidConstruction&) const = default;
 	};
 	using ConstructionParameters = std::variant<std::monostate, VertexConstruction, ArcConstruction, SolidConstruction>;
@@ -76,7 +72,6 @@ namespace draw3::shapes
 		ToolSpec tool;
 		Vec2 start, end;
 		ConstructionParameters parameters;
-		bool legacyArrow = false; // v2旧箭头保留按线长决定头部的公式。
 		bool operator==(const Construction&) const = default;
 	};
 	enum class LinePattern : uint32_t { Solid, Dashed, Dotted, DashDot };
@@ -112,8 +107,6 @@ namespace draw3::shapes
 		std::vector<ShapePart> parts;
 		LegacyKind legacyKind = LegacyKind::None;
 		std::optional<Construction> construction;
-		// 仅供活动EditSession的句柄视图使用；提交时清除，不参与几何或持久化。
-		std::optional<Vec2> editDepthAnchor;
 		bool operator==(const ShapeObject&) const = default;
 	};
 	struct Bounds
@@ -215,7 +208,6 @@ namespace draw3::shapes
 	std::optional<ShapeObject> MakeConstructedShape(const Construction&, const ShapeStyle&,
 		const ObjectId&, uint64_t revision = 1, std::string* error = nullptr);
 	// v3/v4棱柱/棱锥先严格匹配旧parts，再恢复为当前面朝向派生。
-	std::optional<ShapeObject> NormalizeLegacyPolygonSolid(const ShapeObject&, std::string* error = nullptr);
 	struct ToolCapabilities
 	{
 		bool enabled = false, multiStage = false, points = false, fill = false, regularSides = false;

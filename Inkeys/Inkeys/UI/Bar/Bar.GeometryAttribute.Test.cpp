@@ -94,7 +94,7 @@ namespace
 			a.Pen.ModeSelect == b.Pen.ModeSelect && stroke(a.Pen.Brush1, b.Pen.Brush1) && a.Pen.Brush1.widthPreset == b.Pen.Brush1.widthPreset &&
 			stroke(a.Pen.Highlighter1, b.Pen.Highlighter1) && a.Pen.Highlighter1.widthPreset == b.Pen.Highlighter1.widthPreset &&
 			stroke(a.Pen.Laser, b.Pen.Laser) && std::equal(std::begin(a.Pen.Laser.widthPreset), std::end(a.Pen.Laser.widthPreset), std::begin(b.Pen.Laser.widthPreset)) &&
-			a.Shape.ModeSelect == b.Shape.ModeSelect && a.Shape.circleMode == b.Shape.circleMode && a.Shape.polygonSides == b.Shape.polygonSides &&
+			a.Shape.ModeSelect == b.Shape.ModeSelect && a.Shape.circleMode == b.Shape.circleMode && a.Shape.polygonSides == b.Shape.polygonSides && a.Shape.prismSides == b.Shape.prismSides && a.Shape.pyramidSides == b.Shape.pyramidSides &&
 			a.Shape.fillMode == b.Shape.fillMode && a.Shape.openPattern == b.Shape.openPattern && a.Shape.closedPattern == b.Shape.closedPattern &&
 			a.Shape.auxiliary == b.Shape.auxiliary && a.Shape.auxiliaryChoices == b.Shape.auxiliaryChoices &&
 			stroke(a.Shape.StraightLine1, b.Shape.StraightLine1) && stroke(a.Shape.Rectangle1, b.Shape.Rectangle1);
@@ -341,7 +341,7 @@ namespace Inkeys::UI::Bar
 				const bool supported = (SupportedAuxiliary(*entry.preset) & auxiliaryBits[bit]) != Auxiliary::None;
 				expect((f.items[item].Width() > 0) == supported,"auxiliary toggle presence follows preset capability");
 				if (supported) expect(button.name.enable.val && button.icon.enable.val && !f.accessibleNames[item].empty()
-					&& button.name.content.GetVal() == ShapeAuxiliaryLabel(auxiliaryBits[bit])
+					&& button.name.content.GetVal() == ShapeAuxiliaryLabel(auxiliaryBits[bit],*entry.preset)
 					&& owner.spec.MeasureText(button.name.content.GetVal(),button.name.size.val).width <= button.name.w.val+0.5
 					&& (button.state->state == BarWidgetState::Selected) == ((GetShapeAuxiliary(GetStateModeSnapshot()) & auxiliaryBits[bit]) != Auxiliary::None),"auxiliary toggles keep measured localized labels beside icons and correct defaults");
 			}
@@ -804,7 +804,7 @@ namespace Inkeys::UI::Bar
 				const std::array<Auxiliary,3> bits{Auxiliary::Center,Auxiliary::Foci,Auxiliary::Diagonals};
 				const bool shown = (i < GeometryCategoryCount && catalog[i].category == presented.category) || i == GeometryCloseButton || i >= GeometrySegmentBegin
 					|| ((i == GeometryCircleCenter || i == GeometryCircleBox) && wanted == PresetKind::Circle)
-					|| (i >= GeometrySidesBegin && i < GeometryAuxBegin && GetToolCapabilities(wanted).regularSides)
+					|| (i >= GeometrySidesBegin && i < GeometrySidesBegin+(wanted == PresetKind::RegularPolygon ? GeometrySidesCount : 6) && GetToolCapabilities(wanted).regularSides)
 					|| (auxiliaryOption && stroke && (SupportedAuxiliary(wanted) & bits[i-GeometryAuxBegin]) != Auxiliary::None)
 					|| (constraintOption && ((wanted == PresetKind::Triangle && i < GeometryTrapezoidMode) || ((wanted == PresetKind::Trapezoid || wanted == PresetKind::Prism || wanted == PresetKind::Pyramid) && i == GeometryTrapezoidMode)))
 					|| (i >= GeometryStyleBegin && i < GeometryStyleBegin+2 && closed) || (i >= GeometryPatternBegin && i < GeometryCloseButton && stroke);

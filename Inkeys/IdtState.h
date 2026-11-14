@@ -141,7 +141,9 @@ public:
 		bool prismRight = false, pyramidRight = false;
 		draw3::shapes::PlanarConstraint triangleConstraint = draw3::shapes::PlanarConstraint::Free;
 		draw3::shapes::PlanarConstraint trapezoidConstraint = draw3::shapes::PlanarConstraint::Free;
-		std::uint32_t polygonSides = 3;
+		std::uint32_t polygonSides = 6;
+		std::uint32_t prismSides = 6;
+		std::uint32_t pyramidSides = 6;
 		draw3::shapes::FillMode fillMode = draw3::shapes::FillMode::Outline;
 		draw3::shapes::LinePattern openPattern = draw3::shapes::LinePattern::Solid;
 		draw3::shapes::LinePattern closedPattern = draw3::shapes::LinePattern::Solid;

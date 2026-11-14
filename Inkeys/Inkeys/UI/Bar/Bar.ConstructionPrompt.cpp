@@ -31,8 +31,6 @@ namespace
 		const bool first=status.confirmedSteps==0;
 		if(status.preset==PresetKind::Arc||status.preset==PresetKind::Sector)
 			return first?I18n::getWOr(keys.RadiusStep,L"确定圆心与半径"):I18n::getWOr(keys.SweepStep,L"确定圆弧范围");
-		if(status.preset==PresetKind::Cuboid||status.preset==PresetKind::Cube)
-			return first?I18n::getWOr(keys.FrontStep,L"确定正面"):I18n::getWOr(keys.DepthStep,L"确定深度");
 		return first?I18n::getWOr(keys.BaseStep,L"确定底面"):I18n::getWOr(keys.HeightStep,L"确定高度");
 	}
 	std::wstring PromptFormat(std::wstring format,uint32_t count,const std::wstring& description)

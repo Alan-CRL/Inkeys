@@ -138,7 +138,7 @@
 			for (auto& output : StandardShapeParts(part)) standard.push_back(std::move(output));
 		}
 		const auto count = standard.size();
-		const auto metadataVersion = InkeysShapeVersion(normalized);
+		const auto metadataVersion = kInkeysShapeVersion;
 		if (!count || count > UINT32_MAX || canvas.content.size() > UINT32_MAX - count) return false;
 		for (size_t index = 0; index < count; ++index)
 		{

@@ -27,13 +27,15 @@ namespace Inkeys::Drawing::Draw3
 		draw3::shapes::ConstructionStatus construction;
 		std::uint64_t completedConstructionSession = 0; // 完成沿保留原构造身份，不能借用随后打开的编辑会话。
 		bool editGestureActive = false, constructionContactActive = false;
+		bool drawingPreview = false; // 首笔约束提示的只读快照，不是构造会话或可编辑对象。
 		float displayScale = 1;
 		int canvasOriginX = 0, canvasOriginY = 0;
 	};
 	enum class ShapeUiActionKind : std::uint8_t
 	{
 		BeginEdit, PreviewEdit, CommitEdit, CancelEdit, CloseEditor,
-		SetStyle, SetSides, SetConstraint, ConstructionComplete, ConstructionBack, ConstructionCancel, ConstructionForward, SetRightSolid
+		SetStyle, SetSides, SetConstraint, ConstructionComplete, ConstructionBack, ConstructionCancel, ConstructionForward, SetRightSolid,
+		ConstructionBeginPointEdit, ConstructionPreviewPointEdit, ConstructionCommitPointEdit, ConstructionCancelPointEdit
 	};
 	struct ShapeUiAction
 	{
@@ -62,6 +64,15 @@ namespace Inkeys::Drawing::Draw3
 		if (action.kind == ShapeUiActionKind::SetRightSolid)
 			return draw3::shapes::SetRightSolid(before,action.rightSolid,revision);
 		return std::nullopt;
+	}
+
+	inline bool IsShapePreviewAction(ShapeUiActionKind kind) noexcept
+	{
+		return kind == ShapeUiActionKind::PreviewEdit || kind == ShapeUiActionKind::ConstructionPreviewPointEdit;
+	}
+	inline bool IsConstructionPointAction(ShapeUiActionKind kind) noexcept
+	{
+		return kind >= ShapeUiActionKind::ConstructionBeginPointEdit && kind <= ShapeUiActionKind::ConstructionCancelPointEdit;
 	}
 
 	// 同一编辑手势的预览只需最新一条；Commit携带最终点，可取代尚未执行的预览。

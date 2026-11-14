@@ -160,6 +160,7 @@
         "CategoryRegularLabel": "Allgemein",
         "CategorySolidLabel": "3D",
         "CategoryCoordinateFunctionLabel": "Koordinaten & Funktionen",
+        "AuxCircleCenterLabel": "Kreismittelpunkt",
         "AuxCenterLabel": "Mittelpunkt",
         "AuxFociLabel": "Brennpunkte",
         "AuxDiagonalsLabel": "Diagonalen",

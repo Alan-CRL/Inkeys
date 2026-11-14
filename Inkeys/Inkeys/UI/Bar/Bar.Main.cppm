@@ -357,7 +357,7 @@ namespace Inkeys::UI::Bar
 	wstring ShapeToolIconResource(const draw3::shapes::ToolSpec& tool,
 		std::optional<unsigned> carouselSides = std::nullopt);
 	wstring ShapeToolLabel(draw3::shapes::PresetKind preset);
-	wstring ShapeAuxiliaryLabel(draw3::shapes::Auxiliary auxiliary);
+	wstring ShapeAuxiliaryLabel(draw3::shapes::Auxiliary auxiliary, draw3::shapes::PresetKind preset = draw3::shapes::PresetKind::Rectangle);
 	wstring ShapePlanarConstraintLabel(draw3::shapes::PlanarConstraint constraint);
 	bool ApplyBarThicknessPresetIfRevision(int preset, std::uint64_t revision, bool save = true);
 	// 目录属于UI层；没有真实preset的未来工具只占位，不能进入业务状态或文档。

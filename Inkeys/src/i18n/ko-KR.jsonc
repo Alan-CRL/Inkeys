@@ -160,6 +160,7 @@
         "CategoryRegularLabel": "일반",
         "CategorySolidLabel": "입체",
         "CategoryCoordinateFunctionLabel": "좌표와 함수",
+        "AuxCircleCenterLabel": "원의 중심",
         "AuxCenterLabel": "중심",
         "AuxFociLabel": "초점",
         "AuxDiagonalsLabel": "대각선",

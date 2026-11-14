@@ -276,7 +276,7 @@ namespace Inkeys::Drawing::Draw3
 							construction.parameters = ArcConstruction{direction ? -4.4f : 4.4f};
 						}
 						else if (preset == PresetKind::Cuboid || preset == PresetKind::Cube)
-							construction.parameters = SolidConstruction{{23,-32},0};
+							construction = MakeSolidConstruction(construction.tool,{34,88},{66,100},-50);
 						else
 						{
 							construction.start = {25,84}; construction.end = {102,108};
@@ -284,7 +284,7 @@ namespace Inkeys::Drawing::Draw3
 							{
 								construction.start = {64,96}; construction.end = {95,96};
 							}
-							construction.parameters = SolidConstruction{{},-50};
+							construction = MakeSolidConstruction(construction.tool,construction.start,construction.end,-50);
 						}
 						auto base = object(); base.style.width = 4; base.style.strokeOpacity = 0.5f;
 						base.style.linePattern = static_cast<LinePattern>(pattern);

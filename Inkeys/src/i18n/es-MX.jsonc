@@ -160,6 +160,7 @@
         "CategoryRegularLabel": "General",
         "CategorySolidLabel": "3D",
         "CategoryCoordinateFunctionLabel": "Coordenadas y funciones",
+        "AuxCircleCenterLabel": "Centro",
         "AuxCenterLabel": "Centro",
         "AuxFociLabel": "Focos",
         "AuxDiagonalsLabel": "Diagonales",

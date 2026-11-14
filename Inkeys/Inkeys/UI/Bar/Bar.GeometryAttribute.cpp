@@ -99,9 +99,10 @@ namespace
 
 namespace Inkeys::UI::Bar
 {
-	wstring ShapeAuxiliaryLabel(Auxiliary auxiliary)
+	wstring ShapeAuxiliaryLabel(Auxiliary auxiliary, PresetKind preset)
 	{
 		const auto& t = I18nKey.UI.Bar.GeometryAttributes;
+		if (auxiliary == Auxiliary::Center && preset == PresetKind::Circle) return I18n::getWOr("UI/Bar/GeometryAttributes/AuxCircleCenterLabel",L"圆心");
 		if (auxiliary == Auxiliary::Center) return I18n::getWOr(t.AuxCenterLabel, L"中心");
 		if (auxiliary == Auxiliary::Foci) return I18n::getWOr(t.AuxFociLabel, L"焦点");
 		if (auxiliary == Auxiliary::Diagonals) return I18n::getWOr(t.AuxDiagonalsLabel, L"对角线");
@@ -337,7 +338,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	const bool showStyle = !OpenPreset(tool.preset), showStroke = !showStyle || style.stroke;
 	const bool circle = tool.preset == PresetKind::Circle, polygon = GetToolCapabilities(tool.preset).regularSides;
 	const bool triangle = tool.preset == PresetKind::Triangle, rightSolid = tool.preset == PresetKind::Prism || tool.preset == PresetKind::Pyramid, trapezoid = tool.preset == PresetKind::Trapezoid || rightSolid;
-	const auto constraintLabel = [&](int item) { return item == GeometryTrapezoidMode && rightSolid ? I18n::getWOr(tool.preset == PresetKind::Prism ? "UI/Bar/GeometryAttributes/RightPrismLabel" : "UI/Bar/GeometryAttributes/RightPyramidLabel", tool.preset == PresetKind::Prism ? L"正棱柱" : L"正棱锥") : ItemLabel(item); };
+	const auto constraintLabel = [&](int item) { if(item>=AuxBegin && item<GeometryTriangleModeBegin) return ShapeAuxiliaryLabel(AuxiliaryBits[item-AuxBegin],tool.preset); return item == GeometryTrapezoidMode && rightSolid ? I18n::getWOr(tool.preset == PresetKind::Prism ? "UI/Bar/GeometryAttributes/RightPrismLabel" : "UI/Bar/GeometryAttributes/RightPyramidLabel", tool.preset == PresetKind::Prism ? L"正棱柱" : L"正棱锥") : ItemLabel(item); };
 	const auto supportedAuxiliary = SupportedAuxiliary(tool.preset), auxiliary = GetShapeAuxiliary(state);
 	const double disabledOpacity = BarThemeMaterial::DisabledContentOpacity(owner.barStyle.darkStyle ? 0.0 : 1.0);
 	if (opening)
@@ -362,11 +363,11 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	unsigned auxiliaryCount = 0;
 	for (int i = 0; i < 3; ++i) if ((supportedAuxiliary & AuxiliaryBits[i]) != Auxiliary::None)
 	{
-		if (typographyChanged || optionTextWidths_[i] == 0)
-			optionTextWidths_[i] = ceil(owner.spec.MeasureText(ItemLabel(AuxBegin+i),12).width);
+		if (typographyChanged || optionTextWidths_[i] == 0 || labelTargets_[AuxBegin+i] != constraintLabel(AuxBegin+i))
+			optionTextWidths_[i] = ceil(owner.spec.MeasureText(constraintLabel(AuxBegin+i),12).width);
 		if (hasAuxiliary)
 		{
-			auxiliaryWidth += optionTextWidths_[i] + 48 + (auxiliaryCount ? BarButtonGapDip : 0);
+			auxiliaryWidth += optionTextWidths_[i] + 44 + (auxiliaryCount ? BarButtonGapDip : 0);
 			++auxiliaryCount;
 		}
 	}
@@ -377,7 +378,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		// 0–2辅助，3–5分类分段，6–9约束，测字缓存不能交叉覆盖。
 		const int index = item-GeometryTriangleModeBegin+6;
 		if (typographyChanged || optionTextWidths_[index] == 0 || labelTargets_[item] != constraintLabel(item)) optionTextWidths_[index] = ceil(owner.spec.MeasureText(constraintLabel(item),12).width);
-		return optionTextWidths_[index]+48;
+		return optionTextWidths_[index]+44;
 	};
 	if (triangle) for (int item = GeometryTriangleModeBegin; item < GeometryTrapezoidMode; ++item)
 		constraintWidth += measureConstraint(item)+(item == GeometryTriangleModeBegin ? 0 : g);
@@ -387,7 +388,9 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	const bool hasConstraint = triangle || trapezoid;
 	const bool parameterDivider = hasAuxiliary && (circle || polygon || hasConstraint);
 	const double separationWidth = parameterDivider ? 1 + g * 2 : 0;
-	const double fixedConstructionWidth = polygon ? buttonSide * GeometrySidesCount + g * (GeometrySidesCount-1) : constraintWidth;
+	const int sidesCount = rightSolid ? 6 : GeometrySidesCount;
+	const double circleMinWidth = circle ? 2*(44+(std::max)(owner.spec.MeasureText(ItemLabel(CircleCenter),12).width,owner.spec.MeasureText(ItemLabel(CircleBox),12).width))+g : 0;
+	const double fixedConstructionWidth = circle ? circleMinWidth : polygon ? buttonSide * sidesCount + g * (sidesCount-1) + (rightSolid ? constraintWidth + g : 0) : constraintWidth;
 	const double parameterWidth = circle || polygon || hasConstraint || hasAuxiliary ? fixedConstructionWidth + auxiliaryWidth + separationWidth + g * 2 : 0;
 	const double targetWidth = (std::max)({categoryLayout_.width + g * 2, attributeMaxWidth_, parameterWidth});
 	const double parameterHeight = circle || polygon || hasConstraint || hasAuxiliary ? buttonSide + g * 2 + 1 : 0;
@@ -522,18 +525,18 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	const double circleWidth = (constructionWidth-g) / 2;
 	if (circle) for (int i = 0; i < 2; ++i) slots[CircleCenter+i] = {parameterLeft+i*(circleWidth+g),y,
 		parameterLeft+i*(circleWidth+g)+circleWidth,y+buttonSide};
-	if (polygon) for (int i = 0; i < GeometrySidesCount; ++i) slots[SidesBegin+i] = {parameterLeft+i*(buttonSide+g),y,parameterLeft+i*(buttonSide+g)+buttonSide,y+buttonSide};
+	if (polygon) for (int i = 0; i < sidesCount; ++i) { const double x = parameterLeft + (rightSolid ? constraintWidth + g : 0) + i*(buttonSide+g); slots[SidesBegin+i] = {x,y,x+buttonSide,y+buttonSide}; }
 	double constraintLeft = parameterLeft;
 	for (int item = GeometryTriangleModeBegin; item <= GeometryTrapezoidMode; ++item) if ((triangle && item < GeometryTrapezoidMode) || (trapezoid && item == GeometryTrapezoidMode))
 	{
-		const double itemWidth = optionTextWidths_[item-GeometryTriangleModeBegin+6]+48;
+		const double itemWidth = optionTextWidths_[item-GeometryTriangleModeBegin+6]+44;
 		slots[item] = {constraintLeft,y,constraintLeft+itemWidth,y+buttonSide}; constraintLeft += itemWidth+g;
 	}
 	if (parameterDivider) lines[2] = {parameterLeft+constructionWidth+g,y+2,parameterLeft+constructionWidth+g+1,y+buttonSide-2};
 	double auxiliaryLeft = parameterLeft + constructionWidth + separationWidth;
 	for (int i = 0; i < 3; ++i) if (hasAuxiliary && (supportedAuxiliary & AuxiliaryBits[i]) != Auxiliary::None)
 	{
-		const double itemWidth = optionTextWidths_[i]+48;
+		const double itemWidth = optionTextWidths_[i]+44;
 		slots[AuxBegin+i] = {auxiliaryLeft,y,auxiliaryLeft+itemWidth,y+buttonSide};
 		auxiliaryLeft += itemWidth+g;
 	}
@@ -592,7 +595,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		const bool segment = i >= SegmentBegin, auxiliaryOption = i >= AuxBegin && i < GeometryTriangleModeBegin;
 		const bool constraintOption = i >= GeometryTriangleModeBegin && i <= GeometryTrapezoidMode;
 		const bool wanted = (i < CategoryCount && ShapeCategoryCatalog()[i].category == category_ && b.userVisible) || i == CloseButton || segment
-			|| ((i == CircleCenter || i == CircleBox) && circle) || (i >= SidesBegin && i < AuxBegin && polygon)
+			|| ((i == CircleCenter || i == CircleBox) && circle) || (i >= SidesBegin && i < SidesBegin+sidesCount && polygon)
 			|| (auxiliaryOption && hasAuxiliary && (supportedAuxiliary & AuxiliaryBits[i-AuxBegin]) != Auxiliary::None)
 			|| (constraintOption && ((triangle && i < GeometryTrapezoidMode) || (trapezoid && i == GeometryTrapezoidMode)))
 			|| (i >= StyleBegin && i < StyleBegin+2 && showStyle) || (i >= PatternBegin && i < CloseButton && showStroke);
@@ -687,9 +690,9 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 				: auxiliaryOption ? optionTextWidths_[i-AuxBegin] : constraintOption ? optionTextWidths_[i-GeometryTriangleModeBegin+6] : buttonSide;
 			b.button.rw->SetDirect(BarButtonCornerRadiusDip * scale); b.button.rh->SetDirect(BarButtonCornerRadiusDip * scale);
 			b.button.ft->SetDirect(BarButtonFrameThicknessDip * scale);
-			b.icon.x.SetDirect(labeledOption ? -(textWidth + 8) * scale / 2 : 0); b.icon.y.SetDirect(0);
+			b.icon.x.SetDirect(labeledOption ? -(textWidth + 4) * scale / 2 : 0); b.icon.y.SetDirect(0);
 			b.icon.SetWH(20 * scale, 20 * scale); b.icon.w.SetDirect(b.icon.w.tar); b.icon.h.SetDirect(b.icon.h.tar);
-			b.name.x.SetDirect(labeledOption ? 14 * scale : 0); b.name.y.SetDirect(0);
+			b.name.x.SetDirect(labeledOption ? 12 * scale : 0); b.name.y.SetDirect(0);
 			b.name.w.SetDirect(textWidth * scale); b.name.h.SetDirect(buttonSide * scale);
 			const double measured = segment ? optionTextWidths_[i-SegmentBegin+3] : auxiliaryOption ? optionTextWidths_[i-AuxBegin] : constraintOption ? optionTextWidths_[i-GeometryTriangleModeBegin+6] : 0;
 			const double fontSize = measured > textWidth ? 12 * textWidth / measured : 12;

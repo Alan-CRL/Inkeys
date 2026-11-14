@@ -163,6 +163,7 @@ inline constexpr struct I18nKeyRoot
                 const char* CategoryRegularLabel = "UI/Bar/GeometryAttributes/CategoryRegularLabel";
                 const char* CategorySolidLabel = "UI/Bar/GeometryAttributes/CategorySolidLabel";
                 const char* CategoryCoordinateFunctionLabel = "UI/Bar/GeometryAttributes/CategoryCoordinateFunctionLabel";
+                const char* AuxCircleCenterLabel = "UI/Bar/GeometryAttributes/AuxCircleCenterLabel";
                 const char* AuxCenterLabel = "UI/Bar/GeometryAttributes/AuxCenterLabel";
                 const char* AuxFociLabel = "UI/Bar/GeometryAttributes/AuxFociLabel";
                 const char* AuxDiagonalsLabel = "UI/Bar/GeometryAttributes/AuxDiagonalsLabel";

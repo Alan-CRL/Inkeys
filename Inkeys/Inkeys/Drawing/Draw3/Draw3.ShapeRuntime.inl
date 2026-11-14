@@ -9,6 +9,7 @@ struct ShapeConstructionRuntime
 	InkViewport viewport;
 	uint64_t revision = 1;
 	bool contactActive = false, cancelled = false, completed = false;
+	std::optional<ShapeUiAction> pointGesture; // 覆盖层控件手势，不伪造物理画布接触。
 	std::optional<draw3::shapes::ShapeObject> preview;
 	draw3::shapes::RenderData renderData;
 };
@@ -116,7 +117,7 @@ bool SameShapeUiContents(const ShapeUiSnapshot& a, const ShapeUiSnapshot& b)
 		a.identity.objectId == b.identity.objectId && a.identity.objectRevision == b.identity.objectRevision &&
 		a.object == b.object && a.handles == b.handles && a.bounds == b.bounds && a.frameRect == b.frameRect &&
 		a.completedConstructionSession == b.completedConstructionSession &&
-		a.editGestureActive == b.editGestureActive && a.constructionContactActive == b.constructionContactActive && a.displayScale == b.displayScale &&
+		a.drawingPreview == b.drawingPreview && a.editGestureActive == b.editGestureActive && a.constructionContactActive == b.constructionContactActive && a.displayScale == b.displayScale &&
 		a.canvasOriginX == b.canvasOriginX && a.canvasOriginY == b.canvasOriginY &&
 		a.construction.active == b.construction.active && a.construction.step == b.construction.step &&
 		a.construction.confirmedSteps == b.construction.confirmedSteps && a.construction.preset == b.construction.preset &&
@@ -152,8 +153,10 @@ bool ShapeConstructionActionIdentityMatches(const ShapeConstructionRuntime& cons
 {
 	if (!published || !SameShapeUiScene(action.identity,scene) || action.identity.session != construction.identity.session ||
 		action.identity.objectId != construction.identity.objectId) return false;
+	if (construction.pointGesture && IsConstructionPointAction(action.kind))
+		return action.kind != ShapeUiActionKind::ConstructionBeginPointEdit && SameShapeEditGesture(*construction.pointGesture,action);
 	return action.kind == ShapeUiActionKind::ConstructionCancel ||
-		(!construction.contactActive && action.identity == published->identity);
+		(!construction.contactActive && !construction.pointGesture && action.identity == published->identity);
 }
 
 bool ShapeCommandChangesScene(const CanvasCommand& command,Bridge::Workspace workspace,std::size_t pageIndex,
@@ -195,7 +198,8 @@ struct ShapePreviewSlot
 	std::shared_ptr<const ShapeUiAction> BeforeCommand(const ShapeUiAction* shape, bool transparent) noexcept
 	{
 		if (!held || transparent) return {};
-		if (shape && (shape->kind == ShapeUiActionKind::CommitEdit || shape->kind == ShapeUiActionKind::CancelEdit) &&
+		if (shape && (shape->kind == ShapeUiActionKind::CommitEdit || shape->kind == ShapeUiActionKind::CancelEdit ||
+			shape->kind == ShapeUiActionKind::ConstructionCommitPointEdit || shape->kind == ShapeUiActionKind::ConstructionCancelPointEdit) &&
 			SameShapeEditGesture(*held,*shape)) { held.reset(); ++coalesced; return {}; }
 		return std::exchange(held,{});
 	}

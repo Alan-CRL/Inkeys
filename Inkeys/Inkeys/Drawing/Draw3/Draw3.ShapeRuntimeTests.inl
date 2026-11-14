@@ -123,6 +123,37 @@ int RunShapeInteractionProductionTest()
 		}
 		check(state->session.CanComplete() && canvas->Strokes().size() == count,"point session waits for Complete");
 		const auto beforeMove = state->session.Points();
+		// 覆盖层命中的控件经真实Bridge FIFO进入同一构造会话，不能依赖穿透重新产生画布Down。
+		{
+			Bridge::StateBridge bridge; bridge.Reset();
+			ShapeUiSnapshot published; published.identity = state->identity; published.identity.generation = 100;
+			const auto scene = published.identity;
+			ShapeUiAction drag; drag.identity = published.identity; drag.handleId = 1000;
+			drag.down = {24,23}; drag.point = {44,43}; // 热区边缘按下保留相对位移。
+			drag.kind = ShapeUiActionKind::ConstructionBeginPointEdit;
+			check(bridge.PublishShapeAction(drag) == Bridge::CommandResult::Accepted,"construction point Down enters production bridge");
+			Bridge::Command command;
+			check(bridge.TryConsume(command) && command.shapeAction && ApplyConstructionPointAction(*state,&published,*command.shapeAction,scene,{}),
+				"construction point Down reaches production runtime action handler");
+			++published.identity.generation;
+			drag.kind = ShapeUiActionKind::ConstructionPreviewPointEdit;
+			check(bridge.PublishShapeAction(drag) == Bridge::CommandResult::Accepted,"construction preview enters bridge");
+			drag.point = {49,48}; bool coalesced = false;
+			check(bridge.PublishShapeAction(drag,&coalesced) == Bridge::CommandResult::Accepted && coalesced,"construction preview uses bounded latest intent");
+			check(bridge.TryConsume(command) && ApplyConstructionPointAction(*state,&published,*command.shapeAction,scene,{}),"preview retains Down ticket across snapshot publication");
+			check(state->session.Points().front() == (Vec2{45,45}) && state->session.Points().size() == beforeMove.size() && !state->renderData.batches.empty(),
+				"overlay point drag updates live render data without adding vertex");
+			drag.kind = ShapeUiActionKind::ConstructionCommitPointEdit; drag.point = {54,53};
+			check(bridge.PublishShapeAction(drag) == Bridge::CommandResult::Accepted && bridge.TryConsume(command) &&
+				ApplyConstructionPointAction(*state,&published,*command.shapeAction,scene,{}),"overlay Up commits final point through production dispatcher");
+			check(!state->pointGesture && state->session.Points().front() == (Vec2{50,50}) && canvas->Strokes().size() == count,
+				"overlay Up leaves construction active without a document append");
+			check(state->session.Back() && state->session.Points() == beforeMove && state->session.Forward() && state->session.Points().front() == (Vec2{50,50}),
+				"overlay point operation participates in construction undo redo");
+			check(state->session.Back(),"restore original points for following physical-contact regression");
+			RefreshConstructionRuntimePreview(*state,{});
+			check(!ApplyConstructionPointAction(*state,&published,drag,scene,{}),"late overlay Up cannot add a new point after gesture retirement");
+		}
 		auto edit = begin({preset,CreationMode::Points},{20,20},state);
 		check(edit->shape.object == state->preview && !edit->shape.renderData.batches.empty(),"point Down retains drawable preview before first Move");
 		move(*edit,{30,35},{33,38});
