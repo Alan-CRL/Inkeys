@@ -160,10 +160,18 @@ export namespace Inkeys::Drawing::Draw3
 	enum class CanvasPanReleaseReason : uint8_t
 	{
 		None, Ready, InsufficientSamples, InsufficientSpan, TimingRejected,
-		Stationary, Stale, Cancelled, WithinSlop, EmptyViewport, DirectionConflict, Disabled
+		Stationary, Stale, Cancelled, WithinSlop, EmptyViewport, DirectionConflict, Disabled, InsufficientSupport
 	};
 	const char* CanvasPanReleaseReasonName(CanvasPanReleaseReason reason) noexcept;
-	enum class CanvasPanSampleDisposition : uint8_t { Accepted, Reversed, TimingRejected, Rejected };
+	enum class CanvasPanSampleDisposition : uint8_t { Accepted, Reversed, Rejected };
+
+	struct CanvasPanReleaseSupport
+	{
+		size_t anchorCount = 0, positiveIntervalCount = 0;
+		int64_t firstQpc = 0, lastQpc = 0, supportFirstQpc = 0, supportLastQpc = 0;
+		double speedUpperBound = 0;
+		bool evaluated = false, valid = false;
+	};
 
 	// 每指只记录自己的真实测量；另一指更新和拓扑变更不能伪造同时采样。
 	class CanvasPanReleaseVelocityTracker
@@ -181,8 +189,15 @@ export namespace Inkeys::Drawing::Draw3
 		double SampleSpanSeconds(uint64_t key, int64_t frequency) const noexcept;
 		std::optional<double> RecentSpeedLimit(uint64_t key, int64_t frequency,
 			CanvasVector estimatedVelocity) const noexcept;
+		CanvasPanReleaseSupport ReleaseSupport(uint64_t key, int64_t frequency,
+			CanvasPanVelocityEstimate estimatedVelocity) const noexcept;
 		int64_t LastSampleQpc(uint64_t key) const noexcept;
 		int64_t LastSampleQpc() const noexcept;
+		// Touch释放使用空间进展时钟；原始观察时间仍由LastSampleQpc提供。
+		int64_t LastMotionQpc(uint64_t key) const noexcept;
+		size_t MotionSampleCount(uint64_t key) const noexcept;
+		bool HasStationaryObservation(uint64_t key) const noexcept;
+		bool ShortTouchSupported(uint64_t key, int64_t frequency) const noexcept;
 
 	private:
 		struct History
@@ -191,14 +206,61 @@ export namespace Inkeys::Drawing::Draw3
 			uint64_t key = 0;
 			std::array<CanvasPanVelocitySample, kCanvasPanReleaseCapacity> samples = {};
 			size_t count = 0;
+			std::array<CanvasPanVelocitySample, kCanvasPanReleaseCapacity> progressSamples = {};
+			size_t progressCount = 0; // 仅Touch使用，固定容量，不在Move分配。
 			CanvasVector direction = {};
 			std::optional<CanvasPanVelocitySample> reversalAnchor;
-			bool timingRejected = false;
+
 		};
 		const History* Find(uint64_t key) const noexcept;
+		std::span<const CanvasPanVelocitySample> MotionSamples(const History& history) const noexcept;
 		std::array<History, kCanvasPanMaximumContacts> histories_ = {};
 		double reversalDistance_ = kCanvasPanReleaseReversalDip;
-		double velocityLimit_ = kCanvasPanProductVelocityLimit;
+		bool independentFit_ = false, touchProgress_ = false;
+	};
+
+	enum class TouchReleaseMode : uint8_t { NotEvaluated, Stop, Measured, ShortSupported, ResidualOnly, DistanceBounded };
+	enum class TouchReleaseReason : uint8_t { None, Cancelled, Disabled, NoScroll, ConfirmedStop, StaleRaw, Unsupported, Velocity, Residual, Distance };
+	enum class TouchResponseSource : uint8_t { NotEvaluated, Measured, Base };
+	struct TouchVelocityEvidence
+	{
+		CanvasVector raw = {}, velocity = {};
+		int64_t motionQpc = 0;
+		uint64_t contactKey = 0;
+		bool valid = false, shortSupported = false, supportLimited = false;
+	};
+	struct TouchReleaseFacts
+	{
+		CanvasPanMotionContext context;
+		TouchVelocityEvidence evidence;
+		CanvasVector direction = {}, confirmedNet = {}, residual = {};
+		double rawAgeSeconds = 0, motionAgeSeconds = 0, scrollAgeSeconds = 0;
+		bool scrolled = false, cancelled = false, allowInertia = true, residualEligible = false, platformObserved = false, budgetConfirmed = false, confirmedStopped = false;
+	};
+	struct TouchReleaseDecision
+	{
+		TouchReleaseMode mode = TouchReleaseMode::NotEvaluated;
+		TouchReleaseReason reason = TouchReleaseReason::None;
+		TouchResponseSource response = TouchResponseSource::NotEvaluated;
+		CanvasVector handVelocity = {}, velocitySeed = {};
+		CanvasPanFrictionParameters parameters;
+		uint64_t evidenceContactKey = 0;
+		int64_t evidenceMotionQpc = 0;
+		double distanceBudget = 0;
+		bool addedResidual = false, boostSuppressed = false;
+	};
+	TouchReleaseDecision ResolveTouchRelease(const TouchReleaseFacts& facts) noexcept;
+	const char* TouchReleaseModeName(TouchReleaseMode mode) noexcept;
+	struct TouchMotionTag
+	{
+		uint64_t group = 0, leg = 0, epoch = 0, metric = 0;
+		friend bool operator==(const TouchMotionTag&, const TouchMotionTag&) = default;
+	};
+	struct TouchMotionFeedback
+	{
+		TouchMotionTag tag;
+		int64_t frameQpc = 0, scrollQpc = 0;
+		bool present = false, eligible = false;
 	};
 
 	enum class CanvasPanPhase : uint8_t { Idle, Coasting, Locked };
@@ -371,6 +433,16 @@ export namespace Inkeys::Drawing::Draw3
 		double releaseSpanSeconds = 0.0;
 		double releaseTailSpeedLimit = 0.0;
 		bool releaseTailSpeedLimited = false;
+		uint64_t releaseContactKey = 0;
+		CanvasPanReleaseSupport releaseSupport = {}; // 速度上界用内部运动单位，QPC保持真实事件时钟。
+		bool releaseSupportLimited = false, releaseOutputLimited = false, releaseBoostSuppressed = false;
+		size_t releaseMotionSampleCount = 0;
+		int64_t releaseLastRawQpc = 0, releaseLastMotionQpc = 0;
+		bool releaseMotionAgeLimited = false;
+		TouchReleaseDecision touchDecision;
+		TouchMotionTag releaseTouchTag;
+		TouchMotionFeedback motionFeedback;
+		double releaseRawAgeSeconds = 0, releasePlatformSeconds = 0;
 		size_t rejectedSamples = 0;
 		size_t reversalCount = 0;
 		size_t timingResetCount = 0;
@@ -398,6 +470,7 @@ export namespace Inkeys::Drawing::Draw3
 		CanvasPanFrameOutput Step(const CanvasPanFrameInput& input) noexcept;
 		void Stop() noexcept;
 		void StopFling() noexcept;
+		bool ConfirmAppliedMotion(const TouchMotionFeedback& feedback, CanvasVector actualContentDeltaDip) noexcept;
 		void ClearAxis(bool x, bool y) noexcept;
 		CanvasPanPhase Phase() const noexcept;
 		bool Active() const noexcept;
@@ -426,6 +499,18 @@ export namespace Inkeys::Drawing::Draw3
 		int64_t lastFrameQpc_ = 0;
 		uint64_t lastSourceKey_ = 0;
 		CanvasPanMotionContext motionContext_ = {};
+		struct TouchGroup
+		{
+			TouchMotionTag tag;
+			TouchVelocityEvidence candidate;
+			CanvasVector requestedNet = {}, confirmedNet = {}, residual = {};
+			int64_t lastScrollQpc = 0, lastRawQpc = 0, lastConfirmedFrame = 0, intentQpc = 0;
+			bool scrolled = false, residualEligible = false, budgetConfirmed = false, distanceEligible = true, confirmedStopped = false;
+		} touch_;
+		uint64_t touchGroupSerial_ = 0, touchLegSerial_ = 0, touchEpoch_ = 1, touchMetricSerial_ = 0;
+		void BeginTouchLeg(bool requireIndependent = false, int64_t qpc = 0) noexcept;
+		void RecordTouchScroll(CanvasVector delta, int64_t qpc, const CanvasPanFrameInput& input, CanvasPanFrameOutput& output) noexcept;
+		bool CacheTouchEvidence(int64_t motionQpc, int64_t frequency) noexcept;
 		struct RejectedContact
 		{
 			uint64_t key = 0;

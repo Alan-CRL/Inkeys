@@ -460,8 +460,11 @@ namespace Inkeys::Drawing::Draw3
 		bool selectedToolIsEraser, bool selectedToolIsLaser,
 		bool penSampleValid, bool mouseSampleValid,
 		bool mouseUsesSystemCursor, bool touchPanActive,
-		bool realMouseTakeoverDuringTouchPan, bool mouseSampleIsTablet) noexcept
+		bool realMouseTakeoverDuringTouchPan, bool mouseSampleIsTablet, bool canvasPanMode) noexcept
 	{
+		// 白板移动不画应用光标；仍保留 Touch 的隐藏与真实鼠标接管优先级。
+		if (canvasPanMode && (!touchPanActive || realMouseTakeoverDuringTouchPan) &&
+			(pointerAuthority != DrawingCursorPointerAuthority::Touch || realMouseTakeoverDuringTouchPan)) return false;
 		// 开关开启时驱动注入的数位板鼠标按数位板行绘制应用光标，系统箭头必须隐藏。
 		if (mouseSampleIsTablet) mouseUsesSystemCursor = false;
 		// Eraser/Laser 始终由 Draw3 绘制专用光标，不依赖 event-only Touch owner 或 Hover sample。

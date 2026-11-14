@@ -149,6 +149,29 @@ namespace Inkeys::Drawing::Draw3
 
 		bool PanZero(CanvasVector value) noexcept { return value.x == 0.0f && value.y == 0.0f; }
 
+		void ResetTouchReleaseMetadata(CanvasPanFrameOutput& output) noexcept
+		{
+			// 仅清最后一次释放的Touch专属结果；帧级位移与混组反馈必须保留。
+			output.touchDecision = {}; output.releaseTouchTag = {};
+			output.releaseRawAgeSeconds = output.releasePlatformSeconds = 0;
+		}
+
+		size_t PanIndependentReleaseEvidence(std::span<const CanvasPanVelocitySample> samples, int64_t frequency,
+			std::array<size_t, kCanvasPanReleaseCapacity>& evidence) noexcept
+		{
+			size_t count = 0;
+			for (size_t back = samples.size(); back > 0; --back)
+			{
+				const auto sample = samples[back - 1];
+				// 从最新真实端点向前取有时间支撑的点，不把同批密集回调当作独立时钟证据。
+				if (count == 0 ||
+					PanSecondsBetween(samples[evidence[count - 1]].qpc, sample.qpc, frequency) + 1e-9 >= kCanvasPanReleaseMinimumIntervalSeconds)
+					evidence[count++] = back - 1;
+			}
+			std::reverse(evidence.begin(), evidence.begin() + count);
+			return count;
+		}
+
 	}
 
 	CanvasPanMotionContext MakeCanvasPanMotionContext(CanvasPanMotionProfile profile,
@@ -218,6 +241,80 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
+	const char* TouchReleaseModeName(TouchReleaseMode mode) noexcept
+	{
+		switch (mode)
+		{
+		case TouchReleaseMode::Stop: return "stop";
+		case TouchReleaseMode::Measured: return "measured";
+		case TouchReleaseMode::ShortSupported: return "short-supported";
+		case TouchReleaseMode::ResidualOnly: return "residual-only";
+		case TouchReleaseMode::DistanceBounded: return "distance-bounded";
+		default: return "not-evaluated";
+		}
+	}
+	TouchReleaseDecision ResolveTouchRelease(const TouchReleaseFacts& f) noexcept
+	{
+		TouchReleaseDecision d; d.mode = TouchReleaseMode::Stop;
+		const auto stop = [&](TouchReleaseReason reason) { auto out = d; out.reason = reason; return out; };
+		if (!IsCanvasPanMotionContextValid(f.context) || !std::isfinite(f.rawAgeSeconds) || !std::isfinite(f.motionAgeSeconds) ||
+			!std::isfinite(f.scrollAgeSeconds) || !std::isfinite(f.direction.x) || !std::isfinite(f.direction.y) ||
+			!std::isfinite(f.confirmedNet.x) || !std::isfinite(f.confirmedNet.y) || !std::isfinite(f.residual.x) || !std::isfinite(f.residual.y) ||
+			(f.evidence.valid && (!std::isfinite(f.evidence.velocity.x) || !std::isfinite(f.evidence.velocity.y)))) return stop(TouchReleaseReason::Unsupported);
+		if (f.cancelled) return stop(TouchReleaseReason::Cancelled);
+		if (!f.allowInertia) return stop(TouchReleaseReason::Disabled);
+		if (f.confirmedStopped) return stop(TouchReleaseReason::ConfirmedStop);
+		if (!f.scrolled) return stop(TouchReleaseReason::NoScroll);
+		if (f.motionAgeSeconds >= kCanvasPanReleaseZeroAgeSeconds) return stop(TouchReleaseReason::ConfirmedStop);
+		if (f.rawAgeSeconds >= kCanvasPanReleaseZeroAgeSeconds) return stop(TouchReleaseReason::StaleRaw);
+		const double fresh = std::clamp((kCanvasPanReleaseZeroAgeSeconds - f.rawAgeSeconds) /
+			(kCanvasPanReleaseZeroAgeSeconds - kCanvasPanReleaseFullAgeSeconds), 0.0, 1.0);
+		const double residualSpeed = std::hypot(f.residual.x, f.residual.y);
+		const double directionSpeed = std::hypot(f.direction.x, f.direction.y);
+		const bool residualFresh = f.residualEligible && f.rawAgeSeconds <= kCanvasPanReleaseFullAgeSeconds &&
+			f.scrollAgeSeconds <= (f.platformObserved ? kCanvasPanReleaseZeroAgeSeconds : kCanvasPanBoostTimeoutSeconds);
+		if (f.evidence.valid)
+		{
+			d.handVelocity = { static_cast<float>(f.evidence.velocity.x * fresh), static_cast<float>(f.evidence.velocity.y * fresh) };
+			const double hand = std::hypot(d.handVelocity.x, d.handVelocity.y);
+			if (hand <= f.context.minimumFlingVelocity) return stop(TouchReleaseReason::Unsupported);
+			const double ux = d.handVelocity.x / hand, uy = d.handVelocity.y / hand;
+			const double extra = residualFresh && !f.evidence.supportLimited && hand >= f.context.boostMinimumFlingVelocity &&
+				residualSpeed >= f.context.boostMinimumFlingVelocity ? (std::max)(0.0, f.residual.x * ux + f.residual.y * uy) : 0;
+			const double speed = (std::min)(f.context.velocityLimit, hand + extra);
+			d.velocitySeed = ToCanvasVector(ux * speed, uy * speed); d.addedResidual = extra > 0;
+			d.boostSuppressed = f.evidence.supportLimited || (f.residualEligible && !residualFresh);
+			d.mode = f.evidence.shortSupported ? TouchReleaseMode::ShortSupported : TouchReleaseMode::Measured;
+			d.reason = TouchReleaseReason::Velocity; d.response = TouchResponseSource::Measured;
+			d.parameters = ResolveCanvasPanFriction(f.context, hand); d.evidenceContactKey = f.evidence.contactKey; d.evidenceMotionQpc = f.evidence.motionQpc;
+			return d;
+		}
+		if (!(directionSpeed > 0)) return stop(TouchReleaseReason::Unsupported);
+		const double ux = f.direction.x / directionSpeed, uy = f.direction.y / directionSpeed;
+		d.parameters = ResolveCanvasPanFriction(f.context, 0); d.response = TouchResponseSource::Base;
+		const double residual = residualFresh ? (std::max)(0.0, f.residual.x * ux + f.residual.y * uy) : 0;
+		if (residual > f.context.minimumFlingVelocity)
+		{
+			const double speed = (std::min)(residual, f.context.velocityLimit);
+			d.velocitySeed = ToCanvasVector(ux * speed, uy * speed); d.mode = TouchReleaseMode::ResidualOnly;
+			d.reason = TouchReleaseReason::Residual; d.boostSuppressed = true; return d;
+		}
+		if (!f.budgetConfirmed) return stop(TouchReleaseReason::Unsupported);
+		const double budget = (std::max)(0.0, f.confirmedNet.x * ux + f.confirmedNet.y * uy);
+		const double tau = d.parameters.tauSeconds, c = d.parameters.deceleration;
+		const auto distance = [&](double speed) { return tau * speed - c * tau * tau * std::log1p(speed / (c * tau)); };
+		d.distanceBudget = (std::min)(budget, distance(f.context.velocityLimit));
+		if (!(d.distanceBudget > 0)) return stop(TouchReleaseReason::Unsupported);
+		// 固定有界逆解基础摩擦D(v)，只取下界；float种子再留舍入余量，不能超支实际位移。
+		double low = 0, high = f.context.velocityLimit;
+		for (int iteration = 0; iteration < 64; ++iteration)
+		{ const double mid = (low + high) * .5; if (distance(mid) <= d.distanceBudget) low = mid; else high = mid; }
+		const double seed = low * fresh * (1 - 4 * std::numeric_limits<float>::epsilon());
+		if (seed <= f.context.minimumFlingVelocity) return stop(TouchReleaseReason::Unsupported);
+		d.velocitySeed = ToCanvasVector(ux * seed, uy * seed); d.mode = TouchReleaseMode::DistanceBounded;
+		d.reason = TouchReleaseReason::Distance; d.boostSuppressed = true; return d;
+	}
+
 	const char* CanvasPanAdmissionReasonName(CanvasPanAdmissionReason reason) noexcept
 	{
 		switch (reason)
@@ -237,7 +334,7 @@ namespace Inkeys::Drawing::Draw3
 		case CanvasPanReleaseReason::Ready: return "ready";
 		case CanvasPanReleaseReason::InsufficientSamples: return "few-samples";
 		case CanvasPanReleaseReason::InsufficientSpan: return "short-span";
-		case CanvasPanReleaseReason::TimingRejected: return "compressed-time";
+		case CanvasPanReleaseReason::TimingRejected: return "invalid-time";
 		case CanvasPanReleaseReason::Stationary: return "slow-or-stationary";
 		case CanvasPanReleaseReason::Stale: return "stale";
 		case CanvasPanReleaseReason::Cancelled: return "cancelled";
@@ -245,6 +342,7 @@ namespace Inkeys::Drawing::Draw3
 		case CanvasPanReleaseReason::EmptyViewport: return "empty-viewport";
 		case CanvasPanReleaseReason::DirectionConflict: return "direction-conflict";
 		case CanvasPanReleaseReason::Disabled: return "disabled";
+		case CanvasPanReleaseReason::InsufficientSupport: return "unsupported-tail";
 		default: return "none";
 		}
 	}
@@ -256,7 +354,11 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	void CanvasPanReleaseVelocityTracker::Configure(const CanvasPanMotionContext& context) noexcept
-	{ reversalDistance_ = context.reversalDistance; velocityLimit_ = context.velocityLimit; }
+	{
+		reversalDistance_ = context.reversalDistance;
+		independentFit_ = context.profile != CanvasPanMotionProfile::IndirectDip;
+		touchProgress_ = context.profile == CanvasPanMotionProfile::TouchPhysical || context.profile == CanvasPanMotionProfile::TouchFallback;
+	}
 
 	CanvasPanSampleDisposition CanvasPanReleaseVelocityTracker::AddSample(uint64_t key,
 		CanvasPanVelocitySample sample, int64_t frequency) noexcept
@@ -272,6 +374,8 @@ namespace Inkeys::Drawing::Draw3
 			*found = {}; found->used = true; found->key = key;
 		}
 		auto& history = *found;
+		const std::optional<CanvasPanVelocitySample> previousRaw = touchProgress_ && history.count ?
+			std::optional(history.samples[history.count - 1]) : std::nullopt;
 		CanvasPanSampleDisposition result = CanvasPanSampleDisposition::Accepted;
 		if (history.count)
 		{
@@ -280,21 +384,11 @@ namespace Inkeys::Drawing::Draw3
 			const double dt = PanSecondsBetween(sample.qpc, previous.qpc, frequency);
 			const double dx = sample.x - previous.x, dy = sample.y - previous.y;
 			const double distance = std::hypot(dx, dy);
-			// QPC量化会使960Hz的合法12000速度略超上限；两端float像素还会带来坐标量化。
-			// 在位移域扣除可计算的误差界，不能把这些舍入误判为时间压缩而反复清窗。
-			const double coordinateError = std::numeric_limits<float>::epsilon() *
-				(std::hypot(sample.x, sample.y) + std::hypot(previous.x, previous.y));
-			const double maximumDistance = velocityLimit_ *
-				(dt + 1.0 / static_cast<double>(frequency)) + coordinateError;
-			if (dt < kCanvasPanReleaseMinimumIntervalSeconds && distance > maximumDistance)
+			// 输入速度可以高于惯性输出上限。只有真实长空档清时间窗，不用cap否定输入。
+			if (dt >= kCanvasPanTrackerGapSeconds)
 			{
 				history.count = 0; history.direction = {}; history.reversalAnchor.reset();
-				history.timingRejected = true; result = CanvasPanSampleDisposition::TimingRejected;
-			}
-			else if (dt >= kCanvasPanTrackerGapSeconds)
-			{
-				history.count = 0; history.direction = {}; history.reversalAnchor.reset();
-				history.timingRejected = false;
+				if (touchProgress_) history.progressCount = 0;
 			}
 			else if (distance > 0.0)
 			{
@@ -308,9 +402,10 @@ namespace Inkeys::Drawing::Draw3
 					if (reverseX * history.direction.x + reverseY * history.direction.y <= -reversalDistance_)
 					{
 						history.samples[0] = anchor; history.count = 1;
+					if (touchProgress_) { history.progressSamples[0] = anchor; history.progressCount = 1; }
 						const double length = std::hypot(reverseX, reverseY);
 						history.direction = ToCanvasVector(reverseX / length, reverseY / length);
-						history.reversalAnchor.reset(); history.timingRejected = false;
+						history.reversalAnchor.reset();
 						result = CanvasPanSampleDisposition::Reversed;
 					}
 				}
@@ -333,10 +428,59 @@ namespace Inkeys::Drawing::Draw3
 			std::move(history.samples.begin() + 1, history.samples.end(), history.samples.begin()); --history.count;
 		}
 		history.samples[history.count++] = sample;
-		if (history.count >= kCanvasPanReleaseMinimumSamples &&
-			SampleSpanSeconds(key, frequency) + 1e-9 >= kCanvasPanReleaseMinimumSpanSeconds) history.timingRejected = false;
+		if (touchProgress_)
+		{
+			const auto appendProgress = [&](CanvasPanVelocitySample point)
+			{
+				while (history.progressCount > 1 && PanSecondsBetween(point.qpc, history.progressSamples[1].qpc, frequency) > kCanvasPanReleaseWindowSeconds)
+				{
+					std::move(history.progressSamples.begin() + 1, history.progressSamples.begin() + history.progressCount, history.progressSamples.begin());
+					--history.progressCount;
+				}
+				if (history.progressCount == history.progressSamples.size())
+				{
+					std::move(history.progressSamples.begin() + 1, history.progressSamples.end(), history.progressSamples.begin()); --history.progressCount;
+				}
+				history.progressSamples[history.progressCount++] = point;
+			};
+			if (!history.progressCount) appendProgress(sample);
+			else
+			{
+				const auto previous = history.progressSamples[history.progressCount - 1];
+				const double error = std::numeric_limits<float>::epsilon() *
+					(std::hypot(sample.x, sample.y) + std::hypot(previous.x, previous.y));
+				if (std::hypot(sample.x - previous.x, sample.y - previous.y) > error)
+				{
+					// 重复点保留在raw历史，不刷新运动QPC或裁掉运动窗；catch-up使用原真实时间差。
+					// >=70ms无进展后的新移动退休旧证据，仅用上一真实raw点作为新leg锚。
+					if (result != CanvasPanSampleDisposition::Reversed &&
+						PanSecondsBetween(sample.qpc, previous.qpc, frequency) >= kCanvasPanReleaseZeroAgeSeconds)
+					{
+						history.progressCount = 0;
+						if (previousRaw) appendProgress(*previousRaw);
+					}
+					appendProgress(sample);
+				}
+			}
+		}
 		return result;
 	}
+
+	std::span<const CanvasPanVelocitySample> CanvasPanReleaseVelocityTracker::MotionSamples(const History& history) const noexcept
+	{
+		return touchProgress_ ? std::span(history.progressSamples).first(history.progressCount) : std::span(history.samples).first(history.count);
+	}
+	int64_t CanvasPanReleaseVelocityTracker::LastMotionQpc(uint64_t key) const noexcept
+	{
+		const auto* history = Find(key);
+		if (!history) return 0;
+		const auto samples = MotionSamples(*history);
+		return samples.empty() ? 0 : samples.back().qpc;
+	}
+	size_t CanvasPanReleaseVelocityTracker::MotionSampleCount(uint64_t key) const noexcept
+	{ const auto* history = Find(key); return history ? MotionSamples(*history).size() : 0; }
+	bool CanvasPanReleaseVelocityTracker::HasStationaryObservation(uint64_t key) const noexcept
+	{ return touchProgress_ && LastSampleQpc(key) > LastMotionQpc(key); }
 
 	void CanvasPanReleaseVelocityTracker::Clear() noexcept { histories_ = {}; }
 	void CanvasPanReleaseVelocityTracker::ClearPointer(uint64_t key) noexcept
@@ -349,6 +493,9 @@ namespace Inkeys::Drawing::Draw3
 			const auto newest = history.samples[history.count - 1];
 			for (size_t i = 0; i < history.count; ++i)
 			{ if (x) history.samples[i].x = newest.x; if (y) history.samples[i].y = newest.y; }
+			if (touchProgress_)
+				for (size_t i = 0; i < history.progressCount; ++i)
+				{ if (x) history.progressSamples[i].x = newest.x; if (y) history.progressSamples[i].y = newest.y; }
 			if (x) history.direction.x = 0.0f;
 			if (y) history.direction.y = 0.0f;
 			const double length = std::hypot(history.direction.x, history.direction.y);
@@ -377,11 +524,13 @@ namespace Inkeys::Drawing::Draw3
 		int64_t frequency, CanvasVector estimatedVelocity) const noexcept
 	{
 		const auto* history = Find(key);
-		if (frequency <= 0 || !history || history->count < 2 || PanZero(estimatedVelocity)) return {};
-		const auto newest = history->samples[history->count - 1];
-		for (size_t back = 1; back < history->count; ++back)
+		if (frequency <= 0 || !history || PanZero(estimatedVelocity)) return {};
+		const auto samples = MotionSamples(*history);
+		if (samples.size() < 2) return {};
+		const auto newest = samples[samples.size() - 1];
+		for (size_t back = 1; back < samples.size(); ++back)
 		{
-			const auto previous = history->samples[history->count - back - 1];
+			const auto previous = samples[samples.size() - back - 1];
 			const double dt = PanSecondsBetween(newest.qpc, previous.qpc, frequency);
 			const double dx = newest.x - previous.x, dy = newest.y - previous.y;
 			const double distance = std::hypot(dx, dy);
@@ -393,33 +542,113 @@ namespace Inkeys::Drawing::Draw3
 		return {};
 	}
 
+	CanvasPanReleaseSupport CanvasPanReleaseVelocityTracker::ReleaseSupport(uint64_t key,
+		int64_t frequency, CanvasPanVelocityEstimate estimatedVelocity) const noexcept
+	{
+		CanvasPanReleaseSupport support;
+		const auto* history = Find(key);
+		if (frequency <= 0 || !history) return support;
+		const auto samples = MotionSamples(*history);
+		if (samples.empty()) return support;
+		std::array<size_t, kCanvasPanReleaseCapacity> evidence;
+		support.anchorCount = PanIndependentReleaseEvidence(samples, frequency, evidence);
+		support.firstQpc = samples[evidence[0]].qpc;
+		support.lastQpc = samples[evidence[support.anchorCount - 1]].qpc;
+		const double speed = std::hypot(estimatedVelocity.x, estimatedVelocity.y);
+		if (support.anchorCount < kCanvasPanReleaseMinimumSamples ||
+			(PanSecondsBetween(support.lastQpc, support.firstQpc, frequency) + 1e-9 < kCanvasPanReleaseMinimumSpanSeconds && !ShortTouchSupported(key, frequency)) ||
+			!estimatedVelocity.valid || !std::isfinite(speed) || speed <= 0) return support;
+		support.evaluated = true;
+		const double ux = estimatedVelocity.x / speed, uy = estimatedVelocity.y / speed;
+		// 至少两份真实正向位移证据；静止窗中的单个跳点不能凭空间容差制造惯性。
+		for (size_t index = 1; index < support.anchorCount; ++index)
+		{
+			const auto first = samples[evidence[index - 1]], last = samples[evidence[index]];
+			const double projected = (last.x - first.x) * ux + (last.y - first.y) * uy;
+			const double error = std::numeric_limits<float>::epsilon() *
+				(std::hypot(first.x, first.y) + std::hypot(last.x, last.y));
+			if (projected > error) ++support.positiveIntervalCount;
+		}
+		if (support.positiveIntervalCount < 2) return support;
+		const auto a = samples[evidence[support.anchorCount - 3]];
+		const auto b = samples[evidence[support.anchorCount - 2]];
+		support.supportFirstQpc = a.qpc; support.supportLastQpc = b.qpc;
+		const auto c = samples[evidence[support.anchorCount - 1]];
+		if (b.qpc - a.qpc <= 1 || c.qpc - b.qpc <= 1) return support;
+		// AB不含最新C；BC即使静止/小位移也必须参与，不能跳过后恢复更旧的快速度。
+		const auto intervalUpper = [&](const CanvasPanVelocitySample& first, const CanvasPanVelocitySample& last)
+		{
+			const double dt = PanSecondsBetween(last.qpc, first.qpc, frequency) - 1.0 / static_cast<double>(frequency);
+			if (dt <= 0) return 0.0;
+			const double projected = (last.x - first.x) * ux + (last.y - first.y) * uy;
+			const double error = std::numeric_limits<float>::epsilon() *
+				(std::hypot(first.x, first.y) + std::hypot(last.x, last.y));
+			// 复用当前profile的空间噪声预算；不是另设输入速度或硬件量化上限。
+			return ((std::max)(0.0, projected) + reversalDistance_ + error) / dt;
+		};
+		support.speedUpperBound = (std::min)(intervalUpper(a, b), intervalUpper(b, c));
+		support.valid = std::isfinite(support.speedUpperBound);
+		return support;
+	}
+
+	bool CanvasPanReleaseVelocityTracker::ShortTouchSupported(uint64_t key, int64_t frequency) const noexcept
+	{
+		const auto* history = Find(key); if (!touchProgress_ || !history || frequency <= 0) return false;
+		const auto samples = MotionSamples(*history); std::array<size_t, kCanvasPanReleaseCapacity> evidence;
+		const size_t count = PanIndependentReleaseEvidence(samples, frequency, evidence);
+		if (count < 3) return false;
+		const auto a = samples[evidence[count - 3]], b = samples[evidence[count - 2]], c = samples[evidence[count - 1]];
+		// 两段对AC都有正投影仍可能互成直角；可靠短证据要求相邻段本身同向。
+		if (!((b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y) > 0)) return false;
+		const double dx = c.x - a.x, dy = c.y - a.y, length = std::hypot(dx, dy);
+		if (!(length > 0)) return false;
+		const auto supported = [&](CanvasPanVelocitySample first, CanvasPanVelocitySample last)
+		{
+			const double error = std::numeric_limits<float>::epsilon() * (std::hypot(first.x, first.y) + std::hypot(last.x, last.y));
+			return ((last.x - first.x) * dx + (last.y - first.y) * dy) / length > reversalDistance_ + error;
+		};
+		return supported(a, b) && supported(b, c);
+	}
+
 	CanvasPanReleaseReason CanvasPanReleaseVelocityTracker::Reason(uint64_t key, int64_t frequency) const noexcept
 	{
 		const auto* history = Find(key);
-		if (history && history->timingRejected) return CanvasPanReleaseReason::TimingRejected;
-		if (!history || history->count < kCanvasPanReleaseMinimumSamples) return CanvasPanReleaseReason::InsufficientSamples;
-		if (SampleSpanSeconds(key, frequency) + 1e-9 < kCanvasPanReleaseMinimumSpanSeconds) return CanvasPanReleaseReason::InsufficientSpan;
+		if (!history) return CanvasPanReleaseReason::InsufficientSamples;
+		const auto samples = MotionSamples(*history);
+		if (samples.size() < kCanvasPanReleaseMinimumSamples) return CanvasPanReleaseReason::InsufficientSamples;
+		if (frequency <= 0) return CanvasPanReleaseReason::InsufficientSpan;
+		std::array<size_t, kCanvasPanReleaseCapacity> evidence;
+		const size_t count = PanIndependentReleaseEvidence(samples, frequency, evidence);
+		if (count < kCanvasPanReleaseMinimumSamples) return CanvasPanReleaseReason::InsufficientSamples;
+		if (PanSecondsBetween(samples[evidence[count - 1]].qpc, samples[evidence[0]].qpc, frequency) + 1e-9 < kCanvasPanReleaseMinimumSpanSeconds && !ShortTouchSupported(key, frequency))
+			return CanvasPanReleaseReason::InsufficientSpan;
 		return CanvasPanReleaseReason::Ready;
 	}
 	CanvasPanVelocityEstimate CanvasPanReleaseVelocityTracker::Estimate(uint64_t key, int64_t frequency) const noexcept
 	{
 		if (frequency <= 0 || Reason(key, frequency) != CanvasPanReleaseReason::Ready) return {};
 		const auto& history = *Find(key);
-		const auto newest = history.samples[history.count - 1];
+		const auto samples = MotionSamples(history);
+		std::array<size_t, kCanvasPanReleaseCapacity> evidence;
+		const size_t count = independentFit_ ?
+			PanIndependentReleaseEvidence(samples, frequency, evidence) : samples.size();
+		const auto sampleAt = [&](size_t index) -> const CanvasPanVelocitySample&
+		{ return samples[independentFit_ ? evidence[index] : index]; };
+		const auto newest = samples[samples.size() - 1];
 		double sumT = 0.0, sumX = 0.0, sumY = 0.0;
-		for (size_t i = 0; i < history.count; ++i)
+		for (size_t i = 0; i < count; ++i)
 		{
-			sumT += PanSecondsBetween(history.samples[i].qpc, newest.qpc, frequency);
-			sumX += history.samples[i].x - newest.x; sumY += history.samples[i].y - newest.y;
+			sumT += PanSecondsBetween(sampleAt(i).qpc, newest.qpc, frequency);
+			sumX += sampleAt(i).x - newest.x; sumY += sampleAt(i).y - newest.y;
 		}
-		const double meanT = sumT / history.count, meanX = sumX / history.count, meanY = sumY / history.count;
+		const double meanT = sumT / count, meanX = sumX / count, meanY = sumY / count;
 		double denominator = 0.0, numeratorX = 0.0, numeratorY = 0.0;
-		for (size_t i = 0; i < history.count; ++i)
+		for (size_t i = 0; i < count; ++i)
 		{
-			const double dt = PanSecondsBetween(history.samples[i].qpc, newest.qpc, frequency) - meanT;
+			const double dt = PanSecondsBetween(sampleAt(i).qpc, newest.qpc, frequency) - meanT;
 			denominator += dt * dt;
-			numeratorX += dt * (history.samples[i].x - newest.x - meanX);
-			numeratorY += dt * (history.samples[i].y - newest.y - meanY);
+			numeratorX += dt * (sampleAt(i).x - newest.x - meanX);
+			numeratorY += dt * (sampleAt(i).y - newest.y - meanY);
 		}
 		if (!(denominator > 0.0)) return {};
 		const double vx = numeratorX / denominator, vy = numeratorY / denominator;
@@ -759,12 +988,19 @@ namespace Inkeys::Drawing::Draw3
 				(kCanvasPanReleaseZeroAgeSeconds - kCanvasPanReleaseFullAgeSeconds), 0.0, 1.0);
 			const double speed = std::hypot(estimate.x, estimate.y);
 			const auto tail = releaseTracker_.RecentSpeedLimit(contact.pointer.key, frequency, ToCanvasVector(estimate.x, estimate.y));
-			const double limit = (std::min)(motionContext_.velocityLimit, tail.value_or(motionContext_.velocityLimit));
+			const auto support = releaseTracker_.ReleaseSupport(contact.pointer.key, frequency, estimate);
+			const double limit = (std::min)({ motionContext_.velocityLimit, tail.value_or(motionContext_.velocityLimit),
+				support.valid ? support.speedUpperBound : 0 });
 			const double scale = speed > limit ? limit / speed : 1;
-			if (estimate.valid) { vx += estimate.x * gate * scale; vy += estimate.y * gate * scale; }
+			// 显式更新的同位Touch观察用于呈现静止；无新raw的普通低报点帧不清估计。
+			if (estimate.valid && !releaseTracker_.HasStationaryObservation(contact.pointer.key))
+			{ vx += estimate.x * gate * scale; vy += estimate.y * gate * scale; }
 			out.handVelocityKnown |= estimate.valid; ++count;
 		}
-		const auto motionVelocity = count ? ToCanvasVector(vx / count, vy / count) : CanvasVector{};
+		// slop内的短强证据只用于释放资格，未实际scroll时不能给预取/blur虚构呈现速度。
+		const bool presentMotion = detector_.Scrolling() ||
+			(motionContext_.profile != CanvasPanMotionProfile::TouchPhysical && motionContext_.profile != CanvasPanMotionProfile::TouchFallback);
+		const auto motionVelocity = count && presentMotion ? ToCanvasVector(vx / count, vy / count) : CanvasVector{};
 		if (handMotion) *handMotion = motionVelocity;
 		out.handVelocity = PanToDip(motionContext_, motionVelocity);
 		if (count)
@@ -794,20 +1030,140 @@ namespace Inkeys::Drawing::Draw3
 				booster_.Reset(); break;
 			case CanvasPanGestureType::ScrollUpdate:
 			{
+				RecordTouchScroll(event.delta, static_cast<int64_t>(std::llround(event.timeSeconds * input.qpcFrequency)), input, out);
 				// 一帧可包含毫米触摸和 DIP 鼠标，必须在事件边界恢复后再累加。
 				const auto delta = PanToDip(motionContext_, event.delta);
 				out.contentDelta.x += delta.x; out.contentDelta.y += delta.y; break;
 			}
 			case CanvasPanGestureType::FlingStart:
 				out.released = true;
+				if (out.touchDecision.mode == TouchReleaseMode::NotEvaluated ||
+					(motionContext_.profile != CanvasPanMotionProfile::TouchPhysical && motionContext_.profile != CanvasPanMotionProfile::TouchFallback))
 				{ const auto v = PanToDip(motionContext_, event.velocity); out.releaseSpeed = std::hypot(v.x, v.y); }
-				out.frictionParameters = ResolveCanvasPanFriction(motionContext_, std::hypot(event.velocity.x, event.velocity.y));
+				if ((motionContext_.profile == CanvasPanMotionProfile::TouchPhysical || motionContext_.profile == CanvasPanMotionProfile::TouchFallback) &&
+					out.touchDecision.mode != TouchReleaseMode::NotEvaluated)
+				{
+					// Touch纯决策已给最终seed/响应；不得再次加旧残余或由seed触发快甩增强。
+					booster_.Reset(); out.frictionParameters = out.touchDecision.parameters;
+				}
+				else out.frictionParameters = ResolveCanvasPanFriction(motionContext_, std::hypot(event.velocity.x, event.velocity.y));
 				fling_.Start(event, static_cast<double>(input.frameQpc) / input.qpcFrequency,
 					PanToMotion(motionContext_, input.viewportSizeDip), booster_, out.frictionParameters);
 				out.boostedReleaseVelocity = PanToDip(motionContext_, fling_.Velocity()); break;
 			default: break;
 			}
 		}
+	}
+
+	void CanvasPanDynamics::BeginTouchLeg(bool requireIndependent, int64_t qpc) noexcept
+	{
+		touch_.tag.leg = ++touchLegSerial_; touch_.candidate = {};
+		touch_.requestedNet = touch_.confirmedNet = {}; touch_.scrolled = touch_.budgetConfirmed = false;
+		touch_.lastScrollQpc = 0; touch_.residualEligible = false;
+		touch_.distanceEligible = !requireIndependent; touch_.confirmedStopped = requireIndependent;
+		if (qpc) touch_.intentQpc = qpc;
+	}
+	void CanvasPanDynamics::RecordTouchScroll(CanvasVector delta, int64_t qpc,
+		const CanvasPanFrameInput& input, CanvasPanFrameOutput& out) noexcept
+	{
+		const bool touch = motionContext_.profile == CanvasPanMotionProfile::TouchPhysical || motionContext_.profile == CanvasPanMotionProfile::TouchFallback;
+		if (touch)
+		{
+			const double oldLength = std::hypot(touch_.requestedNet.x, touch_.requestedNet.y);
+			if (oldLength > 0 && (delta.x * touch_.requestedNet.x + delta.y * touch_.requestedNet.y) / oldLength <= -motionContext_.reversalDistance)
+				BeginTouchLeg(false, qpc); // 新末指的第一次反向Move也能确认组新腿，不借已退出主指旧速。
+			if (touch_.lastScrollQpc && PanSecondsBetween(qpc, touch_.lastScrollQpc, input.qpcFrequency) >= kCanvasPanReleaseZeroAgeSeconds) BeginTouchLeg(true, qpc);
+			touch_.requestedNet.x += delta.x; touch_.requestedNet.y += delta.y;
+			const int64_t previousScroll = touch_.lastScrollQpc;
+			if (previousScroll && !PanZero(delta))
+			{
+				// 与既有booster共用微秒/最短间隔语义；只让真实慢scroll取消接力，零位移平台不走这里。
+				const double dt = static_cast<double>(PanMicroseconds(static_cast<double>(qpc) / input.qpcFrequency) -
+					PanMicroseconds(static_cast<double>(previousScroll) / input.qpcFrequency)) / 1000000.0;
+				if (dt >= kCanvasPanBoostMinimumIntervalSeconds)
+				{
+					const float scale = static_cast<float>(1.0 / dt);
+					const CanvasVector scrollVelocity{ delta.x * scale, delta.y * scale };
+					if (PanDot(scrollVelocity, scrollVelocity) < motionContext_.boostMinimumScrollVelocity * motionContext_.boostMinimumScrollVelocity)
+					{
+						touch_.residualEligible = touch_.distanceEligible = touch_.budgetConfirmed = false;
+						touch_.confirmedNet = {};
+						// 本帧若已含减速前位移，整帧ACK不能把刚退役的旧预算再领回来。
+						if (out.motionFeedback.present) out.motionFeedback.eligible = false;
+					}
+				}
+			}
+			touch_.scrolled = true; touch_.lastScrollQpc = qpc;
+			if (!CacheTouchEvidence(qpc, input.qpcFrequency) && touch_.candidate.valid)
+			{
+				if (PanSecondsBetween(qpc, touch_.candidate.motionQpc, input.qpcFrequency) >= kCanvasPanReleaseZeroAgeSeconds) touch_.candidate = {};
+				else if (previousScroll)
+				{
+					const double dt = PanSecondsBetween(qpc, previousScroll, input.qpcFrequency);
+					const double speed = std::hypot(touch_.candidate.velocity.x, touch_.candidate.velocity.y);
+					if (dt >= kCanvasPanReleaseMinimumIntervalSeconds && speed > 0)
+					{
+						const double along = (delta.x * touch_.candidate.velocity.x + delta.y * touch_.candidate.velocity.y) / speed;
+						const double upper = ((std::max)(0.0, along) + motionContext_.reversalDistance +
+							std::numeric_limits<float>::epsilon() * std::hypot(touch_.requestedNet.x, touch_.requestedNet.y)) /
+							(dt - 1.0 / input.qpcFrequency);
+						if (upper < speed)
+						{
+							touch_.candidate.velocity = ToCanvasVector(touch_.candidate.velocity.x * upper / speed, touch_.candidate.velocity.y * upper / speed);
+							touch_.candidate.supportLimited = true; touch_.candidate.motionQpc = qpc; touch_.candidate.contactKey = 0;
+						}
+					}
+				}
+			}
+		}
+		const TouchMotionTag tag = touch ? touch_.tag : TouchMotionTag{};
+		if (!out.motionFeedback.present)
+			out.motionFeedback = { tag, input.frameQpc, qpc, true, touch };
+		else
+		{
+			if (out.motionFeedback.tag != tag) out.motionFeedback.eligible = false;
+			out.motionFeedback.scrollQpc = qpc;
+		}
+	}
+	bool CanvasPanDynamics::CacheTouchEvidence(int64_t motionQpc, int64_t frequency) noexcept
+	{
+		double rawX = 0, rawY = 0, vx = 0, vy = 0; size_t count = 0;
+		bool known = false, shortOnly = true, limited = false; uint64_t singleKey = 0;
+		// 只在实际ScrollUpdate采样内容/focus速度。拓扑不采样，未知/静止指计入分母，不能取最快个人。
+		for (const auto& contact : contacts_)
+		{
+			if (!contact.held) continue; ++count; singleKey = contact.pointer.key;
+			const auto raw = releaseTracker_.Estimate(contact.pointer.key, frequency);
+			const auto support = releaseTracker_.ReleaseSupport(contact.pointer.key, frequency, raw);
+			const double speed = std::hypot(raw.x, raw.y);
+			if (!raw.valid || !support.valid || !(speed > 0) || releaseTracker_.HasStationaryObservation(contact.pointer.key)) continue;
+			const auto tail = releaseTracker_.RecentSpeedLimit(contact.pointer.key, frequency, ToCanvasVector(raw.x, raw.y));
+			const double baseline = (std::min)({ speed, tail.value_or(speed), motionContext_.velocityLimit });
+			const double bounded = (std::min)(baseline, support.speedUpperBound);
+			const double age = PanSecondsBetween(motionQpc, releaseTracker_.LastSampleQpc(contact.pointer.key), frequency);
+			const double fresh = std::clamp((kCanvasPanReleaseZeroAgeSeconds - age) /
+				(kCanvasPanReleaseZeroAgeSeconds - kCanvasPanReleaseFullAgeSeconds), 0.0, 1.0);
+			rawX += raw.x; rawY += raw.y; vx += raw.x * bounded / speed * fresh; vy += raw.y * bounded / speed * fresh;
+			known = true; limited |= support.speedUpperBound < baseline;
+			shortOnly &= PanSecondsBetween(support.lastQpc, support.firstQpc, frequency) < kCanvasPanReleaseMinimumSpanSeconds;
+		}
+		if (!count || !known) return false;
+		const auto velocity = ToCanvasVector(vx / count, vy / count);
+		if (!PanZero(velocity) && PanDot(velocity, touch_.requestedNet) < 0) return false;
+		touch_.distanceEligible = true; touch_.confirmedStopped = false;
+		touch_.candidate = { ToCanvasVector(rawX / count, rawY / count), velocity, motionQpc,
+			count == 1 ? singleKey : 0, true, shortOnly, limited };
+		return true;
+	}
+	bool CanvasPanDynamics::ConfirmAppliedMotion(const TouchMotionFeedback& f, CanvasVector actualDip) noexcept
+	{
+		if (!f.present || !f.eligible || f.tag != touch_.tag || !f.tag.group || !HeldContactCount() ||
+			f.frameQpc != lastFrameQpc_ || f.frameQpc <= touch_.lastConfirmedFrame || f.scrollQpc > f.frameQpc ||
+			!std::isfinite(actualDip.x) || !std::isfinite(actualDip.y)) return false;
+		// 仅累计已成功应用的内容净位移；确认时刻不能续租运动/停止时钟。
+		touch_.confirmedNet.x += static_cast<float>(actualDip.x * motionContext_.motionPerDipX);
+		touch_.confirmedNet.y += static_cast<float>(actualDip.y * motionContext_.motionPerDipY);
+		touch_.lastConfirmedFrame = f.frameQpc; touch_.budgetConfirmed = true; return true;
 	}
 
 	CanvasPanFrameOutput CanvasPanDynamics::Step(const CanvasPanFrameInput& input) noexcept
@@ -941,6 +1297,14 @@ namespace Inkeys::Drawing::Draw3
 				{
 					// 先结算旧域，真正的新 Down 才能换单位或隔离旧响应残余。
 					if (!SamePanPolicy(motionContext_, proposed)) StopFling();
+					const CanvasVector residual = fling_.Active() && SamePanPolicy(motionContext_, proposed) && sample.sourceKey == lastSourceKey_ ? fling_.Velocity() : CanvasVector{};
+					if (!SamePanPolicy(motionContext_, proposed)) ++touchMetricSerial_;
+					touch_ = {};
+					if (proposed.profile == CanvasPanMotionProfile::TouchPhysical || proposed.profile == CanvasPanMotionProfile::TouchFallback)
+					{
+						touch_.tag = { ++touchGroupSerial_, ++touchLegSerial_, touchEpoch_, touchMetricSerial_ };
+						touch_.residual = residual; touch_.residualEligible = !PanZero(residual); touch_.intentQpc = sample.qpc;
+					}
 					motionContext_ = proposed; releaseTracker_.Configure(proposed); detector_.Configure(proposed); booster_.Configure(proposed);
 					releaseTracker_.Clear();
 				}
@@ -951,6 +1315,7 @@ namespace Inkeys::Drawing::Draw3
 				releaseTracker_.ClearPointer(sample.key);
 				Dispatch(detector_.Down(sample.qpc, currentPointers(), input.qpcFrequency), input, events);
 				releaseTracker_.AddSample(sample.key, { sample.qpc, sample.x, sample.y }, input.qpcFrequency);
+				if (touch_.tag.group) touch_.lastRawQpc = (std::max)(touch_.lastRawQpc, sample.qpc);
 				decide(sourceSample, CanvasPanAdmissionReason::Accepted); ++events.sampleCount;
 				if (terminalBeforeDown(sample.key))
 				{
@@ -960,11 +1325,16 @@ namespace Inkeys::Drawing::Draw3
 					if (last)
 					{
 						events.released = true; events.releaseSourceKey = sample.sourceKey;
+						ResetTouchReleaseMetadata(events);
 						events.releaseMotionContext = motionContext_; events.releaseReason = CanvasPanReleaseReason::TimingRejected;
 						events.frictionParameters = ResolveCanvasPanFriction(motionContext_, 0);
 						events.rawReleaseVelocity = events.selectedReleaseVelocity = events.boostedReleaseVelocity = events.releaseMotionVelocity = {};
 						events.releaseSpeed = events.releaseAgeSeconds = events.releaseTailSpeedLimit = events.releaseSpanSeconds = 0;
 						events.releaseSampleCount = 0; events.releaseTailSpeedLimited = false;
+						events.releaseContactKey = sample.key; events.releaseSupport = {};
+						events.releaseSupportLimited = events.releaseOutputLimited = events.releaseBoostSuppressed = false;
+						events.releaseMotionAgeLimited = false; events.releaseMotionSampleCount = 0;
+						events.releaseLastRawQpc = events.releaseLastMotionQpc = 0;
 					}
 				}
 				continue;
@@ -974,11 +1344,20 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (found == contacts_.end() || sample.qpc <= found->lastQpc) { ++events.rejectedSamples; continue; }
 				if (moveQpc && moveQpc != sample.qpc) flushMove();
+				const bool rawGap = PanSecondsBetween(sample.qpc, found->lastQpc, input.qpcFrequency) >= kCanvasPanTrackerGapSeconds;
 				const auto result = releaseTracker_.AddSample(sample.key, { sample.qpc, sample.x, sample.y }, input.qpcFrequency);
-				if (result == CanvasPanSampleDisposition::Reversed || result == CanvasPanSampleDisposition::TimingRejected)
+				if (touch_.tag.group)
 				{
-					booster_.Reset();
-					if (result == CanvasPanSampleDisposition::Reversed) ++events.reversalCount; else ++events.timingResetCount;
+					if (rawGap || result == CanvasPanSampleDisposition::Reversed) BeginTouchLeg(rawGap, sample.qpc);
+					else if (!touch_.confirmedStopped && touch_.intentQpc && PanSecondsBetween(sample.qpc,
+						touch_.lastScrollQpc ? touch_.lastScrollQpc : touch_.intentQpc, input.qpcFrequency) >= kCanvasPanReleaseZeroAgeSeconds)
+						BeginTouchLeg(true, sample.qpc);
+				}
+				if (touch_.tag.group)
+				{ touch_.lastRawQpc = (std::max)(touch_.lastRawQpc, sample.qpc); }
+				if (result == CanvasPanSampleDisposition::Reversed)
+				{
+					booster_.Reset(); ++events.reversalCount;
 				}
 				found->pointer = { sample.key, sample.x, sample.y }; found->lastQpc = sample.qpc;
 				moveQpc = sample.qpc; ++events.sampleCount; continue;
@@ -990,17 +1369,31 @@ namespace Inkeys::Drawing::Draw3
 			found->pointer = { sample.key, sample.x, sample.y };
 			const bool last = HeldContactCount() == 1;
 			const bool cancelled = sample.phase == CanvasPanContactPhase::Cancelled || invalidTerminalTime;
-			const int64_t latest = releaseTracker_.LastSampleQpc(sample.key);
+			const int64_t latest = releaseTracker_.LastMotionQpc(sample.key);
 			const double age = latest ? PanSecondsBetween(sample.qpc, latest, input.qpcFrequency) : 0;
 			const auto raw = releaseTracker_.Estimate(sample.key, input.qpcFrequency);
 			auto selected = raw.valid ? raw : CanvasPanVelocityEstimate{};
-			const double gate = std::clamp((kCanvasPanReleaseZeroAgeSeconds - age) /
+			const bool touchRelease = motionContext_.profile == CanvasPanMotionProfile::TouchPhysical || motionContext_.profile == CanvasPanMotionProfile::TouchFallback;
+			const double rawAge = PanSecondsBetween(sample.qpc, releaseTracker_.LastSampleQpc(sample.key), input.qpcFrequency);
+			const double gate = std::clamp((kCanvasPanReleaseZeroAgeSeconds - (touchRelease ? rawAge : age)) /
 				(kCanvasPanReleaseZeroAgeSeconds - kCanvasPanReleaseFullAgeSeconds), 0.0, 1.0);
 			const double speed = std::hypot(raw.x, raw.y);
 			const auto tailLimit = raw.valid ? releaseTracker_.RecentSpeedLimit(sample.key, input.qpcFrequency, ToCanvasVector(raw.x, raw.y)) : std::optional<double>{};
-			const double limit = (std::min)(motionContext_.velocityLimit, tailLimit.value_or(motionContext_.velocityLimit));
+			const auto support = releaseTracker_.ReleaseSupport(sample.key, input.qpcFrequency, raw);
+			const double beforeSupport = (std::min)(speed, tailLimit.value_or(speed));
+			const bool supportLimited = raw.valid && speed > 0 && (!support.valid || support.speedUpperBound < (std::min)(beforeSupport, motionContext_.velocityLimit));
+			const double supported = (std::min)(beforeSupport, support.valid ? support.speedUpperBound : 0);
+			const double limit = (std::min)(motionContext_.velocityLimit, supported);
 			const double scale = speed > limit ? limit / speed : 1;
 			selected.x *= gate * scale; selected.y *= gate * scale;
+			// 质量降级不能被旧残余再次抬高；单纯超出输出cap不清历史或续甩资格。
+			const bool touchMotionAgeLimited = false; // Touch平台/明确停住由唯一纯决策区分，不再机械衰减。
+			if (supportLimited && !touchRelease) booster_.Reset();
+			if (touchRelease)
+			{
+				touch_.lastRawQpc = (std::max)(touch_.lastRawQpc, releaseTracker_.LastSampleQpc(sample.key));
+				if (cancelled) BeginTouchLeg(true, sample.qpc);
+			}
 			if (cancelled) { selected = {}; booster_.Reset(); }
 			if (!sample.allowInertia) { if (last) selected = {}; booster_.Reset(); }
 			const double selectedSpeed = std::hypot(selected.x, selected.y);
@@ -1016,6 +1409,12 @@ namespace Inkeys::Drawing::Draw3
 					raw.x / speed * *tailLimit / motionContext_.motionPerDipX,
 					raw.y / speed * *tailLimit / motionContext_.motionPerDipY) : 0;
 				events.releaseTailSpeedLimited = tailLimit && *tailLimit < speed;
+				events.releaseContactKey = sample.key; events.releaseSupport = support;
+				events.releaseSupportLimited = supportLimited; events.releaseBoostSuppressed = supportLimited || touchMotionAgeLimited;
+				events.releaseMotionAgeLimited = touchMotionAgeLimited;
+				events.releaseMotionSampleCount = releaseTracker_.MotionSampleCount(sample.key);
+				events.releaseLastRawQpc = releaseTracker_.LastSampleQpc(sample.key); events.releaseLastMotionQpc = latest;
+				events.releaseOutputLimited = supported > motionContext_.velocityLimit;
 				events.rawReleaseVelocity = PanToDip(motionContext_, ToCanvasVector(raw.x, raw.y));
 				events.selectedReleaseVelocity = PanToDip(motionContext_, events.releaseMotionVelocity);
 				events.releaseSpeed = std::hypot(selected.x / motionContext_.motionPerDipX, selected.y / motionContext_.motionPerDipY);
@@ -1025,6 +1424,8 @@ namespace Inkeys::Drawing::Draw3
 					cancelled ? CanvasPanReleaseReason::Cancelled : !sample.allowInertia ? CanvasPanReleaseReason::Disabled :
 					age >= kCanvasPanReleaseZeroAgeSeconds ? CanvasPanReleaseReason::Stale : releaseTracker_.Reason(sample.key, input.qpcFrequency);
 				if (events.releaseReason == CanvasPanReleaseReason::Ready && !raw.valid) events.releaseReason = CanvasPanReleaseReason::DirectionConflict;
+				else if (events.releaseReason == CanvasPanReleaseReason::Ready && speed > 0 && !support.valid)
+					events.releaseReason = CanvasPanReleaseReason::InsufficientSupport;
 				else if (events.releaseReason == CanvasPanReleaseReason::Ready && selectedSpeed <= motionContext_.minimumFlingVelocity)
 					events.releaseReason = CanvasPanReleaseReason::Stationary;
 			}
@@ -1034,11 +1435,36 @@ namespace Inkeys::Drawing::Draw3
 				{
 					if (!other.held || other.pointer.key == sample.key) continue;
 					const auto velocity = releaseTracker_.Estimate(other.pointer.key, input.qpcFrequency);
-					const double otherAge = PanSecondsBetween(sample.qpc, releaseTracker_.LastSampleQpc(other.pointer.key), input.qpcFrequency);
+					const double otherAge = PanSecondsBetween(sample.qpc, releaseTracker_.LastMotionQpc(other.pointer.key), input.qpcFrequency);
 					if (velocity.valid && otherAge < kCanvasPanReleaseZeroAgeSeconds && selected.x * velocity.x + selected.y * velocity.y < 0)
-					{ releaseTracker_.Clear(); booster_.Reset(); break; }
+					{ releaseTracker_.Clear(); booster_.Reset(); if (touchRelease) BeginTouchLeg(false, sample.qpc); break; }
 				}
 			}
+			if (last && touchRelease)
+			{
+				TouchReleaseFacts facts; facts.context = motionContext_; facts.evidence = touch_.candidate;
+				facts.direction = touch_.requestedNet; facts.confirmedNet = touch_.confirmedNet; facts.residual = touch_.residual;
+				facts.scrolled = touch_.scrolled; facts.cancelled = cancelled; facts.allowInertia = sample.allowInertia;
+				facts.residualEligible = touch_.residualEligible; facts.budgetConfirmed = touch_.budgetConfirmed && touch_.distanceEligible; facts.confirmedStopped = touch_.confirmedStopped;
+				facts.rawAgeSeconds = touch_.lastRawQpc ? PanSecondsBetween(sample.qpc, touch_.lastRawQpc, input.qpcFrequency) : kCanvasPanReleaseZeroAgeSeconds;
+				facts.motionAgeSeconds = facts.scrollAgeSeconds = touch_.lastScrollQpc ? PanSecondsBetween(sample.qpc, touch_.lastScrollQpc, input.qpcFrequency) : kCanvasPanReleaseZeroAgeSeconds;
+				facts.platformObserved = touch_.lastRawQpc > touch_.lastScrollQpc;
+				if (!PanZero(facts.evidence.velocity) && PanDot(facts.evidence.velocity, facts.direction) <= 0) facts.evidence = {};
+				const auto decision = ResolveTouchRelease(facts); events.touchDecision = decision; events.releaseTouchTag = touch_.tag;
+				selected = { decision.mode != TouchReleaseMode::Stop, decision.velocitySeed.x, decision.velocitySeed.y };
+				const bool measured = decision.mode == TouchReleaseMode::Measured || decision.mode == TouchReleaseMode::ShortSupported;
+				events.releaseMotionVelocity = measured ? decision.handVelocity : decision.velocitySeed;
+				events.selectedReleaseVelocity = PanToDip(motionContext_, events.releaseMotionVelocity);
+				events.releaseSpeed = std::hypot(events.selectedReleaseVelocity.x, events.selectedReleaseVelocity.y);
+				events.rawReleaseVelocity = PanToDip(motionContext_, facts.evidence.raw);
+				events.releaseRawAgeSeconds = facts.rawAgeSeconds; events.releasePlatformSeconds = facts.motionAgeSeconds;
+				events.releaseBoostSuppressed = decision.boostSuppressed; events.releaseMotionAgeLimited = false;
+				events.releaseReason = decision.mode != TouchReleaseMode::Stop ? CanvasPanReleaseReason::Ready :
+					invalidTerminalTime ? CanvasPanReleaseReason::TimingRejected : cancelled ? CanvasPanReleaseReason::Cancelled : !sample.allowInertia ? CanvasPanReleaseReason::Disabled :
+					decision.reason == TouchReleaseReason::ConfirmedStop || decision.reason == TouchReleaseReason::StaleRaw ? CanvasPanReleaseReason::Stale : CanvasPanReleaseReason::InsufficientSupport;
+				booster_.Reset(); // 最终seed已包括一次合法残余，执行器不得重复加。
+			}
+			else if (last) ResetTouchReleaseMetadata(events);
 			Dispatch(detector_.Up(sample.qpc, currentPointers(), sample.key, cancelled, input.qpcFrequency, selected), input, events);
 			if (last && !fling_.Active())
 			{
@@ -1052,6 +1478,7 @@ namespace Inkeys::Drawing::Draw3
 		if (input.penHover && fling_.Active()) StopFling();
 		const auto flingDelta = PanToDip(motionContext_, fling_.Progress(static_cast<double>(input.frameQpc) / input.qpcFrequency, booster_));
 		events.contentDelta.x += flingDelta.x; events.contentDelta.y += flingDelta.y;
+		if (!PanZero(flingDelta)) events.motionFeedback.eligible = false;
 		velocity_ = fling_.Active() ? fling_.Velocity() : CanvasVector{};
 		CanvasVector handMotion;
 		auto out = Snapshot(input.qpcFrequency, &handMotion);
@@ -1066,10 +1493,17 @@ namespace Inkeys::Drawing::Draw3
 		out.boostedReleaseVelocity = events.boostedReleaseVelocity; out.releaseReason = events.releaseReason;
 		out.releaseSampleCount = events.releaseSampleCount; out.releaseSpanSeconds = events.releaseSpanSeconds;
 		out.releaseTailSpeedLimit = events.releaseTailSpeedLimit; out.releaseTailSpeedLimited = events.releaseTailSpeedLimited;
+		out.releaseContactKey = events.releaseContactKey; out.releaseSupport = events.releaseSupport;
+		out.releaseSupportLimited = events.releaseSupportLimited; out.releaseOutputLimited = events.releaseOutputLimited;
+		out.releaseBoostSuppressed = events.releaseBoostSuppressed;
+		out.releaseMotionSampleCount = events.releaseMotionSampleCount; out.releaseMotionAgeLimited = events.releaseMotionAgeLimited;
+		out.releaseLastRawQpc = events.releaseLastRawQpc; out.releaseLastMotionQpc = events.releaseLastMotionQpc;
 		out.rejectedSamples = events.rejectedSamples; out.reversalCount = events.reversalCount; out.timingResetCount = events.timingResetCount;
 		out.admissionDecisionCount = events.admissionDecisionCount; out.releaseSourceKey = events.releaseSourceKey;
 		out.releaseMotionContext = events.releaseMotionContext; out.releaseMotionVelocity = events.releaseMotionVelocity;
 		out.frictionParameters = events.frictionParameters;
+		out.touchDecision = events.touchDecision; out.releaseTouchTag = events.releaseTouchTag; out.motionFeedback = events.motionFeedback;
+		out.releaseRawAgeSeconds = events.releaseRawAgeSeconds; out.releasePlatformSeconds = events.releasePlatformSeconds;
 		return out;
 	}
 
@@ -1077,11 +1511,19 @@ namespace Inkeys::Drawing::Draw3
 	{
 		contacts_ = {}; rejectedContacts_.clear(); earlyTerminalKeys_.clear(); detector_.Reset(); releaseTracker_.Clear(); fling_.StopFling(booster_); velocity_ = {};
 		lastFrameQpc_ = 0; lastSourceKey_ = 0; motionContext_ = {};
+		touch_ = {}; ++touchEpoch_;
 	}
-	void CanvasPanDynamics::StopFling() noexcept { fling_.StopFling(booster_); velocity_ = {}; }
+	void CanvasPanDynamics::StopFling() noexcept
+	{
+		fling_.StopFling(booster_); velocity_ = {}; ++touchEpoch_;
+		if (HeldContactCount() && touch_.tag.group) { BeginTouchLeg(true, touch_.lastRawQpc); touch_.tag.epoch = touchEpoch_; }
+		else touch_ = {};
+	}
 	void CanvasPanDynamics::ClearAxis(bool x, bool y) noexcept
 	{
 		releaseTracker_.ClearAxis(x, y); fling_.ClearAxis(x, y, booster_);
+		if (x) { touch_.confirmedNet.x = touch_.requestedNet.x = touch_.residual.x = touch_.candidate.velocity.x = touch_.candidate.raw.x = 0; }
+		if (y) { touch_.confirmedNet.y = touch_.requestedNet.y = touch_.residual.y = touch_.candidate.velocity.y = touch_.candidate.raw.y = 0; }
 		if (x) velocity_.x = 0;
 		if (y) velocity_.y = 0;
 	}

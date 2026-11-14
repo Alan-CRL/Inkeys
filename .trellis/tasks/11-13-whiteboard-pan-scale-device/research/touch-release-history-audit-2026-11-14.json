@@ -1,0 +1,132 @@
+{
+  "type": "read-only source history audit; no native cross-version replay performed",
+  "versions": {
+    "7b213d90": [
+      {
+        "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp",
+        "sha256": "6f2f4e6de5a75c30ed4b917cccda2e6e2ecd7b7efc670a5fd68246f84684c8c9",
+        "matches": [
+          {
+            "line": 273,
+            "text": "if (m < 2) return {};"
+          },
+          {
+            "line": 806,
+            "text": "const int64_t latest = detector_.Tracker().LastSampleQpc();"
+          }
+        ]
+      },
+      {
+        "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm",
+        "sha256": "abe48499a5aa747c1d6da62fc35e2efdbc4339ae4bbde0ea4b16faa7922a12a6",
+        "matches": []
+      }
+    ],
+    "4b4edb91": [
+      {
+        "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp",
+        "sha256": "dbe536a4719328854996761353a87b7a40a8aeddb11a6e1c4d54efea1c8029e7",
+        "matches": [
+          {
+            "line": 273,
+            "text": "if (m < 2) return {};"
+          },
+          {
+            "line": 476,
+            "text": "if (SampleSpanSeconds(key, frequency) + 1e-9 < kCanvasPanReleaseMinimumSpanSeconds) return CanvasPanReleaseReason::InsufficientSpan;"
+          },
+          {
+            "line": 1072,
+            "text": "const int64_t latest = releaseTracker_.LastSampleQpc(sample.key);"
+          }
+        ]
+      },
+      {
+        "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm",
+        "sha256": "5c7924a434a798b2432b523f38c320904baeb818eb666776d828dbb6df21d81a",
+        "matches": [
+          {
+            "line": 57,
+            "text": "inline constexpr double kCanvasPanReleaseMinimumSpanSeconds = 0.020;"
+          },
+          {
+            "line": 60,
+            "text": "inline constexpr double kCanvasPanReleaseFullAgeSeconds = 0.030;"
+          },
+          {
+            "line": 61,
+            "text": "inline constexpr double kCanvasPanReleaseZeroAgeSeconds = 0.070;"
+          }
+        ]
+      }
+    ],
+    "4706ec0e": [
+      {
+        "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp",
+        "sha256": "15ba2ee897e85519e630f462b25b21079fa386bbc8e0cb9cc8dd921e5f34b322",
+        "matches": [
+          {
+            "line": 319,
+            "text": "if (SampleSpanSeconds(key, frequency) + 1e-9 < kCanvasPanReleaseMinimumSpanSeconds) return CanvasPanReleaseReason::InsufficientSpan;"
+          },
+          {
+            "line": 768,
+            "text": "const int64_t latest = releaseTracker_.LastSampleQpc(sample.key);"
+          }
+        ]
+      },
+      {
+        "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm",
+        "sha256": "2e09d16ce8c77d848ddb216a203ef6ed5cbc0463fc6ca0e8d1382b9f8b7fcf2e",
+        "matches": [
+          {
+            "line": 35,
+            "text": "inline constexpr double kCanvasPanReleaseMinimumSpanSeconds = 0.020;"
+          },
+          {
+            "line": 38,
+            "text": "inline constexpr double kCanvasPanReleaseFullAgeSeconds = 0.030;"
+          },
+          {
+            "line": 39,
+            "text": "inline constexpr double kCanvasPanReleaseZeroAgeSeconds = 0.070;"
+          }
+        ]
+      }
+    ],
+    "c2f21bd0": [
+      {
+        "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp",
+        "sha256": "77b5deab6e88bb275641452f5b995d7a7ef59d4a6418d551884211875f28ed9c",
+        "matches": [
+          {
+            "line": 401,
+            "text": "if (SampleSpanSeconds(key, frequency) + 1e-9 < kCanvasPanReleaseMinimumSpanSeconds) return CanvasPanReleaseReason::InsufficientSpan;"
+          },
+          {
+            "line": 993,
+            "text": "const int64_t latest = releaseTracker_.LastSampleQpc(sample.key);"
+          }
+        ]
+      },
+      {
+        "file": "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm",
+        "sha256": "2c452aa03e1425cbe5e1679a497c92d744a7abb8e655f11079e06bab8bf183b8",
+        "matches": [
+          {
+            "line": 36,
+            "text": "inline constexpr double kCanvasPanReleaseMinimumSpanSeconds = 0.020;"
+          },
+          {
+            "line": 39,
+            "text": "inline constexpr double kCanvasPanReleaseFullAgeSeconds = 0.030;"
+          },
+          {
+            "line": 40,
+            "text": "inline constexpr double kCanvasPanReleaseZeroAgeSeconds = 0.070;"
+          }
+        ]
+      }
+    ]
+  }
+}

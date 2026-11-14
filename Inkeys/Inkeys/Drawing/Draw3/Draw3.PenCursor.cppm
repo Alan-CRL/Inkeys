@@ -201,7 +201,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool penSampleValid, bool mouseSampleValid,
 		bool mouseUsesSystemCursor = true, bool touchPanActive = false,
 		bool realMouseTakeoverDuringTouchPan = false,
-		bool mouseSampleIsTablet = false) noexcept;
+		bool mouseSampleIsTablet = false, bool canvasPanMode = false) noexcept;
 	// Touch 仅暂时接管视觉；真实 Mouse 接管活动 Pan 时仍保持优先。
 	DrawingCursorPointerAuthority ResolveDrawingCursorVisualAuthority(
 		DrawingCursorPointerAuthority persistentOwner, bool touchCursorSuppressed,

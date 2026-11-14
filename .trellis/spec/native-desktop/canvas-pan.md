@@ -15,7 +15,7 @@
 - `WindowController::TouchpadNavigationNeedsUpdate()`表示interaction待识别或实际动画所需调度，不能用于判held；`TouchpadNavigationFrontend::{Associate,Interaction,CanPublishStatus,PublishStatus,Reset}`供真实Owner与无窗口测试共用。`ConfigureTouchpadViewport`及`DispatchTouchpadHitTest`约束实际初始化和来源选择。
 - `CanvasPanReleaseVelocityTracker::{AddSample,Estimate,Reason,SampleCount,SampleSpanSeconds,ClearPointer,ClearAxis}`：逐指真实采样，当前唯一释放估速为可靠同向尾段线性拟合。
 - `CanvasPanFlingCurve`仅保留向量摩擦闭式；`CanvasPanFlingController`负责推进/取消/限位，不再提供曲线选择枚举或旧曲线入口。
-- `CanvasPanFrameOutput`额外记录raw/selected/boosted release向量、releaseReason/count/span、rejectedSamples/reversalCount/timingResetCount。
+- `CanvasPanFrameOutput`额外记录raw/selected/boosted release向量、releaseReason/count/span、rejectedSamples/reversalCount/timingResetCount。 释放追加release-quality，记录key/source/profile/unit、raw-points/anchors/positive-intervals、真实锚点QPC、support-upper/valid/limited、output-limited、boost-suppressed。真实Stop入口追加触发原因；通用fling-complete-or-cancel仍不能单独证明误取消。
 - `CanvasPanSourceClass{None,Touch,Mouse,Pen,PenTail}`保持0..4，高32位仍在sourceKey；`CanvasPanMotionContext`含unit/profile、两轴motionPerDip、outputKey/sourceGeneration、映射事实及空间阈值；`MakeCanvasPanMotionContext`/`ResolveCanvasPanFriction`是纯数值入口。
 - `CanvasPanFrameInput::{motionContexts,admissionDecisions}`由caller持有；Down的`motionContextIndex`仅本次Step有效，核心复制选中值。`CanvasPanFrameOutput::{admissionDecisionCount,admissionFailed,releaseSourceKey,releaseMotionContext,releaseMotionVelocity,frictionParameters}`区分准入结果与释放自身标签。
 - `WindowController::CanvasPanDisplayContextSnapshot()`同锁读取display+mode；`DrawingCursorEventSink::{NotifyPenFeedbackContact,PublishPenCursorSampleForContact,ClearPenCursorSampleForContact}`旁路真实RTS token；窗口`NavigationPenFeedbackToken`/`SetNavigationPenFeedbackEpoch`/`ApplyNavigationPenDecision`应用权威反馈；`ReadPenCursorSample(sample,bool* suppressed=nullptr)`一次取配对样本与抑制状态。
@@ -39,14 +39,20 @@
 ### 几何、释放与连续滑动
 
 - 公共输入/输出仍为系统DIP并与像素互转；内部按MotionContext使用mm或DIP，首次径向扣该profile的slop。手按住时旧惯性不推动画布。Down立刻取消旧动画；拖动模式所有来源的运动均不因笔尖/笔尾hover停止，真实允许接管的Down取消旧coast，持续接触继续跟手。活动Touch/native Running持有时的后来Pen按互斥保护跟踪到终态，不混focus。
-- 产品释放取最近同向50ms尾段线性拟合；保留窗口左侧一个真实锚点以兼容低报点率，至少3点且跨度20ms。每指容量64；不得恢复旧LSQ2的20点/100ms规则替代产品释放合同。
-- 反向沿原可靠方向累计达到context.reversalDistance才确认（间接基准1DIP），零点/细碎噪声不反复重置；确认即切断旧方向和boost。新尾段不够时释放0，不回退旧窗口。小于2ms且段位移超过本profile模长上限允许距离（包含1个QPC tick与两端float坐标量化误差界）作为可检测异常重置证据，几何仍跟手；仅arrival无法识别所有时间压缩。
+- 产品释放取最近同向50ms尾段线性拟合；保留窗口左侧一个真实锚点以兼容低报点率，标准充分估速分支至少3点且跨度20ms；Touch另有ShortSupported/ResidualOnly/DistanceBounded分级决策。raw与Touch progress每指各≤64；不得恢复旧LSQ2的20点/100ms规则替代产品释放合同。
+- 反向沿原可靠方向累计达到context.reversalDistance才确认（间接基准1DIP），零点/细碎噪声不反复重置；确认即切断旧方向和boost。新尾段不足且无合法Touch组候选/有限退化时释放0，不借旧方向复活。合法超速不清历史、方向或续甩资格，不能用profile输出cap证明输入时间无效。
+- ScreenPen Physical/Fallback从最新真实Move向前取间隔≥2ms锚点拟合；Touch Physical/Fallback改用真实位置进展点及运动年龄，重复raw仍保留停止观察，详见[释放质量规范](canvas-pan-release-quality.md)。Indirect保留原raw拟合；充分估速仍需真实多段；Touch短强证据/组决策与有限退化按释放质量规范，不统一用个人20ms归零，不补Up速度或伪造时间。
+- 已移除输出cap判坏时间因果。前轮实机Touch末坐标平台曾被双段支持压成1–3mm短尾，现已改为集中释放决策；Ready仍不代表体验验收，重复位置的物理原因未定。见[复测](../../tasks/11-13-whiteboard-pan-scale-device/research/device-feedback-summary-2026-11-14.md)。
 - 拟合方向与最新可靠方向冲突时以DirectionConflict拒绝释放，raw值仍可诊断；已准入Up即使时间异常也必须闭合并取消惯性，不能留下永久held。
 - 释放selected速度还受最新可靠同向段的速度上限约束（真实点累计至少2ms与context.reversalDistance），防减速时50ms拟合残留旧快速度；raw诊断保留，不能用单个量化点强制限速。
-- 最后有效样本距Up≤30ms保持速度，30–70ms线性衰减，≥70ms为0；取消/无有效速度不fling。不得恢复250DIP/s硬台阶。
+- 原raw新鲜度门仍≤30ms全速、30–70ms衰减、≥70ms为0；Touch平台/确认停止另由纯决策处理，不把motion-age直接套同一减速门；取消或最终决策无可用seed时不fling。不得恢复250DIP/s硬台阶。
 - 自由运动沿释放向量统一闭式减速：`ds/dt=−s/tau−c`；`T=tau*log1p(s/(c*tau))`、`D=tau*s−c*tau*T`。间接基准仍tau=.30秒、c=1000DIP/s²，其它profile按下节选定并锁存。不得逐轴平方改变斜向方向，不恢复Slipping。
-- 连甩使用当前残余在新方向上的正投影，boost加法后最终模长≤本profile上限（间接基准12000DIP/s）；保留50ms合格滚动续期窗口（不是整个Down→Up必须≤50ms）。反向、弱证据、程序Stop、取消、超时或来源变化清候选，不重新累加历史初速。
+- 连甩使用当前残余在新方向上的正投影，boost加法后最终模长≤本profile上限（间接基准12000DIP/s）；非Touch保留50ms合格滚动续期窗口（不是整个Down→Up必须≤50ms）；Touch终端平台由Decision统一裁决至确认停止边界，不无限续租。反向、弱证据、程序Stop、取消、超时或来源变化清候选，不重新累加历史初速。
 - inputReleaseTime用于时效；动画以首次消费Up的呈现帧为起点，首帧不追补fling但照常提交真实Move位移。ClearAxis同步booster当前残余并归一化剩余方向，避免下一Down恢复已限位轴。之后按同一动画时钟推进；不保证消除渲染长帧自身的视觉停顿。
+
+### 释放质量与Touch专用证据
+
+输出cap不判坏输入；通用双段质量支持、Touch进展/重复观察分工及验收见[释放质量规范](canvas-pan-release-quality.md)。修改Tracker/释放/boost时须读该文；Touch新分工已实现，Pen/PenTail/Indirect保持前轮路径；硬件验收以任务记录为准。
 
 ### 尺度、设备响应与唯一有序准入
 
@@ -103,6 +109,9 @@
 | 可靠短反向但尾段不足 | 清旧候选，释放0 |
 | 相同输入、不同消费fps | 真实样本与释放速度不被呈现采样改变；离散首尾帧位移单列 |
 | 无可靠时间/异常短间隔 | 明确拒绝/退化，不伪造采样时刻 |
+| ScreenPen成簇到达、跨段可靠 | 至少3个≥2ms真实锚点/20ms，保留末点，允许正常起滑 |
+| 合法输入超过profile输出cap | 保留历史与支持资格，只在合适输出端限幅 |
+| 反向新尾段或独立运动支持不足 | 不复活旧方向或不可信释放；质量限制不清真实历史 |
 | 五类输入轮换 | 不混focus、不跨来源继承boost；实际消费来源决定热停哪类 |
 | Pen/PenTail真实入环 | Down/Move/Up全部到达；持续contact不自我Stop，终态只回收一次 |
 | hover / 实际Down | 拖动模式hover均不急停；允许接管的Down停旧coast |
@@ -140,6 +149,8 @@
 - 设置`--no-window --setting-general-only`及真实Config元数据覆盖六bool默认/往返/非法/ReadMini/Reset/NoUpload、父关保留子项/单击ID/显隐禁交互/窄宽布局；二十语言全部校验。
 - 当前前端回归必须由`RunTouchpadIngressProductionProbe`断言DM quarantine仍启用，并保留停用实现的setup/关联/interaction/状态测试及四类真实Coordinator接触回归；这些只防止隔离被无意撤销，不证明PTP可用。未来重新启用前必须执行真实RTS/DM注册与接触探针；独立HWND初始化、直接PublishHiddenTestTouchpadNavigation或只断言选项位均不够。
 - 新增真实resolver/ContactInput→Pending→有序决策→窗口token路径回归：各轴/DPI/旋转、>16顺序Down、坏终态/重复逆frame、排队物理失效、双publisher配对及ABA。不能只测公式或空样本的否定断言。
+- 屏幕笔到达簇回归重放2026-11-14用户日志的五个完整手势（不补造截断key75）；覆盖毫米/回退profile的非零可靠释放、滑行实际推进、末端异常跳跃、同簇反向、全段压缩、stale Up及原Indirect/Touch行为。
+- 时序/质量回归：共同10MHz时钟的240/960Hz与cap两侧、19ms空档后的末尾簇、Touch两单位、低速量化、单末点/静止后jump/重复平台、持续加速与减速、反向/stale/取消；真实非零旧coast→质量限幅必须boosted=selected，纯cap限幅仍保持续甩资格。旧“超cap即清窗”异常断言按新合同改，普通Indirect基准单独比较。
 - GUI/真机测试需要用户明确授权或用户手动执行；自动测试不等于手感验收。实际运行结果写当前task验证记录，规范不冒称PASS。
 
 ## 7. Wrong vs Correct

@@ -1,0 +1,1487 @@
+{
+  "evidenceType": "read-only focused log correlation and offline arithmetic; not native execution or physical hand-speed measurement",
+  "snapshotSha256": "ac5a7c2ab6564f44fa027b06979baf40f8a9fb6b8534c49fc431511d7cfafd15",
+  "qpcFrequency": 10000000,
+  "coordinatePrecision": "rounded log px and velocity fields",
+  "scriptSha256": "17f9ad35779c7725d194c3246023cda67d18af4ef9cb094c70c1129f85f83a51",
+  "examples": [
+    {
+      "key": 4,
+      "source": 4867889024,
+      "context": {
+        "line": 15901,
+        "dipPerPixel": [
+          0.5,
+          0.5
+        ],
+        "motionPerDip": [
+          0.19444445,
+          0.19791666
+        ]
+      },
+      "releaseLine": 16057,
+      "qualityLine": 16058,
+      "rawMmPerSecond": 633.8528759282582,
+      "supportUpperMmPerSecond": 945.96968,
+      "tailUpperMmPerSecondApprox": 916.1071029281037,
+      "motionAgeMs": 8.295300000000001,
+      "ageGate": 1,
+      "predictedSelectedMmPerSecond": 633.8528759282582,
+      "selectedMmPerSecond": 633.8535658347125,
+      "boostedMmPerSecond": 633.8528759282582,
+      "selectedToRawRatio": 1.0000010884331059,
+      "lastMovingHeld": {
+        "line": 16042,
+        "deltaPx": [
+          59.87,
+          -50.27
+        ],
+        "estimatedSpeedMmPerSecond": 633.8484877532383
+      },
+      "selectedToLastMovingHeldEstimate": 1.000008011506807,
+      "boostedToLastMovingHeldEstimate": 1.000006923066166,
+      "lastCallbackSegmentSpeedMmPerSecond": 916.1111391597256,
+      "motionEvent": {
+        "line": 16041,
+        "ordinal": 817,
+        "epoch": 5,
+        "source": 4867889024,
+        "phase": 1,
+        "px": [
+          2031.194,
+          919.408
+        ],
+        "qpc": 155246639920,
+        "frameQpc": 155246642443
+      },
+      "previousMotionEvent": {
+        "line": 16031,
+        "ordinal": 816,
+        "epoch": 5,
+        "source": 4867889024,
+        "phase": 1,
+        "px": [
+          1971.326,
+          969.676
+        ],
+        "qpc": 155246556343,
+        "frameQpc": 155246558363
+      },
+      "upEvent": {
+        "line": 16053,
+        "ordinal": 818,
+        "epoch": 5,
+        "source": 4867889024,
+        "phase": 2,
+        "px": [
+          2031.194,
+          919.408
+        ],
+        "qpc": 155246722873,
+        "frameQpc": 155246723865
+      },
+      "postReleaseCoastSteps": [
+        {
+          "line": 16061,
+          "phase": 1,
+          "deltaPx": [
+            6.5,
+            -5.6
+          ],
+          "speedMmPerSecond": 630.7923824897158,
+          "frameQpc": 155246737156,
+          "submitQpc": 155246752606
+        },
+        {
+          "line": 16072,
+          "phase": 1,
+          "deltaPx": [
+            40.25,
+            -34.63
+          ],
+          "speedMmPerSecond": 611.7723457755642,
+          "frameQpc": 155246820888,
+          "submitQpc": 155246833539
+        },
+        {
+          "line": 16074,
+          "phase": 1,
+          "deltaPx": [
+            38.98,
+            -33.54
+          ],
+          "speedMmPerSecond": 593.3088303802331,
+          "frameQpc": 155246904493,
+          "submitQpc": 155246915065
+        },
+        {
+          "line": 16076,
+          "phase": 1,
+          "deltaPx": [
+            37.74,
+            -32.48
+          ],
+          "speedMmPerSecond": 575.3725816027851,
+          "frameQpc": 155246987976,
+          "submitQpc": 155246997899
+        },
+        {
+          "line": 16078,
+          "phase": 1,
+          "deltaPx": [
+            36.72,
+            -31.6
+          ],
+          "speedMmPerSecond": 557.8805975114886,
+          "frameQpc": 155247071739,
+          "submitQpc": 155247084731
+        },
+        {
+          "line": 16080,
+          "phase": 1,
+          "deltaPx": [
+            35.46,
+            -30.51
+          ],
+          "speedMmPerSecond": 540.9451346968352,
+          "frameQpc": 155247155148,
+          "submitQpc": 155247170140
+        },
+        {
+          "line": 16082,
+          "phase": 1,
+          "deltaPx": [
+            34.44,
+            -29.64
+          ],
+          "speedMmPerSecond": 524.4262692333077,
+          "frameQpc": 155247238724,
+          "submitQpc": 155247263634
+        },
+        {
+          "line": 16084,
+          "phase": 1,
+          "deltaPx": [
+            33.43,
+            -28.77
+          ],
+          "speedMmPerSecond": 508.3516684057389,
+          "frameQpc": 155247322403,
+          "submitQpc": 155247337457
+        },
+        {
+          "line": 16086,
+          "phase": 1,
+          "deltaPx": [
+            32.3,
+            -27.8
+          ],
+          "speedMmPerSecond": 492.76362690739,
+          "frameQpc": 155247405815,
+          "submitQpc": 155247415670
+        },
+        {
+          "line": 16088,
+          "phase": 1,
+          "deltaPx": [
+            31.36,
+            -26.99
+          ],
+          "speedMmPerSecond": 477.592182723013,
+          "frameQpc": 155247489359,
+          "submitQpc": 155247500645
+        },
+        {
+          "line": 16090,
+          "phase": 1,
+          "deltaPx": [
+            30.48,
+            -26.23
+          ],
+          "speedMmPerSecond": 462.78200119698283,
+          "frameQpc": 155247573143,
+          "submitQpc": 155247583318
+        },
+        {
+          "line": 16092,
+          "phase": 1,
+          "deltaPx": [
+            29.43,
+            -25.33
+          ],
+          "speedMmPerSecond": 448.4307116953863,
+          "frameQpc": 155247656641,
+          "submitQpc": 155247668645
+        },
+        {
+          "line": 16094,
+          "phase": 1,
+          "deltaPx": [
+            28.5,
+            -24.53
+          ],
+          "speedMmPerSecond": 434.48139211875787,
+          "frameQpc": 155247740095,
+          "submitQpc": 155247748245
+        },
+        {
+          "line": 16096,
+          "phase": 1,
+          "deltaPx": [
+            27.7,
+            -23.84
+          ],
+          "speedMmPerSecond": 420.8802952083405,
+          "frameQpc": 155247823814,
+          "submitQpc": 155247833448
+        },
+        {
+          "line": 16098,
+          "phase": 1,
+          "deltaPx": [
+            26.78,
+            -23.05
+          ],
+          "speedMmPerSecond": 407.66812834315783,
+          "frameQpc": 155247907379,
+          "submitQpc": 155247919104
+        },
+        {
+          "line": 16100,
+          "phase": 1,
+          "deltaPx": [
+            25.93,
+            -22.31
+          ],
+          "speedMmPerSecond": 394.8302640514387,
+          "frameQpc": 155247990893,
+          "submitQpc": 155247999586
+        },
+        {
+          "line": 16102,
+          "phase": 1,
+          "deltaPx": [
+            25.16,
+            -21.65
+          ],
+          "speedMmPerSecond": 382.31295513056483,
+          "frameQpc": 155248074592,
+          "submitQpc": 155248086572
+        },
+        {
+          "line": 16104,
+          "phase": 1,
+          "deltaPx": [
+            24.45,
+            -21.03
+          ],
+          "speedMmPerSecond": 370.0999869759079,
+          "frameQpc": 155248158577,
+          "submitQpc": 155248168662
+        },
+        {
+          "line": 16106,
+          "phase": 1,
+          "deltaPx": [
+            23.53,
+            -20.25
+          ],
+          "speedMmPerSecond": 358.3052032072908,
+          "frameQpc": 155248242079,
+          "submitQpc": 155248252362
+        },
+        {
+          "line": 16108,
+          "phase": 1,
+          "deltaPx": [
+            22.79,
+            -19.61
+          ],
+          "speedMmPerSecond": 346.80172023997835,
+          "frameQpc": 155248325620,
+          "submitQpc": 155248333568
+        },
+        {
+          "line": 16110,
+          "phase": 1,
+          "deltaPx": [
+            22.08,
+            -19.0
+          ],
+          "speedMmPerSecond": 335.6172053746658,
+          "frameQpc": 155248409268,
+          "submitQpc": 155248425595
+        },
+        {
+          "line": 16112,
+          "phase": 1,
+          "deltaPx": [
+            21.37,
+            -18.39
+          ],
+          "speedMmPerSecond": 324.7386185188963,
+          "frameQpc": 155248492934,
+          "submitQpc": 155248502420
+        },
+        {
+          "line": 16114,
+          "phase": 1,
+          "deltaPx": [
+            20.62,
+            -17.74
+          ],
+          "speedMmPerSecond": 314.18058661945946,
+          "frameQpc": 155248576356,
+          "submitQpc": 155248591515
+        },
+        {
+          "line": 16116,
+          "phase": 1,
+          "deltaPx": [
+            19.98,
+            -17.19
+          ],
+          "speedMmPerSecond": 303.913855695302,
+          "frameQpc": 155248659920,
+          "submitQpc": 155248668725
+        },
+        {
+          "line": 16118,
+          "phase": 1,
+          "deltaPx": [
+            19.43,
+            -16.72
+          ],
+          "speedMmPerSecond": 293.86846328947775,
+          "frameQpc": 155248743940,
+          "submitQpc": 155248752240
+        },
+        {
+          "line": 16122,
+          "phase": 1,
+          "deltaPx": [
+            18.94,
+            -16.3
+          ],
+          "speedMmPerSecond": 284.0183295846215,
+          "frameQpc": 155248828661,
+          "submitQpc": 155248844545
+        }
+      ],
+      "sumCoastDeltaMm": 92.3255709517394,
+      "elapsedToLastVisibleCoastFrameMs": 210.47959999999998,
+      "predictedDistanceAtVisibleElapsedMm": 92.3250620104173,
+      "visibleTerminalIdle": false,
+      "nextDownLine": 16132,
+      "loggedTheoreticalDistanceMm": 146.09358,
+      "loggedTheoreticalDurationMs": 734.3749200000001
+    },
+    {
+      "key": 25,
+      "source": 4867889024,
+      "context": {
+        "line": 21233,
+        "dipPerPixel": [
+          0.5,
+          0.5
+        ],
+        "motionPerDip": [
+          0.19444445,
+          0.19791666
+        ]
+      },
+      "releaseLine": 21400,
+      "qualityLine": 21402,
+      "rawMmPerSecond": 962.5196722037974,
+      "supportUpperMmPerSecond": 580.11828,
+      "tailUpperMmPerSecondApprox": 565.4551768616051,
+      "motionAgeMs": 4.7321,
+      "ageGate": 1,
+      "predictedSelectedMmPerSecond": 565.4551768616051,
+      "selectedMmPerSecond": 565.4551437529828,
+      "boostedMmPerSecond": 730.4514086067104,
+      "selectedToRawRatio": 0.58747385646499,
+      "lastMovingHeld": {
+        "line": 21391,
+        "deltaPx": [
+          26.46,
+          -61.98
+        ],
+        "estimatedSpeedMmPerSecond": 565.4554759636541
+      },
+      "selectedToLastMovingHeldEstimate": 0.9999994124901335,
+      "boostedToLastMovingHeldEstimate": 1.2917929698388169,
+      "lastCallbackSegmentSpeedMmPerSecond": 565.454488425822,
+      "motionEvent": {
+        "line": 21390,
+        "ordinal": 1238,
+        "epoch": 5,
+        "source": 4867889024,
+        "phase": 1,
+        "px": [
+          1588.46,
+          497.537
+        ],
+        "qpc": 155322497604,
+        "frameQpc": 155322518987
+      },
+      "previousMotionEvent": {
+        "line": 21380,
+        "ordinal": 1237,
+        "epoch": 5,
+        "source": 4867889024,
+        "phase": 1,
+        "px": [
+          1562.003,
+          559.521
+        ],
+        "qpc": 155322379976,
+        "frameQpc": 155322435651
+      },
+      "upEvent": {
+        "line": 21397,
+        "ordinal": 1239,
+        "epoch": 5,
+        "source": 4867889024,
+        "phase": 2,
+        "px": [
+          1588.46,
+          497.537
+        ],
+        "qpc": 155322544925,
+        "frameQpc": 155322545868
+      },
+      "postReleaseCoastSteps": [
+        {
+          "line": 21407,
+          "phase": 1,
+          "deltaPx": [
+            0.66,
+            -2.62
+          ],
+          "speedMmPerSecond": 729.4837210235348,
+          "frameQpc": 155322549528,
+          "submitQpc": 155322555637
+        },
+        {
+          "line": 21417,
+          "phase": 1,
+          "deltaPx": [
+            14.93,
+            -58.89
+          ],
+          "speedMmPerSecond": 707.800025952998,
+          "frameQpc": 155322633104,
+          "submitQpc": 155322640337
+        },
+        {
+          "line": 21419,
+          "phase": 1,
+          "deltaPx": [
+            14.47,
+            -57.05
+          ],
+          "speedMmPerSecond": 686.7300747944751,
+          "frameQpc": 155322716559,
+          "submitQpc": 155322722508
+        },
+        {
+          "line": 21421,
+          "phase": 1,
+          "deltaPx": [
+            14.05,
+            -55.42
+          ],
+          "speedMmPerSecond": 666.2307578356052,
+          "frameQpc": 155322800108,
+          "submitQpc": 155322811008
+        },
+        {
+          "line": 21423,
+          "phase": 1,
+          "deltaPx": [
+            13.64,
+            -53.8
+          ],
+          "speedMmPerSecond": 646.2636655335423,
+          "frameQpc": 155322883727,
+          "submitQpc": 155322890445
+        },
+        {
+          "line": 21425,
+          "phase": 1,
+          "deltaPx": [
+            13.28,
+            -52.39
+          ],
+          "speedMmPerSecond": 626.7664835583623,
+          "frameQpc": 155322967665,
+          "submitQpc": 155322982662
+        },
+        {
+          "line": 21427,
+          "phase": 1,
+          "deltaPx": [
+            12.81,
+            -50.53
+          ],
+          "speedMmPerSecond": 607.9214549872348,
+          "frameQpc": 155323051147,
+          "submitQpc": 155323059958
+        },
+        {
+          "line": 21429,
+          "phase": 1,
+          "deltaPx": [
+            12.41,
+            -48.93
+          ],
+          "speedMmPerSecond": 589.6231554585215,
+          "frameQpc": 155323134495,
+          "submitQpc": 155323143018
+        },
+        {
+          "line": 21431,
+          "phase": 1,
+          "deltaPx": [
+            12.07,
+            -47.59
+          ],
+          "speedMmPerSecond": 571.7755615741968,
+          "frameQpc": 155323218076,
+          "submitQpc": 155323225162
+        },
+        {
+          "line": 21433,
+          "phase": 1,
+          "deltaPx": [
+            11.7,
+            -46.13
+          ],
+          "speedMmPerSecond": 554.4170827288589,
+          "frameQpc": 155323301634,
+          "submitQpc": 155323315299
+        },
+        {
+          "line": 21435,
+          "phase": 1,
+          "deltaPx": [
+            11.33,
+            -44.66
+          ],
+          "speedMmPerSecond": 537.5716237998606,
+          "frameQpc": 155323385065,
+          "submitQpc": 155323391348
+        },
+        {
+          "line": 21437,
+          "phase": 1,
+          "deltaPx": [
+            11.03,
+            -43.48
+          ],
+          "speedMmPerSecond": 521.1098557974799,
+          "frameQpc": 155323468840,
+          "submitQpc": 155323479659
+        },
+        {
+          "line": 21439,
+          "phase": 1,
+          "deltaPx": [
+            10.62,
+            -41.89
+          ],
+          "speedMmPerSecond": 505.2042175246388,
+          "frameQpc": 155323552099,
+          "submitQpc": 155323556490
+        },
+        {
+          "line": 21441,
+          "phase": 1,
+          "deltaPx": [
+            10.35,
+            -40.83
+          ],
+          "speedMmPerSecond": 489.6583650242282,
+          "frameQpc": 155323635812,
+          "submitQpc": 155323646554
+        },
+        {
+          "line": 21443,
+          "phase": 1,
+          "deltaPx": [
+            9.98,
+            -39.37
+          ],
+          "speedMmPerSecond": 474.6063278162829,
+          "frameQpc": 155323719104,
+          "submitQpc": 155323722837
+        },
+        {
+          "line": 21445,
+          "phase": 1,
+          "deltaPx": [
+            9.71,
+            -38.3
+          ],
+          "speedMmPerSecond": 459.9234770645243,
+          "frameQpc": 155323802692,
+          "submitQpc": 155323812487
+        },
+        {
+          "line": 21447,
+          "phase": 1,
+          "deltaPx": [
+            9.4,
+            -37.08
+          ],
+          "speedMmPerSecond": 445.6435217941619,
+          "frameQpc": 155323886214,
+          "submitQpc": 155323892134
+        },
+        {
+          "line": 21449,
+          "phase": 1,
+          "deltaPx": [
+            9.12,
+            -35.95
+          ],
+          "speedMmPerSecond": 431.7519577650923,
+          "frameQpc": 155323969789,
+          "submitQpc": 155323979200
+        },
+        {
+          "line": 21451,
+          "phase": 1,
+          "deltaPx": [
+            8.8,
+            -34.71
+          ],
+          "speedMmPerSecond": 418.2726896948538,
+          "frameQpc": 155324053093,
+          "submitQpc": 155324061715
+        },
+        {
+          "line": 21453,
+          "phase": 1,
+          "deltaPx": [
+            8.59,
+            -33.89
+          ],
+          "speedMmPerSecond": 405.0763886612286,
+          "frameQpc": 155324137056,
+          "submitQpc": 155324147301
+        },
+        {
+          "line": 21455,
+          "phase": 1,
+          "deltaPx": [
+            8.26,
+            -32.59
+          ],
+          "speedMmPerSecond": 392.3260929322967,
+          "frameQpc": 155324220412,
+          "submitQpc": 155324226604
+        }
+      ],
+      "sumCoastDeltaMm": 91.38650993912808,
+      "elapsedToLastVisibleCoastFrameMs": 167.4544,
+      "predictedDistanceAtVisibleElapsedMm": 91.38768619973358,
+      "visibleTerminalIdle": false,
+      "nextDownLine": 21464,
+      "loggedTheoreticalDistanceMm": 172.72673,
+      "loggedTheoreticalDurationMs": 773.47787
+    },
+    {
+      "key": 26,
+      "source": 4867889024,
+      "context": {
+        "line": 21462,
+        "dipPerPixel": [
+          0.5,
+          0.5
+        ],
+        "motionPerDip": [
+          0.19444445,
+          0.19791666
+        ]
+      },
+      "releaseLine": 21669,
+      "qualityLine": 21670,
+      "rawMmPerSecond": 1062.4877326767764,
+      "supportUpperMmPerSecond": 677.65289,
+      "tailUpperMmPerSecondApprox": 1286.6473885705582,
+      "motionAgeMs": 50.017399999999995,
+      "ageGate": 0.49956500000000026,
+      "predictedSelectedMmPerSecond": 338.53166599285015,
+      "selectedMmPerSecond": 338.53166650691816,
+      "boostedMmPerSecond": 338.53136885070853,
+      "selectedToRawRatio": 0.31862171778119175,
+      "lastMovingHeld": {
+        "line": 21635,
+        "deltaPx": [
+          -1.13,
+          65.01
+        ],
+        "estimatedSpeedMmPerSecond": 677.6577628954574
+      },
+      "selectedToLastMovingHeldEstimate": 0.49956140849100494,
+      "boostedToLastMovingHeldEstimate": 0.49956096924832827,
+      "lastCallbackSegmentSpeedMmPerSecond": 1286.6511574722522,
+      "motionEvent": {
+        "line": 21634,
+        "ordinal": 1256,
+        "epoch": 5,
+        "source": 4867889024,
+        "phase": 1,
+        "px": [
+          1411.729,
+          1468.12
+        ],
+        "qpc": 155325545829,
+        "frameQpc": 155325588408
+      },
+      "previousMotionEvent": {
+        "line": 21624,
+        "ordinal": 1255,
+        "epoch": 5,
+        "source": 4867889024,
+        "phase": 1,
+        "px": [
+          1412.863,
+          1403.112
+        ],
+        "qpc": 155325495823,
+        "frameQpc": 155325505007
+      },
+      "upEvent": {
+        "line": 21664,
+        "ordinal": 1262,
+        "epoch": 5,
+        "source": 4867889024,
+        "phase": 2,
+        "px": [
+          1411.729,
+          1468.12
+        ],
+        "qpc": 155326046003,
+        "frameQpc": 155326046500
+      },
+      "postReleaseCoastSteps": [
+        {
+          "line": 21676,
+          "phase": 1,
+          "deltaPx": [
+            -0.18,
+            0.8
+          ],
+          "speedMmPerSecond": 338.2218404631982,
+          "frameQpc": 155326048893,
+          "submitQpc": 155326056286
+        },
+        {
+          "line": 21686,
+          "phase": 1,
+          "deltaPx": [
+            -6.3,
+            28.19
+          ],
+          "speedMmPerSecond": 326.975954889148,
+          "frameQpc": 155326134784,
+          "submitQpc": 155326146223
+        },
+        {
+          "line": 21688,
+          "phase": 1,
+          "deltaPx": [
+            -5.89,
+            26.38
+          ],
+          "speedMmPerSecond": 316.3971893838354,
+          "frameQpc": 155326217870,
+          "submitQpc": 155326224479
+        },
+        {
+          "line": 21690,
+          "phase": 1,
+          "deltaPx": [
+            -5.74,
+            25.68
+          ],
+          "speedMmPerSecond": 306.0629071658814,
+          "frameQpc": 155326301485,
+          "submitQpc": 155326321410
+        },
+        {
+          "line": 21692,
+          "phase": 1,
+          "deltaPx": [
+            -5.56,
+            24.9
+          ],
+          "speedMmPerSecond": 295.9731081163162,
+          "frameQpc": 155326385292,
+          "submitQpc": 155326399018
+        },
+        {
+          "line": 21694,
+          "phase": 1,
+          "deltaPx": [
+            -5.34,
+            23.93
+          ],
+          "speedMmPerSecond": 286.22861867547647,
+          "frameQpc": 155326468588,
+          "submitQpc": 155326484559
+        },
+        {
+          "line": 21696,
+          "phase": 1,
+          "deltaPx": [
+            -5.18,
+            23.21
+          ],
+          "speedMmPerSecond": 276.724445253707,
+          "frameQpc": 155326552141,
+          "submitQpc": 155326561266
+        },
+        {
+          "line": 21698,
+          "phase": 1,
+          "deltaPx": [
+            -5.01,
+            22.45
+          ],
+          "speedMmPerSecond": 267.4647551552466,
+          "frameQpc": 155326635734,
+          "submitQpc": 155326644820
+        },
+        {
+          "line": 21700,
+          "phase": 1,
+          "deltaPx": [
+            -4.84,
+            21.65
+          ],
+          "speedMmPerSecond": 258.48821194785194,
+          "frameQpc": 155326719160,
+          "submitQpc": 155326732676
+        },
+        {
+          "line": 21702,
+          "phase": 1,
+          "deltaPx": [
+            -4.69,
+            20.98
+          ],
+          "speedMmPerSecond": 249.71332127912328,
+          "frameQpc": 155326802813,
+          "submitQpc": 155326827705
+        },
+        {
+          "line": 21704,
+          "phase": 1,
+          "deltaPx": [
+            -4.51,
+            20.2
+          ],
+          "speedMmPerSecond": 241.22574462039336,
+          "frameQpc": 155326886195,
+          "submitQpc": 155326896111
+        },
+        {
+          "line": 21706,
+          "phase": 1,
+          "deltaPx": [
+            -4.36,
+            19.51
+          ],
+          "speedMmPerSecond": 232.97848402633903,
+          "frameQpc": 155326969568,
+          "submitQpc": 155326975645
+        },
+        {
+          "line": 21708,
+          "phase": 1,
+          "deltaPx": [
+            -4.24,
+            18.99
+          ],
+          "speedMmPerSecond": 224.8748806871707,
+          "frameQpc": 155327053625,
+          "submitQpc": 155327067243
+        },
+        {
+          "line": 21710,
+          "phase": 1,
+          "deltaPx": [
+            -4.07,
+            18.21
+          ],
+          "speedMmPerSecond": 217.06958871019276,
+          "frameQpc": 155327137136,
+          "submitQpc": 155327147401
+        },
+        {
+          "line": 21712,
+          "phase": 1,
+          "deltaPx": [
+            -3.92,
+            17.55
+          ],
+          "speedMmPerSecond": 209.4742833791965,
+          "frameQpc": 155327220502,
+          "submitQpc": 155327232345
+        },
+        {
+          "line": 21714,
+          "phase": 1,
+          "deltaPx": [
+            -3.79,
+            16.96
+          ],
+          "speedMmPerSecond": 202.07646352148214,
+          "frameQpc": 155327303994,
+          "submitQpc": 155327312279
+        },
+        {
+          "line": 21716,
+          "phase": 1,
+          "deltaPx": [
+            -3.68,
+            16.47
+          ],
+          "speedMmPerSecond": 194.8223007204813,
+          "frameQpc": 155327388063,
+          "submitQpc": 155327401844
+        },
+        {
+          "line": 21718,
+          "phase": 1,
+          "deltaPx": [
+            -3.52,
+            15.76
+          ],
+          "speedMmPerSecond": 187.83195295652916,
+          "frameQpc": 155327471506,
+          "submitQpc": 155327480395
+        },
+        {
+          "line": 21735,
+          "phase": 1,
+          "deltaPx": [
+            -3.4,
+            15.21
+          ],
+          "speedMmPerSecond": 181.02392586081973,
+          "frameQpc": 155327555054,
+          "submitQpc": 155327562110
+        }
+      ],
+      "sumCoastDeltaMm": 38.19816351856285,
+      "elapsedToLastVisibleCoastFrameMs": 150.8554,
+      "predictedDistanceAtVisibleElapsedMm": 38.198112498599215,
+      "visibleTerminalIdle": false,
+      "nextDownLine": 21743,
+      "loggedTheoreticalDistanceMm": 67.477538,
+      "loggedTheoreticalDurationMs": 568.03272
+    }
+  ],
+  "zeroExamples": [
+    {
+      "finalKey": 46,
+      "groupKeys": [
+        46
+      ],
+      "source": 4867889024,
+      "releaseLine": 27188,
+      "reason": "few-samples",
+      "registrations": [
+        {
+          "line": 27157,
+          "key": 46,
+          "downQpc": 155373263911
+        }
+      ],
+      "groupDurationMs": 5.3498,
+      "visibleInputRecords": [
+        {
+          "line": 27158,
+          "key": 46,
+          "ordinal": 2027,
+          "phase": 0,
+          "qpc": 155373263911,
+          "px": [
+            1727.395,
+            547.124
+          ]
+        },
+        {
+          "line": 27185,
+          "key": 46,
+          "ordinal": 2028,
+          "phase": 2,
+          "qpc": 155373317409,
+          "px": [
+            1727.395,
+            547.124
+          ]
+        }
+      ],
+      "maxHeld": 1,
+      "heldSteps": [
+        {
+          "line": 27162,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "line": 27167,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "sumHeldDeltaPx": [
+        0.0,
+        0.0
+      ],
+      "sumHeldDeltaMmApprox": 0.0,
+      "rawCount": 1,
+      "motionCount": 1,
+      "rawSpanMs": 0.0,
+      "dataCaveat": "Input records correlated by actual source/key. This does not establish physical gesture intent."
+    },
+    {
+      "finalKey": 48,
+      "groupKeys": [
+        47,
+        48
+      ],
+      "source": 4867889024,
+      "releaseLine": 27282,
+      "reason": "short-span",
+      "registrations": [
+        {
+          "line": 27208,
+          "key": 47,
+          "downQpc": 155374171151
+        },
+        {
+          "line": 27221,
+          "key": 48,
+          "downQpc": 155374173423
+        }
+      ],
+      "groupDurationMs": 20.5546,
+      "visibleInputRecords": [
+        {
+          "line": 27212,
+          "key": 47,
+          "ordinal": 2029,
+          "phase": 0,
+          "qpc": 155374171151,
+          "px": [
+            1498.809,
+            530.117
+          ]
+        },
+        {
+          "line": 27223,
+          "key": 48,
+          "ordinal": 2030,
+          "phase": 0,
+          "qpc": 155374173423,
+          "px": [
+            1767.383,
+            637.606
+          ]
+        },
+        {
+          "line": 27248,
+          "key": 47,
+          "ordinal": 2031,
+          "phase": 1,
+          "qpc": 155374213989,
+          "px": [
+            1395.628,
+            548.107
+          ]
+        },
+        {
+          "line": 27249,
+          "key": 48,
+          "ordinal": 2032,
+          "phase": 1,
+          "qpc": 155374214637,
+          "px": [
+            1674.104,
+            646.45
+          ]
+        },
+        {
+          "line": 27256,
+          "key": 47,
+          "ordinal": 2033,
+          "phase": 2,
+          "qpc": 155374296396,
+          "px": [
+            1395.628,
+            548.107
+          ]
+        },
+        {
+          "line": 27262,
+          "key": 48,
+          "ordinal": 2034,
+          "phase": 1,
+          "qpc": 155374297512,
+          "px": [
+            1563.213,
+            655.748
+          ]
+        },
+        {
+          "line": 27277,
+          "key": 48,
+          "ordinal": 2035,
+          "phase": 2,
+          "qpc": 155374376697,
+          "px": [
+            1563.213,
+            655.748
+          ]
+        }
+      ],
+      "maxHeld": 2,
+      "heldSteps": [
+        {
+          "line": 27215,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "line": 27225,
+          "held": 2,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "line": 27250,
+          "held": 2,
+          "deltaPx": [
+            -85.57,
+            11.21
+          ]
+        },
+        {
+          "line": 27259,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "line": 27264,
+          "held": 1,
+          "deltaPx": [
+            -110.89,
+            9.3
+          ]
+        }
+      ],
+      "sumHeldDeltaPx": [
+        -196.45999999999998,
+        20.51
+      ],
+      "sumHeldDeltaMmApprox": 19.207812256533348,
+      "rawCount": 3,
+      "motionCount": 3,
+      "rawSpanMs": 12.409,
+      "dataCaveat": "Input records correlated by actual source/key. This does not establish physical gesture intent."
+    },
+    {
+      "finalKey": 64,
+      "groupKeys": [
+        64
+      ],
+      "source": 4867889024,
+      "releaseLine": 28965,
+      "reason": "few-samples",
+      "registrations": [
+        {
+          "line": 28923,
+          "key": 64,
+          "downQpc": 155394885401
+        }
+      ],
+      "groupDurationMs": 11.027099999999999,
+      "visibleInputRecords": [
+        {
+          "line": 28938,
+          "key": 64,
+          "ordinal": 2215,
+          "phase": 0,
+          "qpc": 155394885401,
+          "px": [
+            1216.252,
+            572.523
+          ]
+        },
+        {
+          "line": 28939,
+          "key": 64,
+          "ordinal": 2216,
+          "phase": 1,
+          "qpc": 155394888597,
+          "px": [
+            1100.674,
+            598.677
+          ]
+        },
+        {
+          "line": 28962,
+          "key": 64,
+          "ordinal": 2217,
+          "phase": 2,
+          "qpc": 155394995672,
+          "px": [
+            1100.674,
+            598.677
+          ]
+        }
+      ],
+      "maxHeld": 1,
+      "heldSteps": [
+        {
+          "line": 28947,
+          "held": 1,
+          "deltaPx": [
+            -90.52,
+            20.48
+          ]
+        },
+        {
+          "line": 28953,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "line": 28956,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "sumHeldDeltaPx": [
+        -90.52,
+        20.48
+      ],
+      "sumHeldDeltaMmApprox": 9.030900288077131,
+      "rawCount": 2,
+      "motionCount": 2,
+      "rawSpanMs": 0.32,
+      "dataCaveat": "Input records correlated by actual source/key. This does not establish physical gesture intent."
+    },
+    {
+      "finalKey": 68,
+      "groupKeys": [
+        68
+      ],
+      "source": 4867889024,
+      "releaseLine": 29325,
+      "reason": "few-samples",
+      "registrations": [
+        {
+          "line": 29279,
+          "key": 68,
+          "downQpc": 155399519885
+        }
+      ],
+      "groupDurationMs": 28.5919,
+      "visibleInputRecords": [
+        {
+          "line": 29280,
+          "key": 68,
+          "ordinal": 2245,
+          "phase": 0,
+          "qpc": 155399519885,
+          "px": [
+            1689.146,
+            466.469
+          ]
+        },
+        {
+          "line": 29305,
+          "key": 68,
+          "ordinal": 2246,
+          "phase": 1,
+          "qpc": 155399540884,
+          "px": [
+            1689.146,
+            466.469
+          ]
+        },
+        {
+          "line": 29310,
+          "key": 68,
+          "ordinal": 2247,
+          "phase": 1,
+          "qpc": 155399626487,
+          "px": [
+            1689.146,
+            466.469
+          ]
+        },
+        {
+          "line": 29315,
+          "key": 68,
+          "ordinal": 2248,
+          "phase": 1,
+          "qpc": 155399706313,
+          "px": [
+            1679.773,
+            476.901
+          ]
+        },
+        {
+          "line": 29321,
+          "key": 68,
+          "ordinal": 2249,
+          "phase": 2,
+          "qpc": 155399805804,
+          "px": [
+            1679.773,
+            476.901
+          ]
+        }
+      ],
+      "maxHeld": 1,
+      "heldSteps": [
+        {
+          "line": 29285,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "line": 29291,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "line": 29306,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "line": 29311,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "line": 29316,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "sumHeldDeltaPx": [
+        0.0,
+        0.0
+      ],
+      "sumHeldDeltaMmApprox": 0.0,
+      "rawCount": 4,
+      "motionCount": 2,
+      "rawSpanMs": 18.643,
+      "dataCaveat": "Input records correlated by actual source/key. This does not establish physical gesture intent."
+    },
+    {
+      "finalKey": 174,
+      "groupKeys": [
+        174
+      ],
+      "source": 4867889024,
+      "releaseLine": 42813,
+      "reason": "few-samples",
+      "registrations": [
+        {
+          "line": 42783,
+          "key": 174,
+          "downQpc": 155523567947
+        }
+      ],
+      "groupDurationMs": 7.7831,
+      "visibleInputRecords": [
+        {
+          "line": 42807,
+          "key": 174,
+          "ordinal": 4059,
+          "phase": 2,
+          "qpc": 155523645778,
+          "px": [
+            1975.786,
+            571.767
+          ]
+        }
+      ],
+      "maxHeld": 1,
+      "heldSteps": [
+        {
+          "line": 42787,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        },
+        {
+          "line": 42791,
+          "held": 1,
+          "deltaPx": [
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "sumHeldDeltaPx": [
+        0.0,
+        0.0
+      ],
+      "sumHeldDeltaMmApprox": 0.0,
+      "rawCount": 1,
+      "motionCount": 1,
+      "rawSpanMs": 0.0,
+      "dataCaveat": "key174 Down input log absent; actual registration/admission and quality raw-last QPC agree on Down. Positive-intervals zero can mean early return, not absence of motion."
+    }
+  ]
+}

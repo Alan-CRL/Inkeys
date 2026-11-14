@@ -1980,7 +1980,7 @@ namespace Inkeys::Drawing::Draw3
 			penSample.valid, mouseSample.valid, mouseUsesSystemCursor,
 			touchPanActive, realMouseTakeover,
 			injectedMouseAsTablet_.load(std::memory_order_acquire) &&
-				mouseSample.source.kind == SpeedEraser::SourceKind::ExternalPen);
+				mouseSample.source.kind == SpeedEraser::SourceKind::ExternalPen, CanvasPanMode());
 		DrawingCursorDiagnosticVisualState appVisual;
 		const bool appVisualKnown = ReadDrawingCursorDiagnosticVisualState(appVisual);
 
@@ -2110,7 +2110,7 @@ namespace Inkeys::Drawing::Draw3
 		const DrawingTool tool = EffectiveDrawingCursorTool();
 		const DrawingCursorPointerAuthority authority = CursorOwner();
 		const bool selectionMode = SelectionMode();
-		// 选择态只交还鼠标；白板仍显示主画布时，Pen/Touch 继续按原策略隐藏。
+		// 白板移动将 Pen/Mouse 交还系统默认光标，Touch 仍由共享策略保持隐藏。
 		const bool mouseUsesSystemCursor = selectionMode ||
 			mouseUsesSystemCursor_.load(std::memory_order_acquire);
 		const bool touchPanActive = touchPanActive_.load(std::memory_order_acquire);
@@ -2123,7 +2123,7 @@ namespace Inkeys::Drawing::Draw3
 			penSample.valid, mouseSample.valid,
 			mouseUsesSystemCursor, touchPanActive, realMouseTakeover,
 			injectedMouseAsTablet_.load(std::memory_order_acquire) &&
-				mouseSample.source.kind == SpeedEraser::SourceKind::ExternalPen);
+				mouseSample.source.kind == SpeedEraser::SourceKind::ExternalPen, CanvasPanMode());
 		uint64_t key = static_cast<uint64_t>(authority);
 		key = key * 17u + static_cast<uint64_t>(tool);
 		key = key * 17u + (hide ? 1u : 0u);

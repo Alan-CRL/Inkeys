@@ -2805,9 +2805,15 @@ namespace Inkeys::Drawing::Draw3
 			void SetInertiaOptions(CanvasPanInertiaOptions options) noexcept
 			{
 				inertiaOptions_ = options;
-				if (!options.Allows(lastInertiaKind_)) dynamics_.StopFling();
+				if (!options.Allows(lastInertiaKind_)) StopFling("inertia-disabled");
 			}
-			void StopFling() noexcept { dynamics_.StopFling(); }
+			void StopFling(const char* trigger = "controller-fling-stop") noexcept
+			{
+				if (dynamics_.Phase() == CanvasPanPhase::Coasting)
+					LogCanvasPan("stop trigger=%s scope=fling epoch=%llu class=%u", trigger,
+						static_cast<unsigned long long>(navigationEpoch_), static_cast<unsigned>(lastInertiaKind_));
+				dynamics_.StopFling();
+			}
 
 			// 只报告有序内核已准入的归属；Pending和只等终态者不能冒充owner。
 			CanvasPanDeviceClass OwnerClass() const noexcept
@@ -2913,7 +2919,7 @@ namespace Inkeys::Drawing::Draw3
 						resolved.context.motionPerDipX != contact.motionContext.motionPerDipX ||
 						resolved.context.motionPerDipY != contact.motionContext.motionPerDipY;
 				}
-				if ((geometryChanged || physicalChanged) && (HasContacts() || dynamics_.Active())) Stop();
+				if ((geometryChanged || physicalChanged) && (HasContacts() || dynamics_.Active())) Stop("display-metric-changed");
 				if (geometryChanged) ++outputKey_;
 				scale_ = next;
 			}
@@ -2929,7 +2935,7 @@ namespace Inkeys::Drawing::Draw3
 				const auto history = input.NavigationHistoryStatus();
 				if (!HasContacts() && historyEpoch_ && history.epoch != historyEpoch_)
 				{
-					dynamics_.StopFling(); // 旧曲线失效；新 epoch 的完整 Down 仍可正常准入。
+					StopFling("input-epoch-changed"); // 旧曲线失效；新 epoch 的完整 Down 仍可正常准入。
 					historyEpoch_ = history.epoch;
 				}
 				if (!HasContacts() && !dynamics_.Active())
@@ -2973,8 +2979,11 @@ namespace Inkeys::Drawing::Draw3
 
 			// 离开移动模式、翻页、工作区/加载/最小化/Resize、笔落下：清零手势与惯性，
 			// 已登记的触点只跟踪到终态，直到全部抬起前不再重新进入平移。
-			void Stop() noexcept
+			void Stop(const char* trigger = "controller-stop") noexcept
 			{
+				if (dynamics_.Active() || HasContacts())
+					LogCanvasPan("stop trigger=%s scope=gesture epoch=%llu class=%u held=%u", trigger,
+						static_cast<unsigned long long>(navigationEpoch_), static_cast<unsigned>(lastInertiaKind_), HasContacts() ? 1u : 0u);
 				CancelNative();
 				if (input_) stopSequence_ = input_->NavigationHistoryStatus().published;
 				++navigationEpoch_;
@@ -3007,13 +3016,14 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const bool left = moveModeApplied_ && !pansNow;
 				moveModeApplied_ = pansNow;
-				if (left) Stop();
+				if (left) Stop("left-move-mode");
 				return left;
 			}
 
 			Frame Step(ContactInputCoordinator& input, int64_t nowQpc,
 				int64_t qpcFrequency, bool penHover, CanvasVector viewportSizePixels = {})
 			{
+				pendingMotionFeedback_ = {};
 				Frame frame;
 				const CanvasPanPhase previousPhase = dynamics_.Phase();
 				if (qpcFrequency <= 0 || nowQpc <= 0 || (lastStepFrameQpc_ && nowQpc <= lastStepFrameQpc_))
@@ -3036,7 +3046,7 @@ namespace Inkeys::Drawing::Draw3
 				const auto history = input.DrainNavigationHistory(navigationEvents_);
 				if (historyEpoch_ && history.epoch != historyEpoch_)
 				{
-					if (HasContacts() || dynamics_.Active()) Stop();
+					if (HasContacts() || dynamics_.Active()) Stop("input-history-epoch-changed");
 					LogCanvasPan("history-gap epoch=%llu previous=%llu dropped=%llu pending=%zu action=cancel-batch",
 						static_cast<unsigned long long>(history.epoch), static_cast<unsigned long long>(historyEpoch_),
 						static_cast<unsigned long long>(history.dropped), history.pending);
@@ -3118,7 +3128,7 @@ namespace Inkeys::Drawing::Draw3
 					frame.dynamics = dynamics_.Step(in);
 					lastStepFrameQpc_ = in.frameQpc;
 					if (frame.dynamics.admissionFailed)
-					{ Stop(); frame.dynamics = {}; frame.dynamics.admissionFailed = true; }
+					{ Stop("admission-buffer-failure"); frame.dynamics = {}; frame.dynamics.admissionFailed = true; }
 					else for (size_t i = 0; i < frame.dynamics.admissionDecisionCount; ++i)
 					{
 						const auto& decision = admissionDecisions_[i];
@@ -3157,6 +3167,9 @@ namespace Inkeys::Drawing::Draw3
 				frame.contentDeltaPixels = {
 					static_cast<float>(frame.dynamics.contentDelta.x / scale_.dipPerPixelX),
 					static_cast<float>(frame.dynamics.contentDelta.y / scale_.dipPerPixelY) };
+				pendingMotionFeedback_ = frame.dynamics.motionFeedback;
+				if (handoffDelta_.x != 0 || handoffDelta_.y != 0 || nativeFrame.contentDeltaPixels.x != 0 || nativeFrame.contentDeltaPixels.y != 0)
+					pendingMotionFeedback_.eligible = false;
 				frame.contentDeltaPixels.x += handoffDelta_.x + nativeFrame.contentDeltaPixels.x;
 				frame.contentDeltaPixels.y += handoffDelta_.y + nativeFrame.contentDeltaPixels.y;
 				handoffDelta_ = {};
@@ -3179,6 +3192,7 @@ namespace Inkeys::Drawing::Draw3
 			CanvasPanViewportApply ApplyToCanvas(InkCanvas& canvas, CanvasVector contentDeltaPixels) noexcept
 			{
 				CanvasPanViewportApply result;
+				const auto feedback = std::exchange(pendingMotionFeedback_, TouchMotionFeedback{});
 				if (contentDeltaPixels.x == 0.0f && contentDeltaPixels.y == 0.0f) return result;
 				CanvasViewportState viewport{ canvas.Viewport().x, canvas.Viewport().y };
 				const CanvasContentTranslationResult translation =
@@ -3191,6 +3205,10 @@ namespace Inkeys::Drawing::Draw3
 				result.viewportChanged = (translation.viewportDelta.x != 0.0f ||
 					translation.viewportDelta.y != 0.0f) &&
 					canvas.SetViewport({ viewport.x, viewport.y, 1.0f });
+				if (result.viewportChanged)
+					dynamics_.ConfirmAppliedMotion(feedback, {
+						translation.xClamped ? 0.0f : static_cast<float>(-translation.viewportDelta.x * scale_.dipPerPixelX),
+						translation.yClamped ? 0.0f : static_cast<float>(-translation.viewportDelta.y * scale_.dipPerPixelY) });
 				return result;
 			}
 
@@ -3274,6 +3292,7 @@ namespace Inkeys::Drawing::Draw3
 			uint64_t historyEpoch_ = 0, stopSequence_ = 0, navigationEpoch_ = 1;
 			int64_t lastStepFrameQpc_ = 0;
 			CanvasPanDynamics dynamics_;
+			TouchMotionFeedback pendingMotionFeedback_;
 			WindowController* touchpadWindow_ = nullptr;
 			std::vector<TouchpadNavigationSample> touchpadSamples_;
 			uint64_t nativeEpoch_ = 0, nativeSequence_ = 0;
@@ -5565,6 +5584,27 @@ namespace Inkeys::Drawing::Draw3
 				expectCursorProjection(CursorStyle::Arrow);
 				window.SetActiveTool(DrawingTool::Pen);
 			}
+			// 真实 Window 的白板移动与 Touch 终态归属，不附着 HWND 或改变系统全局光标。
+			{
+				WindowController navigation;
+				navigation.SetCanvasPanWorkspace(true); navigation.SetSelectionMode(true);
+				DrawingCursorSample pen{ .x = 12, .y = 18, .qpc = 1, .valid = true };
+				const auto hidden = [&]()
+				{
+					return ShouldHideSystemDrawingCursor(navigation.CursorOwner(), false, false,
+						true, false, true, false, false, false, navigation.CanvasPanMode());
+				};
+				navigation.PublishPenCursorSample(pen);
+				check(navigation.CanvasPanMode() && !hidden(), "whiteboard move restores system cursor under real Window pen ownership");
+				navigation.NotifyTouchContactBegin(); navigation.NotifyTouchContactEnd();
+				check(navigation.CursorOwner() == DrawingCursorPointerAuthority::Touch && hidden(),
+					"last touch Up in move mode retains touch suppression instead of reviving a stale pen arrow");
+				++pen.qpc; navigation.PublishPenCursorSample(pen);
+				check(navigation.CursorOwner() == DrawingCursorPointerAuthority::Pen && !hidden(),
+					"fresh pen input recovers the move mode system cursor after touch");
+				navigation.SetSelectionMode(false);
+				check(!navigation.CanvasPanMode() && hidden(), "returning to drawing restores the normal system pen hiding policy");
+			}
 			const auto configuration = CreateStrokeModelConfiguration(96);
 			constexpr DrawingTool ordinaryTools[] = { DrawingTool::Pen, DrawingTool::HardPen,
 				DrawingTool::SolidLine, DrawingTool::DashedLine,
@@ -6877,6 +6917,45 @@ namespace Inkeys::Drawing::Draw3
 			const auto d = display(); const auto touch = source(SourceKind::Touch), pen = source(SourceKind::IntegratedPen);
 			const auto scale = CanvasPanScaleFromDisplay(d);
 			const auto physical = ResolveCanvasPanMotion(scale, touch, CanvasPanDeviceClass::Touch, 1);
+			// 真正经过Adapter→ApplyToCanvas→SetViewport/限位→ACK，再在下一Up消费预算；不拿requested冒充实际。
+			{
+				auto owned = std::make_unique<Rig>(); auto& r = *owned; r.scale = scale;
+				r.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 1216.252, 572.523, 1, false, touch); r.Frame(1.1);
+				r.Move(Rig::kTouchTablet, 1, 1100.674, 598.677, 1.3196); r.Frame(1.6);
+				const double budget = std::hypot(r.lastApply.viewportDelta.x * 10 * d.cmPerPixelX, r.lastApply.viewportDelta.y * 10 * d.cmPerPixelY);
+				check(r.lastApply.viewportChanged && r.ViewportX() > 0 && r.ViewportY() < 0 && budget > 8 && budget < 10,
+					"distance-budget-production-applies-real-viewport-opposite-to-content");
+				r.Up(Rig::kTouchTablet, 1, 1100.674, 598.677, 12.0271); r.Frame(12.1);
+				const auto& out = r.last.dynamics; const auto f = out.frictionParameters;
+				const double speed = std::hypot(out.boostedReleaseVelocity.x * out.releaseMotionContext.motionPerDipX,
+					out.boostedReleaseVelocity.y * out.releaseMotionContext.motionPerDipY);
+				const double distance = f.tauSeconds * speed - f.deceleration * f.tauSeconds * f.tauSeconds * std::log1p(speed / (f.deceleration * f.tauSeconds));
+				check(out.touchDecision.mode == TouchReleaseMode::DistanceBounded && out.boostedReleaseVelocity.x < 0 && out.boostedReleaseVelocity.y > 0 &&
+					distance > 8 && distance <= budget + .001 && distance <= out.touchDecision.distanceBudget + .001,
+					"distance-budget-production-ack-units-sign-and-tail-bound");
+			}
+			{
+				auto owned = std::make_unique<Rig>(); auto& r = *owned; r.scale = scale;
+				(void)r.Canvas(0)->SetViewport({ -kCanvasViewportLimitDip + 1, 0, 1 });
+				r.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 1, false, touch); r.Frame(1.1);
+				r.Move(Rig::kTouchTablet, 1, 200, 100, 1.3); r.Frame(1.6);
+				check(r.lastApply.xClamped, "distance-budget-production-fixture-reaches-viewport-limit");
+				r.Up(Rig::kTouchTablet, 1, 200, 100, 10); r.Frame(11);
+				check(r.pan.Phase() == CanvasPanPhase::Idle && r.last.dynamics.touchDecision.mode == TouchReleaseMode::Stop,
+					"distance-budget-production-clamped-axis-does-not-regain-requested-displacement");
+			}
+			{
+				auto owned = std::make_unique<Rig>(); auto& r = *owned; r.scale = scale;
+				r.Down(Rig::kTouchTablet, 1, InputDeviceType::Touch, 100, 100, 1, false, touch);
+				r.Move(Rig::kTouchTablet, 1, 50, 100, 1.3); r.Up(Rig::kTouchTablet, 1, 50, 100, 2);
+				r.Down(Rig::kTouchTablet, 2, InputDeviceType::Touch, 100, 100, 3, false, touch);
+				r.Move(Rig::kTouchTablet, 2, 150, 100, 3.3); r.Frame(4);
+				check(!r.last.dynamics.motionFeedback.eligible, "distance-budget-production-mixed-frame-not-confirmable");
+				r.Up(Rig::kTouchTablet, 2, 150, 100, 5); r.Frame(6);
+				check(r.pan.Phase() == CanvasPanPhase::Idle && r.last.dynamics.touchDecision.mode == TouchReleaseMode::Stop,
+					"distance-budget-production-mixed-groups-cannot-charge-newest-leg");
+			}
+
 			check(physical.context.profile == CanvasPanMotionProfile::TouchPhysical && physical.context.inputMapped &&
 				std::abs(physical.context.motionPerDipX - 10.0*d.cmPerPixelX/.5) < 1e-8, "trusted-touch-mm-axis");
 			check(ResolveCanvasPanMotion(scale, pen, CanvasPanDeviceClass::Pen, 1).context.profile == CanvasPanMotionProfile::ScreenPenPhysical,
@@ -7506,7 +7585,9 @@ namespace Inkeys::Drawing::Draw3
 					}, false, hitched ? hitch : 0.0, true, hitch > 0.0);
 				const bool fullScrollFrame = beforeScrolling && rig.last.dynamics.scrolling &&
 					beforeLocked && rig.pan.Phase() == CanvasPanPhase::Locked && !hitched;
+				// 慢拖首次真实Scroll可能晚于脚本120ms；稳定速度只比较连续两个Scrolling帧。
 				if (now - start > 120.0 && !hitched && beforeLocked && beforeKnown &&
+					beforeScrolling && rig.last.dynamics.scrolling &&
 					rig.last.dynamics.handVelocityKnown && rig.pan.Phase() == CanvasPanPhase::Locked)
 				{
 					const auto v = rig.pan.VelocityDip();
@@ -14967,7 +15048,7 @@ namespace Inkeys::Drawing::Draw3
 				LogCanvasPan("navigation-stop reason=%s phase=%u contacts=%zu velocity-dip=(%.1f,%.1f)",
 					reason ? reason : "unknown", static_cast<unsigned>(canvasPan.Phase()),
 					gestureContacts.size(), canvasPan.VelocityDip().x, canvasPan.VelocityDip().y);
-			canvasPan.Stop();
+			canvasPan.Stop(reason ? reason : "canvas-command");
 			interruptNavigationForPenOrMouse();
 		};
 
@@ -16312,7 +16393,7 @@ namespace Inkeys::Drawing::Draw3
 			if (revision == observedAdmissionRevision) return;
 			observedAdmissionRevision = revision;
 			// 页边界/加载/最小化/工作区转换等准入变化一律终止平移手势与惯性，翻页后不遗留速度。
-			if (canvasPan.Active()) canvasPan.Stop();
+			if (canvasPan.Active()) canvasPan.Stop("admission-revision-changed");
 			if (!input_.AdmissionBlocked() && active.empty() && gestureContacts.empty() &&
 				debugProbeContacts.empty()) return;
 			// 页边界只收尾已经被绘制线程接受的最后位置，不消费边界后的 Move。
@@ -16515,7 +16596,7 @@ namespace Inkeys::Drawing::Draw3
 			if (penInContact && !suppressPenUntilRelease && !canvasPan.HasContacts())
 			{
 				// mailbox 可提前取消自由滑行，不能把合法笔的持续接触每帧解释为新 Down。
-				canvasPan.StopFling();
+				canvasPan.StopFling("pen-mailbox-contact");
 			}
 
 			// 有序真实样本 -> 本批运动域内核 -> 系统DIP/像素出口；移动模式hover不急停。
@@ -16557,6 +16638,25 @@ namespace Inkeys::Drawing::Draw3
 				if (out.released)
 				{
 					const auto& context = out.releaseMotionContext;
+					const auto& support = out.releaseSupport;
+					LogCanvasPan("touch-decision mode=%s reason=%u response=%u candidate-source=%s evidence-key=%llu evidence-motion-qpc=%lld raw-age-ms=%.5f platform-ms=%.5f distance-budget=%.8g residual-added=%u group=%llu leg=%llu epoch=%llu metric=%llu",
+						TouchReleaseModeName(out.touchDecision.mode), static_cast<unsigned>(out.touchDecision.reason), static_cast<unsigned>(out.touchDecision.response),
+						(out.touchDecision.mode == TouchReleaseMode::Measured || out.touchDecision.mode == TouchReleaseMode::ShortSupported) ?
+							(out.touchDecision.evidenceContactKey ? "contact-focus" : "group-focus") :
+							out.touchDecision.mode == TouchReleaseMode::ResidualOnly ? "prior-current-residual" :
+							out.touchDecision.mode == TouchReleaseMode::DistanceBounded ? "applied-net-distance" : "not-used",
+						static_cast<unsigned long long>(out.touchDecision.evidenceContactKey), static_cast<long long>(out.touchDecision.evidenceMotionQpc),
+						out.releaseRawAgeSeconds * 1000, out.releasePlatformSeconds * 1000, out.touchDecision.distanceBudget, out.touchDecision.addedResidual ? 1u : 0u,
+						static_cast<unsigned long long>(out.releaseTouchTag.group), static_cast<unsigned long long>(out.releaseTouchTag.leg),
+						static_cast<unsigned long long>(out.releaseTouchTag.epoch), static_cast<unsigned long long>(out.releaseTouchTag.metric));
+					LogCanvasPan("release-quality key=%llu source=%llu profile=%u unit=%s raw-points=%zu motion-points=%zu raw-last-qpc=%lld motion-last-qpc=%lld age-limited=%u anchors=%zu positive-intervals=%zu first-qpc=%lld last-qpc=%lld support-first-qpc=%lld support-last-qpc=%lld support-upper=%.8g support-scope=local-contact support-evaluated=%u support-valid=%u support-limited=%u output-limited=%u boost-suppressed=%u",
+						static_cast<unsigned long long>(out.releaseContactKey), static_cast<unsigned long long>(out.releaseSourceKey),
+						static_cast<unsigned>(context.profile), context.unit == CanvasPanMotionUnit::Millimeters ? "mm" : "system-DIP",
+						out.releaseSampleCount, out.releaseMotionSampleCount, static_cast<long long>(out.releaseLastRawQpc),
+						static_cast<long long>(out.releaseLastMotionQpc), out.releaseMotionAgeLimited ? 1u : 0u,
+						support.anchorCount, support.positiveIntervalCount, static_cast<long long>(support.firstQpc), static_cast<long long>(support.lastQpc),
+						static_cast<long long>(support.supportFirstQpc), static_cast<long long>(support.supportLastQpc), support.speedUpperBound,
+						support.evaluated ? 1u : 0u, support.valid ? 1u : 0u, out.releaseSupportLimited ? 1u : 0u, out.releaseOutputLimited ? 1u : 0u, out.releaseBoostSuppressed ? 1u : 0u);
 					const double speed = std::hypot(out.boostedReleaseVelocity.x * context.motionPerDipX,
 						out.boostedReleaseVelocity.y * context.motionPerDipY);
 					const auto parameters = out.frictionParameters;

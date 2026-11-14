@@ -31,3 +31,11 @@
 - windows-scale-api-evidence.md：Microsoft官方DPI/EDID/映射证据。
 
 完整主产品合同见manifest里的canvas-pan.md和C++规范；构建前另读`.trellis/spec/native-desktop/build-and-compatibility.md`（为给完整集成审查留注入预算，此文件在implement清单不再内联，check清单保留）。若原生注入因大小降为路径索引，子代理必须自行读取需要的全文，不能忽略未注入条目。
+
+## 最新执行入口（2026-11-14）
+
+用户已批准overspeed-history-plan-2026-11-14.md。必须补读该计划及research/overspeed-history-plan-review-2026-11-14.md、第二轮intermittent研究；旧“超输出cap即清窗”合同已明确待移除，不能拿它要求新实现保持。按住仍1:1，输出cap保留，单末点质量规则须量化且有反例。当前不commit/push/归档，自动验证后向用户交付真机测试步骤。
+
+最新优先级：Touch执行合同 touch-terminal-fix-2026-11-14.md 已批准实施；需读device-feedback三份实机报告和该合同。旧统一双段noise/dt导致Touch1–3mm短尾，本轮只Touch改进展证据/运动age，Pen/Tail/Indirect不变。
+
+最新优先级（Touch释放回归）：用户已批准touch-release-repair-plan-2026-11-14.md，必须补读该计划及research/touch-release-repair-plan-review-2026-11-14.md。旧motion-age50ms机械折半/禁boost和个人20ms硬门是待修对象，不以旧断言阻止已批准改进。距离预算只用确认已应用净位移，最终seed不二次boost；RTS本轮仅诊断实际返回属性，不改desired列表或正式时间源。

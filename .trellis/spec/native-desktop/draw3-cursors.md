@@ -12,6 +12,7 @@
 - `DotCursorHideMode{Off=0,ScreenPen=1,Tablet=2,Both=3}`、`RestoreDotCursorHideMode(int)`、`ShouldHideDotCursorOnContact(CursorDevice,CursorStyle,DotCursorHideMode)`：只对两种 Dot 样式与命中的笔设备返回隐藏；非法整数还原为 ScreenPen。
 - `Bridge::ProductState::cursorSettings` 是纯值快照；`Bridge::ResolveMouseCursorStyleForTool(Tool,CursorStyle)` 给出当前工具的有效鼠标样式（软/硬笔取所选，荧光笔固定为应用预览，其余回 Arrow），`Bridge::ResolveCursorSettingsForTool(Tool,CursorSettings)` 按值生成有效快照且只改 mouse；原始选择不得被该临时结果覆盖。
 - `DrawingController::SetCursorSettings(const CursorSettings&) noexcept` 只由 Host owner 消费；`ResolvePrimaryDrawingCursorVisual(..., const CursorSettings* productSettings=nullptr, bool penIconAllowed=false, float dpiScale=1.0f)` 在显式接入后应用产品规则（`penIconAllowed` 仅对软/硬笔为真，同时门控设备样式）；`MakeTouchPenDrawingCursorVisual(x,y,appearance,CursorStyle,dpi)` 生成逐接触触摸光标。
+- `ShouldHideSystemDrawingCursor(..., bool mouseSampleIsTablet=false, bool canvasPanMode=false)`：白板移动模式的Pen/Mouse及驱动注入数位板交还默认系统光标；Touch和无真实鼠标接管的活动Touch Pan仍隐藏，默认false保留普通绘制策略。Window实际应用与诊断必须传同一`CanvasPanMode()`。
 - `FilterMouseCursorMessage(const MouseCursorMessageFilterInput&) noexcept`的输入携带当前持久`pointerAuthority`（默认Unknown）；Window RTS光标分支从既有`cursorOwner_`读取，不新增计时/归属状态。
 - `DrawingCursorShape::{PenIcon,Arrow}`、`DrawingCursorAppearance::{outlineOpacity,centerOffsetX,centerOffsetY}` 保留既有shader/dirty合同；GPU type 21=笔形、22=自绘箭头（共用 type 4–6 的 quad/覆盖率路径，12×19 DIP 参考盒、射线奇偶内外判断）。`WindowController::RequestDrawingCursorRender() noexcept` 只发合并请求和wake，不操作HWND/GPU。
 
@@ -56,7 +57,7 @@
 - PenIcon 仍24 DIP，左上尖端为输入热点、笔尾向右下；仅笔侧/笔尾四个非尖端角做内切圆角，目标半径3 DIP并等比缩放，切线长度各不超过相邻短边2/5以保留间隔；不能整体圆化而钝化笔头。偏移仅影响瞬态中心/quad/dirty，不移动 sample、不外扩外框，复用GPU type21。
 - Highlighter矩形复用当前 `CanvasDiameterForTool` 和同一长宽比，填充有效alpha仍0.35；显式不透明高亮（outlineOpacity=1、GPU编码uv.x=2）时左右边缘为原宽度一半，上下保持原宽度，外框不动。ScreenPen非高亮与legacy默认编码0保持原公式，小尺寸inner coverage须非负且不超过outer；独立边缘alpha不改变工具墨迹。`outlineOpacity=-1` 保留旧整体opacity语义。
 - 显式productSettings=nullptr时保留旧独立API行为，包括旧 Pen Contact 开关；产品接入后该开关不再覆盖新的小圆点策略，倒转橡皮、Laser及逐Touch保持。瞬态视觉不进入L0/L1/L2、文档或Undo。
-- 穿透/选择清应用主光标，由当前命中窗口拥有系统光标；保持WindowFromPoint保护，不用全局ShowCursor计数或强制箭头覆盖其它应用。
+- 穿透/选择清应用主光标，由当前命中窗口拥有系统光标；白板移动模式在自身HWND命中范围内让Pen/Mouse使用默认系统光标，不受画笔样式/接触隐藏配置影响。Touch终态保留的suppression仍解析为Touch，不能借旧Pen/Mouse归属恢复箭头。保持WindowFromPoint保护，不用全局ShowCursor计数或强制箭头覆盖其它应用。
 
 ### Pen离开后的主光标归属
 
@@ -92,6 +93,8 @@
 | Pen归属、样本清空、迟到/重复系统Move | 两MouseStyle均无主视觉；不复活旧Mouse mailbox |
 | 真实Mouse/TouchPad移动或按键Down | 即时接管，Drawing恢复PenIcon，System沿既有系统策略 |
 | 来源API缺失/失败或其它未知来源 | 不冒充已确认系统注入；保留Win7及既有回退 |
+| 白板移动Pen/Mouse/注入数位板 | 默认系统光标；切回绘制保留原设备样式 |
+| 白板移动Touch Up后的suppression | 继续隐藏，真实Pen/Mouse重新接管后恢复系统光标 |
 | Win7尚未实测 | 待硬件验收，不宣布零闪现/双光标消失 |
 | 触摸 TouchStyle=None | 不生成 visual；荧光笔/激光触摸行为不变 |
 | 屏幕笔/数位板样式变化 | 只影响对应设备行；鼠标、触摸、荧光笔/图形不变 |

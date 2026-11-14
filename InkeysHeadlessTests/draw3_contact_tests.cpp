@@ -1458,6 +1458,22 @@ namespace
 			highlighted(injected) && hideArrow && keepArrow && realMouse,
 			"injected tablet mouse uses the tablet row only when marked and enabled")) ++failures;
 
+		// 移动模式不依赖笔样式或残留工具；退出后立即恢复原有绘制策略。
+		for (const auto authority : { penOwner, mouseOwner, DrawingCursorPointerAuthority::Unknown })
+			for (const bool valid : { false, true })
+				for (const bool injectedTablet : { false, true })
+				{
+					if (!Expect(!ShouldHideSystemDrawingCursor(authority, true, true,
+						valid, valid, false, false, false, injectedTablet, true),
+						"whiteboard move restores the default system cursor for pen, tablet and mouse")) ++failures;
+				}
+		if (!Expect(ShouldHideSystemDrawingCursor(penOwner, false, false, true, false) &&
+			ShouldHideSystemDrawingCursor(penOwner, false, false, true, false, true, true, false, false, true) &&
+			ShouldHideSystemDrawingCursor(DrawingCursorPointerAuthority::Touch, false, false,
+				false, false, true, false, false, false, true) &&
+			!ShouldHideSystemDrawingCursor(penOwner, false, false, true, true, false, true, true, true, true),
+			"move mode preserves touch hiding, real mouse takeover and ordinary drawing pen policy")) ++failures;
+
 		// 触摸：默认无光标；逐接触生成所选软/硬笔光标，缩放按各自 DPI。
 		const auto touchVisual = [&](CursorStyle style, float scale = 1.0f)
 		{
