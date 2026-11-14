@@ -1060,6 +1060,22 @@ namespace Inkeys::UI::Setting::Design
 		return events;
 	}
 
+	CanvasPanInertiaEvents RenderCanvasPanInertia(Inkeys::Drawing::Draw3::CanvasPanInertiaOptions& options)
+	{
+		CanvasPanInertiaEvents events;
+		const auto& text = I18nKey.SettingsUI.Draw.General.CanvasPanInertia;
+		const auto devices = InlineCheckboxes("##canvas-pan-devices", {
+			{ IA(text.Mouse), &options.mouse, &events.devicesChanged[0] },
+			{ IA(text.Touchpad), &options.touchpad, &events.devicesChanged[1] },
+			{ IA(text.Touch), &options.touch, &events.devicesChanged[2] },
+			{ IA(text.Pen), &options.pen, &events.devicesChanged[3] },
+			{ IA(text.PenTail), &options.penTail, &events.devicesChanged[4] } },
+			"##canvas-pan-devices-visibility", options.enabled);
+		events.enabledChanged = ToggleRow("##canvas-pan-inertia", IA(text.N).c_str(),
+			IA(text.E).c_str(), "\ue7c9", options.enabled, nullptr, &devices);
+		return events;
+	}
+
 	SpeedEraserEvents RenderSpeedEraser(SpeedEraserDraft& draft, const EraserDemoPresenter& presenter)
 	{
 		SpeedEraserEvents events;

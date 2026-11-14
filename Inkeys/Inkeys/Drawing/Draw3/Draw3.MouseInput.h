@@ -9,6 +9,30 @@ namespace Inkeys::Drawing::Draw3::Detail
 	inline constexpr std::uintptr_t kMouseInputStop = 0;
 	inline constexpr std::uintptr_t kMouseInputStart = 1;
 
+	// 兜底鼠标的“选择隔离”：白板移动模式下鼠标左键是平移触点，必须送达控制器；
+	// 桌面/PPT 的 Selection 仍隔离。
+	constexpr bool MouseSelectionIsolates(bool selectionMode, bool canvasPanMode) noexcept
+	{
+		return selectionMode && !canvasPanMode;
+	}
+
+	// 选择位与已确认工作区直接派生平移模式，避免两个独立模式发布之间丢失首个 Down。
+	class MouseSelectionModeState
+	{
+	public:
+		bool Selection() const noexcept { return selection_.load(std::memory_order_acquire); }
+		bool SetSelection(bool enabled) noexcept
+		{ return selection_.exchange(enabled, std::memory_order_acq_rel) != enabled; }
+		void SetWhiteboard(bool enabled) noexcept { whiteboard_.store(enabled, std::memory_order_release); }
+		// 新窗口/Host 代次必须重新确认工作区，默认 Desktop 不会另发就绪回调。
+		void ResetWorkspace() noexcept { SetWhiteboard(false); }
+		bool CanvasPan() const noexcept { return Selection() && whiteboard_.load(std::memory_order_acquire); }
+		bool Isolates() const noexcept { return Selection() && !whiteboard_.load(std::memory_order_acquire); }
+	private:
+		std::atomic<bool> selection_ = true;
+		std::atomic<bool> whiteboard_ = false;
+	};
+
 	// 只有窗口 owner 读写 contact；跨线程 Stop 先关准入，再由 owner 串行取消并确认。
 	// 模板让普通头和模块共用真实 Coordinator，不在无窗口测试中复制输入决策。
 	template<class Coordinator, class Snapshot, class Device, class Phase>

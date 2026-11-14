@@ -1,0 +1,42 @@
+[Draw3TouchpadIngress] PASS: explicit input isolation and real association/interaction/status routines; no HWND
+[Draw3TouchDiscardIdentity] PASS: captured key survives Up/Cancel and same-slot reuse
+[Draw3SingleTouchReconnect] PASS: actual match/model handoff and independent-touch rejection
+[Draw3ReconnectIdentity] PASS: reused contact IDs, chained handoff and isolated Touch ownership
+[Draw3EraserIdleWake] PASS: four device paths, four race windows, deadlines and idle lifecycle
+[Draw3.Input] action=admission reasons=1024 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=1104 desired=2 actual=0 session=1 target=1
+[Draw3.Input] action=admission reasons=1088 desired=2 actual=2 session=1 target=1
+[Draw3.Input] action=admission reasons=1024 desired=2 actual=2 session=1 target=1
+[Draw3.Input] action=admission reasons=0 desired=2 actual=2 session=1 target=1
+[Draw3.Input] action=admission reasons=128 desired=0 actual=2 session=0 target=0
+[Draw3.Input] action=admission reasons=0 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=1024 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=0 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=1024 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=1026 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=2 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=0 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=1024 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=1028 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=4 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=0 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=1024 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=1536 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=512 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=0 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=1024 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=0 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2048 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=2052 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=4 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=0 desired=1 actual=1 session=0 target=0
+[Draw3.Input] action=admission reasons=1024 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=0 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=1024 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=768 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=1024 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=0 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=1024 desired=0 actual=0 session=0 target=0
+[Draw3.Input] action=admission reasons=1 desired=0 actual=0 session=0 target=0
+[Draw3WorkspaceTransition] PASS: epoch fence, owner ACK, independent reasons and real contact drain
+[Draw3CanvasPan] PASS: Move-mode routing, Touch/Mouse 1:1 pan, coupling, inertia, DIP, exclusivity, stop, clamp and per-page views; no GPU/HWND

@@ -582,6 +582,12 @@ namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 					if (helpers) check(text.find("[CURSOR_TRACE]") != std::string::npos &&
 						text.find("[diagnostic-helper] failed. HRESULT=0x80004005") != std::string::npos &&
 						text.find("[PptSync] stage=diagnostic-helper") != std::string::npos, "real Cursor HRESULT stderr helper bytes");
+					if (helpers) check(text.find("[CanvasPan] seq=") != std::string::npos &&
+						text.find("helper=canvas-pan-production value=42") != std::string::npos &&
+						text.find("helper=canvas-pan-last-error preserved=1") != std::string::npos &&
+						text.find("[CanvasPan] disabled") != std::string::npos &&
+						text.find("helper=canvas-pan-disabled") == std::string::npos,
+						"production CanvasPan runtime gate, output bytes and LastError preservation");
 					CloseHandle(file);
 				}
 				else check(false, "temp file open");

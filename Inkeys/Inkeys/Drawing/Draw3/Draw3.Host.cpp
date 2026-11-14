@@ -459,6 +459,8 @@ namespace Inkeys::Drawing::Draw3
 		// 一份原子快照保存通用偏好；绘制 owner 应用，不能跨线程借用 Controller。
 		std::atomic_uint32_t generalDrawingOptions = 3u | (2u << 2);
 		std::atomic_uint32_t laserOptions = 0;
+		std::atomic_uint32_t canvasPanInertiaOptions = CanvasPanInertiaOptions{}.Encode();
+		uint32_t appliedCanvasPanInertiaOptions = UINT32_MAX;
 		uint32_t appliedGeneralDrawingOptions = UINT32_MAX;
 		uint32_t appliedLaserOptions = UINT32_MAX;
 		mutable std::mutex palmEraserOptionsMutex;
@@ -1222,6 +1224,14 @@ namespace Inkeys::Drawing::Draw3
 				self->runtimeCallbacks.whiteboardThemeEdited(self->runtimeCallbacks.context, theme);
 		}
 
+		// 直接转发给产品层（不经 Host 快照/条件变量/state 线程），保持视口通道在绘制线程到 UI3 之间只跳一次。
+		static void ObserveWhiteboardViewport(void* context, const WhiteboardViewportSample& sample) noexcept
+		{
+			auto* self = static_cast<Impl*>(context);
+			if (self && self->runtimeCallbacks.whiteboardViewportChanged)
+				self->runtimeCallbacks.whiteboardViewportChanged(self->runtimeCallbacks.context, sample);
+		}
+
 		static void ObserveWhiteboardExit(void* context, bool durable)
 		{
 			static_cast<Impl*>(context)->whiteboardExitDurable.store(durable, std::memory_order_release);
@@ -1583,6 +1593,9 @@ namespace Inkeys::Drawing::Draw3
 		{
 			(void)drawingActivity.EndIfActive(runtimeCallbacks.context,
 				runtimeCallbacks.drawingActivityChanged);
+			// 绘制线程每个退出点都经此：视口通道复位为“离开白板”，Freeze 不再依据旧样本画相位。
+			if (runtimeCallbacks.whiteboardViewportChanged)
+				runtimeCallbacks.whiteboardViewportChanged(runtimeCallbacks.context, WhiteboardViewportSample{});
 		}
 
 		static bool ApplyStyle(void* context, DWORD setMask, DWORD clearMask)
@@ -1757,6 +1770,12 @@ namespace Inkeys::Drawing::Draw3
 				{
 					drawing->SetCanvasDebugInputMode(static_cast<uint8_t>(inputPath));
 					appliedCanvasDebugInputMode = inputPath;
+				}
+				const uint32_t panInertia = canvasPanInertiaOptions.load(std::memory_order_acquire);
+				if (panInertia != appliedCanvasPanInertiaOptions)
+				{
+					drawing->SetCanvasPanInertiaOptions(CanvasPanInertiaOptions::Decode(panInertia));
+					appliedCanvasPanInertiaOptions = panInertia;
 				}
 				const uint32_t general = generalDrawingOptions.load(std::memory_order_acquire);
 				if (general != appliedGeneralDrawingOptions)
@@ -2272,6 +2291,7 @@ namespace Inkeys::Drawing::Draw3
 							observer.whiteboardRoot = startOptions.autoSaveRoot;
 							observer.whiteboardDefaultTheme = startOptions.whiteboardDefaultTheme;
 							observer.whiteboardThemeEdited = &ObserveWhiteboardThemeEdited;
+							observer.whiteboardViewportChanged = &ObserveWhiteboardViewport;
 							observer.acceptedStrokeBegan = &ObserveAcceptedStroke;
 							observer.acceptedStrokeSceneChanged = &ObserveAcceptedStrokeScene;
 							observer.shortcutContextChanged = &ObserveShortcutContext;
@@ -2282,7 +2302,7 @@ namespace Inkeys::Drawing::Draw3
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
 								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks);
 							// 新 Controller 必须重新消费期望值，不能沿用上一代的已应用缓存。
-							appliedGeneralDrawingOptions = appliedLaserOptions = UINT32_MAX;
+							appliedGeneralDrawingOptions = appliedLaserOptions = appliedCanvasPanInertiaOptions = UINT32_MAX;
 							appliedPalmEraserOptions.reset();
 							appliedCanvasDebugOptions = UINT32_MAX;
 							appliedInterruptedStrokeReconnectDevices = UINT32_MAX;
@@ -2556,6 +2576,12 @@ namespace Inkeys::Drawing::Draw3
 		void StopInputProducer() noexcept
 		{
 			CloseInputAdmission();
+			// DM 对象与回调由窗口 owner 释放；未确认停产时不能继续拆除 HWND。
+			if (!window.StopTouchpadNavigation())
+			{
+				startOptions.failedCleanup.BeginKnownFailure();
+				startOptions.failedCleanup.FailUnprovenProducerStop();
+			}
 			if (!window.SetMouseCompatibilityEnabled(false))
 			{
 				startOptions.failedCleanup.BeginKnownFailure();
@@ -2968,6 +2994,13 @@ namespace Inkeys::Drawing::Draw3
 		const uint32_t mode = predictionMode >= 0 && predictionMode <= 2 ? static_cast<uint32_t>(predictionMode) : 2u;
 		const uint32_t next = (multiTouchEnabled ? 1u : 0u) | (penTailCorrectionEnabled ? 2u : 0u) | (mode << 2);
 		if (impl_->generalDrawingOptions.exchange(next, std::memory_order_acq_rel) != next)
+			(void)impl_->input.PublishControlWake();
+	}
+
+	void Host::SetCanvasPanInertiaOptions(CanvasPanInertiaOptions options) noexcept
+	{
+		// 六个偏好同代交给绘制 owner；总开关不清子项，等值发布不打断帧节拍。
+		if (impl_->canvasPanInertiaOptions.exchange(options.Encode(), std::memory_order_acq_rel) != options.Encode())
 			(void)impl_->input.PublishControlWake();
 	}
 

@@ -447,6 +447,14 @@ GROUP(UI, \
 		) \
 		GROUP(Whiteboard, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<WhiteboardThemePreference>, DefaultTheme, WhiteboardThemePreference{}) \
+			GROUP(PanInertia, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enabled, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Mouse, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Touchpad, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Touch, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Pen, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PenTail, false) \
+			) \
 		) \
 		GROUP(Haptics, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Drawing, true) \
@@ -520,6 +528,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Haptics, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchArea, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Cursor, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CanvasPan, false) \
 			) \
 			GROUP(UI3, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ThemeMode, ThemeModeDark) 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, BackgroundOpacity, ResidentBackgroundOpacityThemeDefault) 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ContentOpacity, ResidentContentOpacityDefault) \

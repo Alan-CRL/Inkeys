@@ -190,6 +190,13 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		return selectionMode && workspace != Workspace::Whiteboard;
 	}
 
+	// 白板的“移动”（Selection）模式才平移画布；桌面/PPT 的 Selection 仍是穿透的电脑操作。
+	constexpr bool MoveModePansCanvas(
+		bool selectionMode, Workspace workspace) noexcept
+	{
+		return selectionMode && workspace == Workspace::Whiteboard;
+	}
+
 	constexpr bool PresentationInputSuppressed(
 		Workspace workspace, bool loadPending) noexcept
 	{

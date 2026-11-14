@@ -164,7 +164,8 @@ namespace Inkeys::Drawing::Draw3
 
 	int InkRenderer::DrawShapePrimitives(std::span<const ShapePrimitive> primitives,
 		ShapePrimitiveKind kind, DirectX::XMFLOAT4 color, InkOperatorKind operatorKind,
-		ID3D11BlendState* blendStateOverride, float cornerRadiusOverride)
+		ID3D11BlendState* blendStateOverride, float cornerRadiusOverride,
+		ID3D11RasterizerState* rasterStateOverride)
 	{
 		if (primitives.empty()) return 0;
 		if (!IsLineShapePrimitive(kind) && !IsRectangleShapePrimitive(kind)) return -1;
@@ -217,7 +218,8 @@ namespace Inkeys::Drawing::Draw3
 			context->PSSetConstantBuffers(0, 1, constantBuffers);
 			context->OMSetBlendState(blendStateOverride ? blendStateOverride
 				: strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF);
-			context->RSSetState(rasterState.Get());
+			// 仅白板纹理 under pass 传入 scissor 光栅状态；其余调用保持原固定状态。
+			context->RSSetState(rasterStateOverride ? rasterStateOverride : rasterState.Get());
 			context->Draw(static_cast<UINT>(batchCount) * 6, 0);
 
 			ID3D11ShaderResourceView* nullResource[] = { nullptr };

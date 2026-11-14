@@ -7,6 +7,8 @@
 #include "Draw3.ShaderCompatibility.h"
 
 import Inkeys.Window;
+import Inkeys.Drawing.Draw3.window_control;
+import Inkeys.Drawing.Draw3.contact_input;
 import Inkeys.Drawing.Draw3.renderer;
 import Inkeys.Drawing.Draw3.graphics_initialization;
 import Inkeys.Drawing.Draw3.transparent_presentation;
@@ -78,7 +80,8 @@ namespace Inkeys::Drawing::Draw3
 			return false;
 		}
 
-		constexpr UINT kHiddenCaptureProbeMessage = WM_APP + 0x3D4u;
+		// +0x3D4 由生产鼠标 owner 启停握手占用，测试探针不能吞掉它。
+		constexpr UINT kHiddenCaptureProbeMessage = WM_APP + 0x3D5u;
 		LRESULT CALLBACK HiddenDrawpadWindowProc(HWND window, UINT message,
 			WPARAM wParam, LPARAM lParam)
 		{
@@ -123,6 +126,308 @@ namespace Inkeys::Drawing::Draw3
 			spec.visible = false;
 			spec.bindMessages = false;
 		return spec;
+		}
+
+
+		// 不启动 Host/GPU：用真实 HWND -> WindowController -> Coordinator 验证 Win32 兜底生命周期。
+		LRESULT CALLBACK CompatibilityMouseWindowProc(HWND window, UINT message,
+			WPARAM wParam, LPARAM lParam)
+		{
+			auto* controller = reinterpret_cast<WindowController*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+			return controller ? controller->HandleExternalMessage(window, message, wParam, lParam)
+				: DefWindowProcW(window, message, wParam, lParam);
+		}
+
+		bool CheckCompatibilityMouseWindow(int& failures)
+		{
+			const auto beforeFailures = failures;
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			WindowController controller;
+			const std::wstring className = L"Inkeys.Draw3.Hidden.Compatibility." + std::to_wstring(GetCurrentProcessId());
+			WNDCLASSEXW windowClass{};
+			windowClass.cbSize = sizeof(windowClass);
+			windowClass.hInstance = GetModuleHandleW(nullptr);
+			windowClass.lpszClassName = className.c_str();
+			windowClass.lpfnWndProc = CompatibilityMouseWindowProc;
+			const ATOM atom = RegisterClassExW(&windowClass);
+			if (!Check(atom != 0, "compatibility mouse registers hidden fixture", failures)) return false;
+			const HWND window = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+				className.c_str(), L"Inkeys hidden compatibility mouse", WS_POPUP,
+				-32000, -32000, 320, 240, nullptr, nullptr, windowClass.hInstance, nullptr);
+			struct Cleanup
+			{
+				WindowController& controller;
+				HWND window;
+				const WNDCLASSEXW& windowClass;
+				~Cleanup()
+				{
+					(void)controller.SetMouseCompatibilityEnabled(false);
+					controller.DetachExternal();
+					if (window) { SetWindowLongPtrW(window, GWLP_USERDATA, 0); DestroyWindow(window); }
+					UnregisterClassW(windowClass.lpszClassName, windowClass.hInstance);
+				}
+			} cleanup{ controller, window, windowClass };
+			if (!Check(window && !IsWindowVisible(window) && controller.AttachExternal(window),
+				"compatibility fixture attaches a hidden non-activating HWND", failures)) return false;
+			SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&controller));
+			controller.SetInputCoordinator(&input);
+			if (!Check(controller.SetMouseCompatibilityEnabled(true),
+				"compatibility producer starts on its HWND owner", failures)) return false;
+			// GetMessageTime 是生产路径的旧代次屏障；使用新排队消息，不伪造时间或调用私有处理函数。
+			const DWORD started = GetTickCount();
+			const auto tickDeadline = std::chrono::steady_clock::now() + 1s;
+			while (GetTickCount() == started && std::chrono::steady_clock::now() < tickDeadline)
+				std::this_thread::sleep_for(1ms);
+			if (!Check(GetTickCount() != started, "compatibility fixture obtains a new message-time generation", failures)) return false;
+			const auto deadline = std::chrono::steady_clock::now() + 20s;
+			const auto dispatch = [&](UINT message, WPARAM buttons, LPARAM position)
+			{
+				if (std::chrono::steady_clock::now() >= deadline || !PostMessageW(window, message, buttons, position))
+					return Check(false, "compatibility message post stays within hard timeout", failures);
+				MSG queued{};
+				const auto limit = std::chrono::steady_clock::now() + 1s;
+				do
+				{
+					if (PeekMessageW(&queued, window, 0, 0, PM_REMOVE))
+					{
+						DispatchMessageW(&queued);
+						if (queued.message == message) return true;
+					}
+					else std::this_thread::sleep_for(1ms);
+				} while (std::chrono::steady_clock::now() < limit && std::chrono::steady_clock::now() < deadline);
+				return Check(false, "compatibility posted message reaches real window procedure", failures);
+			};
+			const auto takeDown = [&]()
+			{
+				ContactRecord* record = nullptr;
+				for (unsigned n = 0; n < 64 && input.TryDequeue(record); ++n)
+				{
+					if (record) return ContactHandle{ record, record->Generation() };
+					input.AcknowledgeControlWake();
+				}
+				return ContactHandle{};
+			};
+			const auto phaseAt = [&](ContactHandle handle, ContactPhase phase, float x, float y)
+			{
+				ContactSnapshot snapshot;
+				return handle && input.TryReadSnapshot(handle, snapshot) && snapshot.phase == phase
+					&& snapshot.position.x == x && snapshot.position.y == y;
+			};
+			const auto releaseUnexpected = [&](ContactHandle handle)
+			{
+				if (!handle) return;
+				SendMessageW(window, WM_CANCELMODE, 0, 0);
+				input.Recycle(handle);
+			};
+			// 清掉启动时真实按键的隔离位；不查询前台、不产生系统输入。
+			dispatch(WM_LBUTTONUP, 0, MAKELPARAM(20, 30));
+			dispatch(WM_RBUTTONUP, 0, MAKELPARAM(20, 30));
+			controller.SetCanvasPanWorkspace(true);
+			controller.SetSelectionMode(false);
+			controller.SetSelectionMode(true);
+			Check(controller.CanvasPanMode(), "confirmed whiteboard Selection immediately derives the pan gate", failures);
+			// 实际 WM_LBUTTONDOWN 来自客户区；捕获后的拖动可越界，仍须只产生一次终态。
+			const auto dragTerminals = input.DiagnosticsSnapshot().terminalPublished;
+			dispatch(WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(20, 30));
+			auto contact = takeDown();
+			Check(phaseAt(contact, ContactPhase::Down, 20, 30) && GetCapture() == window,
+				"first Down after Move switch is accepted and captures without a publish frame", failures);
+			dispatch(WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(74, 91));
+			Check(phaseAt(contact, ContactPhase::Move, 74, 91), "real WM_MOUSEMOVE preserves client pixel coordinates", failures);
+			dispatch(WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(-12, 260));
+			Check(phaseAt(contact, ContactPhase::Move, -12, 260) && GetCapture() == window,
+				"captured drag leaving the client keeps signed pixel coordinates", failures);
+			dispatch(WM_LBUTTONUP, 0, MAKELPARAM(-10, 262));
+			Check(phaseAt(contact, ContactPhase::Up, -10, 262) && GetCapture() != window &&
+				input.DiagnosticsSnapshot().terminalPublished == dragTerminals + 1,
+				"real button Up closes captured outside drag exactly once", failures);
+			dispatch(WM_LBUTTONUP, 0, MAKELPARAM(-10, 262));
+			Check(input.DiagnosticsSnapshot().terminalPublished == dragTerminals + 1,
+				"duplicate outside Up does not publish another terminal", failures);
+			if (contact) input.Recycle(contact);
+
+			for (const UINT cancel : { WM_CAPTURECHANGED, WM_CANCELMODE, WM_KILLFOCUS, WM_SHOWWINDOW, WM_WINDOWPOSCHANGED })
+			{
+				dispatch(WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(35, 45));
+				contact = takeDown();
+				Check(phaseAt(contact, ContactPhase::Down, 35, 45), "each cancellation starts with a fresh owner", failures);
+				const auto terminals = input.DiagnosticsSnapshot().terminalPublished;
+				WINDOWPOS position{}; position.hwnd = window; position.flags = SWP_HIDEWINDOW | SWP_NOMOVE | SWP_NOSIZE;
+				// 隐藏窗无法再次产生真实 Hide 边沿；发送真实窗口通知验证相同生产取消分支。
+				SendMessageW(window, cancel, 0, cancel == WM_WINDOWPOSCHANGED ? reinterpret_cast<LPARAM>(&position) : 0);
+				Check(phaseAt(contact, ContactPhase::Cancelled, 35, 45) && GetCapture() != window,
+					"capture/focus/cancel/hide notification cancels and releases ownership", failures);
+				SendMessageW(window, cancel, 0, cancel == WM_WINDOWPOSCHANGED ? reinterpret_cast<LPARAM>(&position) : 0);
+				dispatch(WM_LBUTTONUP, 0, MAKELPARAM(35, 45));
+				Check(input.DiagnosticsSnapshot().terminalPublished == terminals + 1,
+					"duplicate cancel and late Up publish exactly one Cancelled terminal", failures);
+				if (contact) input.Recycle(contact);
+			}
+			for (int n = 0; n < 3; ++n)
+			{
+				dispatch(WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(40 + n, 50));
+				contact = takeDown();
+				dispatch(WM_LBUTTONUP, 0, MAKELPARAM(40 + n, 50));
+				Check(phaseAt(contact, ContactPhase::Up, static_cast<float>(40 + n), 50),
+					"rapid Down Up Down retains independent terminal routes", failures);
+				if (contact) input.Recycle(contact);
+			}
+			for (const auto workspace : { Bridge::Workspace::Desktop, Bridge::Workspace::Presentation })
+			{
+				controller.SetCanvasPanWorkspace(workspace == Bridge::Workspace::Whiteboard);
+				dispatch(WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(30, 40));
+				contact = takeDown();
+				Check(!contact && !controller.CanvasPanMode(), "Desktop and PPT Selection isolate real mouse Down", failures);
+				releaseUnexpected(contact);
+				dispatch(WM_LBUTTONUP, 0, MAKELPARAM(30, 40));
+			}
+			controller.SetCanvasPanWorkspace(true);
+			for (const UINT ignored : { WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEWHEEL, WM_MOUSEHWHEEL, WM_LBUTTONDBLCLK, WM_RBUTTONDBLCLK })
+			{
+				dispatch(ignored, 0, MAKELPARAM(30, 40));
+				contact = takeDown();
+				Check(!contact, "middle wheel and double-click never create compatibility contacts", failures);
+				releaseUnexpected(contact);
+			}
+			// 右键 mailbox 有独立设备类型；是否平移由 Controller 决定，不能把 MouseRight 当成左键。
+			dispatch(WM_RBUTTONDOWN, MK_RBUTTON, MAKELPARAM(30, 40));
+			contact = takeDown();
+			Check(contact && contact.record->DeviceType() == InputDeviceType::MouseRight,
+				"right button is tagged MouseRight rather than contaminating MouseLeft", failures);
+			dispatch(WM_RBUTTONUP, 0, MAKELPARAM(30, 40));
+			if (contact) input.Recycle(contact);
+			// Win32 兜底沿用既有单点鼠标降级，不区分笔提升来源；RTS 的 Pen 隔离不适用于此路径。
+			// 在 owner 同线程设置 promoted 签名后 SendMessage，不使用 SendInput 或修改系统笔状态。
+			const LPARAM previousExtra = SetMessageExtraInfo(static_cast<LPARAM>(0xFF515700u));
+			SendMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(30, 40));
+			SetMessageExtraInfo(previousExtra);
+			contact = takeDown();
+			Check(phaseAt(contact, ContactPhase::Down, 30, 40) &&
+				contact.record->DeviceType() == InputDeviceType::MouseLeft && GetCapture() == window,
+				"pen-promoted Down retains the existing single-point MouseLeft fallback", failures);
+			const auto promotedTerminals = input.DiagnosticsSnapshot().terminalPublished;
+			dispatch(WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(60, 70));
+			Check(phaseAt(contact, ContactPhase::Move, 60, 70),
+				"pen-promoted fallback contact follows the compatibility mouse stream", failures);
+			dispatch(WM_LBUTTONUP, 0, MAKELPARAM(60, 70));
+			Check(phaseAt(contact, ContactPhase::Up, 60, 70) && GetCapture() != window &&
+				input.DiagnosticsSnapshot().terminalPublished == promotedTerminals + 1,
+				"pen-promoted fallback contact ends with one mouse terminal", failures);
+			if (contact) input.Recycle(contact);
+			// ResetWorkspace 的生产等价入口：结束白板确认后 Selection 恢复隔离。
+			controller.SetCanvasPanWorkspace(false);
+			dispatch(WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(30, 40));
+			contact = takeDown();
+			Check(!contact && !controller.CanvasPanMode(), "leaving whiteboard restores mouse Selection isolation", failures);
+			releaseUnexpected(contact);
+			dispatch(WM_LBUTTONUP, 0, MAKELPARAM(30, 40));
+			Check(input.DiagnosticsSnapshot().occupiedSlots == 0 && GetCapture() != window && !IsWindowVisible(window),
+				"compatibility fixture ends without slots capture or visible UI", failures);
+			return failures == beforeFailures;
+		}
+
+
+		struct HiddenViewportObservation
+		{
+			std::atomic<std::uint64_t> coordinates = 0;
+			std::atomic<std::uint64_t> publications = 0;
+			std::atomic_bool moving = false;
+			static void Observe(void* context, const WhiteboardViewportSample& sample) noexcept
+			{
+				auto& value = *static_cast<HiddenViewportObservation*>(context);
+				value.coordinates.store(static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(sample.x)) |
+					(static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(sample.y)) << 32), std::memory_order_release);
+				value.moving.store(sample.active && sample.moving, std::memory_order_release);
+				value.publications.fetch_add(1, std::memory_order_release);
+			}
+		};
+
+		bool CheckHiddenControllerMousePan(HWND drawpad, HiddenViewportObservation& viewport,
+			int& failures)
+		{
+			// 生产只在 RTS 初始化失败时选 Win32Mouse；不关闭 RTS、不把合成 mailbox 注入冒充鼠标消息。
+			if (ProductHost().RuntimeSnapshot().inputMode != HostInputMode::Win32Mouse)
+			{
+				Report("SKIP", "real-controller WM_MOUSE pan: Host selected RTS, no safe force-Win32 option");
+				return true;
+			}
+			if constexpr (!kWhiteboardPatternOwnedByFreeze)
+			{
+				Report("SKIP", "real-controller WM_MOUSE pan: Draw3 owner does not publish an observable viewport callback");
+				return true;
+			}
+			const int beforeFailures = failures;
+			auto drawing = ProductHost().ProductBridge().Snapshot();
+			if (!Check(!drawing.selectionMode, "controller mouse smoke starts from drawing mode", failures)) return false;
+			auto move = drawing;
+			move.selectionMode = true;
+			PublishProductState(move);
+			if (!Check(WaitUntil([]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return state.workspace == Bridge::Workspace::Whiteboard && state.selectionMode && state.presentationInputReady;
+			}, 5s), "real controller confirms hidden whiteboard Move admission", failures))
+			{
+				PublishProductState(drawing);
+				return false;
+			}
+			Check(!IsWindowVisible(drawpad), "controller mouse smoke keeps Drawpad hidden", failures);
+			const auto post = [&](UINT message, WPARAM buttons, int x, int y)
+			{
+				return PostMessageW(drawpad, message, buttons, MAKELPARAM(x, y)) != FALSE;
+			};
+			// 真实按键状态只在后端 Start 时锁存；Up 清理该启动隔离，不依赖前台状态。
+			post(WM_LBUTTONUP, 0, 40, 50);
+			post(WM_RBUTTONUP, 0, 40, 50);
+			const auto beforeRight = ProductHost().RuntimeSnapshot();
+			const auto rightPosition = viewport.coordinates.load(std::memory_order_acquire);
+			Check(post(WM_RBUTTONDOWN, MK_RBUTTON, 40, 50) && post(WM_MOUSEMOVE, MK_RBUTTON, 90, 80) &&
+				post(WM_RBUTTONUP, 0, 90, 80), "post real-controller right-button isolation sequence", failures);
+			Check(WaitUntil([beforeRight]
+			{
+				return ProductHost().RuntimeSnapshot().inputRecycled > beforeRight.inputRecycled;
+			}, 5s) && viewport.coordinates.load(std::memory_order_acquire) == rightPosition,
+				"controller recycles MouseRight without changing the viewport", failures);
+			const auto beforeDown = ProductHost().RuntimeSnapshot();
+			const auto beforePosition = viewport.coordinates.load(std::memory_order_acquire);
+			Check(post(WM_LBUTTONDOWN, MK_LBUTTON, 40, 50), "post real WM_LBUTTONDOWN to hidden controller", failures);
+			Check(WaitUntil([&]
+			{
+				return ProductHost().RuntimeSnapshot().inputDownPublished > beforeDown.inputDownPublished &&
+					viewport.moving.load(std::memory_order_acquire);
+			}, 5s), "controller consumes compatibility Down before the first Move", failures);
+			Check(post(WM_MOUSEMOVE, MK_LBUTTON, 104, 86), "post real WM_MOUSEMOVE to hidden controller", failures);
+			Check(WaitUntil([&]
+			{
+				return viewport.publications.load(std::memory_order_acquire) != 0 &&
+					viewport.coordinates.load(std::memory_order_acquire) != beforePosition;
+			}, 5s), "real controller mouse drag changes the page viewport callback", failures);
+			Check(post(WM_LBUTTONUP, 0, 104, 86), "post real WM_LBUTTONUP to hidden controller", failures);
+			Check(WaitUntil([beforeDown]
+			{
+				return ProductHost().RuntimeSnapshot().inputTerminalPublished > beforeDown.inputTerminalPublished;
+			}, 5s), "controller mouse smoke reaches a real terminal", failures);
+			PublishProductState(drawing);
+			const bool exited = Check(WaitUntil([&] { return !ProductHost().RuntimeSnapshot().selectionMode &&
+				!viewport.moving.load(std::memory_order_acquire); }, 5s),
+				"real controller exits Move mode", failures);
+			if (exited)
+			{
+				const auto stopped = viewport.coordinates.load(std::memory_order_acquire);
+				post(WM_MOUSEMOVE, MK_LBUTTON, 170, 120);
+				bool stable = true;
+				const auto deadline = std::chrono::steady_clock::now() + 150ms;
+				do
+				{
+					stable &= viewport.coordinates.load(std::memory_order_acquire) == stopped;
+					std::this_thread::sleep_for(5ms);
+				} while (std::chrono::steady_clock::now() < deadline);
+				Check(stable, "orphan Move after mode exit produces no further viewport movement", failures);
+			}
+			post(WM_LBUTTONUP, 0, 170, 120);
+			Check(!IsWindowVisible(drawpad), "controller mouse smoke finishes without visible UI", failures);
+			return failures == beforeFailures;
 		}
 
 		bool CheckPresentationStyle(HWND drawpad, HostPresentationMode mode, int& failures)
@@ -905,7 +1210,13 @@ namespace Inkeys::Drawing::Draw3
 				scale.pixelWidth=320;scale.pixelHeight=240;scale.logicalOutputKnown=true;
 				options.hiddenTestDisplayScale=scale;
 			}
-			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
+			HiddenViewportObservation viewportObservation;
+			HostRuntimeCallbacks runtimeCallbacks;
+			runtimeCallbacks.context = &viewportObservation;
+			runtimeCallbacks.whiteboardViewportChanged = &HiddenViewportObservation::Observe;
+			// 回调借用本栈对象；异常/提前返回时也先 join Host，再销毁观测存储。
+			struct StopObservedHost { ~StopObservedHost() { StopProduct(); } } stopObservedHost;
+			if (!Check(StartProduct(drawpad, presentation, callbacks, options, runtimeCallbacks),
 				"start real Draw3 host", failures))
 				return false;
 
@@ -1620,6 +1931,7 @@ namespace Inkeys::Drawing::Draw3
 					return state.workspace == Bridge::Workspace::Whiteboard && state.presentationInputReady &&
 						!state.whiteboardLoadPending && DrawpadPresentationReady(whiteboardState, state);
 				}), "switch to hidden whiteboard with a matching adopted style", failures);
+				modeSucceeded &= CheckHiddenControllerMousePan(drawpad, viewportObservation, failures);
 				// 真实 Controller/Host 切页：同布尔内容也必须取得新版本，旧页成功帧不能冒充就绪。
 				const auto firstWhiteboardPage = ProductHost().RuntimeSnapshot().currentPageIndex;
 				const auto switchWhiteboardPage = [&](Bridge::CommandType type, std::size_t page,
@@ -4325,6 +4637,7 @@ namespace Inkeys::Drawing::Draw3
 		int failures = 0;
 		try
 		{
+			if (!eraserOnly) (void)CheckCompatibilityMouseWindow(failures);
 			Inkeys::Window::Service service(64);
 			const std::wstring processSuffix = std::to_wstring(GetCurrentProcessId());
 			const auto makeSpecs = [&](bool dcompCompatible)

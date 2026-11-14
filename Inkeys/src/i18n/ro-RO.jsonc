@@ -635,6 +635,16 @@
           "Precise": "Precis",
           "Fast": "Rapid",
           "Disabled": "Dezactivat"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Inerția glisării tablei albe",
+          "E": "Tabla continuă să alunece după eliberare în modul de glisare. Se poate regla separat pentru fiecare tip de intrare.",
+          "Mouse": "Mouse",
+          "Touchpad": "Touchpad",
+          "Touch": "Atingere",
+          "Pen": "Stilou",
+          "PenTail": "Stilou (capătul cu radieră)"
         }
       },
       "Laser":
@@ -965,6 +975,11 @@
         {
           "N": "Diagnosticare cursor",
           "E": "Afișează în consolă sursa intrării cursorului și rezultatul randat efectiv."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnosticarea deplasării și inerției tablei",
+          "E": "Înregistrează intrările de deplasare cu mouse-ul și prin atingere, viteza, inerția și motivele opririi pentru investigarea problemelor de mișcare."
         }
       }
     },

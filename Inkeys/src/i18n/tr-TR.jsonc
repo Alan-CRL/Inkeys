@@ -635,6 +635,16 @@
           "Precise": "Hassas",
           "Fast": "Hızlı",
           "Disabled": "Kapalı"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Beyaz tahta sürükleme eylemsizliği",
+          "E": "Beyaz tahta sürükleme modunda bırakıldıktan sonra kaymaya devam eder. Her giriş türü ayrı ayrı ayarlanabilir.",
+          "Mouse": "Fare",
+          "Touchpad": "Dokunmatik yüzey",
+          "Touch": "Dokunma",
+          "Pen": "Kalem",
+          "PenTail": "Kalem (silgi ucu)"
         }
       },
       "Laser":
@@ -965,6 +975,11 @@
         {
           "N": "İmleç tanılaması",
           "E": "İmleç girdisi sahipliğini ve çizilen görüntüyü konsola yazdırın."
+        },
+        "CanvasPan":
+        {
+          "N": "Beyaz tahta kaydırma ve atalet tanılaması",
+          "E": "Hareket sorunlarını araştırmak için fare ve dokunma kaydırma girdilerini, hızı, ataleti ve durma nedenlerini kaydeder."
         }
       }
     },

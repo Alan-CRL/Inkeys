@@ -834,6 +834,114 @@ int RunConfigMetadataTests()
 			&&themes.Drawing.Whiteboard.DefaultTheme.load()==WhiteboardThemePreference{0xFFFFFF,2},"invalid runtime preference cannot replace the last successful choice");
 		themes.ResetToDefaults();check(themes.Drawing.Whiteboard.DefaultTheme.load()==defaultTheme,"reset restores the green blank theme default");
 	}
+	{
+		// 平移诊断是独立、默认关闭的产品开关；真实配置往返不能误启用其他控制台。
+		const auto writePanDocument = [&](const Json::Value& document)
+		{
+			std::ofstream output(file, std::ios::binary | std::ios::trunc);
+			Json::StreamWriterBuilder writer;
+			output << Json::writeString(writer, document);
+			check(output.good(), "pan diagnostic fixture writes isolated main.json");
+		};
+		Inkeys::Config pan;
+		writePanDocument(Json::Value(Json::objectValue));
+		check(pan.ReadAll() && !pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load(),
+			"pan diagnostics default off when key is missing");
+		const auto upload = pan.GetUploadInfo();
+		for (const bool enabled : { true, false })
+		{
+			pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan = enabled;
+			Inkeys::Config frozen; frozen = pan;
+			pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan = !enabled;
+			check(frozen.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load() == enabled &&
+				frozen.GetUploadInfo() == upload && frozen.Write(), "pan flag frozen copy and NoUpload write");
+			const auto saved = ReadJson(file)["Experimental"]["Inkeys3"]["ConsoleOutput"]["CanvasPan"];
+			check(saved.isBool() && saved.asBool() == enabled, "pan flag serializes as exact bool");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll() && restarted.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load() == enabled &&
+				!restarted.Experimental.Inkeys3.ConsoleOutput.Cursor.load() &&
+				!restarted.Experimental.Inkeys3.ConsoleOutput.Draw3.load(), "pan restart is independent of other consoles");
+			restarted.UI.Bar.Zoom2 = 1.25;
+			restarted.Experimental.Inkeys3.ConsoleOutput.CanvasPan = !enabled;
+			check(restarted.ReadMini({ "Experimental.Inkeys3.ConsoleOutput.CanvasPan" }) &&
+				restarted.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load() == enabled &&
+				restarted.UI.Bar.Zoom2.load() == 1.25, "pan Mini loads only the selected flag");
+		}
+		for (const auto& invalid : { Json::Value(), Json::Value(1), Json::Value(1.0),
+			Json::Value("true"), Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
+		{
+			Json::Value document(Json::objectValue);
+			document["Experimental"]["Inkeys3"]["ConsoleOutput"]["CanvasPan"] = invalid;
+			writePanDocument(document);
+			pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan = true;
+			check(pan.ReadAll() && !pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load(),
+				"invalid pan diagnostic type defaults off without coercion");
+		}
+		pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan = true;
+		pan.ResetToDefaults();
+		check(!pan.Experimental.Inkeys3.ConsoleOutput.CanvasPan.load(), "reset disables pan diagnostics");
+	}
+	{
+		// 惯性主/子偏好均经真实 schema 和磁盘往返，不能以单独默认 struct 代替。
+		constexpr std::array<bool, 6> defaults{ true, false, true, true, true, false };
+		const std::array<const char*, 6> names{ "Enabled", "Mouse", "Touchpad", "Touch", "Pen", "PenTail" };
+		const auto values = [](const Inkeys::Config& config) {
+			const auto& options = config.Drawing.Whiteboard.PanInertia;
+			return std::array<bool, 6>{ options.Enabled.load(), options.Mouse.load(), options.Touchpad.load(),
+				options.Touch.load(), options.Pen.load(), options.PenTail.load() };
+		};
+		const auto assign = [](Inkeys::Config& config, const std::array<bool, 6>& value) {
+			auto& options = config.Drawing.Whiteboard.PanInertia;
+			options.Enabled = value[0]; options.Mouse = value[1]; options.Touchpad = value[2];
+			options.Touch = value[3]; options.Pen = value[4]; options.PenTail = value[5];
+		};
+		const auto writeDocument = [&](const Json::Value& document) {
+			std::ofstream output(file, std::ios::binary | std::ios::trunc);
+			Json::StreamWriterBuilder writer; output << Json::writeString(writer, document);
+			check(output.good(), "pan inertia fixture writes isolated configuration");
+		};
+		Inkeys::Config pan;
+		writeDocument(Json::Value(Json::objectValue));
+		check(pan.ReadAll() && values(pan) == defaults, "missing inertia preferences use all six product defaults");
+		const auto upload = pan.GetUploadInfo();
+		for (const unsigned mask : { 0u, 63u, 1u, 2u, 4u, 8u, 16u, 32u, 29u })
+		{
+			std::array<bool, 6> expected{}, opposite{};
+			for (size_t index = 0; index < expected.size(); ++index) {
+				expected[index] = (mask & (1u << index)) != 0; opposite[index] = !expected[index];
+			}
+			assign(pan, expected);
+			Inkeys::Config frozen; frozen = pan; assign(pan, opposite);
+			check(values(frozen) == expected && frozen.GetUploadInfo() == upload && frozen.Write(),
+				"inertia frozen copy preserves independent preferences and NoUpload metadata");
+			const auto saved = ReadJson(file)["Drawing"]["Whiteboard"]["PanInertia"];
+			for (size_t index = 0; index < names.size(); ++index)
+				check(saved[names[index]].isBool() && saved[names[index]].asBool() == expected[index],
+					"inertia leaves serialize as exact independent bools");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll() && values(restarted) == expected,
+				"inertia restart retains selected devices even while the master is off");
+			for (size_t index = 0; index < names.size(); ++index)
+			{
+				assign(restarted, opposite); restarted.UI.Bar.Zoom2 = 1.25;
+				const std::string path = std::string("Drawing.Whiteboard.PanInertia.") + names[index];
+				auto miniExpected = opposite; miniExpected[index] = expected[index];
+				check(restarted.ReadMini({ path }) && values(restarted) == miniExpected && restarted.UI.Bar.Zoom2.load() == 1.25,
+					"inertia ReadMini changes only the selected leaf and preserves unrelated state");
+			}
+		}
+		for (size_t index = 0; index < names.size(); ++index)
+			for (const auto& invalid : { Json::Value(), Json::Value(1), Json::Value(1.0),
+				Json::Value("true"), Json::Value(Json::arrayValue), Json::Value(Json::objectValue) })
+			{
+				Json::Value document(Json::objectValue);
+				document["Drawing"]["Whiteboard"]["PanInertia"][names[index]] = invalid;
+				writeDocument(document); assign(pan, { false, true, false, false, false, true });
+				check(pan.ReadAll() && values(pan) == defaults, "invalid inertia leaf falls back without bool coercion");
+			}
+		assign(pan, { false, true, false, false, false, true }); pan.ResetToDefaults();
+		check(values(pan) == defaults, "inertia reset restores master and every device default");
+	}
 	std::cout << "Config metadata tests: " << failures << " failures\n";
 	return failures;
 }

@@ -635,6 +635,16 @@
           "Precise": "Precise",
           "Fast": "Fast",
           "Disabled": "Off"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Whiteboard drag inertia",
+          "E": "Keep gliding after release in whiteboard drag mode. Adjust each input type separately.",
+          "Mouse": "Mouse",
+          "Touchpad": "Touchpad",
+          "Touch": "Touch",
+          "Pen": "Pen",
+          "PenTail": "Pen (eraser end)"
         }
       },
       "Laser":
@@ -965,6 +975,11 @@
         {
           "N": "Cursor diagnostics",
           "E": "Output cursor input ownership and rendered visuals to the console."
+        },
+        "CanvasPan":
+        {
+          "N": "Whiteboard pan and inertia diagnostics",
+          "E": "Log mouse and touch panning input, velocity, inertia, and stop reasons to investigate motion issues."
         }
       }
     },

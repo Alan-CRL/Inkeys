@@ -639,6 +639,16 @@ inline constexpr struct I18nKeyRoot
                     const char* Fast = "SettingsUI/Draw/General/InkPrediction/Fast";
                     const char* Disabled = "SettingsUI/Draw/General/InkPrediction/Disabled";
                 } InkPrediction{};
+                struct Node__SettingsUI__Draw__General__CanvasPanInertia
+                {
+                    const char* N = "SettingsUI/Draw/General/CanvasPanInertia/N";
+                    const char* E = "SettingsUI/Draw/General/CanvasPanInertia/E";
+                    const char* Mouse = "SettingsUI/Draw/General/CanvasPanInertia/Mouse";
+                    const char* Touchpad = "SettingsUI/Draw/General/CanvasPanInertia/Touchpad";
+                    const char* Touch = "SettingsUI/Draw/General/CanvasPanInertia/Touch";
+                    const char* Pen = "SettingsUI/Draw/General/CanvasPanInertia/Pen";
+                    const char* PenTail = "SettingsUI/Draw/General/CanvasPanInertia/PenTail";
+                } CanvasPanInertia{};
             } General{};
             struct Node__SettingsUI__Draw__Laser
             {
@@ -969,6 +979,11 @@ inline constexpr struct I18nKeyRoot
                     const char* N = "SettingsUI/Experimental/ConsoleOutput/Cursor/N";
                     const char* E = "SettingsUI/Experimental/ConsoleOutput/Cursor/E";
                 } Cursor{};
+                struct Node__SettingsUI__Experimental__ConsoleOutput__CanvasPan
+                {
+                    const char* N = "SettingsUI/Experimental/ConsoleOutput/CanvasPan/N";
+                    const char* E = "SettingsUI/Experimental/ConsoleOutput/CanvasPan/E";
+                } CanvasPan{};
             } ConsoleOutput{};
         } Experimental{};
         struct Node__SettingsUI__PlugIn

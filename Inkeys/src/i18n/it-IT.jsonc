@@ -635,6 +635,16 @@
           "Precise": "Precisa",
           "Fast": "Rapida",
           "Disabled": "Disattivata"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Inerzia del trascinamento della lavagna",
+          "E": "La lavagna continua a scorrere dopo il rilascio in modalità trascinamento. Regolabile per ogni tipo di input.",
+          "Mouse": "Mouse",
+          "Touchpad": "Touchpad",
+          "Touch": "Tocco",
+          "Pen": "Penna",
+          "PenTail": "Penna (estremità gomma)"
         }
       },
       "Laser":
@@ -965,6 +975,11 @@
         {
           "N": "Diagnostica puntatore",
           "E": "Mostra nella console la provenienza dell'input del puntatore e il risultato del rendering."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnostica di spostamento e inerzia della lavagna",
+          "E": "Registra gli input di spostamento con mouse e tocco, la velocità, l’inerzia e i motivi di arresto per analizzare i problemi di movimento."
         }
       }
     },

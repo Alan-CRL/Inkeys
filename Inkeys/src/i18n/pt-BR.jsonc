@@ -635,6 +635,16 @@
           "Precise": "Preciso",
           "Fast": "Rápido",
           "Disabled": "Desativado"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Inércia ao arrastar o quadro branco",
+          "E": "O quadro continua deslizando após soltar no modo de arraste. Ajuste cada tipo de entrada separadamente.",
+          "Mouse": "Mouse",
+          "Touchpad": "Touchpad",
+          "Touch": "Toque",
+          "Pen": "Caneta",
+          "PenTail": "Caneta (ponta da borracha)"
         }
       },
       "Laser":
@@ -965,6 +975,11 @@
         {
           "N": "Depuração do ponteiro",
           "E": "Envia ao console a origem da entrada do ponteiro e o resultado real da renderização."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnóstico de deslocamento e inércia do quadro",
+          "E": "Registra entradas de deslocamento por mouse e toque, velocidade, inércia e motivos de parada para investigar problemas de movimento."
         }
       }
     },

@@ -2509,6 +2509,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool Draw3ConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Draw3;
 				bool HapticsConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Haptics;
 				bool CursorConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor;
+				bool CanvasPanConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.CanvasPan;
 			}Inkeys3;
 		}Experimental;
 
@@ -4040,6 +4041,23 @@ SettingSessionCoroutine RunSettingSession()
 						QueueConfigWrite();
 					}
 
+					auto& panPreferences = drawingOptions.Whiteboard.PanInertia;
+					Inkeys::Drawing::Draw3::CanvasPanInertiaOptions panInertia{
+						panPreferences.Enabled.load(), panPreferences.Mouse.load(), panPreferences.Touchpad.load(),
+						panPreferences.Touch.load(), panPreferences.Pen.load(), panPreferences.PenTail.load() };
+					if (Design::RenderCanvasPanInertia(panInertia).Changed())
+					{
+						// 隐藏内联区仅改变有效惯性，保存全部设备偏好以便重新启用。
+						panPreferences.Enabled = panInertia.enabled;
+						panPreferences.Mouse = panInertia.mouse;
+						panPreferences.Touchpad = panInertia.touchpad;
+						panPreferences.Touch = panInertia.touch;
+						panPreferences.Pen = panInertia.pen;
+						panPreferences.PenTail = panInertia.penTail;
+						Inkeys::Drawing::Draw3::ProductHost().SetCanvasPanInertiaOptions(panInertia);
+						QueueConfigWrite();
+					}
+
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.N).c_str());
 					Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::RenderDrawingEraserEntries(drawingSubpage));
 
@@ -4893,6 +4911,9 @@ SettingSessionCoroutine RunSettingSession()
 					consoleToggle("##console-cursor", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.N).c_str(),
 						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.Cursor.E).c_str(),
 						Experimental.Inkeys3.CursorConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.Cursor);
+					consoleToggle("##console-canvas-pan", IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.CanvasPan.N).c_str(),
+						IA(I18nKey.SettingsUI.Experimental.ConsoleOutput.CanvasPan.E).c_str(),
+						Experimental.Inkeys3.CanvasPanConsoleOutput, Inkeys::config.Experimental.Inkeys3.ConsoleOutput.CanvasPan);
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					const auto diagnosticText = [](const char* format, auto... values)
 					{

@@ -1,0 +1,92 @@
+
+### 2. Flick with plateau at lift (flick_sin 4000, 120 ms)
+(rel/true quantiles: med p90 p99 max; glide/ideal: med p99 max; ideal = same model with perfect velocity)
+| flick_sin 4000 @60Hz               | cur      | rel/true  0.72  0.80  0.81  0.82 | >1.5x   0.0% <0.7x  45.8% none   0.0% | glide/ideal  0.52  0.66   0.67 | peak/true max  0.82 |
+| flick_sin 4000 @60Hz               | lsq2     | rel/true  1.08  1.14  1.16  1.17 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.09  1.18   1.20 | peak/true max  1.17 |
+| flick_sin 4000 @60Hz               | lsq2b6   | rel/true  1.03  1.09  1.11  1.11 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.03  1.12   1.13 | peak/true max  1.11 |
+| flick_sin 4000 @60Hz               | avg21    | rel/true  1.00  1.04  1.06  1.09 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.07   1.10 | peak/true max  1.09 |
+| flick_sin 4000 @60Hz               | lsq2+ring | rel/true  1.10  1.12  1.14  1.16 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.12  1.16   1.19 | peak/true max  1.17 |
+| flick_sin 4000 @120Hz              | cur      | rel/true  0.72  0.77  0.78  0.81 | >1.5x   0.0% <0.7x  44.2% none   0.0% | glide/ideal  0.52  0.60   0.66 | peak/true max  0.81 |
+| flick_sin 4000 @120Hz              | lsq2     | rel/true  1.11  1.14  1.16  1.16 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.13  1.18   1.18 | peak/true max  1.16 |
+| flick_sin 4000 @120Hz              | lsq2b6   | rel/true  1.06  1.09  1.10  1.11 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.07  1.12   1.12 | peak/true max  1.11 |
+| flick_sin 4000 @120Hz              | avg21    | rel/true  1.01  1.04  1.05  1.06 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.01  1.06   1.07 | peak/true max  1.06 |
+| flick_sin 4000 @120Hz              | lsq2+ring | rel/true  1.12  1.14  1.15  1.15 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.14  1.17   1.18 | peak/true max  1.16 |
+| flick_sin 4000 @240Hz              | cur      | rel/true  0.73  0.77  0.79  0.79 | >1.5x   0.0% <0.7x  25.8% none   0.0% | glide/ideal  0.53  0.62   0.63 | peak/true max  0.79 |
+| flick_sin 4000 @240Hz              | lsq2     | rel/true  1.12  1.14  1.16  1.18 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.14  1.18   1.21 | peak/true max  1.18 |
+| flick_sin 4000 @240Hz              | lsq2b6   | rel/true  1.07  1.09  1.11  1.12 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.08  1.12   1.14 | peak/true max  1.12 |
+| flick_sin 4000 @240Hz              | avg21    | rel/true  1.02  1.04  1.05  1.07 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.03  1.06   1.08 | peak/true max  1.07 |
+| flick_sin 4000 @240Hz              | lsq2+ring | rel/true  1.09  1.11  1.13  1.13 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.11  1.15   1.16 | peak/true max  1.14 |
+
+### 3. Accelerating flick (flick_lin 4000: 80 ms, SHORT 50 ms) @120 Hz
+(rel/true quantiles: med p90 p99 max; glide/ideal: med p99 max; ideal = same model with perfect velocity)
+| flick_lin 80ms                     | cur      | rel/true  0.47  0.49  0.49  0.50 | >1.5x   0.0% <0.7x 100.0% none   0.0% | glide/ideal  0.22  0.24   0.25 | peak/true max  0.50 |
+| flick_lin 80ms                     | lsq2     | rel/true  0.93  0.99  1.01  1.01 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  0.92  1.01   1.01 | peak/true max  1.01 |
+| flick_lin 80ms                     | lsq2b6   | rel/true  0.86  0.92  0.93  0.94 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  0.84  0.92   0.92 | peak/true max  0.94 |
+| flick_lin 80ms                     | avg21    | rel/true  0.79  0.84  0.86  0.87 | >1.5x   0.0% <0.7x  24.2% none   0.0% | glide/ideal  0.75  0.84   0.84 | peak/true max  0.87 |
+| flick_lin 80ms                     | lsq2+ring | rel/true  1.00  1.01  1.02  1.02 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.02   1.03 | peak/true max  1.01 |
+| flick_lin 50ms q=2ms               | cur      | rel/true  0.42  0.50  0.51  0.52 | >1.5x   0.0% <0.7x 100.0% none   0.0% | glide/ideal  0.18  0.26   0.27 | peak/true max  0.52 |
+| flick_lin 50ms q=2ms               | lsq2     | rel/true  0.85  0.97  1.01  1.03 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  0.83  1.02   1.03 | peak/true max  1.03 |
+| flick_lin 50ms q=2ms               | lsq2b6   | rel/true  0.72  0.86  0.89  0.90 | >1.5x   0.0% <0.7x  42.2% none   0.0% | glide/ideal  0.68  0.87   0.89 | peak/true max  0.90 |
+| flick_lin 50ms q=2ms               | avg21    | rel/true  0.64  0.74  0.80  0.81 | >1.5x   0.0% <0.7x  76.0% none   0.0% | glide/ideal  0.58  0.76   0.78 | peak/true max  0.81 |
+| flick_lin 50ms q=2ms               | lsq2+ring | rel/true  0.97  1.00  1.03  1.04 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  0.96  1.03   1.05 | peak/true max  1.03 |
+
+### 4. Delivery pathologies, flick_sin 4000
+(rel/true quantiles: med p90 p99 max; glide/ideal: med p99 max; ideal = same model with perfect velocity)
+| burst_p=0.30 @120Hz                | cur      | rel/true  0.70  0.81  0.87  0.90 | >1.5x   0.0% <0.7x  48.2% none   0.0% | glide/ideal  0.50  0.76   0.81 | peak/true max  0.90 |
+| burst_p=0.30 @120Hz                | lsq2     | rel/true  1.08  1.21  1.43  1.71 | >1.5x   0.8% <0.7x   6.2% none   0.2% | glide/ideal  1.10  1.51   1.84 | peak/true max  2.45 |
+| burst_p=0.30 @120Hz                | lsq2b6   | rel/true  1.03  1.15  1.34  1.53 | >1.5x   0.2% <0.7x   6.5% none   0.2% | glide/ideal  1.04  1.40   1.63 | peak/true max  1.72 |
+| burst_p=0.30 @120Hz                | avg21    | rel/true  1.00  1.11  1.51  1.72 | >1.5x   1.5% <0.7x   7.2% none   0.2% | glide/ideal  0.99  1.60   1.85 | peak/true max  1.72 |
+| burst_p=0.30 @120Hz                | lsq2+ring | rel/true  1.11  1.17  1.20  1.22 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.13  1.24   1.25 | peak/true max  1.22 |
+| quant 3ms @240Hz                   | cur      | rel/true  0.74  0.78  0.78  0.78 | >1.5x   0.0% <0.7x   0.8% none   0.0% | glide/ideal  0.55  0.61   0.62 | peak/true max  0.78 |
+| quant 3ms @240Hz                   | lsq2     | rel/true  1.13  1.15  1.17  1.18 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.15  1.20   1.21 | peak/true max  1.18 |
+| quant 3ms @240Hz                   | lsq2b6   | rel/true  1.08  1.10  1.12  1.13 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.10  1.14   1.15 | peak/true max  1.13 |
+| quant 3ms @240Hz                   | avg21    | rel/true  1.04  1.05  1.06  1.08 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.04  1.08   1.09 | peak/true max  1.08 |
+| quant 3ms @240Hz                   | lsq2+ring | rel/true  1.11  1.12  1.13  1.15 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.12  1.15   1.17 | peak/true max  1.13 |
+| loop stalls 5%/frame (20-50ms)     | cur      | rel/true  0.72  0.79  0.89  0.93 | >1.5x   0.0% <0.7x  44.0% none   0.0% | glide/ideal  0.51  0.80   0.87 | peak/true max  0.93 |
+| loop stalls 5%/frame (20-50ms)     | lsq2     | rel/true  1.09  1.13  1.16  1.16 | >1.5x   0.0% <0.7x  11.2% none   8.0% | glide/ideal  1.11  1.18   1.19 | peak/true max  1.17 |
+| loop stalls 5%/frame (20-50ms)     | lsq2b6   | rel/true  1.04  1.08  1.10  1.11 | >1.5x   0.0% <0.7x  12.2% none   8.0% | glide/ideal  1.05  1.12   1.13 | peak/true max  1.11 |
+| loop stalls 5%/frame (20-50ms)     | avg21    | rel/true  1.00  1.04  1.06  1.16 | >1.5x   0.0% <0.7x  16.8% none   8.0% | glide/ideal  1.00  1.07   1.19 | peak/true max  1.17 |
+| loop stalls 5%/frame (20-50ms)     | lsq2+ring | rel/true  1.12  1.14  1.15  1.15 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.14  1.17   1.18 | peak/true max  1.16 |
+| tiny first dt, flick_lin 36ms      | cur      | rel/true  0.53  0.62  0.65  0.67 | >1.5x   0.0% <0.7x 100.0% none   0.0% | glide/ideal  0.28  0.42   0.44 | peak/true max  1.10 |
+| tiny first dt, flick_lin 36ms      | lsq2     | rel/true  0.00  0.97  1.03  1.07 | >1.5x   0.0% <0.7x  58.2% none  58.2% | glide/ideal  0.00  1.03   1.08 | peak/true max  1.07 |
+| tiny first dt, flick_lin 36ms      | lsq2b6   | rel/true  0.00  0.79  0.84  0.86 | >1.5x   0.0% <0.7x  58.5% none  58.2% | glide/ideal  0.00  0.82   0.84 | peak/true max  0.86 |
+| tiny first dt, flick_lin 36ms      | avg21    | rel/true  0.00  0.79  0.83  0.85 | >1.5x   0.0% <0.7x  58.8% none  58.2% | glide/ideal  0.00  0.80   0.82 | peak/true max  0.85 |
+| tiny first dt, flick_lin 36ms      | lsq2+ring | rel/true  0.99  1.04  1.08  1.10 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  0.99  1.10   1.11 | peak/true max  1.07 |
+| tiny first dt, flick_lin 60ms      | cur      | rel/true  0.48  0.55  0.57  0.59 | >1.5x   0.0% <0.7x 100.0% none   0.0% | glide/ideal  0.23  0.33   0.35 | peak/true max  0.77 |
+| tiny first dt, flick_lin 60ms      | lsq2     | rel/true  0.84  0.99  1.02  1.03 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  0.81  1.02   1.03 | peak/true max  1.03 |
+| tiny first dt, flick_lin 60ms      | lsq2b6   | rel/true  0.74  0.89  0.91  0.92 | >1.5x   0.0% <0.7x   4.8% none   0.0% | glide/ideal  0.70  0.90   0.91 | peak/true max  0.92 |
+| tiny first dt, flick_lin 60ms      | avg21    | rel/true  0.67  0.79  0.83  0.84 | >1.5x   0.0% <0.7x  67.8% none   0.0% | glide/ideal  0.62  0.80   0.81 | peak/true max  0.84 |
+| tiny first dt, flick_lin 60ms      | lsq2+ring | rel/true  1.00  1.02  1.04  1.05 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.04   1.06 | peak/true max  1.03 |
+| tiny first dt, flick_lin 90ms      | cur      | rel/true  0.49  0.51  0.53  0.54 | >1.5x   0.0% <0.7x 100.0% none   0.0% | glide/ideal  0.24  0.28   0.29 | peak/true max  0.54 |
+| tiny first dt, flick_lin 90ms      | lsq2     | rel/true  0.93  0.98  1.01  1.02 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  0.91  1.01   1.02 | peak/true max  1.02 |
+| tiny first dt, flick_lin 90ms      | lsq2b6   | rel/true  0.86  0.92  0.94  0.95 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  0.84  0.93   0.94 | peak/true max  0.95 |
+| tiny first dt, flick_lin 90ms      | avg21    | rel/true  0.80  0.86  0.88  0.89 | >1.5x   0.0% <0.7x   2.8% none   0.0% | glide/ideal  0.76  0.86   0.87 | peak/true max  0.89 |
+| tiny first dt, flick_lin 90ms      | lsq2+ring | rel/true  1.00  1.01  1.03  1.03 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.03   1.04 | peak/true max  1.02 |
+
+### 6. Drag-and-place / stop-and-lift (true release speed = 0)
+(rel/true quantiles: med p90 p99 max; glide/ideal: med p99 max; ideal = same model with perfect velocity)
+| v3000 decel100ms rest0ms           | cur      | rel v   1784   1801   1817   1832 | P(rel>300) 100.0% | glide DIP    265    275    280 |
+| v3000 decel100ms rest0ms           | lsq2     | rel v    280    333    371    391 | P(rel>300)  32.2% | glide DIP     25     39     42 |
+| v3000 decel100ms rest0ms           | lsq2b6   | rel v    463    509    541    557 | P(rel>300)  67.0% | glide DIP     55     69     72 |
+| v3000 decel100ms rest0ms           | avg21    | rel v    606    692    717    743 | P(rel>300)  98.2% | glide DIP     82    105    111 |
+| v3000 decel100ms rest0ms           | lsq2+ring | rel v      0     50     79    117 | P(rel>300)   0.0% | glide DIP      0      2      5 |
+| v3000 decel100ms rest50ms          | cur      | rel v   1301   1313   1357   1376 | P(rel>300) 100.0% | glide DIP    141    153    158 |
+| v3000 decel100ms rest50ms          | lsq2     | rel v    124    150    171    184 | P(rel>300)   0.0% | glide DIP      6     10     12 |
+| v3000 decel100ms rest50ms          | lsq2b6   | rel v      0     29     45     54 | P(rel>300)   0.0% | glide DIP      0      1      1 |
+| v3000 decel100ms rest50ms          | avg21    | rel v    116    132    142    159 | P(rel>300)   0.0% | glide DIP      5      8      9 |
+| v3000 decel100ms rest50ms          | lsq2+ring | rel v    124    150    171    184 | P(rel>300)   0.0% | glide DIP      6     10     12 |
+| v3000 decel100ms rest95ms          | cur      | rel v   1301   1313   1357   1376 | P(rel>300) 100.0% | glide DIP    141    153    158 |
+| v3000 decel100ms rest95ms          | lsq2     | rel v      0      0      0      0 | P(rel>300)   0.0% | glide DIP      0      0      0 |
+| v3000 decel100ms rest95ms          | lsq2b6   | rel v      0      0      0      0 | P(rel>300)   0.0% | glide DIP      0      0      0 |
+| v3000 decel100ms rest95ms          | avg21    | rel v      0      0      0      0 | P(rel>300)   0.0% | glide DIP      0      0      0 |
+| v3000 decel100ms rest95ms          | lsq2+ring | rel v      0      0      0      0 | P(rel>300)   0.0% | glide DIP      0      0      0 |
+| v6000 decel100ms rest50ms          | cur      | rel v   2602   2626   2714   2752 | P(rel>300) 100.0% | glide DIP    564    614    631 |
+| v6000 decel100ms rest50ms          | lsq2     | rel v    249    298    339    366 | P(rel>300)   9.2% | glide DIP     20     33     38 |
+| v6000 decel100ms rest50ms          | lsq2b6   | rel v      0     56     86    106 | P(rel>300)   0.0% | glide DIP      0      3      4 |
+| v6000 decel100ms rest50ms          | avg21    | rel v    233    263    284    314 | P(rel>300)   0.2% | glide DIP     18     25     30 |
+| v6000 decel100ms rest50ms          | lsq2+ring | rel v    248    297    339    366 | P(rel>300)   9.0% | glide DIP     20     33     38 |
+| v1500 decel100ms rest50ms          | cur      | rel v    773    780    800    807 | P(rel>300) 100.0% | glide DIP     50     53     54 |
+| v1500 decel100ms rest50ms          | lsq2     | rel v      0     20     27     29 | P(rel>300)   0.0% | glide DIP      0      0      0 |
+| v1500 decel100ms rest50ms          | lsq2b6   | rel v     51     60     66     68 | P(rel>300)   0.0% | glide DIP      1      2      2 |
+| v1500 decel100ms rest50ms          | avg21    | rel v     88    101    107    109 | P(rel>300)   0.0% | glide DIP      3      4      5 |
+| v1500 decel100ms rest50ms          | lsq2+ring | rel v      0     20     26     28 | P(rel>300)   0.0% | glide DIP      0      0      0 |

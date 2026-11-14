@@ -6,6 +6,7 @@
 #include "Setting.EraserDemo.h"
 #include "../../Drawing/Draw3/Draw3.EraserCursor.h"
 #include "../../Business/DesktopShortcut.h"
+#include "../../Drawing/Draw3/Draw3.CanvasPanSettings.h"
 
 struct ImGuiWindow;
 
@@ -229,6 +230,18 @@ namespace Inkeys::UI::Setting::Design
 		navigation.contentReveal.Reset(navigation.animationsEnabled ? 0.0F : 1.0F);
 		navigation.contentReveal.Target(1.0F);
 	}
+
+	struct CanvasPanInertiaEvents
+	{
+		bool enabledChanged = false;
+		std::array<bool, 5> devicesChanged{};
+		bool Changed() const noexcept
+		{
+			return enabledChanged || devicesChanged[0] || devicesChanged[1] || devicesChanged[2]
+				|| devicesChanged[3] || devicesChanged[4];
+		}
+	};
+	CanvasPanInertiaEvents RenderCanvasPanInertia(Inkeys::Drawing::Draw3::CanvasPanInertiaOptions& options);
 
 	struct SpeedEraserDraft
 	{

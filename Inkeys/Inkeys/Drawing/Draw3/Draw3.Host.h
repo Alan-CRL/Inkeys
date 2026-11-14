@@ -5,6 +5,7 @@
 #include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.MouseInput.h"
+#include "Draw3.CanvasPanSettings.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PalmEraser.h"
 #include "Draw3.PenDiagnostics.h"
@@ -215,6 +216,8 @@ namespace Inkeys::Drawing::Draw3
 			const Inkeys::Business::PenWidth::Context&) noexcept = nullptr;
 		void (*acceptedStrokeBegan)(void*, const Bridge::AcceptedStrokeBegin&) noexcept = nullptr;
 		void (*whiteboardThemeEdited)(void*, WhiteboardTheme) noexcept = nullptr;
+		// 绘制线程同步调用；产品层只可做无锁写入与原子唤醒（新字段必须追加在末尾，聚合初始化为位置式）。
+		void (*whiteboardViewportChanged)(void*, const WhiteboardViewportSample&) noexcept = nullptr;
 	};
 
 	enum class HostPresentationMode : std::uint8_t
@@ -424,6 +427,7 @@ namespace Inkeys::Drawing::Draw3
 		// 断触接续适用的设备：触摸 / 笔尾（橡皮端）；只在总开关开启时生效，默认两者都开。
 		void SetInterruptedStrokeReconnectDevices(bool touch, bool penTail) noexcept;
 		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled, int predictionMode) noexcept;
+		void SetCanvasPanInertiaOptions(CanvasPanInertiaOptions options) noexcept;
 		void SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept;
 		void SetPalmEraserOptions(const PalmEraser::Settings& options);
 		PalmEraser::Settings PalmEraserOptions() const;

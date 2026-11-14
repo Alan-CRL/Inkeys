@@ -4,7 +4,9 @@
 
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.MouseInput.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.SpeedEraser.h"
+#include <chrono>
 #include <condition_variable>
+#include <initializer_list>
 #include <iostream>
 #include <mutex>
 #include <thread>
@@ -177,6 +179,7 @@ namespace
 		std::mutex mutex;
 		std::condition_variable condition;
 		bool ownerDownComplete = false, resumeOwner = false;
+		bool ownerWaitCompleted = false;
 		std::thread owner([&]
 		{
 			(void)mouse.Down(input, Mouse::Left, 1, 2, 1, false);
@@ -184,7 +187,8 @@ namespace
 				std::unique_lock lock(mutex);
 				ownerDownComplete = true;
 				condition.notify_all();
-				condition.wait(lock, [&] { return resumeOwner; });
+				ownerWaitCompleted = condition.wait_for(lock, std::chrono::seconds(2),
+					[&] { return resumeOwner; });
 			}
 			// CloseAdmission 与 owner 消息交错：迟到 Up 必须取消，不能作为正常提交。
 			mouse.Up(input, Mouse::Left, 4, 5, 2);
@@ -193,7 +197,8 @@ namespace
 		});
 		{
 			std::unique_lock lock(mutex);
-			condition.wait(lock, [&] { return ownerDownComplete; });
+			Expect(condition.wait_for(lock, std::chrono::seconds(2),
+				[&] { return ownerDownComplete; }), "owner Down completes before timeout", failures);
 		}
 		const auto contact = Take(input, failures);
 		mouse.CloseAdmission();
@@ -203,6 +208,7 @@ namespace
 		}
 		condition.notify_all();
 		owner.join(); // 新一代必须在 owner 确认和旧 consumer 收尾之后 Reset。
+		Expect(ownerWaitCompleted, "owner cancellation resumes before timeout", failures);
 		ExpectPhase(input, contact, ContactPhase::Cancelled, "stop wins late Up", failures);
 		Expect(!mouse.Active() && input.DiagnosticsSnapshot().downPublished == 1 &&
 			input.DiagnosticsSnapshot().terminalPublished == 1,
@@ -218,6 +224,184 @@ namespace
 		ExpectPhase(input, next, ContactPhase::Cancelled, "owner Stop cancels active contact", failures);
 		input.Recycle(next);
 	}
+
+	// 白板移动模式：兜底鼠标左键必须送达控制器作为平移触点，其他 Selection 场景仍隔离。
+	void TestCanvasPanModeIsolation(int& failures)
+	{
+		Expect(Detail::MouseSelectionIsolates(true, false), "desktop/PPT Selection isolates", failures);
+		Expect(!Detail::MouseSelectionIsolates(true, true), "whiteboard Move mode does not isolate", failures);
+		Expect(!Detail::MouseSelectionIsolates(false, false) && !Detail::MouseSelectionIsolates(false, true),
+			"drawing tools never isolate", failures);
+
+		Detail::MouseSelectionModeState mode;
+		mode.SetSelection(false);
+		mode.SetWhiteboard(true); // 工作区确认先于准入重开；此时仍是绘制工具。
+		Expect(!mode.CanvasPan() && !mode.Isolates(), "whiteboard drawing mode", failures);
+		mode.SetSelection(true); // 不推进绘制帧，首个 Down 必须已经可以平移。
+		Expect(mode.CanvasPan() && !mode.Isolates(), "selection synchronously enables pan", failures);
+		mode.SetWhiteboard(false);
+		Expect(!mode.CanvasPan() && mode.Isolates(), "confirmed desktop keeps Selection isolated", failures);
+		mode.SetWhiteboard(true);
+		Expect(mode.CanvasPan() && !mode.Isolates(), "workspace confirmation enables pan before admission", failures);
+		ContactInputCoordinator input;
+		input.EnableDiagnostics(true);
+		Mouse mouse;
+		mouse.Start();
+		Expect(mouse.Down(input, Mouse::Left, 10, 20, 1, mode.Isolates()),
+			"Move mode admits left Down", failures);
+		const auto pan = Take(input, failures);
+		if (!pan) return;
+		Expect(pan.record->DeviceType() == InputDeviceType::MouseLeft, "pan contact is MouseLeft", failures);
+		mouse.Move(input, Mouse::Left, 14, 26, 2, Detail::MouseSelectionIsolates(true, true));
+		ExpectPhase(input, pan, ContactPhase::Move, "Move mode keeps publishing Move", failures);
+		// 工作区离开白板（Selection 不变、平移模式关闭）：活动流收为 Cancelled，并隔离该键。
+		mouse.Move(input, Mouse::Left, 15, 27, 3, Detail::MouseSelectionIsolates(true, false));
+		ExpectPhase(input, pan, ContactPhase::Cancelled, "leaving Move mode cancels the stream", failures);
+		input.Recycle(pan);
+		Expect(!mouse.Down(input, Mouse::Left, 1, 2, 4, Detail::MouseSelectionIsolates(true, false)),
+			"desktop Selection refuses the same held key", failures);
+		mouse.Up(input, Mouse::Left, 1, 2, 5);
+		// 右键在移动模式也只是普通兜底接触（控制器负责丢弃），隔离只取决于模式位。
+		Expect(mouse.Down(input, Mouse::Right, 3, 4, 6, Detail::MouseSelectionIsolates(true, true)),
+			"Move mode still forwards right button for controller-side discard", failures);
+		const auto right = Take(input, failures);
+		if (right) { mouse.Up(input, Mouse::Right, 3, 4, 7); input.Recycle(right); }
+		Expect(input.DiagnosticsSnapshot().occupiedSlots == 0, "pan mode streams fully recycled", failures);
+	}
+
+	// 模式发布后直接 Down，不借助绘制线程下一帧；旧终态未回收时也能开始下一次拖动。
+	void TestCanvasPanImmediateDownAndRapidRestart(int& failures)
+	{
+		for (const bool workspaceFirst : { false, true })
+		{
+			Detail::MouseSelectionModeState mode;
+			mode.SetSelection(false);
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			Mouse mouse;
+			mouse.Start();
+			if (workspaceFirst) mode.SetWhiteboard(true);
+			mode.SetSelection(true);
+			if (!workspaceFirst) mode.SetWhiteboard(true);
+			Expect(mode.CanvasPan(), "both mode publication orders confirm Move", failures);
+			ContactHandle previous{};
+			for (int drag = 0; drag != 3; ++drag)
+			{
+				const std::int64_t qpc = 10 + drag * 4;
+				Expect(mouse.Down(input, Mouse::Left, 17, 29, qpc, mode.Isolates()),
+					"first or rapid Move Down admitted without another publication", failures);
+				const auto current = Take(input, failures);
+				if (!current) break;
+				if (previous)
+				{
+					ExpectPhase(input, previous, ContactPhase::Up,
+						"next Down preserves unconsumed previous Up", failures);
+					input.Recycle(previous);
+				}
+				const auto& down = current.record->DownSnapshot();
+				Expect(down.position.x == 17 && down.position.y == 29 && down.qpc == qpc,
+					"immediate Down keeps client coordinates and time", failures);
+				mouse.Move(input, Mouse::Left, -41, 700, qpc + 1, mode.Isolates());
+				ContactSnapshot moved{};
+				Expect(input.TryReadSnapshot(current, moved) && moved.phase == ContactPhase::Move
+					&& moved.position.x == -41 && moved.position.y == 700 && moved.qpc == qpc + 1,
+					"Move preserves signed outside-client coordinates", failures);
+				mouse.Up(input, Mouse::Left, -43, 701, qpc + 2);
+				ContactSnapshot ended{};
+				Expect(input.TryReadSnapshot(current, ended) && ended.phase == ContactPhase::Up
+					&& ended.position.x == -43 && ended.position.y == 701 && ended.qpc == qpc + 2,
+					"rapid Up keeps terminal coordinates", failures);
+				previous = current;
+			}
+			if (previous) input.Recycle(previous);
+			const auto counts = input.DiagnosticsSnapshot();
+			Expect(!mouse.Active() && counts.downPublished == 3 && counts.terminalPublished == 3
+				&& counts.occupiedSlots == 0, "rapid Move drags each terminate exactly once", failures);
+		}
+	}
+
+	void TestCanvasPanCancellationAndWorkspaceReset(int& failures)
+	{
+		for (const bool captureLost : { false, true })
+		{
+			Detail::MouseSelectionModeState mode;
+			mode.SetWhiteboard(true);
+			ContactInputCoordinator input;
+			input.EnableDiagnostics(true);
+			Mouse mouse;
+			mouse.Start();
+			Expect(mouse.Down(input, Mouse::Left, 7, 9, 1, mode.Isolates()),
+				"cancellation fixture Move Down", failures);
+			const auto contact = Take(input, failures);
+			if (!contact) continue;
+			mouse.Move(input, Mouse::Left, -8, 400, 2, mode.Isolates());
+			if (captureLost) mouse.CaptureLost(input, 3);
+			else mouse.Cancel(input, 3);
+			// 原生取消可能同步触发失捕获，随后还有迟到 Move/Up；终态只能发布一次。
+			mouse.CaptureLost(input, 4);
+			mouse.Cancel(input, 5);
+			mouse.Move(input, Mouse::Left, 100, 200, 6, mode.Isolates());
+			mouse.Up(input, Mouse::Left, 100, 200, 7);
+			ContactSnapshot ended{};
+			Expect(input.TryReadSnapshot(contact, ended) && ended.phase == ContactPhase::Cancelled
+				&& ended.position.x == -8 && ended.position.y == 400 && ended.qpc == 3,
+				"reentrant cancellation preserves first terminal and last accepted position", failures);
+			Expect(!mouse.Active() && input.DiagnosticsSnapshot().terminalPublished == 1,
+				"cancellation cascade leaves no active mouse owner", failures);
+			input.Recycle(contact);
+			Expect(mouse.Down(input, Mouse::Left, 11, 13, 8, mode.Isolates()),
+				"fresh Down after cancellation is accepted", failures);
+			const auto next = Take(input, failures);
+			mode.ResetWorkspace();
+			mouse.Move(input, Mouse::Left, 15, 17, 9, mode.Isolates());
+			ExpectPhase(input, next, ContactPhase::Cancelled,
+				"workspace reset cancels an active Move drag", failures);
+			mouse.CaptureLost(input, 10);
+			mode.SetWhiteboard(true);
+			Expect(!mouse.Down(input, Mouse::Left, 15, 17, 11, mode.Isolates()),
+				"workspace reset quarantine survives capture loss and mode reentry", failures);
+			mouse.Up(input, Mouse::Left, 15, 17, 12);
+			input.Recycle(next);
+			const auto counts = input.DiagnosticsSnapshot();
+			Expect(!mouse.Active() && counts.downPublished == 2 && counts.terminalPublished == 2
+				&& counts.occupiedSlots == 0, "reset and capture-loss routes fully retired", failures);
+		}
+	}
+	void TestCanvasPanWorkspaceRestart(int& failures)
+	{
+		Detail::MouseSelectionModeState mode;
+		mode.SetWhiteboard(true);
+		mode.SetSelection(true);
+		Expect(mode.CanvasPan(), "restart fixture confirmed whiteboard Selection", failures);
+		ContactInputCoordinator input;
+		input.EnableDiagnostics(true);
+		Mouse mouse;
+		mouse.Start();
+		Expect(mouse.Down(input, Mouse::Left, 10, 20, 1, mode.Isolates()),
+			"old whiteboard run admits Down", failures);
+		const auto old = Take(input, failures);
+		mouse.Stop(input, 2);
+		ExpectPhase(input, old, ContactPhase::Cancelled, "restart cancels old mouse stream", failures);
+		input.Recycle(old);
+		// Stop/Detach 后同一 Host 以默认 Desktop 重启，不靠 SetWhiteboard(false) 回调清理旧门禁。
+		mode.ResetWorkspace();
+		mode.ResetWorkspace(); // Attach/Detach 的重复复位幂等。
+		input.ResetForNextRun();
+		mouse.Start();
+		mode.SetSelection(true);
+		const auto publishedBeforeRestartDown = input.DiagnosticsSnapshot().downPublished;
+		Expect(!mode.CanvasPan() && mode.Isolates(), "Desktop restart clears stale pan gate", failures);
+		Expect(!mouse.Down(input, Mouse::Left, 10, 20, 3, mode.Isolates()) &&
+			input.DiagnosticsSnapshot().downPublished == publishedBeforeRestartDown && !mouse.Active(),
+			"first Desktop Selection Down stays isolated without workspace callback", failures);
+		mouse.Up(input, Mouse::Left, 10, 20, 4);
+		mode.SetWhiteboard(true); // 新一代确认仍须立即放行首个 Down，不等待绘制帧。
+		Expect(mouse.Down(input, Mouse::Left, 10, 20, 5, mode.Isolates()),
+			"fresh workspace confirmation reopens pan synchronously", failures);
+		const auto next = Take(input, failures);
+		mouse.Up(input, Mouse::Left, 10, 20, 6);
+		input.Recycle(next);
+	}
 }
 
 int RunDraw3MouseInputTests()
@@ -227,6 +411,10 @@ int RunDraw3MouseInputTests()
 	TestAdmissionAndCancel(failures);
 	TestCaptureLossResynchronization(failures);
 	TestStopOwnerInterleaving(failures);
-	if (!failures) std::cout << "PASS Draw3 mouse input lifecycle and stop interleaving\n";
+	TestCanvasPanModeIsolation(failures);
+	TestCanvasPanWorkspaceRestart(failures);
+	TestCanvasPanImmediateDownAndRapidRestart(failures);
+	TestCanvasPanCancellationAndWorkspaceReset(failures);
+	if (!failures) std::cout << "PASS Draw3 mouse input lifecycle, stop interleaving and canvas pan mode\n";
 	return failures;
 }

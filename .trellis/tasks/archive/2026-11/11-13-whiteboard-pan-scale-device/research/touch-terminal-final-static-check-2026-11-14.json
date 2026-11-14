@@ -1,0 +1,18 @@
+{
+  "status": "passed",
+  "sourceHashUnchangedAfterFullSuite": true,
+  "sourceFormatFiles": 8,
+  "localLinksChecked": 132,
+  "brokenLinks": [],
+  "contexts": {
+    "implement.jsonl": {
+      "total": 119432,
+      "maxFile": 31068
+    },
+    "check.jsonl": {
+      "total": 125725,
+      "maxFile": 31068
+    }
+  },
+  "manualExecutableExists": true
+}

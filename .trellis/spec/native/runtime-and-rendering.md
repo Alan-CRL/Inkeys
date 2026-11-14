@@ -706,6 +706,8 @@ Correct：`runtime.selectedTool` 保留批次选择，`runtime.tool` 只保存�
 - `L1`：共享临时操作层，合并全部活动 contact 已稳定的前缀操作。
 - `L0`：共享临时操作层，合并全部活动 contact 当前帧仍会变化的真实尾部、预测与笔锋；每帧只恢复一次单位操作再重画。
 
+白板点阵/网格不属于上述画布层：`Draw3.WhiteboardModel.h::kWhiteboardPatternOwner` 默认 Freeze，由独立 Freeze 场景在共享 UI3 D2D/WARP 管线按视口相位重画；切到 Draw3 时仅在 backbuffer 做 under pass，仍不进入 L2/L1/L0、历史或快照。归属、通道与回执不变量见 [whiteboard.md](../native-desktop/whiteboard.md#场景白板点阵网格背景的归属与视口跟随2026-11-06)，后备合成/裁剪见 [cpu-gpu-contracts.md](../shaders/cpu-gpu-contracts.md#scenario-whiteboard-pattern-under-pass-draw3-后备归属)。
+
 应用绘制 cursor 虽属于 L0 帧的瞬态视觉层级，但只在 backbuffer 最终合成阶段绘制；它不是 `layerL0` operator 的内容，也不得参与任何 L0→L2 resolve。
 
 临时操作层表示：
@@ -849,42 +851,70 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 
 ### 1. Scope / Trigger
 
-修改 Canvas 坐标变换、`CanvasCommand::TranslateViewport`、Touch 批次归属、平移/惯性、Pen 接管、分页视口、composition tile 恢复或可信 L2 快照时，必须同步应用本节与 [CPU/GPU Contracts](../shaders/cpu-gpu-contracts.md)。当前 `scale` 固定为 `1`；本契约不包含缩放、旋转、EDID 物理距离、边缘拉伸或回弹。
+修改 Canvas 坐标变换、`CanvasCommand::TranslateViewport`、白板移动模式的 Selection Down 分流、平移触点与设备互斥、`CanvasPanDynamics` 产品手势/fling 与速度估计、Win32 鼠标兜底的移动模式隔离、Pen 接管、每页视角、composition tile 恢复或可信 L2 快照时，必须同步应用本节与 [CPU/GPU Contracts](../shaders/cpu-gpu-contracts.md)。当前 `scale` 固定为 `1`；本契约接入可信EDID物理距离及设备profile；不包含缩放、旋转、边界阻力/拉伸/回弹、桌面/PPT 平移，以及绘制模式下的任何手势。2026-11-06 起平移只属于"白板工作区 + 移动（Selection）模式"，整体替代此前"普通 Touch 双指 180 ms 窗口 + 不叠加惯性"的契约；任务依据见 `.trellis/tasks/archive/2026-11/11-06-whiteboard-canvas-pan-inertia/`。
 
 ### 2. Signatures
 
 - `InkViewport { float x, y, scale }`，`InkCanvas::SetViewport(InkViewport) -> bool`
 - `CanvasCommand { CanvasCommandType type; float deltaX; float deltaY; }`，其中 `TranslateViewport` 的 delta 是可见内容屏幕位移 DIP
-- `ScreenToCanvas(screen, viewport)` / `CanvasToScreen(canvas, viewport)` / `ApplyCanvasContentTranslation(viewport, contentDelta)`
-- `CanvasTouchGestureState::OnTouchDown/OnTouchUp/Update/InterruptForPenOrMouse`
-- `BeginCanvasPan/UpdateCanvasPan/CanvasPanReleaseAgeSeconds(releaseQpc, lastInputQpc, qpcFrequency, cancelled)/EndCanvasPan(motion, secondsSinceLastInput)/StepCanvasPanInertia/StopCanvasPan/ShouldPrioritizeDrawingContact`
-- `PlanCanvasRenderTiles` / `ComputeCanvasRenderBudget` / `ComputeCanvasSnapshotScreenIntersection`
+- `ScreenToCanvas(screen, viewport)` / `CanvasToScreen(canvas, viewport)` / `ApplyCanvasContentTranslation(viewport, contentDelta)` / `ApplyCanvasContentTranslationChecked`
+- 门禁与路由：`Bridge::MoveModePansCanvas(selectionMode, workspace)`；`RouteSelectionDown(selectionMode, workspace, device, latchedClass) -> SelectionDownRoute{Stroke, Pan, Discard}` 与 `HandleSelectionDown`；`CanvasPanDeviceClass{None, Touch, Mouse, Pen, PenTail}` / `CanvasPanClassOf`；`WindowController::{CanvasPanMode, SetCanvasPanWorkspace}`、`Detail::MouseSelectionIsolates(selectionMode, canvasPanMode)`、`PublishCanvasPanMode`
+- 输入侧：`CanvasPanInput::{Register, Step, Stop, Reset, ObserveMoveMode, ApplyToCanvas, OwnerClass, HasContacts, Active, TouchPanHeld, VelocityDip, VelocityPixels}`；`Run()` 内统一终止入口 `stopCanvasNavigation(reason)`；`SelectionReleasesTimerPeriod(selectionMode, canvasPanActive)`；`CanvasPanScaleFromSnapshot`/`ObserveDisplay`
+- 动力学（模块 `Inkeys.Drawing.Draw3.canvas_navigation`，纯 CPU，无窗口/D3D 依赖）：`CanvasPanDynamics::{Step, Stop, StopFling, ClearAxis, Phase, Active, ContentVelocity, HeldContactCount}`、`CanvasPanPhase{Idle, Coasting, Locked}`；`CanvasPanFrameInput` 保留 QPC/contacts/penHover/penContact 并增加 `viewportSizeDip`；`CanvasPanFrameOutput` 保留位移/速度/释放诊断，增加 `focus/span/pointerCount/scaleDelta=1`、各指样本数/估速、booster 起滑/当前速度与cutoff、fling累计offset。
+- 产品组件：`CanvasPanReleaseVelocityTracker`逐指维护可靠尾段；`CanvasPanGestureDetector::{Down, Move, Up}`仅负责几何/门限/拓扑，Up显式接受可靠释放估计；`CanvasPanFlingBooster`只续接当前残余正投影；`CanvasPanFlingCurve::{Start, Advance, Duration, Distance}`只保留向量摩擦闭式；`CanvasPanFlingController::{Start, Progress, Cancel, StopFling}`负责动画生命周期。2026-11-13收尾移除旧LSQ2、PhysicsBased/Legacy、贝塞尔、未接产品的history seed与曲线选择开关；该次清理参数未变；随后11-13尺度任务改为MotionContext参数化，当前合同见native-desktop/canvas-pan.md。
+- 每页视角：`WhiteboardViewportMemory::{Remember, Recall, Restore}`（`Run()` 内与 `whiteboardPages` 并列）
+- `PlanCanvasRenderTiles` / `ComputeCanvasRenderBudget` / `ComputeCanvasSnapshotScreenIntersection` / `ComputeCanvasPredictionOffset` / `CanvasPanFallbackBlurDip`
 - `CompositionRestoreRequest::{tiles, viewportX, viewportY, canvasWidth, canvasHeight}`
 - `ContactInputCoordinator::HasPendingWork()` 与窗口线程 Pen cursor mailbox
 
 ### 3. Contracts
 
-- `InkViewport.x/y` 是屏幕左上角对应的 Canvas 世界坐标，固定映射为 `screen = canvas - viewportOrigin`。Pen、Highlighter、Eraser、Shape 和 Laser 在进入模型/文档前都反变换为 Canvas-local；瞬态 L0/L1/Laser/粒子/cursor 在当前视口下重建。Viewport 必须 finite、`scale == 1` 且 `x/y` 在 `[-1048576, 1048576] DIP`；触限轴速度立即归零。
-- 方向键只在非自动重复 Down 时发布一次 `TranslateViewport`，内容移动 `64 DIP`，不启动惯性。Viewport 不进入 Undo，也不进入 `InkHistoryRasterKey`；视口变化丢弃依赖屏幕坐标的热前像，但保留 Canvas-local composition cache。
-- `kCanvasNavigationProductIntegrationEnabled` 是临时产品接入门禁，当前固定为 `false`：普通 Touch 继续绘制，但双指 Pan 与方向键 `TranslateViewport` 不进入运行时；接入 Inkeys 白板后只改该常量即可恢复。`LogCanvasPan` 仅随显式 RTS diagnostics 开启，正常模式不得输出滑动日志。
-- 只有零 Touch 开始的批次可识别平移。首指静止时立即按工具绘制；第二指的输入时间戳与首指相差 `<= 180ms` 时，即使绘制线程稍晚执行 `Update`，仍取消该批全部 Touch 临时内容、清 Laser/笔尖/粒子并从剩余 Pen/Mouse contact 重建 L1/L0 后进入平移。新加入 Pan 的第二/后续 Touch 必须以自身 `DownSnapshot` 为 anchor，使排队期间的 Move 在首帧补齐；原 drawing 首指以 handoff 当前 snapshot 为 anchor，不能把第二指出现前的单指位移算入 Pan。超时后该批直到全部 Up 都不可再识别平移。
-- 平移中新增 Touch 只加入手势、不绘制；拓扑变化重设中心，剩一指仍可拖动。QPC 是唯一时间源；固定容量 `24` 的 Move 样本在约 `100ms` 窗口内对累计中心位移做线性拟合。零位移包、Up 终态和渲染空帧不得进入估速；最后 Up 只补齐最终中心位移，并以 `releaseQpc - lastVelocitySampleQpc` 判断时效。Cancelled、反向时间或无有效 Move 样本禁止惯性。
-- 惯性中首个 Touch 进入特殊 180ms 候选期：惯性继续且该指不绘制。及时第二指接续旧速度；候选超时后首指整段生命周期都不补画，并请求加速制动，迟到 Touch 可绘制但不能与首指组成平移。
-- 接续惯性时应用层旧速度只保存为独立 `releaseVelocityCandidate`，并立即停止旧惯性积分。位置输出严格等于当前 centroid delta；active `velocity` 只等于统一 `24000 DIP/s` 上限裁剪后的 `directVelocity`。新手势尚无有效 Move 就释放时可一次性选用 residual candidate；首条有效 Move 立即清空 candidate，之后必须满足 `selectedReleaseVelocity == directVelocity`。`EndCanvasPan` 先固化该选择结果，再以 `100ms` 输入时效决定实际惯性 `velocity` 是否清零，诊断不能把 stale gate 误报成 inherited mismatch。触点拓扑 reset 同理：reset 前 direct velocity 只作为无后续 Move 的 topology candidate，不能与新拓扑速度叠加。
-- Windows Tablet/RTS 在活动多 Touch 批次中不保证交付后来加入的 Pen contact；本机 Windows 11 ARM64 实测双 Touch 均持续收到 RTS Packets，但随后 Pen 没有任何 RTS `StylusDown/Packets/StylusUp`，只有独立 `WM_POINTER` 触觉/光标事件。活动 Touch 跟手平移期间的 Pen contact 因此锁存为 suppressed-until-up：不刹停、不绘制、不发布接触光标、不预启动触觉，也不能在 Touch 抬起后的惯性阶段补画。Pen 抬起后，惯性阶段重新产生的新 Pen Down 才可抢占；Pen hover 仍只在惯性中提高减速度。Mouse contact 仍可立即抢占。
+#### 3.1 坐标、视口与门禁
+
+- `InkViewport.x/y` 是屏幕左上角对应的 Canvas 世界坐标，固定映射为 `screen = canvas - viewportOrigin`。Pen、Highlighter、Eraser、Shape 和 Laser 在进入模型/文档前都反变换为 Canvas-local；瞬态 L0/L1/Laser/粒子/cursor 在当前视口下重建。Viewport 必须 finite、`scale == 1` 且 `x/y` 在既有画布世界坐标的 `[-1048576, 1048576]` 保护范围；不随物理标尺缩放，触限轴速度立即归零。
+- `CanvasCommand::TranslateViewport` 是内部一次性位移入口，产品树内当前没有任何生产者（不存在方向键平移）：白板工作区收到时直接丢弃；其它工作区被调用时一次性应用 delta、推进 Presentation mutation 且不启动惯性。Viewport 不进入 Undo，也不进入 `InkHistoryRasterKey`；视口变化丢弃依赖屏幕坐标的热前像，但保留 Canvas-local composition cache。不得借该命令绕过下面的移动模式门禁。
+- **门禁**：平移只在 `Bridge::MoveModePansCanvas(selectionMode, workspace)`（`selectionMode && workspace == Whiteboard`）为真时存在。桌面/PPT 的 Selection 仍是穿透的电脑操作，所有 Down 丢弃到终态；任何绘制工具（含白板内的 Pen/Highlighter/Eraser/Laser/Shape）都不识别平移，也没有绘制模式下的双指/长按/手势触发——绘制模式的 Touch 只按工具绘制，或被多指书写开关拒绝。白板"选择"按钮已显示为"移动"，不新增 UI；白板 Selection 的输出仍是 `PrimaryDrawpad`（`SelectionUsesAuxiliaryOutput` 对白板恒为 false），所以 RTS 的触摸/鼠标 Down 照常到达绘制线程。
+- **已移除机制（不得恢复）**：临时门禁 `kCanvasNavigationProductIntegrationEnabled`；180 ms 双指窗口及"只有零 Touch 批次可识别平移、超时后整批不可再平移"的批次资格；`CanvasTouchGestureState` 双指 FSM、惯性中的首指候选期（`PanCandidate`）与候选超时加速制动（`InertiaBrakeRequested`）；"绝不叠加旧速度"以及 `releaseVelocityCandidate`/`selectedReleaseVelocity`/拓扑候选等一次性残余速度机制；绘制中 Touch 因第二指到达被取消并转为平移的 handoff（`cancelTouchDrawingForPan`）与旧单指批次退休（`retireEndedTouchBeforeDown`）；`CanvasPanMotionState` 的 24 样本/100 ms 线性拟合、梯形积分、`6000/12000 DIP/s²` 常减速与 `24000 DIP/s` 上限。
+- **Selection Down分流**：非Selection继续建笔，非白板/非法设备仍按静态RouteSelectionDown丢弃，白板移动的Touch/MouseLeft/Pen/PenTail登记Pending。native Running历史门禁保留，动态类别/metric只在Dynamics已有有序Down裁决，不能按publication或Pending退休其它候选。Pan不受多指书写/Laser限制。
+- **设备互斥**：owner/held/Active只认有序内核已接纳的同类别兼容metric触点，Pending/Suppressed只记物理生命周期，不混focus或提前挡笔。同QPC Down先于Up仍重叠；实际Touch期间拒收Pen直到真实终态，不可凭Move复活。HasContacts包括待终态者以保证Stop/失效回收；它不等于导航owner。
+- **Win32 鼠标兜底**：`WindowController::SetCanvasPanWorkspace` 发布已确认工作区，`Detail::MouseSelectionModeState` 由 Selection 与白板位直接派生 `CanvasPan()`/`Isolates()`；白板已确认时切入移动模式的首个 Down 即可接受，不等待下一帧发布。`WindowController::AttachExternal` / `DetachExternal` 都必须调用 `ResetWorkspace()`，新窗口/Host 代次重新确认工作区，防止旧白板门禁泄漏到桌面/PPT。`Detail::MouseSelectionIsolates(selectionMode, canvasPanMode)` 的隔离规则仍为 `selectionMode && !canvasPanMode`。该路径把触摸及笔提升的兼容鼠标消息当单点 `MouseLeft`（该分支既有降级，真实笔设备未验证）；右键保持 `MouseRight`，由控制器丢弃。RTS 的 Pen 隔离不能当作此路径的保证。
+
+#### 3.2 白板产品手势与惯性（2026-11-08 手感修复）
+
+当前产品合同见 [白板可靠输入、释放与诊断](../native-desktop/canvas-pan.md)。统一导航事件历史、逐指真实尾段线性估速、反向失效、30–70ms年龄衰减、向量摩擦与当前残余投影替代阶段1的快照/共享LSQ2/逐轴Physics曲线/历史初速boost。2026-11-13收尾已移除这些旧参考实现与专属黄金值测试；当前只保留产品算法及几何/多指/释放/摩擦/boost回归。允许的真实Down立即停旧动画、首次径向扣本profile slop及多指几何基线保持；本阶段新增笔/笔尾导航，移动模式取消hover急停，五类惯性开关以该规范为准。2026-11-12起PTP双指因DM/RTS同HWND输入委托冲突暂时停用，保留的DM/Bridge实现不代表当前能力。
+
+#### 3.3 终止、计时器与预测
+
+- **终止原因**：`stopCanvasNavigation(reason)`（`CanvasPanInput::Stop` → `CanvasPanDynamics::Stop` + 既有笔/鼠标中断清理）在这些时刻立即清零手势与惯性，翻页/切换后不遗留速度或残余位移：离开移动模式（`ObserveMoveMode` 每帧观察 `SetSelectionMode` 真→假或工作区变化，`leave-move-mode`）、工作区切换（`workspace`）、PPT 目标切换（`presentation-target`）、任一画布命令（`canvas-command`：翻页/`SetPage`/Undo/Redo/Clear 等，命令以固定视口为起点）、窗口 Resize（`resize`）。移动模式允许接管的笔尖/笔尾真实Down取消旧coast并开始新导航，持续inContact不每帧Stop；绘制路径的`drawing-contact`停止仍保持。准入封口（`AdmissionRevision` 变化：页边界、白板冷页加载、最小化与工作区转换挂起等）在 `sealPresentationContacts` 中先 `Stop()` 再 `Reset()`，所以白板加载和最小化走准入路径终止。`Stop` 之后，已登记触点只被跟踪到终态（`Suppressed`），"作废批次"一直保持到所有平移触点终态，期间新 Down 同样只跟踪不平移——离开移动模式后仍按着的手指既不会画线，也不会重新进入平移。
+- **计时器与活动帧**：`SelectionReleasesTimerPeriod(selectionMode, canvasPanActive) = selectionMode && !canvasPanActive`；`CanvasPanInput::Active()`包括动力学非`Idle`、原生触控板Running/Inertia或仍有`panManaged && disposition == CanvasTouchDisposition::Pan`触点；`Suppressed` 与只忽略到终态的触点仍须记账回收，但不算导航活动，不得单独维持活动帧或 1 ms 计时器。平移/惯性活动期间必须保持 `timeBeginPeriod(1)` 与活动帧节拍（不得进入阻塞 idle），空闲的 Selection 仍整段释放 1 ms 计时器；否则逐帧平移会在默认计时器分辨率下抖动。
+- **tile 预测与快照方向**：`ComputeCanvasPredictionOffset`、覆盖范围与 `PlanCanvasRenderTiles` 读取 `contentVelocity`（换算为像素/秒），预测 `150 ms`、距离不超过 `1.5` 个视口对角线；速度来源为产品逐指尾段/向量摩擦曲线，内部按profile的mm/DIP模长cap，出口恢复为系统DIP/s再换像素；`ComputeCanvasPredictionOffset` 与tile规划公式不变。可信快照的模糊方向与强度读取 `CanvasPanInput::VelocityDip()`（DIP/s）。
+
+#### 3.4 窗口层、光标与 Pen
+
+- Windows Tablet/RTS 在活动多 Touch 批次中不保证交付后来加入的 Pen contact；本机 Windows 11 ARM64 实测双 Touch 均持续收到 RTS Packets，但随后 Pen 没有任何 RTS `StylusDown/Packets/StylusUp`，只有独立 `WM_POINTER` 触觉/光标事件。活动 Touch 跟手平移（`CanvasPanInput::TouchPanHeld()`：持有者为 Touch 且仍有手按住）期间的 Pen contact 因此锁存为 suppressed-until-up：不刹停、不绘制、不发布接触光标、不预启动触觉。白板移动模式的Pen/PenTail Down可导航，合法panManaged Pen不算suppressed，持续mailbox contact不自我Stop；所有来源的运动均不因Pen hover急停，真实允许接管的Down取消旧coast。有手按住时保留来源互斥及吞到真实终态规则。鼠标左键不再是"抢占者"：在移动模式它是平移触点，可以抓住惯性中的画布。
+- **Pen仲裁必须按事件时间**：动态权限由唯一有序Down决定，辅助TouchPanHeld只认已接纳事实；Pending或被metric拒收的Touch不能先永久抑制后来合法Pen。真实Touch持有期间拒收的Pen仍锁到终态；后来Touch不追溯抑制，严格晚于Touch Up的新Pen可接手，同QPC仍算重叠。RTS每Down稳定token及窗口配对反馈合同见[平移规范](../native-desktop/canvas-pan.md)。
 - Pointer event 类型、持久 cursor owner 与 Touch Pan 状态必须分离：Touch `ENTER/UPDATE/DOWN/UP/LEAVE` 只更新诊断，不得把 owner 固定为 Touch。Touch Pan 开始后、确认真实 Mouse 接管前，系统 cursor 必须始终隐藏；开始时隐藏应用 Pen cursor 并保留 Pen presence，结束时从有效 Pen/Mouse sample 解析 owner、请求应用 cursor 重画并刷新系统 cursor。部分 Pen/Windows 输入栈在活动 Touch Pan 中既不交付 Pen `WM_POINTERDOWN`，又产生缺少 promoted signature 的兼容 `WM_MOUSE*`；窗口层依据不超过 `100ms` 的有效 Pen presence、Mouse contact 和不超过 `8 DIP` 的位置差锁存兼容消息，不依赖当前 owner，并吞到 terminal。普通非 promoted 真实鼠标显式设置本轮 takeover 后恢复正常系统 cursor 策略；该 takeover 在 Pan stop 后仍用于恢复 Mouse owner，只由下一轮 `SetTouchPanActive(true)` 清零，期间的 Touch/Pen 反馈不得反向夺回 owner。
-- 窗口 Pen/Mouse mailbox 必须在导航推进和 viewport tile 恢复前读取。活动 Touch 跟手时 Pen mailbox 只开始/维持 suppression；惯性阶段确认可抢占 contact 后，先排空已发布 Down、创建 runtime 并固定 viewport，再执行本帧导航/恢复。若 RTS Pen Down 曾到达，轻量 contact 消费 Up/Cancelled 后记录终态 QPC，并忽略 `sample.qpc <= terminal.qpc` 的陈旧 Pointer contact；更晚的新 Down 可正常抢占。完全没有 RTS Pen contact 的 Pointer-only 情况只能等待 mailbox 变为非 contact 或离屏后解除，防止旧样本在惯性中误刹停。
-- `CanvasPanMotionState` 是手势、估速和惯性的唯一权威；生产路径不得再引入 `IManipulationProcessor`、`IInertiaProcessor` 或与应用状态机并行的系统速度真值。惯性按真实绘制帧 QPC 间隔、`DIP/s^2` 线性减速度和梯形积分推进：普通滑行为 `6000`，Pen hover 或惯性候选超时为 `12000`；单步时间限制为 `50ms`，避免调度长停顿产生位移尖峰。
-- 新 Touch Down 出队时，旧首指可能已在合并 mailbox 中发布 `Up/Cancelled`，但导航循环尚未消费。若当前不是活动 Pan，且旧终态 QPC 不晚于新 Down，必须先只调用 `CanvasTouchGestureState::OnTouchUp` 退休旧批次资格；不得提前回收 contact、跳过 Stored 收尾或让新批次取消旧笔画。若第二指 Down 已经触发 Pan 后，原 drawing 首指才在 promotion 前终止，则 handoff 必须同步消费/退休终态并禁止该 Touch drawing 提交；不能因“物理已结束”跳过 ownership transfer。
-- Pan 开始、额外触点加入以及触点移除后，都必须从同一组 snapshot 重建 `previousPanCentroid` 与每个剩余触点的 `velocityPosition`；anchor snapshot 与 `lastConsumedSequence` 必须一致，handoff 时已观察到的终态需以显式 pending 或同步 retirement 保证消费。`ResetCanvasPanVelocitySamples` 的 QPC 不得早于 `CanvasPanMotionState::lastUpdateQpc`。只重建几何中心会把拓扑跳变误算成速度尖峰。首指 Down 开始的新零 Touch 批次必须显式重置旧批次的中断和超时资格。`PanActive` 时至少一个实际 navigation runtime 必须持有 Pan contact，FSM/runtime/terminal-pending 数量由 lifecycle diagnostic 核对；最后一个真实 contact Up 后只调用一次 `EndCanvasPan`，并同时清除 centroid 与窗口 Touch Pan 状态。
-- 视口硬限位以 `double` 候选原点直接比较 `+/-1048576 DIP`；只有候选真实越界才报告 clamp 并清零该轴速度。禁止通过 float 应用前后差值反推 clamp，远端 viewport 的量化误差不是撞边。
-- Pen mailbox 仍用于活动 Touch 平移中的 suppression 和惯性 hover 制动。Mouse mailbox 不得作为导航抢占真值，因为系统可能把 Touch 提升为 Mouse；只有从 contact coordinator 出队的真实 Mouse Down 才可抢占。
-- 页面切换、Undo、Resize 和键盘平移先终止手势/惯性。每个 Page/Device Canvas 保存自己的 viewport；切页恢复目标 viewport，只保存位置不保存速度。Undo 只改变当前页 RenderItem visibility，不能移动当前 viewport，离屏内容仍按 Canvas-local tile 恢复。
+- `SetTouchPanActive` 只在 Touch 持有的平移且仍有手按住时置位；鼠标拖动保持系统箭头光标，不进入 Touch Pan 状态，也不触发笔反馈抑制。移动模式沿用既有光标/触觉：不绘制应用光标，鼠标显示系统箭头，Touch/Pen 隐藏，连续触觉禁用，不新增抓手光标。
+- 窗口 Pen mailbox presence可在 `CanvasPanInput::Step` 与viewport恢复前读取，但不能把provisional反馈作为最终准入；核心决策应用后发布权威held/抑制，实际光标/橡皮用组合snapshot读取样本及对应抑制状态。原有读取顺序为（`updateCanvasNavigation` 的顺序：发布移动模式 → 读 Pen mailbox → suppression/刹停 → `Step` → 视口应用）。若 RTS Pen Down 曾到达，轻量 contact 消费 Up/Cancelled 后记录终态 QPC（`suppressedPenTerminalQpc`），并忽略 `sample.qpc <= terminal.qpc` 的陈旧 Pointer contact（`IsPenContactSampleFresh`）；更晚的新 Down 才可刹停。完全没有 RTS Pen contact 的 Pointer-only 情况只能等待 mailbox 变为非 contact 或离屏后解除 suppression，防止旧样本误刹停。
+- Mouse mailbox（`WM_MOUSE*` 光标样本）不得作为导航真值，因为系统可能把 Touch 提升为 Mouse；鼠标平移触点只来自 contact coordinator 出队的 `MouseLeft` Down（RTS）或 Win32 兜底发布的 contact。Pen mailbox保留活动Touch中的suppression与绘制路径仲裁；移动模式不作hover刹停或持续接触反复Stop。
+
+#### 3.5 每页视角
+
+- 白板每页保存自己的视角：`WhiteboardViewportMemory` 是 `Run()` 内的会话侧表（按页索引，新页默认 `(0,0)`，不继承上一页），在视口应用块、白板离页前、工作区切换与 PPT 目标切换前 `Remember`；白板冷页被 `EvictWhiteboardPage` 重建为空 `InkPage` 后，冷页加载完成并 `ReplacePage` 成功时立即 `Restore` 到新 canvas，侧表优先于文件内保存的视口，`SetViewport` 拒绝（非有限等）时回退 `(0,0)`。暖页因 canvas 常驻而自然保持。
+- 视角只在会话内有效（新进程是新白板），不写 UInk、不推进页 `revision`、不使页变脏、不触发保存，也不改变笔迹或 history；UInk 导出仍带保存时刻的视口。只保存位置，不保存速度。Undo 只改变当前页 RenderItem visibility，不能移动当前 viewport，离屏内容仍按 Canvas-local tile 恢复。
+
+#### 3.6 L2 tile 恢复与可信快照
+
 - L2 是当前 viewport 的清晰稳定层；每次 viewport 变化从 Canvas-local 有符号 `256x256` tile 恢复。规划优先级固定为可见缺失区、运动前缘、150ms 预测扫掠区、后缘维护，预测距离不超过 `1.5` 个视口对角线并带一圈 tile 余量。
 - 每帧恢复预算使用目标帧间隔、上一帧工作/Present 耗时和 tile EWMA，预留 `1ms` 且上限 `4ms`；允许预算为零。每个 tile 前检查 `HasPendingWork()` 和 wake generation，输入到达必须让出。可见 tile 失败保留当前游标并重试，不能把 L2 标记为清晰；仅全部可见 tile 清晰后刷新可信快照。
 - `CanvasRuntimeHistory` 用可见 composition tile 引用计数维护稀疏索引；Append、Undo 和可见项 geometry update 必须同步加减引用。平移规划先计算当前/预测/后缘带一圈 tile 余量的查询范围，再从索引枚举内容，禁止每帧遍历所有 RenderItem。footprint 是 Canvas-local 真值，窗口 Resize 只更新 raster generation 并恢复当前可见 tile，不重算全页 footprint。
 - Stored Pen/Highlighter/Eraser 的 tile restore 只上传与目标 Canvas 区域相交的连续点段；每段保留相邻连接点，胶囊、擦除和荧光 sweep 在 tile 边缘必须连续。Shape 继续使用解析外框筛选并只提交两个端点。
 - 可信快照只含最后一次完整清晰 L2。平移时按两个世界视口的真实交集重投影到 backbuffer；低于 `300 DIP/s` 不模糊，之后沿运动方向增加并钳制到 `12 DIP`。清晰 tile 后画并覆盖兜底；超出快照覆盖的区域保持真实透明。兜底像素不得写回 L2、文档、history、热前像或 composition cache。
+
+#### 3.7 诊断与范围外
+
+- `ConsoleOutput.CanvasPan`独立控制生产日志，无旧RTS编译宏依赖；配置与有界异步输出合同见[平移规范](../native-desktop/canvas-pan.md)。
+- 可信EDID毫米、分设备profile及无EDID模式回退已接入；重复/逆frame在Drain前no-op保留排队终态，Pending毫米候选也在物理依据变化时取消。范围外：RTS批内硬件时间、缩放旋转、普通滚轮/键盘平移、触控板按压拖动独立分类、绘制模式漫游、边界回弹与存储格式。移动模式Pen/PenTail已进入范围；PTP双指自2026-11-12起因DM/RTS同HWND冲突暂停，保留的owner/epoch/Running历史与最终停止确认只供未来替代前端参考，见[平移规范](../native-desktop/canvas-pan.md)。
 
 ### 4. Validation & Error Matrix
 
@@ -892,43 +922,75 @@ Correct：`Error 只清 active contact state；decoder/binding 通过 rare-write
 |---|---|
 | viewport 非有限、scale 不为 1 或越界 | `SetViewport` 返回 false，原 viewport 不变 |
 | 内容位移触及单轴保护值 | 应用可表示部分并把该轴速度清零，另一轴继续 |
-| 第二 Touch 时间戳恰好 180ms | 允许平移；判定不能依赖绘制线程实际处理延迟 |
-| 首 Touch 已在 L0/L1 产生内容后及时第二指 | 丢弃该批 Touch 内容并从仍有效 Pen/Mouse 重建全部瞬态层 |
-| 惯性首指超时 | 不补画该指；加强制动；迟到 Touch 不得重新组成手势 |
-| Pen/Mouse 已 contact | 阻止新双指手势；活动 Touch 跟手中的新 Pen 抑制到 Up，Mouse 仍可抢占；惯性中的新 Pen/Mouse Down 先于导航和 tile 恢复消费并立即刹停 |
-| 无新 Touch Move 的渲染帧 | 保持最后有效速度；不得用零中心位移覆盖 |
-| 最后 Touch Up | 先应用最终 centroid 位移但不把 Up 写入估速；按 `Up QPC - last Move sample QPC` 判断，最近样本不超过 `100ms` 时用拟合速度启动惯性，处理线程晚到不影响 |
-| 触点数量变化 | 重建 centroid 和 Move 样本零点；刚结束拓扑的有效直接速度只作为无新 Move 的一次性候选，首个新 Move 立即作废；首个拓扑帧不得制造速度尖峰 |
-| 惯性中双指重新抓取 | 旧惯性不再产生位置增量或混入 active velocity；输出严格等于触点 centroid delta；有新 Move 时 release 只等于 direct velocity，无 Move 时才允许 residual fallback |
+| 桌面/PPT Selection下Touch/MouseLeft/Pen/PenTail Down | 丢弃到终态（Quarantined），不平移、不建笔；绘制工具下同样不识别平移 |
+| 白板Selection下Pen/PenTail Down | 空闲/同类且准入时导航；允许接管的Down停旧coast，持续contact不自我Stop |
+| 白板Selection下MouseRight Down | 丢弃到终态，不移动画布 |
+| 白板移动模式Touch（任意指数）或MouseLeft Down | 先Pending，有序接纳时取消fling；门限内contentDelta=0，不建笔，不受多指书写/Laser限制 |
+| Touch 持有时 `MouseLeft` Down（或反之） | 另一类设备丢弃到终态，位置不混入质心；全部平移触点终态后才可换类 |
+| Win32 鼠标兜底 + 白板移动模式 | 白板工作区确认后首个左键 Down 即接受；桌面/PPT Selection 仍隔离；兼容触摸/笔均退化为单点 MouseLeft |
+| 惯性中静止按住 | Down立即取消fling、保留booster；不再进入Slipping或继续积分旧速度 |
+| 惯性中同向加速滑动 | 可靠新速度叠加当前残余正投影，boost后按本profile cap，50ms按合格滚动续期 |
+| 惯性中反向滑动 | Down先停fling；反向ScrollUpdate重置booster，之后按新手势起滑 |
+| 旧Slipping/手摩擦 | 已删除，不得按旧耦合规则恢复 |
+| 最后一指UP | 取该指可靠尾段速度，30–70ms年龄软衰减，无证据/取消不fling |
+| Cancelled / 异常终态 | 已知身份可靠取消闭合，即使坏时间/坐标或异常排序在同key Down前也不留held/拒收屏障，不造速度；不凭迟到事件复活 |
+| 触点数量变化 | 重算focus并重置位移基线，不产生拓扑位移；反向POINTER_UP清全部tracker；静止时contentDelta=0且视口不变，focus按质心重算，速度绝对容差<0.01 DIP/s |
+| 估速样本不足/非法输入 | 产品至少3点/20ms，异常Move时间/非有限坐标拒绝，坏终态仍闭合，最终模长按profile cap；没有旧LSQ2降阶回退 |
+| 无新Move的渲染帧（有手） | 内容位移为0；释放时按真实最后样本年龄衰减 |
+| 移动模式任意来源coast遇笔hover | 不急停；持续hover不吞Pen刚释放的惯性 |
+| 笔尖/笔尾真实Down | 允许接管时停旧coast并开始新导航；活动Touch/native Running中的后来笔按互斥保护跟踪到终态 |
+| 离开移动模式 / 工作区或 PPT 目标切换 / 翻页与其它画布命令 / Resize / 准入封口（加载、最小化） | 立即 `Stop`，速度与残余位移为 `0`；仍按着的手只跟踪终态，不重新平移也不建笔 |
+| 平移或惯性活动 | 保持 1 ms 计时器与活动帧；空闲 Selection 释放计时器；阻塞 idle 只在无活动后进入 |
+| 翻页再回 / 冷页被驱逐后重载 | 视角恢复；新页 `(0,0)`；不改 `revision`、dirty 与保存 |
+| 触点超过 `16` 个 | 超出部分不参与动力学，只跟踪到终态 |
+| 无Move轻点排队至稍后的消费帧 | Down取消fling，不凭接触时长恢复旧速度；没有越slop的Move就不产生新的scroll/fling |
+| 多触点终态乱序或同 QPC | 适配器稳定按 QPC 排序，同刻 Down 先于 Up；全部旧触点终态后的新按下按下一手势处理 |
+| Touch Up 与 Pen contact 同帧到达 | 按 Pen 开始时间裁决是否重叠，重叠则抑制到终态 |
+| 仅剩 Suppressed / 忽略到终态触点 | 继续跟踪回收，不单独维持导航活动帧/1 ms 计时器 |
+| HWND 控制器附着/解绑 | 重置已确认白板门禁，旧 Host 不影响新工作区 |
+| `--draw3-canvas-pan-feel-test` | 必须运行当前生产路径并记录退出码；收尾清理还需与清理前全量scenario记录对比，不能只检查历史PASS或末行计数 |
+| `--draw3-hidden-test` 的 S8 增量 | `CheckCompatibilityMouseWindow` 验证真实 WndProc；`CheckHiddenControllerMousePan` 验证隐藏控制器，保留后端/归属条件导致的 SKIP |
+| `--page-control-hidden-test` 的 S8 增量 | `Whiteboard.cpp:RunFollowStream` 验证 Freeze 跟随、落定像素精确、无相位候选取消、回 Idle、代次/翻页/主题/Blank，并输出 M1/M2 |
+| 正常模式（未开 CanvasPan diagnostics） | 不输出 `LogCanvasPan` |
 | 活动 Touch Pan + 无 promoted 标记的同位置 Pen 兼容 Mouse contact | 依据新鲜 Pen presence 锁存并抑制 Pen 光标/触觉到终态，不依赖 cursor owner；位置或时间不匹配时按真实鼠标处理并显式 takeover |
 | 远端有限 viewport 发生小位移 | 按 double 候选值判断未越界，不得因 float 量化差异报告 `viewport-clamp` |
-| Mouse mailbox 显示 contact 但没有真实 Mouse contact 出队 | 不打断平移或惯性；避免 Touch-to-Mouse 提升污染导航状态 |
+| Mouse mailbox 显示 contact 但没有真实 `MouseLeft` contact 出队 | 不打断也不驱动平移；避免 Touch-to-Mouse 提升污染导航状态 |
 | 可见 tile 恢复失败或有新输入 | 不推进失败 tile；保持恢复 pending，下一帧重试 |
 | 快照/当前视口无交集 | 不采样、不拉伸边缘，区域保持透明背景 |
 | Undo/page/Resize | 快照签名失效；Resize 不重算 Canvas-local footprint；失败的权威恢复继续排队，不能把兜底提交为文档内容 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：普通 `3200 DIP/s` 甩动按 `6000 DIP/s^2` 约滑行 `0.53s / 853 DIP`；重新抓取后无 Move 直接释放可继续 residual，但任意同向/反向新 Move 都完全改用新 direct velocity；活动跟手中的 Pen 不打断且不会留下接触起点光标，Touch 不生成系统箭头，抬笔后惯性中的新 Pen 靠近时按 `12000 DIP/s^2` 快速减弱并在落笔前固定 viewport。
-- Base：方向键一次移动内容 64 DIP；切到另一页恢复该页上次 viewport；负坐标 Stroke 由有符号 tile 正确显示和撤回。
-- Bad：用处理时刻而非 contact QPC 判定 180ms 或释放速度时效、用单个 `delta/dt` 或 Up 终态估速、跨触点拓扑拟合、每个渲染帧用零位移刷新速度、用 float 应用差值反推 clamp、只用 mailbox 刹停却把真实 Down 留到 tile 恢复之后、把 viewport 写入 raster key，或用模糊快照覆盖未知区域。
+运动/输入Good、Base、Bad用例见[平移规范](../native-desktop/canvas-pan.md)；页面与渲染仍以Canvas-local文档、会话viewport、清晰tile与backbuffer-only兜底为准。
 
 ### 6. Tests Required
 
-- 单元测试覆盖 180ms 内/等于/超时和绘制线程迟到、第二指 Down anchor 补齐排队 Move、终态首指 handoff retirement/FSM-runtime 数量、静止首指撤销、惯性首指抑制、迟到 Touch、额外 Touch、residual 无 Move fallback、同向/反向首 Move 完全切断 residual、拓扑候选/新 Move 作废且位置严格跟手、Touch 不接管 cursor owner、Touch Pan 系统 cursor 隐藏/真实 Mouse takeover、owner 非 Pen 时仍识别新鲜同位置 Pen compatibility Mouse、Pan 结束 Pen owner 恢复、活动跟手 Pen suppression、惯性 Pen hover/Down、导航 contact 优先判定、速度上限、Move-only 多样本拟合、零位移保持、Up 尖峰排除、`100ms` 旧样本淘汰、新批次资格复位、Cancelled、远端 float viewport 和真实单轴范围保护；静态检查生产源码不包含 Windows manipulation/inertia 接口。
-- 坐标/文档测试覆盖 Pen、Highlighter、Eraser、四种 Shape 的 Canvas-local 完成态，Laser 瞬态变换，负/远端坐标、有符号 tile、每页独立 viewport、离屏 Undo 和 viewport 不进入 history raster key。
-- 渲染规划测试覆盖双方向预测、`1.5` 对角线上限、优先级、0/4ms 预算、pending input 让出、失败 tile 不推进、可见完成、快照交集、300 DIP/s 清晰阈值和 12 DIP 模糊上限。
-- ARM64 Debug/Release 完整 solution 构建并运行两套测试。实体 Touch/Pen、快速反复滑动手感、视觉重投影/模糊、窗口 Resize、翻页、D3D Debug Layer 和 Windows 7 未执行时必须明确标记。
+- 当前运动/输入/诊断回归与构建命令见[平移规范](../native-desktop/canvas-pan.md)。旧阶段1 PASS/数值黄金值不能替代本轮产品路径验证。
+- 保留坐标、每页视角、Freeze跟随、tile规划、未写入dirty/history的既有测试。
+- 隐藏窗口/GUI测试按用户明确授权执行，不因本节存在历史入口就自动启动。
 
 ### 7. Wrong vs Correct
 
-Wrong：`screen point 直接写文档 -> viewport 进入 history key -> 平移时整页缓存失效 -> 模糊图写回 L2。`
+Wrong：只对照Chromium公式，仍用单槽/整帧合并向估速器交付残缺轨迹。
+Correct：真实发布/消费链保留事件，独立验证方向与释放不变量；无可靠证据时停止，程序性Stop后旧触点不得复活。
 
-Correct：`真实 Touch Move + QPC 进入固定窗口线性拟合 -> Up 只补最终位移并以 Up QPC 检查 100ms -> 应用层线性惯性；旧惯性/拓扑速度只作为无新 Move 的一次性 release candidate，首个 Move 后 active/release velocity 都只等于 direct velocity；重新抓取期间位置严格跟随 centroid。screen -> Canvas-local 文档真值；viewport 仅决定目标矩形；Canvas tile 清晰恢复写 L2，可信快照只在 backbuffer 下方作视觉兜底。`
+Wrong：把screen点直接写入文档，把viewport写入history key，或把模糊兜底写回L2。
+Correct：文档保存Canvas-local真值，viewport只影响呈现，可信快照只用于backbuffer视觉兜底。
 
-Wrong：`活动 Touch 跟手时只凭 Pointer 触觉假设 RTS Pen contact 存在并清零速度；或惯性中 Pen mailbox 清零速度 -> 本帧继续 tile 恢复 -> 帧后段才出队 Pen Down。`
+### 8. Common Mistakes
 
-Correct：`活动 Touch 跟手 + Pen mailbox -> suppression 锁存到 Up；惯性 + 新 Pen/Mouse contact -> 导航/恢复前优先出队真实 Down -> 固定 viewport -> 同帧创建绘制 runtime。`
+- 不把物理像素当DIP；不把显示器EDID当间接输入设备物理标尺。
+- 不能用Mouse光标mailbox作为导航真值，Touch可能被提升为Mouse。
+- 不以参考组件的两点估速/初速累加合同否定当前产品的尾段资格/残余投影。
+- 不在Stop/overflow后用旧Move补Down，不跨设备/导航epoch继承速度。
+- 不为白板视口变化调用markPresentationMutation或改变页revision。
+
+### 9. 已知限制与未验证项
+
+- RTS仍只解码回调批末包，时间是arrival QPC；本轮修回调间保留和消费顺序，不宣称硬件全样本保真。真实手感待用户实机验收。
+- Mouse/RTS拖出窗口、真实contactId及交换鼠标键行为需设备实测；Win32兜底Touch仍降为单点。
+- 生产CPU探针不覆盖完整Run渲染/呈现；不能证明重页面tile恢复无卡顿。历史hidden-test曾有负载敏感3s超时，不得将重跑通过掩盖该记录。
+- 本轮不自动启动GUI，窗口样式/光标/触觉/Resize与最小化的真机观感需单独授权验证。
 
 ## Scenario: Ink Document Persistence
 
@@ -1143,6 +1205,6 @@ Correct：`封存 UInk Type 6 -> fresh runtime + 全量透明 Present -> durable
 ## Scenario: 可视化探测接触（2026-11-05）
 
 - 可视化模式（`canvasDebugOptions_ == 3`）下，Down 在 `initializeStroke` 前走 `registerCanvasDebugProbe(handle)`：接触照常经 `ContactInputCoordinator` 入队，但**不创建 `RuntimeStroke`**，因此无笔画/擦除/手掌橡皮动作/撤销历史/触感/触摸平移。
-- 不复用 `DiscardSelectionDown`：被隔离的接触读不到后续 Move/压力/面积。
+- 不复用 `HandleSelectionDown` 的 `Discard` 路径（原 `DiscardSelectionDown`）：被隔离的接触读不到后续 Move/压力/面积。
 - 每帧 `pumpCanvasDebugProbes()` 刷新快照，Up/Cancel 回收句柄，`sealPresentationContacts` 清空。
 - 手掌橡皮红框实/虚：仅 Touch 接触、手掌橡皮总开关开、`area >= ThresholdAreaPixels()` 且长宽比 ≤ 3.5（同 `PalmEraser::State::Observe`）；cm 文字仅 `DisplayScale.physicalAvailable`。

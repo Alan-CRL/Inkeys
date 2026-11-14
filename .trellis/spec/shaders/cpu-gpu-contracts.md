@@ -133,6 +133,10 @@ Laser 矩形 shape `8/11/12/13` 不读取 `InkData`：CPU 把 `(left, top, right
 - `18`：边界居中的圆角矩形边框。
 - `19`：无额外边框的圆角填充矩形。
 - `20`：把 `t14` 的可信 L2 快照按 `b3` 目标/UV 矩形重投影到 backbuffer，并可沿内容运动方向模糊。
+- `21`：瞬态笔形 Cursor，PS 调用 `GetPenIconDist`。
+- `22`：瞬态箭头 Cursor，PS 调用 `GetArrowDist`。
+
+主产品锚点：`Draw3/Assets/inkPixelShader.hlsl` 的 `type == 21/22` 分支；`0..22` 已占用，不得将白板纹理另编码为 21/22。
 
 `globalOperatorKind`：
 
@@ -142,6 +146,67 @@ Laser 矩形 shape `8/11/12/13` 不读取 `InkData`：CPU 把 `(left, top, right
 这些数值虽然部分未暴露在 enum 中，但已经是 CPU/GPU 协议；不要任意复用。
 
 Cursor `InkData[0]` 使用 `pos=center, r=halfWidth, time=halfHeight`；`InkData[1].pos` 使用 `x=outlineWidth, y=fillAlpha`，`r=outlineOpacity+1`，`time=outerOutlineWidth`（仅高亮 Pen/Dot 为 1 物理像素，其它光标为 0）。VS 将后两者映射为 `uv.x/uv.y`；PS 依次合成外黑边、灰色/白色环和彩色填充，外黑边与高亮白环不透明。`globalColor` 保存 fill RGB 与整体 opacity，`globalPadding` 保存 outline RGB。Cursor shape 不写 operator texture，而是对 backbuffer 使用 `operatorResolveBlendState` 直接计算 `premultiplied Add + Retain * Destination`。
+
+## Scenario: Whiteboard Pattern Under Pass (Draw3 后备归属)
+
+### 1. Scope / Trigger
+
+主产品白板点阵/网格的 Draw3 后备路径适用；默认归属仍是 Freeze（D2D/WARP，不占用画布 GPU）。修改参数、under 混合、dirty 裁剪或两个合成调用点时应用本节。默认归属及 Freeze 协议见 [whiteboard.md](../native-desktop/whiteboard.md#场景白板点阵网格背景的归属与视口跟随2026-11-06)。
+
+### 2. Signatures / Anchors
+
+- `Draw3.WhiteboardModel.h`（`Inkeys::Drawing::Draw3`）：`WhiteboardPatternOwner::{Freeze, Draw3}`、`kWhiteboardPatternOwner`、`WhiteboardPatternDrawnByDraw3`。
+- `Draw3.WhiteboardPattern.h`（同命名空间）：`WhiteboardPatternParams`、`ResolveWhiteboardPatternForFrame`、`WhiteboardPatternPhase`、`EnumerateWhiteboardPatternPrimitives`、`WhiteboardPatternKey`、`MakeWhiteboardPatternKey`。
+- `Draw3.RendererPattern.cpp`：`InkRenderer::EnsureWhiteboardPatternPipeline`、`InkRenderer::DrawWhiteboardPatternUnder(const WhiteboardPatternParams&, RECT dirty) noexcept -> bool`、`RunWhiteboardPatternValidation`。
+- `Draw3.DrawingController.cpp`：`syncWhiteboardPattern`、`DrawingController::DrawWhiteboardPatternUnder`、`CompositeLayersToBackBuffer` 与 `Run` 的可信快照平移合成分支；PS：`Assets/inkPixelShader.hlsl` 的 shape 16 分支。
+
+### 3. Contracts
+
+- 门控为白板工作区、非 `WhiteboardPattern::Blank` 且 owner 为 `WhiteboardPatternOwner::Draw3`。控制器 `syncWhiteboardPattern` 单点应用归属门控；renderer 只消费参数。默认 Freeze 时参数未启用、appearance key 为空、under pass 惰性；显式探针仍可直接传启用参数验证后备管线。
+- 两个合成位置都先恢复 dirty 范围的内容基底，再 `ApplyOperatorLayers` → `DrawDebugPlateUnder` → `DrawWhiteboardPatternUnder`：普通路径在 `CompositeLayersToBackBuffer`，平移路径在可信快照重投影之后。图案在墨迹、快照与调试板之下，擦除只显露图案。
+- 预乘 under：RGB/Alpha 都用 `SrcBlend=INV_DEST_ALPHA, DestBlend=ONE, BlendOp=ADD`，即 `out = base + (1-base.a)*pattern`。它**不幂等**：不恢复基底就重画会让 0.18 的 alpha 约变成 0.33。必须 scissor 到本帧 dirty 与画布的交集；仅限制 CPU 图元枚举不够，边缘图元仍会越界。缺少 scissor raster 或建管线失败返回 false；控制器仅记录一次失败并呈现无图案的墨迹帧。
+- 复用 `ShapePrimitiveKind::SolidLine`（shape 16）、现有 `t0` 两槽布局，无新增 HLSL shape/资源：点为零长度线、半线宽=半径 1 DIP；网格为贯穿整幅 canvas 的长线、线宽 1 DIP（半线宽 0.5 DIP），端帽外延至画布之外。同序号网格线端点不依赖 dirty，保证分块与整帧插值一致；枚举保留 AA 边距，结束恢复普通 raster state。
+- 视觉常量来自 `Draw3.WhiteboardPattern.h`：间距 24 DIP、alpha 0.18；`IsLightWhiteboardBackground` 按 `299R+587G+114B > 128000` 选黑，否则白。CPU 传未预乘的 shade/alpha；PS 以 `outAlpha=color.a*coverage` 输出 `(color.rgb*outAlpha, outAlpha)`，不得在 CPU 再预乘一次。
+- `stepPx=24*dpiScale`；`phaseX=fmod(W/2-viewport.x, stepPx)`、Y 同理，负余数补 step，舍入到 step 时归零。必须用 **double 精度的 fmod**；格点按 `phase+k*step` 直算，不逐点累加。视口是后备缓冲像素，屏幕=画布−视口；有效 DPI 为 [0.5,8]，Blank/非法主题、尺寸或 DPI 返回未启用参数。
+- 仅写 backbuffer：不进入 L2/L1/L0、history、trusted snapshots、hot preimages 或 composition cache，不从带纹理的 backbuffer 回灌内容。白板空页仍绘制图案；桌面/PPT 保持真透明。
+- appearance key 为 `WhiteboardPatternKey{kind, shade, stepPx}`；`syncWhiteboardPattern` 与 `appliedWhiteboardPatternKey` 比较，变化设置 `forceFullPresent=true`，包括关闭纹理/离开白板以清旧像素。同明暗类 RGB 变化不改图案键，纯色由 Freeze 更新；phase 不入键，因为视口平移已有整屏重合成。命令处理后、idle 前及合成前均同步，不能只在已有墨迹 dirty 时检查。
+- D2D 对照须区分已知结果与断言：任务提供的已知零视口差异为点阵 ≤10 LSB、200% 网格 ≤7 LSB；当前 `RunWhiteboardPatternValidation` 的 `phaseTolerance` 为点阵 10、100%/150% 网格 2、200% 网格 **8**，小数位移对照为 12。PS 的 `1.5*fwidth(d)` smoothstep 边缘与 D2D 面积覆盖不同，不能宣称仅有 ≤1 LSB 的量化差。后备零视口对照忽略 8 px 边缘（旧 D2D 循环遗漏部分边界图元），上述值不是任意相位的全屏承诺。
+
+### 4. Validation & Error Matrix
+
+下列命名断言锚定 `RunWhiteboardPatternValidation`（`--draw3-whiteboard-pattern-test`），不宣称本轮执行通过。
+
+| 场景 | 断言 / 探针 |
+| --- | --- |
+| 默认 Freeze / 两种归属 | `owner switch is a single exclusive gate`；默认下后备像素用例仍可执行 |
+| 桌面/PPT、Blank、非法 DPI | `desktop/presentation gating leaves the canvas truly transparent`、`blank pattern never draws`、`invalid DPI disables the pattern` |
+| 深浅背景、多 DPI、零视口 | `dots match the legacy Freeze pattern within the AA-tail tolerance`、`wide grid matches the legacy Freeze pattern within the AA-tail tolerance`；按上述实际阈值核验 |
+| 重复整帧、分块、重叠 dirty | `repeated frames never accumulate alpha (byte-identical)`、`tiled dirty rectangles equal one full frame byte-for-byte`、`overlapping partial recomposites stay byte-identical` |
+| 不恢复基底重复 under（反证） | `a second under pass without recopy would accumulate alpha` 必须检测到增长 |
+| 橡皮与透明/半透明/不透明墨迹 | `pattern is exactly under the ink: out = base + (1-a)*pattern`、`opaque ink pixels are never altered by the pattern` |
+| L2、可信快照、平移分支 | `L2 contains no pattern pixels`、`trusted L2 snapshot contains no pattern pixels`、`pan branch: the pattern sits under both the L2 and the trusted snapshot` |
+| 周期、小数、正负大视口 | `viewport shifted by whole periods leaves the pattern unchanged`、`1048576 px viewport follows the exact fmod phase`、`shifted pattern matches the anchor-shifted D2D reference` |
+| 管线/scissor 失败、4K 成本 | 前者按代码返回 false 并降级装饰；4K 只记录成本，不代替真实 DComp/ULW 或 Win7 验证 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：恢复 dirty 基底后，仅在 dirty scissor 内画一次 under；分块与整帧逐字节相同，换样式即整屏刷新。
+- Base：默认 Freeze 归属时 Draw3 图案为空操作；主题预览仍用 `WhiteboardVisual::DrawThemePattern`。
+- Bad：直接对旧 backbuffer 再叠 under；网格端点随 dirty 截短；把纹理烘进 L2 或快照；复用已占用的 shape 21/22。
+
+### 6. Tests Required
+
+- `InkeysHeadlessTests/draw3_canvas_pan_tests.cpp::TestWhiteboardPatternGeometry`：相位周期/负数/大坐标、参数门控、外观键、枚举数量与 dirty 无关的网格端点。
+- `RunWhiteboardPatternValidation`：上述完整像素矩阵及反证必须保留；两种 owner 都保留可编译后备代码，不能因默认惰性删掉验证。
+- history/hot preimages/composition cache 隔离还须静态核对调用和数据源，不能把 L2/可信快照读回断言扩大成全部缓存的运行覆盖。真实显示、调度、耗时与诊断边界见 whiteboard.md 的“未验证项”。
+
+### 7. Wrong vs Correct / Common Mistakes
+
+Wrong：每帧对旧 backbuffer 直接 `DrawWhiteboardPatternUnder(full)`；仅靠图元枚举范围限制写入。
+
+Correct：恢复 dirty 基底 → `ApplyOperatorLayers` → `DrawDebugPlateUnder` → 图案 under（dirty∩canvas scissor）→ 后续瞬态视觉/Present。
+
+Common Mistakes：将 under 当作幂等；把 1 DIP 网格宽度误作半宽；CPU/PS 双重预乘；漏掉可信快照平移分支或空页；把测得 ≤7 LSB 误写成现有测试已强制 ≤7。
 
 ## Scenario: Trusted L2 Snapshot Fallback
 

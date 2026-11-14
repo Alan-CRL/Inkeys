@@ -1,0 +1,5809 @@
+{
+  "downConsumeDelayMedianMs": 0.468,
+  "downConsumeDelayMaxMs": 0.762,
+  "softwareSubmitMetricsByClass": {
+    "3": {
+      "sampleToSubmitCount": 309,
+      "sampleToSubmitMedianMs": 4.192,
+      "sampleToSubmitP95Ms": 8.162,
+      "sampleToSubmitMaxMs": 9.808,
+      "submitIntervalMedianMs": 8.379999999999999
+    },
+    "4": {
+      "sampleToSubmitCount": 1111,
+      "sampleToSubmitMedianMs": 4.311,
+      "sampleToSubmitP95Ms": 8.845,
+      "sampleToSubmitMaxMs": 13.899,
+      "submitIntervalMedianMs": 16.218
+    }
+  },
+  "evidence": "log parsing plus offline detector geometry calculation, not native execution or hardware measurement",
+  "snapshot": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-device-feedback-2026-11-14\\console.snapshot.log",
+  "snapshotSha256": "540b3817922dd1832aadafc97f53c61d6e7e2e0412f36e15d896b581e54ff94a",
+  "snapshotLineCount": 133090,
+  "configurationAtAnalysis": {
+    "path": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanOverspeedValidation\\Inkeys\\Config\\main.json",
+    "sha256": "877838e4d562117baa02adb8577a9526e99af88951b606a539779ea30e427da0",
+    "PanInertia": {
+      "Enabled": true,
+      "Mouse": false,
+      "Pen": true,
+      "PenTail": false,
+      "Touch": true,
+      "Touchpad": true
+    },
+    "matchesPreparedSettings": true
+  },
+  "summary": {
+    "tailGestures": 44,
+    "disabledReleases": 44,
+    "acceptedAdmissions": 44,
+    "allInputEvents": 3649,
+    "gesturesWithOrdinalGaps": 15,
+    "withNonzeroHeldMovement": 40,
+    "withOtherContactInputs": 0,
+    "withStopsOrClamp": 0,
+    "withSuppressedOrNonSelectionState": 0,
+    "activeNonInvertedSamples": 0,
+    "pressureRecordsInSnapshot": 0,
+    "renderFramesChecked": 1783,
+    "renderFramesOverPointOneError": 0,
+    "renderFrameMaxErrorPixels": 0.08665070048909396,
+    "allUpHeldZero": true,
+    "allSingleHeld": true,
+    "maxTotalErrorPixels": 76.85780794673468,
+    "matchedWithinAccumulatedPrintRounding": 39,
+    "upAgeMedianMs": 21.29985,
+    "durationMedianMs": 126.87495,
+    "qualityValidReleaseCount": 35,
+    "rawTailDownCount": 46,
+    "extraNonNavigationTailDowns": 2,
+    "viewportMatchedWithinPointOnePixel": 44,
+    "maxExactDownViewportErrorPixels": 0.08665070048904511,
+    "maxViewportErrorPixels": 0.08665070048904511
+  },
+  "extraNonNavigationTailDowns": [
+    {
+      "down": {
+        "line": 124065,
+        "text": "[CURSOR_TRACE] seq=85873 tick=11199109 thread=4432 rts-input event=Down reason=published tcid=1912558080 cid=22 deviceKnown=1 device=1 decoded=1 published=1 packets=1 properties=6 x=1541.1 y=1269.2"
+      },
+      "penSample": "[CURSOR_TRACE] seq=85872 tick=11199109 thread=4432 pen-sample contact=1 inverted=1 x=1541.1 y=1269.2 qpc=111991325476 owner=1",
+      "qpc": 111991325476,
+      "nearbySystemState": [
+        {
+          "line": 124069,
+          "text": "[CURSOR_TRACE] seq=85877 tick=11199109 thread=33916 system trigger=posted-refresh hidden=1 tool=3 owner=1 persistent=1 touchSuppressed=0 penValid=1 mouseValid=0 pan=0 mouseTakeover=0 selection=0 cursor=(1541,1269)"
+        },
+        {
+          "line": 124075,
+          "text": "[CURSOR_TRACE] seq=85883 tick=11199109 thread=33916 system trigger=posted-refresh hidden=1 tool=3 owner=1 persistent=1 touchSuppressed=0 penValid=1 mouseValid=0 pan=0 mouseTakeover=0 selection=0 cursor=(1541,1269)"
+        }
+      ]
+    },
+    {
+      "down": {
+        "line": 125485,
+        "text": "[CURSOR_TRACE] seq=87293 tick=11200875 thread=4432 rts-input event=Down reason=published tcid=1912558080 cid=22 deviceKnown=1 device=1 decoded=1 published=1 packets=1 properties=6 x=1410.4 y=1421.0"
+      },
+      "penSample": "[CURSOR_TRACE] seq=87292 tick=11200875 thread=4432 pen-sample contact=1 inverted=1 x=1410.4 y=1421.0 qpc=112009042130 owner=1",
+      "qpc": 112009042130,
+      "nearbySystemState": [
+        {
+          "line": 125489,
+          "text": "[CURSOR_TRACE] seq=87297 tick=11200875 thread=33916 system trigger=posted-refresh hidden=1 tool=0 owner=1 persistent=1 touchSuppressed=0 penValid=1 mouseValid=0 pan=0 mouseTakeover=0 selection=0 cursor=(1410,1420)"
+        },
+        {
+          "line": 125501,
+          "text": "[CURSOR_TRACE] seq=87309 tick=11200875 thread=33916 system trigger=posted-refresh hidden=1 tool=3 owner=1 persistent=1 touchSuppressed=0 penValid=1 mouseValid=0 pan=0 mouseTakeover=0 selection=0 cursor=(1410,1420)"
+        }
+      ]
+    }
+  ],
+  "gestures": [
+    {
+      "key": 190,
+      "renderFrameCheckCount": 8,
+      "renderFrameMaxErrorPixels": 0.0002315423990353338,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 94569,
+        "frame": 6242,
+        "qpc": 111754802365,
+        "sampleQpc": 111754794149,
+        "page": 0,
+        "x": -353.222,
+        "y": 2.838
+      },
+      "viewportEnd": {
+        "line": 94830,
+        "frame": 6250,
+        "qpc": 111770679113,
+        "sampleQpc": 111770459900,
+        "page": 0,
+        "x": -384.462,
+        "y": 43.702
+      },
+      "viewportDeltaPixels": [
+        31.24000000000001,
+        -40.864
+      ],
+      "viewportErrorPixels": [
+        -0.0002092798196784429,
+        -0.00023154239885769812
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 94813,
+          "beforeSeq": 29761,
+          "afterLine": 94815,
+          "afterSeq": 29763
+        }
+      ],
+      "downLine": 94786,
+      "upLine": 94835,
+      "release": {
+        "line": 94839,
+        "text": "[CanvasPan] seq=29778 qpc=111770699066 tid=15688 release released=1 reason=disabled raw=(524.07,-686.35) selected=(0.00,0.00) boosted=(0.00,0.00) samples=7 span-ms=29.470 age-ms=23.472 rejected=0 reversals=0 timing-resets=0 tail-limit=948.919 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 94782,
+        "text": "[CanvasPan] seq=29741 qpc=111770168405 tid=15688 pan-context key=190 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 94790,
+        "text": "[CanvasPan] seq=29745 qpc=111770170896 tid=15688 pan-admission key=190 accepted=1 reason=accepted qpc=111770165198"
+      },
+      "quality": {
+        "line": 94840,
+        "text": "[CanvasPan] seq=29779 qpc=111770699120 tid=15688 release-quality key=190 source=19092427264 profile=3 unit=mm raw-points=7 anchors=3 positive-intervals=2 first-qpc=111770168437 last-qpc=111770459900 support-first-qpc=111770168437 support-last-qpc=111770303766 support-upper=160.598 support-valid=1 support-limited=1 output-limited=0 boost-suppressed=1"
+      },
+      "profile": {
+        "line": 94841,
+        "text": "[CanvasPan] seq=29780 qpc=111770699166 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 8,
+      "moveCount": 6,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 6,
+        "2": 1
+      },
+      "actions": {
+        "consume": 8
+      },
+      "durationMs": 52.9418,
+      "lastMoveAgeMs": 23.4716,
+      "panStepCount": 9,
+      "scrollingFrames": 8,
+      "nonzeroFrames": 3,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        31.240000000000002,
+        -40.86
+      ],
+      "predictedDeltaPixels": {
+        "dx": 31.240209279819688,
+        "dy": -40.86376845760114,
+        "firstSlopCrossLine": 94787,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.00020927981968554832,
+        0.003768457601140085
+      ],
+      "frameRoundingBoundPixels": 0.075,
+      "maxMotionDistanceMm": 6.556805400958501,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 191,
+      "renderFrameCheckCount": 11,
+      "renderFrameMaxErrorPixels": 0.0014954534505911,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 94830,
+        "frame": 6250,
+        "qpc": 111770679113,
+        "sampleQpc": 111770459900,
+        "page": 0,
+        "x": -384.462,
+        "y": 43.702
+      },
+      "viewportEnd": {
+        "line": 95224,
+        "frame": 6261,
+        "qpc": 111774683362,
+        "sampleQpc": 111774557076,
+        "page": 0,
+        "x": -179.097,
+        "y": -135.171
+      },
+      "viewportDeltaPixels": [
+        -205.36499999999998,
+        178.873
+      ],
+      "viewportErrorPixels": [
+        -0.0004954534503838204,
+        0.0004832960788121454
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 95164,
+          "beforeSeq": 29813,
+          "afterLine": 95166,
+          "afterSeq": 29815
+        }
+      ],
+      "downLine": 95116,
+      "upLine": 95228,
+      "release": {
+        "line": 95230,
+        "text": "[CanvasPan] seq=29838 qpc=111774742753 tid=15688 release released=1 reason=disabled raw=(-1810.34,1566.38) selected=(0.00,0.00) boosted=(0.00,0.00) samples=13 span-ms=50.008 age-ms=17.665 rejected=0 reversals=0 timing-resets=0 tail-limit=3919.427 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 95111,
+        "text": "[CanvasPan] seq=29782 qpc=111773921745 tid=15688 pan-context key=191 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 95119,
+        "text": "[CanvasPan] seq=29788 qpc=111773923985 tid=15688 pan-admission key=191 accepted=1 reason=accepted qpc=111773916664"
+      },
+      "quality": {
+        "line": 95231,
+        "text": "[CanvasPan] seq=29839 qpc=111774742824 tid=15688 release-quality key=191 source=19092427264 profile=3 unit=mm raw-points=13 anchors=6 positive-intervals=5 first-qpc=111774058041 last-qpc=111774557076 support-first-qpc=111774395689 support-last-qpc=111774530236 support-upper=476.53609 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 95232,
+        "text": "[CanvasPan] seq=29840 qpc=111774742877 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 17,
+      "moveCount": 15,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 15,
+        "2": 1
+      },
+      "actions": {
+        "consume": 17
+      },
+      "durationMs": 81.7064,
+      "lastMoveAgeMs": 17.6652,
+      "panStepCount": 12,
+      "scrollingFrames": 11,
+      "nonzeroFrames": 5,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -205.36,
+        178.88
+      ],
+      "predictedDeltaPixels": {
+        "dx": -205.3645045465496,
+        "dy": 178.87251670392118,
+        "firstSlopCrossLine": 95118,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.0045045465495832104,
+        0.007483296078817148
+      ],
+      "frameRoundingBoundPixels": 0.09,
+      "maxMotionDistanceMm": 28.176238344945357,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 192,
+      "renderFrameCheckCount": 11,
+      "renderFrameMaxErrorPixels": 0.0006718190973344917,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 95224,
+        "frame": 6261,
+        "qpc": 111774683362,
+        "sampleQpc": 111774557076,
+        "page": 0,
+        "x": -179.097,
+        "y": -135.171
+      },
+      "viewportEnd": {
+        "line": 95509,
+        "frame": 6272,
+        "qpc": 111777529315,
+        "sampleQpc": 111777380969,
+        "page": 0,
+        "x": -402.28,
+        "y": 65.783
+      },
+      "viewportDeltaPixels": [
+        223.18299999999996,
+        -200.954
+      ],
+      "viewportErrorPixels": [
+        -5.074966099982703e-05,
+        -0.0006718190972492266
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 95477,
+          "beforeSeq": 29883,
+          "afterLine": 95480,
+          "afterSeq": 29885
+        }
+      ],
+      "downLine": 95393,
+      "upLine": 95513,
+      "release": {
+        "line": 95517,
+        "text": "[CanvasPan] seq=29899 qpc=111777588495 tid=15688 release released=1 reason=disabled raw=(1746.42,-1565.17) selected=(0.00,0.00) boosted=(0.00,0.00) samples=16 span-ms=61.122 age-ms=20.396 rejected=0 reversals=0 timing-resets=0 tail-limit=1934.583 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 95388,
+        "text": "[CanvasPan] seq=29842 qpc=111776770989 tid=15688 pan-context key=192 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 95395,
+        "text": "[CanvasPan] seq=29847 qpc=111776772594 tid=15688 pan-admission key=192 accepted=1 reason=accepted qpc=111776767574"
+      },
+      "quality": {
+        "line": 95518,
+        "text": "[CanvasPan] seq=29900 qpc=111777588561 tid=15688 release-quality key=192 source=19092427264 profile=3 unit=mm raw-points=16 anchors=6 positive-intervals=5 first-qpc=111776769745 last-qpc=111777380969 support-first-qpc=111777084938 support-last-qpc=111777229541 support-upper=389.06345 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 95519,
+        "text": "[CanvasPan] seq=29901 qpc=111777588621 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 18,
+      "moveCount": 16,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 16,
+        "2": 1
+      },
+      "actions": {
+        "consume": 18
+      },
+      "durationMs": 81.7356,
+      "lastMoveAgeMs": 20.3961,
+      "panStepCount": 11,
+      "scrollingFrames": 10,
+      "nonzeroFrames": 5,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        223.18,
+        -200.96
+      ],
+      "predictedDeltaPixels": {
+        "dx": 223.18305074966096,
+        "dy": -200.95332818090276,
+        "firstSlopCrossLine": 95394,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.003050749660957308,
+        -0.006671819097249454
+      ],
+      "frameRoundingBoundPixels": 0.08499999999999999,
+      "maxMotionDistanceMm": 30.932456602254298,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 193,
+      "renderFrameCheckCount": 6,
+      "renderFrameMaxErrorPixels": 0.00085544909914681,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 95509,
+        "frame": 6272,
+        "qpc": 111777529315,
+        "sampleQpc": 111777380969,
+        "page": 0,
+        "x": -402.28,
+        "y": 65.783
+      },
+      "viewportEnd": {
+        "line": 95720,
+        "frame": 6278,
+        "qpc": 111779669373,
+        "sampleQpc": 111779498395,
+        "page": 0,
+        "x": -351.295,
+        "y": 28.609
+      },
+      "viewportDeltaPixels": [
+        -50.98499999999996,
+        37.174
+      ],
+      "viewportErrorPixels": [
+        0.00026146907001844966,
+        -0.0001445509009343482
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 95676,
+          "beforeSeq": 29905,
+          "afterLine": 95678,
+          "afterSeq": 29907
+        }
+      ],
+      "downLine": 95676,
+      "upLine": 95724,
+      "release": {
+        "line": 95726,
+        "text": "[CanvasPan] seq=29934 qpc=111779691284 tid=15688 release released=1 reason=disabled raw=(0.00,0.00) selected=(0.00,0.00) boosted=(0.00,0.00) samples=6 span-ms=17.636 age-ms=18.965 rejected=0 reversals=0 timing-resets=0 tail-limit=0.000 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 95671,
+        "text": "[CanvasPan] seq=29903 qpc=111779325452 tid=15688 pan-context key=193 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 95680,
+        "text": "[CanvasPan] seq=29909 qpc=111779328813 tid=15688 pan-admission key=193 accepted=1 reason=accepted qpc=111779322038"
+      },
+      "quality": {
+        "line": 95727,
+        "text": "[CanvasPan] seq=29935 qpc=111779691375 tid=15688 release-quality key=193 source=19092427264 profile=3 unit=mm raw-points=6 anchors=3 positive-intervals=0 first-qpc=111779327310 last-qpc=111779498395 support-first-qpc=0 support-last-qpc=0 support-upper=0 support-valid=0 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 95728,
+        "text": "[CanvasPan] seq=29936 qpc=111779691449 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 7,
+      "moveCount": 5,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 5,
+        "2": 1
+      },
+      "actions": {
+        "consume": 7
+      },
+      "durationMs": 36.6005,
+      "lastMoveAgeMs": 18.9648,
+      "panStepCount": 7,
+      "scrollingFrames": 6,
+      "nonzeroFrames": 2,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -50.980000000000004,
+        37.17
+      ],
+      "predictedDeltaPixels": {
+        "dx": -50.985261469069975,
+        "dy": 37.174144550900934,
+        "firstSlopCrossLine": 95678,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.00526146906997127,
+        -0.004144550900932131
+      ],
+      "frameRoundingBoundPixels": 0.065,
+      "maxMotionDistanceMm": 7.6708896038814,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 194,
+      "renderFrameCheckCount": 11,
+      "renderFrameMaxErrorPixels": 0.0008786724213791786,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 95889,
+        "frame": 6281,
+        "qpc": 111781218271,
+        "sampleQpc": 111781128785,
+        "page": 0,
+        "x": -351.295,
+        "y": 28.609
+      },
+      "viewportEnd": {
+        "line": 95953,
+        "frame": 6289,
+        "qpc": 111781886141,
+        "sampleQpc": 111781720710,
+        "page": 0,
+        "x": -464.314,
+        "y": 115.76
+      },
+      "viewportDeltaPixels": [
+        113.019,
+        -87.15100000000001
+      ],
+      "viewportErrorPixels": [
+        0.0008786724213791786,
+        -0.0006229200521374878
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 95951,
+          "beforeSeq": 29985,
+          "afterLine": 95953,
+          "afterSeq": 29987
+        }
+      ],
+      "downLine": 95872,
+      "upLine": 95957,
+      "release": {
+        "line": 95961,
+        "text": "[CanvasPan] seq=29990 qpc=111781943752 tid=15688 release released=1 reason=disabled raw=(963.10,-739.71) selected=(0.00,0.00) boosted=(0.00,0.00) samples=11 span-ms=59.193 age-ms=22.027 rejected=0 reversals=0 timing-resets=0 tail-limit=1913.134 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 95869,
+        "text": "[CanvasPan] seq=29938 qpc=111781132096 tid=15688 pan-context key=194 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 95874,
+        "text": "[CanvasPan] seq=29943 qpc=111781133826 tid=15688 pan-admission key=194 accepted=1 reason=accepted qpc=111781127512"
+      },
+      "quality": {
+        "line": 95962,
+        "text": "[CanvasPan] seq=29991 qpc=111781943799 tid=15688 release-quality key=194 source=19092427264 profile=3 unit=mm raw-points=11 anchors=5 positive-intervals=4 first-qpc=111781128785 last-qpc=111781720710 support-first-qpc=111781415067 support-last-qpc=111781601805 support-upper=283.42417 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 95963,
+        "text": "[CanvasPan] seq=29992 qpc=111781943841 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 13,
+      "moveCount": 11,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 11,
+        "2": 1
+      },
+      "actions": {
+        "consume": 13
+      },
+      "durationMs": 81.3463,
+      "lastMoveAgeMs": 22.0265,
+      "panStepCount": 12,
+      "scrollingFrames": 8,
+      "nonzeroFrames": 5,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        113.03000000000002,
+        -87.15
+      ],
+      "predictedDeltaPixels": {
+        "dx": 113.01812132757863,
+        "dy": -87.15037707994787,
+        "firstSlopCrossLine": 95892,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.01187867242138907,
+        0.00037707994786728705
+      ],
+      "frameRoundingBoundPixels": 0.09,
+      "maxMotionDistanceMm": 15.464557105048224,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 195,
+      "renderFrameCheckCount": 6,
+      "renderFrameMaxErrorPixels": 0.0012557569736753038,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 95953,
+        "frame": 6289,
+        "qpc": 111781886141,
+        "sampleQpc": 111781720710,
+        "page": 0,
+        "x": -464.314,
+        "y": 115.76
+      },
+      "viewportEnd": {
+        "line": 96101,
+        "frame": 6295,
+        "qpc": 111783430802,
+        "sampleQpc": 111783216896,
+        "page": 0,
+        "x": -482.819,
+        "y": 129.705
+      },
+      "viewportDeltaPixels": [
+        18.504999999999995,
+        -13.945000000000007
+      ],
+      "viewportErrorPixels": [
+        -0.0005473913964770816,
+        0.0012557569736753038
+      ],
+      "canvasSequenceGaps": [],
+      "downLine": 96068,
+      "upLine": 96105,
+      "release": {
+        "line": 96108,
+        "text": "[CanvasPan] seq=30023 qpc=111783469314 tid=15688 release released=1 reason=disabled raw=(0.00,0.00) selected=(0.00,0.00) boosted=(0.00,0.00) samples=5 span-ms=13.545 age-ms=24.869 rejected=0 reversals=0 timing-resets=0 tail-limit=0.000 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 96065,
+        "text": "[CanvasPan] seq=29994 qpc=111783085455 tid=15688 pan-context key=195 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 96073,
+        "text": "[CanvasPan] seq=29999 qpc=111783087370 tid=15688 pan-admission key=195 accepted=1 reason=accepted qpc=111783081449"
+      },
+      "quality": {
+        "line": 96109,
+        "text": "[CanvasPan] seq=30024 qpc=111783469367 tid=15688 release-quality key=195 source=19092427264 profile=3 unit=mm raw-points=5 anchors=2 positive-intervals=0 first-qpc=111783085760 last-qpc=111783216896 support-first-qpc=0 support-last-qpc=0 support-upper=0 support-valid=0 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 96110,
+        "text": "[CanvasPan] seq=30025 qpc=111783469418 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 6,
+      "moveCount": 4,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 4,
+        "2": 1
+      },
+      "actions": {
+        "consume": 6
+      },
+      "durationMs": 38.4142,
+      "lastMoveAgeMs": 24.8695,
+      "panStepCount": 7,
+      "scrollingFrames": 6,
+      "nonzeroFrames": 2,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        18.51,
+        -13.95
+      ],
+      "predictedDeltaPixels": {
+        "dx": 18.505547391396473,
+        "dy": -13.946255756973683,
+        "firstSlopCrossLine": 96070,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.004452608603529029,
+        -0.003744243026316596
+      ],
+      "frameRoundingBoundPixels": 0.065,
+      "maxMotionDistanceMm": 3.767294637448774,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 196,
+      "renderFrameCheckCount": 17,
+      "renderFrameMaxErrorPixels": 0.001076919472609461,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 96101,
+        "frame": 6295,
+        "qpc": 111783430802,
+        "sampleQpc": 111783216896,
+        "page": 0,
+        "x": -482.819,
+        "y": 129.705
+      },
+      "viewportEnd": {
+        "line": 96470,
+        "frame": 6312,
+        "qpc": 111786445903,
+        "sampleQpc": 111786239788,
+        "page": 0,
+        "x": -92.296,
+        "y": -196.971
+      },
+      "viewportDeltaPixels": [
+        -390.523,
+        326.67600000000004
+      ],
+      "viewportErrorPixels": [
+        7.69194725194211e-05,
+        -0.0003043373101263569
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 96429,
+          "beforeSeq": 30092,
+          "afterLine": 96430,
+          "afterSeq": 30094
+        }
+      ],
+      "downLine": 96279,
+      "upLine": 96474,
+      "release": {
+        "line": 96476,
+        "text": "[CanvasPan] seq=30113 qpc=111786458679 tid=15688 release released=1 reason=disabled raw=(-1839.10,1740.67) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=59.452 age-ms=21.479 rejected=0 reversals=0 timing-resets=0 tail-limit=11096.007 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 96277,
+        "text": "[CanvasPan] seq=30027 qpc=111785184502 tid=15688 pan-context key=196 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 96287,
+        "text": "[CanvasPan] seq=30033 qpc=111785186566 tid=15688 pan-admission key=196 accepted=1 reason=accepted qpc=111785179951"
+      },
+      "quality": {
+        "line": 96477,
+        "text": "[CanvasPan] seq=30114 qpc=111786458741 tid=15688 release-quality key=196 source=19092427264 profile=3 unit=mm raw-points=17 anchors=7 positive-intervals=6 first-qpc=111785645271 last-qpc=111786239788 support-first-qpc=111786078771 support-last-qpc=111786218145 support-upper=132.54111 support-valid=1 support-limited=1 output-limited=0 boost-suppressed=1"
+      },
+      "profile": {
+        "line": 96478,
+        "text": "[CanvasPan] seq=30115 qpc=111786458793 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 30,
+      "moveCount": 28,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 28,
+        "2": 1
+      },
+      "actions": {
+        "consume": 30
+      },
+      "durationMs": 127.4623,
+      "lastMoveAgeMs": 21.4786,
+      "panStepCount": 18,
+      "scrollingFrames": 17,
+      "nonzeroFrames": 10,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -390.5100000000001,
+        326.67
+      ],
+      "predictedDeltaPixels": {
+        "dx": -390.52307691947254,
+        "dy": 326.67630433731017,
+        "firstSlopCrossLine": 96281,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.013076919472439386,
+        -0.006304337310155006
+      ],
+      "frameRoundingBoundPixels": 0.12,
+      "maxMotionDistanceMm": 51.326561597356715,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 197,
+      "renderFrameCheckCount": 4,
+      "renderFrameMaxErrorPixels": 0.0,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 96470,
+        "frame": 6312,
+        "qpc": 111786445903,
+        "sampleQpc": 111786239788,
+        "page": 0,
+        "x": -92.296,
+        "y": -196.971
+      },
+      "viewportEnd": {
+        "line": 97026,
+        "frame": 6316,
+        "qpc": 111792574534,
+        "sampleQpc": 111792401277,
+        "page": 0,
+        "x": -92.296,
+        "y": -196.971
+      },
+      "viewportDeltaPixels": [
+        0.0,
+        0.0
+      ],
+      "viewportErrorPixels": [
+        0.0,
+        0.0
+      ],
+      "canvasSequenceGaps": [],
+      "downLine": 97006,
+      "upLine": 97031,
+      "release": {
+        "line": 97035,
+        "text": "[CanvasPan] seq=30138 qpc=111792625407 tid=15688 release released=1 reason=disabled raw=(0.00,0.00) selected=(0.00,0.00) boosted=(0.00,0.00) samples=2 span-ms=0.434 age-ms=21.994 rejected=0 reversals=0 timing-resets=0 tail-limit=0.000 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 97001,
+        "text": "[CanvasPan] seq=30117 qpc=111792403609 tid=15688 pan-context key=197 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 97008,
+        "text": "[CanvasPan] seq=30122 qpc=111792406579 tid=15688 pan-admission key=197 accepted=1 reason=accepted qpc=111792396938"
+      },
+      "quality": {
+        "line": 97038,
+        "text": "[CanvasPan] seq=30139 qpc=111792625471 tid=15688 release-quality key=197 source=19092427264 profile=3 unit=mm raw-points=2 anchors=1 positive-intervals=0 first-qpc=111792401277 last-qpc=111792401277 support-first-qpc=0 support-last-qpc=0 support-upper=0 support-valid=0 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 97039,
+        "text": "[CanvasPan] seq=30140 qpc=111792625531 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 3,
+      "moveCount": 1,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 1,
+        "2": 1
+      },
+      "actions": {
+        "consume": 3
+      },
+      "durationMs": 22.4279,
+      "lastMoveAgeMs": 21.994,
+      "panStepCount": 5,
+      "scrollingFrames": 0,
+      "nonzeroFrames": 0,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        0.0,
+        0.0
+      ],
+      "predictedDeltaPixels": {
+        "dx": 0.0,
+        "dy": 0.0,
+        "firstSlopCrossLine": null,
+        "scrolling": false
+      },
+      "deltaErrorPixels": [
+        0.0,
+        0.0
+      ],
+      "frameRoundingBoundPixels": 0.055,
+      "maxMotionDistanceMm": 0.5294549611072941,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 198,
+      "renderFrameCheckCount": 8,
+      "renderFrameMaxErrorPixels": 0.000660677555384126,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 97026,
+        "frame": 6316,
+        "qpc": 111792574534,
+        "sampleQpc": 111792401277,
+        "page": 0,
+        "x": -92.296,
+        "y": -196.971
+      },
+      "viewportEnd": {
+        "line": 97514,
+        "frame": 6324,
+        "qpc": 111797996750,
+        "sampleQpc": 111797790011,
+        "page": 0,
+        "x": -116.861,
+        "y": -154.867
+      },
+      "viewportDeltaPixels": [
+        24.564999999999998,
+        -42.10400000000001
+      ],
+      "viewportErrorPixels": [
+        0.000660677555210043,
+        -0.00047110892366220014
+      ],
+      "canvasSequenceGaps": [],
+      "downLine": 97470,
+      "upLine": 97518,
+      "release": {
+        "line": 97523,
+        "text": "[CanvasPan] seq=30182 qpc=111798030671 tid=15688 release released=1 reason=disabled raw=(299.44,-600.00) selected=(0.00,0.00) boosted=(0.00,0.00) samples=9 span-ms=30.369 age-ms=23.766 rejected=0 reversals=0 timing-resets=0 tail-limit=628.133 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 97464,
+        "text": "[CanvasPan] seq=30142 qpc=111797488712 tid=15688 pan-context key=198 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 97474,
+        "text": "[CanvasPan] seq=30149 qpc=111797490764 tid=15688 pan-admission key=198 accepted=1 reason=accepted qpc=111797486323"
+      },
+      "quality": {
+        "line": 97524,
+        "text": "[CanvasPan] seq=30183 qpc=111798030743 tid=15688 release-quality key=198 source=19092427264 profile=3 unit=mm raw-points=9 anchors=3 positive-intervals=2 first-qpc=111797488812 last-qpc=111797790011 support-first-qpc=111797488812 support-last-qpc=111797631524 support-upper=130.00152 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 97525,
+        "text": "[CanvasPan] seq=30184 qpc=111798030793 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 10,
+      "moveCount": 8,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 8,
+        "2": 1
+      },
+      "actions": {
+        "consume": 10
+      },
+      "durationMs": 54.1349,
+      "lastMoveAgeMs": 23.7661,
+      "panStepCount": 9,
+      "scrollingFrames": 8,
+      "nonzeroFrames": 3,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        24.57,
+        -42.1
+      ],
+      "predictedDeltaPixels": {
+        "dx": 24.564339322444788,
+        "dy": -42.10352889107635,
+        "firstSlopCrossLine": 97472,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.005660677555212601,
+        0.003528891076349794
+      ],
+      "frameRoundingBoundPixels": 0.075,
+      "maxMotionDistanceMm": 6.201711561580202,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 199,
+      "renderFrameCheckCount": 8,
+      "renderFrameMaxErrorPixels": 0.0,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 97514,
+        "frame": 6324,
+        "qpc": 111797996750,
+        "sampleQpc": 111797790011,
+        "page": 0,
+        "x": -116.861,
+        "y": -154.867
+      },
+      "viewportEnd": {
+        "line": 98308,
+        "frame": 6332,
+        "qpc": 111807300571,
+        "sampleQpc": 111807097792,
+        "page": 0,
+        "x": -116.861,
+        "y": -154.867
+      },
+      "viewportDeltaPixels": [
+        0.0,
+        0.0
+      ],
+      "viewportErrorPixels": [
+        0.0,
+        0.0
+      ],
+      "canvasSequenceGaps": [],
+      "downLine": 98261,
+      "upLine": 98312,
+      "release": {
+        "line": 98315,
+        "text": "[CanvasPan] seq=30227 qpc=111807334116 tid=15688 release released=1 reason=disabled raw=(-86.33,52.56) selected=(0.00,0.00) boosted=(0.00,0.00) samples=10 span-ms=30.295 age-ms=23.316 rejected=0 reversals=0 timing-resets=0 tail-limit=51.060 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 98258,
+        "text": "[CanvasPan] seq=30186 qpc=111806797203 tid=15688 pan-context key=199 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 98264,
+        "text": "[CanvasPan] seq=30192 qpc=111806798535 tid=15688 pan-admission key=199 accepted=1 reason=accepted qpc=111806794846"
+      },
+      "quality": {
+        "line": 98316,
+        "text": "[CanvasPan] seq=30228 qpc=111807334160 tid=15688 release-quality key=199 source=19092427264 profile=3 unit=mm raw-points=10 anchors=3 positive-intervals=2 first-qpc=111806796630 last-qpc=111807097792 support-first-qpc=111806796630 support-last-qpc=111806945134 support-upper=16.803761 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 98317,
+        "text": "[CanvasPan] seq=30229 qpc=111807334202 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 11,
+      "moveCount": 9,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 9,
+        "2": 1
+      },
+      "actions": {
+        "consume": 11
+      },
+      "durationMs": 53.6105,
+      "lastMoveAgeMs": 23.3159,
+      "panStepCount": 9,
+      "scrollingFrames": 0,
+      "nonzeroFrames": 0,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        0.0,
+        0.0
+      ],
+      "predictedDeltaPixels": {
+        "dx": 0.0,
+        "dy": 0.0,
+        "firstSlopCrossLine": null,
+        "scrolling": false
+      },
+      "deltaErrorPixels": [
+        0.0,
+        0.0
+      ],
+      "frameRoundingBoundPixels": 0.075,
+      "maxMotionDistanceMm": 1.3367481120327676,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 200,
+      "renderFrameCheckCount": 4,
+      "renderFrameMaxErrorPixels": 0.0,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 98308,
+        "frame": 6332,
+        "qpc": 111807300571,
+        "sampleQpc": 111807097792,
+        "page": 0,
+        "x": -116.861,
+        "y": -154.867
+      },
+      "viewportEnd": {
+        "line": 98392,
+        "frame": 6336,
+        "qpc": 111807883899,
+        "sampleQpc": 111807712618,
+        "page": 0,
+        "x": -116.861,
+        "y": -154.867
+      },
+      "viewportDeltaPixels": [
+        0.0,
+        0.0
+      ],
+      "viewportErrorPixels": [
+        0.0,
+        0.0
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 98387,
+          "beforeSeq": 30243,
+          "afterLine": 98389,
+          "afterSeq": 30245
+        },
+        {
+          "beforeLine": 98390,
+          "beforeSeq": 30246,
+          "afterLine": 98392,
+          "afterSeq": 30248
+        }
+      ],
+      "downLine": 98357,
+      "upLine": 98396,
+      "release": {
+        "line": 98398,
+        "text": "[CanvasPan] seq=30251 qpc=111807921055 tid=15688 release released=1 reason=disabled raw=(0.00,0.00) selected=(0.00,0.00) boosted=(0.00,0.00) samples=2 span-ms=0.222 age-ms=20.627 rejected=0 reversals=0 timing-resets=0 tail-limit=0.000 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 98355,
+        "text": "[CanvasPan] seq=30231 qpc=111807714635 tid=15688 pan-context key=200 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 98363,
+        "text": "[CanvasPan] seq=30235 qpc=111807716234 tid=15688 pan-admission key=200 accepted=1 reason=accepted qpc=111807710395"
+      },
+      "quality": {
+        "line": 98399,
+        "text": "[CanvasPan] seq=30252 qpc=111807921096 tid=15688 release-quality key=200 source=19092427264 profile=3 unit=mm raw-points=2 anchors=1 positive-intervals=0 first-qpc=111807712618 last-qpc=111807712618 support-first-qpc=0 support-last-qpc=0 support-upper=0 support-valid=0 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 98400,
+        "text": "[CanvasPan] seq=30253 qpc=111807921135 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 3,
+      "moveCount": 1,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 1,
+        "2": 1
+      },
+      "actions": {
+        "consume": 3
+      },
+      "durationMs": 20.8493,
+      "lastMoveAgeMs": 20.627,
+      "panStepCount": 5,
+      "scrollingFrames": 0,
+      "nonzeroFrames": 0,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        0.0,
+        0.0
+      ],
+      "predictedDeltaPixels": {
+        "dx": 0.0,
+        "dy": 0.0,
+        "firstSlopCrossLine": null,
+        "scrolling": false
+      },
+      "deltaErrorPixels": [
+        0.0,
+        0.0
+      ],
+      "frameRoundingBoundPixels": 0.055,
+      "maxMotionDistanceMm": 0.5936263031951667,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 201,
+      "renderFrameCheckCount": 24,
+      "renderFrameMaxErrorPixels": 0.001362219648562757,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 98527,
+        "frame": 6341,
+        "qpc": 111809154034,
+        "sampleQpc": 111809050765,
+        "page": 0,
+        "x": -116.861,
+        "y": -154.867
+      },
+      "viewportEnd": {
+        "line": 98647,
+        "frame": 6360,
+        "qpc": 111810739138,
+        "sampleQpc": 111810544310,
+        "page": 0,
+        "x": -146.092,
+        "y": -133.106
+      },
+      "viewportDeltaPixels": [
+        29.23100000000001,
+        -21.760999999999996
+      ],
+      "viewportErrorPixels": [
+        -0.0005279202685919415,
+        0.0003622196483838991
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 98511,
+          "beforeSeq": 30268,
+          "afterLine": 98513,
+          "afterSeq": 30270
+        },
+        {
+          "beforeLine": 98585,
+          "beforeSeq": 30319,
+          "afterLine": 98587,
+          "afterSeq": 30321
+        }
+      ],
+      "downLine": 98493,
+      "upLine": 98651,
+      "release": {
+        "line": 98656,
+        "text": "[CanvasPan] seq=30369 qpc=111810780888 tid=15688 release released=1 reason=disabled raw=(52.98,25.86) selected=(0.00,0.00) boosted=(0.00,0.00) samples=12 span-ms=60.149 age-ms=23.387 rejected=0 reversals=0 timing-resets=0 tail-limit=101.986 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 98491,
+        "text": "[CanvasPan] seq=30255 qpc=111808900650 tid=15688 pan-context key=201 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 98498,
+        "text": "[CanvasPan] seq=30260 qpc=111808902126 tid=15688 pan-admission key=201 accepted=1 reason=accepted qpc=111808898238"
+      },
+      "quality": {
+        "line": 98657,
+        "text": "[CanvasPan] seq=30370 qpc=111810780959 tid=15688 release-quality key=201 source=19092427264 profile=3 unit=mm raw-points=12 anchors=5 positive-intervals=4 first-qpc=111809942816 last-qpc=111810544310 support-first-qpc=111810243975 support-last-qpc=111810395131 support-upper=24.565701 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 98658,
+        "text": "[CanvasPan] seq=30371 qpc=111810781009 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 37,
+      "moveCount": 35,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 35,
+        "2": 1
+      },
+      "actions": {
+        "consume": 37
+      },
+      "durationMs": 187.9944,
+      "lastMoveAgeMs": 23.3872,
+      "panStepCount": 25,
+      "scrollingFrames": 19,
+      "nonzeroFrames": 10,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        29.229999999999997,
+        -21.75
+      ],
+      "predictedDeltaPixels": {
+        "dx": 29.2315279202686,
+        "dy": -21.76136221964838,
+        "firstSlopCrossLine": 98533,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.0015279202686038218,
+        0.011362219648379579
+      ],
+      "frameRoundingBoundPixels": 0.155,
+      "maxMotionDistanceMm": 5.063931901770526,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 202,
+      "renderFrameCheckCount": 65,
+      "renderFrameMaxErrorPixels": 0.0015796880496452559,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 98790,
+        "frame": 6365,
+        "qpc": 111812155864,
+        "sampleQpc": 111812042624,
+        "page": 0,
+        "x": -146.092,
+        "y": -133.106
+      },
+      "viewportEnd": {
+        "line": 99663,
+        "frame": 6429,
+        "qpc": 111817496895,
+        "sampleQpc": 111817311664,
+        "page": 0,
+        "x": -557.854,
+        "y": 156.323
+      },
+      "viewportDeltaPixels": [
+        411.76200000000006,
+        -289.429
+      ],
+      "viewportErrorPixels": [
+        -0.0005796880490720469,
+        0.0003251810959454815
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 98778,
+          "beforeSeq": 30385,
+          "afterLine": 98780,
+          "afterSeq": 30387
+        },
+        {
+          "beforeLine": 98783,
+          "beforeSeq": 30388,
+          "afterLine": 98785,
+          "afterSeq": 30390
+        },
+        {
+          "beforeLine": 99160,
+          "beforeSeq": 30536,
+          "afterLine": 99162,
+          "afterSeq": 30538
+        },
+        {
+          "beforeLine": 99575,
+          "beforeSeq": 30686,
+          "afterLine": 99576,
+          "afterSeq": 30688
+        }
+      ],
+      "downLine": 98761,
+      "upLine": 99667,
+      "release": {
+        "line": 99671,
+        "text": "[CanvasPan] seq=30726 qpc=111817531208 tid=15688 release released=1 reason=disabled raw=(-351.17,123.61) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=58.918 age-ms=21.140 rejected=0 reversals=0 timing-resets=0 tail-limit=184.016 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 98759,
+        "text": "[CanvasPan] seq=30373 qpc=111811901057 tid=15688 pan-context key=202 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 98763,
+        "text": "[CanvasPan] seq=30377 qpc=111811903980 tid=15688 pan-admission key=202 accepted=1 reason=accepted qpc=111811898131"
+      },
+      "quality": {
+        "line": 99672,
+        "text": "[CanvasPan] seq=30727 qpc=111817531264 tid=15688 release-quality key=202 source=19092427264 profile=3 unit=mm raw-points=17 anchors=6 positive-intervals=5 first-qpc=111816722485 last-qpc=111817311664 support-first-qpc=111817147660 support-last-qpc=111817168579 support-upper=46.324059 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 99673,
+        "text": "[CanvasPan] seq=30728 qpc=111817531313 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 138,
+      "moveCount": 136,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 7100,
+          "afterOrdinal": 7102,
+          "beforeLine": 98783,
+          "afterLine": 98794
+        },
+        {
+          "beforeOrdinal": 7223,
+          "afterOrdinal": 7225,
+          "beforeLine": 99575,
+          "afterLine": 99596
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 136,
+        "2": 1
+      },
+      "actions": {
+        "consume": 138
+      },
+      "durationMs": 562.4934,
+      "lastMoveAgeMs": 21.1401,
+      "panStepCount": 70,
+      "scrollingFrames": 64,
+      "nonzeroFrames": 39,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        411.78,
+        -289.44000000000005
+      ],
+      "predictedDeltaPixels": {
+        "dx": 411.76257968804913,
+        "dy": -289.4293251810959,
+        "firstSlopCrossLine": 98795,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.01742031195084337,
+        -0.010674818904135464
+      ],
+      "frameRoundingBoundPixels": 0.38,
+      "maxMotionDistanceMm": 57.5515694522974,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 203,
+      "renderFrameCheckCount": 17,
+      "renderFrameMaxErrorPixels": 0.0006023435562934054,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 99663,
+        "frame": 6429,
+        "qpc": 111817496895,
+        "sampleQpc": 111817311664,
+        "page": 0,
+        "x": -557.854,
+        "y": 156.323
+      },
+      "viewportEnd": {
+        "line": 100276,
+        "frame": 6447,
+        "qpc": 111823459971,
+        "sampleQpc": 111823319062,
+        "page": 0,
+        "x": -1023.218,
+        "y": 546.412
+      },
+      "viewportDeltaPixels": [
+        465.3639999999999,
+        -390.08900000000006
+      ],
+      "viewportErrorPixels": [
+        0.0005889667251608444,
+        0.00039765644362432795
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 100193,
+          "beforeSeq": 30789,
+          "afterLine": 100214,
+          "afterSeq": 30791
+        },
+        {
+          "beforeLine": 100267,
+          "beforeSeq": 30811,
+          "afterLine": 100269,
+          "afterSeq": 30813
+        }
+      ],
+      "downLine": 100040,
+      "upLine": 100282,
+      "release": {
+        "line": 100284,
+        "text": "[CanvasPan] seq=30823 qpc=111823532596 tid=15688 release released=1 reason=disabled raw=(1718.86,-1336.61) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=58.456 age-ms=21.086 rejected=0 reversals=0 timing-resets=0 tail-limit=2273.442 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 100038,
+        "text": "[CanvasPan] seq=30730 qpc=111822115310 tid=15688 pan-context key=203 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 100042,
+        "text": "[CanvasPan] seq=30734 qpc=111822116727 tid=15688 pan-admission key=203 accepted=1 reason=accepted qpc=111822111457"
+      },
+      "quality": {
+        "line": 100285,
+        "text": "[CanvasPan] seq=30824 qpc=111823532657 tid=15688 release-quality key=203 source=19092427264 profile=3 unit=mm raw-points=17 anchors=6 positive-intervals=5 first-qpc=111822734505 last-qpc=111823319062 support-first-qpc=111823154154 support-last-qpc=111823174640 support-upper=455.44162 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 100286,
+        "text": "[CanvasPan] seq=30825 qpc=111823532711 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 33,
+      "moveCount": 31,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 7267,
+          "afterOrdinal": 7269,
+          "beforeLine": 100267,
+          "afterLine": 100269
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 31,
+        "2": 1
+      },
+      "actions": {
+        "consume": 33
+      },
+      "durationMs": 141.8461,
+      "lastMoveAgeMs": 21.0856,
+      "panStepCount": 19,
+      "scrollingFrames": 18,
+      "nonzeroFrames": 9,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        465.37,
+        -390.08
+      ],
+      "predictedDeltaPixels": {
+        "dx": 465.36341103327476,
+        "dy": -390.0893976564437,
+        "firstSlopCrossLine": 100041,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.006588966725246337,
+        0.009397656443695723
+      ],
+      "frameRoundingBoundPixels": 0.125,
+      "maxMotionDistanceMm": 60.96792572420845,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 204,
+      "renderFrameCheckCount": 20,
+      "renderFrameMaxErrorPixels": 0.0011080784239538843,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 100276,
+        "frame": 6447,
+        "qpc": 111823459971,
+        "sampleQpc": 111823319062,
+        "page": 0,
+        "x": -1023.218,
+        "y": 546.412
+      },
+      "viewportEnd": {
+        "line": 100688,
+        "frame": 6467,
+        "qpc": 111826628818,
+        "sampleQpc": 111826477856,
+        "page": 0,
+        "x": -358.483,
+        "y": 120.849
+      },
+      "viewportDeltaPixels": [
+        -664.7349999999999,
+        425.56300000000005
+      ],
+      "viewportErrorPixels": [
+        -0.0003945096756297062,
+        -0.00010807842392068778
+      ],
+      "canvasSequenceGaps": [],
+      "downLine": 100434,
+      "upLine": 100694,
+      "release": {
+        "line": 100696,
+        "text": "[CanvasPan] seq=30931 qpc=111826689106 tid=15688 release released=1 reason=disabled raw=(-2033.53,1745.97) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=58.730 age-ms=20.342 rejected=0 reversals=0 timing-resets=0 tail-limit=12059.387 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 100432,
+        "text": "[CanvasPan] seq=30827 qpc=111825117232 tid=15688 pan-context key=204 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 100442,
+        "text": "[CanvasPan] seq=30832 qpc=111825118741 tid=15688 pan-admission key=204 accepted=1 reason=accepted qpc=111825113791"
+      },
+      "quality": {
+        "line": 100697,
+        "text": "[CanvasPan] seq=30932 qpc=111826689158 tid=15688 release-quality key=204 source=19092427264 profile=3 unit=mm raw-points=17 anchors=8 positive-intervals=7 first-qpc=111825890553 last-qpc=111826477856 support-first-qpc=111826326248 support-last-qpc=111826456476 support-upper=144.09555 support-valid=1 support-limited=1 output-limited=0 boost-suppressed=1"
+      },
+      "profile": {
+        "line": 100698,
+        "text": "[CanvasPan] seq=30933 qpc=111826689204 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 39,
+      "moveCount": 37,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 37,
+        "2": 1
+      },
+      "actions": {
+        "consume": 39
+      },
+      "durationMs": 156.7483,
+      "lastMoveAgeMs": 20.3418,
+      "panStepCount": 21,
+      "scrollingFrames": 20,
+      "nonzeroFrames": 13,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -664.72,
+        425.55999999999995
+      ],
+      "predictedDeltaPixels": {
+        "dx": -664.7346054903243,
+        "dy": 425.56310807842397,
+        "firstSlopCrossLine": 100435,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.014605490324242965,
+        -0.0031080784240202775
+      ],
+      "frameRoundingBoundPixels": 0.135,
+      "maxMotionDistanceMm": 78.63281741131374,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 205,
+      "renderFrameCheckCount": 22,
+      "renderFrameMaxErrorPixels": 0.0007736161840483646,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 100688,
+        "frame": 6467,
+        "qpc": 111826628818,
+        "sampleQpc": 111826477856,
+        "page": 0,
+        "x": -358.483,
+        "y": 120.849
+      },
+      "viewportEnd": {
+        "line": 101142,
+        "frame": 6489,
+        "qpc": 111830094402,
+        "sampleQpc": 111829925275,
+        "page": 0,
+        "x": 57.825,
+        "y": -164.268
+      },
+      "viewportDeltaPixels": [
+        -416.308,
+        285.117
+      ],
+      "viewportErrorPixels": [
+        -0.0004719812071130036,
+        -0.00022638381591377765
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 100901,
+          "beforeSeq": 30958,
+          "afterLine": 100903,
+          "afterSeq": 30960
+        },
+        {
+          "beforeLine": 100946,
+          "beforeSeq": 30975,
+          "afterLine": 100948,
+          "afterSeq": 30977
+        }
+      ],
+      "downLine": 100863,
+      "upLine": 101146,
+      "release": {
+        "line": 101150,
+        "text": "[CanvasPan] seq=31051 qpc=111830137115 tid=15688 release released=1 reason=disabled raw=(-2770.43,2011.31) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=59.934 age-ms=20.858 rejected=0 reversals=0 timing-resets=0 tail-limit=3399.645 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 100860,
+        "text": "[CanvasPan] seq=30935 qpc=111828417191 tid=15688 pan-context key=205 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 100866,
+        "text": "[CanvasPan] seq=30941 qpc=111828418880 tid=15688 pan-admission key=205 accepted=1 reason=accepted qpc=111828414108"
+      },
+      "quality": {
+        "line": 101151,
+        "text": "[CanvasPan] seq=31052 qpc=111830137177 tid=15688 release-quality key=205 source=19092427264 profile=3 unit=mm raw-points=17 anchors=7 positive-intervals=6 first-qpc=111829325933 last-qpc=111829925275 support-first-qpc=111829760215 support-last-qpc=111829781085 support-upper=672.95459 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 101152,
+        "text": "[CanvasPan] seq=31053 qpc=111830137229 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 43,
+      "moveCount": 41,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 41,
+        "2": 1
+      },
+      "actions": {
+        "consume": 43
+      },
+      "durationMs": 171.9748,
+      "lastMoveAgeMs": 20.8581,
+      "panStepCount": 23,
+      "scrollingFrames": 22,
+      "nonzeroFrames": 12,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -416.31000000000006,
+        285.11
+      ],
+      "predictedDeltaPixels": {
+        "dx": -416.3075280187929,
+        "dy": 285.11722638381593,
+        "firstSlopCrossLine": 100864,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.0024719812071793967,
+        -0.00722638381591878
+      ],
+      "frameRoundingBoundPixels": 0.14500000000000002,
+      "maxMotionDistanceMm": 47.862296643590064,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 206,
+      "renderFrameCheckCount": 11,
+      "renderFrameMaxErrorPixels": 0.0007483683473310521,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 101142,
+        "frame": 6489,
+        "qpc": 111830094402,
+        "sampleQpc": 111829925275,
+        "page": 0,
+        "x": 57.825,
+        "y": -164.268
+      },
+      "viewportEnd": {
+        "line": 101489,
+        "frame": 6500,
+        "qpc": 111833233290,
+        "sampleQpc": 111833079485,
+        "page": 0,
+        "x": 345.312,
+        "y": -418.047
+      },
+      "viewportDeltaPixels": [
+        -287.487,
+        253.77900000000002
+      ],
+      "viewportErrorPixels": [
+        -0.00025163165253161424,
+        -0.0003566323285326689
+      ],
+      "canvasSequenceGaps": [],
+      "downLine": 101368,
+      "upLine": 101493,
+      "release": {
+        "line": 101496,
+        "text": "[CanvasPan] seq=31111 qpc=111833292377 tid=15688 release released=1 reason=disabled raw=(-2304.29,2034.15) selected=(0.00,0.00) boosted=(0.00,0.00) samples=16 span-ms=60.618 age-ms=20.822 rejected=0 reversals=0 timing-resets=0 tail-limit=2588.234 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 101364,
+        "text": "[CanvasPan] seq=31055 qpc=111832473766 tid=15688 pan-context key=206 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 101370,
+        "text": "[CanvasPan] seq=31059 qpc=111832475677 tid=15688 pan-admission key=206 accepted=1 reason=accepted qpc=111832470804"
+      },
+      "quality": {
+        "line": 101498,
+        "text": "[CanvasPan] seq=31112 qpc=111833292456 tid=15688 release-quality key=206 source=19092427264 profile=3 unit=mm raw-points=16 anchors=6 positive-intervals=5 first-qpc=111832473302 last-qpc=111833079485 support-first-qpc=111832787912 support-last-qpc=111832931676 support-upper=517.12663 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 101499,
+        "text": "[CanvasPan] seq=31113 qpc=111833292512 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 18,
+      "moveCount": 16,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 16,
+        "2": 1
+      },
+      "actions": {
+        "consume": 18
+      },
+      "durationMs": 81.69,
+      "lastMoveAgeMs": 20.8219,
+      "panStepCount": 12,
+      "scrollingFrames": 11,
+      "nonzeroFrames": 6,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -287.49,
+        253.77999999999997
+      ],
+      "predictedDeltaPixels": {
+        "dx": -287.4867483683475,
+        "dy": 253.77935663232856,
+        "firstSlopCrossLine": 101369,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.003251631652517517,
+        0.0006433676714152625
+      ],
+      "frameRoundingBoundPixels": 0.09,
+      "maxMotionDistanceMm": 39.0749112971151,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 207,
+      "renderFrameCheckCount": 8,
+      "renderFrameMaxErrorPixels": 2.080042700924878e-05,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 101489,
+        "frame": 6500,
+        "qpc": 111833233290,
+        "sampleQpc": 111833079485,
+        "page": 0,
+        "x": 345.312,
+        "y": -418.047
+      },
+      "viewportEnd": {
+        "line": 101750,
+        "frame": 6508,
+        "qpc": 111835830361,
+        "sampleQpc": 111835651104,
+        "page": 0,
+        "x": 197.039,
+        "y": -295.076
+      },
+      "viewportDeltaPixels": [
+        148.27300000000002,
+        -122.971
+      ],
+      "viewportErrorPixels": [
+        -1.194496456946581e-05,
+        2.080042695240536e-05
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 101721,
+          "beforeSeq": 31137,
+          "afterLine": 101723,
+          "afterSeq": 31139
+        },
+        {
+          "beforeLine": 101742,
+          "beforeSeq": 31143,
+          "afterLine": 101743,
+          "afterSeq": 31145
+        }
+      ],
+      "downLine": 101685,
+      "upLine": 101754,
+      "release": {
+        "line": 101756,
+        "text": "[CanvasPan] seq=31155 qpc=111835847366 tid=15688 release released=1 reason=disabled raw=(1622.91,-1344.15) selected=(0.00,0.00) boosted=(0.00,0.00) samples=9 span-ms=32.978 age-ms=19.181 rejected=0 reversals=0 timing-resets=0 tail-limit=7839.262 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 101680,
+        "text": "[CanvasPan] seq=31115 qpc=111835323565 tid=15688 pan-context key=207 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 101688,
+        "text": "[CanvasPan] seq=31121 qpc=111835324873 tid=15688 pan-admission key=207 accepted=1 reason=accepted qpc=111835321327"
+      },
+      "quality": {
+        "line": 101757,
+        "text": "[CanvasPan] seq=31156 qpc=111835847419 tid=15688 release-quality key=207 source=19092427264 profile=3 unit=mm raw-points=9 anchors=4 positive-intervals=3 first-qpc=111835322386 last-qpc=111835651104 support-first-qpc=111835492284 support-last-qpc=111835630324 support-upper=386.74758 support-valid=1 support-limited=1 output-limited=0 boost-suppressed=1"
+      },
+      "profile": {
+        "line": 101758,
+        "text": "[CanvasPan] seq=31157 qpc=111835847463 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 10,
+      "moveCount": 8,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 8,
+        "2": 1
+      },
+      "actions": {
+        "consume": 10
+      },
+      "durationMs": 52.1589,
+      "lastMoveAgeMs": 19.1812,
+      "panStepCount": 8,
+      "scrollingFrames": 7,
+      "nonzeroFrames": 2,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        82.21000000000001,
+        -68.62
+      ],
+      "predictedDeltaPixels": {
+        "dx": 148.2730119449646,
+        "dy": -122.97102080042696,
+        "firstSlopCrossLine": 101686,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -66.06301194496459,
+        54.35102080042695
+      ],
+      "frameRoundingBoundPixels": 0.07,
+      "maxMotionDistanceMm": 20.364787563244963,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 208,
+      "renderFrameCheckCount": 40,
+      "renderFrameMaxErrorPixels": 0.0008712889050883632,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 101750,
+        "frame": 6508,
+        "qpc": 111835830361,
+        "sampleQpc": 111835651104,
+        "page": 0,
+        "x": 197.039,
+        "y": -295.076
+      },
+      "viewportEnd": {
+        "line": 102556,
+        "frame": 6548,
+        "qpc": 111842257307,
+        "sampleQpc": 111842092196,
+        "page": 0,
+        "x": -239.275,
+        "y": -10.237
+      },
+      "viewportDeltaPixels": [
+        436.31399999999996,
+        -284.839
+      ],
+      "viewportErrorPixels": [
+        0.00031047366127268106,
+        -0.0001287110949306225
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 102208,
+          "beforeSeq": 31234,
+          "afterLine": 102210,
+          "afterSeq": 31236
+        },
+        {
+          "beforeLine": 102335,
+          "beforeSeq": 31281,
+          "afterLine": 102337,
+          "afterSeq": 31283
+        },
+        {
+          "beforeLine": 102390,
+          "beforeSeq": 31298,
+          "afterLine": 102392,
+          "afterSeq": 31300
+        }
+      ],
+      "downLine": 102038,
+      "upLine": 102560,
+      "release": {
+        "line": 102564,
+        "text": "[CanvasPan] seq=31363 qpc=111842308782 tid=15688 release released=1 reason=disabled raw=(812.35,-482.70) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=61.004 age-ms=21.291 rejected=0 reversals=0 timing-resets=0 tail-limit=990.394 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 102034,
+        "text": "[CanvasPan] seq=31159 qpc=111839077349 tid=15688 pan-context key=208 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 102042,
+        "text": "[CanvasPan] seq=31165 qpc=111839078848 tid=15688 pan-admission key=208 accepted=1 reason=accepted qpc=111839074745"
+      },
+      "quality": {
+        "line": 102565,
+        "text": "[CanvasPan] seq=31364 qpc=111842308891 tid=15688 release-quality key=208 source=19092427264 profile=3 unit=mm raw-points=17 anchors=5 positive-intervals=4 first-qpc=111841482161 last-qpc=111842092196 support-first-qpc=111841783302 support-last-qpc=111841936711 support-upper=192.08423 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 102566,
+        "text": "[CanvasPan] seq=31365 qpc=111842308973 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 78,
+      "moveCount": 76,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 76,
+        "2": 1
+      },
+      "actions": {
+        "consume": 78
+      },
+      "durationMs": 323.0359,
+      "lastMoveAgeMs": 21.2908,
+      "panStepCount": 41,
+      "scrollingFrames": 40,
+      "nonzeroFrames": 26,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        436.3299999999999,
+        -284.81000000000006
+      ],
+      "predictedDeltaPixels": {
+        "dx": 436.3136895263387,
+        "dy": -284.83887128890507,
+        "firstSlopCrossLine": 102040,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.016310473661235392,
+        0.028871288905008896
+      ],
+      "frameRoundingBoundPixels": 0.23500000000000001,
+      "maxMotionDistanceMm": 52.42441917900561,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 209,
+      "renderFrameCheckCount": 11,
+      "renderFrameMaxErrorPixels": 0.0007199132912205641,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 102556,
+        "frame": 6548,
+        "qpc": 111842257307,
+        "sampleQpc": 111842092196,
+        "page": 0,
+        "x": -239.275,
+        "y": -10.237
+      },
+      "viewportEnd": {
+        "line": 102694,
+        "frame": 6559,
+        "qpc": 111843310491,
+        "sampleQpc": 111843146491,
+        "page": 0,
+        "x": -409.299,
+        "y": 82.361
+      },
+      "viewportDeltaPixels": [
+        170.02399999999997,
+        -92.598
+      ],
+      "viewportErrorPixels": [
+        -0.0007199132912205641,
+        -0.0005772057269552988
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 102644,
+          "beforeSeq": 31399,
+          "afterLine": 102646,
+          "afterSeq": 31401
+        },
+        {
+          "beforeLine": 102665,
+          "beforeSeq": 31406,
+          "afterLine": 102667,
+          "afterSeq": 31408
+        }
+      ],
+      "downLine": 102595,
+      "upLine": 102698,
+      "release": {
+        "line": 102700,
+        "text": "[CanvasPan] seq=31424 qpc=111843351896 tid=15688 release released=1 reason=disabled raw=(1235.66,-666.08) selected=(0.00,0.00) boosted=(0.00,0.00) samples=14 span-ms=60.689 age-ms=20.269 rejected=0 reversals=0 timing-resets=0 tail-limit=8003.578 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 102592,
+        "text": "[CanvasPan] seq=31367 qpc=111842540413 tid=15688 pan-context key=209 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 102599,
+        "text": "[CanvasPan] seq=31374 qpc=111842543185 tid=15688 pan-admission key=209 accepted=1 reason=accepted qpc=111842534973"
+      },
+      "quality": {
+        "line": 102701,
+        "text": "[CanvasPan] seq=31425 qpc=111843351955 tid=15688 release-quality key=209 source=19092427264 profile=3 unit=mm raw-points=14 anchors=6 positive-intervals=5 first-qpc=111842539601 last-qpc=111843146491 support-first-qpc=111842995321 support-last-qpc=111843124386 support-upper=103.70152 support-valid=1 support-limited=1 output-limited=0 boost-suppressed=1"
+      },
+      "profile": {
+        "line": 102702,
+        "text": "[CanvasPan] seq=31426 qpc=111843352157 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 18,
+      "moveCount": 16,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 16,
+        "2": 1
+      },
+      "actions": {
+        "consume": 18
+      },
+      "durationMs": 81.4207,
+      "lastMoveAgeMs": 20.2689,
+      "panStepCount": 12,
+      "scrollingFrames": 11,
+      "nonzeroFrames": 5,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        170.03,
+        -92.6
+      ],
+      "predictedDeltaPixels": {
+        "dx": 170.0247199132912,
+        "dy": -92.59742279427304,
+        "firstSlopCrossLine": 102596,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.005280086708808085,
+        -0.0025772057269506377
+      ],
+      "frameRoundingBoundPixels": 0.09,
+      "maxMotionDistanceMm": 20.399546905618877,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 210,
+      "renderFrameCheckCount": 4,
+      "renderFrameMaxErrorPixels": 0.00018676297725761515,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 102694,
+        "frame": 6559,
+        "qpc": 111843310491,
+        "sampleQpc": 111843146491,
+        "page": 0,
+        "x": -409.299,
+        "y": 82.361
+      },
+      "viewportEnd": {
+        "line": 102765,
+        "frame": 6563,
+        "qpc": 111843906500,
+        "sampleQpc": 111843730992,
+        "page": 0,
+        "x": -424.509,
+        "y": 89.611
+      },
+      "viewportDeltaPixels": [
+        15.210000000000036,
+        -7.25
+      ],
+      "viewportErrorPixels": [
+        0.00018676297725761515,
+        1.568213167058019e-05
+      ],
+      "canvasSequenceGaps": [],
+      "downLine": 102743,
+      "upLine": 102769,
+      "release": {
+        "line": 102772,
+        "text": "[CanvasPan] seq=31450 qpc=111843980238 tid=15688 release released=1 reason=disabled raw=(0.00,0.00) selected=(0.00,0.00) boosted=(0.00,0.00) samples=3 span-ms=0.183 age-ms=24.537 rejected=0 reversals=0 timing-resets=0 tail-limit=0.000 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 102739,
+        "text": "[CanvasPan] seq=31428 qpc=111843731623 tid=15688 pan-context key=210 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 102747,
+        "text": "[CanvasPan] seq=31434 qpc=111843733870 tid=15688 pan-admission key=210 accepted=1 reason=accepted qpc=111843729162"
+      },
+      "quality": {
+        "line": 102774,
+        "text": "[CanvasPan] seq=31451 qpc=111843980289 tid=15688 release-quality key=210 source=19092427264 profile=3 unit=mm raw-points=3 anchors=1 positive-intervals=0 first-qpc=111843730992 last-qpc=111843730992 support-first-qpc=0 support-last-qpc=0 support-upper=0 support-valid=0 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": null,
+      "inputCount": 4,
+      "moveCount": 2,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 2,
+        "2": 1
+      },
+      "actions": {
+        "consume": 4
+      },
+      "durationMs": 24.7202,
+      "lastMoveAgeMs": 24.5372,
+      "panStepCount": 5,
+      "scrollingFrames": 4,
+      "nonzeroFrames": 1,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        15.21,
+        -7.25
+      ],
+      "predictedDeltaPixels": {
+        "dx": 15.209813237022779,
+        "dy": -7.250015682131671,
+        "firstSlopCrossLine": 102744,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.000186762977222088,
+        1.568213167058019e-05
+      ],
+      "frameRoundingBoundPixels": 0.055,
+      "maxMotionDistanceMm": 3.143209717757942,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 211,
+      "renderFrameCheckCount": 204,
+      "renderFrameMaxErrorPixels": 0.0008331183727392499,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 102765,
+        "frame": 6563,
+        "qpc": 111843906500,
+        "sampleQpc": 111843730992,
+        "page": 0,
+        "x": -424.509,
+        "y": 89.611
+      },
+      "viewportEnd": {
+        "line": 105756,
+        "frame": 6769,
+        "qpc": 111861376057,
+        "sampleQpc": 111861163418,
+        "page": 0,
+        "x": -322.207,
+        "y": 331.818
+      },
+      "viewportDeltaPixels": [
+        -102.30200000000002,
+        -242.207
+      ],
+      "viewportErrorPixels": [
+        0.0008331183710623691,
+        0.00042423371223776485
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 102916,
+          "beforeSeq": 31510,
+          "afterLine": 102918,
+          "afterSeq": 31512
+        },
+        {
+          "beforeLine": 102975,
+          "beforeSeq": 31537,
+          "afterLine": 102977,
+          "afterSeq": 31539
+        },
+        {
+          "beforeLine": 102982,
+          "beforeSeq": 31541,
+          "afterLine": 102984,
+          "afterSeq": 31543
+        },
+        {
+          "beforeLine": 103144,
+          "beforeSeq": 31614,
+          "afterLine": 103146,
+          "afterSeq": 31616
+        },
+        {
+          "beforeLine": 103472,
+          "beforeSeq": 31732,
+          "afterLine": 103490,
+          "afterSeq": 31734
+        },
+        {
+          "beforeLine": 104132,
+          "beforeSeq": 31958,
+          "afterLine": 104133,
+          "afterSeq": 31960
+        },
+        {
+          "beforeLine": 104527,
+          "beforeSeq": 32092,
+          "afterLine": 104529,
+          "afterSeq": 32094
+        },
+        {
+          "beforeLine": 104844,
+          "beforeSeq": 32206,
+          "afterLine": 104846,
+          "afterSeq": 32208
+        },
+        {
+          "beforeLine": 104967,
+          "beforeSeq": 32249,
+          "afterLine": 104974,
+          "afterSeq": 32251
+        },
+        {
+          "beforeLine": 105065,
+          "beforeSeq": 32280,
+          "afterLine": 105067,
+          "afterSeq": 32282
+        },
+        {
+          "beforeLine": 105209,
+          "beforeSeq": 32330,
+          "afterLine": 105211,
+          "afterSeq": 32332
+        },
+        {
+          "beforeLine": 105397,
+          "beforeSeq": 32394,
+          "afterLine": 105399,
+          "afterSeq": 32396
+        },
+        {
+          "beforeLine": 105666,
+          "beforeSeq": 32488,
+          "afterLine": 105668,
+          "afterSeq": 32490
+        }
+      ],
+      "downLine": 102818,
+      "upLine": 105758,
+      "release": {
+        "line": 105760,
+        "text": "[CanvasPan] seq=32526 qpc=111861379548 tid=15688 release released=1 reason=disabled raw=(-686.68,-311.81) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=60.207 age-ms=21.192 rejected=0 reversals=0 timing-resets=0 tail-limit=3382.615 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 102813,
+        "text": "[CanvasPan] seq=31454 qpc=111844338268 tid=15688 pan-context key=211 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 102821,
+        "text": "[CanvasPan] seq=31460 qpc=111844340231 tid=15688 pan-admission key=211 accepted=1 reason=accepted qpc=111844335019"
+      },
+      "quality": {
+        "line": 105761,
+        "text": "[CanvasPan] seq=32527 qpc=111861379625 tid=15688 release-quality key=211 source=19092427264 profile=3 unit=mm raw-points=17 anchors=8 positive-intervals=7 first-qpc=111860561346 last-qpc=111861163418 support-first-qpc=111861012510 support-last-qpc=111861141025 support-upper=43.583503 support-valid=1 support-limited=1 output-limited=0 boost-suppressed=1"
+      },
+      "profile": {
+        "line": 105762,
+        "text": "[CanvasPan] seq=32528 qpc=111861379665 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 445,
+      "moveCount": 443,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 7513,
+          "afterOrdinal": 7515,
+          "beforeLine": 102982,
+          "afterLine": 102993
+        },
+        {
+          "beforeOrdinal": 7689,
+          "afterOrdinal": 7691,
+          "beforeLine": 104132,
+          "afterLine": 104133
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 443,
+        "2": 1
+      },
+      "actions": {
+        "consume": 445
+      },
+      "durationMs": 1704.0316,
+      "lastMoveAgeMs": 21.1917,
+      "panStepCount": 206,
+      "scrollingFrames": 205,
+      "nonzeroFrames": 134,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -160.0299999999995,
+        -225.3599999999999
+      ],
+      "predictedDeltaPixels": {
+        "dx": -102.30283311837108,
+        "dy": -242.20742423371223,
+        "firstSlopCrossLine": 102820,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -57.727166881628406,
+        16.84742423371233
+      ],
+      "frameRoundingBoundPixels": 1.06,
+      "maxMotionDistanceMm": 140.15451333242135,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 212,
+      "renderFrameCheckCount": 138,
+      "renderFrameMaxErrorPixels": 0.0007309735585749877,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 105756,
+        "frame": 6769,
+        "qpc": 111861376057,
+        "sampleQpc": 111861163418,
+        "page": 0,
+        "x": -322.207,
+        "y": 331.818
+      },
+      "viewportEnd": {
+        "line": 108173,
+        "frame": 6908,
+        "qpc": 111877719323,
+        "sampleQpc": 111877516399,
+        "page": 0,
+        "x": 462.722,
+        "y": -469.575
+      },
+      "viewportDeltaPixels": [
+        -784.929,
+        801.393
+      ],
+      "viewportErrorPixels": [
+        -0.0007309735584613009,
+        -0.0005868422902040038
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 106781,
+          "beforeSeq": 32774,
+          "afterLine": 106783,
+          "afterSeq": 32776
+        },
+        {
+          "beforeLine": 106950,
+          "beforeSeq": 32824,
+          "afterLine": 106952,
+          "afterSeq": 32826
+        },
+        {
+          "beforeLine": 107154,
+          "beforeSeq": 32898,
+          "afterLine": 107162,
+          "afterSeq": 32900
+        },
+        {
+          "beforeLine": 107329,
+          "beforeSeq": 32956,
+          "afterLine": 107330,
+          "afterSeq": 32958
+        },
+        {
+          "beforeLine": 108028,
+          "beforeSeq": 33190,
+          "afterLine": 108030,
+          "afterSeq": 33192
+        }
+      ],
+      "downLine": 106109,
+      "upLine": 108177,
+      "release": {
+        "line": 108181,
+        "text": "[CanvasPan] seq=33252 qpc=111877733694 tid=15688 release released=1 reason=disabled raw=(-145.44,127.37) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=57.602 age-ms=21.356 rejected=0 reversals=0 timing-resets=0 tail-limit=215.016 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 106107,
+        "text": "[CanvasPan] seq=32530 qpc=111866267091 tid=15688 pan-context key=212 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 106117,
+        "text": "[CanvasPan] seq=32535 qpc=111866270174 tid=15688 pan-admission key=212 accepted=1 reason=accepted qpc=111866261882"
+      },
+      "quality": {
+        "line": 108182,
+        "text": "[CanvasPan] seq=33253 qpc=111877733745 tid=15688 release-quality key=212 source=19092427264 profile=3 unit=mm raw-points=17 anchors=7 positive-intervals=6 first-qpc=111876940384 last-qpc=111877516399 support-first-qpc=111877363851 support-last-qpc=111877385158 support-upper=48.887752 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 108183,
+        "text": "[CanvasPan] seq=33254 qpc=111877733786 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 296,
+      "moveCount": 294,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 8048,
+          "afterOrdinal": 8050,
+          "beforeLine": 106950,
+          "afterLine": 106952
+        },
+        {
+          "beforeOrdinal": 8080,
+          "afterOrdinal": 8082,
+          "beforeLine": 107154,
+          "afterLine": 107176
+        },
+        {
+          "beforeOrdinal": 8105,
+          "afterOrdinal": 8107,
+          "beforeLine": 107329,
+          "afterLine": 107330
+        },
+        {
+          "beforeOrdinal": 8204,
+          "afterOrdinal": 8206,
+          "beforeLine": 108028,
+          "afterLine": 108030
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 294,
+        "2": 1
+      },
+      "actions": {
+        "consume": 296
+      },
+      "durationMs": 1146.8075,
+      "lastMoveAgeMs": 21.3558,
+      "panStepCount": 140,
+      "scrollingFrames": 139,
+      "nonzeroFrames": 91,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -784.94,
+        801.4000000000001
+      ],
+      "predictedDeltaPixels": {
+        "dx": -784.9282690264415,
+        "dy": 801.3935868422902,
+        "firstSlopCrossLine": 106111,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.011730973558542246,
+        0.006413157709857842
+      ],
+      "frameRoundingBoundPixels": 0.7300000000000001,
+      "maxMotionDistanceMm": 108.80620382504605,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 213,
+      "renderFrameCheckCount": 4,
+      "renderFrameMaxErrorPixels": 0.0005087486155561649,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 108173,
+        "frame": 6908,
+        "qpc": 111877719323,
+        "sampleQpc": 111877516399,
+        "page": 0,
+        "x": 462.722,
+        "y": -469.575
+      },
+      "viewportEnd": {
+        "line": 108412,
+        "frame": 6912,
+        "qpc": 111880245921,
+        "sampleQpc": 111880068566,
+        "page": 0,
+        "x": 457.531,
+        "y": -464.26
+      },
+      "viewportDeltaPixels": [
+        5.190999999999974,
+        -5.314999999999998
+      ],
+      "viewportErrorPixels": [
+        -0.0005087486155561649,
+        0.00013167333381503
+      ],
+      "canvasSequenceGaps": [],
+      "downLine": 108391,
+      "upLine": 108417,
+      "release": {
+        "line": 108421,
+        "text": "[CanvasPan] seq=33277 qpc=111880307660 tid=15688 release released=1 reason=disabled raw=(0.00,0.00) selected=(0.00,0.00) boosted=(0.00,0.00) samples=2 span-ms=0.079 age-ms=23.549 rejected=0 reversals=0 timing-resets=0 tail-limit=0.000 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 108387,
+        "text": "[CanvasPan] seq=33256 qpc=111880070830 tid=15688 pan-context key=213 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 108394,
+        "text": "[CanvasPan] seq=33261 qpc=111880072407 tid=15688 pan-admission key=213 accepted=1 reason=accepted qpc=111880067772"
+      },
+      "quality": {
+        "line": 108422,
+        "text": "[CanvasPan] seq=33278 qpc=111880307710 tid=15688 release-quality key=213 source=19092427264 profile=3 unit=mm raw-points=2 anchors=1 positive-intervals=0 first-qpc=111880068566 last-qpc=111880068566 support-first-qpc=0 support-last-qpc=0 support-upper=0 support-valid=0 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 108423,
+        "text": "[CanvasPan] seq=33279 qpc=111880307757 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 3,
+      "moveCount": 1,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 1,
+        "2": 1
+      },
+      "actions": {
+        "consume": 3
+      },
+      "durationMs": 23.6283,
+      "lastMoveAgeMs": 23.5489,
+      "panStepCount": 5,
+      "scrollingFrames": 4,
+      "nonzeroFrames": 1,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        5.19,
+        -5.32
+      ],
+      "predictedDeltaPixels": {
+        "dx": 5.19150874861553,
+        "dy": -5.315131673333813,
+        "firstSlopCrossLine": 108393,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.0015087486155298535,
+        -0.004868326666187528
+      ],
+      "frameRoundingBoundPixels": 0.055,
+      "maxMotionDistanceMm": 2.228974444225645,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 214,
+      "renderFrameCheckCount": 13,
+      "renderFrameMaxErrorPixels": 0.0008233465678983976,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 108412,
+        "frame": 6912,
+        "qpc": 111880245921,
+        "sampleQpc": 111880068566,
+        "page": 0,
+        "x": 457.531,
+        "y": -464.26
+      },
+      "viewportEnd": {
+        "line": 108635,
+        "frame": 6927,
+        "qpc": 111881616564,
+        "sampleQpc": 111881419771,
+        "page": 0,
+        "x": 145.552,
+        "y": -226.133
+      },
+      "viewportDeltaPixels": [
+        311.97900000000004,
+        -238.12699999999998
+      ],
+      "viewportErrorPixels": [
+        -0.0003705576687593748,
+        -0.00017665343199269046
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 108515,
+          "beforeSeq": 33309,
+          "afterLine": 108516,
+          "afterSeq": 33311
+        },
+        {
+          "beforeLine": 108576,
+          "beforeSeq": 33333,
+          "afterLine": 108588,
+          "afterSeq": 33335
+        }
+      ],
+      "downLine": 108448,
+      "upLine": 108639,
+      "release": {
+        "line": 108643,
+        "text": "[CanvasPan] seq=33359 qpc=111881641074 tid=15688 release released=1 reason=disabled raw=(1657.51,-1182.94) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=57.637 age-ms=21.309 rejected=0 reversals=0 timing-resets=0 tail-limit=1560.145 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 108444,
+        "text": "[CanvasPan] seq=33281 qpc=111880522586 tid=15688 pan-context key=214 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 108452,
+        "text": "[CanvasPan] seq=33286 qpc=111880525261 tid=15688 pan-admission key=214 accepted=1 reason=accepted qpc=111880519143"
+      },
+      "quality": {
+        "line": 108644,
+        "text": "[CanvasPan] seq=33360 qpc=111881641128 tid=15688 release-quality key=214 source=19092427264 profile=3 unit=mm raw-points=17 anchors=6 positive-intervals=5 first-qpc=111880843399 last-qpc=111881419771 support-first-qpc=111881259865 support-last-qpc=111881280835 support-upper=315.41117 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 108645,
+        "text": "[CanvasPan] seq=33361 qpc=111881641171 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 26,
+      "moveCount": 24,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 8241,
+          "afterOrdinal": 8243,
+          "beforeLine": 108515,
+          "afterLine": 108541
+        },
+        {
+          "beforeOrdinal": 8250,
+          "afterOrdinal": 8252,
+          "beforeLine": 108573,
+          "afterLine": 108588
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 24,
+        "2": 1
+      },
+      "actions": {
+        "consume": 26
+      },
+      "durationMs": 111.3717,
+      "lastMoveAgeMs": 21.3089,
+      "panStepCount": 16,
+      "scrollingFrames": 15,
+      "nonzeroFrames": 9,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        311.97999999999996,
+        -238.12999999999997
+      ],
+      "predictedDeltaPixels": {
+        "dx": 311.9793705576688,
+        "dy": -238.126823346568,
+        "firstSlopCrossLine": 108449,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.0006294423311601349,
+        -0.0031766534319785933
+      ],
+      "frameRoundingBoundPixels": 0.11,
+      "maxMotionDistanceMm": 39.909302824489714,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 215,
+      "renderFrameCheckCount": 43,
+      "renderFrameMaxErrorPixels": 0.0016761602792882968,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 108635,
+        "frame": 6927,
+        "qpc": 111881616564,
+        "sampleQpc": 111881419771,
+        "page": 0,
+        "x": 145.552,
+        "y": -226.133
+      },
+      "viewportEnd": {
+        "line": 109354,
+        "frame": 6970,
+        "qpc": 111887568671,
+        "sampleQpc": 111887446863,
+        "page": 0,
+        "x": -932.659,
+        "y": 439.308
+      },
+      "viewportDeltaPixels": [
+        1078.211,
+        -665.441
+      ],
+      "viewportErrorPixels": [
+        0.0006761602789993049,
+        0.0010232342470999356
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 108875,
+          "beforeSeq": 33402,
+          "afterLine": 108877,
+          "afterSeq": 33404
+        },
+        {
+          "beforeLine": 108920,
+          "beforeSeq": 33419,
+          "afterLine": 108922,
+          "afterSeq": 33421
+        },
+        {
+          "beforeLine": 108968,
+          "beforeSeq": 33438,
+          "afterLine": 108969,
+          "afterSeq": 33440
+        },
+        {
+          "beforeLine": 109016,
+          "beforeSeq": 33459,
+          "afterLine": 109018,
+          "afterSeq": 33461
+        },
+        {
+          "beforeLine": 109241,
+          "beforeSeq": 33543,
+          "afterLine": 109243,
+          "afterSeq": 33545
+        }
+      ],
+      "downLine": 108788,
+      "upLine": 109358,
+      "release": {
+        "line": 109362,
+        "text": "[CanvasPan] seq=33588 qpc=111887651668 tid=15688 release released=1 reason=disabled raw=(1049.20,-550.34) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=62.277 age-ms=19.370 rejected=0 reversals=0 timing-resets=0 tail-limit=2445.892 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 108783,
+        "text": "[CanvasPan] seq=33363 qpc=111884133858 tid=15688 pan-context key=215 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 108790,
+        "text": "[CanvasPan] seq=33368 qpc=111884136709 tid=15688 pan-admission key=215 accepted=1 reason=accepted qpc=111884129585"
+      },
+      "quality": {
+        "line": 109363,
+        "text": "[CanvasPan] seq=33589 qpc=111887651729 tid=15688 release-quality key=215 source=19092427264 profile=3 unit=mm raw-points=17 anchors=7 positive-intervals=6 first-qpc=111886824090 last-qpc=111887446863 support-first-qpc=111887307178 support-last-qpc=111887413532 support-upper=72.851519 support-valid=1 support-limited=1 output-limited=0 boost-suppressed=1"
+      },
+      "profile": {
+        "line": 109364,
+        "text": "[CanvasPan] seq=33590 qpc=111887651786 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 90,
+      "moveCount": 88,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 88,
+        "2": 1
+      },
+      "actions": {
+        "consume": 90
+      },
+      "durationMs": 351.098,
+      "lastMoveAgeMs": 19.3702,
+      "panStepCount": 43,
+      "scrollingFrames": 42,
+      "nonzeroFrames": 27,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        1024.3899999999999,
+        -628.8799999999999
+      ],
+      "predictedDeltaPixels": {
+        "dx": 1078.210323839721,
+        "dy": -665.4420232342471,
+        "firstSlopCrossLine": 108789,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -53.82032383972114,
+        36.56202323424725
+      ],
+      "frameRoundingBoundPixels": 0.245,
+      "maxMotionDistanceMm": 125.28735835133783,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 216,
+      "renderFrameCheckCount": 44,
+      "renderFrameMaxErrorPixels": 0.0014503039092232939,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 109354,
+        "frame": 6970,
+        "qpc": 111887568671,
+        "sampleQpc": 111887446863,
+        "page": 0,
+        "x": -932.659,
+        "y": 439.308
+      },
+      "viewportEnd": {
+        "line": 110063,
+        "frame": 7014,
+        "qpc": 111892892171,
+        "sampleQpc": 111892677496,
+        "page": 0,
+        "x": 495.982,
+        "y": -386.487
+      },
+      "viewportDeltaPixels": [
+        -1428.641,
+        825.7950000000001
+      ],
+      "viewportErrorPixels": [
+        0.00032393889273407694,
+        -0.00045030390924694075
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 109593,
+          "beforeSeq": 33637,
+          "afterLine": 109595,
+          "afterSeq": 33639
+        },
+        {
+          "beforeLine": 109835,
+          "beforeSeq": 33727,
+          "afterLine": 109837,
+          "afterSeq": 33729
+        },
+        {
+          "beforeLine": 109904,
+          "beforeSeq": 33754,
+          "afterLine": 109906,
+          "afterSeq": 33756
+        },
+        {
+          "beforeLine": 109928,
+          "beforeSeq": 33764,
+          "afterLine": 109930,
+          "afterSeq": 33766
+        },
+        {
+          "beforeLine": 109954,
+          "beforeSeq": 33771,
+          "afterLine": 109956,
+          "afterSeq": 33773
+        }
+      ],
+      "downLine": 109499,
+      "upLine": 110064,
+      "release": {
+        "line": 110066,
+        "text": "[CanvasPan] seq=33819 qpc=111892901898 tid=15688 release released=1 reason=disabled raw=(-1758.94,1128.75) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=60.046 age-ms=21.592 rejected=0 reversals=0 timing-resets=0 tail-limit=1598.496 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 109497,
+        "text": "[CanvasPan] seq=33592 qpc=111889376520 tid=15688 pan-context key=216 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 109504,
+        "text": "[CanvasPan] seq=33597 qpc=111889377953 tid=15688 pan-admission key=216 accepted=1 reason=accepted qpc=111889373264"
+      },
+      "quality": {
+        "line": 110067,
+        "text": "[CanvasPan] seq=33820 qpc=111892901951 tid=15688 release-quality key=216 source=19092427264 profile=3 unit=mm raw-points=17 anchors=5 positive-intervals=4 first-qpc=111892077040 last-qpc=111892677496 support-first-qpc=111892377657 support-last-qpc=111892526549 support-upper=320.20063 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 110068,
+        "text": "[CanvasPan] seq=33821 qpc=111892902002 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 89,
+      "moveCount": 87,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 8364,
+          "afterOrdinal": 8366,
+          "beforeLine": 109593,
+          "afterLine": 109595
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 87,
+        "2": 1
+      },
+      "actions": {
+        "consume": 89
+      },
+      "durationMs": 352.0148,
+      "lastMoveAgeMs": 21.5916,
+      "panStepCount": 45,
+      "scrollingFrames": 44,
+      "nonzeroFrames": 27,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -1428.6200000000003,
+        825.81
+      ],
+      "predictedDeltaPixels": {
+        "dx": -1428.6413239388928,
+        "dy": 825.7954503039093,
+        "firstSlopCrossLine": 109501,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.021323938892464867,
+        0.01454969609062573
+      ],
+      "frameRoundingBoundPixels": 0.255,
+      "maxMotionDistanceMm": 162.5798026164424,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 217,
+      "renderFrameCheckCount": 49,
+      "renderFrameMaxErrorPixels": 0.0012183113325363593,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 110063,
+        "frame": 7014,
+        "qpc": 111892892171,
+        "sampleQpc": 111892677496,
+        "page": 0,
+        "x": 495.982,
+        "y": -386.487
+      },
+      "viewportEnd": {
+        "line": 110999,
+        "frame": 7063,
+        "qpc": 111899785254,
+        "sampleQpc": 111899584563,
+        "page": 0,
+        "x": -921.732,
+        "y": 283.889
+      },
+      "viewportDeltaPixels": [
+        1417.714,
+        -670.376
+      ],
+      "viewportErrorPixels": [
+        -0.0008641727401936805,
+        0.00021831133256000612
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 110841,
+          "beforeSeq": 34012,
+          "afterLine": 110843,
+          "afterSeq": 34014
+        }
+      ],
+      "downLine": 110334,
+      "upLine": 111003,
+      "release": {
+        "line": 111005,
+        "text": "[CanvasPan] seq=34077 qpc=111899803079 tid=15688 release released=1 reason=disabled raw=(430.95,-63.55) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=59.032 age-ms=21.537 rejected=0 reversals=0 timing-resets=0 tail-limit=59.592 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 110328,
+        "text": "[CanvasPan] seq=33823 qpc=111895848663 tid=15688 pan-context key=217 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 110338,
+        "text": "[CanvasPan] seq=33828 qpc=111895851779 tid=15688 pan-admission key=217 accepted=1 reason=accepted qpc=111895844349"
+      },
+      "quality": {
+        "line": 111006,
+        "text": "[CanvasPan] seq=34078 qpc=111899803124 tid=15688 release-quality key=217 source=19092427264 profile=3 unit=mm raw-points=17 anchors=6 positive-intervals=5 first-qpc=111898994238 last-qpc=111899584563 support-first-qpc=111899285706 support-last-qpc=111899440272 support-upper=14.981133 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 111007,
+        "text": "[CanvasPan] seq=34079 qpc=111899803169 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 102,
+      "moveCount": 100,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 100,
+        "2": 1
+      },
+      "actions": {
+        "consume": 102
+      },
+      "durationMs": 395.5581,
+      "lastMoveAgeMs": 21.5367,
+      "panStepCount": 50,
+      "scrollingFrames": 49,
+      "nonzeroFrames": 31,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        1417.69,
+        -670.3599999999999
+      ],
+      "predictedDeltaPixels": {
+        "dx": 1417.7148641727401,
+        "dy": -670.3762183113325,
+        "firstSlopCrossLine": 110336,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.024864172740080903,
+        0.016218311332636404
+      ],
+      "frameRoundingBoundPixels": 0.28,
+      "maxMotionDistanceMm": 154.4996525477987,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 218,
+      "renderFrameCheckCount": 96,
+      "renderFrameMaxErrorPixels": 0.000791191523831003,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 110999,
+        "frame": 7063,
+        "qpc": 111899785254,
+        "sampleQpc": 111899584563,
+        "page": 0,
+        "x": -921.732,
+        "y": 283.889
+      },
+      "viewportEnd": {
+        "line": 112348,
+        "frame": 7160,
+        "qpc": 111907979344,
+        "sampleQpc": 111907842932,
+        "page": 0,
+        "x": -303.645,
+        "y": -74.896
+      },
+      "viewportDeltaPixels": [
+        -618.087,
+        358.785
+      ],
+      "viewportErrorPixels": [
+        -0.0007911915233762556,
+        0.0003050030343274557
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 111094,
+          "beforeSeq": 34117,
+          "afterLine": 111096,
+          "afterSeq": 34120
+        },
+        {
+          "beforeLine": 111228,
+          "beforeSeq": 34171,
+          "afterLine": 111237,
+          "afterSeq": 34173
+        },
+        {
+          "beforeLine": 111633,
+          "beforeSeq": 34318,
+          "afterLine": 111635,
+          "afterSeq": 34320
+        },
+        {
+          "beforeLine": 111657,
+          "beforeSeq": 34328,
+          "afterLine": 111659,
+          "afterSeq": 34330
+        },
+        {
+          "beforeLine": 111986,
+          "beforeSeq": 34450,
+          "afterLine": 111988,
+          "afterSeq": 34452
+        },
+        {
+          "beforeLine": 112034,
+          "beforeSeq": 34470,
+          "afterLine": 112036,
+          "afterSeq": 34472
+        },
+        {
+          "beforeLine": 112060,
+          "beforeSeq": 34477,
+          "afterLine": 112062,
+          "afterSeq": 34479
+        },
+        {
+          "beforeLine": 112147,
+          "beforeSeq": 34507,
+          "afterLine": 112149,
+          "afterSeq": 34509
+        },
+        {
+          "beforeLine": 112274,
+          "beforeSeq": 34554,
+          "afterLine": 112276,
+          "afterSeq": 34556
+        }
+      ],
+      "downLine": 111035,
+      "upLine": 112352,
+      "release": {
+        "line": 112354,
+        "text": "[CanvasPan] seq=34589 qpc=111908066777 tid=15688 release released=1 reason=disabled raw=(1384.85,204.00) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=59.574 age-ms=21.551 rejected=0 reversals=0 timing-resets=0 tail-limit=1097.486 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 111029,
+        "text": "[CanvasPan] seq=34081 qpc=111900035391 tid=15688 pan-context key=218 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 111040,
+        "text": "[CanvasPan] seq=34088 qpc=111900037466 tid=15688 pan-admission key=218 accepted=1 reason=accepted qpc=111900033216"
+      },
+      "quality": {
+        "line": 112355,
+        "text": "[CanvasPan] seq=34590 qpc=111908066876 tid=15688 release-quality key=218 source=19092427264 profile=3 unit=mm raw-points=17 anchors=5 positive-intervals=4 first-qpc=111907247191 last-qpc=111907842932 support-first-qpc=111907546274 support-last-qpc=111907715132 support-upper=214.31994 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 112356,
+        "text": "[CanvasPan] seq=34591 qpc=111908066930 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 208,
+      "moveCount": 206,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 8552,
+          "afterOrdinal": 8555,
+          "beforeLine": 111094,
+          "afterLine": 111099
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 206,
+        "2": 1
+      },
+      "actions": {
+        "consume": 208
+      },
+      "durationMs": 802.523,
+      "lastMoveAgeMs": 21.5514,
+      "panStepCount": 98,
+      "scrollingFrames": 97,
+      "nonzeroFrames": 61,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -618.09,
+        358.82
+      ],
+      "predictedDeltaPixels": {
+        "dx": -618.0862088084766,
+        "dy": 358.7846949969657,
+        "firstSlopCrossLine": 111039,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.003791191523419002,
+        0.03530500303429562
+      ],
+      "frameRoundingBoundPixels": 0.52,
+      "maxMotionDistanceMm": 155.0861041404494,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 219,
+      "renderFrameCheckCount": 42,
+      "renderFrameMaxErrorPixels": 0.0010626450293216294,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 112578,
+        "frame": 7163,
+        "qpc": 111910651270,
+        "sampleQpc": 111910561196,
+        "page": 0,
+        "x": -303.645,
+        "y": -74.896
+      },
+      "viewportEnd": {
+        "line": 113092,
+        "frame": 7202,
+        "qpc": 111913908055,
+        "sampleQpc": 111913709420,
+        "page": 0,
+        "x": -364.606,
+        "y": 646.806
+      },
+      "viewportDeltaPixels": [
+        60.96100000000001,
+        -721.702
+      ],
+      "viewportErrorPixels": [
+        6.2645029224484e-05,
+        -0.0010121410012970955
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 112658,
+          "beforeSeq": 34639,
+          "afterLine": 112660,
+          "afterSeq": 34641
+        },
+        {
+          "beforeLine": 112708,
+          "beforeSeq": 34656,
+          "afterLine": 112710,
+          "afterSeq": 34658
+        },
+        {
+          "beforeLine": 112912,
+          "beforeSeq": 34733,
+          "afterLine": 112914,
+          "afterSeq": 34735
+        },
+        {
+          "beforeLine": 113087,
+          "beforeSeq": 34800,
+          "afterLine": 113089,
+          "afterSeq": 34802
+        }
+      ],
+      "downLine": 112561,
+      "upLine": 113096,
+      "release": {
+        "line": 113098,
+        "text": "[CanvasPan] seq=34808 qpc=111913919766 tid=15688 release released=1 reason=disabled raw=(-49.68,-487.19) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=61.027 age-ms=20.695 rejected=0 reversals=0 timing-resets=0 tail-limit=389.580 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 112559,
+        "text": "[CanvasPan] seq=34593 qpc=111910564051 tid=15688 pan-context key=219 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 112568,
+        "text": "[CanvasPan] seq=34597 qpc=111910566741 tid=15688 pan-admission key=219 accepted=1 reason=accepted qpc=111910558030"
+      },
+      "quality": {
+        "line": 113099,
+        "text": "[CanvasPan] seq=34809 qpc=111913919824 tid=15688 release-quality key=219 source=19092427264 profile=3 unit=mm raw-points=17 anchors=7 positive-intervals=6 first-qpc=111913099149 last-qpc=111913709420 support-first-qpc=111913541411 support-last-qpc=111913567163 support-upper=82.5385 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 113100,
+        "text": "[CanvasPan] seq=34810 qpc=111913919877 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 84,
+      "moveCount": 82,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 82,
+        "2": 1
+      },
+      "actions": {
+        "consume": 84
+      },
+      "durationMs": 335.8343,
+      "lastMoveAgeMs": 20.6953,
+      "panStepCount": 43,
+      "scrollingFrames": 39,
+      "nonzeroFrames": 24,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        60.959999999999994,
+        -721.7099999999998
+      ],
+      "predictedDeltaPixels": {
+        "dx": 60.96093735497079,
+        "dy": -721.7009878589987,
+        "firstSlopCrossLine": 112581,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.0009373549707945017,
+        -0.00901214100110792
+      ],
+      "frameRoundingBoundPixels": 0.245,
+      "maxMotionDistanceMm": 73.09489696094565,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 220,
+      "renderFrameCheckCount": 48,
+      "renderFrameMaxErrorPixels": 0.0007231779406993155,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 113358,
+        "frame": 7205,
+        "qpc": 111916795424,
+        "sampleQpc": 111916707976,
+        "page": 0,
+        "x": -364.606,
+        "y": 646.806
+      },
+      "viewportEnd": {
+        "line": 114198,
+        "frame": 7252,
+        "qpc": 111922858479,
+        "sampleQpc": 111922854885,
+        "page": 0,
+        "x": -106.795,
+        "y": -276.165
+      },
+      "viewportDeltaPixels": [
+        -257.811,
+        922.971
+      ],
+      "viewportErrorPixels": [
+        -0.0007226433133951105,
+        0.0007231779405856287
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 113503,
+          "beforeSeq": 34884,
+          "afterLine": 113504,
+          "afterSeq": 34886
+        },
+        {
+          "beforeLine": 113508,
+          "beforeSeq": 34890,
+          "afterLine": 113510,
+          "afterSeq": 34892
+        },
+        {
+          "beforeLine": 113635,
+          "beforeSeq": 34937,
+          "afterLine": 113637,
+          "afterSeq": 34939
+        },
+        {
+          "beforeLine": 113792,
+          "beforeSeq": 34989,
+          "afterLine": 113793,
+          "afterSeq": 34991
+        },
+        {
+          "beforeLine": 113798,
+          "beforeSeq": 34995,
+          "afterLine": 113807,
+          "afterSeq": 34997
+        },
+        {
+          "beforeLine": 113822,
+          "beforeSeq": 35001,
+          "afterLine": 113824,
+          "afterSeq": 35003
+        },
+        {
+          "beforeLine": 113848,
+          "beforeSeq": 35008,
+          "afterLine": 113850,
+          "afterSeq": 35010
+        },
+        {
+          "beforeLine": 113996,
+          "beforeSeq": 35061,
+          "afterLine": 113998,
+          "afterSeq": 35063
+        }
+      ],
+      "downLine": 113339,
+      "upLine": 114002,
+      "release": {
+        "line": 114006,
+        "text": "[CanvasPan] seq=35066 qpc=111920676504 tid=15688 release released=1 reason=disabled raw=(-196.68,577.06) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=58.973 age-ms=20.957 rejected=0 reversals=0 timing-resets=0 tail-limit=200.262 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 113332,
+        "text": "[CanvasPan] seq=34812 qpc=111916705848 tid=15688 pan-context key=220 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 113343,
+        "text": "[CanvasPan] seq=34819 qpc=111916710950 tid=15688 pan-admission key=220 accepted=1 reason=accepted qpc=111916702992"
+      },
+      "quality": {
+        "line": 114007,
+        "text": "[CanvasPan] seq=35067 qpc=111920676556 tid=15688 release-quality key=220 source=19092427264 profile=3 unit=mm raw-points=17 anchors=6 positive-intervals=5 first-qpc=111919873650 last-qpc=111920463378 support-first-qpc=111920171074 support-last-qpc=111920304741 support-upper=46.466321 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 114008,
+        "text": "[CanvasPan] seq=35068 qpc=111920676598 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 99,
+      "moveCount": 97,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 8861,
+          "afterOrdinal": 8863,
+          "beforeLine": 113503,
+          "afterLine": 113504
+        },
+        {
+          "beforeOrdinal": 8906,
+          "afterOrdinal": 8908,
+          "beforeLine": 113792,
+          "afterLine": 113797
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 97,
+        "2": 1
+      },
+      "actions": {
+        "consume": 99
+      },
+      "durationMs": 396.9956,
+      "lastMoveAgeMs": 20.957,
+      "panStepCount": 50,
+      "scrollingFrames": 46,
+      "nonzeroFrames": 30,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -257.85,
+        922.9499999999998
+      ],
+      "predictedDeltaPixels": {
+        "dx": -257.8102773566866,
+        "dy": 922.9702768220594,
+        "firstSlopCrossLine": 113363,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.03972264331343922,
+        -0.020276822059599908
+      ],
+      "frameRoundingBoundPixels": 0.28,
+      "maxMotionDistanceMm": 96.20650398190126,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 221,
+      "renderFrameCheckCount": 42,
+      "renderFrameMaxErrorPixels": 0.042774345681550585,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": false,
+      "viewportStart": {
+        "line": 114211,
+        "frame": 7254,
+        "qpc": 111922943705,
+        "sampleQpc": 111922858857,
+        "page": 0,
+        "x": -106.795,
+        "y": -276.165
+      },
+      "viewportEnd": {
+        "line": 114770,
+        "frame": 7295,
+        "qpc": 111926366418,
+        "sampleQpc": 111926168332,
+        "page": 0,
+        "x": 524.313,
+        "y": 120.607
+      },
+      "viewportDeltaPixels": [
+        -631.108,
+        -396.77200000000005
+      ],
+      "viewportErrorPixels": [
+        0.023248539923883982,
+        0.04177434568151739
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 114189,
+          "beforeSeq": 35071,
+          "afterLine": 114194,
+          "afterSeq": 35074
+        },
+        {
+          "beforeLine": 114231,
+          "beforeSeq": 35101,
+          "afterLine": 114233,
+          "afterSeq": 35103
+        },
+        {
+          "beforeLine": 114467,
+          "beforeSeq": 35183,
+          "afterLine": 114469,
+          "afterSeq": 35185
+        },
+        {
+          "beforeLine": 114544,
+          "beforeSeq": 35213,
+          "afterLine": 114546,
+          "afterSeq": 35215
+        },
+        {
+          "beforeLine": 114568,
+          "beforeSeq": 35217,
+          "afterLine": 114569,
+          "afterSeq": 35219
+        },
+        {
+          "beforeLine": 114653,
+          "beforeSeq": 35251,
+          "afterLine": 114674,
+          "afterSeq": 35253
+        },
+        {
+          "beforeLine": 114692,
+          "beforeSeq": 35263,
+          "afterLine": 114705,
+          "afterSeq": 35265
+        },
+        {
+          "beforeLine": 114733,
+          "beforeSeq": 35274,
+          "afterLine": 114735,
+          "afterSeq": 35276
+        }
+      ],
+      "downLine": 114189,
+      "upLine": 114774,
+      "release": {
+        "line": 114779,
+        "text": "[CanvasPan] seq=35295 qpc=111926383278 tid=15688 release released=1 reason=disabled raw=(-838.96,-271.11) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=60.302 age-ms=21.132 rejected=0 reversals=0 timing-resets=0 tail-limit=978.239 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 114188,
+        "text": "[CanvasPan] seq=35070 qpc=111922856618 tid=15688 pan-context key=221 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 114194,
+        "text": "[CanvasPan] seq=35074 qpc=111922859466 tid=15688 pan-admission key=221 accepted=1 reason=accepted qpc=111922853241"
+      },
+      "quality": {
+        "line": 114780,
+        "text": "[CanvasPan] seq=35296 qpc=111926383328 tid=15688 release-quality key=221 source=19092427264 profile=3 unit=mm raw-points=17 anchors=5 positive-intervals=4 first-qpc=111925565315 last-qpc=111926168332 support-first-qpc=111925869389 support-last-qpc=111926015083 support-upper=158.59457 support-valid=1 support-limited=1 output-limited=0 boost-suppressed=1"
+      },
+      "profile": {
+        "line": 114781,
+        "text": "[CanvasPan] seq=35298 qpc=111926383374 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 85,
+      "moveCount": 84,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 8993,
+          "afterOrdinal": 8995,
+          "beforeLine": 114568,
+          "afterLine": 114569
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "1": 84,
+        "2": 1
+      },
+      "actions": {
+        "consume": 85
+      },
+      "durationMs": 352.6409,
+      "lastMoveAgeMs": 21.1318,
+      "panStepCount": 45,
+      "scrollingFrames": 41,
+      "nonzeroFrames": 25,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -631.0899999999999,
+        -396.76
+      ],
+      "predictedDeltaPixels": {
+        "dx": -631.1312485399238,
+        "dy": -396.81377434568157,
+        "firstSlopCrossLine": 114215,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.041248539923913086,
+        0.05377434568157469
+      ],
+      "frameRoundingBoundPixels": 0.255,
+      "maxMotionDistanceMm": 73.91471331668338,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 222,
+      "renderFrameCheckCount": 4,
+      "renderFrameMaxErrorPixels": 0.0,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 114770,
+        "frame": 7295,
+        "qpc": 111926366418,
+        "sampleQpc": 111926168332,
+        "page": 0,
+        "x": 524.313,
+        "y": 120.607
+      },
+      "viewportEnd": {
+        "line": 114966,
+        "frame": 7299,
+        "qpc": 111928283924,
+        "sampleQpc": 111928114440,
+        "page": 0,
+        "x": 524.313,
+        "y": 120.607
+      },
+      "viewportDeltaPixels": [
+        0.0,
+        0.0
+      ],
+      "viewportErrorPixels": [
+        0.0,
+        0.0
+      ],
+      "canvasSequenceGaps": [],
+      "downLine": 114942,
+      "upLine": 114972,
+      "release": {
+        "line": 114977,
+        "text": "[CanvasPan] seq=35321 qpc=111928348561 tid=15688 release released=1 reason=disabled raw=(0.00,0.00) selected=(0.00,0.00) boosted=(0.00,0.00) samples=4 span-ms=0.309 age-ms=23.134 rejected=0 reversals=0 timing-resets=0 tail-limit=0.000 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 114938,
+        "text": "[CanvasPan] seq=35299 qpc=111928114018 tid=15688 pan-context key=222 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 114946,
+        "text": "[CanvasPan] seq=35305 qpc=111928116012 tid=15688 pan-admission key=222 accepted=1 reason=accepted qpc=111928111354"
+      },
+      "quality": {
+        "line": 114978,
+        "text": "[CanvasPan] seq=35322 qpc=111928348606 tid=15688 release-quality key=222 source=19092427264 profile=3 unit=mm raw-points=4 anchors=1 positive-intervals=0 first-qpc=111928114440 last-qpc=111928114440 support-first-qpc=0 support-last-qpc=0 support-upper=0 support-valid=0 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 114979,
+        "text": "[CanvasPan] seq=35323 qpc=111928348646 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 5,
+      "moveCount": 3,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 3,
+        "2": 1
+      },
+      "actions": {
+        "consume": 5
+      },
+      "durationMs": 23.4429,
+      "lastMoveAgeMs": 23.1343,
+      "panStepCount": 5,
+      "scrollingFrames": 0,
+      "nonzeroFrames": 0,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        0.0,
+        0.0
+      ],
+      "predictedDeltaPixels": {
+        "dx": 0.0,
+        "dy": 0.0,
+        "firstSlopCrossLine": null,
+        "scrolling": false
+      },
+      "deltaErrorPixels": [
+        0.0,
+        0.0
+      ],
+      "frameRoundingBoundPixels": 0.055,
+      "maxMotionDistanceMm": 1.0146653820411788,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 223,
+      "renderFrameCheckCount": 4,
+      "renderFrameMaxErrorPixels": 0.0004808347676450442,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 114966,
+        "frame": 7299,
+        "qpc": 111928283924,
+        "sampleQpc": 111928114440,
+        "page": 0,
+        "x": 524.313,
+        "y": 120.607
+      },
+      "viewportEnd": {
+        "line": 115028,
+        "frame": 7303,
+        "qpc": 111928757258,
+        "sampleQpc": 111928582916,
+        "page": 0,
+        "x": 519.199,
+        "y": 121.444
+      },
+      "viewportDeltaPixels": [
+        5.114000000000033,
+        -0.8370000000000033
+      ],
+      "viewportErrorPixels": [
+        6.608939589725082e-05,
+        -0.0004808347676450442
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 115007,
+          "beforeSeq": 35327,
+          "afterLine": 115008,
+          "afterSeq": 35329
+        }
+      ],
+      "downLine": 115007,
+      "upLine": 115032,
+      "release": {
+        "line": 115035,
+        "text": "[CanvasPan] seq=35347 qpc=111928809496 tid=15688 release released=1 reason=disabled raw=(0.00,0.00) selected=(0.00,0.00) boosted=(0.00,0.00) samples=3 span-ms=0.442 age-ms=22.311 rejected=0 reversals=0 timing-resets=0 tail-limit=0.000 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 115001,
+        "text": "[CanvasPan] seq=35325 qpc=111928581841 tid=15688 pan-context key=223 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 115010,
+        "text": "[CanvasPan] seq=35331 qpc=111928585181 tid=15688 pan-admission key=223 accepted=1 reason=accepted qpc=111928578498"
+      },
+      "quality": {
+        "line": 115036,
+        "text": "[CanvasPan] seq=35348 qpc=111928809547 tid=15688 release-quality key=223 source=19092427264 profile=3 unit=mm raw-points=3 anchors=1 positive-intervals=0 first-qpc=111928582916 last-qpc=111928582916 support-first-qpc=0 support-last-qpc=0 support-upper=0 support-valid=0 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 115037,
+        "text": "[CanvasPan] seq=35349 qpc=111928809591 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 4,
+      "moveCount": 2,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 2,
+        "2": 1
+      },
+      "actions": {
+        "consume": 4
+      },
+      "durationMs": 22.7524,
+      "lastMoveAgeMs": 22.3106,
+      "panStepCount": 5,
+      "scrollingFrames": 4,
+      "nonzeroFrames": 1,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        5.11,
+        -0.84
+      ],
+      "predictedDeltaPixels": {
+        "dx": 5.1139339106041355,
+        "dy": -0.8365191652323583,
+        "firstSlopCrossLine": 115009,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.003933910604135171,
+        -0.003480834767641716
+      ],
+      "frameRoundingBoundPixels": 0.055,
+      "maxMotionDistanceMm": 2.004032298752609,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 224,
+      "renderFrameCheckCount": 103,
+      "renderFrameMaxErrorPixels": 0.0007881750143496902,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 115028,
+        "frame": 7303,
+        "qpc": 111928757258,
+        "sampleQpc": 111928582916,
+        "page": 0,
+        "x": 519.199,
+        "y": 121.444
+      },
+      "viewportEnd": {
+        "line": 116629,
+        "frame": 7408,
+        "qpc": 111937635174,
+        "sampleQpc": 111937433374,
+        "page": 0,
+        "x": 356.669,
+        "y": -257.236
+      },
+      "viewportDeltaPixels": [
+        162.52999999999997,
+        378.68
+      ],
+      "viewportErrorPixels": [
+        0.0007881750140370514,
+        -0.0005554502496352143
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 115128,
+          "beforeSeq": 35376,
+          "afterLine": 115129,
+          "afterSeq": 35378
+        },
+        {
+          "beforeLine": 115246,
+          "beforeSeq": 35419,
+          "afterLine": 115248,
+          "afterSeq": 35421
+        },
+        {
+          "beforeLine": 115346,
+          "beforeSeq": 35453,
+          "afterLine": 115348,
+          "afterSeq": 35455
+        },
+        {
+          "beforeLine": 115439,
+          "beforeSeq": 35486,
+          "afterLine": 115441,
+          "afterSeq": 35488
+        },
+        {
+          "beforeLine": 115539,
+          "beforeSeq": 35517,
+          "afterLine": 115540,
+          "afterSeq": 35519
+        },
+        {
+          "beforeLine": 115923,
+          "beforeSeq": 35650,
+          "afterLine": 115925,
+          "afterSeq": 35652
+        },
+        {
+          "beforeLine": 115971,
+          "beforeSeq": 35669,
+          "afterLine": 115972,
+          "afterSeq": 35671
+        },
+        {
+          "beforeLine": 116178,
+          "beforeSeq": 35739,
+          "afterLine": 116180,
+          "afterSeq": 35741
+        },
+        {
+          "beforeLine": 116236,
+          "beforeSeq": 35753,
+          "afterLine": 116237,
+          "afterSeq": 35755
+        }
+      ],
+      "downLine": 115065,
+      "upLine": 116634,
+      "release": {
+        "line": 116636,
+        "text": "[CanvasPan] seq=35898 qpc=111937646860 tid=15688 release released=1 reason=disabled raw=(-698.43,338.12) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=59.664 age-ms=20.240 rejected=0 reversals=0 timing-resets=0 tail-limit=5014.864 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 115062,
+        "text": "[CanvasPan] seq=35351 qpc=111929018849 tid=15688 pan-context key=224 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 115067,
+        "text": "[CanvasPan] seq=35355 qpc=111929021038 tid=15688 pan-admission key=224 accepted=1 reason=accepted qpc=111929015487"
+      },
+      "quality": {
+        "line": 116637,
+        "text": "[CanvasPan] seq=35899 qpc=111937646908 tid=15688 release-quality key=224 source=19092427264 profile=3 unit=mm raw-points=17 anchors=6 positive-intervals=5 first-qpc=111936836737 last-qpc=111937433374 support-first-qpc=111937280962 support-last-qpc=111937413192 support-upper=61.724679 support-valid=1 support-limited=1 output-limited=0 boost-suppressed=1"
+      },
+      "profile": {
+        "line": 116638,
+        "text": "[CanvasPan] seq=35900 qpc=111937646952 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 220,
+      "moveCount": 218,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 9040,
+          "afterOrdinal": 9042,
+          "beforeLine": 115128,
+          "afterLine": 115129
+        },
+        {
+          "beforeOrdinal": 9087,
+          "afterOrdinal": 9089,
+          "beforeLine": 115439,
+          "afterLine": 115441
+        },
+        {
+          "beforeOrdinal": 9100,
+          "afterOrdinal": 9102,
+          "beforeLine": 115539,
+          "afterLine": 115540
+        },
+        {
+          "beforeOrdinal": 9157,
+          "afterOrdinal": 9159,
+          "beforeLine": 115923,
+          "afterLine": 115945
+        },
+        {
+          "beforeOrdinal": 9164,
+          "afterOrdinal": 9166,
+          "beforeLine": 115971,
+          "afterLine": 115972
+        },
+        {
+          "beforeOrdinal": 9200,
+          "afterOrdinal": 9202,
+          "beforeLine": 116236,
+          "afterLine": 116237
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 218,
+        "2": 1
+      },
+      "actions": {
+        "consume": 220
+      },
+      "durationMs": 862.0285,
+      "lastMoveAgeMs": 20.2398,
+      "panStepCount": 106,
+      "scrollingFrames": 105,
+      "nonzeroFrames": 68,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        162.5300000000002,
+        378.69999999999993
+      ],
+      "predictedDeltaPixels": {
+        "dx": 162.52921182498594,
+        "dy": 378.68055545024964,
+        "firstSlopCrossLine": 115066,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.000788175014264425,
+        0.019444549750289752
+      ],
+      "frameRoundingBoundPixels": 0.56,
+      "maxMotionDistanceMm": 147.55035413631407,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 225,
+      "renderFrameCheckCount": 13,
+      "renderFrameMaxErrorPixels": 0.08665070048909396,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 116820,
+        "frame": 7411,
+        "qpc": 111939607697,
+        "sampleQpc": 111939520733,
+        "page": 0,
+        "x": 356.669,
+        "y": -257.236
+      },
+      "viewportEnd": {
+        "line": 116923,
+        "frame": 7421,
+        "qpc": 111940443229,
+        "sampleQpc": 111940275976,
+        "page": 0,
+        "x": 263.093,
+        "y": -141.15
+      },
+      "viewportDeltaPixels": [
+        93.57599999999996,
+        -116.08599999999998
+      ],
+      "viewportErrorPixels": [
+        0.08665070048904511,
+        0.03514846589524723
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 116825,
+          "beforeSeq": 35919,
+          "afterLine": 116827,
+          "afterSeq": 35921
+        }
+      ],
+      "downLine": 116802,
+      "upLine": 116927,
+      "release": {
+        "line": 116930,
+        "text": "[CanvasPan] seq=35970 qpc=111940494417 tid=15688 release released=1 reason=disabled raw=(757.70,-930.99) selected=(0.00,0.00) boosted=(0.00,0.00) samples=16 span-ms=61.160 age-ms=21.483 rejected=0 reversals=0 timing-resets=0 tail-limit=1344.625 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 116797,
+        "text": "[CanvasPan] seq=35902 qpc=111939521393 tid=15688 pan-context key=225 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 116805,
+        "text": "[CanvasPan] seq=35908 qpc=111939523639 tid=15688 pan-admission key=225 accepted=1 reason=accepted qpc=111939518721"
+      },
+      "quality": {
+        "line": 116932,
+        "text": "[CanvasPan] seq=35971 qpc=111940494595 tid=15688 release-quality key=225 source=19092427264 profile=3 unit=mm raw-points=16 anchors=6 positive-intervals=5 first-qpc=111939664380 last-qpc=111940275976 support-first-qpc=111939991391 support-last-qpc=111940131118 support-upper=272.49525 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 116933,
+        "text": "[CanvasPan] seq=35972 qpc=111940494677 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 22,
+      "moveCount": 20,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 9263,
+          "afterOrdinal": 9265,
+          "beforeLine": 116825,
+          "afterLine": 116827
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 20,
+        "2": 1
+      },
+      "actions": {
+        "consume": 22
+      },
+      "durationMs": 97.2083,
+      "lastMoveAgeMs": 21.4828,
+      "panStepCount": 14,
+      "scrollingFrames": 10,
+      "nonzeroFrames": 5,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        93.57000000000001,
+        -116.1
+      ],
+      "predictedDeltaPixels": {
+        "dx": 93.48934929951092,
+        "dy": -116.12114846589523,
+        "firstSlopCrossLine": 116827,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.08065070048908751,
+        0.021148465895237223
+      ],
+      "frameRoundingBoundPixels": 0.1,
+      "maxMotionDistanceMm": 16.10170085769582,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 226,
+      "renderFrameCheckCount": 11,
+      "renderFrameMaxErrorPixels": 0.0007593758834048003,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 116923,
+        "frame": 7421,
+        "qpc": 111940443229,
+        "sampleQpc": 111940275976,
+        "page": 0,
+        "x": 263.093,
+        "y": -141.15
+      },
+      "viewportEnd": {
+        "line": 117078,
+        "frame": 7432,
+        "qpc": 111941809816,
+        "sampleQpc": 111941628592,
+        "page": 0,
+        "x": -16.081,
+        "y": 37.999
+      },
+      "viewportDeltaPixels": [
+        279.17400000000004,
+        -179.149
+      ],
+      "viewportErrorPixels": [
+        -0.00024062411665681793,
+        0.00038749321572595363
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 116971,
+          "beforeSeq": 35980,
+          "afterLine": 116973,
+          "afterSeq": 35982
+        }
+      ],
+      "downLine": 116964,
+      "upLine": 117082,
+      "release": {
+        "line": 117084,
+        "text": "[CanvasPan] seq=36031 qpc=111941842143 tid=15688 release released=1 reason=disabled raw=(2257.60,-1433.02) selected=(0.00,0.00) boosted=(0.00,0.00) samples=15 span-ms=57.867 age-ms=21.143 rejected=0 reversals=0 timing-resets=0 tail-limit=2840.794 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 116962,
+        "text": "[CanvasPan] seq=35974 qpc=111941049065 tid=15688 pan-context key=226 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 116968,
+        "text": "[CanvasPan] seq=35979 qpc=111941051154 tid=15688 pan-admission key=226 accepted=1 reason=accepted qpc=111941046127"
+      },
+      "quality": {
+        "line": 117085,
+        "text": "[CanvasPan] seq=36032 qpc=111941842191 tid=15688 release-quality key=226 source=19092427264 profile=3 unit=mm raw-points=15 anchors=5 positive-intervals=4 first-qpc=111941049926 last-qpc=111941628592 support-first-qpc=111941347224 support-last-qpc=111941487041 support-upper=565.37661 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 117086,
+        "text": "[CanvasPan] seq=36033 qpc=111941842237 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 19,
+      "moveCount": 17,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 17,
+        "2": 1
+      },
+      "actions": {
+        "consume": 19
+      },
+      "durationMs": 79.389,
+      "lastMoveAgeMs": 21.1425,
+      "panStepCount": 12,
+      "scrollingFrames": 11,
+      "nonzeroFrames": 7,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        279.19,
+        -179.15
+      ],
+      "predictedDeltaPixels": {
+        "dx": 279.1742406241167,
+        "dy": -179.14938749321573,
+        "firstSlopCrossLine": 116965,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.015759375883305893,
+        -0.0006125067842788212
+      ],
+      "frameRoundingBoundPixels": 0.09,
+      "maxMotionDistanceMm": 33.917382713651925,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 227,
+      "renderFrameCheckCount": 7,
+      "renderFrameMaxErrorPixels": 0.00060011765492618,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 117133,
+        "frame": 7434,
+        "qpc": 111942236588,
+        "sampleQpc": 111942229614,
+        "page": 0,
+        "x": -16.081,
+        "y": 37.999
+      },
+      "viewportEnd": {
+        "line": 117232,
+        "frame": 7441,
+        "qpc": 111942822380,
+        "sampleQpc": 111942677763,
+        "page": 0,
+        "x": -259.164,
+        "y": 156.353
+      },
+      "viewportDeltaPixels": [
+        243.083,
+        -118.35400000000001
+      ],
+      "viewportErrorPixels": [
+        0.0002819099580051443,
+        0.0003998823451354383
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 117227,
+          "beforeSeq": 36075,
+          "afterLine": 117229,
+          "afterSeq": 36077
+        }
+      ],
+      "downLine": 117123,
+      "upLine": 117236,
+      "release": {
+        "line": 117238,
+        "text": "[CanvasPan] seq=36083 qpc=111942896848 tid=15688 release released=1 reason=disabled raw=(2359.56,-1152.59) selected=(0.00,0.00) boosted=(0.00,0.00) samples=15 span-ms=44.815 age-ms=21.563 rejected=0 reversals=0 timing-resets=0 tail-limit=3506.294 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 117121,
+        "text": "[CanvasPan] seq=36035 qpc=111942233990 tid=15688 pan-context key=227 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 117126,
+        "text": "[CanvasPan] seq=36038 qpc=111942235849 tid=15688 pan-admission key=227 accepted=1 reason=accepted qpc=111942229614"
+      },
+      "quality": {
+        "line": 117239,
+        "text": "[CanvasPan] seq=36084 qpc=111942896935 tid=15688 release-quality key=227 source=19092427264 profile=3 unit=mm raw-points=15 anchors=4 positive-intervals=3 first-qpc=111942245684 last-qpc=111942677763 support-first-qpc=111942379346 support-last-qpc=111942529518 support-upper=638.59227 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 117240,
+        "text": "[CanvasPan] seq=36085 qpc=111942897007 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 16,
+      "moveCount": 14,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 14,
+        "2": 1
+      },
+      "actions": {
+        "consume": 16
+      },
+      "durationMs": 66.3779,
+      "lastMoveAgeMs": 21.563,
+      "panStepCount": 10,
+      "scrollingFrames": 7,
+      "nonzeroFrames": 4,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        243.08,
+        -118.35
+      ],
+      "predictedDeltaPixels": {
+        "dx": 243.082718090042,
+        "dy": -118.35439988234515,
+        "firstSlopCrossLine": 117151,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.0027180900419807585,
+        0.004399882345154538
+      ],
+      "frameRoundingBoundPixels": 0.08,
+      "maxMotionDistanceMm": 27.87580482836919,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 228,
+      "renderFrameCheckCount": 211,
+      "renderFrameMaxErrorPixels": 0.0011224230372590682,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 117232,
+        "frame": 7441,
+        "qpc": 111942822380,
+        "sampleQpc": 111942677763,
+        "page": 0,
+        "x": -259.164,
+        "y": 156.353
+      },
+      "viewportEnd": {
+        "line": 120345,
+        "frame": 7652,
+        "qpc": 111960752724,
+        "sampleQpc": 111960541746,
+        "page": 0,
+        "x": -235.452,
+        "y": 107.286
+      },
+      "viewportDeltaPixels": [
+        -23.71199999999999,
+        49.06700000000001
+      ],
+      "viewportErrorPixels": [
+        -0.00012242303673204447,
+        0.0003955476486297016
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 117347,
+          "beforeSeq": 36120,
+          "afterLine": 117349,
+          "afterSeq": 36122
+        },
+        {
+          "beforeLine": 117474,
+          "beforeSeq": 36172,
+          "afterLine": 117476,
+          "afterSeq": 36174
+        },
+        {
+          "beforeLine": 117688,
+          "beforeSeq": 36249,
+          "afterLine": 117690,
+          "afterSeq": 36251
+        },
+        {
+          "beforeLine": 118006,
+          "beforeSeq": 36359,
+          "afterLine": 118007,
+          "afterSeq": 36361
+        },
+        {
+          "beforeLine": 118145,
+          "beforeSeq": 36414,
+          "afterLine": 118147,
+          "afterSeq": 36416
+        },
+        {
+          "beforeLine": 118910,
+          "beforeSeq": 36682,
+          "afterLine": 118921,
+          "afterSeq": 36684
+        },
+        {
+          "beforeLine": 119454,
+          "beforeSeq": 36875,
+          "afterLine": 119462,
+          "afterSeq": 36877
+        },
+        {
+          "beforeLine": 119757,
+          "beforeSeq": 36983,
+          "afterLine": 119759,
+          "afterSeq": 36985
+        },
+        {
+          "beforeLine": 120264,
+          "beforeSeq": 37153,
+          "afterLine": 120280,
+          "afterSeq": 37155
+        }
+      ],
+      "downLine": 117282,
+      "upLine": 120351,
+      "release": {
+        "line": 120353,
+        "text": "[CanvasPan] seq=37190 qpc=111960767407 tid=15688 release released=1 reason=disabled raw=(0.00,0.00) selected=(0.00,0.00) boosted=(0.00,0.00) samples=2 span-ms=0.925 age-ms=21.561 rejected=0 reversals=0 timing-resets=0 tail-limit=0.000 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 117278,
+        "text": "[CanvasPan] seq=36087 qpc=111943291396 tid=15688 pan-context key=228 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 117285,
+        "text": "[CanvasPan] seq=36092 qpc=111943293227 tid=15688 pan-admission key=228 accepted=1 reason=accepted qpc=111943286254"
+      },
+      "quality": {
+        "line": 120354,
+        "text": "[CanvasPan] seq=37191 qpc=111960767448 tid=15688 release-quality key=228 source=19092427264 profile=3 unit=mm raw-points=2 anchors=1 positive-intervals=0 first-qpc=111960541746 last-qpc=111960541746 support-first-qpc=0 support-last-qpc=0 support-upper=0 support-valid=0 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 120355,
+        "text": "[CanvasPan] seq=37192 qpc=111960767497 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 458,
+      "moveCount": 456,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 9326,
+          "afterOrdinal": 9328,
+          "beforeLine": 117347,
+          "afterLine": 117349
+        },
+        {
+          "beforeOrdinal": 9565,
+          "afterOrdinal": 9567,
+          "beforeLine": 118907,
+          "afterLine": 118921
+        },
+        {
+          "beforeOrdinal": 9765,
+          "afterOrdinal": 9767,
+          "beforeLine": 120261,
+          "afterLine": 120280
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 456,
+        "2": 1
+      },
+      "actions": {
+        "consume": 458
+      },
+      "durationMs": 1747.1105,
+      "lastMoveAgeMs": 21.5613,
+      "panStepCount": 211,
+      "scrollingFrames": 210,
+      "nonzeroFrames": 128,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -18.10000000000058,
+        40.27999999999989
+      ],
+      "predictedDeltaPixels": {
+        "dx": -23.711877576963257,
+        "dy": 49.06660445235138,
+        "firstSlopCrossLine": 117283,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        5.6118775769626765,
+        -8.78660445235149
+      ],
+      "frameRoundingBoundPixels": 1.085,
+      "maxMotionDistanceMm": 114.90955844961174,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 229,
+      "renderFrameCheckCount": 198,
+      "renderFrameMaxErrorPixels": 0.0011920532660951721,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 120590,
+        "frame": 7658,
+        "qpc": 111963452277,
+        "sampleQpc": 111963385656,
+        "page": 0,
+        "x": -235.452,
+        "y": 107.286
+      },
+      "viewportEnd": {
+        "line": 123377,
+        "frame": 7852,
+        "qpc": 111979669276,
+        "sampleQpc": 111979465770,
+        "page": 0,
+        "x": -451.781,
+        "y": 136.445
+      },
+      "viewportDeltaPixels": [
+        216.329,
+        -29.158999999999992
+      ],
+      "viewportErrorPixels": [
+        0.0011920532657541116,
+        -3.363458758087745e-05
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 120872,
+          "beforeSeq": 37332,
+          "afterLine": 120874,
+          "afterSeq": 37334
+        },
+        {
+          "beforeLine": 120896,
+          "beforeSeq": 37342,
+          "afterLine": 120898,
+          "afterSeq": 37344
+        },
+        {
+          "beforeLine": 121052,
+          "beforeSeq": 37399,
+          "afterLine": 121054,
+          "afterSeq": 37401
+        },
+        {
+          "beforeLine": 121204,
+          "beforeSeq": 37457,
+          "afterLine": 121206,
+          "afterSeq": 37459
+        },
+        {
+          "beforeLine": 121252,
+          "beforeSeq": 37471,
+          "afterLine": 121253,
+          "afterSeq": 37473
+        },
+        {
+          "beforeLine": 121281,
+          "beforeSeq": 37487,
+          "afterLine": 121283,
+          "afterSeq": 37489
+        },
+        {
+          "beforeLine": 121376,
+          "beforeSeq": 37521,
+          "afterLine": 121378,
+          "afterSeq": 37523
+        },
+        {
+          "beforeLine": 121634,
+          "beforeSeq": 37616,
+          "afterLine": 121636,
+          "afterSeq": 37618
+        },
+        {
+          "beforeLine": 122053,
+          "beforeSeq": 37761,
+          "afterLine": 122055,
+          "afterSeq": 37763
+        },
+        {
+          "beforeLine": 122444,
+          "beforeSeq": 37897,
+          "afterLine": 122445,
+          "afterSeq": 37899
+        },
+        {
+          "beforeLine": 122466,
+          "beforeSeq": 37904,
+          "afterLine": 122467,
+          "afterSeq": 37906
+        },
+        {
+          "beforeLine": 122672,
+          "beforeSeq": 37984,
+          "afterLine": 122674,
+          "afterSeq": 37986
+        },
+        {
+          "beforeLine": 122768,
+          "beforeSeq": 38016,
+          "afterLine": 122781,
+          "afterSeq": 38019
+        },
+        {
+          "beforeLine": 122945,
+          "beforeSeq": 38075,
+          "afterLine": 122950,
+          "afterSeq": 38077
+        },
+        {
+          "beforeLine": 123045,
+          "beforeSeq": 38110,
+          "afterLine": 123051,
+          "afterSeq": 38112
+        },
+        {
+          "beforeLine": 123348,
+          "beforeSeq": 38220,
+          "afterLine": 123350,
+          "afterSeq": 38222
+        }
+      ],
+      "downLine": 120549,
+      "upLine": 123381,
+      "release": {
+        "line": 123383,
+        "text": "[CanvasPan] seq=38238 qpc=111979678282 tid=15688 release released=1 reason=disabled raw=(-362.11,-22.80) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=59.826 age-ms=21.023 rejected=0 reversals=0 timing-resets=0 tail-limit=682.413 tail-limited=0 phase-change=1"
+      },
+      "context": {
+        "line": 120547,
+        "text": "[CanvasPan] seq=37194 qpc=111963114534 tid=15688 pan-context key=229 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 120557,
+        "text": "[CanvasPan] seq=37199 qpc=111963116899 tid=15688 pan-admission key=229 accepted=1 reason=accepted qpc=111963109199"
+      },
+      "quality": {
+        "line": 123384,
+        "text": "[CanvasPan] seq=38239 qpc=111979678327 tid=15688 release-quality key=229 source=19092427264 profile=3 unit=mm raw-points=17 anchors=6 positive-intervals=5 first-qpc=111978867507 last-qpc=111979465770 support-first-qpc=111979162238 support-last-qpc=111979317299 support-upper=87.399753 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 123385,
+        "text": "[CanvasPan] seq=38240 qpc=111979678371 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 430,
+      "moveCount": 428,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 9891,
+          "afterOrdinal": 9893,
+          "beforeLine": 121252,
+          "afterLine": 121253
+        },
+        {
+          "beforeOrdinal": 10012,
+          "afterOrdinal": 10014,
+          "beforeLine": 122053,
+          "afterLine": 122055
+        },
+        {
+          "beforeOrdinal": 10073,
+          "afterOrdinal": 10075,
+          "beforeLine": 122466,
+          "afterLine": 122467
+        },
+        {
+          "beforeOrdinal": 10162,
+          "afterOrdinal": 10164,
+          "beforeLine": 123045,
+          "afterLine": 123076
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        5
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 428,
+        "2": 1
+      },
+      "actions": {
+        "consume": 430
+      },
+      "durationMs": 1656.6796,
+      "lastMoveAgeMs": 21.0225,
+      "panStepCount": 200,
+      "scrollingFrames": 193,
+      "nonzeroFrames": 120,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        139.46999999999957,
+        5.859999999999951
+      ],
+      "predictedDeltaPixels": {
+        "dx": 216.32780794673425,
+        "dy": -29.15896636541241,
+        "firstSlopCrossLine": 120595,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -76.85780794673468,
+        35.01896636541236
+      ],
+      "frameRoundingBoundPixels": 1.03,
+      "maxMotionDistanceMm": 141.6384461007707,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 230,
+      "renderFrameCheckCount": 16,
+      "renderFrameMaxErrorPixels": 0.0008335945321960025,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 123377,
+        "frame": 7852,
+        "qpc": 111979669276,
+        "sampleQpc": 111979465770,
+        "page": 0,
+        "x": -451.781,
+        "y": 136.445
+      },
+      "viewportEnd": {
+        "line": 126923,
+        "frame": 7868,
+        "qpc": 112024344159,
+        "sampleQpc": 112024209202,
+        "page": 0,
+        "x": -794.141,
+        "y": 546.654
+      },
+      "viewportDeltaPixels": [
+        342.35999999999996,
+        -410.209
+      ],
+      "viewportErrorPixels": [
+        -0.0008335945321960025,
+        -0.0005432558625670936
+      ],
+      "canvasSequenceGaps": [],
+      "downLine": 126727,
+      "upLine": 126927,
+      "release": {
+        "line": 126931,
+        "text": "[CanvasPan] seq=38327 qpc=112024421335 tid=15688 release released=1 reason=disabled raw=(1980.93,-2291.08) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=59.253 age-ms=20.928 rejected=0 reversals=0 timing-resets=0 tail-limit=2814.950 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 126724,
+        "text": "[CanvasPan] seq=38244 qpc=112023158866 tid=15688 pan-context key=230 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 126732,
+        "text": "[CanvasPan] seq=38249 qpc=112023161454 tid=15688 pan-admission key=230 accepted=1 reason=accepted qpc=112023155611"
+      },
+      "quality": {
+        "line": 126932,
+        "text": "[CanvasPan] seq=38328 qpc=112024421423 tid=15688 release-quality key=230 source=19092427264 profile=3 unit=mm raw-points=17 anchors=7 positive-intervals=6 first-qpc=112023616674 last-qpc=112024209202 support-first-qpc=112023924396 support-last-qpc=112024054667 support-upper=560.75599 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 126934,
+        "text": "[CanvasPan] seq=38330 qpc=112024421465 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 30,
+      "moveCount": 28,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        8
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 28,
+        "2": 1
+      },
+      "actions": {
+        "consume": 30
+      },
+      "durationMs": 126.2876,
+      "lastMoveAgeMs": 20.9285,
+      "panStepCount": 17,
+      "scrollingFrames": 16,
+      "nonzeroFrames": 9,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        342.37000000000006,
+        -410.21
+      ],
+      "predictedDeltaPixels": {
+        "dx": 342.36083359453215,
+        "dy": -410.20845674413744,
+        "firstSlopCrossLine": 126729,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.00916640546790859,
+        -0.0015432558625434467
+      ],
+      "frameRoundingBoundPixels": 0.115,
+      "maxMotionDistanceMm": 53.98637600405235,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 231,
+      "renderFrameCheckCount": 48,
+      "renderFrameMaxErrorPixels": 0.001539616876531369,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 126923,
+        "frame": 7868,
+        "qpc": 112024344159,
+        "sampleQpc": 112024209202,
+        "page": 0,
+        "x": -794.141,
+        "y": 546.654
+      },
+      "viewportEnd": {
+        "line": 127683,
+        "frame": 7917,
+        "qpc": 112028589309,
+        "sampleQpc": 112028407849,
+        "page": 0,
+        "x": 46.111,
+        "y": -214.853
+      },
+      "viewportDeltaPixels": [
+        -840.252,
+        761.5070000000001
+      ],
+      "viewportErrorPixels": [
+        0.0005396168764946196,
+        0.0008558546518315779
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 126967,
+          "beforeSeq": 38342,
+          "afterLine": 126980,
+          "afterSeq": 38344
+        },
+        {
+          "beforeLine": 127037,
+          "beforeSeq": 38363,
+          "afterLine": 127039,
+          "afterSeq": 38365
+        },
+        {
+          "beforeLine": 127066,
+          "beforeSeq": 38373,
+          "afterLine": 127068,
+          "afterSeq": 38375
+        },
+        {
+          "beforeLine": 127108,
+          "beforeSeq": 38387,
+          "afterLine": 127110,
+          "afterSeq": 38389
+        },
+        {
+          "beforeLine": 127433,
+          "beforeSeq": 38492,
+          "afterLine": 127434,
+          "afterSeq": 38494
+        },
+        {
+          "beforeLine": 127460,
+          "beforeSeq": 38501,
+          "afterLine": 127462,
+          "afterSeq": 38503
+        }
+      ],
+      "downLine": 126957,
+      "upLine": 127687,
+      "release": {
+        "line": 127689,
+        "text": "[CanvasPan] seq=38590 qpc=112028645362 tid=15688 release released=1 reason=disabled raw=(-1528.75,1580.38) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=60.252 age-ms=23.225 rejected=0 reversals=0 timing-resets=0 tail-limit=1282.734 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 126953,
+        "text": "[CanvasPan] seq=38331 qpc=112024653696 tid=15688 pan-context key=231 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 126961,
+        "text": "[CanvasPan] seq=38336 qpc=112024656734 tid=15688 pan-admission key=231 accepted=1 reason=accepted qpc=112024650160"
+      },
+      "quality": {
+        "line": 127692,
+        "text": "[CanvasPan] seq=38591 qpc=112028645429 tid=15688 release-quality key=231 source=19092427264 profile=3 unit=mm raw-points=17 anchors=5 positive-intervals=4 first-qpc=112027805329 last-qpc=112028407849 support-first-qpc=112028122624 support-last-qpc=112028258114 support-upper=257.09205 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 127693,
+        "text": "[CanvasPan] seq=38592 qpc=112028645646 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 102,
+      "moveCount": 100,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 10696,
+          "afterOrdinal": 10698,
+          "beforeLine": 127108,
+          "afterLine": 127123
+        },
+        {
+          "beforeOrdinal": 10740,
+          "afterOrdinal": 10742,
+          "beforeLine": 127433,
+          "afterLine": 127434
+        },
+        {
+          "beforeOrdinal": 10743,
+          "afterOrdinal": 10745,
+          "beforeLine": 127460,
+          "afterLine": 127462
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        8
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 100,
+        "2": 1
+      },
+      "actions": {
+        "consume": 102
+      },
+      "durationMs": 398.9942,
+      "lastMoveAgeMs": 23.2253,
+      "panStepCount": 50,
+      "scrollingFrames": 49,
+      "nonzeroFrames": 35,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -840.29,
+        761.5200000000002
+      ],
+      "predictedDeltaPixels": {
+        "dx": -840.2525396168764,
+        "dy": 761.5061441453482,
+        "firstSlopCrossLine": 126960,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.037460383123516294,
+        0.013855854651978916
+      ],
+      "frameRoundingBoundPixels": 0.28,
+      "maxMotionDistanceMm": 109.64043203972477,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 232,
+      "renderFrameCheckCount": 25,
+      "renderFrameMaxErrorPixels": 0.0008752436903591843,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 127683,
+        "frame": 7917,
+        "qpc": 112028589309,
+        "sampleQpc": 112028407849,
+        "page": 0,
+        "x": 46.111,
+        "y": -214.853
+      },
+      "viewportEnd": {
+        "line": 128177,
+        "frame": 7942,
+        "qpc": 112032310916,
+        "sampleQpc": 112032177008,
+        "page": 0,
+        "x": -791.169,
+        "y": 307.165
+      },
+      "viewportDeltaPixels": [
+        837.28,
+        -522.018
+      ],
+      "viewportErrorPixels": [
+        0.0007747301752942803,
+        -0.00012475630956032546
+      ],
+      "canvasSequenceGaps": [],
+      "downLine": 127838,
+      "upLine": 128181,
+      "release": {
+        "line": 128183,
+        "text": "[CanvasPan] seq=38724 qpc=112032388880 tid=15688 release released=1 reason=disabled raw=(2079.34,-1053.60) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=61.413 age-ms=19.979 rejected=0 reversals=0 timing-resets=0 tail-limit=1647.410 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 127836,
+        "text": "[CanvasPan] seq=38594 qpc=112030381793 tid=15688 pan-context key=232 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 127840,
+        "text": "[CanvasPan] seq=38598 qpc=112030383980 tid=15688 pan-admission key=232 accepted=1 reason=accepted qpc=112030374980"
+      },
+      "quality": {
+        "line": 128184,
+        "text": "[CanvasPan] seq=38725 qpc=112032388964 tid=15688 release-quality key=232 source=19092427264 profile=3 unit=mm raw-points=17 anchors=5 positive-intervals=4 first-qpc=112031562877 last-qpc=112032177008 support-first-qpc=112031870688 support-last-qpc=112032018411 support-upper=330.85274 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 128185,
+        "text": "[CanvasPan] seq=38726 qpc=112032389034 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 50,
+      "moveCount": 48,
+      "ordinalGaps": [],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        8
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 48,
+        "2": 1
+      },
+      "actions": {
+        "consume": 50
+      },
+      "durationMs": 200.1817,
+      "lastMoveAgeMs": 19.9789,
+      "panStepCount": 26,
+      "scrollingFrames": 25,
+      "nonzeroFrames": 16,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        837.27,
+        -522.0299999999999
+      ],
+      "predictedDeltaPixels": {
+        "dx": 837.2792252698247,
+        "dy": -522.0178752436905,
+        "firstSlopCrossLine": 127839,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        -0.009225269824696625,
+        -0.01212475630939025
+      ],
+      "frameRoundingBoundPixels": 0.16,
+      "maxMotionDistanceMm": 97.90118347819232,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    },
+    {
+      "key": 233,
+      "renderFrameCheckCount": 104,
+      "renderFrameMaxErrorPixels": 0.0015898193201167032,
+      "renderFrameErrorsOverPointOne": [],
+      "exactDownInputLogged": true,
+      "viewportStart": {
+        "line": 128177,
+        "frame": 7942,
+        "qpc": 112032310916,
+        "sampleQpc": 112032177008,
+        "page": 0,
+        "x": -791.169,
+        "y": 307.165
+      },
+      "viewportEnd": {
+        "line": 129795,
+        "frame": 8046,
+        "qpc": 112042069052,
+        "sampleQpc": 112041921341,
+        "page": 0,
+        "x": 95.481,
+        "y": -218.42
+      },
+      "viewportDeltaPixels": [
+        -886.65,
+        525.585
+      ],
+      "viewportErrorPixels": [
+        0.0003716160194926488,
+        -0.0005898193199982416
+      ],
+      "canvasSequenceGaps": [
+        {
+          "beforeLine": 128424,
+          "beforeSeq": 38786,
+          "afterLine": 128426,
+          "afterSeq": 38788
+        },
+        {
+          "beforeLine": 128525,
+          "beforeSeq": 38816,
+          "afterLine": 128527,
+          "afterSeq": 38818
+        },
+        {
+          "beforeLine": 128583,
+          "beforeSeq": 38836,
+          "afterLine": 128585,
+          "afterSeq": 38838
+        },
+        {
+          "beforeLine": 128770,
+          "beforeSeq": 38905,
+          "afterLine": 128777,
+          "afterSeq": 38907
+        },
+        {
+          "beforeLine": 129044,
+          "beforeSeq": 38996,
+          "afterLine": 129046,
+          "afterSeq": 38998
+        },
+        {
+          "beforeLine": 129218,
+          "beforeSeq": 39062,
+          "afterLine": 129220,
+          "afterSeq": 39064
+        },
+        {
+          "beforeLine": 129600,
+          "beforeSeq": 39198,
+          "afterLine": 129602,
+          "afterSeq": 39200
+        }
+      ],
+      "downLine": 128290,
+      "upLine": 129799,
+      "release": {
+        "line": 129801,
+        "text": "[CanvasPan] seq=39273 qpc=112042143475 tid=15688 release released=1 reason=disabled raw=(-505.74,170.72) selected=(0.00,0.00) boosted=(0.00,0.00) samples=17 span-ms=58.981 age-ms=21.820 rejected=0 reversals=0 timing-resets=0 tail-limit=182.228 tail-limited=1 phase-change=1"
+      },
+      "context": {
+        "line": 128288,
+        "text": "[CanvasPan] seq=38728 qpc=112033536793 tid=15688 pan-context key=233 profile=3 unit=1 mapped=1 reason=trusted-physical mode=1 dip-per-pixel=(0.5,0.5) motion-per-dip=(0.19444445,0.19791666) w=0 G=1 version=1"
+      },
+      "admission": {
+        "line": 128293,
+        "text": "[CanvasPan] seq=38733 qpc=112033540123 tid=15688 pan-admission key=233 accepted=1 reason=accepted qpc=112033531787"
+      },
+      "quality": {
+        "line": 129802,
+        "text": "[CanvasPan] seq=39274 qpc=112042143535 tid=15688 release-quality key=233 source=19092427264 profile=3 unit=mm raw-points=17 anchors=5 positive-intervals=4 first-qpc=112041331527 last-qpc=112041921341 support-first-qpc=112041627798 support-last-qpc=112041772224 support-upper=43.295102 support-valid=1 support-limited=0 output-limited=0 boost-suppressed=0"
+      },
+      "profile": {
+        "line": 129803,
+        "text": "[CanvasPan] seq=39275 qpc=112042143587 tid=15688 release-profile source=19092427264 profile=3 unit=mm selected-motion=(0,0) tau=0.2 c=350 target-distance=0 duration-s=0"
+      },
+      "inputCount": 222,
+      "moveCount": 220,
+      "ordinalGaps": [
+        {
+          "beforeOrdinal": 10863,
+          "afterOrdinal": 10865,
+          "beforeLine": 128525,
+          "afterLine": 128527
+        },
+        {
+          "beforeOrdinal": 10871,
+          "afterOrdinal": 10873,
+          "beforeLine": 128583,
+          "afterLine": 128585
+        },
+        {
+          "beforeOrdinal": 10940,
+          "afterOrdinal": 10942,
+          "beforeLine": 129044,
+          "afterLine": 129046
+        },
+        {
+          "beforeOrdinal": 10967,
+          "afterOrdinal": 10969,
+          "beforeLine": 129218,
+          "afterLine": 129220
+        }
+      ],
+      "classes": [
+        4
+      ],
+      "contexts": [
+        1912558080
+      ],
+      "cursors": [
+        22
+      ],
+      "epochs": [
+        8
+      ],
+      "phaseCounts": {
+        "0": 1,
+        "1": 220,
+        "2": 1
+      },
+      "actions": {
+        "consume": 222
+      },
+      "durationMs": 860.7759,
+      "lastMoveAgeMs": 21.8205,
+      "panStepCount": 105,
+      "scrollingFrames": 104,
+      "nonzeroFrames": 67,
+      "maxHeld": 1,
+      "upHeld": 0,
+      "sumDeltaPixels": [
+        -886.6300000000001,
+        525.5900000000003
+      ],
+      "predictedDeltaPixels": {
+        "dx": -886.6503716160195,
+        "dy": 525.58558981932,
+        "firstSlopCrossLine": 128291,
+        "scrolling": true
+      },
+      "deltaErrorPixels": [
+        0.020371616019360772,
+        0.004410180680224585
+      ],
+      "frameRoundingBoundPixels": 0.555,
+      "maxMotionDistanceMm": 124.67171412156512,
+      "otherContactInputs": 0,
+      "stops": [],
+      "suppressedFrames": []
+    }
+  ],
+  "userClarification": "Main relayed: suspected tail not fully pressed/pressure; alternatively relative slip after grab, user leans pressure. Physical contact timing not recorded.",
+  "geometryEvidenceCaveat": "1783 matched-sample render frames; key221 uses explicit0.1px registration Down approximation; key225 misses first-slop-nearby ordinal9264; remaining42 cumulative errors ≤0.00126px. No native or optical execution."
+}

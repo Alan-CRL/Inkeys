@@ -1,0 +1,22 @@
+{
+  "status": "PASS",
+  "productSourceFiles": 8,
+  "specFiles": 3,
+  "localLinksChecked": 152,
+  "originalEncodingAndCrLfPreserved": true,
+  "finalSourceAndArtifactHashesMatch": true,
+  "manifests": {
+    "implement": {
+      "entries": 5,
+      "payloadFileBytes": 124506
+    },
+    "check": {
+      "entries": 6,
+      "payloadFileBytes": 127022
+    }
+  },
+  "taskStatus": "in_progress",
+  "manualDeviceValidation": "pending",
+  "errors": [],
+  "linkCheck": "filesystem target and explicit line anchors; Markdown fragments separated from filenames"
+}

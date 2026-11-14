@@ -84,7 +84,10 @@ export namespace Inkeys::Drawing::Draw3
 	// Debug 限频输出墨迹建模和绘制耗时；Release 中为空操作。
 	void LogFrameTiming(size_t committedIndex, size_t realPointCount, size_t predictedPointCount,
 		size_t l0PointCount, double workMs, double previousFrameMs, bool idleFrozen);
-	// 输出带统一前缀的画布平移诊断；调用方负责只在关键状态或限频采样时调用。
+	// 独立产品开关；查询同时检查输出端，供热路径避开诊断字段构造。
+	void SetCanvasPanDiagnosticsEnabled(bool enabled) noexcept;
+	bool CanvasPanDiagnosticsEnabled() noexcept;
+	// 输出带序号/QPC前缀的平移诊断；调用方仅在输入、活动帧或状态边界调用。
 	void LogCanvasPan(const char* format, ...) noexcept;
 	// 光标输入回调只尝试提交有界记录，由独立输出线程处理 sink，避免阻塞 RTS/绘制。
 	void SetCursorDiagnosticsEnabled(bool enabled) noexcept;

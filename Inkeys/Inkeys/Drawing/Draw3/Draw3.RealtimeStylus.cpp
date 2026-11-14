@@ -505,6 +505,7 @@ namespace Inkeys::Drawing::Draw3
 			PacketPropertyMetadata altitude;
 			PacketPropertyMetadata width;
 			PacketPropertyMetadata height;
+			PacketPropertyMetadata timerTick, serialNumber; // 仅观察当前返回属性，正式采样时钟不变。
 			float positionScaleX = 1.0f;
 			float positionScaleY = 1.0f;
 			float contactScaleX = 1.0f;
@@ -540,6 +541,8 @@ namespace Inkeys::Drawing::Draw3
 			uint64_t decoderGeneration = 0;
 			InputDeviceType deviceType = InputDeviceType::Pen;
 			bool occupied = false;
+			uint64_t penFeedbackToken = 0;
+			int64_t penFeedbackDownQpc = 0;
 		};
 
 		enum class RtsBindingInsertResult : uint8_t
@@ -607,6 +610,21 @@ namespace Inkeys::Drawing::Draw3
 					index = NextIndex(index);
 				}
 				return nullptr;
+			}
+
+			void SetPenFeedbackIdentity(uint32_t tabletContextId, uint32_t contactId,
+				uint64_t token, int64_t downQpc) noexcept
+			{
+				const auto* binding = Find(tabletContextId, contactId);
+				if (!binding) return;
+				auto& stored = slots_[static_cast<size_t>(binding - slots_.data())];
+				stored.penFeedbackToken = token; stored.penFeedbackDownQpc = downQpc;
+			}
+			template<typename Visitor>
+			void ForEach(const Visitor& visitor) const noexcept
+			{
+				for (size_t index = 0; index < logicalCapacity_; ++index)
+					if (slots_[index].occupied) visitor(slots_[index]);
 			}
 
 			RtsBindingInsertResult Insert(const RtsActiveContactBinding& binding) noexcept
@@ -882,6 +900,8 @@ namespace Inkeys::Drawing::Draw3
 					captureProperty(decoder.width, index);
 				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_HEIGHT))
 					captureProperty(decoder.height, index);
+				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_TIMER_TICK)) captureProperty(decoder.timerTick, index);
+				else if (IsEqualGUID(properties[index].guid, GUID_PACKETPROPERTY_GUID_SERIAL_NUMBER)) captureProperty(decoder.serialNumber, index);
 			}
 			decoder.propertyCount = propertyCount;
 			return hasX && hasY;
@@ -933,6 +953,20 @@ namespace Inkeys::Drawing::Draw3
 			RtsContextDecoder decoder;
 			const bool propertiesValid = PopulateContextDecoderProperties(
 				properties, propertyCount, decoder);
+			if (propertiesValid && CanvasPanDiagnosticsEnabled())
+			{
+				// 低频建decoder时只报告实际返回GUID/metrics；未请求/未返回不等于硬件不支持。
+				LogCanvasPan("rts-clock-capability context=%u properties=%lu timer-requested=0 timer-reported=%u serial-requested=0 serial-reported=%u clock-validated=0 timestamp=callback-arrival",
+					static_cast<unsigned>(contextId), static_cast<unsigned long>(propertyCount), decoder.timerTick.present ? 1u : 0u, decoder.serialNumber.present ? 1u : 0u);
+				for (ULONG index = 0; index < propertyCount; ++index)
+				{
+					const auto& guid = properties[index].guid; const auto& m = properties[index].PropertyMetrics;
+					LogCanvasPan("rts-packet-property context=%u index=%lu guid=%08lx-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x minimum=%ld maximum=%ld unit=%u resolution=%.9g",
+						static_cast<unsigned>(contextId), static_cast<unsigned long>(index), static_cast<unsigned long>(guid.Data1), guid.Data2, guid.Data3,
+						guid.Data4[0], guid.Data4[1], guid.Data4[2], guid.Data4[3], guid.Data4[4], guid.Data4[5], guid.Data4[6], guid.Data4[7],
+						m.nLogicalMin, m.nLogicalMax, static_cast<unsigned>(m.Units), static_cast<double>(m.fResolution));
+				}
+			}
 			CoTaskMemFree(properties);
 			if (!propertiesValid) return false;
 
@@ -1046,6 +1080,17 @@ namespace Inkeys::Drawing::Draw3
 				drawingCursorSink->NotifyTouchContactEnd();
 		}
 
+		uint64_t NextPenFeedbackToken() noexcept
+		{
+			// 整个进程单调，不随 RTS 重建归零；耗尽时只关闭可选反馈凭据。
+			static std::atomic<uint64_t> serial = 0;
+			uint64_t current = serial.load(std::memory_order_relaxed);
+			while (current != (std::numeric_limits<uint64_t>::max)())
+				if (serial.compare_exchange_weak(current, current + 1,
+					std::memory_order_relaxed, std::memory_order_relaxed)) return current + 1;
+			return 0;
+		}
+
 		class StylusSyncPlugin final : public IStylusSyncPlugin
 		{
 		public:
@@ -1057,6 +1102,12 @@ namespace Inkeys::Drawing::Draw3
 			{
 				marshalerResult_ = CoCreateFreeThreadedMarshaler(
 					static_cast<IUnknown*>(this), freeThreadedMarshaler_.ReleaseAndGetAddressOf());
+			}
+
+			void ClosePenFeedbackContacts() noexcept
+			{
+				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
+				CancelPenFeedbackContacts();
 			}
 
 			HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** object) override
@@ -1165,7 +1216,7 @@ namespace Inkeys::Drawing::Draw3
 				return S_OK;
 			}
 
-			HRESULT STDMETHODCALLTYPE StylusOutOfRange(IRealTimeStylus*, TABLET_CONTEXT_ID, STYLUS_ID) override
+			HRESULT STDMETHODCALLTYPE StylusOutOfRange(IRealTimeStylus*, TABLET_CONTEXT_ID contextId, STYLUS_ID cursorId) override
 			{
 				RtsStartup::CallbackGate::Lease callback(callbackGate_);
 				if (!callback) return S_OK;
@@ -1173,7 +1224,10 @@ namespace Inkeys::Drawing::Draw3
 				RecordCallback("StylusOutOfRange", nullptr, nullptr, 0, 0,
 					nullptr, nullptr, true, false);
 #endif
-				PublishDefaultPenCursor();
+				RtsStateWriterGuard stateWriter(stateWriterMutex_, stateGate_);
+				const auto* binding = activeBindings_.Find(contextId, cursorId);
+				NotifyPenFeedback(binding, PenFeedbackPhase::Cancelled);
+				PublishDefaultPenCursor(binding ? binding->penFeedbackToken : 0);
 				return S_OK;
 			}
 
@@ -1257,6 +1311,12 @@ namespace Inkeys::Drawing::Draw3
 				snapshot.source = SourceForCursor(*decoder,stylusInfo->cid);
 				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
+				if (decoder->deviceType == InputDeviceType::Pen && drawingCursorSink_)
+				{
+					const uint64_t token = NextPenFeedbackToken();
+					activeBindings_.SetPenFeedbackIdentity(stylusInfo->tcid, stylusInfo->cid, token, snapshot.qpc);
+					NotifyPenFeedback(activeBindings_.Find(stylusInfo->tcid, stylusInfo->cid), PenFeedbackPhase::Down);
+				}
 				PublishPenCursor(decoder, stylusInfo, true, snapshot);
 				InputDeviceType deviceType = decoder->deviceType;
 				if (deviceType == InputDeviceType::MouseLeft)
@@ -1277,6 +1337,9 @@ namespace Inkeys::Drawing::Draw3
 				});
 				if (!published)
 				{
+					const auto* failedBinding = activeBindings_.Find(stylusInfo->tcid, stylusInfo->cid);
+					NotifyPenFeedback(failedBinding, PenFeedbackPhase::Cancelled);
+					PublishDefaultPenCursor(failedBinding ? failedBinding->penFeedbackToken : 0);
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 					NotifyRtsTouchContactEnd(decoder->deviceType, drawingCursorSink_);
 				}
@@ -1309,8 +1372,9 @@ namespace Inkeys::Drawing::Draw3
 					? binding->deviceType : InputDeviceType::Pen;
 				if (!packet)
 				{
-					PublishDefaultPenCursor();
+					const uint64_t token = binding ? binding->penFeedbackToken : 0;
 					const bool published = CloseProducerContact(stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+					PublishDefaultPenCursor(token);
 					RecordInputDiagnostic("Up", "no-packet-cancel", stylusInfo,
 						binding ? decoderCache_.Resolve(*binding) : nullptr, nullptr, published);
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
@@ -1323,10 +1387,11 @@ namespace Inkeys::Drawing::Draw3
 				if (!decoder || !DecodeSnapshot(*decoder, propertyCount, packet,
 					ContactPhase::Up, QueryQpc(), snapshot))
 				{
-					PublishDefaultPenCursor();
+					const uint64_t token = binding ? binding->penFeedbackToken : 0;
 					// 坏 Up 包不能把 contact 永久留在 Producing；协调器会沿用最后有效位置闭合。
 					const bool published = CloseProducerContact(
 						stylusInfo->tcid, stylusInfo->cid, QueryQpc());
+					PublishDefaultPenCursor(token);
 					RecordInputDiagnostic("Up", decoder ? "decode-failed-cancel" : "no-decoder-cancel",
 						stylusInfo, decoder, nullptr, published, 1, propertyCount);
 					activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
@@ -1341,7 +1406,15 @@ namespace Inkeys::Drawing::Draw3
 				snapshot.source = SourceForCursor(*decoder,stylusInfo->cid);
 				snapshot.isInvertedCursor = decoder->deviceType == InputDeviceType::Pen &&
 					stylusInfo->bIsInvertedCursor != FALSE;
-				PublishDefaultPenCursor(); // Up 只清除接触光标，后续 InAir/Pointer 样本再恢复真实 Hover。
+				if (CanvasPanDiagnosticsEnabled())
+					LogCanvasPan("rts-terminal-raw context=%u cursor=%u packet-count=1 properties=%lu x=%ld y=%ld timer-present=%u timer-raw=%ld serial-present=%u serial-raw=%ld arrival-qpc=%lld clock-validated=0",
+						static_cast<unsigned>(stylusInfo->tcid), static_cast<unsigned>(stylusInfo->cid), static_cast<unsigned long>(propertyCount),
+						packet[decoder->xIndex], packet[decoder->yIndex], decoder->timerTick.present ? 1u : 0u,
+						decoder->timerTick.present && decoder->timerTick.index < propertyCount ? packet[decoder->timerTick.index] : 0L,
+						decoder->serialNumber.present ? 1u : 0u, decoder->serialNumber.present && decoder->serialNumber.index < propertyCount ? packet[decoder->serialNumber.index] : 0L,
+						static_cast<long long>(snapshot.qpc));
+				NotifyPenFeedback(binding, PenFeedbackPhase::Up);
+				PublishDefaultPenCursor(binding ? binding->penFeedbackToken : 0); // 不清另一笔的新 token。
 				bool published = false;
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
 					published = interruptionSimulation_.PublishUp(
@@ -1451,6 +1524,10 @@ namespace Inkeys::Drawing::Draw3
 				else
 					published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot);
 				PublishPenCursor(decoder, stylusInfo, true, snapshot);
+				if (CanvasPanDiagnosticsEnabled() && decoder->deviceType != InputDeviceType::Pen)
+					LogCanvasPan("rts-batch context=%u cursor=%u reported=%lu retained=1 published=%u sample-qpc=%lld timestamp=callback-arrival",
+						static_cast<unsigned>(stylusInfo->tcid), static_cast<unsigned>(stylusInfo->cid),
+						static_cast<unsigned long>(packetCount), published ? 1u : 0u, static_cast<long long>(snapshot.qpc));
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 				RecordCallback("Packets", stylusInfo, decoder, packetCount, propertyCount,
 					lastPacket, &snapshot, true, published);
@@ -1672,17 +1749,33 @@ namespace Inkeys::Drawing::Draw3
 				sample.inverted = stylusInfo->bIsInvertedCursor != FALSE;
 				sample.inContact = inContact;
 				sample.source = snapshot.source;
-				drawingCursorSink_->PublishPenCursorSample(sample);
+				const auto* binding = inContact ? activeBindings_.Find(stylusInfo->tcid, stylusInfo->cid) : nullptr;
+				drawingCursorSink_->PublishPenCursorSampleForContact(sample, binding ? binding->penFeedbackToken : 0);
 			}
 
-			void PublishDefaultPenCursor() noexcept
+			void NotifyPenFeedback(const RtsActiveContactBinding* binding, PenFeedbackPhase phase) noexcept
 			{
-				if (drawingCursorSink_) drawingCursorSink_->ClearPenCursorSample();
+				if (!drawingCursorSink_ || !binding || !binding->penFeedbackToken) return;
+				drawingCursorSink_->NotifyPenFeedbackContact({ binding->penFeedbackToken,
+					binding->tabletContextId, binding->contactId, binding->decoderGeneration,
+					binding->penFeedbackDownQpc, phase });
+			}
+
+			void CancelPenFeedbackContacts() noexcept
+			{
+				activeBindings_.ForEach([&](const auto& binding)
+					{ NotifyPenFeedback(&binding, PenFeedbackPhase::Cancelled); });
+			}
+
+			void PublishDefaultPenCursor(uint64_t token = 0) noexcept
+			{
+				if (drawingCursorSink_) drawingCursorSink_->ClearPenCursorSampleForContact(token);
 			}
 
 			bool CloseProducerContact(uint32_t tabletContextId,
 				uint32_t contactId, int64_t qpc) noexcept
 			{
+				NotifyPenFeedback(activeBindings_.Find(tabletContextId, contactId), PenFeedbackPhase::Cancelled);
 				ContactSnapshot snapshot;
 				snapshot.position = { NAN, NAN };
 				snapshot.qpc = qpc;
@@ -1695,6 +1788,7 @@ namespace Inkeys::Drawing::Draw3
 
 			void ResetActiveContactState(bool closeProducerContacts) noexcept
 			{
+				CancelPenFeedbackContacts();
 				const size_t activeTouchContactCount =
 					activeBindings_.ActiveTouchBindingCount();
 				if constexpr (kInterruptedStrokeReconnectSimulationEnabled)
@@ -2910,8 +3004,9 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 		if (plugin && !plugin->DrainCallbacks()) impl_->failedCleanup.FailUnprovenProducerStop();
+		if (plugin) plugin->ClosePenFeedbackContacts();
 		if (impl_->coordinator) impl_->coordinator->CloseAllProducerContacts(QueryQpc());
-		if (impl_->drawingCursorSink) impl_->drawingCursorSink->ClearPenCursorSample();
+		if (impl_->drawingCursorSink) impl_->drawingCursorSink->ClearPenCursorSampleForContact(0);
 		impl_->stylus3.Reset();
 		impl_->stylus.Reset();
 		removedPlugin.Reset();

@@ -786,6 +786,14 @@ namespace
 			&& !SelectionUsesAuxiliaryOutput(true, Workspace::Whiteboard)
 			&& !SelectionUsesAuxiliaryOutput(false, Workspace::Whiteboard),
 			"whiteboard selection stays on the primary drawpad")) ++failures;
+		// 只有白板移动模式平移画布；桌面/PPT 的 Selection 与所有绘制工具都不平移。
+		if (!Expect(MoveModePansCanvas(true, Workspace::Whiteboard)
+			&& !MoveModePansCanvas(false, Workspace::Whiteboard)
+			&& !MoveModePansCanvas(true, Workspace::Desktop)
+			&& !MoveModePansCanvas(true, Workspace::Presentation)
+			&& !MoveModePansCanvas(false, Workspace::Desktop)
+			&& !MoveModePansCanvas(false, Workspace::Presentation),
+			"only whiteboard Move mode pans the canvas")) ++failures;
 		if (!Expect(ResolveDrawpadPresentationSurface(true, false, true) ==
 			DrawpadPresentationSurface::Hidden,
 			"clean empty selection hides both drawpad surfaces")) ++failures;

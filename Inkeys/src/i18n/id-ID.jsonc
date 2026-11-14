@@ -635,6 +635,16 @@
           "Precise": "Presisi",
           "Fast": "Cepat",
           "Disabled": "Nonaktif"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Inersia seret papan tulis",
+          "E": "Terus meluncur setelah dilepas dalam mode seret papan tulis. Atur setiap jenis input secara terpisah.",
+          "Mouse": "Mouse",
+          "Touchpad": "Touchpad",
+          "Touch": "Sentuhan",
+          "Pen": "Pena",
+          "PenTail": "Pena (ujung penghapus)"
         }
       },
       "Laser":
@@ -965,6 +975,11 @@
         {
           "N": "Diagnostik kursor",
           "E": "Keluarkan pemilik masukan kursor dan hasil perenderannya ke konsol."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnostik geser dan inersia papan tulis",
+          "E": "Catat input geser mouse dan sentuh, kecepatan, inersia, serta alasan berhenti untuk menyelidiki masalah gerakan."
         }
       }
     },

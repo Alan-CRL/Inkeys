@@ -1,0 +1,2 @@
+[Draw3CanvasPan] seqlock stress reads=1000000 contended=42110 torn=0
+PASS Draw3 product canvas pan, Chromium reference, whiteboard pattern geometry and Freeze pattern follow

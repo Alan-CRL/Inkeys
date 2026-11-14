@@ -635,6 +635,16 @@
           "Precise": "Precisa",
           "Fast": "Rápida",
           "Disabled": "Desactivada"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Inercia al arrastrar la pizarra",
+          "E": "La pizarra sigue deslizándose al soltar en el modo de arrastre. Se puede ajustar por tipo de entrada.",
+          "Mouse": "Ratón",
+          "Touchpad": "Panel táctil",
+          "Touch": "Toque",
+          "Pen": "Lápiz",
+          "PenTail": "Lápiz (extremo borrador)"
         }
       },
       "Laser":
@@ -965,6 +975,11 @@
         {
           "N": "Diagnóstico del cursor",
           "E": "Mostrar en la consola la propiedad de las entradas del cursor y su representación visual."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnóstico de desplazamiento e inercia de la pizarra",
+          "E": "Registra la entrada del ratón y táctil, la velocidad, la inercia y los motivos de detención para investigar problemas de movimiento."
         }
       }
     },

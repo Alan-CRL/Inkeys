@@ -10,6 +10,8 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <vector>
+#include "Draw3.TouchpadNavigation.h"
 #include <windows.h>
 #include "Draw3.Bridge.h"
 #include "Draw3.HapticRequest.h"
@@ -24,11 +26,19 @@ import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.pen_cursor;
 export import Inkeys.Drawing.Draw3.presentation_auto_save;
 
+namespace Inkeys::Drawing::Draw3 { class TouchpadNavigationOwner; }
+
 export namespace Inkeys::Drawing::Draw3
 {
-	// 画布平移尚未纳入产品桥接，保留编译门禁并隐藏实验入口。
-	inline constexpr bool kCanvasNavigationProductIntegrationEnabled = false;
+	struct CanvasPanDisplaySnapshot
+	{
+		SpeedEraser::DisplayScale display;
+		SpeedEraser::DeviceMode mode = SpeedEraser::DeviceMode::Laptop;
+	};
 
+	// 无 HWND：关闭停止握手的原句柄后，独立通知仍可唤醒同一内核事件。
+	int RunTouchpadOwnerNotificationProductionProbe() noexcept;
+	int RunTouchpadIngressProductionProbe() noexcept;
 	// 表示当前选择或活动 contact 锁定的绘制工具。
 	enum class DrawingTool
 	{
@@ -155,6 +165,23 @@ export namespace Inkeys::Drawing::Draw3
 		// mode 启闭通过 HWND owner 同步确认；返回前旧鼠标 producer 已停止。
 		bool SetMouseCompatibilityEnabled(bool enabled) noexcept;
 		void CloseMouseInputAdmission() noexcept;
+		// DM 仅由 HWND owner 调用，绘制线程只交换带 epoch 的累计位移。
+		void SetTouchpadNavigationEnabled(bool enabled, bool inertiaAllowed) noexcept;
+		void CancelTouchpadNavigation(std::int64_t takeoverQpc = 0) noexcept;
+		void RequestTouchpadNavigationUpdate() noexcept;
+		bool StopTouchpadNavigation() noexcept;
+		std::uint64_t DrainTouchpadNavigation(std::vector<TouchpadNavigationSample>& samples);
+		std::uint64_t TouchpadNavigationEpoch() const noexcept;
+		bool TouchpadNavigationActive() const noexcept;
+		bool TouchpadNavigationNeedsUpdate() const noexcept;
+		bool TouchpadNavigationRunning() const noexcept;
+		bool TouchpadNavigationRunningAt(std::int64_t qpc) const noexcept;
+		std::int64_t TouchpadNavigationStartQpc() const noexcept;
+		// 无 HWND 探针与真实 DM 回调共用同一有界发布通道。
+		void PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase phase,
+			double x, double y, std::int64_t qpc) noexcept;
+		void PublishHiddenTestTouchpadInteraction(bool begin) noexcept;
+
 		// 返回窗口句柄。
 		HWND Handle() const;
 		// 返回当前客户区尺寸。
@@ -187,6 +214,9 @@ export namespace Inkeys::Drawing::Draw3
 		// 选择模式与穿透样式解耦；绘制线程据此管理高精度计时器。
 		bool SelectionMode() const noexcept;
 		void SetSelectionMode(bool enabled) noexcept;
+		// 平移模式由选择位与已确认工作区派生；工作区确认回调前发布，不等待下一绘制帧。
+		bool CanvasPanMode() const noexcept;
+		void SetCanvasPanWorkspace(bool whiteboard) noexcept;
 		bool AutoSaveEnabled() const noexcept;
 		void SetAutoSaveEnabled(bool enabled) noexcept;
 		// Presentation 保持 click-through/不激活；白板绘制面由生命周期事务显式开放激活。
@@ -210,6 +240,8 @@ export namespace Inkeys::Drawing::Draw3
 		SpeedEraser::DisplayScale SpeedEraserDisplayScaleSnapshot() const;
 		void SetSpeedEraserDeviceMode(SpeedEraser::DeviceMode mode);
 		SpeedEraser::DeviceMode SpeedEraserDeviceModeSnapshot() const;
+		// 同一锁截面的事实快照；不拼接两次独立读取，也不携带橡皮响应配置。
+		CanvasPanDisplaySnapshot CanvasPanDisplayContextSnapshot() const;
 		// 宽度和显示上下文同锁发布，实际绘制仍由绘制线程消费。
 		void SetProductVisualStyle(uint32_t colorRgba, double widthDip,
 			const Inkeys::Business::PenWidth::Context& context = {}) noexcept;
@@ -234,10 +266,12 @@ export namespace Inkeys::Drawing::Draw3
 		DrawingTool EffectiveDrawingCursorTool() const noexcept;
 		// 返回当前视觉归属；Touch 只暂时覆盖，不写入持久 Pen/Mouse owner。
 		DrawingCursorPointerAuthority CursorOwner() const noexcept;
-		bool ReadPenCursorSample(DrawingCursorSample& sample) const noexcept;
+		bool ReadPenCursorSample(DrawingCursorSample& sample, bool* suppressed = nullptr) const noexcept;
 		bool ReadMouseCursorSample(DrawingCursorSample& sample) const noexcept;
 		// 仅由Host隐藏注入门调用；复用正常光标发布，不安装真实鼠标离窗跟踪。
 		void PublishHiddenTestMouseCursor(const DrawingCursorSample& sample) noexcept;
+		// 无 HWND 探针复用离窗/取消共用的清理操作；不模拟 USER32 消息派发。
+		void ClearHiddenTestMouseCursor() noexcept;
 		// 绘制线程发布直接跟手平移状态，窗口线程据此抑制 Pen 接触反馈。
 		void SetTouchPanActive(bool active) noexcept;
 		bool TouchPanActive() const noexcept;
@@ -251,6 +285,15 @@ export namespace Inkeys::Drawing::Draw3
 		void NotifyTouchContactEnd() noexcept override;
 		void PublishPenCursorSample(const DrawingCursorSample& sample) noexcept override;
 		void ClearPenCursorSample() noexcept override;
+		void NotifyPenFeedbackContact(const PenFeedbackContact& contact) noexcept override;
+		void PublishPenCursorSampleForContact(const DrawingCursorSample& sample,
+			uint64_t token) noexcept override;
+		void ClearPenCursorSampleForContact(uint64_t token) noexcept override;
+		uint64_t NavigationPenFeedbackToken(uint32_t tabletContextId, uint32_t cursorId,
+			uint64_t sourceGeneration, int64_t downQpc) const noexcept;
+		void SetNavigationPenFeedbackEpoch(uint64_t navigationEpoch) noexcept;
+		void ApplyNavigationPenDecision(uint64_t token, uint64_t panKey,
+			uint64_t handleGeneration, uint64_t navigationEpoch, bool accepted) noexcept;
 		// 消费最近一次 Pointer 消息中的 pointerId 和笔尾提示；仅用于触觉预启动。
 		bool ConsumeHapticPointer(Haptics::CanvasPointerRequest& request);
 		bool ConsumeHapticPointerLeave();
@@ -275,7 +318,11 @@ export namespace Inkeys::Drawing::Draw3
 		void RestoreTabletInputProperty(HWND window) noexcept;
 		void SetDrawingCursorOwner(DrawingCursorPointerAuthority owner) noexcept;
 		void SetTouchCursorSuppressed(bool suppressed) noexcept;
-		void SetPenContactSuppressedForTouchPan(bool suppressed) noexcept;
+		void SetPenContactSuppressedForTouchPan(bool suppressed, bool updateRts = true) noexcept;
+		void SetPointerPenContactSuppressed(bool suppressed) noexcept;
+		void FinishPenCursorClear(bool changed) noexcept;
+		void PublishPenCursorSampleImpl(const DrawingCursorSample& sample,
+			uint64_t token, bool fromRts) noexcept;
 		void NotifyTouchContactBegin(bool trackActiveContact,
 			uint32_t touchBarrierTick) noexcept;
 		void PublishMouseCursorSample(const DrawingCursorSample& sample) noexcept;
@@ -306,6 +353,21 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic_bool mouseOwnerControlSucceeded_[2] = {};
 		unsigned mouseDispatchDepth_ = 0; // 仅 owner；直接停止不能等待自己的外层输入回调。
 		DWORD mouseStartTick_ = 0; // 仅 owner 读写，拒绝模式就绪前已经排队的 Down。
+		std::shared_ptr<Detail::TouchpadNavigationBridge> touchpadNavigationBridge_ =
+			std::make_shared<Detail::TouchpadNavigationBridge>();
+		// 以下 COM holder 只由 owner 创建/清理，Host 必须取得 Stop 确认后才能销毁本对象。
+		std::shared_ptr<TouchpadNavigationOwner> touchpadNavigationOwner_;
+		std::atomic_bool touchpadNavigationAllowed_ = true;
+		std::atomic_bool touchpadNavigationEnabled_ = false;
+		std::atomic_bool touchpadNavigationInertia_ = true;
+		std::atomic_bool touchpadNavigationPosted_ = false;
+		std::atomic_bool touchpadNavigationOwnerStopped_ = true;
+		HANDLE touchpadNavigationStoppedEvent_ = nullptr;
+		std::atomic<UINT_PTR> touchpadNavigationIdentity_ = 0;
+		unsigned touchpadDeferredOperation_ = 0;
+		bool touchpadStopCompletionPending_ = false, touchpadStopSucceeded_ = false;
+		void FinishTouchpadNavigationDispatch(HWND window) noexcept;
+		unsigned touchpadDispatchDepth_ = 0; // 仅 owner，避免在 COM 嵌套回调中提前确认停止。
 		std::atomic<HWND> window_ = nullptr;
 		// 外部 HWND 的消息来自 Window Service 线程，绘制线程也会读取该状态。
 		std::atomic<bool> externalWindow_ = false;
@@ -340,6 +402,21 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> touchPanActive_ = false;
 		std::atomic<bool> realMouseTakeoverDuringTouchPan_ = false;
 		std::atomic<bool> penContactSuppressedForTouchPan_ = false;
+		std::atomic<bool> pointerPenContactSuppressed_ = false;
+		// 只在 lifecycle/裁决与样本入口短暂持锁，不持锁调用窗口/触觉。
+		struct PenFeedbackState
+		{
+			PenFeedbackContact contact;
+			uint64_t panKey = 0, handleGeneration = 0;
+			bool terminal = false, decided = false, suppressed = false;
+		};
+		mutable std::mutex penFeedbackMutex_;
+		std::vector<PenFeedbackState> penFeedbackContacts_;
+		uint64_t penFeedbackNavigationEpoch_ = 0;
+		int64_t penFeedbackRetiredDownQpc_ = 0;
+		uint64_t penCursorFeedbackToken_ = 0;
+		bool penCursorFromRts_ = false;
+		bool penRtsFeedbackSuppressed_ = false;
 		std::atomic<bool> penCompatibilityMouseContactSuppressed_ = false;
 		// 高 32 位为有效标志，低 32 位保存 Windows uptime tick，保证跨线程一致快照。
 		std::atomic<uint64_t> latestTouchInputBarrierTick_ = 0;
@@ -355,7 +432,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool lastTouchMouseDiagnosticFromPointer_ = false;
 		uint64_t cursorMouseDiagnosticEvent_ = 0;
 		std::atomic<DrawingTool> activeTool_ = DrawingTool::Pen;
-		std::atomic<bool> selectionMode_ = true;
+		Detail::MouseSelectionModeState mouseSelectionMode_;
 		std::atomic<bool> autoSaveEnabled_ = false;
 		std::atomic<bool> activationAllowed_ = false;
 		std::atomic<uint32_t> eraserWidthModeRevision_ = 0;

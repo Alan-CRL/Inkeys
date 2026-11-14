@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 185
+- **Total Sessions**: 186
 - **Last Active**: 2026-11-14
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~447 | Active |
+| `journal-3.md` | ~483 | Active |
 | `journal-2.md` | ~2029 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,7 +31,9 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 186 | 2026-11-14 | Close whiteboard input inertia task | `b861d464` | `feature/whiteboard3` |
 | 185 | 2026-11-14 | PptCOM联动阻塞调查、回退与归档 | `10c8be73`, `533c95fc` | `bugfix/pptcom` |
+| 184 | 2026-11-13 | 白板拖动收尾：移除旧曲线并保留当前手感 | `4706ec0e1226aaaf3549b5aaa719eeaf749aa293` | `feature/whiteboard3` |
 | 183 | 2026-11-06 | 手掌橡皮第一阶段：RTS坐标、面积与定尺修复 | - | `bugfix/hand-erase` |
 | 182 | 2026-11-06 | 位置设置页与 PPT/白板进入自动居中底栏 | `b10c5858`, `fa57e5f5` | `chore/ui` |
 | 181 | 2026-11-06 | Canvas debug overlay, visual mode and per-device stroke reconnect | `e0711662`, `1565cb61`, `0df57184` | `debug/drawpad` |

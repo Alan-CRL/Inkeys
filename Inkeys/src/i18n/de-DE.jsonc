@@ -635,6 +635,16 @@
           "Precise": "Präzise",
           "Fast": "Schnell",
           "Disabled": "Aus"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Trägheit beim Verschieben des Whiteboards",
+          "E": "Im Verschiebemodus gleitet das Whiteboard nach dem Loslassen weiter. Für jede Eingabeart getrennt einstellbar.",
+          "Mouse": "Maus",
+          "Touchpad": "Touchpad",
+          "Touch": "Touch",
+          "Pen": "Stift",
+          "PenTail": "Stift (Radiererende)"
         }
       },
       "Laser":
@@ -965,6 +975,11 @@
         {
           "N": "Zeigerdiagnose",
           "E": "Eingabezuordnung des Zeigers und seine Darstellung in der Konsole ausgeben."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnose von Whiteboard-Verschiebung und Trägheit",
+          "E": "Protokolliert Maus- und Touch-Eingaben, Geschwindigkeit, Trägheit und Stoppgründe zur Untersuchung von Bewegungsproblemen."
         }
       }
     },

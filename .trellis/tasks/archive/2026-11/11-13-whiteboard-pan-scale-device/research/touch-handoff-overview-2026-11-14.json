@@ -1,0 +1,818 @@
+{
+  "snapshot": {
+    "source": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\ARM64\\Debug\\PanTouchTerminalValidation\\console.log",
+    "snapshot": "D:\\Project\\Inkeys\\Repo\\Inkeys\\Build\\Logs\\pan-touch-feedback-2026-11-14\\console.snapshot.log",
+    "bytes": 14737778,
+    "sha256": "ac5a7c2ab6564f44fa027b06979baf40f8a9fb6b8534c49fc431511d7cfafd15",
+    "stableDuringRead": true
+  },
+  "lines": 65855,
+  "releaseCounts": {
+    "2/disabled": 3,
+    "1/ready": 76,
+    "1/few-samples": 4,
+    "1/short-span": 1,
+    "3/ready": 53
+  },
+  "touchReady": 76,
+  "touchProfileAvailable": 74,
+  "readyBelow3mm": 1,
+  "readyBelow10mm": 2,
+  "readyMotionAgeOver30ms": 57,
+  "readyAgeLimitedRecords": 55,
+  "readySupportLimitedRecords": 18,
+  "sourceBefore": {
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "539519f8a01de462abc572d4bc5e23280d9e047e01dfd49635d0c459c8fc58c0",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "21a6be6d125b713150e5c1a892484c7dc73e8436a10d28ba7b5e74d3eda6414e",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "6537891644ae5486fec5abbfa2d81bb1949a21744a6e9ca19697c54058c5a17b",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cpp": "63b8f74be50de9a2dbc0814cef4f38cfc51d66d48f76bcfab4dd9444a8c6a56c",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "d093f41aa8a901cd33ada5e9770c9eaff473e5c8cde65d2d2e874c0c71581579",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "d304f799402735be1afaf54ed84259a6209ff234041581e4a17f964c31fa634a",
+    "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "73fcbddd3b5f01d2e7148092fb9e903f4285e11c95ee184265d0acc5829f1a49",
+    "InkeysHeadlessTests/draw3_contact_tests.cpp": "fe6a17e8b4a89a994a670330096d719060843ced4e05e537b82ba1adafc82d7d"
+  },
+  "sourceAfter": {
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cpp": "539519f8a01de462abc572d4bc5e23280d9e047e01dfd49635d0c459c8fc58c0",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.CanvasNavigation.cppm": "21a6be6d125b713150e5c1a892484c7dc73e8436a10d28ba7b5e74d3eda6414e",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.DrawingController.cpp": "6537891644ae5486fec5abbfa2d81bb1949a21744a6e9ca19697c54058c5a17b",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cpp": "63b8f74be50de9a2dbc0814cef4f38cfc51d66d48f76bcfab4dd9444a8c6a56c",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.PenCursor.cppm": "d093f41aa8a901cd33ada5e9770c9eaff473e5c8cde65d2d2e874c0c71581579",
+    "Inkeys/Inkeys/Drawing/Draw3/Draw3.WindowControl.cpp": "d304f799402735be1afaf54ed84259a6209ff234041581e4a17f964c31fa634a",
+    "InkeysHeadlessTests/draw3_canvas_pan_tests.cpp": "73fcbddd3b5f01d2e7148092fb9e903f4285e11c95ee184265d0acc5829f1a49",
+    "InkeysHeadlessTests/draw3_contact_tests.cpp": "fe6a17e8b4a89a994a670330096d719060843ced4e05e537b82ba1adafc82d7d"
+  },
+  "sourceUnchanged": true,
+  "productBuildOrRunThisRound": false,
+  "userClarification": "rapid stop/very short inertial travel, not collision; both single and multi touch; pen seems normal",
+  "edgeCorrelation": {
+    "rows": [
+      {
+        "key": 4,
+        "releaseLine": 16057,
+        "reason": "ready",
+        "ageMs": 8.295,
+        "distanceToNearestEdgePx": 848.806,
+        "x": 2031.194,
+        "y": 919.408,
+        "line": 16041
+      },
+      {
+        "key": 5,
+        "releaseLine": 16317,
+        "reason": "ready",
+        "ageMs": 49.915,
+        "distanceToNearestEdgePx": 914.117,
+        "x": 1785.751,
+        "y": 1005.883,
+        "line": 16282
+      },
+      {
+        "key": 6,
+        "releaseLine": 16577,
+        "reason": "ready",
+        "ageMs": 11.727,
+        "distanceToNearestEdgePx": 912.68,
+        "x": 1942.299,
+        "y": 912.68,
+        "line": 16567
+      },
+      {
+        "key": 7,
+        "releaseLine": 16842,
+        "reason": "ready",
+        "ageMs": 49.882,
+        "distanceToNearestEdgePx": 789.0899999999999,
+        "x": 1604.863,
+        "y": 1130.91,
+        "line": 16807
+      },
+      {
+        "key": 8,
+        "releaseLine": 17042,
+        "reason": "ready",
+        "ageMs": 47.586,
+        "distanceToNearestEdgePx": 915.024,
+        "x": 1853.783,
+        "y": 915.024,
+        "line": 17007
+      },
+      {
+        "key": 9,
+        "releaseLine": 17251,
+        "reason": "ready",
+        "ageMs": 49.576,
+        "distanceToNearestEdgePx": 827.6410000000001,
+        "x": 1667.452,
+        "y": 1092.359,
+        "line": 17214
+      },
+      {
+        "key": 10,
+        "releaseLine": 17459,
+        "reason": "ready",
+        "ageMs": 49.454,
+        "distanceToNearestEdgePx": 948.51,
+        "x": 1864.441,
+        "y": 948.51,
+        "line": 17424
+      },
+      {
+        "key": 11,
+        "releaseLine": 17638,
+        "reason": "ready",
+        "ageMs": 11.545,
+        "distanceToNearestEdgePx": 940.195,
+        "x": 1641.676,
+        "y": 940.195,
+        "line": 17626
+      },
+      {
+        "key": 12,
+        "releaseLine": 17836,
+        "reason": "ready",
+        "ageMs": 50.012,
+        "distanceToNearestEdgePx": 891.288,
+        "x": 1988.712,
+        "y": 925.077,
+        "line": 17801
+      },
+      {
+        "key": 13,
+        "releaseLine": 17985,
+        "reason": "ready",
+        "ageMs": 4.664,
+        "distanceToNearestEdgePx": 935.055,
+        "x": 1763.376,
+        "y": 984.945,
+        "line": 17972
+      },
+      {
+        "key": 14,
+        "releaseLine": 18239,
+        "reason": "ready",
+        "ageMs": 49.719,
+        "distanceToNearestEdgePx": 839.0550000000001,
+        "x": 2040.945,
+        "y": 1030.072,
+        "line": 18204
+      },
+      {
+        "key": 15,
+        "releaseLine": 18443,
+        "reason": "ready",
+        "ageMs": 48.549,
+        "distanceToNearestEdgePx": 871.3320000000001,
+        "x": 1678.261,
+        "y": 1048.668,
+        "line": 18412
+      },
+      {
+        "key": 16,
+        "releaseLine": 18644,
+        "reason": "ready",
+        "ageMs": 11.657,
+        "distanceToNearestEdgePx": 864.9069999999999,
+        "x": 1820.523,
+        "y": 1055.093,
+        "line": 18634
+      },
+      {
+        "key": 17,
+        "releaseLine": 18940,
+        "reason": "ready",
+        "ageMs": 4.854,
+        "distanceToNearestEdgePx": 894.1610000000001,
+        "x": 1369.55,
+        "y": 1025.839,
+        "line": 18925
+      },
+      {
+        "key": 18,
+        "releaseLine": 19278,
+        "reason": "ready",
+        "ageMs": 49.836,
+        "distanceToNearestEdgePx": 626.4940000000001,
+        "x": 2253.506,
+        "y": 946.545,
+        "line": 19243
+      },
+      {
+        "key": 19,
+        "releaseLine": 19510,
+        "reason": "ready",
+        "ageMs": 7.921,
+        "distanceToNearestEdgePx": 856.5160000000001,
+        "x": 1331.15,
+        "y": 1063.484,
+        "line": 19500
+      },
+      {
+        "key": 20,
+        "releaseLine": 19870,
+        "reason": "ready",
+        "ageMs": 50.188,
+        "distanceToNearestEdgePx": 897.4110000000001,
+        "x": 1982.589,
+        "y": 982.904,
+        "line": 19834
+      },
+      {
+        "key": 21,
+        "releaseLine": 20156,
+        "reason": "ready",
+        "ageMs": 4.923,
+        "distanceToNearestEdgePx": 796.573,
+        "x": 1903.219,
+        "y": 796.573,
+        "line": 20142
+      },
+      {
+        "key": 22,
+        "releaseLine": 20505,
+        "reason": "ready",
+        "ageMs": 49.506,
+        "distanceToNearestEdgePx": 504.64300000000003,
+        "x": 1759.899,
+        "y": 1415.357,
+        "line": 20470
+      },
+      {
+        "key": 23,
+        "releaseLine": 20869,
+        "reason": "ready",
+        "ageMs": 50.99,
+        "distanceToNearestEdgePx": 512.731,
+        "x": 1664.05,
+        "y": 1407.269,
+        "line": 20834
+      },
+      {
+        "key": 24,
+        "releaseLine": 21180,
+        "reason": "ready",
+        "ageMs": 49.683,
+        "distanceToNearestEdgePx": 632.92,
+        "x": 1653.392,
+        "y": 632.92,
+        "line": 21142
+      },
+      {
+        "key": 25,
+        "releaseLine": 21400,
+        "reason": "ready",
+        "ageMs": 4.732,
+        "distanceToNearestEdgePx": 497.537,
+        "x": 1588.46,
+        "y": 497.537,
+        "line": 21390
+      },
+      {
+        "key": 26,
+        "releaseLine": 21669,
+        "reason": "ready",
+        "ageMs": 50.017,
+        "distanceToNearestEdgePx": 451.8800000000001,
+        "x": 1411.729,
+        "y": 1468.12,
+        "line": 21634
+      },
+      {
+        "key": 27,
+        "releaseLine": 21929,
+        "reason": "ready",
+        "ageMs": 49.791,
+        "distanceToNearestEdgePx": 520.441,
+        "x": 1527.383,
+        "y": 1399.559,
+        "line": 21893
+      },
+      {
+        "key": 28,
+        "releaseLine": 22188,
+        "reason": "ready",
+        "ageMs": 49.661,
+        "distanceToNearestEdgePx": 507.74199999999996,
+        "x": 1664.806,
+        "y": 1412.258,
+        "line": 22153
+      },
+      {
+        "key": 29,
+        "releaseLine": 22432,
+        "reason": "ready",
+        "ageMs": 10.055,
+        "distanceToNearestEdgePx": 555.439,
+        "x": 1766.627,
+        "y": 555.439,
+        "line": 22422
+      },
+      {
+        "key": 30,
+        "releaseLine": 23197,
+        "reason": "ready",
+        "ageMs": 49.971,
+        "distanceToNearestEdgePx": 832.479,
+        "x": 1514.381,
+        "y": 1087.521,
+        "line": 23162
+      },
+      {
+        "key": 31,
+        "releaseLine": 25071,
+        "reason": "ready",
+        "ageMs": 32.936,
+        "distanceToNearestEdgePx": 568.139,
+        "x": 2002.243,
+        "y": 568.139,
+        "line": 25028
+      },
+      {
+        "key": 36,
+        "releaseLine": 25686,
+        "reason": "ready",
+        "ageMs": 48.321,
+        "distanceToNearestEdgePx": 649.323,
+        "x": 1464.416,
+        "y": 649.323,
+        "line": 25598
+      },
+      {
+        "key": 38,
+        "releaseLine": 26141,
+        "reason": "ready",
+        "ageMs": 49.817,
+        "distanceToNearestEdgePx": 743.131,
+        "x": 1538.495,
+        "y": 743.131,
+        "line": 26061
+      },
+      {
+        "key": 42,
+        "releaseLine": 26666,
+        "reason": "ready",
+        "ageMs": 50.39,
+        "distanceToNearestEdgePx": 702.463,
+        "x": 1276.044,
+        "y": 702.463,
+        "line": 26581
+      },
+      {
+        "key": 46,
+        "releaseLine": 27188,
+        "reason": "few-samples",
+        "ageMs": 5.35,
+        "distanceToNearestEdgePx": 547.124,
+        "x": 1727.395,
+        "y": 547.124,
+        "line": 27158
+      },
+      {
+        "key": 48,
+        "releaseLine": 27282,
+        "reason": "short-span",
+        "ageMs": 7.918,
+        "distanceToNearestEdgePx": 655.748,
+        "x": 1563.213,
+        "y": 655.748,
+        "line": 27262
+      },
+      {
+        "key": 49,
+        "releaseLine": 27509,
+        "reason": "ready",
+        "ageMs": 49.608,
+        "distanceToNearestEdgePx": 463.446,
+        "x": 1776.151,
+        "y": 463.446,
+        "line": 27433
+      },
+      {
+        "key": 53,
+        "releaseLine": 27925,
+        "reason": "ready",
+        "ageMs": 47.619,
+        "distanceToNearestEdgePx": 706.545,
+        "x": 898.998,
+        "y": 706.545,
+        "line": 27850
+      },
+      {
+        "key": 60,
+        "releaseLine": 28293,
+        "reason": "ready",
+        "ageMs": 32.835,
+        "distanceToNearestEdgePx": 548.485,
+        "x": 1137.713,
+        "y": 548.485,
+        "line": 28515
+      },
+      {
+        "key": 62,
+        "releaseLine": 28854,
+        "reason": "ready",
+        "ageMs": 8.885,
+        "distanceToNearestEdgePx": 522.104,
+        "x": 1860.813,
+        "y": 522.104,
+        "line": 28841
+      },
+      {
+        "key": 64,
+        "releaseLine": 28965,
+        "reason": "few-samples",
+        "ageMs": 10.707,
+        "distanceToNearestEdgePx": 598.677,
+        "x": 1100.674,
+        "y": 598.677,
+        "line": 28939
+      },
+      {
+        "key": 68,
+        "releaseLine": 29325,
+        "reason": "few-samples",
+        "ageMs": 9.949,
+        "distanceToNearestEdgePx": 476.901,
+        "x": 1679.773,
+        "y": 476.901,
+        "line": 29315
+      },
+      {
+        "key": 70,
+        "releaseLine": 29803,
+        "reason": "ready",
+        "ageMs": 49.413,
+        "distanceToNearestEdgePx": 724.46,
+        "x": 1294.337,
+        "y": 724.46,
+        "line": 29720
+      },
+      {
+        "key": 73,
+        "releaseLine": 30150,
+        "reason": "ready",
+        "ageMs": 49.55,
+        "distanceToNearestEdgePx": 774.425,
+        "x": 1021.606,
+        "y": 774.425,
+        "line": 30068
+      },
+      {
+        "key": 76,
+        "releaseLine": 30515,
+        "reason": "ready",
+        "ageMs": 49.505,
+        "distanceToNearestEdgePx": 654.841,
+        "x": 1561.776,
+        "y": 654.841,
+        "line": 30450
+      },
+      {
+        "key": 79,
+        "releaseLine": 30831,
+        "reason": "ready",
+        "ageMs": 8.53,
+        "distanceToNearestEdgePx": 478.488,
+        "x": 2099.528,
+        "y": 478.488,
+        "line": 30818
+      },
+      {
+        "key": 83,
+        "releaseLine": 31079,
+        "reason": "ready",
+        "ageMs": 50.102,
+        "distanceToNearestEdgePx": 735.496,
+        "x": 1053.354,
+        "y": 735.496,
+        "line": 31018
+      },
+      {
+        "key": 86,
+        "releaseLine": 31452,
+        "reason": "ready",
+        "ageMs": 49.686,
+        "distanceToNearestEdgePx": 935.584,
+        "x": 1494.123,
+        "y": 984.416,
+        "line": 31391
+      },
+      {
+        "key": 89,
+        "releaseLine": 31819,
+        "reason": "ready",
+        "ageMs": 49.773,
+        "distanceToNearestEdgePx": 818.9480000000001,
+        "x": 1467.439,
+        "y": 1101.052,
+        "line": 31780
+      },
+      {
+        "key": 92,
+        "releaseLine": 32168,
+        "reason": "ready",
+        "ageMs": 49.853,
+        "distanceToNearestEdgePx": 929.537,
+        "x": 1595.187,
+        "y": 990.463,
+        "line": 32097
+      },
+      {
+        "key": 95,
+        "releaseLine": 32515,
+        "reason": "ready",
+        "ageMs": 49.768,
+        "distanceToNearestEdgePx": 594.7469999999998,
+        "x": 2285.253,
+        "y": 812.901,
+        "line": 32427
+      },
+      {
+        "key": 97,
+        "releaseLine": 32838,
+        "reason": "ready",
+        "ageMs": 49.654,
+        "distanceToNearestEdgePx": 706.545,
+        "x": 1470.917,
+        "y": 706.545,
+        "line": 32786
+      },
+      {
+        "key": 99,
+        "releaseLine": 33222,
+        "reason": "ready",
+        "ageMs": 48.248,
+        "distanceToNearestEdgePx": 516.661,
+        "x": 1929.524,
+        "y": 516.661,
+        "line": 33151
+      },
+      {
+        "key": 104,
+        "releaseLine": 33514,
+        "reason": "ready",
+        "ageMs": 49.334,
+        "distanceToNearestEdgePx": 690.444,
+        "x": 1383.534,
+        "y": 690.444,
+        "line": 33451
+      },
+      {
+        "key": 107,
+        "releaseLine": 33873,
+        "reason": "ready",
+        "ageMs": 7.988,
+        "distanceToNearestEdgePx": 595.2,
+        "x": 1718.854,
+        "y": 595.2,
+        "line": 33868
+      },
+      {
+        "key": 110,
+        "releaseLine": 34292,
+        "reason": "ready",
+        "ageMs": 49.751,
+        "distanceToNearestEdgePx": 573.43,
+        "x": 1361.008,
+        "y": 573.43,
+        "line": 34257
+      },
+      {
+        "key": 111,
+        "releaseLine": 34618,
+        "reason": "ready",
+        "ageMs": 50.417,
+        "distanceToNearestEdgePx": 500.787,
+        "x": 1736.542,
+        "y": 500.787,
+        "line": 34556
+      },
+      {
+        "key": 116,
+        "releaseLine": 35111,
+        "reason": "ready",
+        "ageMs": 48.588,
+        "distanceToNearestEdgePx": 736.403,
+        "x": 1124.031,
+        "y": 736.403,
+        "line": 35075
+      },
+      {
+        "key": 117,
+        "releaseLine": 35461,
+        "reason": "ready",
+        "ageMs": 49.405,
+        "distanceToNearestEdgePx": 536.844,
+        "x": 1986.142,
+        "y": 536.844,
+        "line": 35409
+      },
+      {
+        "key": 122,
+        "releaseLine": 35954,
+        "reason": "ready",
+        "ageMs": 50.151,
+        "distanceToNearestEdgePx": 800.655,
+        "x": 940.271,
+        "y": 800.655,
+        "line": 35919
+      },
+      {
+        "key": 125,
+        "releaseLine": 36390,
+        "reason": "ready",
+        "ageMs": 8.108,
+        "distanceToNearestEdgePx": 835.276,
+        "x": 1682.797,
+        "y": 835.276,
+        "line": 36384
+      },
+      {
+        "key": 128,
+        "releaseLine": 36879,
+        "reason": "ready",
+        "ageMs": 48.639,
+        "distanceToNearestEdgePx": 747.137,
+        "x": 747.137,
+        "y": 861.883,
+        "line": 36817
+      },
+      {
+        "key": 134,
+        "releaseLine": 37734,
+        "reason": "ready",
+        "ageMs": 49.96,
+        "distanceToNearestEdgePx": 794.079,
+        "x": 1131.364,
+        "y": 794.079,
+        "line": 37676
+      },
+      {
+        "key": 137,
+        "releaseLine": 38144,
+        "reason": "ready",
+        "ageMs": 8.191,
+        "distanceToNearestEdgePx": 697.02,
+        "x": 1639.181,
+        "y": 697.02,
+        "line": 38134
+      },
+      {
+        "key": 140,
+        "releaseLine": 38507,
+        "reason": "ready",
+        "ageMs": 49.986,
+        "distanceToNearestEdgePx": 743.811,
+        "x": 1109.594,
+        "y": 743.811,
+        "line": 38461
+      },
+      {
+        "key": 143,
+        "releaseLine": 38846,
+        "reason": "ready",
+        "ageMs": 5.488,
+        "distanceToNearestEdgePx": 704.655,
+        "x": 1505.31,
+        "y": 704.655,
+        "line": 38830
+      },
+      {
+        "key": 151,
+        "releaseLine": 39952,
+        "reason": "ready",
+        "ageMs": 48.59,
+        "distanceToNearestEdgePx": 636.926,
+        "x": 1094.249,
+        "y": 636.926,
+        "line": 39885
+      },
+      {
+        "key": 153,
+        "releaseLine": 40374,
+        "reason": "ready",
+        "ageMs": 49.496,
+        "distanceToNearestEdgePx": 489.827,
+        "x": 2178.293,
+        "y": 489.827,
+        "line": 40298
+      },
+      {
+        "key": 157,
+        "releaseLine": 40780,
+        "reason": "ready",
+        "ageMs": 49.537,
+        "distanceToNearestEdgePx": 739.654,
+        "x": 954.935,
+        "y": 739.654,
+        "line": 40718
+      },
+      {
+        "key": 161,
+        "releaseLine": 41151,
+        "reason": "ready",
+        "ageMs": 8.112,
+        "distanceToNearestEdgePx": 525.052,
+        "x": 2218.129,
+        "y": 525.052,
+        "line": 41136
+      },
+      {
+        "key": 164,
+        "releaseLine": 41562,
+        "reason": "ready",
+        "ageMs": 48.169,
+        "distanceToNearestEdgePx": 755.376,
+        "x": 1345.587,
+        "y": 755.376,
+        "line": 41511
+      },
+      {
+        "key": 167,
+        "releaseLine": 41979,
+        "reason": "ready",
+        "ageMs": 49.997,
+        "distanceToNearestEdgePx": 638.211,
+        "x": 1933.833,
+        "y": 638.211,
+        "line": 41933
+      },
+      {
+        "key": 170,
+        "releaseLine": 42348,
+        "reason": "ready",
+        "ageMs": 50.186,
+        "distanceToNearestEdgePx": 804.057,
+        "x": 987.515,
+        "y": 1115.943,
+        "line": 42289
+      },
+      {
+        "key": 172,
+        "releaseLine": 42739,
+        "reason": "ready",
+        "ageMs": 49.128,
+        "distanceToNearestEdgePx": 620.523,
+        "x": 1930.583,
+        "y": 620.523,
+        "line": 42678
+      },
+      {
+        "key": 175,
+        "releaseLine": 42961,
+        "reason": "ready",
+        "ageMs": 49.192,
+        "distanceToNearestEdgePx": 858.8599999999999,
+        "x": 1264.252,
+        "y": 1061.14,
+        "line": 42914
+      },
+      {
+        "key": 178,
+        "releaseLine": 43242,
+        "reason": "ready",
+        "ageMs": 8.522,
+        "distanceToNearestEdgePx": 465.411,
+        "x": 2234.154,
+        "y": 465.411,
+        "line": 43232
+      },
+      {
+        "key": 181,
+        "releaseLine": 43760,
+        "reason": "ready",
+        "ageMs": 48.424,
+        "distanceToNearestEdgePx": 557.027,
+        "x": 774.047,
+        "y": 1362.973,
+        "line": 43699
+      },
+      {
+        "key": 184,
+        "releaseLine": 44116,
+        "reason": "ready",
+        "ageMs": 49.784,
+        "distanceToNearestEdgePx": 856.29,
+        "x": 1069.833,
+        "y": 1063.71,
+        "line": 44034
+      },
+      {
+        "key": 187,
+        "releaseLine": 45128,
+        "reason": "ready",
+        "ageMs": 41.356,
+        "distanceToNearestEdgePx": 626.117,
+        "x": 1100.75,
+        "y": 626.117,
+        "line": 45056
+      }
+    ],
+    "bounds": [
+      0,
+      0,
+      2880,
+      1920
+    ],
+    "interpretation": "descriptive only; last-motion point availability limited by log drops"
+  }
+}

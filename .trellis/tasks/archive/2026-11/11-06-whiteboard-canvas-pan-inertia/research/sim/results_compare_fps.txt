@@ -1,0 +1,30 @@
+
+### 10. Render-loop rate = StrokeTimingProfile target_fps 30/60/240 (the nav loop only samples once per frame)
+(rel/true quantiles: med p90 p99 max; glide/ideal: med p99 max; ideal = same model with perfect velocity)
+| steady 3000, loop 30 fps           | cur      | rel/true  1.00  1.01  1.02  1.02 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.03   1.04 | peak/true max  1.03 |
+| steady 3000, loop 30 fps           | lsq2     | rel/true  0.98  1.03  1.08  1.10 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  0.98  1.10   1.12 | peak/true max  1.34 |
+| steady 3000, loop 30 fps           | lsq2+ring | rel/true  1.00  1.02  1.04  1.05 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.04   1.06 | peak/true max  1.34 |
+| flick_sin 4000, loop 30 fps        | cur      | rel/true  0.57  0.80  0.87  0.88 | >1.5x   0.0% <0.7x  77.8% none   0.0% | glide/ideal  0.33  0.75   0.77 | peak/true max  0.88 |
+| flick_sin 4000, loop 30 fps        | lsq2     | rel/true  1.02  1.10  1.15  1.17 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.03  1.17   1.20 | peak/true max  1.17 |
+| flick_sin 4000, loop 30 fps        | lsq2+ring | rel/true  1.12  1.14  1.15  1.15 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.14  1.17   1.18 | peak/true max  1.15 |
+| 2-finger U(0,60), loop 30 fps      | cur      | rel/true  0.89  1.01  1.15  1.19 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  0.79  1.33   1.42 | peak/true max  1.19 |
+| 2-finger U(0,60), loop 30 fps      | lsq2     | rel/true  0.98  1.02  1.05  1.08 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  0.98  1.06   1.10 | peak/true max  1.38 |
+| 2-finger U(0,60), loop 30 fps      | lsq2+ring | rel/true  1.00  1.01  1.02  1.04 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.03   1.04 | peak/true max  1.36 |
+| steady 3000, loop 60 fps           | cur      | rel/true  1.00  1.01  1.01  1.02 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.03   1.04 | peak/true max  1.02 |
+| steady 3000, loop 60 fps           | lsq2     | rel/true  1.00  1.03  1.06  1.08 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.07   1.09 | peak/true max  1.35 |
+| steady 3000, loop 60 fps           | lsq2+ring | rel/true  1.00  1.02  1.04  1.05 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.04   1.06 | peak/true max  1.35 |
+| flick_sin 4000, loop 60 fps        | cur      | rel/true  0.66  0.77  0.81  0.82 | >1.5x   0.0% <0.7x  61.2% none   0.0% | glide/ideal  0.43  0.66   0.67 | peak/true max  0.82 |
+| flick_sin 4000, loop 60 fps        | lsq2     | rel/true  1.08  1.12  1.15  1.16 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.10  1.17   1.18 | peak/true max  1.16 |
+| flick_sin 4000, loop 60 fps        | lsq2+ring | rel/true  1.12  1.14  1.15  1.15 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.14  1.17   1.18 | peak/true max  1.16 |
+| 2-finger U(0,60), loop 60 fps      | cur      | rel/true  1.00  1.14  1.39  1.52 | >1.5x   0.5% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.94   2.32 | peak/true max  1.53 |
+| 2-finger U(0,60), loop 60 fps      | lsq2     | rel/true  1.00  1.02  1.03  1.05 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.04   1.06 | peak/true max  1.37 |
+| 2-finger U(0,60), loop 60 fps      | lsq2+ring | rel/true  1.00  1.01  1.02  1.04 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.03   1.04 | peak/true max  1.36 |
+| steady 3000, loop 240 fps          | cur      | rel/true  1.00  1.01  1.01  1.01 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.02   1.02 | peak/true max  1.02 |
+| steady 3000, loop 240 fps          | lsq2     | rel/true  1.00  1.02  1.05  1.06 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.05   1.07 | peak/true max  1.37 |
+| steady 3000, loop 240 fps          | lsq2+ring | rel/true  1.00  1.02  1.04  1.05 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.04   1.06 | peak/true max  1.37 |
+| flick_sin 4000, loop 240 fps       | cur      | rel/true  0.73  0.78  0.79  0.79 | >1.5x   0.0% <0.7x   4.2% none   0.0% | glide/ideal  0.54  0.63   0.63 | peak/true max  0.79 |
+| flick_sin 4000, loop 240 fps       | lsq2     | rel/true  1.12  1.14  1.16  1.16 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.14  1.18   1.19 | peak/true max  1.16 |
+| flick_sin 4000, loop 240 fps       | lsq2+ring | rel/true  1.12  1.14  1.15  1.15 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.14  1.17   1.18 | peak/true max  1.16 |
+| 2-finger U(0,60), loop 240 fps     | cur      | rel/true  1.08  1.67  2.12  2.81 | >1.5x  11.5% <0.7x   0.0% none   0.0% | glide/ideal  1.17  4.48   7.89 | peak/true max  2.84 |
+| 2-finger U(0,60), loop 240 fps     | lsq2     | rel/true  1.00  1.01  1.03  1.04 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.03   1.04 | peak/true max  1.36 |
+| 2-finger U(0,60), loop 240 fps     | lsq2+ring | rel/true  1.00  1.01  1.02  1.04 | >1.5x   0.0% <0.7x   0.0% none   0.0% | glide/ideal  1.00  1.03   1.04 | peak/true max  1.36 |

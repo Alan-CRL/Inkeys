@@ -1,0 +1,22 @@
+{
+  "status": "PASS",
+  "taskStatus": "planning",
+  "productQuestions": [],
+  "implementationApproved": false,
+  "localLinksChecked": 112,
+  "textFilesChecked": 17,
+  "manifests": {
+    "implement": {
+      "entries": 6,
+      "fileAndArtifactBytes": 127374
+    },
+    "check": {
+      "entries": 6,
+      "fileAndArtifactBytes": 117685
+    }
+  },
+  "errors": [],
+  "validationKind": "planning documents and independent algebra only; no product build/test/GUI",
+  "scriptSha256": "540c8681ce40cc38af4130729345f2ac554fecdbb04e1f975935fa143fadf5b6",
+  "analysisSha256": "951ea6885fc8af3f04b45a6bc5e34594759a33a87cdb14081d00a492ed8527a3"
+}

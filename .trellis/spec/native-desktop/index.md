@@ -15,6 +15,8 @@
 - [bar-icons.md](bar-icons.md)：Bar SVG 图标设计语言、占位色着色、专属资源映射与 lint/预览流程。
 - [setting-motion.md](setting-motion.md)：Setting页面入场、条件块、稳定正文轨道、开屏标题栏及resize/材质连续性。
 - [whiteboard.md](whiteboard.md)：白板初版菜单、每页主题、UInk分页存储与底栏恢复合同。
+- [canvas-pan.md](canvas-pan.md)：白板导航事件顺序、可靠释放、向量惯性与独立诊断开关。
+- [canvas-pan-release-quality.md](canvas-pan-release-quality.md)：释放支持、Touch空间进展/停止年龄、boost与呈现速度分工。
 - [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。
 - [input-and-ink.md](input-and-ink.md)：RTS、鼠标归一化、多点触控、墨迹合成和历史记录。
 - [ui-pointer-session.md](ui-pointer-session.md)：Bar/PPT 私有 Raw Mouse、WM_TOUCH 来源会话、窗口外拖动与取消合同。

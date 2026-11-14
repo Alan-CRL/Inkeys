@@ -635,6 +635,16 @@
           "Precise": "Dokładny",
           "Fast": "Szybki",
           "Disabled": "Wyłączone"
+        },
+        "CanvasPanInertia":
+        {
+          "N": "Bezwładność przesuwania tablicy",
+          "E": "Tablica przesuwa się dalej po zwolnieniu w trybie przeciągania. Ustawienia są niezależne dla każdego typu wejścia.",
+          "Mouse": "Mysz",
+          "Touchpad": "Touchpad",
+          "Touch": "Dotyk",
+          "Pen": "Pióro",
+          "PenTail": "Pióro (końcówka gumki)"
         }
       },
       "Laser":
@@ -965,6 +975,11 @@
         {
           "N": "Diagnostyka kursora",
           "E": "Wyświetlaj w konsoli źródło wejścia kursora i rzeczywisty wynik renderowania."
+        },
+        "CanvasPan":
+        {
+          "N": "Diagnostyka przesuwania i bezwładności tablicy",
+          "E": "Rejestruje przesuwanie myszą i dotykiem, prędkość, bezwładność oraz przyczyny zatrzymania, aby zbadać problemy z ruchem."
         }
       }
     },
