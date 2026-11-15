@@ -29,13 +29,13 @@ namespace Inkeys::UI::Setting::Design
 			return { minimum.x, minimum.y, maximum.x, maximum.y };
 		}
 
-		void FocusParent(ImGuiWindow* window, const NavigationState& state)
+		void FocusParent(ImGuiWindow* window, const NavigationGroupState& group)
 		{
-			if (!window || !state.parentItemId) return;
+			if (!window || !group.parentItemId) return;
 			ImGui::FocusWindow(window);
-			ImGui::SetNavID(state.parentItemId, ImGuiNavLayer_Main, window->NavRootFocusScopeId,
-				ImRect(ImVec2(state.parentBounds.left - window->Pos.x, state.parentBounds.top - window->Pos.y),
-					ImVec2(state.parentBounds.right - window->Pos.x, state.parentBounds.bottom - window->Pos.y)));
+			ImGui::SetNavID(group.parentItemId, ImGuiNavLayer_Main, window->NavRootFocusScopeId,
+				ImRect(ImVec2(group.parentBounds.left - window->Pos.x, group.parentBounds.top - window->Pos.y),
+					ImVec2(group.parentBounds.right - window->Pos.x, group.parentBounds.bottom - window->Pos.y)));
 		}
 
 		void FadeVertices(ImDrawList* drawList, int first, float alpha)
@@ -108,8 +108,11 @@ namespace Inkeys::UI::Setting::Design
 		const auto& pane = geometry.pane;
 		const float scale = Pixels(1.0F);
 		const bool expanded = pane.Width() > CompactPaneWidth + 0.01F;
-		const float childReveal = state.animationsInitialized ? state.groupReveal.value
-			: (state.Expanded() && state.generalExpanded ? 1.0F : 0.0F);
+		// 动画未初始化前直接按目标状态取展开进度。
+		const auto groupReveal = [&](const NavigationGroupState& group) {
+			return state.animationsInitialized ? group.reveal.value
+				: (state.Expanded() && group.expanded ? 1.0F : 0.0F);
+		};
 		if (selected.page == PageId::Debug || selected.page == PageId::Feedback) state.ClearIndicator();
 		const auto sections = ResolveNavigationPaneGeometry(pane.Width(), pane.Height(),
 			ImFluent::GetStyle().NavItemHeight);
@@ -117,7 +120,7 @@ namespace Inkeys::UI::Setting::Design
 		const bool wasInlineChildFocused = state.inlineChildFocused;
 		state.inlineChildFocused = false;
 		ImGui::PushID("##settings-navigation-flyout-owner");
-		const bool popupExists = ImGui::IsPopupOpen("##settings-general-flyout");
+		const bool popupExists = ImGui::IsPopupOpen("##settings-group-flyout");
 		ImGui::PopID();
 		if (state.overlayOpen && !popupExists && !state.IsFlyoutOpen() && ImGui::IsKeyPressed(ImGuiKey_Escape, false))
 			state.DismissOverlay();
@@ -126,7 +129,7 @@ namespace Inkeys::UI::Setting::Design
 				&& (GImGui->NavId == 0 || GImGui->NavId == state.childWindowItemId))))
 		{
 			// NewFrame 可能已按 Esc 清除焦点；只恢复上一帧实际持焦的子项，不接管正文焦点。
-			state.restoreParentFocus = true; state.scrollSelectedGeneral = true;
+			state.restoreParentFocus = true; state.scrollSelectedGroup = true;
 		}
 		bool toggled = false;
 		bool keepOverlayForGroup = false;
@@ -137,8 +140,11 @@ namespace Inkeys::UI::Setting::Design
 		ImRect indicatorClip;
 		LayoutRect indicatorBounds;
 		bool indicatorVisible = false;
-		state.parentBounds = state.chevronBounds = {};
-		state.childBounds = {}; state.flyoutChildBounds = {};
+		for (auto& group : state.groups)
+		{
+			group.parentBounds = group.chevronBounds = {};
+			group.childBounds = {}; group.flyoutChildBounds = {};
+		}
 		state.middleBounds = {}; state.footerBounds = {};
 		state.navigationScrollWindowId = state.flyoutWindowId = 0;
 		if (state.mouseReleaseBarrier && !ImGui::IsMouseDown(ImGuiMouseButton_Left)
@@ -148,27 +154,10 @@ namespace Inkeys::UI::Setting::Design
 			Entry{ PageId::Home, I18nKey.SettingsUI.Home.N, "\ue80f" },
 			Entry{ PageId::Language, I18nKey.SettingsUI.Language.N, "\uf2b7" }
 		};
-		const std::array middleEntries{
-			Entry{ PageId::General, I18nKey.SettingsUI.Regular.N, "\ue713" },
-			Entry{ PageId::Draw, I18nKey.SettingsUI.Draw.N, "\uee56" },
-			Entry{ PageId::Performance, I18nKey.SettingsUI.Performance.N, "\uec4a" },
-			Entry{ PageId::Linkage, I18nKey.SettingsUI.Linkage.N, "\ue71b" },
-			Entry{ PageId::Plugins, I18nKey.SettingsUI.PlugIn.N, "\ue74c" },
-			Entry{ PageId::Components, I18nKey.SettingsUI.Component.N, "\ue70b" },
-			Entry{ PageId::Experimental, I18nKey.SettingsUI.Design.Experimental, "\ue9d9" },
-			Entry{ PageId::Version, I18nKey.SettingsUI.Version.N, "\ue946" }
-		};
-		const std::array childKeys{ I18nKey.SettingsUI.Design.GeneralBasic, I18nKey.SettingsUI.Position.N,
-			I18nKey.SettingsUI.Design.GeneralAppearance, I18nKey.SettingsUI.Design.GeneralInteraction,
-			I18nKey.SettingsUI.Design.GeneralStorage, I18nKey.SettingsUI.HotKey.N, I18nKey.SettingsUI.DesktopShortcut.N,
-			I18nKey.SettingsUI.StatusIndicator.N };
-		const std::array childGlyphs{ "\ue713", "\ue707", "\ue790", "\ue72e", "\ue81e", "\ue765", "\ue71b", "\uea8f" };
-		static_assert(childKeys.size() == GeneralSectionCount && childGlyphs.size() == GeneralSectionCount);
-		static_assert(middleEntries.size() == NavigationMiddleItemCount);
 		auto navigate = [&](NavigationDestination destination, bool dismissOverlay = true) {
 			destination = NormalizeDestination(destination);
 			if (destination != selected) result = { NavigationActionKind::Navigate, destination };
-			if (destination.page == PageId::General) state.lastGeneralSection = destination.section;
+			if (auto* group = state.TryGroup(destination.page)) group->lastSection = destination.section;
 			state.CloseFlyout();
 			if (dismissOverlay) state.DismissOverlay();
 			else keepOverlayForGroup = true;
@@ -191,12 +180,12 @@ namespace Inkeys::UI::Setting::Design
 			AllowContentDrag();
 			return pressed;
 		};
-		auto renderEntry = [&](const Entry& entry) {
-			ImGui::PushID(static_cast<int>(entry.page));
-			const bool isSelected = selected.page == entry.page
-				|| (entry.page == PageId::Version && selected.page == PageId::Build);
-			if (navItem("##page", IA(entry.key).c_str(), isSelected, entry.glyph, !expanded))
-				navigate({ entry.page });
+		auto renderEntry = [&](PageId page, const char* labelKey, const char* glyph) {
+			ImGui::PushID(static_cast<int>(page));
+			const bool isSelected = selected.page == page
+				|| (page == PageId::Version && selected.page == PageId::Build);
+			if (navItem("##page", IA(labelKey).c_str(), isSelected, glyph, !expanded))
+				navigate({ page });
 			markSelected(isSelected);
 			ImGui::PopID();
 		};
@@ -251,7 +240,7 @@ namespace Inkeys::UI::Setting::Design
 					Pixels(pane.Width() - 56.0F), ImFluentTextStyle_BodyStrong);
 			for (size_t index = 0; index < topEntries.size(); ++index)
 			{
-				setPosition(sections.topItems[index]); renderEntry(topEntries[index]);
+				setPosition(sections.topItems[index]); renderEntry(topEntries[index].page, topEntries[index].key, topEntries[index].glyph);
 			}
 			divider(sections.separators[0]);
 		}
@@ -266,150 +255,170 @@ namespace Inkeys::UI::Setting::Design
 				parentWindow = ImGui::GetCurrentWindow();
 				state.navigationScrollWindowId = parentWindow->ID;
 				// native WindowPadding 已提供统一 4 DIP 间距，不再额外扣除一次。
-				ImGui::PushID(static_cast<int>(PageId::General));
-				const ImVec2 origin = ImGui::GetCursorScreenPos();
-				const float right = parentWindow->WorkRect.Max.x;
-				const float contentRight = parentWindow->ContentRegionRect.Max.x;
-				if (expanded)
-				{
-					// 真实 NavItem 宽度在普通 child 中来自 ContentRegionRect；箭头必须单独命中。
-					parentWindow->WorkRect.Max.x = contentRight - Pixels(NavigationRowHeight);
-					parentWindow->ContentRegionRect.Max.x = parentWindow->WorkRect.Max.x;
-				}
-				const bool generalSelected = selected.page == PageId::General;
-				const bool parentSelected = generalSelected && (!state.Expanded() || !state.generalExpanded || childReveal < 0.001F);
-				const bool suppressTip = !expanded && state.IsFlyoutOpen();
-				const bool parentPressed = navItem("##general-parent",
-					suppressTip ? "" : IA(I18nKey.SettingsUI.Regular.N).c_str(), parentSelected,
-					"\ue713", !expanded && !suppressTip);
-				parentWindow->WorkRect.Max.x = right;
-				parentWindow->ContentRegionRect.Max.x = contentRight;
-				state.parentBounds = ItemBounds(); state.middleBounds[0] = state.parentBounds;
-				state.parentItemId = ImGui::GetItemID();
-				markSelected(parentSelected);
-				const bool parentFocused = ImGui::IsItemFocused();
-				if (state.restoreParentFocus && !state.IsFlyoutOpen()
-					&& state.parentBounds.top < parentWindow->ClipRect.Max.y
-					&& state.parentBounds.bottom > parentWindow->ClipRect.Min.y)
-				{
-					FocusParent(parentWindow, state); state.restoreParentFocus = false;
-				}
-				if (parentPressed)
-				{
-					if (state.Expanded())
+				// 带子页的页面（通用/绘制/窗口与显示器/日志与配置）共用同一套分组渲染，状态各自保存在 state.groups。
+				const auto renderGroup = [&](size_t entryIndex) {
+					const auto& entry = NavigationMiddleEntries[entryIndex];
+					const PageId page = entry.page;
+					const int groupIndex = NavigationGroupIndex(page);
+					auto& group = state.Group(page);
+					const float childReveal = groupReveal(group);
+					ImGui::PushID(static_cast<int>(page));
+					const ImVec2 origin = ImGui::GetCursorScreenPos();
+					const float right = parentWindow->WorkRect.Max.x;
+					const float contentRight = parentWindow->ContentRegionRect.Max.x;
+					if (expanded)
 					{
-						state.generalExpanded = !state.generalExpanded;
-						// 纯收起不导航，不重置当前子页及正文淡入；覆盖导航留给父行继续开合。
-						if (state.generalExpanded)
+						// 真实 NavItem 宽度在普通 child 中来自 ContentRegionRect；箭头必须单独命中。
+						parentWindow->WorkRect.Max.x = contentRight - Pixels(NavigationRowHeight);
+						parentWindow->ContentRegionRect.Max.x = parentWindow->WorkRect.Max.x;
+					}
+					const bool groupSelected = selected.page == page;
+					const bool parentSelected = groupSelected && (!state.Expanded() || !group.expanded || childReveal < 0.001F);
+					const bool suppressTip = !expanded && state.IsFlyoutOpen();
+					const bool parentPressed = navItem("##group-parent",
+						suppressTip ? "" : IA(entry.labelKey).c_str(), parentSelected,
+						entry.glyph, !expanded && !suppressTip);
+					parentWindow->WorkRect.Max.x = right;
+					parentWindow->ContentRegionRect.Max.x = contentRight;
+					group.parentBounds = ItemBounds(); state.middleBounds[entryIndex] = group.parentBounds;
+					group.parentItemId = ImGui::GetItemID();
+					markSelected(parentSelected);
+					const bool parentFocused = ImGui::IsItemFocused();
+					if (state.restoreParentFocus && state.activeGroup == groupIndex && !state.IsFlyoutOpen()
+						&& group.parentBounds.top < parentWindow->ClipRect.Max.y
+						&& group.parentBounds.bottom > parentWindow->ClipRect.Min.y)
+					{
+						FocusParent(parentWindow, group); state.restoreParentFocus = false;
+					}
+					if (parentPressed)
+					{
+						state.activeGroup = groupIndex;
+						if (state.Expanded())
 						{
-							state.scrollSelectedGeneral = true;
-							navigate({ PageId::General, state.lastGeneralSection }, false);
-						}
-						else markSelected(generalSelected);
-					}
-					else if (generalSelected) state.flyoutOpen = !state.flyoutOpen;
-					else navigate({ PageId::General, state.lastGeneralSection });
-				}
-				if (parentFocused && ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))
-				{
-					ImGui::NavMoveRequestCancel();
-					if (state.Expanded()) { state.generalExpanded = true; state.scrollSelectedGeneral = true; }
-					else state.flyoutOpen = true;
-				}
-				if (parentFocused && ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
-				{
-					ImGui::NavMoveRequestCancel(); state.generalExpanded = false;
-				}
-				if (expanded)
-				{
-					ImGui::SetCursorScreenPos({ contentRight - Pixels(NavigationRowHeight), origin.y });
-					ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));
-					ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
-					ImFluent::PushStyleColor(ImFluentCol_ControlStrokeSecondary, IM_COL32(0, 0, 0, 0));
-					ImFluent::PushStyleColor(ImFluentCol_ElevationControlTop, IM_COL32(0, 0, 0, 0));
-					ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
-					const bool arrowPressed = Button("##general-chevron", { Pixels(NavigationRowHeight), Pixels(NavigationRowHeight) });
-					ImFluent::PopStyleColor(5);
-					state.chevronBounds = ItemBounds();
-					ImDrawList* dl = ImGui::GetWindowDrawList();
-					const int firstVertex = dl->VtxBuffer.Size;
-					const ImVec2 min(state.chevronBounds.left, state.chevronBounds.top), max(state.chevronBounds.right, state.chevronBounds.bottom);
-					ImFluent::DrawIcon("\ue70d", min, max, NavigationGlyphSize, TextSecondary);
-					const float angle = (childReveal - 1.0F) * 1.5707963F;
-					const float cosine = std::cos(angle), sine = std::sin(angle);
-					const ImVec2 center((min.x + max.x) * 0.5F, (min.y + max.y) * 0.5F);
-					for (int vertex = firstVertex; vertex < dl->VtxBuffer.Size; ++vertex)
-					{
-						const ImVec2 relative(dl->VtxBuffer[vertex].pos.x - center.x, dl->VtxBuffer[vertex].pos.y - center.y);
-						dl->VtxBuffer[vertex].pos = { center.x + relative.x * cosine - relative.y * sine,
-							center.y + relative.x * sine + relative.y * cosine };
-					}
-					if (arrowPressed)
-					{
-						state.generalExpanded = !state.generalExpanded;
-						if (!state.generalExpanded) FocusParent(parentWindow, state);
-						if (state.generalExpanded) state.scrollSelectedGeneral = true;
-					}
-				}
-				ImGui::PopID();
-				ImGui::SetCursorScreenPos({ origin.x, origin.y + Pixels(NavigationRowHeight + RowGap) });
-				if (childReveal > 0.001F && expanded)
-				{
-					const float fullHeight = NavigationRowHeight * GeneralSectionCount + RowGap * (GeneralSectionCount - 1);
-					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0F, 0.0F });
-					if (ImGui::BeginChild("##settings-general-children", { 0.0F, Pixels(fullHeight * childReveal) },
-						ImGuiChildFlags_NavFlattened, fixedFlags))
-					{
-						ImGui::BeginDisabled(!state.generalExpanded || !state.Expanded());
-						for (size_t index = 0; index < childKeys.size(); ++index)
-						{
-							ImGui::SetCursorPos({ Pixels(24.0F), Pixels(static_cast<float>(index) * (NavigationRowHeight + RowGap)) });
-							ImGui::PushID(static_cast<int>(index));
-							const bool complete = (index * (NavigationRowHeight + RowGap) + NavigationRowHeight) <= fullHeight * childReveal + 0.01F;
-							ImGui::PushItemFlag(ImGuiItemFlags_NoNav, !complete);
-							const bool isSelected = generalSelected && state.generalExpanded && state.Expanded()
-								&& selected.section == static_cast<GeneralSection>(index);
-							const bool pressed = navItem("##general-child", IA(childKeys[index]).c_str(), isSelected, childGlyphs[index], false);
-							ImGui::PopItemFlag();
-							state.childBounds[index] = ItemBounds();
-							markSelected(isSelected);
-							if (ImGui::IsItemFocused())
+							group.expanded = !group.expanded;
+							// 纯收起不导航，不重置当前子页及正文淡入；覆盖导航留给父行继续开合。
+							if (group.expanded)
 							{
-								state.childFocusId = ImGui::GetItemID();
-								state.childWindowItemId = ImGui::GetCurrentWindow()->ChildId;
-								state.inlineChildFocused = true;
-								if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
-								{
-									ImGui::NavMoveRequestCancel(); state.generalExpanded = false;
-									FocusParent(parentWindow, state);
-								}
+								state.scrollSelectedGroup = true;
+								navigate({ page, state.LastSection(page) }, false);
 							}
-							if (pressed) navigate({ PageId::General, static_cast<GeneralSection>(index) });
-							ImGui::PopID();
+							else markSelected(groupSelected);
 						}
-						ImGui::EndDisabled();
+						else if (groupSelected) state.flyoutOpen = !state.flyoutOpen;
+						else navigate({ page, state.LastSection(page) });
 					}
-					ImGui::EndChild(); ImGui::PopStyleVar();
-					// 完成展开后才滚入选中项，避免展开过程中反复改变用户滚动位置。
-					if (state.scrollSelectedGeneral && generalSelected && childReveal >= 0.999F)
+					if (parentFocused && ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))
 					{
-						const auto& child = state.childBounds[static_cast<size_t>(selected.section)];
-						const float childBottom = child.bottom - parentWindow->Pos.y + parentWindow->Scroll.y;
-						if (child.bottom > parentWindow->ClipRect.Max.y) ImGui::SetScrollY(childBottom - parentWindow->InnerRect.GetHeight());
-						else if (child.top < parentWindow->ClipRect.Min.y) ImGui::SetScrollY(child.top - parentWindow->Pos.y + parentWindow->Scroll.y);
-						state.scrollSelectedGeneral = false;
+						ImGui::NavMoveRequestCancel(); state.activeGroup = groupIndex;
+						if (state.Expanded()) { group.expanded = true; state.scrollSelectedGroup = true; }
+						else state.flyoutOpen = true;
 					}
-				}
-				if (state.scrollSelectedGeneral && generalSelected && !state.Expanded() && childReveal <= 0.001F)
+					if (parentFocused && ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
+					{
+						ImGui::NavMoveRequestCancel(); group.expanded = false;
+					}
+					if (expanded)
+					{
+						ImGui::SetCursorScreenPos({ contentRight - Pixels(NavigationRowHeight), origin.y });
+						ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));
+						ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
+						ImFluent::PushStyleColor(ImFluentCol_ControlStrokeSecondary, IM_COL32(0, 0, 0, 0));
+						ImFluent::PushStyleColor(ImFluentCol_ElevationControlTop, IM_COL32(0, 0, 0, 0));
+						ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
+						const bool arrowPressed = Button("##group-chevron", { Pixels(NavigationRowHeight), Pixels(NavigationRowHeight) });
+						ImFluent::PopStyleColor(5);
+						group.chevronBounds = ItemBounds();
+						ImDrawList* dl = ImGui::GetWindowDrawList();
+						const int firstVertex = dl->VtxBuffer.Size;
+						const ImVec2 min(group.chevronBounds.left, group.chevronBounds.top), max(group.chevronBounds.right, group.chevronBounds.bottom);
+						ImFluent::DrawIcon("\ue70d", min, max, NavigationGlyphSize, TextSecondary);
+						const float angle = (childReveal - 1.0F) * 1.5707963F;
+						const float cosine = std::cos(angle), sine = std::sin(angle);
+						const ImVec2 center((min.x + max.x) * 0.5F, (min.y + max.y) * 0.5F);
+						for (int vertex = firstVertex; vertex < dl->VtxBuffer.Size; ++vertex)
+						{
+							const ImVec2 relative(dl->VtxBuffer[vertex].pos.x - center.x, dl->VtxBuffer[vertex].pos.y - center.y);
+							dl->VtxBuffer[vertex].pos = { center.x + relative.x * cosine - relative.y * sine,
+								center.y + relative.x * sine + relative.y * cosine };
+						}
+						if (arrowPressed)
+						{
+							state.activeGroup = groupIndex;
+							group.expanded = !group.expanded;
+							if (!group.expanded) FocusParent(parentWindow, group);
+							if (group.expanded) state.scrollSelectedGroup = true;
+						}
+					}
+					ImGui::SetCursorScreenPos({ origin.x, origin.y + Pixels(NavigationRowHeight + RowGap) });
+					if (childReveal > 0.001F && expanded)
+					{
+						const float childCount = static_cast<float>(entry.children.size());
+						const float fullHeight = NavigationRowHeight * childCount + RowGap * (childCount - 1.0F);
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0F, 0.0F });
+						if (ImGui::BeginChild("##settings-group-children", { 0.0F, Pixels(fullHeight * childReveal) },
+							ImGuiChildFlags_NavFlattened, fixedFlags))
+						{
+							ImGui::BeginDisabled(!group.expanded || !state.Expanded());
+							for (size_t index = 0; index < entry.children.size(); ++index)
+							{
+								const auto& child = entry.children[index];
+								ImGui::SetCursorPos({ Pixels(24.0F), Pixels(static_cast<float>(index) * (NavigationRowHeight + RowGap)) });
+								ImGui::PushID(static_cast<int>(index));
+								const bool complete = (index * (NavigationRowHeight + RowGap) + NavigationRowHeight) <= fullHeight * childReveal + 0.01F;
+								ImGui::PushItemFlag(ImGuiItemFlags_NoNav, !complete);
+								const bool isSelected = groupSelected && group.expanded && state.Expanded()
+									&& selected.section == child.section;
+								const bool pressed = navItem("##group-child", IA(child.labelKey).c_str(), isSelected, child.glyph, false);
+								ImGui::PopItemFlag();
+								group.childBounds[index] = ItemBounds();
+								markSelected(isSelected);
+								if (ImGui::IsItemFocused())
+								{
+									state.childFocusId = ImGui::GetItemID();
+									state.childWindowItemId = ImGui::GetCurrentWindow()->ChildId;
+									state.inlineChildFocused = true;
+									state.activeGroup = groupIndex;
+									if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))
+									{
+										ImGui::NavMoveRequestCancel(); group.expanded = false;
+										FocusParent(parentWindow, group);
+									}
+								}
+								if (pressed) navigate({ page, child.section });
+								ImGui::PopID();
+							}
+							ImGui::EndDisabled();
+						}
+						ImGui::EndChild(); ImGui::PopStyleVar();
+						// 完成展开后才滚入选中项，避免展开过程中反复改变用户滚动位置。
+						const int selectedChild = NavigationChildIndex(page, selected.section);
+						if (state.scrollSelectedGroup && groupSelected && selectedChild >= 0 && childReveal >= 0.999F)
+						{
+							const auto& child = group.childBounds[static_cast<size_t>(selectedChild)];
+							const float childBottom = child.bottom - parentWindow->Pos.y + parentWindow->Scroll.y;
+							if (child.bottom > parentWindow->ClipRect.Max.y) ImGui::SetScrollY(childBottom - parentWindow->InnerRect.GetHeight());
+							else if (child.top < parentWindow->ClipRect.Min.y) ImGui::SetScrollY(child.top - parentWindow->Pos.y + parentWindow->Scroll.y);
+							state.scrollSelectedGroup = false;
+						}
+					}
+					if (state.scrollSelectedGroup && groupSelected && !state.Expanded() && childReveal <= 0.001F)
+					{
+						// 收起树后让选中的根图标可见，避免沿用子页滚动位置把菜单锚点藏到顶部之外。
+						if (group.parentBounds.top < parentWindow->ClipRect.Min.y || group.parentBounds.bottom > parentWindow->ClipRect.Max.y)
+							ImGui::SetScrollY(group.parentBounds.top - parentWindow->Pos.y + parentWindow->Scroll.y);
+						state.scrollSelectedGroup = false;
+					}
+					ImGui::PopID();
+				};
+				for (size_t index = 0; index < NavigationMiddleEntries.size(); ++index)
 				{
-					// 收起树后让选中的根图标可见，避免沿用子页滚动位置把菜单锚点藏到顶部之外。
-					if (state.parentBounds.top < parentWindow->ClipRect.Min.y || state.parentBounds.bottom > parentWindow->ClipRect.Max.y)
-						ImGui::SetScrollY(state.parentBounds.top - parentWindow->Pos.y + parentWindow->Scroll.y);
-					state.scrollSelectedGeneral = false;
-				}
-				for (size_t index = 1; index < middleEntries.size(); ++index)
-				{
-					renderEntry(middleEntries[index]); state.middleBounds[index] = ItemBounds();
+					const auto& entry = NavigationMiddleEntries[index];
+					if (!entry.children.empty()) renderGroup(index);
+					else
+					{
+						renderEntry(entry.page, entry.labelKey, entry.glyph);
+						state.middleBounds[index] = ItemBounds();
+					}
 				}
 				// 分数 DPI 下 ScrollMax 会取整，登记一像素尾部空间，保证最后一行完整进入裁剪区。
 				ImGui::SetCursorScreenPos({ state.middleBounds.back().left, std::ceil(state.middleBounds.back().bottom) + 1.0F });
@@ -508,22 +517,26 @@ namespace Inkeys::UI::Setting::Design
 			}
 		}
 
-		const bool anchorVisible = parentWindow && state.parentBounds.bottom > parentWindow->ClipRect.Min.y
-			&& state.parentBounds.top < parentWindow->ClipRect.Max.y;
+		// 浮层与回焦都围绕当前活动分组；无子页页面不会成为活动分组。
+		const PageId activePage = NavigationGroupPage(state.activeGroup);
+		auto& activeGroup = state.groups[static_cast<size_t>(state.activeGroup)];
+		const auto activeChildren = NavigationChildren(activePage);
+		const bool anchorVisible = parentWindow && activeGroup.parentBounds.bottom > parentWindow->ClipRect.Min.y
+			&& activeGroup.parentBounds.top < parentWindow->ClipRect.Max.y;
 		if (!anchorVisible || state.Expanded()) state.CloseFlyout();
 		// 模态浮层只用于输入屏障，透明遮罩不改变正文颜色；淡出完成后释放屏障并回焦父项。
 		ImGui::PushID("##settings-navigation-flyout-owner");
-		const char* popupId = "##settings-general-flyout";
+		const char* popupId = "##settings-group-flyout";
 		if (state.flyoutOpen && !ImGui::IsPopupOpen(popupId)) ImGui::OpenPopup(popupId);
 		if (ImGui::IsPopupOpen(popupId))
 		{
 			const ImVec2 origin = ImGui::GetWindowPos();
 			const LayoutRect client{ origin.x, origin.y + Pixels(TitleBarHeightDip),
 				origin.x + Pixels(geometry.content.right), origin.y + Pixels(geometry.content.bottom) };
-			const auto bounds = ResolveNavigationFlyoutGeometry(state.parentBounds, client, scale);
+			const auto bounds = ResolveNavigationFlyoutGeometry(activeGroup.parentBounds, client, scale, activeChildren.size());
 			const float phase = state.animationsInitialized ? state.flyoutReveal.value : 1.0F;
 			const float shift = Pixels(8.0F) * (1.0F - phase);
-			const float y = std::clamp(bounds.top + (bounds.top >= state.parentBounds.bottom ? shift : -shift),
+			const float y = std::clamp(bounds.top + (bounds.top >= activeGroup.parentBounds.bottom ? shift : -shift),
 				client.top + Pixels(8.0F), (std::max)(client.top + Pixels(8.0F), client.bottom - Pixels(8.0F) - bounds.Height()));
 			ImGui::SetNextWindowPos({ bounds.left, y });
 			ImGui::SetNextWindowSize({ bounds.Width(), bounds.Height() });
@@ -544,7 +557,7 @@ namespace Inkeys::UI::Setting::Design
 				const ImVec2 mouse = ImGui::GetIO().MousePos;
 				if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !state.flyoutBounds.Contains(mouse.x, mouse.y))
 				{
-					if (!state.flyoutOpen && state.parentBounds.Contains(mouse.x, mouse.y))
+					if (!state.flyoutOpen && activeGroup.parentBounds.Contains(mouse.x, mouse.y))
 					{ state.flyoutOpen = true; state.restoreParentFocus = false; }
 					else state.CloseFlyout();
 					state.mouseReleaseBarrier = true;
@@ -554,14 +567,14 @@ namespace Inkeys::UI::Setting::Design
 					ImGui::NavMoveRequestCancel(); state.CloseFlyout();
 				}
 				ImGui::BeginDisabled(!state.flyoutOpen);
-				for (size_t index = 0; index < childKeys.size(); ++index)
+				for (size_t index = 0; index < activeChildren.size(); ++index)
 				{
 					ImGui::PushID(static_cast<int>(index));
-					const bool isSelected = selected.page == PageId::General && selected.section == static_cast<GeneralSection>(index);
-					if (ImFluent::NavItemEx("##general-child", IA(childKeys[index]).c_str(), isSelected, childGlyphs[index], false))
-						navigate({ PageId::General, static_cast<GeneralSection>(index) });
+					const bool isSelected = selected.page == activePage && selected.section == activeChildren[index].section;
+					if (ImFluent::NavItemEx("##group-child", IA(activeChildren[index].labelKey).c_str(), isSelected, activeChildren[index].glyph, false))
+						navigate({ activePage, activeChildren[index].section });
 					AllowContentDrag();
-					state.flyoutChildBounds[index] = ItemBounds();
+					activeGroup.flyoutChildBounds[index] = ItemBounds();
 					if (isSelected) ImGui::SetItemDefaultFocus();
 					ImGui::PopID();
 				}
@@ -570,7 +583,7 @@ namespace Inkeys::UI::Setting::Design
 				if (!state.flyoutOpen && (!state.animationsEnabled || state.flyoutReveal.value <= 0.001F))
 				{
 					ImGui::CloseCurrentPopup(); state.flyoutReveal.Reset(0.0F);
-					FocusParent(parentWindow, state); state.restoreParentFocus = false;
+					FocusParent(parentWindow, activeGroup); state.restoreParentFocus = false;
 				}
 				ImGui::EndPopup();
 			}
@@ -587,10 +600,6 @@ namespace Inkeys::UI::Setting::Design
 		switch (action.kind)
 		{
 		case NavigationActionKind::Navigate:
-			if (action.destination.page == PageId::General && action.destination.section == GeneralSection::Storage)
-				return static_cast<int>(PageId::Configuration);
-			if (action.destination.page == PageId::General && action.destination.section == GeneralSection::Shortcuts)
-				return static_cast<int>(PageId::HotKeys);
 			return static_cast<int>(action.destination.page);
 		case NavigationActionKind::Community: return -2;
 		case NavigationActionKind::Restart: return -3;

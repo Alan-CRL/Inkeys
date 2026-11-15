@@ -12,37 +12,6 @@ struct ImGuiWindow;
 
 namespace Inkeys::UI::Setting::Design
 {
-	// 数值保留已有内部路由，未迁移页面继续由原 switch 承载。
-	enum class PageId : int
-	{
-		Home = 0, Language = 1, Build = 2, Configuration = 3, General = 4,
-		Draw = 5, Plugins = 8, Components = 9,
-		HotKeys = 10, Version = 11, Support = 12, Debug = 13, Experimental = 14, Feedback = 15, Performance = 16, Linkage = 17,
-	};
-
-	struct NavigationDestination
-	{
-		PageId page = PageId::Home;
-		GeneralSection section = GeneralSection::Basic;
-		bool operator==(const NavigationDestination&) const = default;
-	};
-
-	[[nodiscard]] inline NavigationDestination NormalizeDestination(NavigationDestination destination) noexcept
-	{
-		// 旧入口只重定向内容；保留页面编号，避免复用已退役路由。
-		if (destination.page == PageId::Configuration)
-			destination = { PageId::General, GeneralSection::Storage };
-		else if (destination.page == PageId::HotKeys)
-			destination = { PageId::General, GeneralSection::Shortcuts };
-		if (destination.page != PageId::General) destination.section = GeneralSection::Basic;
-		return destination;
-	}
-
-	[[nodiscard]] inline NavigationDestination DestinationForPage(int page) noexcept
-	{
-		return NormalizeDestination({ static_cast<PageId>(page), GeneralSection::Basic });
-	}
-
 	enum class NavigationActionKind { None, Navigate, Community, Restart, Exit };
 	struct NavigationAction
 	{
@@ -53,14 +22,14 @@ namespace Inkeys::UI::Setting::Design
 	inline void NotifyNavigationDestination(NavigationState& state, NavigationDestination destination) noexcept
 	{
 		destination = NormalizeDestination(destination);
-		if (destination.page == PageId::General) state.lastGeneralSection = destination.section;
+		if (auto* group = state.TryGroup(destination.page)) group->lastSection = destination.section;
 		if (state.contentPage == static_cast<int>(destination.page) && state.contentSection == destination.section) return;
 		if (destination.page == PageId::Debug || destination.page == PageId::Feedback) state.ClearIndicator();
 		state.contentPage = static_cast<int>(destination.page);
 		state.contentSection = destination.section;
 		state.contentReveal.Reset(state.animationsEnabled ? 0.0F : 1.0F);
 		state.contentReveal.Target(1.0F);
-		state.scrollSelectedGeneral = destination.page == PageId::General;
+		state.scrollSelectedGroup = state.TryGroup(destination.page) != nullptr;
 	}
 
 	enum class HomeAction
@@ -353,6 +322,8 @@ namespace Inkeys::UI::Setting::Design
 		int startupPlacement = 0;
 		int taskbarScaleBase = 0;
 		int selectMode = 0, iconOrder = 0, expansionDirection = 1;
+		// 交互模式：0 大屏触控模式，1 桌面交互模式（沿用原绘图设备选项）。
+		int paintDevice = 1;
 		std::array<int, 4> autoCollapse{ 1, 0, 0, 0 };
 		std::array<bool, 6> shortcuts{ true, true, true, true, true, true };
 		std::string shortcutGlobalStatus, shortcutHookStatus;
@@ -405,6 +376,7 @@ namespace Inkeys::UI::Setting::Design
 		bool backgroundOpacityChanged = false, backgroundOpacityActive = false, backgroundOpacityReset = false;
 		bool contentOpacityChanged = false, contentOpacityActive = false;
 		bool selectModeChanged = false, iconOrderChanged = false, expansionDirectionChanged = false;
+		bool paintDeviceChanged = false;
 		std::array<bool, 4> autoCollapseChanged{};
 		std::array<bool, 6> shortcutsChanged{};
 		bool statusIndicatorChanged = false;
@@ -424,7 +396,12 @@ namespace Inkeys::UI::Setting::Design
 
 	void ApplyContentAlpha(ImGuiWindow* window, float alpha);
 	HomeAction RenderHome(const HomeContent& content, HomeMotionState* motion = nullptr);
-	GeneralEvents RenderGeneral(GeneralDraft& draft, GeneralSection section = GeneralSection::Basic);
+	GeneralEvents RenderGeneral(GeneralDraft& draft, NavigationDestination destination);
+	// 带子页的页面可只给子页，页面由导航表推断。
+	inline GeneralEvents RenderGeneral(GeneralDraft& draft, Section section = Section::Basic)
+	{
+		return RenderGeneral(draft, NavigationDestination{ PageForSection(section), section });
+	}
 	// translucentBackdrop 取调用方本帧 backdrop 快照，与根清屏/标题栏/正文同源。
 	NavigationAction RenderNavigationPane(const ShellGeometry& geometry,
 		NavigationState& state, NavigationDestination selected, bool translucentBackdrop = false);

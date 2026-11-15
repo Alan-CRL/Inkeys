@@ -349,8 +349,16 @@ inline constexpr struct I18nKeyRoot
             const char* CompatibilitySection = "SettingsUI/Design/CompatibilitySection";
             const char* GeneralBasic = "SettingsUI/Design/GeneralBasic";
             const char* GeneralAppearance = "SettingsUI/Design/GeneralAppearance";
-            const char* GeneralInteraction = "SettingsUI/Design/GeneralInteraction";
-            const char* GeneralStorage = "SettingsUI/Design/GeneralStorage";
+            const char* NavWindowDisplay = "SettingsUI/Design/NavWindowDisplay";
+            const char* WindowLayout = "SettingsUI/Design/WindowLayout";
+            const char* WindowBehavior = "SettingsUI/Design/WindowBehavior";
+            const char* WindowDisplay = "SettingsUI/Design/WindowDisplay";
+            const char* NavKeysShortcuts = "SettingsUI/Design/NavKeysShortcuts";
+            const char* NavLogsConfig = "SettingsUI/Design/NavLogsConfig";
+            const char* LogsLog = "SettingsUI/Design/LogsLog";
+            const char* LogsConfiguration = "SettingsUI/Design/LogsConfiguration";
+            const char* DrawEffects = "SettingsUI/Design/DrawEffects";
+            const char* DrawInteraction = "SettingsUI/Design/DrawInteraction";
             const char* OperationModeSection = "SettingsUI/Design/OperationModeSection";
             const char* IconArrangementSection = "SettingsUI/Design/IconArrangementSection";
             const char* AnimationSection = "SettingsUI/Design/AnimationSection";
@@ -700,9 +708,9 @@ inline constexpr struct I18nKeyRoot
         struct Node__SettingsUI__Draw
         {
             const char* N = "SettingsUI/Draw/N";
+            const char* WhiteboardSection = "SettingsUI/Draw/WhiteboardSection";
             struct Node__SettingsUI__Draw__General
             {
-                const char* N = "SettingsUI/Draw/General/N";
                 struct Node__SettingsUI__Draw__General__MultiTouch
                 {
                     const char* N = "SettingsUI/Draw/General/MultiTouch/N";
@@ -945,7 +953,6 @@ inline constexpr struct I18nKeyRoot
         } Draw{};
         struct Node__SettingsUI__Position
         {
-            const char* N = "SettingsUI/Position/N";
             const char* DesktopSection = "SettingsUI/Position/DesktopSection";
             const char* PptSection = "SettingsUI/Position/PptSection";
             const char* WhiteboardSection = "SettingsUI/Position/WhiteboardSection";

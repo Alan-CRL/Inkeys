@@ -435,11 +435,12 @@ namespace Inkeys::UI::Setting::Design
 		if (resetSerial==consumed) return false;
 		consumed=resetSerial; destination={}; FinishHomeEntry(motion);
 		navigation.overlayOpen=navigation.flyoutOpen=navigation.restoreParentFocus=false;
-		navigation.mouseReleaseBarrier=false; navigation.generalExpanded=false;
+		navigation.mouseReleaseBarrier=false;
+		for (auto& group : navigation.groups) { group.expanded=false; group.reveal.Reset(0); }
 		navigation.childFocusId=navigation.childWindowItemId=0; navigation.inlineChildFocused=false;
-		navigation.scrollSelectedGeneral=false;
-		navigation.contentPage=0; navigation.contentSection=GeneralSection::Basic;
-		navigation.contentReveal.Reset(1); navigation.flyoutReveal.Reset(0); navigation.groupReveal.Reset(0);
+		navigation.scrollSelectedGroup=false;
+		navigation.contentPage=0; navigation.contentSection=Section::None;
+		navigation.contentReveal.Reset(1); navigation.flyoutReveal.Reset(0);
 		navigation.ClearIndicator(); motion.buttons={};
 		ImGui::ClearActiveID(); GImGui->MovingWindow=nullptr;
 		// ClosePopupToLevel 要求栈非空；从首层弹窗保存的导航窗回溯，不能重新聚焦已关闭的弹窗。
@@ -1376,374 +1377,409 @@ namespace Inkeys::UI::Setting::Design
 			&& !DesktopShortcutDraftNamesCollide(draft, other);
 	}
 
-	GeneralEvents RenderGeneral(GeneralDraft& draft, GeneralSection section)
+	static void RenderGeneralBasic(GeneralDraft& draft, GeneralEvents& events)
+	{
+		SectionHeader(IA(I18nKey.SettingsUI.Design.OperationModeSection).c_str());
+		// 操作模式说明独立成蓝色信息卡；选择行保留完整操作空间。
+		const std::vector<std::string> modeNames{
+			IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Combined),
+			IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Separate) };
+		const std::string modeDescription = modeNames[0] + ": "
+			+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.CombinedDescription) + "\n"
+			+ modeNames[1] + ": " + IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.SeparateDescription) + "\n"
+			+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThrough) + ": "
+			+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThroughDescription);
+		Notice("##operation-mode-notice", IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.N).c_str(),
+			modeDescription.c_str());
+		events.selectModeChanged = ComboRow("##选择与穿透", IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.N).c_str(),
+			nullptr, "\ue8b0", draft.selectMode, modeNames);
+
+		SectionHeader(IA(I18nKey.SettingsUI.Draw.Effect.N).c_str());
+		{
+			const std::vector<std::string> devices{
+				IA(I18nKey.SettingsUI.Draw.Effect.Device.Touch),
+				IA(I18nKey.SettingsUI.Draw.Effect.Device.MousePen) };
+			const std::string deviceDescription = devices[0] + ": " + IA(I18nKey.SettingsUI.Draw.Effect.Device.TouchE)
+				+ "\n" + devices[1] + ": " + IA(I18nKey.SettingsUI.Draw.Effect.Device.MousePenE);
+			events.paintDeviceChanged = ComboRow("##draw-device", IA(I18nKey.SettingsUI.Draw.Effect.Device.N).c_str(),
+				deviceDescription.c_str(), "\ue7f8", draft.paintDevice, devices);
+		}
+
+		SectionHeader(IA(I18nKey.SettingsUI.Regular.StartUp.N).c_str());
+		events.startupChanged = ToggleRow("startup", IA(I18nKey.SettingsUI.Regular.StartUp.AutoStart).c_str(),
+			IA(I18nKey.SettingsUI.Regular.StartUp.AutoStartE).c_str(), "\ue7e8", draft.startup);
+		events.allowMultipleInstancesChanged = ToggleRow("allow-multiple-instances",
+			IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.E).c_str(), "\ue7f4", draft.allowMultipleInstances);
+
+		SectionHeader(IA(I18nKey.SettingsUI.Design.SafetyRecoverySection).c_str());
+		events.safetyModeChanged = ComboRow("teaching-safety", IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.E).c_str(), "\ue72e", draft.safetyMode,
+			{ IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
+			IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) },
+			IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Note).c_str());
+	}
+
+	static void RenderGeneralAppearance(GeneralDraft& draft, GeneralEvents& events)
+	{
+		const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
+		const float resetSliderWidth = sliderWidth + SliderResetExtraWidthDip;
+		const std::string resetLabel = IA(I18nKey.SettingsUI.Regular.Appearance.ResetDefault);
+		const std::vector<std::string> themeOptions{ IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Dark),
+			IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Light) };
+
+		SectionHeader(IA(I18nKey.SettingsUI.Design.ThemeSection).c_str());
+		// 主栏主题只影响 UI3 Bar；设置窗口配色单独选择，与标题栏切换按钮共用同一偏好。
+		events.themeModeChanged = ComboRow("##主栏主题", IA(I18nKey.SettingsUI.Regular.Appearance.Theme.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Appearance.Theme.E).c_str(), "\ue790", draft.themeMode, themeOptions);
+		events.settingThemeModeChanged = ComboRow("##设置主题", IA(I18nKey.SettingsUI.Regular.Appearance.SettingTheme.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Appearance.SettingTheme.E).c_str(), "\ue771", draft.settingThemeMode, themeOptions);
+
+		SectionHeader(IA(I18nKey.SettingsUI.Design.AnimationSection).c_str());
+		events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
+		if (events.animationChanged) ConfigureRowAnimations(0.0F, draft.animation, draft.animationRate);
+		// 效果选择是加载动画卡片的内联下半区：关闭时随条件动画收起并保留偏好，选择仍由现有配置队列保存。
+		const std::string startupEffectLabel = IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.N);
+		const std::vector<std::string> startupEffects{ IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Shimmer),
+			IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Aurora),
+			IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.PixelAssembly) };
+		const auto startupEffect = InlineCombo("startup-effect", startupEffectLabel.c_str(), draft.startupEffect,
+			startupEffects, events.startupEffectChanged, "##startup-effect-visibility", draft.startupPreview);
+		events.startupPreviewChanged = ToggleRow("startup-preview",
+			IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
+			IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview,
+			IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str(), &startupEffect);
+		events.settingEntryAnimationChanged = ComboRow("setting-entry-animation",
+			IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.E).c_str(), "\ue768", draft.settingEntryAnimation,
+			{ IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.Off),
+			IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.First),
+			IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.Always) });
+
+		SectionHeader(IA(I18nKey.SettingsUI.Design.LightingSection).c_str());
+		events.edgeLightingChanged = ToggleRow("edge-lighting", IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLighting).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLightingE).c_str(), "\ue706", draft.edgeLighting);
+		if (ConditionalBlock block{"##edge-lighting-visibility", draft.edgeLighting}; block)
+			events.dynamicEdgeLightingChanged = ToggleRow("dynamic-edge-lighting",
+				IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLighting).c_str(),
+				IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLightingE).c_str(), "\ue706", draft.dynamicEdgeLighting);
+
+		SectionHeader(IA(I18nKey.SettingsUI.Design.OpacitySection).c_str());
+		// 只作用于常驻的主栏、主按钮与分页；弹出面板保持原透明度以保证可读。
+		SettingRow("bar-background-opacity", IA(I18nKey.SettingsUI.Regular.Appearance.BackgroundOpacity.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Appearance.BackgroundOpacity.E).c_str(), "\uef1f", resetSliderWidth, 32.0F,
+			[&](const LayoutRect& bounds) { events.backgroundOpacityChanged = SliderResetAction(bounds, draft.backgroundOpacity,
+				0.30F, 1.00F, events.backgroundOpacityActive, events.backgroundOpacityReset, resetLabel.c_str()); });
+		if (events.backgroundOpacityReset) draft.backgroundOpacity = draft.backgroundOpacityDefault;
+		bool contentOpacityReset = false;
+		SettingRow("bar-content-opacity", IA(I18nKey.SettingsUI.Regular.Appearance.ContentOpacity.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Appearance.ContentOpacity.E).c_str(), "\ue8a9", resetSliderWidth, 32.0F,
+			[&](const LayoutRect& bounds) { events.contentOpacityChanged = SliderResetAction(bounds, draft.contentOpacity,
+				0.30F, 1.00F, events.contentOpacityActive, contentOpacityReset, resetLabel.c_str()); });
+		if (contentOpacityReset) { draft.contentOpacity = 1.0F; events.contentOpacityChanged = true; }
+	}
+
+	static void RenderWindowLayout(GeneralDraft& draft, GeneralEvents& events)
+	{
+		// 缩放是窗口页最常用的调整，置于最前；随后依次为启动位置、环境位置与主栏布局。
+		const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
+		const float resetSliderWidth = sliderWidth + SliderResetExtraWidthDip;
+		const std::string resetLabel = IA(I18nKey.SettingsUI.Regular.Appearance.ResetDefault);
+		SectionHeader(IA(I18nKey.SettingsUI.Design.ScalingSection).c_str());
+		events.taskbarScaleBaseChanged = ComboRow("##以任务栏高度作为缩放基础量",
+			IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.E).c_str(), "\ue737", draft.taskbarScaleBase,
+			{ IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Off),
+			IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Base),
+			IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Actual) });
+		bool barZoomReset = false;
+		SettingRow("bar-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str(), "\ue9a6", resetSliderWidth, 32.0F,
+			[&](const LayoutRect& bounds) { events.barZoomChanged = SliderResetAction(bounds, draft.barZoom, 0.50F, 2.00F,
+				events.barZoomActive, barZoomReset, resetLabel.c_str()); });
+		if (barZoomReset) { draft.barZoom = 1.0F; events.barZoomChanged = true; }
+
+		const auto& position = I18nKey.SettingsUI.Position;
+		SectionHeader(IA(position.DesktopSection).c_str());
+		// 启动位置只保存下次启动的偏好，保持当前运行中的主栏位置；类型与位置是同一枚举的展示拆分。
+		const auto placement = Inkeys::UI::NormalizeStartupPlacement(draft.startupPlacement);
+		int placementType = Inkeys::UI::StartupPlacementType(placement);
+		int placementPosition = Inkeys::UI::StartupPlacementPosition(placement);
+		const std::vector<std::string> typeItems{ IA(position.TypeBottomBar), IA(position.TypeTopBar), IA(position.TypeFloating) };
+		const std::vector<std::string> positionItems = placementType == 2
+			? std::vector<std::string>{ IA(position.FloatBottomLeft), IA(position.FloatBottomRight), IA(position.FloatBottomCenter) }
+			: std::vector<std::string>{ IA(position.ExpandRight), IA(position.ExpandLeft) };
+		bool typeChanged = false, positionChanged = false;
+		const std::string positionLabel = IA(position.PositionLabel);
+		const std::string startupTitle = IA(I18nKey.SettingsUI.Preset.StartupPlacement.N);
+		const std::string startupDescription = IA(position.StartupE);
+		const std::string startupNote = IA(I18nKey.SettingsUI.Design.NextStartupRequired);
+		float typeWidth = 160.0F;
+		for (const auto& item : typeItems) typeWidth = (std::max)(typeWidth, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
+		const InlineRowContent positionContent = InlineCombo("startup-position", positionLabel.c_str(),
+			placementPosition, positionItems, positionChanged);
+		SettingRow("##启动后位置", startupTitle.c_str(), startupDescription.c_str(), "\ue707",
+			(std::min)(320.0F, typeWidth), ControlHeight,
+			[&](const LayoutRect&) { typeChanged = ComboBox("##select", &placementType, typeItems); },
+			Card, Stroke, 0, IM_COL32_WHITE, false, startupNote.c_str(), true, &positionContent);
+		if (typeChanged || positionChanged)
+		{
+			// 切换类型时位置回到该类型的首项，避免旧下标落到另一类选项上。
+			if (typeChanged) placementPosition = 0;
+			draft.startupPlacement = static_cast<int>(Inkeys::UI::StartupPlacementFromSelection(placementType, placementPosition));
+			events.startupPlacementChanged = true;
+		}
+
+		// PPT / 白板场景：同一布局，复选框决定进入前的哪些主栏状态会自动变成居中底栏。
+		const auto workspaceRow = [&](const char* id, const char* title, const char* description, const char* glyph,
+			int& mask, int& direction, bool& maskChanged, bool& directionChanged)
+		{
+			const std::array<std::string, 4> labels{ IA(position.StateBottom), IA(position.StateBottomFolded),
+				IA(position.StateFloating), IA(position.StateFloatingFolded) };
+			const std::vector<std::string> directions{ IA(position.DirectionKeep), IA(position.ExpandRight), IA(position.ExpandLeft) };
+			const std::string directionLabel = IA(position.MainButtonDirection);
+			float widest = 0;
+			for (const auto& label : labels) widest = (std::max)(widest, ControlTextWidth(label.c_str()) + Pixels(32));
+			const auto columnsFor = [&](float width) { return width >= (std::max)(Pixels(440), widest * 2 + Pixels(16)) ? 2 : 1; };
+			InlineRowContent content;
+			content.height = [&](float width) {
+				const int rows = (4 + columnsFor(width) - 1) / columnsFor(width);
+				return (rows + 1) * Pixels(ControlHeight) + rows * Pixels(ControlSpacing);
+			};
+			content.render = [&](const LayoutRect& bounds) {
+				const int columns = columnsFor(bounds.Width());
+				const float columnWidth = (bounds.Width() - Pixels(16) * (columns - 1)) / columns;
+				const int rows = (4 + columns - 1) / columns;
+				ImGui::PushID(id);
+				for (int index = 0; index < 4; ++index)
+				{
+					ImGui::SetCursorScreenPos({ bounds.left + (index % columns) * (columnWidth + Pixels(16)),
+						bounds.top + (index / columns) * Pixels(ControlHeight + ControlSpacing) });
+					bool checked = (mask >> index) & 1;
+					ImGui::PushID(index);
+					if (Checkbox((labels[index] + "###state").c_str(), &checked))
+					{
+						mask = checked ? (mask | (1 << index)) : (mask & ~(1 << index));
+						maskChanged = true;
+					}
+					ImGui::PopID();
+				}
+				const float top = bounds.top + rows * Pixels(ControlHeight + ControlSpacing);
+				const auto combo = InlineCombo("##direction", directionLabel.c_str(), direction, directions, directionChanged);
+				combo.render({ bounds.left, top, bounds.right, top + Pixels(ControlHeight) });
+				ImGui::PopID();
+			};
+			SettingRow(id, title, description, glyph, 0.0F, 0.0F, [](const LayoutRect&) {},
+				Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &content);
+		};
+		SectionHeader(IA(position.PptSection).c_str());
+		const std::string pptTitle = IA(position.PptAutoDock), pptDescription = IA(position.PptAutoDockE);
+		workspaceRow("##ppt-auto-dock", pptTitle.c_str(), pptDescription.c_str(), "\ue7b3",
+			draft.pptDockMask, draft.pptDockDirection, events.pptDockMaskChanged, events.pptDockDirectionChanged);
+		SectionHeader(IA(position.WhiteboardSection).c_str());
+		const std::string whiteboardTitle = IA(position.WhiteboardAutoDock), whiteboardDescription = IA(position.WhiteboardAutoDockE);
+		workspaceRow("##whiteboard-auto-dock", whiteboardTitle.c_str(), whiteboardDescription.c_str(), "\ue70f",
+			draft.whiteboardDockMask, draft.whiteboardDockDirection,
+			events.whiteboardDockMaskChanged, events.whiteboardDockDirectionChanged);
+
+		SectionHeader(IA(I18nKey.SettingsUI.Design.IconArrangementSection).c_str());
+		const std::vector<std::string> layoutTitles{
+			IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.N),
+			IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.N) };
+		const std::vector<std::vector<std::string>> layoutOptions{
+			{ IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButton),
+			IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButtonReverse),
+			IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.LeftToRight),
+			IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.RightToLeft) },
+			{ IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.Centerline),
+			IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.WhenSpaceInsufficient) } };
+		events.iconOrderChanged = ComboRow("主栏图标顺序", layoutTitles[0].c_str(), nullptr,
+			"\ue8a4", draft.iconOrder, layoutOptions[0]);
+		events.expansionDirectionChanged = ComboRow("主栏展开方向调整", layoutTitles[1].c_str(), nullptr,
+			"\ue8a4", draft.expansionDirection, layoutOptions[1]);
+	}
+
+	static void RenderWindowBehavior(GeneralDraft& draft, GeneralEvents& events)
+	{
+		SectionHeader(IA(I18nKey.SettingsUI.Regular.AutoCollapse.N).c_str());
+		const std::string collapseTitles[]{ IA(I18nKey.SettingsUI.Regular.AutoCollapse.Drawing),
+			IA(I18nKey.SettingsUI.Regular.AutoCollapse.Erasing), IA(I18nKey.SettingsUI.Regular.AutoCollapse.Dragging),
+			IA(I18nKey.SettingsUI.Regular.AutoCollapse.OutsideClick) };
+		const std::vector<std::string> collapseOptions{ IA(I18nKey.SettingsUI.Regular.AutoCollapse.Off),
+			IA(I18nKey.SettingsUI.Regular.AutoCollapse.NonBottom), IA(I18nKey.SettingsUI.Regular.AutoCollapse.Always) };
+		// 公共规则在分区顶部说明，四个策略行只负责各自的选择。
+		Notice("##auto-collapse-notice", IA(I18nKey.SettingsUI.Regular.AutoCollapse.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.AutoCollapse.Description).c_str());
+		const char* collapseIds[]{ "绘制自动收起", "擦除自动收起", "拖动自动收起", "栏外点击自动收起" };
+		for (int item = 0; item < 4; ++item)
+			events.autoCollapseChanged[item] = ComboRow(collapseIds[item], collapseTitles[item].c_str(),
+				nullptr, "\ue70d", draft.autoCollapse[item], collapseOptions);
+
+		SectionHeader(IA(I18nKey.SettingsUI.Design.WindowBehaviorSection).c_str());
+		events.topIntervalChanged = ComboRow("top-interval", IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str(), "\ue916", draft.topInterval,
+			{ IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_100ms), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_500ms),
+			IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_1s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_3s),
+			IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_5s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_10s),
+			IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_30s) });
+		events.rightClickCloseChanged = ToggleRow("right-click-close", IA(I18nKey.SettingsUI.Regular.Behavior.RightClickClose).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Behavior.RightClickCloseE).c_str(), "\ue8b2", draft.rightClickClose);
+	}
+
+	static void RenderStatusIndicator(GeneralDraft& draft, GeneralEvents& events)
+	{
+		const auto& keys = I18nKey.SettingsUI.StatusIndicator;
+		Notice("##status-indicator-notice", IA(keys.N).c_str(), IA(keys.E).c_str());
+		events.statusIndicatorChanged = ToggleRow("status-indicator", IA(keys.Enable.N).c_str(),
+			IA(keys.Enable.E).c_str(), "\uea8f", draft.statusIndicator);
+		// 显示条件只跟随本帧总开关；隐藏时保留各类勾选值。
+		if (ConditionalBlock block{ "##status-indicator-types-visibility", draft.statusIndicator }; block)
+		{
+			CheckboxGroup("##status-indicator-types", IA(keys.Types).c_str(), "\ue7c3", {
+				{ IA(keys.TypeSlideshow), &draft.statusIndicatorTypes[0], &events.statusIndicatorTypesChanged[0] },
+				{ IA(keys.TypeSuperTop), &draft.statusIndicatorTypes[1], &events.statusIndicatorTypesChanged[1] },
+				{ IA(keys.TypeNewVersion), &draft.statusIndicatorTypes[2], &events.statusIndicatorTypesChanged[2] } });
+		}
+	}
+
+	static void RenderKeyShortcuts(GeneralDraft& draft, GeneralEvents& events)
+	{
+		Notice("##hotkey-notice", IA(I18nKey.SettingsUI.HotKey.N).c_str(), IA(I18nKey.SettingsUI.HotKey.E).c_str());
+		if (ConditionalBlock block{"##hotkey-status-visibility",
+			!draft.shortcutGlobalStatus.empty() || !draft.shortcutHookStatus.empty()}; block)
+		{
+			Notice("##hotkey-status", block.RetainText("title", draft.shortcutGlobalStatus.c_str()),
+				block.RetainText("description", draft.shortcutHookStatus.c_str()),
+				draft.shortcutStatusWarning ? ImFluentInfoSeverity_Warning : ImFluentInfoSeverity_Informational);
+		}
+		const char* combinations[]{ "Ctrl + Alt + X", "Ctrl + Z", "Ctrl + Y", "Ctrl + Shift + Z", "Ctrl + Delete", "Ctrl + Q" };
+		const std::string names[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationN), IA(I18nKey.SettingsUI.HotKey.UndoN),
+			IA(I18nKey.SettingsUI.HotKey.RedoYN), IA(I18nKey.SettingsUI.HotKey.RedoShiftZN),
+			IA(I18nKey.SettingsUI.HotKey.ClearN), IA(I18nKey.SettingsUI.HotKey.FreezeN) };
+		const std::string descriptions[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationE), IA(I18nKey.SettingsUI.HotKey.UndoE),
+			IA(I18nKey.SettingsUI.HotKey.RedoYE), IA(I18nKey.SettingsUI.HotKey.RedoShiftZE),
+			IA(I18nKey.SettingsUI.HotKey.ClearE), IA(I18nKey.SettingsUI.HotKey.FreezeE) };
+		for (int item = 0; item < 6; ++item)
+		{
+			if (item == 0) SectionHeader(IA(I18nKey.SettingsUI.Design.ShortcutGlobalSection).c_str());
+			else if (item == 1) SectionHeader(IA(I18nKey.SettingsUI.Design.ShortcutEditingSection).c_str());
+			else if (item == 5) SectionHeader(IA(I18nKey.SettingsUI.Design.ShortcutAuxiliarySection).c_str());
+			ImGui::PushID(item);
+			const std::string shortcutTitle = names[item] + "  (" + combinations[item] + ")";
+			events.shortcutsChanged[item] = ToggleRow("##启用固定快捷键", shortcutTitle.c_str(), descriptions[item].c_str(),
+				"\ue765", draft.shortcuts[item], item == 5 ? IA(I18nKey.SettingsUI.HotKey.FreezeNote).c_str() : nullptr);
+			ImGui::PopID();
+		}
+	}
+
+	static void RenderDesktopShortcuts(GeneralDraft& draft, GeneralEvents& events)
+	{
+		using namespace Business::DesktopShortcut;
+		const auto& keys = I18nKey.SettingsUI.DesktopShortcut;
+		// 两类使用相同控件/动画，只以稳定 ID 与独立草稿区分。
+		auto renderCategory = [&](DesktopShortcutDraft& shortcut, const DesktopShortcutDraft& other,
+			const char* title, const char* prefix, bool& nameCommitted, bool& presetChanged,
+			bool& createRequested, bool& correctChanged, bool& createChanged)
+		{
+			const auto valid = [&] { return IsDesktopShortcutDraftValid(shortcut, other); };
+			const auto error = [&] { return IA(DesktopShortcutDraftNamesCollide(shortcut, other) ? keys.NameConflict : keys.InvalidName); };
+			const int custom = CustomPreset(shortcut.names.kind);
+			SectionHeader(IA(title).c_str());
+			const std::string create = IA(I18nKey.Operate.Create), invalidName = error();
+			const std::string nameId = std::string("##") + prefix + "-name";
+			InlineRowContent inlineName;
+			inlineName.height = [&](float width) {
+				return Pixels(ControlHeight) + (valid() ? 0.0F : Pixels(8) + (std::max)(Pixels(20),
+					TextHeight(invalidName.c_str(), (std::max)(1.0F, width - Pixels(24)), ImFluentTextStyle_Caption)));
+			};
+			inlineName.render = [&](const LayoutRect& bounds) {
+				ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
+				// 透明 child 只承载控件和输入；外框与分隔线由上方 SettingRow 统一绘制。
+				if (ImGui::BeginChild(nameId.c_str(), { bounds.Width(), bounds.Height() },
+					ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+				{
+					const auto origin = ImGui::GetCursorScreenPos();
+					const float innerWidth = ImGui::GetContentRegionAvail().x;
+					const float gap = Pixels(ControlSpacing);
+					const float comboWidth = (std::min)(Pixels(300), (std::max)(1.0F, (innerWidth - gap) * .55F));
+					const float leftWidth = (std::max)(1.0F, innerWidth - comboWidth - gap);
+					std::vector<std::string> names;
+					for (int index = 0; index < PresetCount(shortcut.names.kind, shortcut.names.simplifiedChinese); ++index)
+					{
+						const int preset = PresetForIndex(index, shortcut.names.simplifiedChinese, shortcut.names.kind);
+						names.push_back(preset == custom ? IA(keys.CustomName) : utf16ToUtf8(shortcut.names.presets[preset]));
+					}
+					if (shortcut.preset == custom)
+					{
+						ImGui::SetNextItemWidth(leftWidth);
+						nameCommitted = TextBox("##desktop-shortcut-custom", shortcut.customName,
+							IA(keys.CustomHint).c_str(), ImGuiInputTextFlags_EnterReturnsTrue);
+						nameCommitted |= ImGui::IsItemDeactivatedAfterEdit();
+					}
+					else TextAt(IA(keys.NameLabel).c_str(), { origin.x, origin.y + Pixels(5) }, leftWidth);
+					ImGui::SetCursorScreenPos({ origin.x + innerWidth - comboWidth, origin.y });
+					ImGui::SetNextItemWidth(comboWidth);
+					int index = IndexForPreset(shortcut.preset, shortcut.names.simplifiedChinese, shortcut.names.kind);
+					const auto previous = ResolveName(shortcut.preset, utf8ToUtf16(shortcut.customName), shortcut.names);
+					if (ComboBox("##desktop-shortcut-preset", &index, names, &shortcut.namePopup, I18n::revision()))
+					{
+						shortcut.preset = PresetForIndex(index, shortcut.names.simplifiedChinese, shortcut.names.kind);
+						// 从预设进入自定义时使用当时的显示名；重开已保存的自定义不走此分支。
+						if (shortcut.preset == custom) shortcut.customName = utf16ToUtf8(previous);
+						presetChanged = true;
+					}
+					ImGui::SetCursorScreenPos(origin); ImGui::Dummy({ innerWidth, Pixels(ControlHeight) });
+					if (!valid()) InfoText(error().c_str());
+				}
+				ImGui::EndChild(); ImGui::PopStyleVar();
+			};
+			SettingRow((std::string(prefix) + "-create").c_str(), IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
+				IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str(), "\ue71b", ButtonWidth(create.c_str()), ControlHeight,
+				[&](const LayoutRect& bounds) {
+					ImGui::PushID("create"); ImFluent::BeginDisabled(!valid());
+					createRequested = Button((create + "###button").c_str(), { bounds.Width(), bounds.Height() });
+					ImFluent::EndDisabled(); ImGui::PopID();
+				}, Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &inlineName);
+			correctChanged = ToggleRow((std::string(prefix) + "-correct").c_str(),
+				IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnk).c_str(),
+				IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnkE).c_str(), "\ue71b", shortcut.correct);
+			createChanged = ToggleRow((std::string(prefix) + "-auto-create").c_str(),
+				IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk).c_str(),
+				IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnkE).c_str(), "\ue71b", shortcut.create);
+			if (!valid()) { createRequested = false; nameCommitted = false; }
+		};
+		renderCategory(draft.desktopShortcut, draft.whiteboardShortcut, keys.ApplicationSection, "desktop-shortcut",
+			events.desktopNameCommitted, events.desktopNamePresetChanged, events.createShortcut, events.desktopCorrectChanged, events.desktopCreateChanged);
+		renderCategory(draft.whiteboardShortcut, draft.desktopShortcut, keys.WhiteboardSection, "whiteboard-shortcut",
+			events.whiteboardNameCommitted, events.whiteboardNamePresetChanged, events.createWhiteboardShortcut, events.whiteboardCorrectChanged, events.whiteboardCreateChanged);
+	}
+
+	GeneralEvents RenderGeneral(GeneralDraft& draft, NavigationDestination destination)
 	{
 		GeneralEvents events;
-		// 存储页由原配置保存业务分支承载，避免在此重复提交标题或控件。
-		if (section == GeneralSection::Storage) return events;
-		const char* title = section == GeneralSection::Appearance ? I18nKey.SettingsUI.Design.GeneralAppearance
-			: section == GeneralSection::Position ? I18nKey.SettingsUI.Position.N
-			: section == GeneralSection::Interaction ? I18nKey.SettingsUI.Design.GeneralInteraction
-			: section == GeneralSection::Shortcuts ? I18nKey.SettingsUI.HotKey.N
-			: section == GeneralSection::DesktopShortcuts ? I18nKey.SettingsUI.DesktopShortcut.N
-			: section == GeneralSection::StatusIndicator ? I18nKey.SettingsUI.StatusIndicator.N
-			: I18nKey.SettingsUI.Design.GeneralBasic;
+		destination = NormalizeDestination(destination);
+		// 配置页由原配置保存业务分支承载，避免在此重复提交标题或控件。
+		if (destination.section == Section::LogsConfiguration) return events;
+		// 页标题与侧栏项共用同一份导航表文案，保证两处一致。
+		const int childIndex = NavigationChildIndex(destination.page, destination.section);
+		const char* title = childIndex >= 0 ? NavigationChildren(destination.page)[static_cast<size_t>(childIndex)].labelKey
+			: I18nKey.SettingsUI.Design.NavKeysShortcuts;
 		PageHeader(IA(title).c_str());
-		// 仅渲染当前子页；未显示字段继续使用同一草稿，不触发写回或重置。
-		if (section == GeneralSection::Basic)
+		// 仅渲染当前页；未显示字段继续使用同一草稿，不触发写回或重置。
+		switch (destination.section)
 		{
-			SectionHeader(IA(I18nKey.SettingsUI.Design.OperationModeSection).c_str());
-			// 操作模式说明独立成蓝色信息卡；选择行保留完整操作空间。
-			const std::vector<std::string> modeNames{
-				IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Combined),
-				IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.Separate) };
-			const std::string modeDescription = modeNames[0] + ": "
-				+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.CombinedDescription) + "\n"
-				+ modeNames[1] + ": " + IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.SeparateDescription) + "\n"
-				+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThrough) + ": "
-				+ IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.ClickThroughDescription);
-			Notice("##operation-mode-notice", IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.N).c_str(),
-				modeDescription.c_str());
-			events.selectModeChanged = ComboRow("##选择与穿透", IA(I18nKey.SettingsUI.Regular.SelectAndClickThrough.N).c_str(),
-				nullptr, "\ue8b0", draft.selectMode, modeNames);
-
-			SectionHeader(IA(I18nKey.SettingsUI.Design.IconArrangementSection).c_str());
-			const std::vector<std::string> layoutTitles{
-				IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.N),
-				IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.N) };
-			const std::vector<std::vector<std::string>> layoutOptions{
-				{ IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButton),
-				IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButtonReverse),
-				IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.LeftToRight),
-				IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.RightToLeft) },
-				{ IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.Centerline),
-				IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.WhenSpaceInsufficient) } };
-			events.iconOrderChanged = ComboRow("主栏图标顺序", layoutTitles[0].c_str(), nullptr,
-				"\ue8a4", draft.iconOrder, layoutOptions[0]);
-			events.expansionDirectionChanged = ComboRow("主栏展开方向调整", layoutTitles[1].c_str(), nullptr,
-				"\ue8a4", draft.expansionDirection, layoutOptions[1]);
-
-			SectionHeader(IA(I18nKey.SettingsUI.Regular.StartUp.N).c_str());
-			events.startupChanged = ToggleRow("startup", IA(I18nKey.SettingsUI.Regular.StartUp.AutoStart).c_str(),
-				IA(I18nKey.SettingsUI.Regular.StartUp.AutoStartE).c_str(), "\ue7e8", draft.startup);
-		}
-		if (section == GeneralSection::Position)
-		{
-			const auto& position = I18nKey.SettingsUI.Position;
-			SectionHeader(IA(position.DesktopSection).c_str());
-			// 启动位置只保存下次启动的偏好，保持当前运行中的主栏位置；类型与位置是同一枚举的展示拆分。
-			const auto placement = Inkeys::UI::NormalizeStartupPlacement(draft.startupPlacement);
-			int placementType = Inkeys::UI::StartupPlacementType(placement);
-			int placementPosition = Inkeys::UI::StartupPlacementPosition(placement);
-			const std::vector<std::string> typeItems{ IA(position.TypeBottomBar), IA(position.TypeTopBar), IA(position.TypeFloating) };
-			const std::vector<std::string> positionItems = placementType == 2
-				? std::vector<std::string>{ IA(position.FloatBottomLeft), IA(position.FloatBottomRight), IA(position.FloatBottomCenter) }
-				: std::vector<std::string>{ IA(position.ExpandRight), IA(position.ExpandLeft) };
-			bool typeChanged = false, positionChanged = false;
-			const std::string positionLabel = IA(position.PositionLabel);
-			const std::string startupTitle = IA(I18nKey.SettingsUI.Preset.StartupPlacement.N);
-			const std::string startupDescription = IA(position.StartupE);
-			const std::string startupNote = IA(I18nKey.SettingsUI.Design.NextStartupRequired);
-			float typeWidth = 160.0F;
-			for (const auto& item : typeItems) typeWidth = (std::max)(typeWidth, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
-			const InlineRowContent positionContent = InlineCombo("startup-position", positionLabel.c_str(),
-				placementPosition, positionItems, positionChanged);
-			SettingRow("##启动后位置", startupTitle.c_str(), startupDescription.c_str(), "\ue707",
-				(std::min)(320.0F, typeWidth), ControlHeight,
-				[&](const LayoutRect&) { typeChanged = ComboBox("##select", &placementType, typeItems); },
-				Card, Stroke, 0, IM_COL32_WHITE, false, startupNote.c_str(), true, &positionContent);
-			if (typeChanged || positionChanged)
-			{
-				// 切换类型时位置回到该类型的首项，避免旧下标落到另一类选项上。
-				if (typeChanged) placementPosition = 0;
-				draft.startupPlacement = static_cast<int>(Inkeys::UI::StartupPlacementFromSelection(placementType, placementPosition));
-				events.startupPlacementChanged = true;
-			}
-
-			// PPT / 白板场景：同一布局，复选框决定进入前的哪些主栏状态会自动变成居中底栏。
-			const auto workspaceRow = [&](const char* id, const char* title, const char* description, const char* glyph,
-				int& mask, int& direction, bool& maskChanged, bool& directionChanged)
-			{
-				const std::array<std::string, 4> labels{ IA(position.StateBottom), IA(position.StateBottomFolded),
-					IA(position.StateFloating), IA(position.StateFloatingFolded) };
-				const std::vector<std::string> directions{ IA(position.DirectionKeep), IA(position.ExpandRight), IA(position.ExpandLeft) };
-				const std::string directionLabel = IA(position.MainButtonDirection);
-				float widest = 0;
-				for (const auto& label : labels) widest = (std::max)(widest, ControlTextWidth(label.c_str()) + Pixels(32));
-				const auto columnsFor = [&](float width) { return width >= (std::max)(Pixels(440), widest * 2 + Pixels(16)) ? 2 : 1; };
-				InlineRowContent content;
-				content.height = [&](float width) {
-					const int rows = (4 + columnsFor(width) - 1) / columnsFor(width);
-					return (rows + 1) * Pixels(ControlHeight) + rows * Pixels(ControlSpacing);
-				};
-				content.render = [&](const LayoutRect& bounds) {
-					const int columns = columnsFor(bounds.Width());
-					const float columnWidth = (bounds.Width() - Pixels(16) * (columns - 1)) / columns;
-					const int rows = (4 + columns - 1) / columns;
-					ImGui::PushID(id);
-					for (int index = 0; index < 4; ++index)
-					{
-						ImGui::SetCursorScreenPos({ bounds.left + (index % columns) * (columnWidth + Pixels(16)),
-							bounds.top + (index / columns) * Pixels(ControlHeight + ControlSpacing) });
-						bool checked = (mask >> index) & 1;
-						ImGui::PushID(index);
-						if (Checkbox((labels[index] + "###state").c_str(), &checked))
-						{
-							mask = checked ? (mask | (1 << index)) : (mask & ~(1 << index));
-							maskChanged = true;
-						}
-						ImGui::PopID();
-					}
-					const float top = bounds.top + rows * Pixels(ControlHeight + ControlSpacing);
-					const auto combo = InlineCombo("##direction", directionLabel.c_str(), direction, directions, directionChanged);
-					combo.render({ bounds.left, top, bounds.right, top + Pixels(ControlHeight) });
-					ImGui::PopID();
-				};
-				SettingRow(id, title, description, glyph, 0.0F, 0.0F, [](const LayoutRect&) {},
-					Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &content);
-			};
-			SectionHeader(IA(position.PptSection).c_str());
-			const std::string pptTitle = IA(position.PptAutoDock), pptDescription = IA(position.PptAutoDockE);
-			workspaceRow("##ppt-auto-dock", pptTitle.c_str(), pptDescription.c_str(), "\ue7b3",
-				draft.pptDockMask, draft.pptDockDirection, events.pptDockMaskChanged, events.pptDockDirectionChanged);
-			SectionHeader(IA(position.WhiteboardSection).c_str());
-			const std::string whiteboardTitle = IA(position.WhiteboardAutoDock), whiteboardDescription = IA(position.WhiteboardAutoDockE);
-			workspaceRow("##whiteboard-auto-dock", whiteboardTitle.c_str(), whiteboardDescription.c_str(), "\ue70f",
-				draft.whiteboardDockMask, draft.whiteboardDockDirection,
-				events.whiteboardDockMaskChanged, events.whiteboardDockDirectionChanged);
-		}
-		if (section == GeneralSection::Appearance)
-		{
-			const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
-			const float resetSliderWidth = sliderWidth + SliderResetExtraWidthDip;
-			const std::string resetLabel = IA(I18nKey.SettingsUI.Regular.Appearance.ResetDefault);
-			const std::vector<std::string> themeOptions{ IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Dark),
-				IA(I18nKey.SettingsUI.Regular.Appearance.Theme.Light) };
-
-			SectionHeader(IA(I18nKey.SettingsUI.Design.ThemeSection).c_str());
-			// 主栏主题只影响 UI3 Bar；设置窗口配色单独选择，与标题栏切换按钮共用同一偏好。
-			events.themeModeChanged = ComboRow("##主栏主题", IA(I18nKey.SettingsUI.Regular.Appearance.Theme.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.Theme.E).c_str(), "\ue790", draft.themeMode, themeOptions);
-			events.settingThemeModeChanged = ComboRow("##设置主题", IA(I18nKey.SettingsUI.Regular.Appearance.SettingTheme.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.SettingTheme.E).c_str(), "\ue771", draft.settingThemeMode, themeOptions);
-
-			SectionHeader(IA(I18nKey.SettingsUI.Design.OpacitySection).c_str());
-			// 只作用于常驻的主栏、主按钮与分页；弹出面板保持原透明度以保证可读。
-			SettingRow("bar-background-opacity", IA(I18nKey.SettingsUI.Regular.Appearance.BackgroundOpacity.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.BackgroundOpacity.E).c_str(), "\uef1f", resetSliderWidth, 32.0F,
-				[&](const LayoutRect& bounds) { events.backgroundOpacityChanged = SliderResetAction(bounds, draft.backgroundOpacity,
-					0.30F, 1.00F, events.backgroundOpacityActive, events.backgroundOpacityReset, resetLabel.c_str()); });
-			if (events.backgroundOpacityReset) draft.backgroundOpacity = draft.backgroundOpacityDefault;
-			bool contentOpacityReset = false;
-			SettingRow("bar-content-opacity", IA(I18nKey.SettingsUI.Regular.Appearance.ContentOpacity.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.ContentOpacity.E).c_str(), "\ue8a9", resetSliderWidth, 32.0F,
-				[&](const LayoutRect& bounds) { events.contentOpacityChanged = SliderResetAction(bounds, draft.contentOpacity,
-					0.30F, 1.00F, events.contentOpacityActive, contentOpacityReset, resetLabel.c_str()); });
-			if (contentOpacityReset) { draft.contentOpacity = 1.0F; events.contentOpacityChanged = true; }
-
-			SectionHeader(IA(I18nKey.SettingsUI.Design.AnimationSection).c_str());
-			events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
-			if (events.animationChanged) ConfigureRowAnimations(0.0F, draft.animation, draft.animationRate);
-			// 效果选择是加载动画卡片的内联下半区：关闭时随条件动画收起并保留偏好，选择仍由现有配置队列保存。
-			const std::string startupEffectLabel = IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.N);
-			const std::vector<std::string> startupEffects{ IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Shimmer),
-				IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Aurora),
-				IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.PixelAssembly) };
-			const auto startupEffect = InlineCombo("startup-effect", startupEffectLabel.c_str(), draft.startupEffect,
-				startupEffects, events.startupEffectChanged, "##startup-effect-visibility", draft.startupPreview);
-			events.startupPreviewChanged = ToggleRow("startup-preview",
-				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
-				IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview,
-				IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str(), &startupEffect);
-			events.settingEntryAnimationChanged = ComboRow("setting-entry-animation",
-				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.E).c_str(), "\ue768", draft.settingEntryAnimation,
-				{ IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.Off),
-				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.First),
-				IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.Always) });
-
-			SectionHeader(IA(I18nKey.SettingsUI.Design.LightingSection).c_str());
-			events.edgeLightingChanged = ToggleRow("edge-lighting", IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLighting).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLightingE).c_str(), "\ue706", draft.edgeLighting);
-			if (ConditionalBlock block{"##edge-lighting-visibility", draft.edgeLighting}; block)
-				events.dynamicEdgeLightingChanged = ToggleRow("dynamic-edge-lighting",
-					IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLighting).c_str(),
-					IA(I18nKey.SettingsUI.Regular.Appearance.DynamicEdgeLightingE).c_str(), "\ue706", draft.dynamicEdgeLighting);
-			SectionHeader(IA(I18nKey.SettingsUI.Design.ScalingSection).c_str());
-			events.taskbarScaleBaseChanged = ComboRow("##以任务栏高度作为缩放基础量",
-				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.E).c_str(), "\ue737", draft.taskbarScaleBase,
-				{ IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Off),
-				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Base),
-				IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.Actual) });
-			bool barZoomReset = false;
-			SettingRow("bar-zoom", IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Appearance.BarZoom.E).c_str(), "\ue9a6", resetSliderWidth, 32.0F,
-				[&](const LayoutRect& bounds) { events.barZoomChanged = SliderResetAction(bounds, draft.barZoom, 0.50F, 2.00F,
-					events.barZoomActive, barZoomReset, resetLabel.c_str()); });
-			if (barZoomReset) { draft.barZoom = 1.0F; events.barZoomChanged = true; }
-		}
-		if (section == GeneralSection::Interaction)
-		{
-			SectionHeader(IA(I18nKey.SettingsUI.Regular.AutoCollapse.N).c_str());
-			const std::string collapseTitles[]{ IA(I18nKey.SettingsUI.Regular.AutoCollapse.Drawing),
-				IA(I18nKey.SettingsUI.Regular.AutoCollapse.Erasing), IA(I18nKey.SettingsUI.Regular.AutoCollapse.Dragging),
-				IA(I18nKey.SettingsUI.Regular.AutoCollapse.OutsideClick) };
-			const std::vector<std::string> collapseOptions{ IA(I18nKey.SettingsUI.Regular.AutoCollapse.Off),
-				IA(I18nKey.SettingsUI.Regular.AutoCollapse.NonBottom), IA(I18nKey.SettingsUI.Regular.AutoCollapse.Always) };
-			// 公共规则在分区顶部说明，四个策略行只负责各自的选择。
-			Notice("##auto-collapse-notice", IA(I18nKey.SettingsUI.Regular.AutoCollapse.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.AutoCollapse.Description).c_str());
-			const char* collapseIds[]{ "绘制自动收起", "擦除自动收起", "拖动自动收起", "栏外点击自动收起" };
-			for (int item = 0; item < 4; ++item)
-				events.autoCollapseChanged[item] = ComboRow(collapseIds[item], collapseTitles[item].c_str(),
-					nullptr, "\ue70d", draft.autoCollapse[item], collapseOptions);
-
-			SectionHeader(IA(I18nKey.SettingsUI.Design.WindowBehaviorSection).c_str());
-			events.topIntervalChanged = ComboRow("top-interval", IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.E).c_str(), "\ue916", draft.topInterval,
-				{ IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_100ms), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_500ms),
-				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_1s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_3s),
-				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_5s), IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_10s),
-				IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_30s) });
-			events.rightClickCloseChanged = ToggleRow("right-click-close", IA(I18nKey.SettingsUI.Regular.Behavior.RightClickClose).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Behavior.RightClickCloseE).c_str(), "\ue8b2", draft.rightClickClose);
-
-			SectionHeader(IA(I18nKey.SettingsUI.Design.SafetyRecoverySection).c_str());
-			events.safetyModeChanged = ComboRow("teaching-safety", IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.E).c_str(), "\ue72e", draft.safetyMode,
-				{ IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
-				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) },
-				IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Note).c_str());
-			events.allowMultipleInstancesChanged = ToggleRow("allow-multiple-instances",
-				IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.N).c_str(),
-				IA(I18nKey.SettingsUI.Regular.Tentative.AllowMultipleInstances.E).c_str(), "\ue7f4", draft.allowMultipleInstances);
-		}
-		if (section == GeneralSection::StatusIndicator)
-		{
-			const auto& keys = I18nKey.SettingsUI.StatusIndicator;
-			Notice("##status-indicator-notice", IA(keys.N).c_str(), IA(keys.E).c_str());
-			events.statusIndicatorChanged = ToggleRow("status-indicator", IA(keys.Enable.N).c_str(),
-				IA(keys.Enable.E).c_str(), "\uea8f", draft.statusIndicator);
-			// 显示条件只跟随本帧总开关；隐藏时保留各类勾选值。
-			if (ConditionalBlock block{ "##status-indicator-types-visibility", draft.statusIndicator }; block)
-			{
-				CheckboxGroup("##status-indicator-types", IA(keys.Types).c_str(), "\ue7c3", {
-					{ IA(keys.TypeSlideshow), &draft.statusIndicatorTypes[0], &events.statusIndicatorTypesChanged[0] },
-					{ IA(keys.TypeSuperTop), &draft.statusIndicatorTypes[1], &events.statusIndicatorTypesChanged[1] },
-					{ IA(keys.TypeNewVersion), &draft.statusIndicatorTypes[2], &events.statusIndicatorTypesChanged[2] } });
-			}
-		}
-		if (section == GeneralSection::Shortcuts)
-		{
-			Notice("##hotkey-notice", IA(I18nKey.SettingsUI.HotKey.N).c_str(), IA(I18nKey.SettingsUI.HotKey.E).c_str());
-			if (ConditionalBlock block{"##hotkey-status-visibility",
-				!draft.shortcutGlobalStatus.empty() || !draft.shortcutHookStatus.empty()}; block)
-			{
-				Notice("##hotkey-status", block.RetainText("title", draft.shortcutGlobalStatus.c_str()),
-					block.RetainText("description", draft.shortcutHookStatus.c_str()),
-					draft.shortcutStatusWarning ? ImFluentInfoSeverity_Warning : ImFluentInfoSeverity_Informational);
-			}
-			const char* combinations[]{ "Ctrl + Alt + X", "Ctrl + Z", "Ctrl + Y", "Ctrl + Shift + Z", "Ctrl + Delete", "Ctrl + Q" };
-			const std::string names[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationN), IA(I18nKey.SettingsUI.HotKey.UndoN),
-				IA(I18nKey.SettingsUI.HotKey.RedoYN), IA(I18nKey.SettingsUI.HotKey.RedoShiftZN),
-				IA(I18nKey.SettingsUI.HotKey.ClearN), IA(I18nKey.SettingsUI.HotKey.FreezeN) };
-			const std::string descriptions[]{ IA(I18nKey.SettingsUI.HotKey.ToggleAnnotationE), IA(I18nKey.SettingsUI.HotKey.UndoE),
-				IA(I18nKey.SettingsUI.HotKey.RedoYE), IA(I18nKey.SettingsUI.HotKey.RedoShiftZE),
-				IA(I18nKey.SettingsUI.HotKey.ClearE), IA(I18nKey.SettingsUI.HotKey.FreezeE) };
-			for (int item = 0; item < 6; ++item)
-			{
-				if (item == 0) SectionHeader(IA(I18nKey.SettingsUI.Design.ShortcutGlobalSection).c_str());
-				else if (item == 1) SectionHeader(IA(I18nKey.SettingsUI.Design.ShortcutEditingSection).c_str());
-				else if (item == 5) SectionHeader(IA(I18nKey.SettingsUI.Design.ShortcutAuxiliarySection).c_str());
-				ImGui::PushID(item);
-				const std::string shortcutTitle = names[item] + "  (" + combinations[item] + ")";
-				events.shortcutsChanged[item] = ToggleRow("##启用固定快捷键", shortcutTitle.c_str(), descriptions[item].c_str(),
-					"\ue765", draft.shortcuts[item], item == 5 ? IA(I18nKey.SettingsUI.HotKey.FreezeNote).c_str() : nullptr);
-				ImGui::PopID();
-			}
-		}
-		if (section == GeneralSection::DesktopShortcuts)
-		{
-			using namespace Business::DesktopShortcut;
-			const auto& keys = I18nKey.SettingsUI.DesktopShortcut;
-			// 两类使用相同控件/动画，只以稳定 ID 与独立草稿区分。
-			auto renderCategory = [&](DesktopShortcutDraft& shortcut, const DesktopShortcutDraft& other,
-				const char* title, const char* prefix, bool& nameCommitted, bool& presetChanged,
-				bool& createRequested, bool& correctChanged, bool& createChanged)
-			{
-				const auto valid = [&] { return IsDesktopShortcutDraftValid(shortcut, other); };
-				const auto error = [&] { return IA(DesktopShortcutDraftNamesCollide(shortcut, other) ? keys.NameConflict : keys.InvalidName); };
-				const int custom = CustomPreset(shortcut.names.kind);
-				SectionHeader(IA(title).c_str());
-				const std::string create = IA(I18nKey.Operate.Create), invalidName = error();
-				const std::string nameId = std::string("##") + prefix + "-name";
-				InlineRowContent inlineName;
-				inlineName.height = [&](float width) {
-					return Pixels(ControlHeight) + (valid() ? 0.0F : Pixels(8) + (std::max)(Pixels(20),
-						TextHeight(invalidName.c_str(), (std::max)(1.0F, width - Pixels(24)), ImFluentTextStyle_Caption)));
-				};
-				inlineName.render = [&](const LayoutRect& bounds) {
-					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
-					// 透明 child 只承载控件和输入；外框与分隔线由上方 SettingRow 统一绘制。
-					if (ImGui::BeginChild(nameId.c_str(), { bounds.Width(), bounds.Height() },
-						ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
-					{
-						const auto origin = ImGui::GetCursorScreenPos();
-						const float innerWidth = ImGui::GetContentRegionAvail().x;
-						const float gap = Pixels(ControlSpacing);
-						const float comboWidth = (std::min)(Pixels(300), (std::max)(1.0F, (innerWidth - gap) * .55F));
-						const float leftWidth = (std::max)(1.0F, innerWidth - comboWidth - gap);
-						std::vector<std::string> names;
-						for (int index = 0; index < PresetCount(shortcut.names.kind, shortcut.names.simplifiedChinese); ++index)
-						{
-							const int preset = PresetForIndex(index, shortcut.names.simplifiedChinese, shortcut.names.kind);
-							names.push_back(preset == custom ? IA(keys.CustomName) : utf16ToUtf8(shortcut.names.presets[preset]));
-						}
-						if (shortcut.preset == custom)
-						{
-							ImGui::SetNextItemWidth(leftWidth);
-							nameCommitted = TextBox("##desktop-shortcut-custom", shortcut.customName,
-								IA(keys.CustomHint).c_str(), ImGuiInputTextFlags_EnterReturnsTrue);
-							nameCommitted |= ImGui::IsItemDeactivatedAfterEdit();
-						}
-						else TextAt(IA(keys.NameLabel).c_str(), { origin.x, origin.y + Pixels(5) }, leftWidth);
-						ImGui::SetCursorScreenPos({ origin.x + innerWidth - comboWidth, origin.y });
-						ImGui::SetNextItemWidth(comboWidth);
-						int index = IndexForPreset(shortcut.preset, shortcut.names.simplifiedChinese, shortcut.names.kind);
-						const auto previous = ResolveName(shortcut.preset, utf8ToUtf16(shortcut.customName), shortcut.names);
-						if (ComboBox("##desktop-shortcut-preset", &index, names, &shortcut.namePopup, I18n::revision()))
-						{
-							shortcut.preset = PresetForIndex(index, shortcut.names.simplifiedChinese, shortcut.names.kind);
-							// 从预设进入自定义时使用当时的显示名；重开已保存的自定义不走此分支。
-							if (shortcut.preset == custom) shortcut.customName = utf16ToUtf8(previous);
-							presetChanged = true;
-						}
-						ImGui::SetCursorScreenPos(origin); ImGui::Dummy({ innerWidth, Pixels(ControlHeight) });
-						if (!valid()) InfoText(error().c_str());
-					}
-					ImGui::EndChild(); ImGui::PopStyleVar();
-				};
-				SettingRow((std::string(prefix) + "-create").c_str(), IA(I18nKey.SettingsUI.Regular.StartUp.Link.N).c_str(),
-					IA(I18nKey.SettingsUI.Regular.StartUp.Link.E).c_str(), "\ue71b", ButtonWidth(create.c_str()), ControlHeight,
-					[&](const LayoutRect& bounds) {
-						ImGui::PushID("create"); ImFluent::BeginDisabled(!valid());
-						createRequested = Button((create + "###button").c_str(), { bounds.Width(), bounds.Height() });
-						ImFluent::EndDisabled(); ImGui::PopID();
-					}, Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &inlineName);
-				correctChanged = ToggleRow((std::string(prefix) + "-correct").c_str(),
-					IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnk).c_str(),
-					IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Capability.FixLnkE).c_str(), "\ue71b", shortcut.correct);
-				createChanged = ToggleRow((std::string(prefix) + "-auto-create").c_str(),
-					IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnk).c_str(),
-					IA(I18nKey.SettingsUI.PlugIn.LnkHelper.Expansion.CreateLnkE).c_str(), "\ue71b", shortcut.create);
-				if (!valid()) { createRequested = false; nameCommitted = false; }
-			};
-			renderCategory(draft.desktopShortcut, draft.whiteboardShortcut, keys.ApplicationSection, "desktop-shortcut",
-				events.desktopNameCommitted, events.desktopNamePresetChanged, events.createShortcut, events.desktopCorrectChanged, events.desktopCreateChanged);
-			renderCategory(draft.whiteboardShortcut, draft.desktopShortcut, keys.WhiteboardSection, "whiteboard-shortcut",
-				events.whiteboardNameCommitted, events.whiteboardNamePresetChanged, events.createWhiteboardShortcut, events.whiteboardCorrectChanged, events.whiteboardCreateChanged);
+		case Section::Basic: RenderGeneralBasic(draft, events); break;
+		case Section::Appearance: RenderGeneralAppearance(draft, events); break;
+		case Section::StatusIndicator: RenderStatusIndicator(draft, events); break;
+		case Section::DesktopShortcuts: RenderDesktopShortcuts(draft, events); break;
+		case Section::WindowLayout: RenderWindowLayout(draft, events); break;
+		case Section::WindowBehavior: RenderWindowBehavior(draft, events); break;
+		// 显示器、日志仅有页标题，后续功能接入时在此补渲染。
+		case Section::WindowDisplay: case Section::LogsLog: break;
+		default:
+			if (destination.page == PageId::Keys) RenderKeyShortcuts(draft, events);
+			break;
 		}
 		return events;
 	}

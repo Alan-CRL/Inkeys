@@ -195,10 +195,10 @@ namespace
 					checks.Expect(Near(regions.footer.bottom - regions.footerItems[3].bottom, 8)
 						&& Near(regions.footer.Height(), 184),
 						"footer ends after close action with only its original bottom inset and no debug reservation");
-					checks.Expect(Near(regions.middleContentHeight, 316)
+					checks.Expect(Near(regions.middleContentHeight, 36.0F * Design::NavigationMiddleItemCount + 4.0F * (Design::NavigationMiddleItemCount - 1))
 						&& Near(regions.top.Height() + regions.middle.Height() + regions.footer.Height(), pane.Height())
 						&& (size.y != 520 || regions.middleContentHeight > regions.middle.Height()),
-						"remaining height alone budgets the eight-root middle with overflow at minimum size");
+						"remaining height alone budgets the eleven-root middle with overflow at minimum size");
 				}
 		const auto shortPane = Design::ResolveNavigationPaneGeometry(248, 240);
 		checks.Expect(!shortPane.fits && Near(shortPane.middle.Height(), 0)
@@ -1828,14 +1828,14 @@ namespace
 			BeginScrollChild("##setting-page-content", { 600 * scale, 0 }, ImGuiChildFlags_AutoResizeY);
 			frame.inner = ImGui::GetCurrentWindow();
 			if (destination.page == PageId::Home) (void)RenderHome({});
-			else (void)RenderGeneral(draft, destination.section);
+			else (void)RenderGeneral(draft, destination);
 			ImGui::EndChild(); ImGui::EndChild(); ImGui::PopID(); ImGui::PopID(); ImGui::End();
 			ApplyDragScrolling(navigation); ImGui::Render();
 			checks.Expect(ImGui::GetDrawData()->Valid, "returning setting pages render valid draw data after native memory compaction");
 			return frame;
 		};
-		const NavigationDestination away{ PageId::General, GeneralSection::Appearance };
-		for (const auto target : { NavigationDestination{ PageId::Home }, NavigationDestination{ PageId::General, GeneralSection::Basic } })
+		const NavigationDestination away{ PageId::General, Section::Appearance };
+		for (const auto target : { NavigationDestination{ PageId::Home }, NavigationDestination{ PageId::General, Section::Basic } })
 		{
 			for (bool reset : { false, true })
 			{
@@ -4287,6 +4287,9 @@ namespace
 	void CheckGeneralSections(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
 	{
 		Design::BindTextFonts(regular, strong); ImFluent::SetIconFont(icons); Design::ApplyPalette(false);
+		// 子页属于哪个页面由导航表推断；按键与快捷键无子页，单独构造目的地。
+		const auto Dest = [](Design::Section section) { return Design::NavigationDestination{ Design::PageForSection(section), section }; };
+		const Design::NavigationDestination keysPage{ Design::PageId::Keys };
 		Design::GeneralDraft draft{ true, 1.37F, false, 5, true, 2, false, false, 4.7F, true };
 		draft.iconOrder = 3; draft.expansionDirection = 0;
 		auto& io = ImGui::GetIO(); const auto previousFlags = io.ConfigFlags;
@@ -4297,20 +4300,20 @@ namespace
 		{
 			Design::GeneralEvents events; LayoutRect lastItem; float height = 0; int vertices = 0, blueVertices = 0;
 			bool operation = false, layout = false, collapse = false, shortcuts = false, startupPreview = false, desktopShortcuts = false, startupEffect = false;
-			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false, allowMultipleInstances = false, animationRate = false;
+			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false, allowMultipleInstances = false, animationRate = false, paintDevice = false;
 		};
 		ImGuiWindow* host = nullptr;
 		int modeChanges = 0, entryAnimationChanges = 0, multipleInstanceChanges = 0, startupEffectChanges = 0; std::array<int, 6> shortcutChanges{};
 		checks.Expect(!draft.allowMultipleInstances, "multiple-instance preference is disabled in the initial general draft");
-		auto draw = [&](Design::GeneralSection section, ImVec2 mouse, bool down)
+		auto draw = [&](Design::NavigationDestination destination, ImVec2 mouse, bool down)
 		{
 			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
 			ImGui::NewFrame(); ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(io.DisplaySize);
 			ImGui::Begin("##general-section-cpu", nullptr, ImGuiWindowFlags_NoDecoration
 				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove);
 			host = ImGui::GetCurrentWindow();
-			ImFluent::PushFont(ImFluentTextStyle_Body); ImGui::PushID(static_cast<int>(section));
-			Frame frame; frame.events = Design::RenderGeneral(draft, section);
+			ImFluent::PushFont(ImFluentTextStyle_Body); ImGui::PushID(static_cast<int>(destination.section));
+			Frame frame; frame.events = Design::RenderGeneral(draft, destination);
 			frame.lastItem = { ImGui::GetItemRectMin().x, ImGui::GetItemRectMin().y,
 				ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y };
 			frame.height = ImGui::GetCursorPosY();
@@ -4326,7 +4329,7 @@ namespace
 			// 效果选择是加载动画行的内联区，提交标记位于父行 ID 之下。
 			ImGui::PushID("startup-preview"); frame.startupEffect = rowSeen("startup-effect"); ImGui::PopID();
 			frame.entryAnimation = rowSeen("setting-entry-animation"); frame.animationRate = rowSeen("animation-rate");
-			frame.allowMultipleInstances = rowSeen("allow-multiple-instances");
+			frame.allowMultipleInstances = rowSeen("allow-multiple-instances"); frame.paintDevice = rowSeen("##draw-device");
 			frame.obsoleteSettingZoom = rowSeen("setting-zoom"); frame.barZoom = rowSeen("bar-zoom");
 			ImGui::PushID(5); frame.shortcuts = rowSeen("##启用固定快捷键"); ImGui::PopID();
 			for (const auto& vertex : host->DrawList->VtxBuffer)
@@ -4358,23 +4361,26 @@ namespace
 				&& std::none_of(events.statusIndicatorTypesChanged.begin(), events.statusIndicatorTypesChanged.end(), [](bool value) { return value; });
 		};
 		const ImVec2 outside(-100, -100);
-		for (auto section : { Design::GeneralSection::Basic, Design::GeneralSection::Position, Design::GeneralSection::Appearance,
-			Design::GeneralSection::Interaction, Design::GeneralSection::Shortcuts, Design::GeneralSection::DesktopShortcuts,
-			Design::GeneralSection::StatusIndicator })
+		// 每个带子页的页面的各子页，加上无子页的按键页；显示器、日志两个空页只渲染标题。
+		for (const auto page : { Dest(Design::Section::Basic), Dest(Design::Section::Appearance), Dest(Design::Section::StatusIndicator),
+			Dest(Design::Section::DesktopShortcuts), Dest(Design::Section::WindowLayout), Dest(Design::Section::WindowBehavior),
+			Dest(Design::Section::WindowDisplay), Dest(Design::Section::LogsLog), keysPage })
 		{
-			draw(section, outside, false); const auto frame = draw(section, outside, false);
-			checks.Expect(frame.vertices > 0 && noEdits(frame.events), "actual general subpage renders without creating idle edits");
-			checks.Expect(frame.operation == (section == Design::GeneralSection::Basic)
-				&& frame.layout == (section == Design::GeneralSection::Basic)
-				&& frame.collapse == (section == Design::GeneralSection::Interaction)
-				&& frame.shortcuts == (section == Design::GeneralSection::Shortcuts)
-				&& frame.desktopShortcuts == (section == Design::GeneralSection::DesktopShortcuts)
-				&& frame.startupPreview == (section == Design::GeneralSection::Appearance) && !frame.startupEffect
-				&& frame.entryAnimation == (section == Design::GeneralSection::Appearance)
-				&& frame.barZoom == (section == Design::GeneralSection::Appearance) && !frame.obsoleteSettingZoom
-				&& frame.allowMultipleInstances == (section == Design::GeneralSection::Interaction),
-				"general rows stay in their pages with the new entry-animation mode and no separate Settings zoom");
-			if (section == Design::GeneralSection::Basic)
+			const auto section = page.section;
+			draw(page, outside, false); const auto frame = draw(page, outside, false);
+			checks.Expect(frame.vertices > 0 && noEdits(frame.events), "actual settings subpage renders without creating idle edits");
+			checks.Expect(frame.operation == (section == Design::Section::Basic)
+				&& frame.paintDevice == (section == Design::Section::Basic)
+				&& frame.layout == (section == Design::Section::WindowLayout)
+				&& frame.collapse == (section == Design::Section::WindowBehavior)
+				&& frame.shortcuts == (page.page == Design::PageId::Keys)
+				&& frame.desktopShortcuts == (section == Design::Section::DesktopShortcuts)
+				&& frame.startupPreview == (section == Design::Section::Appearance) && !frame.startupEffect
+				&& frame.entryAnimation == (section == Design::Section::Appearance)
+				&& frame.barZoom == (section == Design::Section::WindowLayout) && !frame.obsoleteSettingZoom
+				&& frame.allowMultipleInstances == (section == Design::Section::Basic),
+				"settings rows stay in their pages with the new entry-animation mode and no separate Settings zoom");
+			if (section == Design::Section::Basic)
 				checks.Expect(frame.blueVertices > 0, "actual operation-mode explanation draws the themed blue informational card");
 			checks.Expect(draft.startup && Near(draft.barZoom, 1.37F) && draft.settingEntryAnimation == 1
 				&& !draft.edgeLighting && draft.topInterval == 5 && draft.rightClickClose && draft.safetyMode == 2
@@ -4382,8 +4388,8 @@ namespace
 				&& draft.selectMode == 0 && draft.iconOrder == 3 && draft.expansionDirection == 0 && !draft.allowMultipleInstances,
 				"page filtering and conditional hidden controls preserve every resident draft value");
 		}
-		auto focus = [&](Design::GeneralSection section, const char* row, const char* control, int item = -1, const char* parent = nullptr) {
-			const int value = static_cast<int>(section);
+		auto focus = [&](Design::NavigationDestination destination, const char* row, const char* control, int item = -1, const char* parent = nullptr) {
+			const int value = static_cast<int>(destination.section);
 			ImGuiID seed = ImHashData(&value, sizeof(value), host->ID);
 			if (item >= 0) seed = ImHashData(&item, sizeof(item), seed);
 			if (parent) seed = ImHashStr(parent, 0, seed);
@@ -4392,83 +4398,83 @@ namespace
 			ImGui::SetNavID(id, ImGuiNavLayer_Main, host->NavRootFocusScopeId, ImRect(1, 1, 20, 20));
 			GImGui->NavCursorVisible = true;
 		};
-		auto chord = [&](Design::GeneralSection section, ImGuiKey key) {
-			io.AddKeyEvent(key, true); auto down = draw(section, outside, false);
-			io.AddKeyEvent(key, false); auto up = draw(section, outside, false);
+		auto chord = [&](Design::NavigationDestination destination, ImGuiKey key) {
+			io.AddKeyEvent(key, true); auto down = draw(destination, outside, false);
+			io.AddKeyEvent(key, false); auto up = draw(destination, outside, false);
 			return down.events.startupPreviewChanged || up.events.startupPreviewChanged;
 		};
 		// 实际键盘输入验证搬移后的控件仍只产生一次原业务事件。
-		draw(Design::GeneralSection::Basic, outside, false);
-		focus(Design::GeneralSection::Basic, "##选择与穿透", "##select");
-		chord(Design::GeneralSection::Basic, ImGuiKey_F4); chord(Design::GeneralSection::Basic, ImGuiKey_Home);
-		chord(Design::GeneralSection::Basic, ImGuiKey_DownArrow); chord(Design::GeneralSection::Basic, ImGuiKey_Enter);
+		draw(Dest(Design::Section::Basic), outside, false);
+		focus(Dest(Design::Section::Basic), "##选择与穿透", "##select");
+		chord(Dest(Design::Section::Basic), ImGuiKey_F4); chord(Dest(Design::Section::Basic), ImGuiKey_Home);
+		chord(Dest(Design::Section::Basic), ImGuiKey_DownArrow); chord(Dest(Design::Section::Basic), ImGuiKey_Enter);
 		checks.Expect(draft.selectMode == 1 && modeChanges == 1, "relocated operation combo commits its actual selection once");
-		const auto previewHidden = draw(Design::GeneralSection::Appearance, outside, false);
-		focus(Design::GeneralSection::Appearance, "startup-preview", "##toggle");
-		const bool previewChanged = chord(Design::GeneralSection::Appearance, ImGuiKey_Space);
+		const auto previewHidden = draw(Dest(Design::Section::Appearance), outside, false);
+		focus(Dest(Design::Section::Appearance), "startup-preview", "##toggle");
+		const bool previewChanged = chord(Dest(Design::Section::Appearance), ImGuiKey_Space);
 		checks.Expect(draft.startupPreview && previewChanged && !draft.animation && Near(draft.animationRate, 4.7F),
 			"appearance loading-animation switch remains independently editable while general animations are disabled");
-		const auto previewShown = draw(Design::GeneralSection::Appearance, outside, false);
+		const auto previewShown = draw(Dest(Design::Section::Appearance), outside, false);
 		checks.Expect(!previewHidden.startupEffect && previewShown.startupEffect
 			&& previewShown.height > previewHidden.height + 40 * scale,
 			"startup effect selector is an inline area of the enabled loading-animation card");
-		focus(Design::GeneralSection::Appearance, "startup-effect", "##select", -1, "startup-preview");
-		chord(Design::GeneralSection::Appearance, ImGuiKey_F4); chord(Design::GeneralSection::Appearance, ImGuiKey_Home);
-		chord(Design::GeneralSection::Appearance, ImGuiKey_DownArrow); chord(Design::GeneralSection::Appearance, ImGuiKey_DownArrow);
-		chord(Design::GeneralSection::Appearance, ImGuiKey_Enter);
+		focus(Dest(Design::Section::Appearance), "startup-effect", "##select", -1, "startup-preview");
+		chord(Dest(Design::Section::Appearance), ImGuiKey_F4); chord(Dest(Design::Section::Appearance), ImGuiKey_Home);
+		chord(Dest(Design::Section::Appearance), ImGuiKey_DownArrow); chord(Dest(Design::Section::Appearance), ImGuiKey_DownArrow);
+		chord(Dest(Design::Section::Appearance), ImGuiKey_Enter);
 		checks.Expect(draft.startupEffect == 2 && startupEffectChanges == 1 && draft.startupPreview,
 			"startup effect combo selects pixel assembly through the actual keyboard event once");
-		focus(Design::GeneralSection::Appearance, "startup-preview", "##toggle");
-		chord(Design::GeneralSection::Appearance, ImGuiKey_Space);
-		const auto effectHidden = draw(Design::GeneralSection::Appearance, outside, false);
+		focus(Dest(Design::Section::Appearance), "startup-preview", "##toggle");
+		chord(Dest(Design::Section::Appearance), ImGuiKey_Space);
+		const auto effectHidden = draw(Dest(Design::Section::Appearance), outside, false);
 		checks.Expect(!effectHidden.startupEffect && draft.startupEffect == 2 && startupEffectChanges == 1,
 			"disabling startup animation hides the selector without resetting its preference");
-		focus(Design::GeneralSection::Appearance, "startup-preview", "##toggle");
-		chord(Design::GeneralSection::Appearance, ImGuiKey_Space);
-		checks.Expect(draw(Design::GeneralSection::Appearance, outside, false).startupEffect && draft.startupEffect == 2,
+		focus(Dest(Design::Section::Appearance), "startup-preview", "##toggle");
+		chord(Dest(Design::Section::Appearance), ImGuiKey_Space);
+		checks.Expect(draw(Dest(Design::Section::Appearance), outside, false).startupEffect && draft.startupEffect == 2,
 			"enabling startup animation restores the stored effect");
-		draw(Design::GeneralSection::Appearance, outside, false);
-		focus(Design::GeneralSection::Appearance, "setting-entry-animation", "##select");
-		chord(Design::GeneralSection::Appearance, ImGuiKey_F4); chord(Design::GeneralSection::Appearance, ImGuiKey_Home);
-		chord(Design::GeneralSection::Appearance, ImGuiKey_DownArrow); chord(Design::GeneralSection::Appearance, ImGuiKey_DownArrow);
-		chord(Design::GeneralSection::Appearance, ImGuiKey_Enter);
+		draw(Dest(Design::Section::Appearance), outside, false);
+		focus(Dest(Design::Section::Appearance), "setting-entry-animation", "##select");
+		chord(Dest(Design::Section::Appearance), ImGuiKey_F4); chord(Dest(Design::Section::Appearance), ImGuiKey_Home);
+		chord(Dest(Design::Section::Appearance), ImGuiKey_DownArrow); chord(Dest(Design::Section::Appearance), ImGuiKey_DownArrow);
+		chord(Dest(Design::Section::Appearance), ImGuiKey_Enter);
 		checks.Expect(draft.settingEntryAnimation == 2 && entryAnimationChanges == 1
 			&& draft.startupPreview && !draft.animation && Near(draft.barZoom, 1.37F),
 			"opening-animation combo commits one persistent choice independently of startup preview and the animation switch");
 		// 真实安全页控件往返切换，只产生其保存事件，不影响教学安全模式或其他偏好。
-		draw(Design::GeneralSection::Interaction, outside, false);
-		focus(Design::GeneralSection::Interaction, "allow-multiple-instances", "##toggle");
-		chord(Design::GeneralSection::Interaction, ImGuiKey_Space);
+		draw(Dest(Design::Section::Basic), outside, false);
+		focus(Dest(Design::Section::Basic), "allow-multiple-instances", "##toggle");
+		chord(Dest(Design::Section::Basic), ImGuiKey_Space);
 		checks.Expect(draft.allowMultipleInstances && multipleInstanceChanges == 1 && draft.safetyMode == 2,
 			"actual safety-page switch enables multiple instances with one independent event");
-		draw(Design::GeneralSection::Interaction, outside, false);
-		focus(Design::GeneralSection::Interaction, "allow-multiple-instances", "##toggle");
-		chord(Design::GeneralSection::Interaction, ImGuiKey_Space);
+		draw(Dest(Design::Section::Basic), outside, false);
+		focus(Dest(Design::Section::Basic), "allow-multiple-instances", "##toggle");
+		chord(Dest(Design::Section::Basic), ImGuiKey_Space);
 		checks.Expect(!draft.allowMultipleInstances && multipleInstanceChanges == 2 && draft.safetyMode == 2,
 			"actual safety-page switch disables future extra instances without changing the safety selection");
-		draw(Design::GeneralSection::Shortcuts, outside, false);
-		focus(Design::GeneralSection::Shortcuts, "##启用固定快捷键", "##toggle", 5);
-		chord(Design::GeneralSection::Shortcuts, ImGuiKey_Space);
+		draw(keysPage, outside, false);
+		focus(keysPage, "##启用固定快捷键", "##toggle", 5);
+		chord(keysPage, ImGuiKey_Space);
 		checks.Expect(!draft.shortcuts[5] && shortcutChanges[5] == 1
 			&& std::all_of(draft.shortcuts.begin(), draft.shortcuts.begin() + 5, [](bool value) { return value; }),
 			"independent shortcuts page toggles only the chosen shortcut and returns one configuration event");
 		// 新页实际控件保持独立事件；无效编辑不能误触发创建。
-		draw(Design::GeneralSection::DesktopShortcuts, outside, false);
-		focus(Design::GeneralSection::DesktopShortcuts, "desktop-shortcut-correct", "##toggle");
-		io.AddKeyEvent(ImGuiKey_Space,true); auto desktopDown=draw(Design::GeneralSection::DesktopShortcuts,outside,false);
-		io.AddKeyEvent(ImGuiKey_Space,false); auto desktopUp=draw(Design::GeneralSection::DesktopShortcuts,outside,false);
+		draw(Dest(Design::Section::DesktopShortcuts), outside, false);
+		focus(Dest(Design::Section::DesktopShortcuts), "desktop-shortcut-correct", "##toggle");
+		io.AddKeyEvent(ImGuiKey_Space,true); auto desktopDown=draw(Dest(Design::Section::DesktopShortcuts),outside,false);
+		io.AddKeyEvent(ImGuiKey_Space,false); auto desktopUp=draw(Dest(Design::Section::DesktopShortcuts),outside,false);
 		checks.Expect(!draft.desktopShortcut.correct && !draft.desktopShortcut.create
 			&& (desktopDown.events.desktopCorrectChanged || desktopUp.events.desktopCorrectChanged)
 			&& !desktopDown.events.desktopCreateChanged && !desktopUp.events.desktopCreateChanged,
 			"actual correction switch returns only its independent preference event");
 		draft.desktopShortcut.preset=Inkeys::Business::DesktopShortcut::Custom; draft.desktopShortcut.customName="CON";
-		auto invalidName=draw(Design::GeneralSection::DesktopShortcuts,outside,false);
+		auto invalidName=draw(Dest(Design::Section::DesktopShortcuts),outside,false);
 		checks.Expect(!invalidName.events.createShortcut && !invalidName.events.desktopNameCommitted
 			&& draft.desktopShortcut.customName=="CON", "invalid custom draft remains editable without producing a creation/save event");
 		for (float width : {440.0F,1100.0F})
 		{
 			io.DisplaySize.x=width*scale; draft.desktopShortcut.customName="My Inkeys";
-			draw(Design::GeneralSection::DesktopShortcuts,outside,false); draw(Design::GeneralSection::DesktopShortcuts,outside,false);
+			draw(Dest(Design::Section::DesktopShortcuts),outside,false); draw(Dest(Design::Section::DesktopShortcuts),outside,false);
 			ImGuiWindow* card=nullptr;
 			for (auto* window : GImGui->Windows) if (strstr(window->Name,"##desktop-shortcut-name") && window->LastFrameActive==ImGui::GetFrameCount()) card=window;
 			checks.Expect(card!=nullptr,"desktop shortcut inline name card is actually rendered");
@@ -4492,7 +4498,7 @@ namespace
 				"one shared outer card has a real full-width header/body divider");
 			auto controlRect=[&](const char* id) {
 				ImGui::FocusWindow(card); ImGui::SetNavID(card->GetID(id),ImGuiNavLayer_Main,card->NavRootFocusScopeId,ImRect{});
-				draw(Design::GeneralSection::DesktopShortcuts,outside,false);
+				draw(Dest(Design::Section::DesktopShortcuts),outside,false);
 				checks.Expect(GImGui->NavIdIsAlive,"desktop name control exposes a real stable navigation item");
 				return ImGui::WindowRectRelToAbs(card,card->NavRectRel[ImGuiNavLayer_Main]);
 			};
@@ -4505,7 +4511,7 @@ namespace
 		draft.desktopShortcut.names.presets[2]=L"Inkeys(批注)";
 		draft.desktopShortcut.preset=Inkeys::Business::DesktopShortcut::Annotation;
 		draft.desktopShortcut.customName="old custom";
-		auto desktopDraw=[&] { return draw(Design::GeneralSection::DesktopShortcuts,outside,false); };
+		auto desktopDraw=[&] { return draw(Dest(Design::Section::DesktopShortcuts),outside,false); };
 		auto nameCard=[&]() -> ImGuiWindow* {
 			for (auto* window : GImGui->Windows) if (strstr(window->Name,"##desktop-shortcut-name") && window->LastFrameActive==ImGui::GetFrameCount()) return window;
 			return nullptr;
@@ -4536,7 +4542,7 @@ namespace
 			auto edit=[&](const char* value) {
 				ImGui::FocusWindow(card); ImGui::SetNavID(card->GetID("##desktop-shortcut-custom"),ImGuiNavLayer_Main,card->NavRootFocusScopeId,ImRect{});
 				desktopDraw(); const auto point=ImGui::WindowRectRelToAbs(card,card->NavRectRel[ImGuiNavLayer_Main]).GetCenter();
-				draw(Design::GeneralSection::DesktopShortcuts,point,false); draw(Design::GeneralSection::DesktopShortcuts,point,true); draw(Design::GeneralSection::DesktopShortcuts,point,false);
+				draw(Dest(Design::Section::DesktopShortcuts),point,false); draw(Dest(Design::Section::DesktopShortcuts),point,true); draw(Dest(Design::Section::DesktopShortcuts),point,false);
 				io.AddKeyEvent(ImGuiMod_Ctrl,true); io.AddKeyEvent(ImGuiKey_A,true); desktopDraw();
 				io.AddKeyEvent(ImGuiKey_A,false); io.AddKeyEvent(ImGuiMod_Ctrl,false); io.AddInputCharactersUTF8(value);
 				return desktopDraw();
@@ -4548,23 +4554,23 @@ namespace
 			checks.Expect((enter.events.desktopNameCommitted || enterUp.events.desktopNameCommitted) && !enter.events.createShortcut,
 				"real Enter produces the name-save event without creating a shortcut");
 			edit("Saved by blur");
-			draw(Design::GeneralSection::DesktopShortcuts,{30*scale,30*scale},false);
-			const auto blurDown=draw(Design::GeneralSection::DesktopShortcuts,{30*scale,30*scale},true);
-			const auto blurUp=draw(Design::GeneralSection::DesktopShortcuts,{30*scale,30*scale},false);
+			draw(Dest(Design::Section::DesktopShortcuts),{30*scale,30*scale},false);
+			const auto blurDown=draw(Dest(Design::Section::DesktopShortcuts),{30*scale,30*scale},true);
+			const auto blurUp=draw(Dest(Design::Section::DesktopShortcuts),{30*scale,30*scale},false);
 			checks.Expect(draft.desktopShortcut.customName=="Saved by blur" && (blurDown.events.desktopNameCommitted || blurUp.events.desktopNameCommitted)
 				&& !blurDown.events.createShortcut,"real focus loss produces the name-save event without a file action");
 		}
 		// 白板复用相同布局与真实控件，持久化 ID 和应用类不同。
 		using ShortcutKind = Inkeys::Business::DesktopShortcut::Kind;
-		draw(Design::GeneralSection::DesktopShortcuts,outside,false);
-		focus(Design::GeneralSection::DesktopShortcuts,"whiteboard-shortcut-correct","##toggle");
+		draw(Dest(Design::Section::DesktopShortcuts),outside,false);
+		focus(Dest(Design::Section::DesktopShortcuts),"whiteboard-shortcut-correct","##toggle");
 		io.AddKeyEvent(ImGuiKey_Space,true); auto boardDown=desktopDraw();
 		io.AddKeyEvent(ImGuiKey_Space,false); auto boardUp=desktopDraw();
 		checks.Expect(!draft.whiteboardShortcut.correct && !draft.whiteboardShortcut.create && !draft.desktopShortcut.correct
 			&& (boardDown.events.whiteboardCorrectChanged || boardUp.events.whiteboardCorrectChanged)
 			&& !boardDown.events.desktopCorrectChanged && !boardUp.events.desktopCorrectChanged,
 			"whiteboard correction has an independent real toggle event");
-		focus(Design::GeneralSection::DesktopShortcuts,"whiteboard-shortcut-auto-create","##toggle");
+		focus(Dest(Design::Section::DesktopShortcuts),"whiteboard-shortcut-auto-create","##toggle");
 		io.AddKeyEvent(ImGuiKey_Space,true); boardDown=desktopDraw();
 		io.AddKeyEvent(ImGuiKey_Space,false); boardUp=desktopDraw();
 		checks.Expect(draft.whiteboardShortcut.create && !draft.desktopShortcut.create
@@ -4641,36 +4647,39 @@ namespace
 		draft.whiteboardShortcut.customName="Separate board";
 		checks.Expect(Design::IsDesktopShortcutDraftValid(draft.desktopShortcut,draft.whiteboardShortcut)
 			&& Design::IsDesktopShortcutDraftValid(draft.whiteboardShortcut,draft.desktopShortcut),"correcting either name makes both categories valid again");
-		auto hidden = draw(Design::GeneralSection::Appearance, outside, false);
+		auto hidden = draw(Dest(Design::Section::Appearance), outside, false);
 		draft.animation = true; draft.edgeLighting = true;
-		draw(Design::GeneralSection::Appearance, outside, false);
-		const auto shown = draw(Design::GeneralSection::Appearance, outside, false);
+		draw(Dest(Design::Section::Appearance), outside, false);
+		const auto shown = draw(Dest(Design::Section::Appearance), outside, false);
 		// 动画速率已迁到实验选项；外观页只增加动态光影行，并保留原速率。
 		checks.Expect(shown.height > hidden.height + 40 * scale && !shown.animationRate
 			&& draft.dynamicEdgeLighting && Near(draft.animationRate, 4.7F),
 			"actual appearance page reveals dynamic lighting, keeps rate in experimental options, and preserves stored values");
 		draft.animation = false; draft.edgeLighting = false;
-		const auto appearance = draw(Design::GeneralSection::Appearance, outside, false);
-		// 末项是缩放行的“恢复默认”按钮，滑块紧挨在它左侧。
-		const ImVec2 slider(appearance.lastItem.left - 40.0F * scale,
-			(appearance.lastItem.top + appearance.lastItem.bottom) / 2);
-		draw(Design::GeneralSection::Appearance, slider, false);
-		const auto dragging = draw(Design::GeneralSection::Appearance, slider, true);
-		const auto committed = draw(Design::GeneralSection::Appearance, slider, false);
+		// 缩放位于窗口页最前；用滑块的真实导航矩形定位，“恢复默认”按钮紧挨在其右侧（12 DIP 间隙 + 半个 32 DIP 按钮）。
+		draw(Dest(Design::Section::WindowLayout), outside, false);
+		focus(Dest(Design::Section::WindowLayout), "bar-zoom", "##slider");
+		draw(Dest(Design::Section::WindowLayout), outside, false);
+		const auto sliderRect = ImGui::WindowRectRelToAbs(host, host->NavRectRel[ImGuiNavLayer_Main]);
+		checks.Expect(GImGui->NavIdIsAlive && sliderRect.GetWidth() > 0 && sliderRect.Min.y < 400 * scale,
+			"the scale slider is among the first window-page rows and exposes a real navigation rectangle");
+		const ImVec2 slider(sliderRect.Max.x - 40.0F * scale, sliderRect.GetCenter().y);
+		draw(Dest(Design::Section::WindowLayout), slider, false);
+		const auto dragging = draw(Dest(Design::Section::WindowLayout), slider, true);
+		const auto committed = draw(Dest(Design::Section::WindowLayout), slider, false);
 		checks.Expect(dragging.events.barZoomActive && !committed.events.barZoomActive
 			&& draft.barZoom >= .5F && draft.barZoom <= 2 && !Near(draft.barZoom, 1.37F)
 			&& draft.settingEntryAnimation == 2,
-			"the remaining appearance scale slider preserves main-bar drag/release behavior");
-		const ImVec2 reset((appearance.lastItem.left + appearance.lastItem.right) / 2,
-			(appearance.lastItem.top + appearance.lastItem.bottom) / 2);
-		draw(Design::GeneralSection::Appearance, reset, false);
-		draw(Design::GeneralSection::Appearance, reset, true);
-		const auto resetDone = draw(Design::GeneralSection::Appearance, reset, false);
+			"the window-layout scale slider preserves main-bar drag/release behavior");
+		const ImVec2 reset(sliderRect.Max.x + 28.0F * scale, sliderRect.GetCenter().y);
+		draw(Dest(Design::Section::WindowLayout), reset, false);
+		draw(Dest(Design::Section::WindowLayout), reset, true);
+		const auto resetDone = draw(Dest(Design::Section::WindowLayout), reset, false);
 		checks.Expect(Near(draft.barZoom, 1.0F) && resetDone.events.barZoomChanged && !resetDone.events.barZoomActive,
 			"the scale reset button restores 100% through the normal change event");
 		// 复用真实行为与安全页，把教学安全的公共 Combo 放到客户区底部，验证跨页面生效。
 		{
-			const auto behaviorSection = Design::GeneralSection::Interaction;
+			const auto behaviorSection = Dest(Design::Section::Basic);
 			const auto savedBehavior = draft;
 			io.DisplaySize.y = 480 * scale;
 			draw(behaviorSection, outside, false); draw(behaviorSection, outside, false);
@@ -4720,20 +4729,20 @@ namespace
 		for (bool dark : { false, true }) for (float width : { 540.0F, 1100.0F })
 		{
 			Design::ApplyPalette(dark); io.DisplaySize = ImVec2(width * scale, 1600 * scale);
-			draft.startupPreview = false; draw(Design::GeneralSection::Appearance, outside, false);
-			const auto hiddenEffect = draw(Design::GeneralSection::Appearance, outside, false);
-			draft.startupPreview = true; draw(Design::GeneralSection::Appearance, outside, false);
-			const auto visibleEffect = draw(Design::GeneralSection::Appearance, outside, false);
+			draft.startupPreview = false; draw(Dest(Design::Section::Appearance), outside, false);
+			const auto hiddenEffect = draw(Dest(Design::Section::Appearance), outside, false);
+			draft.startupPreview = true; draw(Dest(Design::Section::Appearance), outside, false);
+			const auto visibleEffect = draw(Dest(Design::Section::Appearance), outside, false);
 			checks.Expect(!hiddenEffect.startupEffect && visibleEffect.startupEffect && draft.startupEffect == 2
 				&& !hiddenEffect.events.startupEffectChanged && !visibleEffect.events.startupEffectChanged,
 				"startup effect condition preserves selection across themes and narrow layouts without idle edits");
 		}
 		// StatusIndicatorControls：复用本页真实 ID/导航矩形回放；追加在既有按控件次序定位的测试之后。
 		{
-			const auto section = Design::GeneralSection::StatusIndicator;
+			const auto section = Dest(Design::Section::StatusIndicator);
 			draft.statusIndicator = true; draft.statusIndicatorTypes = { true, false, true };
 			draw(section, outside, false); draw(section, outside, false);
-			const int sectionValue = static_cast<int>(section);
+			const int sectionValue = static_cast<int>(section.section);
 			const auto groupId = ImHashStr("##status-indicator-types", 0, ImHashData(&sectionValue, sizeof(sectionValue), host->ID));
 			ImGuiWindow* types = nullptr;
 			for (auto* candidate : GImGui->Windows)
@@ -4792,9 +4801,57 @@ namespace
 		io.DisplaySize = ImVec2(1440 * scale, 1000 * scale);
 	}
 
+	// 导航表是侧栏、旧入口重定向与页面路由的唯一数据源；这里只做纯数据断言，不创建窗口。
+	void CheckNavigationTree(Checks& checks)
+	{
+		using namespace Design;
+		std::array<int, 32> seen{};
+		bool unique = true, labels = true, glyphs = true;
+		for (const auto& entry : NavigationMiddleEntries)
+		{
+			unique &= ++seen[static_cast<size_t>(entry.page)] == 1;
+			labels &= entry.labelKey && *entry.labelKey; glyphs &= entry.glyph && *entry.glyph;
+			for (const auto& child : entry.children)
+			{
+				labels &= child.labelKey && *child.labelKey; glyphs &= child.glyph && *child.glyph;
+				unique &= PageForSection(child.section) == entry.page;
+			}
+		}
+		checks.Expect(unique && labels && glyphs, "navigation table has unique pages, children owned by one page, and a label plus glyph for every item");
+		checks.Expect(NavigationMiddleItemCount == 11 && NavigationGroupCount == 4,
+			"navigation exposes eleven middle roots of which general, drawing, window and logs own child pages");
+		checks.Expect(NavigationEntryIndex(PageId::General) == 0 && NavigationEntryIndex(PageId::Draw) == 1
+			&& NavigationEntryIndex(PageId::Window) == 2 && NavigationEntryIndex(PageId::Keys) == 3
+			&& NavigationEntryIndex(PageId::LogsConfig) == 4 && NavigationEntryIndex(PageId::Performance) == 5
+			&& NavigationEntryIndex(PageId::Components) + 1 == NavigationEntryIndex(PageId::Plugins),
+			"navigation order keeps logs and configuration between keys and performance, and components before plugins");
+		checks.Expect(NavigationChildren(PageId::General).size() == 4 && NavigationChildren(PageId::Draw).size() == 2
+			&& NavigationChildren(PageId::Window).size() == 3 && NavigationChildren(PageId::LogsConfig).size() == 2
+			&& NavigationChildren(PageId::Keys).empty() && NavigationGroupIndex(PageId::Keys) < 0,
+			"each group exposes its designed child pages and the keys page stays a plain root");
+		checks.Expect(NormalizeDestination({ PageId::Configuration }) == NavigationDestination{ PageId::LogsConfig, Section::LogsConfiguration }
+			&& NormalizeDestination({ PageId::HotKeys }) == NavigationDestination{ PageId::Keys, Section::None }
+			&& DestinationForPage(static_cast<int>(PageId::Draw)) == NavigationDestination{ PageId::Draw, Section::DrawEffects }
+			&& DestinationForPage(static_cast<int>(PageId::Window)) == NavigationDestination{ PageId::Window, Section::WindowLayout }
+			&& DestinationForPage(static_cast<int>(PageId::LogsConfig)) == NavigationDestination{ PageId::LogsConfig, Section::LogsLog },
+			"legacy configuration and hotkey routes redirect and child pages default to their first child");
+		checks.Expect(NormalizeDestination({ PageId::General, Section::DrawInteraction }) == NavigationDestination{ PageId::General, Section::Basic }
+			&& NormalizeDestination({ PageId::Performance, Section::Basic }) == NavigationDestination{ PageId::Performance, Section::None }
+			&& NormalizeDestination({ PageId::Keys, Section::WindowDisplay }) == NavigationDestination{ PageId::Keys, Section::None },
+			"foreign or missing sections fall back to the owning page's default instead of leaking across pages");
+		NavigationState state;
+		NavigationDestination destination{ PageId::Window, Section::WindowBehavior };
+		NotifyNavigationDestination(state, destination);
+		destination = { PageId::Draw, Section::DrawInteraction };
+		NotifyNavigationDestination(state, destination);
+		checks.Expect(state.LastSection(PageId::Window) == Section::WindowBehavior && state.LastSection(PageId::Draw) == Section::DrawInteraction
+			&& state.LastSection(PageId::General) == Section::Basic && state.TryGroup(PageId::Keys) == nullptr,
+			"every group remembers its own last child and untouched groups report their default");
+	}
+
 	void CheckHierarchicalNavigation(Checks& checks, ImFont* regular, ImFont* strong, ImFont* icons, float scale)
 	{
-		using Design::GeneralSection;
+		using Design::Section;
 		using Design::NavigationActionKind;
 		using Design::PageId;
 		struct Frame
@@ -4825,6 +4882,8 @@ namespace
 		Design::BindTextFonts(regular, strong);
 		ImFluent::SetIconFont(icons);
 		Design::NavigationState state;
+		// 通用分组的展开状态与命中框（其余分组由各自专项断言覆盖）。
+		auto& general = state.Group(PageId::General);
 		Design::NavigationDestination selected;
 		ImVec2 size(960, 700);
 		bool animated = false, dark = false;
@@ -4901,7 +4960,7 @@ namespace
 				if (!window->Active || window->RootWindow != ImGui::GetCurrentWindow()) continue;
 				const std::string name(window->Name);
 				// ImGui child 名含父路径，必须先识别更深的子列表，不能误把它当中段滚动窗。
-				if (name.find("##settings-general-children") != std::string::npos) frame.group = window;
+				if (name.find("##settings-group-children") != std::string::npos) frame.group = window;
 				else if (name.find("##settings-nav-list") != std::string::npos)
 				{
 					frame.list = window; frame.scroll = window->Scroll.y; frame.maximumScroll = window->ScrollMax.y;
@@ -4949,8 +5008,8 @@ namespace
 				const float right = frame.list->ScrollbarY ? track.Min.x - Design::RowGap * scale : frame.list->ContentRegionRect.Max.x;
 				bool separated = !frame.list->ScrollbarX;
 				for (const auto& bounds : state.middleBounds) separated &= bounds.right <= right + 1;
-				if (state.chevronBounds.Width() > 0) separated &= state.chevronBounds.right <= right + 1;
-				if (frame.group) for (const auto& bounds : state.childBounds) separated &= bounds.right <= right + 1;
+				if (general.chevronBounds.Width() > 0) separated &= general.chevronBounds.right <= right + 1;
+				if (frame.group) for (const auto& bounds : general.childBounds) separated &= bounds.right <= right + 1;
 				checks.Expect(separated, "all production middle roots, arrows and inline children leave the actual scrollbar hit track and gap clear");
 				checks.Expect(Near(state.middleBounds.back().right, frame.list->ContentRegionRect.Max.x, 1),
 					"navigation hit rectangles use the same current-frame available width with or without the scrollbar");
@@ -5011,172 +5070,172 @@ namespace
 		auto focusParent = [&](const Frame& frame) {
 			if (!frame.parentWindow) return;
 			ImGui::FocusWindow(frame.parentWindow);
-			ImGui::SetNavID(state.parentItemId, ImGuiNavLayer_Main, frame.parentWindow->NavRootFocusScopeId,
-				ImRect(ImVec2(state.parentBounds.left - frame.parentWindow->Pos.x, state.parentBounds.top - frame.parentWindow->Pos.y),
-					ImVec2(state.parentBounds.right - frame.parentWindow->Pos.x, state.parentBounds.bottom - frame.parentWindow->Pos.y)));
+			ImGui::SetNavID(general.parentItemId, ImGuiNavLayer_Main, frame.parentWindow->NavRootFocusScopeId,
+				ImRect(ImVec2(general.parentBounds.left - frame.parentWindow->Pos.x, general.parentBounds.top - frame.parentWindow->Pos.y),
+					ImVec2(general.parentBounds.right - frame.parentWindow->Pos.x, general.parentBounds.bottom - frame.parentWindow->Pos.y)));
 			ImGui::GetCurrentContext()->NavCursorVisible = true;
 		};
-		checks.Expect(!state.generalExpanded && Near(state.groupReveal.value, 0),
+		checks.Expect(!general.expanded && Near(general.reveal.value, 0),
 			"a new resident navigation state starts with its child group folded");
 		Frame frame = draw(outside, false);
-		checks.Expect(!state.generalExpanded && Near(state.groupReveal.value, 0)
-			&& !frame.group && state.childBounds[0].Height() == 0,
+		checks.Expect(!general.expanded && Near(general.reveal.value, 0)
+			&& !frame.group && general.childBounds[0].Height() == 0,
 			"the first real draw has no expanded child window or one-frame reveal flash");
 		frame = idle(2);
-		if (state.parentBounds.Width() <= 0 || state.chevronBounds.Width() <= 0
-			|| !Disjoint(state.parentBounds, state.chevronBounds))
-			std::cerr << "[HierarchyRect] scale=" << scale << " parent=" << state.parentBounds.left << ','
-				<< state.parentBounds.top << ',' << state.parentBounds.right << ',' << state.parentBounds.bottom
-				<< " chevron=" << state.chevronBounds.left << ',' << state.chevronBounds.top << ','
-				<< state.chevronBounds.right << ',' << state.chevronBounds.bottom << '\n';
-		checks.Expect(state.parentBounds.Width() > 0 && state.chevronBounds.Width() > 0
-			&& Disjoint(state.parentBounds, state.chevronBounds),
+		if (general.parentBounds.Width() <= 0 || general.chevronBounds.Width() <= 0
+			|| !Disjoint(general.parentBounds, general.chevronBounds))
+			std::cerr << "[HierarchyRect] scale=" << scale << " parent=" << general.parentBounds.left << ','
+				<< general.parentBounds.top << ',' << general.parentBounds.right << ',' << general.parentBounds.bottom
+				<< " chevron=" << general.chevronBounds.left << ',' << general.chevronBounds.top << ','
+				<< general.chevronBounds.right << ',' << general.chevronBounds.bottom << '\n';
+		checks.Expect(general.parentBounds.Width() > 0 && general.chevronBounds.Width() > 0
+			&& Disjoint(general.parentBounds, general.chevronBounds),
 			"actual parent label and chevron have separate hit rectangles");
 		// 新性能根项追加独立路由，不能借用已退役的页面编号。
 		const int beforePerformance = navigations;
-		click(state.middleBounds[2]); frame = idle();
+		click(state.middleBounds[5]); frame = idle();
 		checks.Expect(selected.page == PageId::Performance && navigations == beforePerformance + 1,
 			"performance root between drawing and plugins routes to its independent page");
 		selected = { PageId::Home }; Design::NotifyNavigationDestination(state, selected); frame = idle();
 		const int beforeArrow = navigations;
-		click(state.chevronBounds); frame = idle();
-		checks.Expect(state.generalExpanded && navigations == beforeArrow && selected.page == PageId::Home,
+		click(general.chevronBounds); frame = idle();
+		checks.Expect(general.expanded && navigations == beforeArrow && selected.page == PageId::Home,
 			"real chevron expands the default folded group without routing the current page");
-		click(state.chevronBounds); frame = idle();
-		checks.Expect(!state.generalExpanded && navigations == beforeArrow && selected.page == PageId::Home,
+		click(general.chevronBounds); frame = idle();
+		checks.Expect(!general.expanded && navigations == beforeArrow && selected.page == PageId::Home,
 			"real chevron folds the group without routing the current page");
-		click(state.parentBounds); frame = idle();
-		checks.Expect(state.generalExpanded && selected.page == PageId::General && selected.section == GeneralSection::Basic,
+		click(general.parentBounds); frame = idle();
+		checks.Expect(general.expanded && selected.page == PageId::General && selected.section == Section::Basic,
 			"real parent label enters default basic and expands the group");
 		// 第五个子页在展开树中可选中，折叠/展开仍记住同一目的地。
-		size.y = 1000; frame = idle(); click(state.childBounds[5]); frame = idle();
-		checks.Expect(selected.section == GeneralSection::Shortcuts && state.lastGeneralSection == GeneralSection::Shortcuts,
+		size.y = 1000; frame = idle(); click(general.childBounds[3]); frame = idle();
+		checks.Expect(selected.section == Section::DesktopShortcuts && general.lastSection == Section::DesktopShortcuts,
 			"fifth inline child selects the independent shortcuts page");
-		click(state.parentBounds); frame = idle(); click(state.parentBounds); frame = idle();
-		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Shortcuts,
+		click(general.parentBounds); frame = idle(); click(general.parentBounds); frame = idle();
+		checks.Expect(general.expanded && selected.section == Section::DesktopShortcuts,
 			"parent fold and reopen preserve the fifth shortcut child");
-		click(state.childBounds[6]); frame = idle();
-		checks.Expect(selected.section == GeneralSection::DesktopShortcuts && state.lastGeneralSection == GeneralSection::DesktopShortcuts,
+		click(general.childBounds[3]); frame = idle();
+		checks.Expect(selected.section == Section::DesktopShortcuts && general.lastSection == Section::DesktopShortcuts,
 			"sixth inline child selects desktop shortcuts after keyboard shortcuts");
-		click(state.parentBounds); frame = idle(); click(state.parentBounds); frame = idle();
-		checks.Expect(state.generalExpanded && selected.section == GeneralSection::DesktopShortcuts,
+		click(general.parentBounds); frame = idle(); click(general.parentBounds); frame = idle();
+		checks.Expect(general.expanded && selected.section == Section::DesktopShortcuts,
 			"fold and reopen preserve the sixth desktop-shortcut child");
-		click(state.childBounds[0]); frame = idle(); size.y = 700; requestedScroll = 0; frame = idle(); requestedScroll = -1;
-		click(state.childBounds[2]); frame = idle();
-		checks.Expect(selected.section == GeneralSection::Appearance && state.lastGeneralSection == GeneralSection::Appearance,
+		click(general.childBounds[0]); frame = idle(); size.y = 700; requestedScroll = 0; frame = idle(); requestedScroll = -1;
+		click(general.childBounds[1]); frame = idle();
+		checks.Expect(selected.section == Section::Appearance && general.lastSection == Section::Appearance,
 			"real inline child commits its composite destination and remembered child");
 		const int beforeAppearanceFold = navigations;
-		click(state.parentBounds); frame = idle();
-		checks.Expect(!state.generalExpanded && selected.section == GeneralSection::Appearance
-			&& state.lastGeneralSection == GeneralSection::Appearance && navigations == beforeAppearanceFold,
+		click(general.parentBounds); frame = idle();
+		checks.Expect(!general.expanded && selected.section == Section::Appearance
+			&& general.lastSection == Section::Appearance && navigations == beforeAppearanceFold,
 			"repeated parent click folds appearance without routing or changing the remembered child");
-		click(state.parentBounds); frame = idle();
-		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Appearance
+		click(general.parentBounds); frame = idle();
+		checks.Expect(general.expanded && selected.section == Section::Appearance
 			&& navigations == beforeAppearanceFold,
 			"parent label reopens its remembered appearance page without redundant navigation");
-		click(state.childBounds[4]); frame = idle();
+		click(general.childBounds[2]); frame = idle();
 		focusParent(frame); key(ImGuiKey_DownArrow); frame = idle();
 		checks.Expect(state.childFocusId != 0 && ImGui::GetCurrentContext()->NavId == state.childFocusId,
 			"a real child owns keyboard focus before its parent is clicked to fold");
 		const int beforeStorageFold = navigations;
-		click(state.parentBounds); frame = idle();
-		checks.Expect(!state.generalExpanded && selected.section == GeneralSection::Storage
-			&& state.lastGeneralSection == GeneralSection::Storage && navigations == beforeStorageFold
-			&& ImGui::GetCurrentContext()->NavId == state.parentItemId,
+		click(general.parentBounds); frame = idle();
+		checks.Expect(!general.expanded && selected.section == Section::StatusIndicator
+			&& general.lastSection == Section::StatusIndicator && navigations == beforeStorageFold
+			&& ImGui::GetCurrentContext()->NavId == general.parentItemId,
 			"repeated parent click also preserves the storage page rather than falling back to basic");
-		click(state.parentBounds); frame = idle();
-		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Storage
+		click(general.parentBounds); frame = idle();
+		checks.Expect(general.expanded && selected.section == Section::StatusIndicator
 			&& navigations == beforeStorageFold,
 			"reopening the parent restores storage without changing its body destination");
-		click(state.childBounds[2]); frame = idle();
+		click(general.childBounds[1]); frame = idle();
 		focusParent(frame); key(ImGuiKey_LeftArrow); frame = idle();
-		checks.Expect(!state.generalExpanded && selected.section == GeneralSection::Appearance,
+		checks.Expect(!general.expanded && selected.section == Section::Appearance,
 			"keyboard left folds without changing the remembered page");
 		focusParent(frame); key(ImGuiKey_RightArrow); frame = idle();
-		checks.Expect(state.generalExpanded, "keyboard right opens the focused parent group");
+		checks.Expect(general.expanded, "keyboard right opens the focused parent group");
 		const int beforeKeyboardFold = navigations;
 		focusParent(frame); key(ImGuiKey_Enter); frame = idle();
-		checks.Expect(selected.page == PageId::General && !state.generalExpanded
-			&& selected.section == GeneralSection::Appearance && navigations == beforeKeyboardFold
-			&& ImGui::GetCurrentContext()->NavId == state.parentItemId,
+		checks.Expect(selected.page == PageId::General && !general.expanded
+			&& selected.section == Section::Appearance && navigations == beforeKeyboardFold
+			&& ImGui::GetCurrentContext()->NavId == general.parentItemId,
 			"keyboard enter on an expanded parent folds it without navigating its body");
 		focusParent(frame); key(ImGuiKey_Space); frame = idle();
-		checks.Expect(state.generalExpanded && selected.section == GeneralSection::Appearance
-			&& navigations == beforeKeyboardFold && ImGui::GetCurrentContext()->NavId == state.parentItemId,
+		checks.Expect(general.expanded && selected.section == Section::Appearance
+			&& navigations == beforeKeyboardFold && ImGui::GetCurrentContext()->NavId == general.parentItemId,
 			"keyboard space reopens the parent with the same remembered child");
 		// 点击动画中完全被裁掉的子项区域，不能激活该子项；同一区域的可见根项允许正常响应。
-		state.generalExpanded = false; frame = idle();
-		animated = true; rate = 0.1F; state.generalExpanded = true; frame = draw(outside, false);
-		checks.Expect(frame.group && state.childBounds[4].top >= frame.group->InnerClipRect.Max.y,
+		general.expanded = false; frame = idle();
+		animated = true; rate = 0.1F; general.expanded = true; frame = draw(outside, false);
+		checks.Expect(frame.group && general.childBounds[2].top >= frame.group->InnerClipRect.Max.y,
 			"real opening child-window clip excludes the storage item at the beginning of the animation");
-		click(state.childBounds[4]); frame = idle();
-		checks.Expect(selected != Design::NavigationDestination{ PageId::General, GeneralSection::Storage },
+		click(general.childBounds[2]); frame = idle();
+		checks.Expect(selected != Design::NavigationDestination{ PageId::General, Section::StatusIndicator },
 			"clicking the fully clipped storage item cannot activate an invisible general child");
 		if (frame.group)
 		{
-			LayoutRect visibleBasic = state.childBounds[0];
+			LayoutRect visibleBasic = general.childBounds[0];
 			visibleBasic.top = (std::max)(visibleBasic.top, frame.group->InnerClipRect.Min.y);
 			visibleBasic.bottom = (std::min)(visibleBasic.bottom, frame.group->InnerClipRect.Max.y);
 			checks.Expect(visibleBasic.Height() > 0, "the real clip retains a visible portion of the basic item");
 			click(visibleBasic); frame = idle();
-			checks.Expect(selected == Design::NavigationDestination{ PageId::General, GeneralSection::Basic },
+			checks.Expect(selected == Design::NavigationDestination{ PageId::General, Section::Basic },
 				"the visible clipped portion of a real child still accepts mouse activation");
 		}
 		rate = 5; frame = idle(5); animated = false; frame = idle();
-		click(state.childBounds[2]); frame = idle();
-		state.Toggle(); selected = { PageId::Home, GeneralSection::Basic }; Design::NotifyNavigationDestination(state, selected);
+		click(general.childBounds[1]); frame = idle();
+		state.Toggle(); selected = { PageId::Home, Section::Basic }; Design::NotifyNavigationDestination(state, selected);
 		frame = idle();
-		click(state.parentBounds); frame = idle();
-		checks.Expect(selected.section == GeneralSection::Appearance && !state.flyoutOpen,
+		click(general.parentBounds); frame = idle();
+		checks.Expect(selected.section == Section::Appearance && !state.flyoutOpen,
 			"compact first click navigates to remembered child without opening a menu");
 		const int beforeMenu = navigations;
-		click(state.parentBounds); frame = idle();
+		click(general.parentBounds); frame = idle();
 		checks.Expect(state.flyoutOpen && navigations == beforeMenu && state.flyoutBounds.Width() > 0,
 			"compact second click opens actual popup without redundant navigation");
 		const LayoutRect client{ 0, 0, size.x * scale, size.y * scale };
 		checks.Expect(Contains(client, state.flyoutBounds) && Near(state.flyoutBounds.Width(), 248 * scale, 1)
-			&& state.flyoutBounds.top >= state.parentBounds.bottom,
+			&& state.flyoutBounds.top >= general.parentBounds.bottom,
 			"actual child menu is 248 DIP and opens below its anchor within the client");
-		click(state.parentBounds); frame = idle();
+		click(general.parentBounds); frame = idle();
 		checks.Expect(!state.flyoutOpen && navigations == beforeMenu,
 			"compact third click closes the popup without navigating");
-		click(state.parentBounds); frame = idle();
-		checks.Expect(Contains(state.flyoutBounds, state.flyoutChildBounds.back()),
+		click(general.parentBounds); frame = idle();
+		checks.Expect(Contains(state.flyoutBounds, general.flyoutChildBounds.back()),
 			"compact popup geometry contains all general children");
-		click(state.flyoutChildBounds[5]); frame = idle();
-		checks.Expect(!state.flyoutOpen && selected.section == GeneralSection::Shortcuts,
+		click(general.flyoutChildBounds[3]); frame = idle();
+		checks.Expect(!state.flyoutOpen && selected.section == Section::DesktopShortcuts,
 			"fifth compact popup child enters the same independent shortcuts page");
-		click(state.parentBounds); frame = idle();
-		click(state.flyoutChildBounds[6]); frame = idle();
-		checks.Expect(!state.flyoutOpen && selected.section == GeneralSection::DesktopShortcuts,
+		click(general.parentBounds); frame = idle();
+		click(general.flyoutChildBounds[3]); frame = idle();
+		checks.Expect(!state.flyoutOpen && selected.section == Section::DesktopShortcuts,
 			"sixth compact popup child enters desktop shortcuts after keyboard shortcuts");
-		click(state.parentBounds); frame = idle();
-		click(state.flyoutChildBounds[4]); frame = idle();
-		checks.Expect(!state.flyoutOpen && selected.page == PageId::General && selected.section == GeneralSection::Storage,
+		click(general.parentBounds); frame = idle();
+		click(general.flyoutChildBounds[2]); frame = idle();
+		checks.Expect(!state.flyoutOpen && selected.page == PageId::General && selected.section == Section::StatusIndicator,
 			"real popup child selects storage and closes the popup");
-		click(state.parentBounds); frame = idle();
+		click(general.parentBounds); frame = idle();
 		const auto storageFocus = ImGui::GetCurrentContext()->NavId;
 		key(ImGuiKey_UpArrow); frame = idle();
 		const auto interactionFocus = ImGui::GetCurrentContext()->NavId;
 		checks.Expect(interactionFocus != 0 && interactionFocus != storageFocus
-			&& selected.section == GeneralSection::Storage,
+			&& selected.section == Section::StatusIndicator,
 			"keyboard up moves real flyout focus without navigating its body");
 		key(ImGuiKey_UpArrow); frame = idle();
 		checks.Expect(ImGui::GetCurrentContext()->NavId != interactionFocus,
 			"a second up moves focus to the next visible flyout item");
 		key(ImGuiKey_DownArrow); frame = idle();
 		checks.Expect(ImGui::GetCurrentContext()->NavId == interactionFocus
-			&& selected.section == GeneralSection::Storage,
+			&& selected.section == Section::StatusIndicator,
 			"keyboard down returns to the observed flyout item without activating it");
 		key(ImGuiKey_Space); frame = idle();
-		checks.Expect(!state.flyoutOpen && selected == Design::NavigationDestination{ PageId::General, GeneralSection::Interaction },
+		checks.Expect(!state.flyoutOpen && selected == Design::NavigationDestination{ PageId::General, Section::Appearance },
 			"keyboard space activates the focused real flyout item and closes the menu");
-		click(state.parentBounds); frame = idle();
+		click(general.parentBounds); frame = idle();
 		const int beforeBusiness = businessActions;
 		click(state.footerBounds[3]); frame = idle();
 		checks.Expect(!state.flyoutOpen && businessActions == beforeBusiness,
 			"outside click dismisses real popup without activating the exit footer below it");
-		click(state.parentBounds); frame = idle();
+		click(general.parentBounds); frame = idle();
 		const int beforeBody = bodyActions, beforeBodyNavigation = navigations;
 		LayoutRect outsideBody = frame.body;
 		// 正文按钮中心可能正好落入基本子项，选择按钮真实位于浮层之外的可见部分。
@@ -5186,26 +5245,26 @@ namespace
 			&& frame.body.Contains(outsideBodyPoint.x, outsideBodyPoint.y)
 			&& !state.flyoutBounds.Contains(outsideBodyPoint.x, outsideBodyPoint.y);
 		checks.Expect(outsideBodyReachable, "the real body button retains a mouse target outside the popup");
-		checks.Expect(selected == Design::NavigationDestination{ PageId::General, GeneralSection::Interaction }
-			&& state.lastGeneralSection == GeneralSection::Interaction,
+		checks.Expect(selected == Design::NavigationDestination{ PageId::General, Section::Appearance }
+			&& general.lastSection == Section::Appearance,
 			"the outside-body case begins with the actual previously selected interaction page");
 		if (outsideBodyReachable) click(outsideBody);
 		frame = idle();
 		checks.Expect(!state.flyoutOpen && bodyActions == beforeBody && navigations == beforeBodyNavigation
-			&& selected == Design::NavigationDestination{ PageId::General, GeneralSection::Interaction }
-			&& state.lastGeneralSection == GeneralSection::Interaction,
+			&& selected == Design::NavigationDestination{ PageId::General, Section::Appearance }
+			&& general.lastSection == Section::Appearance,
 			"popup outside press and release cannot penetrate the actual body button or change the current page");
-		click(state.parentBounds); frame = idle(); key(ImGuiKey_Escape); frame = idle();
-		checks.Expect(!state.flyoutOpen && ImGui::GetCurrentContext()->NavId == state.parentItemId,
+		click(general.parentBounds); frame = idle(); key(ImGuiKey_Escape); frame = idle();
+		checks.Expect(!state.flyoutOpen && ImGui::GetCurrentContext()->NavId == general.parentItemId,
 			"escape closes the actual popup and returns focus to its compact parent");
 		size = ImVec2(720, 560); frame = idle(); state.Toggle(); frame = idle();
 		checks.Expect(state.overlayOpen && Near(frame.shell.content.left, 48), "narrow expansion retains compact body reservation");
-		state.generalExpanded = false; selected = { PageId::Home, GeneralSection::Basic };
+		general.expanded = false; selected = { PageId::Home, Section::Basic };
 		Design::NotifyNavigationDestination(state, selected); frame = idle();
 		const int beforeOverlayParent = navigations;
 		LayoutRect overlayParentHit;
 		auto clickVisibleOverlayParent = [&]() {
-			LayoutRect visible = state.parentBounds;
+			LayoutRect visible = general.parentBounds;
 			if (frame.list)
 			{
 				// 窄窗中段可能为最近子项滚动，仅点击父行实际仍可见的裁剪交集。
@@ -5223,63 +5282,63 @@ namespace
 		auto checkOverlayParent = [&](bool passed, const char* message) {
 			if (!passed)
 				std::cerr << "[HierarchyOverlayParent] " << message << " scale=" << scale
-					<< " overlay=" << state.overlayOpen << " expanded=" << state.generalExpanded
+					<< " overlay=" << state.overlayOpen << " expanded=" << general.expanded
 					<< " selected=" << static_cast<int>(selected.page) << ',' << static_cast<int>(selected.section)
-					<< " remembered=" << static_cast<int>(state.lastGeneralSection)
+					<< " remembered=" << static_cast<int>(general.lastSection)
 					<< " routes=" << navigations << " before=" << beforeOverlayParent
-					<< " parent=" << state.parentBounds.left << ',' << state.parentBounds.top << ','
-					<< state.parentBounds.right << ',' << state.parentBounds.bottom
+					<< " parent=" << general.parentBounds.left << ',' << general.parentBounds.top << ','
+					<< general.parentBounds.right << ',' << general.parentBounds.bottom
 					<< " clip=" << (frame.list ? frame.list->InnerClipRect.Min.x : 0) << ','
 					<< (frame.list ? frame.list->InnerClipRect.Min.y : 0) << ','
 					<< (frame.list ? frame.list->InnerClipRect.Max.x : 0) << ','
 					<< (frame.list ? frame.list->InnerClipRect.Max.y : 0)
 					<< " clicked=" << overlayParentHit.left << ',' << overlayParentHit.top << ','
 					<< overlayParentHit.right << ',' << overlayParentHit.bottom
-					<< " nav=" << ImGui::GetCurrentContext()->NavId << " parentId=" << state.parentItemId
+					<< " nav=" << ImGui::GetCurrentContext()->NavId << " parentId=" << general.parentItemId
 					<< " hovered=" << ImGui::GetCurrentContext()->HoveredId
 					<< " active=" << ImGui::GetCurrentContext()->ActiveId << '\n';
 			checks.Expect(passed, message);
 		};
 		clickVisibleOverlayParent();
-		checkOverlayParent(state.overlayOpen && state.generalExpanded && selected.page == PageId::General
-			&& selected.section == GeneralSection::Interaction && navigations == beforeOverlayParent + 1,
+		checkOverlayParent(state.overlayOpen && general.expanded && selected.page == PageId::General
+			&& selected.section == Section::Appearance && navigations == beforeOverlayParent + 1,
 			"narrow parent expansion enters its remembered child while keeping the group visible");
 		clickVisibleOverlayParent();
-		checkOverlayParent(state.overlayOpen && !state.generalExpanded && selected.section == GeneralSection::Interaction
-			&& state.lastGeneralSection == GeneralSection::Interaction && navigations == beforeOverlayParent + 1,
+		checkOverlayParent(state.overlayOpen && !general.expanded && selected.section == Section::Appearance
+			&& general.lastSection == Section::Appearance && navigations == beforeOverlayParent + 1,
 			"narrow repeated parent click folds only its children and preserves its body");
 		clickVisibleOverlayParent();
-		checkOverlayParent(state.overlayOpen && state.generalExpanded && selected.section == GeneralSection::Interaction,
+		checkOverlayParent(state.overlayOpen && general.expanded && selected.section == Section::Appearance,
 			"narrow parent can reopen the preserved child inside the same overlay");
-		click(state.childBounds[0]); frame = idle();
-		checks.Expect(!state.overlayOpen && selected.section == GeneralSection::Basic,
+		click(general.childBounds[0]); frame = idle();
+		checks.Expect(!state.overlayOpen && selected.section == Section::Basic,
 			"an actual narrow leaf selection still closes the overlay after parent expansion");
 		state.Toggle(); frame = idle();
 		focusParent(frame); key(ImGuiKey_DownArrow); frame = idle();
 		checks.Expect(state.childFocusId != 0 && ImGui::GetCurrentContext()->NavId == state.childFocusId
-			&& state.childFocusId != state.parentItemId,
+			&& state.childFocusId != general.parentItemId,
 			"keyboard down focuses a real inline child inside the narrow overlay");
 		const auto focusBeforeOverlayEscape = ImGui::GetCurrentContext()->NavId;
 		key(ImGuiKey_Escape); frame = idle();
-		if (state.overlayOpen || ImGui::GetCurrentContext()->NavId != state.parentItemId)
+		if (state.overlayOpen || ImGui::GetCurrentContext()->NavId != general.parentItemId)
 			std::cerr << "[HierarchyEscape] scale=" << scale << " before=" << focusBeforeOverlayEscape
 				<< " after=" << ImGui::GetCurrentContext()->NavId << " child=" << state.childFocusId
-				<< " parent=" << state.parentItemId << " restore=" << state.restoreParentFocus
-				<< " reveal=" << state.groupReveal.value << " overlay=" << state.overlayOpen
-				<< " expanded=" << state.Expanded() << " parentY=" << state.parentBounds.top << ','
-				<< state.parentBounds.bottom << " listClip=" << (frame.list ? frame.list->InnerClipRect.Min.y : 0)
+				<< " parent=" << general.parentItemId << " restore=" << state.restoreParentFocus
+				<< " reveal=" << general.reveal.value << " overlay=" << state.overlayOpen
+				<< " expanded=" << state.Expanded() << " parentY=" << general.parentBounds.top << ','
+				<< general.parentBounds.bottom << " listClip=" << (frame.list ? frame.list->InnerClipRect.Min.y : 0)
 				<< ',' << (frame.list ? frame.list->InnerClipRect.Max.y : 0) << '\n';
-		checks.Expect(!state.overlayOpen && ImGui::GetCurrentContext()->NavId == state.parentItemId,
+		checks.Expect(!state.overlayOpen && ImGui::GetCurrentContext()->NavId == general.parentItemId,
 			"escape closes overlay and restores the parent when its inline child held keyboard focus");
-		state.Toggle(); frame = idle(); click(state.childBounds[0]); frame = idle();
-		checks.Expect(!state.overlayOpen && selected.section == GeneralSection::Basic,
+		state.Toggle(); frame = idle(); click(general.childBounds[0]); frame = idle();
+		checks.Expect(!state.overlayOpen && selected.section == Section::Basic,
 			"actual narrow child selection closes only the overlay and keeps its destination");
 		size = ImVec2(960, 700); state.desktopCompact = false; frame = idle();
 		focusParent(frame); key(ImGuiKey_DownArrow); frame = idle();
 		checks.Expect(state.childFocusId != 0 && ImGui::GetCurrentContext()->NavId == state.childFocusId,
 			"a real inline child can hold focus before a responsive mode change");
 		size = ImVec2(720, 560); frame = idle();
-		checks.Expect(!state.Expanded() && ImGui::GetCurrentContext()->NavId == state.parentItemId,
+		checks.Expect(!state.Expanded() && ImGui::GetCurrentContext()->NavId == general.parentItemId,
 			"resizing a focused inline child into compact navigation restores visible parent focus");
 
 		// 固定 child 的真实位置、滚动范围与末项命中来自生产提交，避免复制菜单实现。
@@ -5289,7 +5348,7 @@ namespace
 		{
 			dark = nextDark; size = nextSize; state.Resize(size.x);
 			if (state.Expanded() != expanded) state.Toggle();
-			state.generalExpanded = true; selected = { PageId::Home, GeneralSection::Basic }; requestedScroll = 0;
+			general.expanded = true; selected = { PageId::Home, Section::Basic }; requestedScroll = 0;
 			frame = idle(); const auto origins = frame.fixedOrigins;
 			requestedScroll = frame.maximumScroll; frame = idle();
 			checks.Expect(frame.list && Near(frame.scroll, frame.maximumScroll, 1)
@@ -5321,45 +5380,45 @@ namespace
 		// 动画参数推动真实 pane/DrawData，同时检验反向、速率及关闭，不只测补间公式。
 		size = ImVec2(960, 700); state.Resize(size.x); state.desktopCompact = false;
 		requestedScroll = 0; dark = false; animated = false; frame = idle(); requestedScroll = -1;
-		selected = { PageId::General, GeneralSection::Appearance };
-		Design::NotifyNavigationDestination(state, selected); state.generalExpanded = true; frame = idle();
+		selected = { PageId::General, Section::Appearance };
+		Design::NotifyNavigationDestination(state, selected); general.expanded = true; frame = idle();
 		animated = true; rate = 1;
 		const int beforeRapidParent = navigations;
-		click(state.parentBounds); frame = draw(outside, false);
-		const float foldingReveal = state.groupReveal.value;
-		checks.Expect(!state.generalExpanded && foldingReveal > 0 && foldingReveal < 1 && frame.group
-			&& Near(frame.group->Size.y, (Design::NavigationRowHeight * Design::GeneralSectionCount + Design::RowGap * (Design::GeneralSectionCount - 1)) * scale * foldingReveal, 1)
-			&& selected.section == GeneralSection::Appearance && navigations == beforeRapidParent
+		click(general.parentBounds); frame = draw(outside, false);
+		const float foldingReveal = general.reveal.value;
+		checks.Expect(!general.expanded && foldingReveal > 0 && foldingReveal < 1 && frame.group
+			&& Near(frame.group->Size.y, (Design::NavigationRowHeight * Design::GeneralChildren.size() + Design::RowGap * (Design::GeneralChildren.size() - 1)) * scale * foldingReveal, 1)
+			&& selected.section == Section::Appearance && navigations == beforeRapidParent
 			&& Near(frame.contentAlpha, 1),
 			"real parent folding animates the clipped group geometry without restarting the body fade");
-		click(state.parentBounds); const float reversingReveal = state.groupReveal.value;
+		click(general.parentBounds); const float reversingReveal = general.reveal.value;
 		frame = draw(outside, false);
-		checks.Expect(state.generalExpanded && state.groupReveal.value > reversingReveal && state.groupReveal.value < 1
-			&& frame.group && Near(frame.group->Size.y, (Design::NavigationRowHeight * Design::GeneralSectionCount + Design::RowGap * (Design::GeneralSectionCount - 1)) * scale * state.groupReveal.value, 1)
-			&& selected.section == GeneralSection::Appearance && navigations == beforeRapidParent
+		checks.Expect(general.expanded && general.reveal.value > reversingReveal && general.reveal.value < 1
+			&& frame.group && Near(frame.group->Size.y, (Design::NavigationRowHeight * Design::GeneralChildren.size() + Design::RowGap * (Design::GeneralChildren.size() - 1)) * scale * general.reveal.value, 1)
+			&& selected.section == Section::Appearance && navigations == beforeRapidParent
 			&& Near(frame.contentAlpha, 1),
 			"rapid parent reversal continues from the current real child-window height without re-navigating");
-		frame = idle(12); click(state.parentBounds); animated = false; frame = draw(outside, false);
-		checks.Expect(!state.generalExpanded && Near(state.groupReveal.value, 0) && !frame.group
-			&& selected.section == GeneralSection::Appearance && navigations == beforeRapidParent
+		frame = idle(12); click(general.parentBounds); animated = false; frame = draw(outside, false);
+		checks.Expect(!general.expanded && Near(general.reveal.value, 0) && !frame.group
+			&& selected.section == Section::Appearance && navigations == beforeRapidParent
 			&& Near(frame.contentAlpha, 1),
 			"disabling animations settles a parent fold immediately without altering its body");
-		click(state.parentBounds); frame = idle();
-		checks.Expect(state.generalExpanded && Near(state.groupReveal.value, 1)
-			&& selected.section == GeneralSection::Appearance && navigations == beforeRapidParent,
+		click(general.parentBounds); frame = idle();
+		checks.Expect(general.expanded && Near(general.reveal.value, 1)
+			&& selected.section == Section::Appearance && navigations == beforeRapidParent,
 			"parent expansion with animations disabled restores its remembered page and full child height");
 		// 正文自身尚在淡入时收起父行，也应继续同一份正文过渡，而非重新开始。
-		animated = true; click(state.childBounds[4]); frame = draw(outside, false);
+		animated = true; click(general.childBounds[2]); frame = draw(outside, false);
 		const float fadingBody = frame.contentAlpha;
 		const float fadingProgress = state.contentReveal.progress, fadingTarget = state.contentReveal.target;
 		const int beforeFadingFold = navigations;
-		click(state.parentBounds); frame = draw(outside, false);
-		checks.Expect(fadingBody > 0 && fadingBody < 1 && !state.generalExpanded
+		click(general.parentBounds); frame = draw(outside, false);
+		checks.Expect(fadingBody > 0 && fadingBody < 1 && !general.expanded
 			&& state.contentReveal.value >= fadingBody && state.contentReveal.progress >= fadingProgress
-			&& state.contentReveal.target == fadingTarget && selected.section == GeneralSection::Storage
-			&& state.lastGeneralSection == GeneralSection::Storage && navigations == beforeFadingFold,
+			&& state.contentReveal.target == fadingTarget && selected.section == Section::StatusIndicator
+			&& general.lastSection == Section::StatusIndicator && navigations == beforeFadingFold,
 			"folding while storage is fading preserves its active transition and remembered destination");
-		animated = false; frame = idle(); click(state.parentBounds); frame = idle();
+		animated = false; frame = idle(); click(general.parentBounds); frame = idle();
 		animated = true; rate = 1; state.Toggle();
 		const float startingWidth = frame.paneWidth;
 		frame = draw(outside, false); const float closingWidth = frame.paneWidth;
@@ -5421,7 +5480,7 @@ namespace
 
 		// 先经过真实一帧更新策略，再按产品顺序通知新目的地；上一帧关闭动画时通知应直接显示。
 		animated = true; rate = 1; frame = draw(outside, false);
-		selected = { PageId::General, GeneralSection::Appearance };
+		selected = { PageId::General, Section::Appearance };
 		Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
 		checks.Expect(frame.contentAlpha > 0 && frame.contentAlpha < 1,
 			"new body controls render once with a partial fade after a composite destination changes");
@@ -5429,14 +5488,64 @@ namespace
 			&& frame.glyphAlpha <= static_cast<unsigned int>(std::ceil(255 * frame.contentAlpha))
 			&& frame.flatAlpha <= static_cast<unsigned int>(std::ceil(255 * frame.contentAlpha)),
 			"production content fade reaches both direct text glyphs and real control fill vertices");
-		selected.section = GeneralSection::Interaction; Design::NotifyNavigationDestination(state, selected); frame = idle(10);
+		selected.section = Section::StatusIndicator; Design::NotifyNavigationDestination(state, selected); frame = idle(10);
 		checks.Expect(Near(frame.contentAlpha, 1) && bodyDraws == frames,
 			"rapid page changes converge on one body render per frame without duplicate controls");
 		checks.Expect(Design::DestinationForPage(static_cast<int>(PageId::Configuration))
-			== Design::NavigationDestination{ PageId::General, GeneralSection::Storage }
+			== Design::NavigationDestination{ PageId::LogsConfig, Section::LogsConfiguration }
 			&& Design::DestinationForPage(static_cast<int>(PageId::HotKeys))
-			== Design::NavigationDestination{ PageId::General, GeneralSection::Shortcuts },
+			== Design::NavigationDestination{ PageId::Keys, Section::None },
 			"production legacy-route normalization preserves configuration and hotkey entry destinations");
+		// 其余带子页的分组：各自展开、记忆子页和选中，互不干扰通用分组。
+		const auto sizeBeforeGroups = size; const auto selectedBeforeGroups = selected;
+		const bool animatedBeforeGroups = animated, generalExpandedBeforeGroups = general.expanded;
+		const float rateBeforeGroups = rate;
+		animated = false; rate = 1; size = ImVec2(960, 1200); state.Resize(size.x); state.desktopCompact = false; state.overlayOpen = false;
+		selected = { PageId::Home }; Design::NotifyNavigationDestination(state, selected);
+		general.expanded = false; frame = idle();
+		const auto generalRemembered = general.lastSection;
+		auto& drawGroup = state.Group(PageId::Draw);
+		auto& windowGroup = state.Group(PageId::Window);
+		auto& logsGroup = state.Group(PageId::LogsConfig);
+		checks.Expect(!drawGroup.expanded && !windowGroup.expanded && !logsGroup.expanded && state.TryGroup(PageId::Keys) == nullptr,
+			"only pages with children own a navigation group and start folded");
+		click(drawGroup.parentBounds); frame = idle();
+		checks.Expect(drawGroup.expanded && !general.expanded && selected == Design::NavigationDestination{ PageId::Draw, Section::DrawEffects }
+			&& drawGroup.childBounds[1].Width() > 0 && drawGroup.childBounds[2].Width() == 0,
+			"drawing group opens on its first child and exposes exactly two real children");
+		click(drawGroup.childBounds[1]); frame = idle();
+		checks.Expect(selected == Design::NavigationDestination{ PageId::Draw, Section::DrawInteraction }
+			&& drawGroup.lastSection == Section::DrawInteraction && general.lastSection == generalRemembered,
+			"drawing interaction child is selected and remembered only by the drawing group");
+		click(windowGroup.parentBounds); frame = idle();
+		checks.Expect(windowGroup.expanded && selected == Design::NavigationDestination{ PageId::Window, Section::WindowLayout }
+			&& windowGroup.childBounds[2].Width() > 0 && windowGroup.childBounds[3].Width() == 0 && drawGroup.expanded,
+			"window group opens on its window page with three children while the drawing group stays open");
+		click(windowGroup.childBounds[2]); frame = idle();
+		checks.Expect(selected == Design::NavigationDestination{ PageId::Window, Section::WindowDisplay }
+			&& windowGroup.lastSection == Section::WindowDisplay,
+			"the empty displays page is a real navigable child");
+		click(logsGroup.parentBounds); frame = idle();
+		checks.Expect(logsGroup.expanded && selected == Design::NavigationDestination{ PageId::LogsConfig, Section::LogsLog }
+			&& logsGroup.childBounds[1].Width() > 0 && logsGroup.childBounds[2].Width() == 0,
+			"logs and configuration group opens on the empty logs page");
+		click(logsGroup.childBounds[1]); frame = idle();
+		checks.Expect(selected == Design::NavigationDestination{ PageId::LogsConfig, Section::LogsConfiguration },
+			"configuration child routes to the migrated configuration page");
+		const int beforeKeys = navigations;
+		click(state.middleBounds[Design::NavigationEntryIndex(PageId::Keys)]); frame = idle();
+		checks.Expect(selected == Design::NavigationDestination{ PageId::Keys, Section::None } && navigations == beforeKeys + 1,
+			"the keys root routes directly without owning a group");
+		click(drawGroup.parentBounds); frame = idle();
+		checks.Expect(!drawGroup.expanded && selected.page == PageId::Keys, "folding an unselected group does not navigate");
+		click(drawGroup.parentBounds); frame = idle();
+		checks.Expect(drawGroup.expanded && selected == Design::NavigationDestination{ PageId::Draw, Section::DrawInteraction },
+			"reopening a group restores its own remembered child");
+		// 还原到本段之前的场景，后续指示条/滚动专项仍只面对通用分组。
+		for (auto& group : state.groups) group.expanded = false;
+		general.expanded = generalExpandedBeforeGroups; animated = animatedBeforeGroups; rate = rateBeforeGroups;
+		size = sizeBeforeGroups; state.Resize(size.x); selected = selectedBeforeGroups;
+		Design::NotifyNavigationDestination(state, selected); frame = idle();
 		std::cout << "[HierarchyDrawData] scale=" << scale << " frames=" << frames << " navigations=" << navigations
 			<< " businessActions=" << businessActions << " bodyActions=" << bodyActions << '\n';
 		const int originalFrames = frames;
@@ -5459,53 +5568,53 @@ namespace
 				&& bottomRight - bottomLeft < actual.indicator.Width() * 0.25F,
 				"actual blue-bar geometry narrows at both ends into full capsule caps rather than flat edges");
 		};
-		// 原684帧合同保持，追加真实滚轮与蓝条顶点回归；不另写一套导航或动画公式。
-		size = ImVec2(960, 520); state.Resize(size.x); state.desktopCompact = false;
-		state.generalExpanded = false; animated = false; dark = false; rate = 1; requestedScroll = 0;
-		frame = idle(); requestedScroll = -1; click(state.middleBounds[3]); frame = idle();
-		animated = true; frame = idle(12); expectAttached(frame, state.middleBounds[3]);
+		// 原684帧合同保持，追加真实滚轮与蓝条顶点回归；中段共十一个根入口，取 640 高度保证性能/联动等普通根入口可见且仍可滚动。
+		size = ImVec2(960, 640); state.Resize(size.x); state.desktopCompact = false;
+		general.expanded = false; animated = false; dark = false; rate = 1; requestedScroll = 0;
+		frame = idle(); requestedScroll = -1; click(state.middleBounds[6]); frame = idle();
+		animated = true; frame = idle(12); expectAttached(frame, state.middleBounds[6]);
 		const ImVec2 wheelPoint(frame.list->InnerClipRect.Max.x - 2, frame.list->InnerClipRect.Min.y + 20 * scale);
 		frame = draw(wheelPoint, false);
 		for (float wheel : { -0.2F, -0.2F, 0.2F, 0.2F })
 		{
-			const float previousRow = rowCenter(state.middleBounds[3]), previousBar = indicatorCenter(frame), previousScroll = frame.scroll;
+			const float previousRow = rowCenter(state.middleBounds[6]), previousBar = indicatorCenter(frame), previousScroll = frame.scroll;
 			io.AddMouseWheelEvent(0, wheel); frame = draw(wheelPoint, false);
 			checks.Expect(std::abs(frame.scroll - previousScroll) > 0.1F,
 				"real mouse wheel moves the selected middle row in both scrolling directions");
-			checks.Expect(Near(indicatorCenter(frame) - previousBar, rowCenter(state.middleBounds[3]) - previousRow, 0.75F),
+			checks.Expect(Near(indicatorCenter(frame) - previousBar, rowCenter(state.middleBounds[6]) - previousRow, 0.75F),
 				"selected blue bar and its real row move by the same scroll delta in the same frame");
-			expectAttached(frame, state.middleBounds[3]);
+			expectAttached(frame, state.middleBounds[6]);
 		}
-		click(state.middleBounds[1]); frame = draw(outside, false);
-		checks.Expect(selected.page == PageId::Draw && state.indicatorY.Active() && state.indicatorY.progress == 0,
+		click(state.middleBounds[5]); frame = draw(outside, false);
+		checks.Expect(selected.page == PageId::Performance && state.indicatorY.Active() && state.indicatorY.progress == 0,
 			"a real tab change still begins a distinct 160 ms selection transition");
 		for (float wheel : { -0.1F, 0.1F })
 		{
 			const float previousStart = state.indicatorY.start, previousProgress = state.indicatorY.progress;
-			const float previousRow = rowCenter(state.middleBounds[1]);
+			const float previousRow = rowCenter(state.middleBounds[5]);
 			io.AddMouseWheelEvent(0, wheel); frame = draw(wheelPoint, false);
 			checks.Expect(state.indicatorY.progress > previousProgress
-				&& Near((state.indicatorY.start - previousStart) * scale, rowCenter(state.middleBounds[1]) - previousRow, 0.75F)
+				&& Near((state.indicatorY.start - previousStart) * scale, rowCenter(state.middleBounds[5]) - previousRow, 0.75F)
 				&& frame.indicatorDrawn && Near(indicatorCenter(frame), state.indicatorY.value * scale, 0.75F),
 				"scrolling during a tab transition translates the actual blue bar without restarting its progress");
 		}
-		click(state.middleBounds[3]); frame = draw(outside, false);
+		click(state.middleBounds[6]); frame = draw(outside, false);
 		checks.Expect(selected.page == PageId::Linkage && state.indicatorY.Active() && state.indicatorY.progress == 0
 			&& Near(state.indicatorY.start * scale, indicatorCenter(frame), 0.75F),
 			"reversing the tab selection starts from the current rendered blue-bar position");
-		frame = idle(12); expectAttached(frame, state.middleBounds[3]);
+		frame = idle(12); expectAttached(frame, state.middleBounds[6]);
 		// click返回帧仍画旧锚点，首个新目的地帧同时滚动，验证跨锚点的起点补偿。
-		frame = click(state.middleBounds[1]);
-		const float oldAnchorRow = rowCenter(state.middleBounds[3]), oldAnchorBar = indicatorCenter(frame), oldAnchorScroll = frame.scroll;
+		frame = click(state.middleBounds[5]);
+		const float oldAnchorRow = rowCenter(state.middleBounds[6]), oldAnchorBar = indicatorCenter(frame), oldAnchorScroll = frame.scroll;
 		io.AddMouseWheelEvent(0, -0.1F); frame = draw(wheelPoint, false);
-		checks.Expect(selected.page == PageId::Draw && std::abs(frame.scroll - oldAnchorScroll) > 0.1F
+		checks.Expect(selected.page == PageId::Performance && std::abs(frame.scroll - oldAnchorScroll) > 0.1F
 			&& state.indicatorY.progress == 0 && state.indicatorY.Active() && frame.indicatorDrawn
-			&& Near(state.indicatorY.start * scale, oldAnchorBar + rowCenter(state.middleBounds[3]) - oldAnchorRow, 0.75F)
+			&& Near(state.indicatorY.start * scale, oldAnchorBar + rowCenter(state.middleBounds[6]) - oldAnchorRow, 0.75F)
 			&& Near(indicatorCenter(frame), state.indicatorY.start * scale, 0.75F)
-			&& Near(state.indicatorY.target * scale, rowCenter(state.middleBounds[1]), 0.75F),
+			&& Near(state.indicatorY.target * scale, rowCenter(state.middleBounds[5]), 0.75F),
 			"a real tab change and wheel in the same frame compensate the old anchor scroll before starting the new transition");
-		frame = idle(12); expectAttached(frame, state.middleBounds[1]);
-		selected = { PageId::General, GeneralSection::Basic }; Design::NotifyNavigationDestination(state, selected);
+		frame = idle(12); expectAttached(frame, state.middleBounds[5]);
+		selected = { PageId::General, Section::Basic }; Design::NotifyNavigationDestination(state, selected);
 		requestedScroll = frame.maximumScroll; frame = idle(12);
 		const auto clippedAnchor = state.indicatorItemId;
 		checks.Expect(!frame.indicatorDrawn && state.indicatorInitialized,
@@ -5513,9 +5622,9 @@ namespace
 		requestedScroll = 0; frame = idle(3); requestedScroll = -1;
 		checks.Expect(state.indicatorItemId == clippedAnchor && state.indicatorY.progress >= 0.99F,
 			"bringing the same clipped anchor back into view does not restart the selection transition");
-		expectAttached(frame, state.parentBounds);
+		expectAttached(frame, general.parentBounds);
 		requestedScroll = frame.maximumScroll; frame = idle(3);
-		selected = { PageId::Draw, GeneralSection::Basic }; Design::NotifyNavigationDestination(state, selected);
+		selected = { PageId::Draw }; Design::NotifyNavigationDestination(state, selected);
 		frame = idle(12); const auto changedClippedAnchor = state.indicatorItemId;
 		checks.Expect(!frame.indicatorDrawn && changedClippedAnchor != clippedAnchor && state.indicatorY.progress >= 0.99F,
 			"a destination changed while both real rows are clipped still advances its distinct selection anchor");
@@ -5524,10 +5633,10 @@ namespace
 			"revealing a destination changed outside the clip retains its completed transition");
 		expectAttached(frame, state.middleBounds[1]);
 		size = ImVec2(960, 700); frame = idle(); click(state.middleBounds[3]); frame = idle(12);
-		click(state.chevronBounds); frame = draw(outside, false); expectAttached(frame, state.middleBounds[3]);
-		checks.Expect(state.groupReveal.Active() && !state.indicatorY.Active(),
+		click(general.chevronBounds); frame = draw(outside, false); expectAttached(frame, state.middleBounds[3]);
+		checks.Expect(general.reveal.Active() && !state.indicatorY.Active(),
 			"expanding another group moves the same selected row and blue bar together without an extra lag");
-		click(state.chevronBounds); frame = draw(outside, false); expectAttached(frame, state.middleBounds[3]);
+		click(general.chevronBounds); frame = draw(outside, false); expectAttached(frame, state.middleBounds[3]);
 		frame = idle(12); animated = false;
 		auto sameVisibleColor = [](ImVec4 a, ImVec4 b) { return Near(a.x, b.x, 0.02F)
 			&& Near(a.y, b.y, 0.02F) && Near(a.z, b.z, 0.02F); };
@@ -5535,7 +5644,7 @@ namespace
 		for (bool sponsorCompact : { false, true })
 		{
 			dark = sponsorDark; state.desktopCompact = sponsorCompact;
-			selected = { PageId::Home, GeneralSection::Basic }; Design::NotifyNavigationDestination(state, selected);
+			selected = { PageId::Home, Section::Basic }; Design::NotifyNavigationDestination(state, selected);
 			frame = idle(20);
 			checks.Expect(sameVisibleColor(frame.sponsorFill.visible, ImGui::ColorConvertU32ToFloat4(Design::AppBase))
 				&& frame.sponsorBlueIcon > 0 && frame.sponsorOtherIcon == 0
@@ -5577,30 +5686,30 @@ namespace
 				checks.Expect(state.overlayOpen && state.Expanded() && !frame.indicatorDrawn,
 					"debug page can reopen the narrow overlay without destination synchronization closing it");
 			}
-			frame = click(state.middleBounds[4]);
+			frame = click(state.middleBounds[8]);
 			checks.Expect(selected.page == PageId::Plugins && !state.indicatorY.Active(),
 				"return from debug binds the selected row directly instead of sliding from an old blue-bar anchor");
-			frame = draw(outside, false); expectAttached(frame, state.middleBounds[4]);
+			frame = draw(outside, false); expectAttached(frame, state.middleBounds[8]);
 			selected = { PageId::Draw }; Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
 			checks.Expect(state.indicatorY.Active() == animated,
 				"ordinary destinations resume their configured blue-bar transition after leaving debug");
 			selected = { PageId::Debug }; Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
 			checks.Expect(!frame.indicatorDrawn && !state.indicatorY.Active(), "rapid reversal to debug suppresses blue-bar motion immediately");
 			selected = { PageId::Plugins }; Design::NotifyNavigationDestination(state, selected); frame = draw(outside, false);
-			expectAttached(frame, state.middleBounds[4]);
+			expectAttached(frame, state.middleBounds[8]);
 		}
 		// 紧凑轨道的真实模态子菜单不能吞掉标题栏 Debug；它只继续隔离正文。
 		animated = true; size = ImVec2(960, 700); state.desktopCompact = true; state.overlayOpen = false;
 		selected = { PageId::Home }; Design::NotifyNavigationDestination(state, selected); frame = idle(20);
-		click(state.parentBounds); frame = idle(12);
-		click(state.parentBounds); frame = idle(12);
+		click(general.parentBounds); frame = idle(12);
+		click(general.parentBounds); frame = idle(12);
 		checks.Expect(state.flyoutOpen && state.IsFlyoutOpen(), "real compact parent opens the navigation modal before debug activation");
 		frame = click(frame.debug);
 		checks.Expect(selected.page == PageId::Debug && !state.IsFlyoutOpen() && !frame.indicatorDrawn,
 			"titlebar debug remains actionable over the real navigation modal and closes it on activation");
 		selected = { PageId::Home }; Design::NotifyNavigationDestination(state, selected); frame = idle(20);
-		click(state.parentBounds); frame = idle(12);
-		if (!state.IsFlyoutOpen()) { click(state.parentBounds); frame = idle(12); }
+		click(general.parentBounds); frame = idle(12);
+		if (!state.IsFlyoutOpen()) { click(general.parentBounds); frame = idle(12); }
 		checks.Expect(state.IsFlyoutOpen(), "compact navigation modal is open before feedback activation");
 		const int feedbackBodyActions = bodyActions;
 		frame = click(frame.feedback);
@@ -5670,7 +5779,7 @@ namespace
 			Design::NavigationState next; state = next; dark = theme; animated = false;
 			size = ImVec2(mode == 2 ? 720.0F : 960.0F, 600); state.Resize(size.x);
 			state.desktopCompact = mode == 1; state.overlayOpen = mode == 2;
-			selected = { PageId::Home }; state.generalExpanded = false; frame = idle(4);
+			selected = { PageId::Home }; general.expanded = false; frame = idle(4);
 			// 根项增加后原600-DIP夹具也可能溢出，显隐应由实际行范围与可用高度决定。
 			auto middleOverflows = [&]() {
 				const float contentHeight = std::ceil(state.middleBounds.back().bottom) + 1.0F
@@ -5679,7 +5788,7 @@ namespace
 			};
 			checks.Expect(frame.list && frame.list->ScrollbarY == middleOverflows(),
 				"collapsed navigation scrollbar follows actual root extent and available middle height");
-			state.generalExpanded = true; frame = idle(4);
+			general.expanded = true; frame = idle(4);
 			checks.Expect(frame.list->ScrollbarY == middleOverflows(),
 				"inline expansion scrollbar follows actual content overflow in every pane mode");
 			size.y = 520; frame = idle(4);
@@ -5694,11 +5803,11 @@ namespace
 					if ((vertex.uv.x != white.x || vertex.uv.y != white.y) && vertex.col == Design::TextPrimary
 						&& vertex.pos.y >= frame.list->InnerClipRect.Min.y && vertex.pos.y <= frame.list->InnerClipRect.Max.y)
 					{ ++glyphs; glyphsClear &= vertex.pos.x < track.Min.x; }
-				checks.Expect(glyphs > 0 && glyphsClear && GImGui->NavId == state.parentItemId,
+				checks.Expect(glyphs > 0 && glyphsClear && GImGui->NavId == general.parentItemId,
 					"compact real focused icon glyphs stay to the left of the visible scrollbar track");
 			}
 			const int before = navigations, beforeTrackBusiness = businessActions; const auto destination = selected;
-			const auto origins = frame.fixedOrigins; const bool groupOpen = state.generalExpanded;
+			const auto origins = frame.fixedOrigins; const bool groupOpen = general.expanded;
 			const auto track = ImGui::GetWindowScrollbarRect(frame.list, ImGuiAxis_Y);
 			const ImVec2 trackPoint(track.GetCenter().x, track.Max.y - 12 * scale);
 			const float beforeTrackScroll = frame.scroll;
@@ -5717,7 +5826,7 @@ namespace
 			checks.Expect(frame.scroll < beforeThumbDrag && GImGui->ActiveId == ImGui::GetWindowScrollbarID(frame.list, ImGuiAxis_Y),
 				"holding the actual rendered thumb reverses Scroll.y while retaining scrollbar ownership");
 			draw({ grab.x, grab.y - 25 * scale }, false);
-			checks.Expect(navigations == before && businessActions == beforeTrackBusiness && selected == destination && state.generalExpanded == groupOpen,
+			checks.Expect(navigations == before && businessActions == beforeTrackBusiness && selected == destination && general.expanded == groupOpen,
 				"scrollbar press and drag cannot activate a navigation root, chevron or footer action");
 			// 实际行右端到轨道之间的空白可以沿用旧 void 拖动，但不会点击导航。
 			requestedScroll = 0; frame = idle(3); requestedScroll = -1;
@@ -5732,21 +5841,21 @@ namespace
 				frame = draw({ gap.x, gap.y - 5 * scale }, true); frame = draw({ gap.x, gap.y - 5 * scale }, false);
 				checks.Expect(Near(frame.fixedOrigins[0].y, origins[0].y) && Near(frame.fixedOrigins[1].y, origins[1].y), "dragging middle content keeps top and footer fixed");
 			}
-			io.AddMouseSourceEvent(ImGuiMouseSource_Mouse); state.generalExpanded = false; size.y = 900; frame = idle(4);
+			io.AddMouseSourceEvent(ImGuiMouseSource_Mouse); general.expanded = false; size.y = 900; frame = idle(4);
 			checks.Expect(!frame.list->ScrollbarY && Near(frame.scroll, 0), "fold and resize remove the actual bar and clamp the old scroll position");
 		}
 		// 子列表固定 child 的 padding 仍由 nav-list 消费，选中蓝条跟随下一 Begin 的真实位置。
 		Design::NavigationState inlineState; state = inlineState; size = ImVec2(960, 520); animated = false; dark = false;
-		state.generalExpanded = true; selected = { PageId::General, GeneralSection::Appearance }; frame = idle(4);
+		general.expanded = true; selected = { PageId::General, Section::Appearance }; frame = idle(4);
 		requestedScroll = 0; frame = idle(3); requestedScroll = -1;
 		if (frame.group)
 		{
-			const ImVec2 padding(frame.group->InnerClipRect.Min.x + 2 * scale, center(state.childBounds[2]).y);
+			const ImVec2 padding(frame.group->InnerClipRect.Min.x + 2 * scale, center(general.childBounds[1]).y);
 			const float beforeInlineScroll = frame.scroll; const int beforeInlineNavigation = navigations;
 			draw(padding, false); draw(padding, true); draw({ padding.x, padding.y - 15 * scale }, true); frame = draw({ padding.x, padding.y - 15 * scale }, true);
 			checks.Expect(Near(frame.scroll - beforeInlineScroll, 15 * scale, 1) && Near(frame.group->Scroll.y, 0) && navigations == beforeInlineNavigation,
 				"actual inline child padding drag scrolls navigation once while its fixed clip child stays at zero");
-			expectAttached(frame, state.childBounds[2]); draw(padding, false); frame = idle();
+			expectAttached(frame, general.childBounds[1]); draw(padding, false); frame = idle();
 		}
 		// 正常最小窗的五项浮层可完整容纳；再给真实 renderer 更短客户裁剪，覆盖其溢出分支。
 		Design::NavigationState flyoutState; state = flyoutState; size = ImVec2(960, 520); dark = false; animated = true;
@@ -6152,7 +6261,7 @@ namespace
 							"new feedback page is rendered only after outgoing route commit");
 					else
 					{
-						const auto events = Design::RenderGeneral(draft, Design::GeneralSection::Appearance);
+						const auto events = Design::RenderGeneral(draft, Design::Section::Appearance);
 						checks.Expect(!events.edgeLightingChanged && !events.animationChanged,
 							"actual WARP appearance capture performs no synthetic configuration action");
 					}
@@ -6235,7 +6344,7 @@ namespace
 			auto* body = ImGui::GetCurrentWindow();
 			if (generalPage)
 			{
-				const auto events = RenderGeneral(general, GeneralSection::Appearance);
+				const auto events = RenderGeneral(general, Section::Appearance);
 				startupEffectEdits += events.startupEffectChanged ? 1 : 0;
 				frame.effectOwner = body;
 				// 内联效果区挂在加载动画父行 ID 下，条件状态与控件均以同一父作用域定位。
@@ -7340,7 +7449,7 @@ namespace
 		viewport=220; frame(outside); viewport=800; frame(outside);
 		checks.Expect(!motion.EntryActive(),"shrinking active entry cancels permanently for the current Show");
 		scroll=400; frame(outside); frame(outside);
-		resetDestination={Design::PageId::General,Design::GeneralSection::Interaction};
+		resetDestination={Design::PageId::General,Design::Section::Appearance};
 		resetNavigation.overlayOpen=resetNavigation.flyoutOpen=true; resetNavigation.contentReveal.Reset(.2F);
 		resetNavigation.childFocusId=123; resetNavigation.childWindowItemId=456; resetNavigation.inlineChildFocused=true;
 		++hideSerial; scroll=0; ++serial;
@@ -8222,7 +8331,7 @@ namespace
 								}
 							}
 						}
-						else if(page==1) (void)Design::RenderGeneral(draft,Design::GeneralSection::Basic);
+						else if(page==1) (void)Design::RenderGeneral(draft,Design::Section::Basic);
 						else
 						{
 							// 静态主页不传入入场motion，不能在不透明开屏遮罩下错误判定字体已稳定。
@@ -8586,6 +8695,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 			CheckBelowComboPopup(checks, fonts[0], fonts[1], fonts.back(), scale);
 			CheckCompactedSettingPages(checks, fonts[0], fonts[1], fonts.back(), scale);
 			CheckDrawingSubpageScroll(checks, fonts[0], fonts[1], fonts.back(), scale);
+			CheckNavigationTree(checks);
 			CheckHierarchicalNavigation(checks, fonts[0], fonts[1], fonts.back(), scale);
 			CheckDragScrolling(checks, fonts[0], fonts[1], scale);
 			CheckHomeScrollFollowup(checks, fonts[0], fonts[1], scale);

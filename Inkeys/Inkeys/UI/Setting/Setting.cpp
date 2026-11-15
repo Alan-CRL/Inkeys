@@ -2606,8 +2606,8 @@ SettingSessionCoroutine RunSettingSession()
 		{
 			// 保留业务 switch 的原编号；旧配置/快捷键路由统一映射到通用子页。
 			auto requested = Design::DestinationForPage(settingTab);
-			if (settingTab == static_cast<int>(Design::PageId::General))
-				requested.section = destination.section;
+			// 同一页内保留当前子页；跨页时由导航表回落到默认（首个）子页。
+			if (requested.page == destination.page) requested.section = destination.section;
 			navigateTo(requested);
 		};
 
@@ -2682,7 +2682,7 @@ SettingSessionCoroutine RunSettingSession()
 			if (openAction == Design::SettingOpenNavigation::Action::SpeedEraser)
 			{
 				// 在首帧正文排布前选中详情；开屏缓存从一开始就是目标页。
-				navigateTo({ Design::PageId::Draw });
+				navigateTo({ Design::PageId::Draw, Design::Section::DrawInteraction });
 				Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::SpeedEraser);
 				settingFrameSubmission.Reset();
 			}
@@ -2717,6 +2717,9 @@ SettingSessionCoroutine RunSettingSession()
 					tabFeedback = 15,
 					tabPerformance = 16,
 					tabLinkage = 17,
+					tabWindow = 18,
+					tabKeys = 19,
+					tabLogsConfig = 20,
 				};
 				enum settingPlugInTabEnum
 				{
@@ -2726,6 +2729,13 @@ SettingSessionCoroutine RunSettingSession()
 					tabPlugDDB
 				};
 
+				// 子页路由键：绘制页叠加详情层（高位为子页，低 4 位为详情）；插件、联动沿用各自标签页；其余页取导航子页。
+				const auto currentSubpage = [&]() {
+					return settingTab == settingTabEnum::tab4 ? settingPlugInTab
+						: settingTab == settingTabEnum::tabLinkage ? settingLinkageTab
+						: settingTab == settingTabEnum::tab3 ? (static_cast<int>(destination.section) << 4) | static_cast<int>(drawingSubpage)
+						: static_cast<int>(destination.section);
+				};
 				ImGui::SetNextWindowPos({ 0,0 });//设置窗口位置
 				ImGui::SetNextWindowSize({ static_cast<float>(SettingWindowWidth),static_cast<float>(SettingWindowHeight) });//设置窗口大小
 				entryRootSuppressed=Design::CanOmitHomeEntryRootBackground(homeMotion,!transparentBackdrop,ImGui::GetStyle().Alpha,clearColorValue);
@@ -2917,10 +2927,7 @@ SettingSessionCoroutine RunSettingSession()
 				const auto requestedDestination = destination;
 				const int requestedTab = settingTab, requestedPlugin = settingPlugInTab, requestedLinkage = settingLinkageTab;
 				const auto requestedDrawing = drawingSubpage;
-				const int requestedSubpage = settingTab == settingTabEnum::tab4 ? settingPlugInTab
-					: settingTab == settingTabEnum::tabLinkage ? settingLinkageTab
-					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section)
-					: settingTab == settingTabEnum::tab3 ? static_cast<int>(drawingSubpage) : 0;
+				const int requestedSubpage = currentSubpage();
 				const auto displayedRoute = pageTransition.Resolve({settingTab, requestedSubpage},
 					navigationDelta, Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate,
 					resetHomeScroll || openAction != Design::SettingOpenNavigation::Action::None
@@ -2931,12 +2938,15 @@ SettingSessionCoroutine RunSettingSession()
 					// 淡出期间只替换正文绘制路由，导航仍保留最新目标和未活动的子页状态。
 					settingTab = displayedRoute.page;
 					destination = Design::DestinationForPage(settingTab);
-					if (destination.page == Design::PageId::General)
-						destination.section = static_cast<Design::GeneralSection>(displayedRoute.subpage);
 					if (destination.page == Design::PageId::Plugins) settingPlugInTab = displayedRoute.subpage;
-					if (destination.page == Design::PageId::Linkage) settingLinkageTab = displayedRoute.subpage;
-					if (destination.page == Design::PageId::Draw)
-						drawingSubpage = static_cast<Design::DrawingSubpage>(displayedRoute.subpage);
+					else if (destination.page == Design::PageId::Linkage) settingLinkageTab = displayedRoute.subpage;
+					else if (destination.page == Design::PageId::Draw)
+					{
+						destination.section = static_cast<Design::Section>(displayedRoute.subpage >> 4);
+						drawingSubpage = static_cast<Design::DrawingSubpage>(displayedRoute.subpage & 15);
+					}
+					else destination.section = static_cast<Design::Section>(displayedRoute.subpage);
+					destination = Design::NormalizeDestination(destination);
 				}
 				if (holdingPage) Design::SuppressDepartingPageInput(pageMotion);
 				bool blockContentInput = navigationState.BlockContentInput();
@@ -2959,10 +2969,7 @@ SettingSessionCoroutine RunSettingSession()
 				const bool skipEntryBackground=Design::BeginHomeEntryFrame(homeMotion,entryKey,
 					!blockContentInput && !navigationState.flyoutOpen
 					&& !ImGui::IsPopupOpen(nullptr,ImGuiPopupFlags_AnyPopupId|ImGuiPopupFlags_AnyPopupLevel));
-				const int pageSubpage = settingTab == settingTabEnum::tab4 ? settingPlugInTab
-					: settingTab == settingTabEnum::tabLinkage ? settingLinkageTab
-					: settingTab == settingTabEnum::tab2 ? static_cast<int>(destination.section)
-					: settingTab == settingTabEnum::tab3 ? static_cast<int>(drawingSubpage) : 0;
+				const int pageSubpage = currentSubpage();
 				const auto pageRoute = (static_cast<std::uint64_t>(settingTab) << 32)
 					| static_cast<std::uint32_t>(pageSubpage);
 				// 真正导航才重播；字标开屏复用原快照，不在结束后追加一轮页面动画。
@@ -3008,9 +3015,12 @@ SettingSessionCoroutine RunSettingSession()
 					ImGuiChildFlags_AutoResizeY);
 
 				// 页面只提交内容与业务事件，尺寸及文本对齐由 Design 层负责。
-				const int contentPage = destination.page == Design::PageId::General
-					&& destination.section == Design::GeneralSection::Storage
-					? settingTabEnum::tabConfiguration : settingTab;
+				const bool sectionPage = destination.page == Design::PageId::Window || destination.page == Design::PageId::Keys
+					|| destination.page == Design::PageId::LogsConfig;
+				// 窗口与显示器、按键与快捷键、日志共用通用页的草稿与事件接线；配置页由独立业务分支承载。
+				const int contentPage = destination.page == Design::PageId::LogsConfig
+					&& destination.section == Design::Section::LogsConfiguration ? settingTabEnum::tabConfiguration
+					: sectionPage ? settingTabEnum::tab2 : settingTab;
 				if ((contentPage != settingTabEnum::tab3 || drawingSubpage != Design::DrawingSubpage::Cursor) &&
 					cursorOpacitySavePending.exchange(false))
 					QueueConfigWrite();
@@ -3028,11 +3038,11 @@ SettingSessionCoroutine RunSettingSession()
 						static_cast<float>(max(1, settingSign[7].height)) / max(1, settingSign[7].width) }, &homeMotion);
 					switch (action)
 					{
-					case HomeAction::Appearance: navigateTo({ Design::PageId::General, Design::GeneralSection::Appearance }); break;
-					case HomeAction::Shortcuts: navigateTo({ Design::PageId::General, Design::GeneralSection::Shortcuts }); break;
-					case HomeAction::Draw: settingTab = settingTabEnum::tab3; drawingSubpage = Design::DrawingSubpage::Overview; break;
+					case HomeAction::Appearance: navigateTo({ Design::PageId::General, Design::Section::Appearance }); break;
+					case HomeAction::Shortcuts: navigateTo({ Design::PageId::Keys }); break;
+					case HomeAction::Draw: navigateTo({ Design::PageId::Draw, Design::Section::DrawInteraction }); drawingSubpage = Design::DrawingSubpage::Overview; break;
 					case HomeAction::Plugins: settingTab = settingTabEnum::tab4; settingPlugInTab = settingPlugInTabEnum::tabPlug1; break;
-					case HomeAction::General: navigateTo({ Design::PageId::General, Design::GeneralSection::Basic }); break;
+					case HomeAction::General: navigateTo({ Design::PageId::General, Design::Section::Basic }); break;
 					case HomeAction::Language: settingTab = settingTabEnum::Language; break;
 					case HomeAction::Support: settingTab = settingTabEnum::tab8; break;
 					case HomeAction::Version: settingTab = settingTabEnum::tab6; break;
@@ -3104,7 +3114,7 @@ SettingSessionCoroutine RunSettingSession()
 				// 配置保存
 				case settingTabEnum::tabConfiguration:
 				{
-					Design::PageHeader(IA(I18nKey.SettingsUI.Design.GeneralStorage).c_str());
+					Design::PageHeader(IA(I18nKey.SettingsUI.Design.LogsConfiguration).c_str());
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Configuration.Clean.N).c_str());
 
 					{
@@ -3486,6 +3496,8 @@ SettingSessionCoroutine RunSettingSession()
 					draft.contentOpacity = static_cast<float>(ContentOpacity) / 100.0F;
 					// 每帧冻结本页偏好，页面只产出事件，运行时通知仍留在既有 FIFO 业务域。
 					draft.selectMode = GetSelectAndClickThroughMode();
+					// 后台可同步设备模式，每帧读取原子值，不能沿用常驻会话的旧草稿。
+					draft.paintDevice = std::clamp(setlist.paintDevice.load(), 0, 1);
 					const int iconOrder = Inkeys::config.UI.Bar.IconOrder.load();
 					const int expansionDirection = Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load();
 					draft.iconOrder = iconOrder >= 0 && iconOrder < 4 ? iconOrder : 0;
@@ -3501,7 +3513,7 @@ SettingSessionCoroutine RunSettingSession()
 					IdtAtomic<bool>* shortcutPreferences[]{ &shortcuts.ToggleAnnotation, &shortcuts.Undo, &shortcuts.RedoY,
 						&shortcuts.RedoShiftZ, &shortcuts.Clear, &shortcuts.Freeze };
 					for (int item = 0; item < 6; ++item) draft.shortcuts[item] = shortcutPreferences[item]->load();
-					if (destination.section == Design::GeneralSection::Shortcuts)
+					if (destination.page == Design::PageId::Keys)
 					{
 						const auto shortcutStatus = Inkeys::Input::KeyboardShortcuts::GetStatus();
 						string globalStatus = !shortcutStatus.running ? IA(I18nKey.SettingsUI.HotKey.NotRunning)
@@ -3526,8 +3538,8 @@ SettingSessionCoroutine RunSettingSession()
 					whiteboardShortcutDraft.create = Inkeys::config.Application.WhiteboardShortcut.CreateLnk;
 					draft.desktopShortcut = desktopShortcutDraft;
 					draft.whiteboardShortcut = whiteboardShortcutDraft;
-					const auto events = Inkeys::UI::Setting::Design::RenderGeneral(draft, destination.section);
-					if (destination.section == Design::GeneralSection::DesktopShortcuts)
+					const auto events = Inkeys::UI::Setting::Design::RenderGeneral(draft, destination);
+					if (destination.section == Design::Section::DesktopShortcuts)
 					{
 						desktopShortcutDraft = std::move(draft.desktopShortcut);
 						whiteboardShortcutDraft = std::move(draft.whiteboardShortcut);
@@ -3556,7 +3568,7 @@ SettingSessionCoroutine RunSettingSession()
 							events.createWhiteboardShortcut, events.whiteboardCorrectChanged, events.whiteboardCreateChanged);
 					}
 					// 页面只返回一次交互结果，所有副作用继续留在既有 FIFO/配置接线域。
-					if (destination.section == Design::GeneralSection::Basic)
+					if (destination.section == Design::Section::Basic)
 					{
 						StartUp = draft.startup;
 						if (events.startupChanged && setlist.startUp != StartUp)
@@ -3565,8 +3577,24 @@ SettingSessionCoroutine RunSettingSession()
 							setlist.startUp = StartUp;
 							WriteSetting();
 						}
+						RegularSetting.TeachingSafetyMode = draft.safetyMode;
+						if (events.safetyModeChanged && setlist.regularSetting.teachingSafetyMode != draft.safetyMode)
+						{
+							setlist.regularSetting.teachingSafetyMode = draft.safetyMode;
+							WriteSetting();
+							CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
+						}
 					}
 
+					// 交互模式位于通用·基础；仅在用户改动且值确有变化时写回并刷新绘制标尺。
+					if (events.paintDeviceChanged && setlist.paintDevice != draft.paintDevice)
+					{
+						setlist.paintDevice = draft.paintDevice;
+						SyncDraw3State();
+						WriteSetting();
+						drawingScale = GetDrawingScale();
+						stopTimingError = GetStopTimingError();
+					}
 					if (events.startupPlacementChanged)
 					{
 						Inkeys::config.UI.Bar.StartupPlacement = draft.startupPlacement;
@@ -3583,7 +3611,7 @@ SettingSessionCoroutine RunSettingSession()
 						if (events.whiteboardDockDirectionChanged) workspace.Whiteboard.Direction = draft.whiteboardDockDirection;
 						QueueConfigWrite();
 					}
-					if (destination.section == Design::GeneralSection::Appearance)
+					if (destination.section == Design::Section::Appearance)
 					{
 						if (events.themeModeChanged)
 						{
@@ -3651,12 +3679,6 @@ SettingSessionCoroutine RunSettingSession()
 							setlist.settingEntryAnimation = draft.settingEntryAnimation;
 							WriteSetting();
 						}
-						if (events.taskbarScaleBaseChanged)
-						{
-							Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase = draft.taskbarScaleBase;
-							Inkeys::UI::Bar::RefreshScaleBase();
-							QueueConfigWrite();
-						}
 						Experimental.Inkeys3.AnimationEnable = draft.animation;
 						if (events.animationChanged)
 						{
@@ -3672,6 +3694,22 @@ SettingSessionCoroutine RunSettingSession()
 							Inkeys::UI::Bar::SetEdgeLightingOptions(draft.edgeLighting, draft.dynamicEdgeLighting);
 							QueueConfigWrite();
 						}
+						Experimental.Inkeys3.EdgeLightingEnable = draft.edgeLighting;
+						if (events.edgeLightingChanged && Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable != draft.edgeLighting)
+						{
+							Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable = draft.edgeLighting;
+							Inkeys::UI::Bar::SetEdgeLightingOptions(draft.edgeLighting, Experimental.Inkeys3.DynamicEdgeLighting);
+							QueueConfigWrite();
+						}
+					}
+					if (destination.section == Design::Section::WindowLayout)
+					{
+						if (events.taskbarScaleBaseChanged)
+						{
+							Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase = draft.taskbarScaleBase;
+							Inkeys::UI::Bar::RefreshScaleBase();
+							QueueConfigWrite();
+						}
 						BarZoom = draft.barZoom;
 						if (fabs(BarZoom - static_cast<float>(Inkeys::config.UI.Bar.Zoom2.load())) > 0.0001F)
 						{
@@ -3684,15 +3722,8 @@ SettingSessionCoroutine RunSettingSession()
 							QueueConfigWrite();
 							BarZoomSavePending = false;
 						}
-						Experimental.Inkeys3.EdgeLightingEnable = draft.edgeLighting;
-						if (events.edgeLightingChanged && Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable != draft.edgeLighting)
-						{
-							Inkeys::config.Experimental.Inkeys3.UI3.EdgeLighting.Enable = draft.edgeLighting;
-							Inkeys::UI::Bar::SetEdgeLightingOptions(draft.edgeLighting, Experimental.Inkeys3.DynamicEdgeLighting);
-							QueueConfigWrite();
-						}
 					}
-					if (destination.section == Design::GeneralSection::Interaction)
+					if (destination.section == Design::Section::WindowBehavior)
 					{
 						TopSleepTime = draft.topInterval;
 						if (events.topIntervalChanged && setlist.topSleepTime != TopSleepTime)
@@ -3706,13 +3737,6 @@ SettingSessionCoroutine RunSettingSession()
 						{
 							setlist.RightClickClose = RightClickClose;
 							WriteSetting();
-						}
-						RegularSetting.TeachingSafetyMode = draft.safetyMode;
-						if (events.safetyModeChanged && setlist.regularSetting.teachingSafetyMode != draft.safetyMode)
-						{
-							setlist.regularSetting.teachingSafetyMode = draft.safetyMode;
-							WriteSetting();
-							CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
 						}
 					}
 					if (events.statusIndicatorChanged || std::ranges::any_of(events.statusIndicatorTypesChanged, std::identity{}))
@@ -3944,7 +3968,9 @@ SettingSessionCoroutine RunSettingSession()
 						if (saveEntries || events.touchAreaChanged) QueueConfigWrite();
 						break;
 					}
-					Design::PageHeader(IA(I18nKey.SettingsUI.Draw.N).c_str());
+					// 绘制页拆为两个子页：绘制效果（笔迹视觉）与交互与手势（输入、橡皮、光标、白板、触觉）。
+					const bool effectsPage = destination.section == Design::Section::DrawEffects;
+					Design::PageHeader(IA(effectsPage ? I18nKey.SettingsUI.Design.DrawEffects : I18nKey.SettingsUI.Design.DrawInteraction).c_str());
 
 					const auto workspaceFailure = WorkspaceTransitionFailureRevision();
 					if (Design::ConditionalBlock block{"##workspace-recovery-visibility", workspaceFailure != 0}; block)
@@ -3982,145 +4008,131 @@ SettingSessionCoroutine RunSettingSession()
 						ImGui::EndDisabled();
 					}
 
-					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Effect.N).c_str());
-					{
-						vector<string> devices{
-							IA(I18nKey.SettingsUI.Draw.Effect.Device.Touch),
-							IA(I18nKey.SettingsUI.Draw.Effect.Device.MousePen)
-						};
-						// 后台可同步设备模式，每帧读取原子值，不能沿用常驻会话的旧草稿。
-						int PaintDevice = std::clamp(setlist.paintDevice.load(), 0, 1);
-						const string deviceDescription = devices[0] + ": " + IA(I18nKey.SettingsUI.Draw.Effect.Device.TouchE)
-							+ "\n" + devices[1] + ": " + IA(I18nKey.SettingsUI.Draw.Effect.Device.MousePenE);
-						const int previousPaintDevice = PaintDevice;
-						if (Design::ComboRow("##draw-device",
-							IA(I18nKey.SettingsUI.Draw.Effect.Device.N).c_str(),
-							deviceDescription.c_str(), "\ue7f8",
-							PaintDevice, devices)
-							&& previousPaintDevice != PaintDevice
-							&& setlist.paintDevice != PaintDevice)
-						{
-							setlist.paintDevice = PaintDevice;
-							SyncDraw3State();
-							WriteSetting();
-							drawingScale = GetDrawingScale();
-							stopTimingError = GetStopTimingError();
-						}
-					}
-
-					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.General.N).c_str());
 					auto& drawingOptions = Inkeys::config.Drawing;
 					bool multiTouchEnabled = drawingOptions.MultiTouchEnabled;
 					bool penTailCorrectionEnabled = drawingOptions.PenTailCorrectionEnabled;
 					const int savedPredictionMode = drawingOptions.InkPredictionMode.load();
 					// 下拉框按用户习惯排列，不能直接把索引当成内部预测模式。
 					int predictionIndex = savedPredictionMode == 0 ? 2 : savedPredictionMode == 1 ? 1 : 0;
-					const bool multiTouchChanged = Design::ToggleRow("##draw-multi-touch",
-						IA(I18nKey.SettingsUI.Draw.General.MultiTouch.N).c_str(),
-						IA(I18nKey.SettingsUI.Draw.General.MultiTouch.E).c_str(), "\ue7c9", multiTouchEnabled);
-					const bool penTailCorrectionChanged = Design::ToggleRow("##draw-pen-tail-correction",
-						IA(I18nKey.SettingsUI.Draw.General.PenTailCorrection.N).c_str(),
-						IA(I18nKey.SettingsUI.Draw.General.PenTailCorrection.E).c_str(), "\uedc6", penTailCorrectionEnabled);
-					const bool predictionChanged = Design::ComboRow("##draw-ink-prediction",
-						IA(I18nKey.SettingsUI.Draw.General.InkPrediction.N).c_str(),
-						IA(I18nKey.SettingsUI.Draw.General.InkPrediction.E).c_str(), "\ue768", predictionIndex,
-						{ IA(I18nKey.SettingsUI.Draw.General.InkPrediction.Precise) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
-							IA(I18nKey.SettingsUI.Draw.General.InkPrediction.Fast),
-							IA(I18nKey.SettingsUI.Draw.General.InkPrediction.Disabled) });
-					if (multiTouchChanged || penTailCorrectionChanged || predictionChanged)
+					bool multiTouchChanged = false, penTailCorrectionChanged = false, predictionChanged = false;
+					// 多指、笔锋、预测共用同一次下发；每帧都从配置读取三项，只有当前页渲染的控件会改变值，故两个子页提交互不覆盖。
+					const auto commitGeneralDrawingOptions = [&]()
 					{
-						const int predictionModes[]{ 2, 1, 0 };
-						const int predictionMode = predictionModes[predictionIndex];
-						drawingOptions.MultiTouchEnabled = multiTouchEnabled;
-						drawingOptions.PenTailCorrectionEnabled = penTailCorrectionEnabled;
-						drawingOptions.InkPredictionMode = predictionMode;
-						auto& host = Inkeys::Drawing::Draw3::ProductHost();
-						host.SetGeneralDrawingOptions(multiTouchEnabled, penTailCorrectionEnabled, predictionMode);
-						// 隐藏只停用激光多指，不覆盖保存的子项偏好。
-						host.SetLaserOptions(drawingOptions.Laser.MultiTouchEnabled.load(), false);
-						QueueConfigWrite();
+						if (multiTouchChanged || penTailCorrectionChanged || predictionChanged)
+						{
+							const int predictionModes[]{ 2, 1, 0 };
+							const int predictionMode = predictionModes[predictionIndex];
+							drawingOptions.MultiTouchEnabled = multiTouchEnabled;
+							drawingOptions.PenTailCorrectionEnabled = penTailCorrectionEnabled;
+							drawingOptions.InkPredictionMode = predictionMode;
+							auto& host = Inkeys::Drawing::Draw3::ProductHost();
+							host.SetGeneralDrawingOptions(multiTouchEnabled, penTailCorrectionEnabled, predictionMode);
+							// 隐藏只停用激光多指，不覆盖保存的子项偏好。
+							host.SetLaserOptions(drawingOptions.Laser.MultiTouchEnabled.load(), false);
+							QueueConfigWrite();
+						}
+					};
+					if (effectsPage)
+					{
+						predictionChanged = Design::ComboRow("##draw-ink-prediction",
+							IA(I18nKey.SettingsUI.Draw.General.InkPrediction.N).c_str(),
+							IA(I18nKey.SettingsUI.Draw.General.InkPrediction.E).c_str(), "\ue768", predictionIndex,
+							{ IA(I18nKey.SettingsUI.Draw.General.InkPrediction.Precise) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+								IA(I18nKey.SettingsUI.Draw.General.InkPrediction.Fast),
+								IA(I18nKey.SettingsUI.Draw.General.InkPrediction.Disabled) });
+						penTailCorrectionChanged = Design::ToggleRow("##draw-pen-tail-correction",
+							IA(I18nKey.SettingsUI.Draw.General.PenTailCorrection.N).c_str(),
+							IA(I18nKey.SettingsUI.Draw.General.PenTailCorrection.E).c_str(), "\uedc6", penTailCorrectionEnabled);
+						commitGeneralDrawingOptions();
+
+						Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Laser.N).c_str());
+						// 粒子效果暂不可用，仅保留说明，不提供启用入口。
+						ImGui::BeginDisabled();
+						Design::SettingRow("##draw-laser-particles", IA(I18nKey.SettingsUI.Draw.Laser.Particles.N).c_str(),
+							IA(I18nKey.SettingsUI.Draw.Laser.Particles.E).c_str(), "\ue734", 0.0F, 0.0F,
+							[](const Inkeys::UI::Setting::LayoutRect&) {});
+						ImGui::EndDisabled();
 					}
-
-					auto& panPreferences = drawingOptions.Whiteboard.PanInertia;
-					Inkeys::Drawing::Draw3::CanvasPanInertiaOptions panInertia{
-						panPreferences.Enabled.load(), panPreferences.Mouse.load(), panPreferences.Touchpad.load(),
-						panPreferences.Touch.load(), panPreferences.Pen.load(), panPreferences.PenTail.load() };
-					if (Design::RenderCanvasPanInertia(panInertia).Changed())
+					else
 					{
-						// 隐藏内联区仅改变有效惯性，保存全部设备偏好以便重新启用。
-						panPreferences.Enabled = panInertia.enabled;
-						panPreferences.Mouse = panInertia.mouse;
-						panPreferences.Touchpad = panInertia.touchpad;
-						panPreferences.Touch = panInertia.touch;
-						panPreferences.Pen = panInertia.pen;
-						panPreferences.PenTail = panInertia.penTail;
-						Inkeys::Drawing::Draw3::ProductHost().SetCanvasPanInertiaOptions(panInertia);
-						QueueConfigWrite();
-					}
+						Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Touch.N).c_str());
+						multiTouchChanged = Design::ToggleRow("##draw-multi-touch",
+							IA(I18nKey.SettingsUI.Draw.General.MultiTouch.N).c_str(),
+							IA(I18nKey.SettingsUI.Draw.General.MultiTouch.E).c_str(), "\ue7c9", multiTouchEnabled);
+						commitGeneralDrawingOptions();
+						bool laserMultiTouchEnabled = drawingOptions.Laser.MultiTouchEnabled;
+						const bool laserMultiTouchChanged = multiTouchEnabled
+							&& Design::ToggleRow("##draw-laser-multi-touch", IA(I18nKey.SettingsUI.Draw.Laser.MultiTouch.N).c_str(),
+								IA(I18nKey.SettingsUI.Draw.Laser.MultiTouch.E).c_str(), "\ue7c9", laserMultiTouchEnabled);
+						if (laserMultiTouchChanged)
+						{
+							drawingOptions.Laser.MultiTouchEnabled = laserMultiTouchEnabled;
+							Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(laserMultiTouchEnabled, false);
+							QueueConfigWrite();
+						}
+						bool reconnectEnabled = Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect;
+						auto& reconnectConfig = Inkeys::config.Experimental.Inkeys3.Draw3;
+						bool reconnectTouch = reconnectConfig.InterruptedStrokeReconnectTouch;
+						bool reconnectPenTail = reconnectConfig.InterruptedStrokeReconnectPenTail;
+						bool reconnectTouchChanged = false, reconnectPenTailChanged = false;
+						const auto& reconnectKeys = I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect;
+						// 适用设备内联在开关下方，开关关闭时用控件自带的条件动画收起；两项各自保留选择。
+						const auto reconnectDevices = Design::InlineCheckboxes("##断触接续-设备", {
+							{ IA(reconnectKeys.Touch), &reconnectTouch, &reconnectTouchChanged },
+							{ IA(reconnectKeys.PenTail), &reconnectPenTail, &reconnectPenTailChanged } },
+							"##reconnect-devices-visibility", reconnectEnabled);
+						const bool reconnectToggled = Design::ToggleRow("##断触接续", IA(reconnectKeys.N).c_str(),
+							IA(reconnectKeys.E).c_str(), "\ue7c9", reconnectEnabled, nullptr, &reconnectDevices);
+						if (reconnectToggled || reconnectTouchChanged || reconnectPenTailChanged)
+						{
+							reconnectConfig.InterruptedStrokeReconnect = reconnectEnabled;
+							reconnectConfig.InterruptedStrokeReconnectTouch = reconnectTouch;
+							reconnectConfig.InterruptedStrokeReconnectPenTail = reconnectPenTail;
+							Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
+							Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectDevices(reconnectTouch, reconnectPenTail);
+							QueueConfigWrite();
+						}
 
-					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.N).c_str());
-					Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::RenderDrawingEraserEntries(drawingSubpage));
+						Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Eraser.N).c_str());
+						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::RenderDrawingEraserEntries(drawingSubpage));
 
-					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
-					if (Design::NavigationRow("##cursor-entry", IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Cursor.EntryDescription).c_str(), "\ue962"))
-						Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Cursor);
+						Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str());
+						if (Design::NavigationRow("##cursor-entry", IA(I18nKey.SettingsUI.Draw.Cursor.N).c_str(),
+							IA(I18nKey.SettingsUI.Draw.Cursor.EntryDescription).c_str(), "\ue962"))
+							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Cursor);
 
-					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Laser.N).c_str());
-					bool laserMultiTouchEnabled = drawingOptions.Laser.MultiTouchEnabled;
-					const bool laserMultiTouchChanged = multiTouchEnabled
-						&& Design::ToggleRow("##draw-laser-multi-touch", IA(I18nKey.SettingsUI.Draw.Laser.MultiTouch.N).c_str(),
-							IA(I18nKey.SettingsUI.Draw.Laser.MultiTouch.E).c_str(), "\ue7c9", laserMultiTouchEnabled);
-					if (laserMultiTouchChanged)
-					{
-						drawingOptions.Laser.MultiTouchEnabled = laserMultiTouchEnabled;
-						Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(laserMultiTouchEnabled, false);
-						QueueConfigWrite();
-					}
-					// 粒子效果暂不可用，仅保留说明，不提供启用入口。
-					ImGui::BeginDisabled();
-					Design::SettingRow("##draw-laser-particles", IA(I18nKey.SettingsUI.Draw.Laser.Particles.N).c_str(),
-						IA(I18nKey.SettingsUI.Draw.Laser.Particles.E).c_str(), "\ue734", 0.0F, 0.0F,
-						[](const Inkeys::UI::Setting::LayoutRect&) {});
-					ImGui::EndDisabled();
+						Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.WhiteboardSection).c_str());
+						auto& panPreferences = drawingOptions.Whiteboard.PanInertia;
+						Inkeys::Drawing::Draw3::CanvasPanInertiaOptions panInertia{
+							panPreferences.Enabled.load(), panPreferences.Mouse.load(), panPreferences.Touchpad.load(),
+							panPreferences.Touch.load(), panPreferences.Pen.load(), panPreferences.PenTail.load() };
+						if (Design::RenderCanvasPanInertia(panInertia).Changed())
+						{
+							// 隐藏内联区仅改变有效惯性，保存全部设备偏好以便重新启用。
+							panPreferences.Enabled = panInertia.enabled;
+							panPreferences.Mouse = panInertia.mouse;
+							panPreferences.Touchpad = panInertia.touchpad;
+							panPreferences.Touch = panInertia.touch;
+							panPreferences.Pen = panInertia.pen;
+							panPreferences.PenTail = panInertia.penTail;
+							Inkeys::Drawing::Draw3::ProductHost().SetCanvasPanInertiaOptions(panInertia);
+							QueueConfigWrite();
+						}
 
-					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Touch.N).c_str());
-					bool reconnectEnabled = Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect;
-					auto& reconnectConfig = Inkeys::config.Experimental.Inkeys3.Draw3;
-					bool reconnectTouch = reconnectConfig.InterruptedStrokeReconnectTouch;
-					bool reconnectPenTail = reconnectConfig.InterruptedStrokeReconnectPenTail;
-					bool reconnectTouchChanged = false, reconnectPenTailChanged = false;
-					const auto& reconnectKeys = I18nKey.SettingsUI.Draw.Touch.InterruptedStrokeReconnect;
-					// 适用设备内联在开关下方，开关关闭时用控件自带的条件动画收起；两项各自保留选择。
-					const auto reconnectDevices = Design::InlineCheckboxes("##断触接续-设备", {
-						{ IA(reconnectKeys.Touch), &reconnectTouch, &reconnectTouchChanged },
-						{ IA(reconnectKeys.PenTail), &reconnectPenTail, &reconnectPenTailChanged } },
-						"##reconnect-devices-visibility", reconnectEnabled);
-					const bool reconnectToggled = Design::ToggleRow("##断触接续", IA(reconnectKeys.N).c_str(),
-						IA(reconnectKeys.E).c_str(), "\ue7c9", reconnectEnabled, nullptr, &reconnectDevices);
-					if (reconnectToggled || reconnectTouchChanged || reconnectPenTailChanged)
-					{
-						reconnectConfig.InterruptedStrokeReconnect = reconnectEnabled;
-						reconnectConfig.InterruptedStrokeReconnectTouch = reconnectTouch;
-						reconnectConfig.InterruptedStrokeReconnectPenTail = reconnectPenTail;
-						Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
-						Inkeys::Drawing::Draw3::ProductHost().SetInterruptedStrokeReconnectDevices(reconnectTouch, reconnectPenTail);
-						QueueConfigWrite();
-					}
-
-					Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Haptics.N).c_str());
-					auto& haptics = Inkeys::config.Drawing.Haptics;
-					bool drawingHaptics = haptics.Drawing, buttonHaptics = haptics.Buttons;
-					const bool drawingHapticsChanged = Design::ToggleRow("##绘制时震动反馈",
-						IA(I18nKey.SettingsUI.Draw.Haptics.Drawing).c_str(), nullptr, "\uedc6", drawingHaptics);
-					const bool buttonHapticsChanged = Design::ToggleRow("##按钮震动反馈",
-						IA(I18nKey.SettingsUI.Draw.Haptics.Buttons).c_str(), nullptr, "\uedc6", buttonHaptics);
-					if (drawingHapticsChanged || buttonHapticsChanged)
-					{
-						haptics.Drawing = drawingHaptics;
-						haptics.Buttons = buttonHaptics;
-						Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(drawingHaptics, buttonHaptics);
-						QueueConfigWrite();
+						Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Haptics.N).c_str());
+						auto& haptics = Inkeys::config.Drawing.Haptics;
+						bool drawingHaptics = haptics.Drawing, buttonHaptics = haptics.Buttons;
+						const bool drawingHapticsChanged = Design::ToggleRow("##绘制时震动反馈",
+							IA(I18nKey.SettingsUI.Draw.Haptics.Drawing).c_str(), nullptr, "\uedc6", drawingHaptics);
+						const bool buttonHapticsChanged = Design::ToggleRow("##按钮震动反馈",
+							IA(I18nKey.SettingsUI.Draw.Haptics.Buttons).c_str(), nullptr, "\uedc6", buttonHaptics);
+						if (drawingHapticsChanged || buttonHapticsChanged)
+						{
+							haptics.Drawing = drawingHaptics;
+							haptics.Buttons = buttonHaptics;
+							Inkeys::Drawing::Draw3::ProductHost().SetHapticPreferences(drawingHaptics, buttonHaptics);
+							QueueConfigWrite();
+						}
 					}
 					break;
 				}

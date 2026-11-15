@@ -346,8 +346,16 @@
       "CompatibilitySection": "Uyumluluk",
       "GeneralBasic": "Temel",
       "GeneralAppearance": "Görünüm ve animasyonlar",
-      "GeneralInteraction": "Davranış ve güvenlik",
-      "GeneralStorage": "Depolama ve yapılandırma",
+      "NavWindowDisplay": "Pencereler ve ekranlar",
+      "WindowLayout": "Pencere",
+      "WindowBehavior": "Davranış",
+      "WindowDisplay": "Ekranlar",
+      "NavKeysShortcuts": "Tuşlar ve kısayollar",
+      "NavLogsConfig": "Günlükler ve yapılandırma",
+      "LogsLog": "Günlükler",
+      "LogsConfiguration": "Yapılandırma",
+      "DrawEffects": "Çizim efektleri",
+      "DrawInteraction": "Etkileşim ve hareketler",
       "OperationModeSection": "İşlem modu",
       "IconArrangementSection": "Simge düzeni",
       "AnimationSection": "Animasyonlar",
@@ -697,9 +705,9 @@
     "Draw":
     {
       "N": "Çizim",
+      "WhiteboardSection": "Beyaz tahta",
       "General":
       {
-        "N": "Genel",
         "MultiTouch":
         {
           "N": "Çok parmakla çizim",
@@ -942,7 +950,6 @@
     },
     "Position":
     {
-      "N": "Konum",
       "DesktopSection": "Masaüstü",
       "PptSection": "Sunu",
       "WhiteboardSection": "Beyaz tahta",

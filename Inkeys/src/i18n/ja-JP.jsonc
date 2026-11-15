@@ -346,8 +346,16 @@
       "CompatibilitySection": "互換性",
       "GeneralBasic": "基本",
       "GeneralAppearance": "外観とアニメーション",
-      "GeneralInteraction": "動作と安全性",
-      "GeneralStorage": "保存と構成",
+      "NavWindowDisplay": "ウィンドウとディスプレイ",
+      "WindowLayout": "ウィンドウ",
+      "WindowBehavior": "動作",
+      "WindowDisplay": "ディスプレイ",
+      "NavKeysShortcuts": "キーとショートカット",
+      "NavLogsConfig": "ログと構成",
+      "LogsLog": "ログ",
+      "LogsConfiguration": "構成",
+      "DrawEffects": "描画効果",
+      "DrawInteraction": "操作とジェスチャ",
       "OperationModeSection": "操作モード",
       "IconArrangementSection": "アイコンの並び",
       "AnimationSection": "アニメーション",
@@ -697,9 +705,9 @@
     "Draw":
     {
       "N": "描画",
+      "WhiteboardSection": "ホワイトボード",
       "General":
       {
-        "N": "全般",
         "MultiTouch":
         {
           "N": "複数の指で描画",
@@ -942,7 +950,6 @@
     },
     "Position":
     {
-      "N": "位置",
       "DesktopSection": "デスクトップ",
       "PptSection": "プレゼン",
       "WhiteboardSection": "ホワイトボード",

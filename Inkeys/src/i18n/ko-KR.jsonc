@@ -346,8 +346,16 @@
       "CompatibilitySection": "호환성",
       "GeneralBasic": "기본",
       "GeneralAppearance": "모양 및 애니메이션",
-      "GeneralInteraction": "동작 및 안전",
-      "GeneralStorage": "저장 및 구성",
+      "NavWindowDisplay": "창 및 디스플레이",
+      "WindowLayout": "창",
+      "WindowBehavior": "동작",
+      "WindowDisplay": "디스플레이",
+      "NavKeysShortcuts": "키 및 단축키",
+      "NavLogsConfig": "로그 및 구성",
+      "LogsLog": "로그",
+      "LogsConfiguration": "구성",
+      "DrawEffects": "그리기 효과",
+      "DrawInteraction": "상호작용 및 제스처",
       "OperationModeSection": "조작 모드",
       "IconArrangementSection": "아이콘 배치",
       "AnimationSection": "애니메이션",
@@ -697,9 +705,9 @@
     "Draw":
     {
       "N": "그리기",
+      "WhiteboardSection": "화이트보드",
       "General":
       {
-        "N": "일반",
         "MultiTouch":
         {
           "N": "여러 손가락으로 그리기",
@@ -942,7 +950,6 @@
     },
     "Position":
     {
-      "N": "위치",
       "DesktopSection": "바탕 화면",
       "PptSection": "프레젠테이션",
       "WhiteboardSection": "화이트보드",
