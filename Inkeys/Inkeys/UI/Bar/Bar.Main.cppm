@@ -572,6 +572,7 @@ private:
 	BarUiShapeClass auxiliaryHintSurface_;
 	BarUiWordClass auxiliaryHint_;
 	bool auxiliaryHintVisible_ = false;
+	BarUiSVGClass pinBadge_; // 直线/箭头类别右上角的固定标记。
 	BarUiShapeClass surface_, scrollRail_, scrollThumb_;
 	BarUiValueClass width_{0}, height_{0}, viewportHeight_{0}, scroll_{0};
 	// worker只发布滚动意图；共享动画值由唯一render owner推进。

@@ -175,8 +175,10 @@ bool BarConstructionPrompt::Advance(BarUISetClass& owner,std::shared_ptr<const S
 	const double targetWidth=targetChrome+desiredTextWidth;
 	const double targetLeft=(std::clamp)((anchorLeft+anchorRight-targetWidth)/2,workLeft+5,(std::max)(workLeft+5,workRight-targetWidth-5));
 	const double workTop=(workArea.top-origin.y)/zoom-rigidY,workBottom=(workArea.bottom-origin.y)/zoom-rigidY;
-	const double above=anchorTop-targetHeight-5;
-	const double targetTop=(std::clamp)(above>=workTop+5?above:anchorBottom+5,workTop+5,(std::max)(workTop+5,workBottom-targetHeight-5));
+	// 与居中底栏提示相同的嵌入深度：提示条半高压入主栏边缘；空间不足翻到主栏下方时同样向上压入。
+	const double embed=BarBottomDockIndicatorHeightDip/2;
+	const double above=anchorTop+embed-targetHeight;
+	const double targetTop=(std::clamp)(above>=workTop+5?above:anchorBottom-embed,workTop+5,(std::max)(workTop+5,workBottom-targetHeight-5));
 	if(opening&&hidden){left_.SetDirect(targetLeft);top_.SetDirect(targetTop);}
 	else{left_.SetTar(targetLeft,.4);top_.SetTar(targetTop,.4);}advance(left_);advance(top_);
 	Frame next;next.identity=snapshot?snapshot->identity:frame_.identity;next.zoom=zoom;

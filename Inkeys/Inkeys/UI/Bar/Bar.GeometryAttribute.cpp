@@ -276,6 +276,8 @@ void BarGeometryAttributePanel::Initialize()
 	auxiliaryHintSurface_.enable.Initialization(true); auxiliaryHintSurface_.pct.SetDirect(BarDrawAttributeSurfaceOpacity);
 	auxiliaryHint_.Initialization(0, 0, 0, 0, L"", 12, GetThemeColor(BarThemeColorEnum::TextPrimary));
 	auxiliaryHint_.enable.Initialization(true); auxiliaryHint_.pct.SetDirect(1);
+	pinBadge_.Initialization(0, 0, GetThemeColor(BarThemeColorEnum::TextPrimary), GetThemeColor(BarThemeColorEnum::TextPrimary));
+	pinBadge_.enable.Initialization(true); pinBadge_.InitializationFromResource(L"UI", L"barStatusPin");
 	initialized_ = true;
 }
 
@@ -789,7 +791,7 @@ void BarGeometryAttributePanel::Draw(BarUIRendering& renderer, ID2D1DeviceContex
 	if (!initialized_ || !frame_.visible) return;
 	if (deviceGeneration_ != renderer.GetDeviceGeneration())
 	{
-		for (auto& b : buttons_) b->icon.ResetCache(); deviceGeneration_ = renderer.GetDeviceGeneration();
+		for (auto& b : buttons_) b->icon.ResetCache(); pinBadge_.ResetCache(); deviceGeneration_ = renderer.GetDeviceGeneration();
 	}
 	renderer.PushPanelOpacity(context, PixelRect(frame_.panel, frame_.zoom), frame_.opacity);
 	renderer.SetFrameDiffuseMaskGeometryScale(1 / frame_.pose.scale);
@@ -821,6 +823,18 @@ void BarGeometryAttributePanel::Draw(BarUIRendering& renderer, ID2D1DeviceContex
 					cx + diameter / 2, cy + width / 2), width / 2, width / 2), brush);
 				dc->SetTransform(original);
 				return true;
+			};
+		}
+		if (i < CategoryCount && (ShapeCategoryCatalog()[i].preset == PresetKind::Line || ShapeCategoryCatalog()[i].preset == PresetKind::Arrow))
+		{
+			// 直线/箭头选中后保持工具可连续绘制：右上角固定标记跟随图标颜色、透明度与按压缩放。
+			options.content = [&](BarUIRendering& r, ID2D1DeviceContext* dc, BarButtonClass& button, const BarButtonVisualInheritance& inh)
+			{
+				const double scale = frame_.pose.scale, d = 10 * scale;
+				pinBadge_.w.SetDirect(d); pinBadge_.h.SetDirect(d); pinBadge_.pct.SetDirect(button.icon.pct.val);
+				if (button.icon.color1 && pinBadge_.color1) pinBadge_.color1->SetDirect(button.icon.color1->val);
+				if (button.icon.color1 && pinBadge_.color2) pinBadge_.color2->SetDirect(button.icon.color1->val);
+				return r.Svg(dc, pinBadge_, pinBadge_.UpInh({inh.button.x + button.button.w.val - 4 * scale - d, inh.button.y + 4 * scale}));
 			};
 		}
 		DrawBarButtonVisual(renderer, context, b, BarUiInheritClass(b.button.inhX, b.button.inhY), options);

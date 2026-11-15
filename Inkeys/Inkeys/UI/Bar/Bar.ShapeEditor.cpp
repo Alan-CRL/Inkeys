@@ -1902,8 +1902,9 @@ namespace Inkeys::UI::Bar
 					dc->GetTransform(&original);
 					dc->SetTransform(visual.transform * original);
 					if (auto* brush = renderer.ContentSolidBrush(accent, 1.0)) dc->DrawRoundedRectangle(visual.rounded, brush, visual.thickness);
-					// 没有整体缩放柄的平面图形也使用相同角标，仅补视觉不扩大命中。
-					if(!std::any_of(snapshot->handles.begin(),snapshot->handles.end(),[](const auto& h){return h.kind==EditHandleKind::Scale;})) {
+					// 没有整体缩放柄时，仅四角可直接拖动的矩形类补相同角标；椭圆等不支持四角拖动的图形只画外框。
+					const auto framePreset=EditorPreset(object);
+					if((framePreset==PresetKind::Rectangle||framePreset==PresetKind::RoundedRectangle)&&!std::any_of(snapshot->handles.begin(),snapshot->handles.end(),[](const auto& h){return h.kind==EditHandleKind::Scale;})) {
 						const auto& r=visual.rounded.rect; const FLOAT radius=(std::min)({visual.rounded.radiusX,(r.right-r.left)/2,(r.bottom-r.top)/2});
 						if(auto* path=BracketGeometry(dc,radius)) for(unsigned i=0;i<4;++i) {
 							const bool left=i==0||i==3,top=i<2; dc->SetTransform(D2D1::Matrix3x2F(left?1.f:-1.f,0,0,top?1.f:-1.f,left?r.left:r.right,top?r.top:r.bottom)*visual.transform*original);

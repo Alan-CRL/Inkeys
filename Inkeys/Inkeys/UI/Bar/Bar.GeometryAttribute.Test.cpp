@@ -1364,7 +1364,9 @@ namespace Inkeys::UI::Bar
 			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
 			const auto currentMain=owner.shapeMap[BarUISetShapeEnum::MainBar];
 			const EraserAttributeRect mainRect{currentMain->inhX,currentMain->inhY,currentMain->inhX+currentMain->w.val,currentMain->inhY+currentMain->h.val};
-			expect(Intersect(frame.panel,mainRect).Width()==0&&frame.panel.bottom+5<=mainRect.top+.01,"prompt remains five DIP above visible main bar");
+			const auto anchorRoot=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+			const double visibleTop=(std::min)(static_cast<double>(anchorRoot->inhY),static_cast<double>(mainRect.top));
+			expect(frame.panel.bottom>mainRect.top&&std::abs(frame.panel.bottom-(visibleTop+BarBottomDockIndicatorHeightDip/2))<.01,"prompt embeds into visible main bar by the bottom dock indicator depth");
 			const auto before=GetStateModeVersionedSnapshot();BarGeometryAttributeTestAccess::PromptFocus(owner.constructionPrompt,-1);
 			promptKey(VK_TAB,true,false);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==0,"Tab starts at first enabled action");
 			promptKey(VK_TAB,true,false);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==3,"Tab skips disabled Forward and reaches Cancel before Complete");
@@ -1416,7 +1418,7 @@ namespace Inkeys::UI::Bar
 		const auto belowPrompt=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
 		const auto topRoot=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
 		const auto topMain=owner.shapeMap[BarUISetShapeEnum::MainBar];
-		expect(belowPrompt.panel.top>=(std::max)(topRoot->inhY+topRoot->h.val,topMain->inhY+topMain->h.val)+4.99,"insufficient room above places prompt five DIP below visible bar");
+		expect(std::abs(belowPrompt.panel.top-((std::max)(topRoot->inhY+topRoot->h.val,topMain->inhY+topMain->h.val)-BarBottomDockIndicatorHeightDip/2))<.01,"insufficient room above flips prompt below and embeds it into visible bar");
 		BarGeometryAttributeTestAccess::Display(owner,460,420,192);owner.barStyle.configZoom=1;sceneTick(120);
 		const auto compact=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
 		expect(compact.visible&&compact.input,"restricted workspace prompt settles and accepts input");

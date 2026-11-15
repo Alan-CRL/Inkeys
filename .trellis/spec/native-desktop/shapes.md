@@ -44,7 +44,7 @@
 
 - 仅刚完成的Shape自动进入编辑，不搜索/重选旧对象，普通墨迹不进入。多接触全部结束后采用最后真实Up的完成对象；空白下一笔直接沿画布创建。原`selectionMode`仍是电脑交互模式，不得改成对象选择开关。
 - 绘制线程唯一持有`ConstructionSession`/`EditSession`与文档，UI通过`Draw3.ShapeInteraction.h`取不可变快照、发带身份意图。会话、对象/页面、工作区、文档、显示代次均须校验。手势Down身份被冻结；Preview更换revision后仍用同一身份Commit；独立属性/Back/Complete必须匹配当前代次。取消屏障在活动接触期间也须生效，不能等最后Up提交后才处理。
-- SelectionOverlay由Window Service及已有RenderPipeline/Bar worker管理，处于Drawpad之上、Bar之下，与PPT同层；没有独立窗口线程或RTS。按成功呈现的Frame命中，零alpha热区的44DIP触达须有原生输入支撑。控制点为共享 `DrawBarSliderThumb` 的 WinUI3 Thumb（外径20DIP，内芯12/14/10，中心类点8/10/6），旋转钮外径28DIP、距 frameRect 顶边24DIP、1.5DIP连接线；外框为 frameRect 上的2DIP、r6 圆角框；立体外框角缩放点画成沿圆角的L形角标（4/5DIP）。热区至少44DIP且不可见（alpha≤1）；优先旋转，其次专属点与外框角标取最近者（相等取专属点），最后对象本体。视觉细节以 `11-05-shape-ux-edit-visual/design.md` 为准。
+- SelectionOverlay由Window Service及已有RenderPipeline/Bar worker管理，处于Drawpad之上、Bar之下，与PPT同层；没有独立窗口线程或RTS。按成功呈现的Frame命中，零alpha热区的44DIP触达须有原生输入支撑。控制点为共享 `DrawBarSliderThumb` 的 WinUI3 Thumb（外径20DIP，内芯12/14/10，中心类点8/10/6），旋转钮外径28DIP、距 frameRect 顶边24DIP、1.5DIP连接线；外框为 frameRect 上的2DIP、r6 圆角框；立体外框角缩放点画成沿圆角的L形角标（4/5DIP）；平面图形仅矩形/圆角矩形（四角有真实顶点）补同款装饰角标，椭圆、圆、多边形等不支持四角拖动的只画外框（第八轮）。热区至少44DIP且不可见（alpha≤1）；优先旋转，其次专属点与外框角标取最近者（相等取专属点），最后对象本体。视觉细节以 `11-05-shape-ux-edit-visual/design.md` 为准。
 - 浮条复用标准按钮/独立SingleRow属性list及既有调色内容，只改当前对象；进入主栏工具配置结束编辑。三档宽度来自已有策略；不引入细调滑块/数字框/复制删除翻转组合。小工作区采用受限可滚动扩展区，保持按钮尺寸。主栏自身图形目录、属性list、底部5DIP留白不变。
 - 多笔创建首笔冻结工具/样式/ID/显示上下文，真实Up确认参数，预测只重建当前未确认步骤。中间态不入InkCanvas/历史/L2持久层。固定两步最后Up自动提交；折线至少2点、多边形至少3个有效简单多边形顶点后Complete闭合，首点不重复保存。Cancel/Fatal未完成步骤不能物化成圆或矩形降级对象。
 - 主栏提示是Bar场景的独立状态，复用原居中提示位置/外观/动画，包含必要Complete/Back/Forward/Cancel；不得覆盖原bottomDockIndicator状态或新增HWND。全局Undo/Redo在构造中执行Back/Forward，结束后恢复文档Undo/Redo。
@@ -71,7 +71,7 @@
 - 标准按钮应先加载SVG并启用，再Configure公共布局；否则icon槽可保持0宽高。StandardOneOne默认没有文字槽，3–14边数需明确启用正常字体/尺寸的文字槽。控件使用BarButtonPressScale/PressCurve/ReleaseCurve，不能另写局部按压比例。
 - Shape颜色为0xRRGGBB，UI调色组件/ContentSolidBrush使用COLORREF，跨适配层显式转换。ContentSolidBrush返回共享缓存画刷：取下一种颜色前须完成上一种绘制，不能保存两个同源指针后才Fill/Stroke。选中沿用已有colorSelect徽标而非修改共享资源。
 - 离屏fixture必须像生产一样每次呈现前Ensure当前bounds的device resources，并核ULW receipt与target像素尺寸；打开扩展区后沿用旧target会把颜色/文字裁掉。成功alpha/几何命中不证明SVG或文字可见，须检查实际内容像素并有空白/选中底块负例。固定颜色SVG的抗锯齿测试采用资源自身的真实背景，不能拿父按钮底色套混色公式。
-- 构造提示沿原pill水平锚点，但新面板高度不等于旧12pt提示高度；正常工作区须按实际panelHeight留主栏上方5DIP间距，不能直接沿旧pill的top/center混用产生重叠。小空间动作正常尺寸换行，参数扩展区可滚动。
+- 构造提示沿原pill水平锚点，按实际panelHeight定位；第八轮起与居中底栏提示同深度嵌入主栏：提示底边压入主栏可见上边 `BarBottomDockIndicatorHeightDip/2`（15DIP），上方空间不足翻到下方时顶边同样向上压入。提示在主栏窗口 `barDeviceContext` 中绘制、指针先于主栏处理，覆盖区由提示独占。小空间动作正常尺寸换行，参数扩展区可滚动。
 
 ## 编辑焦点层与预览合并（2026-11-05，11-05-shape-ux-edit-performance）
 
