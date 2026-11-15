@@ -44,7 +44,7 @@ namespace Inkeys::UI::SelectionOverlay
 		{
 			std::vector<NativeContact> contacts;
 			NativeKind kind=NativeKind::None;
-			bool body=false;
+			bool body=false, preserveTrajectory=false;
 			bool Has(std::uint64_t source,std::uint32_t id) const
 			{return std::any_of(contacts.begin(),contacts.end(),[&](const auto& c){return c.source==source&&c.id==id;});}
 			bool CanBegin(NativeKind input,std::uint64_t source,std::uint32_t id,bool occupied,bool bodyHit) const
@@ -55,7 +55,7 @@ namespace Inkeys::UI::SelectionOverlay
 			{if(contacts.empty()){kind=input;body=bodyHit;}contacts.push_back({source,id});}
 			bool End(std::uint64_t source,std::uint32_t id)
 			{if(!Has(source,id))return false;std::erase_if(contacts,[&](const auto& c){return c.source==source&&c.id==id;});return contacts.empty();}
-			void Clear(){contacts.clear();kind=NativeKind::None;body=false;}
+			void Clear(){contacts.clear();kind=NativeKind::None;body=false;preserveTrajectory=false;}
 		};
 		NativeContactRouting nativeRouting;
 		bool releasingCapture=false;
@@ -177,6 +177,8 @@ namespace Inkeys::UI::SelectionOverlay
 				if(nativeRouting.contacts.empty())
 				{
 					nativeRouting.kind=kind;nativeRouting.body=body;nativeTicket=nextTicket++;keyboardForeground=GetForegroundWindow();
+					// 位置编辑只需最新坐标；角度和可加入多指的本体保留有序轨迹，避免三维逐点重建积压。
+					nativeRouting.preserveTrajectory=target->PreservePointerTrajectory(point)||(kind==NativeKind::Touch&&body);
 					// Pointer 自带接触捕获；共用鼠标捕获只维护同一窗口手势生命周期。
 					SetCapture(hwnd);if(GetCapture()!=hwnd){ReleaseNative(hwnd);return false;}
 				}
@@ -186,7 +188,7 @@ namespace Inkeys::UI::SelectionOverlay
 			Bar::SurfaceInputEvent e;e.window=hwnd;e.message=message;e.screenPoint=point;e.generation=lifecycle.load();
 			e.contactSource=source;e.contactId=id;e.touch=kind==NativeKind::Touch;e.pen=kind==NativeKind::TouchPen||kind==NativeKind::PointerPen;
 			e.inputSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-			e.captureTicket=nativeTicket;e.captureOwned=true;e.preserveMoveSamples=true;e.presentedRevision=target->PresentedGeneration();
+			e.captureTicket=nativeTicket;e.captureOwned=true;e.preserveMoveSamples=nativeRouting.preserveTrajectory;e.presentedRevision=target->PresentedGeneration();
 			if(!Bar::SubmitSurfaceInput(e)){CancelNative(hwnd);return false;}
 			if(up)
 			{

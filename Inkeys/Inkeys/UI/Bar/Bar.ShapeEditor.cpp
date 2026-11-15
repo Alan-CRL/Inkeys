@@ -655,6 +655,8 @@ namespace Inkeys::UI::Bar
 		ShapeUiIdentity gestureIdentity;
 		Vec2 down, pointerOffset{};
 		unsigned handleDockSide = 0;
+		std::optional<float> dockDeterminant;
+		float dockTangentSign = 1;
 		Vec2 handleDock{}, handleTangent{1,0}, handleEdge{}, dockFitOffset{};
 		std::uint32_t handle = 0;
 		std::function<void(const ShapeUiAction&)> actionSink;
@@ -1021,7 +1023,7 @@ namespace Inkeys::UI::Bar
 			{
 				handles.clear();
 				initialized = false;
-				toolbarBelow = true; handleDockSide = 0;
+				toolbarBelow = true; handleDockSide = 0; dockDeterminant.reset(); dockTangentSign = 1;
 				memberWanted.fill(false); dividerWanted.fill(false);
 				memberBatch.Restart(0);
 				toolbarMotion = {}; paletteMotion = {}; sidesMotion = {}; pickerMotion = {};
@@ -1131,7 +1133,8 @@ namespace Inkeys::UI::Bar
 			std::array<bool, Count> wanted{};
 			for (unsigned id : ToolbarItems) if (id)
 			{
-				wanted[id] = id == Color || id == Finish || id == FlipHorizontal || id == FlipVertical || (id >= Style && id<Pattern && showStyle) || (id >= Pattern && id<Sides && showStroke)
+				// 圆在任意平面角度下镜像外观不变；其余预设保留屏幕轴翻转。
+			wanted[id] = id == Color || id == Finish || ((id == FlipHorizontal || id == FlipVertical) && preset != PresetKind::Circle) || (id >= Style && id<Pattern && showStyle) || (id >= Pattern && id<Sides && showStroke)
 					|| (id == SidesEntry && capabilities.regularSides) || (id >= Aux && id<Aux+3 && showStroke && (SupportedAuxiliary(preset)&AuxiliaryBits[id-Aux]) != Auxiliary::None)
 					|| (id >= TriangleMode && id<TriangleMode+3 && preset == PresetKind::Triangle) || (id == TrapezoidMode && (preset == PresetKind::Trapezoid || preset == PresetKind::Prism || preset == PresetKind::Pyramid));
 				buttons[id]->hide = !wanted[id];
@@ -1246,13 +1249,32 @@ namespace Inkeys::UI::Bar
 					const double x=centers[side].x+snapshot->canvasOriginX,y=centers[side].y+snapshot->canvasOriginY;
 					overflow[side]=(std::max)(0.,work.left+rx-x)+(std::max)(0.,x+rx-work.right)+(std::max)(0.,work.top+ry-y)+(std::max)(0.,y+ry-work.bottom);
 				}
+				const auto& transform=object.transform;
+				const float determinant=transform.m11*transform.m22-transform.m12*transform.m21;
+				if(!dockDeterminant && determinant<0) {
+					// 重开镜像对象没有上一帧可参考，仍从屏幕上侧开始，而非镜像后的局部顶边。
+					for(unsigned side=1;side<4;++side) if(centers[side].y<centers[handleDockSide].y) handleDockSide=side;
+					const auto tangent=tangents[handleDockSide];
+					dockTangentSign=tangent.x<0 || (tangent.x==0 && tangent.y<0) ? -1.f : 1.f;
+				}
+				if(dockDeterminant && determinant*(*dockDeterminant)<0) {
+					// 镜像的是图形，不是编辑器：选靠近原控件的框边，并保持两个按钮的朝向顺序。
+					unsigned nearest=0; float distance=std::numeric_limits<float>::max();
+					for(unsigned side=0;side<4;++side) {
+						const float d=std::hypot(centers[side].x-previousDock.x,centers[side].y-previousDock.y);
+						if(d<distance) {nearest=side;distance=d;}
+					}
+					handleDockSide=nearest;
+					dockTangentSign=tangents[nearest].x*previousTangent.x+tangents[nearest].y*previousTangent.y<0 ? -1.f : 1.f;
+				}
+				dockDeterminant=determinant;
 				if(!tracking && pressedHandle==UINT32_MAX && overflow[handleDockSide]>0) {
 					unsigned best=handleDockSide; double distance=0;
 					for(unsigned side=0;side<4;++side) { const double d=std::hypot(centers[side].x-centers[handleDockSide].x,centers[side].y-centers[handleDockSide].y);
 						if(overflow[side]<overflow[best] || (overflow[side]==overflow[best] && d<distance)) {best=side;distance=d;} }
 					handleDockSide=best;
 				}
-				handleDock=centers[handleDockSide];handleTangent=tangents[handleDockSide];handleEdge=edges[handleDockSide];
+				handleDock=centers[handleDockSide];handleTangent={tangents[handleDockSide].x*dockTangentSign,tangents[handleDockSide].y*dockTangentSign};handleEdge=edges[handleDockSide];
 				if(tracking || pressedHandle!=UINT32_MAX) {handleDock.x+=dockFitOffset.x;handleDock.y+=dockFitOffset.y;} else dockFitOffset={};
 				if(!tracking && pressedHandle==UINT32_MAX && overflow[handleDockSide]>0) {
 					const float rx=static_cast<float>((10+(dockCapsule?10*std::abs(handleTangent.x):0))*scale),ry=static_cast<float>((10+(dockCapsule?10*std::abs(handleTangent.y):0))*scale);
@@ -1408,7 +1430,9 @@ namespace Inkeys::UI::Bar
 			next.snapshot = snapshot; next.geometry = geometry; next.bounds = bounds; next.work = work; next.mainBar = bar; next.scale = scale;
 			next.widths = widths; next.opacity = toolbarMotion.Opacity();
 			next.visible = toolbarMotion.Visible() || editOpacity.val>.000001;
-			next.input = requestedVisible && !toolbarMotion.Active() && toolbarMotion.Opacity()>.99 && editOpacity.IsSame();
+			// 已呈现的圆点立即可拖；浮条的入场动画不能把首个按下漏给画布。
+			next.input = requestedVisible && editOpacity.val>.000001;
+			const bool toolbarInput = !toolbarMotion.Active() && toolbarMotion.Opacity()>.99 && editOpacity.IsSame();
 			next.darkTone = darkTone; next.pickerBelow = pickerBelow;
 			next.paletteLayer = paletteMotion.Visible(); next.sidesLayer = sidesMotion.Visible(); next.pickerLayer = pickerMotion.Visible();
 			next.panelOpacity = {toolbarMotion.Opacity(), sidesMotion.Opacity(), paletteMotion.Opacity(), pickerMotion.Opacity()};
@@ -1464,7 +1488,7 @@ namespace Inkeys::UI::Bar
 				next.buttons[id].boundsDip = EditorRect(poses[panel].Apply(EditorRect(next.buttons[id].boundsDip)));
 				next.buttons[id].visible = next.visible && !p.hide.load();
 				const bool panelInput = panel == 1 ? openSides && !sidesMotion.Active() : panel == 2 ? openColor && !paletteMotion.Active() && !next.pickerLayer : panel == 3 ? openPicker && !pickerMotion.Active() : !next.paletteLayer && !next.sidesLayer;
-				next.buttons[id].enabled &= wanted[id] && next.input && panelInput;
+				next.buttons[id].enabled &= wanted[id] && next.input && toolbarInput && panelInput;
 				if (!panel) rowStable &= x[id].IsSame() && y[id].IsSame() && p.icon.pct.IsSame() && p.name.pct.IsSame();
 			}
 			for (unsigned id : ToolbarItems) if (id) next.buttons[id].enabled &= rowStable;
@@ -3137,6 +3161,27 @@ namespace Inkeys::UI::Bar
 				if(r!=hs.end()&&m!=hs.end())expect(std::abs((m->position.x-r->position.x)*t.y-(m->position.y-r->position.y)*t.x)<.01,"capsule halves follow selected edge tangent");
 				scene.impl_->handleDockSide=0;now+=std::chrono::milliseconds(17);scene.Advance(now);expect(SUCCEEDED(present()),"restore top control after docking regression");scene.CommitPresented();
 			}
+			if ((preset==PresetKind::Rectangle || preset==PresetKind::Cube || preset==PresetKind::Cylinder) && scale==1 && dark && std::wstring(language)==L"zh-CN") {
+				// 通过真实镜像对象重建并呈现，覆盖单按钮、胶囊及撤回后的停靠。
+				const auto originalDock=scene.impl_->handleDock,originalTangent=scene.impl_->handleTangent;
+				for(bool horizontal:{false,true}) {
+					const auto mirrored=FlipShape(*snapshot->object,horizontal,snapshot->object->revision+1,{scale,.25f});
+					expect(mirrored.has_value(),"dock fixture mirrors actual shape");if(!mirrored)continue;
+					auto next=std::make_shared<ShapeUiSnapshot>(*snapshot);next->object=*mirrored;++next->identity.generation;
+					next->handles=BuildEditHandles(*next->object,{scale,.25f},&next->frameRect);
+					scene.Configure(next,work,{});for(int i=0;i<30;++i){now+=std::chrono::milliseconds(17);scene.Advance(now);}
+					expect(SUCCEEDED(present()),"mirrored dock frame renders");scene.CommitPresented();
+					expect(std::hypot(scene.impl_->handleDock.x-originalDock.x,scene.impl_->handleDock.y-originalDock.y)<.1,"mirror keeps top controls on original screen edge");
+					expect(scene.impl_->handleTangent.x*originalTangent.x+scene.impl_->handleTangent.y*originalTangent.y>.99,"mirror keeps capsule button order");
+					ShapeEditorSurface reopened;
+					for(int i=0;i<30;++i){reopened.Configure(next,work,{});now+=std::chrono::milliseconds(17);reopened.Advance(now);}
+					expect(std::hypot(reopened.impl_->handleDock.x-originalDock.x,reopened.impl_->handleDock.y-originalDock.y)<.1,"reopening mirrored object starts controls on screen top");
+					if(preset==PresetKind::Rectangle) expect(reopened.impl_->handleTangent.x*originalTangent.x+reopened.impl_->handleTangent.y*originalTangent.y>.99,"reopening mirrored object retains capsule order along its docked edge");
+					scene.Configure(snapshot,work,{});for(int i=0;i<30;++i){now+=std::chrono::milliseconds(17);scene.Advance(now);}
+					expect(SUCCEEDED(present()),"undo mirrored dock renders");scene.CommitPresented();
+					expect(std::hypot(scene.impl_->handleDock.x-originalDock.x,scene.impl_->handleDock.y-originalDock.y)<.1,"undo mirror retains top controls");
+				}
+			}
 			if (preset==PresetKind::Rectangle && scale==1 && dark && std::wstring(language)==L"zh-CN") {
 				const auto h=scene.impl_->presented.visualHandles.back(); const POINT point{snapshot->canvasOriginX+static_cast<LONG>(h.position.x),snapshot->canvasOriginY+static_cast<LONG>(h.position.y)};
 				const RECT main{point.x-30,point.y-30,point.x+30,point.y+30};
@@ -3499,21 +3544,48 @@ namespace Inkeys::UI::Bar
 			const auto visibleHandles = scene.impl_->presented.visualHandles;
 			for (const auto& h : visibleHandles)
 			{
-				POINT screen{snapshot->canvasOriginX+static_cast<LONG>(h.position.x), snapshot->canvasOriginY+static_cast<LONG>(h.position.y)};
+				// 每个控件都从权威原形独立起步，不能让前一柄的局部预览污染后续命中。
+				scene.CancelPointer();
+				// 模拟 Draw3 的终态确认；Up 后正常保留的 localPending 只在新权威代次交还。
+				snapshot=std::make_shared<ShapeUiSnapshot>(*snapshot); ++snapshot->identity.generation;
+				scene.Configure(snapshot,work,{});
+				now+=std::chrono::milliseconds(17); scene.Advance(now);
+				expect(SUCCEEDED(present()),"each handle restores its original presented shape"); scene.CommitPresented();
+				const auto& currentHandles=scene.impl_->presented.visualHandles;
+				const auto current=std::find_if(currentHandles.begin(),currentHandles.end(),[&](const auto& v){return v.id==h.id;});
+				expect(current!=currentHandles.end(),"restored shape keeps every dedicated handle");
+				if(current==currentHandles.end()) continue;
+				POINT screen{snapshot->canvasOriginX+static_cast<LONG>(std::lround(current->position.x)), snapshot->canvasOriginY+static_cast<LONG>(std::lround(current->position.y))};
 				const auto hit = scene.Hit(screen);
 				expect(hit.occupied, "every current handle can receive input");
+				const bool requiredCorner=h.kind==EditHandleKind::Scale || preset==PresetKind::Rectangle && h.kind==EditHandleKind::Vertex;
+				const bool solidBase=preset>=PresetKind::Cuboid && preset<=PresetKind::Pyramid && h.id==1001;
+				if(requiredCorner||solidBase) expect(hit.handle==h.id&&!hit.body,"each scale corner and solid base must win over body hit");
 				if (hit.handle != h.id) continue;
+				if (preset >= PresetKind::Cuboid && preset <= PresetKind::Pyramid)
+					expect(!scene.PreservePointerTrajectory(screen),"solid position and base Z controls permit latest-position coalescing");
 				// 相邻44DIP区域按优先级选最近点。
 				actions.clear();
-				scene.Pointer(WM_LBUTTONDOWN, screen, true);
-				scene.Pointer(WM_MOUSEMOVE, {screen.x+7, screen.y-4}, true);
-				scene.Pointer(WM_LBUTTONUP, {screen.x+7, screen.y-4}, true);
+				scene.Contact(WM_LBUTTONDOWN, screen, 71, 1, true, false, 1., true, scene.PresentedGeneration());
+				scene.Contact(WM_MOUSEMOVE, {screen.x+7, screen.y-4}, 71, 1, true, false, 1.02, true, scene.PresentedGeneration());
+				scene.Contact(WM_LBUTTONUP, {screen.x+7, screen.y-4}, 71, 1, true, false, 1.04, true, scene.PresentedGeneration());
 				expect(actions.size() == 3 && actions.front().kind == ShapeUiActionKind::BeginEdit
 					&& actions.back().kind == ShapeUiActionKind::CommitEdit, "one handle drag emits begin preview and one commit");
 				if (actions.size() == 3) expect(actions[0].identity == actions[2].identity && actions[2].point.x-actions[0].down.x == 7,
 					"gesture keeps observed identity and document coordinates");
-				break;
+				if(requiredCorner||solidBase) {
+					expect(actions.size()==3&&actions.front().handleId==h.id&&!actions.back().gestureTransform,
+						"every corner and solid base stays in its dedicated edit transaction");
+					expect(scene.impl_->localSnapshot&&scene.impl_->localSnapshot->object
+						&&(scene.impl_->localSnapshot->object->geometry!=snapshot->object->geometry
+							||scene.impl_->localSnapshot->object->parts!=snapshot->object->parts),
+						"each corner and solid base drag changes geometry instead of only revision");
+				}
 			}
+			scene.CancelPointer(); snapshot=std::make_shared<ShapeUiSnapshot>(*snapshot); ++snapshot->identity.generation;
+			scene.Configure(snapshot,work,{});
+			now+=std::chrono::milliseconds(17); scene.Advance(now);
+			expect(SUCCEEDED(present()),"all-handle regression restores original presentation"); scene.CommitPresented();
 			const auto oldBounds = scene.Bounds();
 			snapshot = std::make_shared<ShapeUiSnapshot>(*snapshot);
 			snapshot->canvasOriginX -= 50;
@@ -3619,11 +3691,12 @@ namespace Inkeys::UI::Bar
 			actions.clear(); scene.impl_->Activate(Finish,scene.impl_->presented,{});
 			expect(actions.size()==1 && actions.back().kind==ShapeUiActionKind::CloseEditor && scene.impl_->memberWanted[Finish],"finish check is available and closes the current editor through the terminal action");
 			for (unsigned id : {FlipHorizontal,FlipVertical}) {
+				expect(scene.impl_->memberWanted[id] == (preset!=PresetKind::Circle),"only rotationally symmetric circle omits screen-axis flips");
 				actions.clear(); scene.impl_->Activate(id,scene.impl_->presented,{});
 				expect(actions.size()==1 && actions.back().kind==(id==FlipHorizontal ? ShapeUiActionKind::FlipHorizontal : ShapeUiActionKind::FlipVertical),"flip button publishes its distinct object action");
 				expect(!scene.impl_->buttons[id]->icon.svg.GetVal().empty(),"flip button uses embedded dedicated icon");
 			}
-			expect(scene.impl_->twoRows && scene.impl_->y[Finish].tar>scene.impl_->y[Color].tar && scene.impl_->x[Finish].tar>scene.impl_->x[FlipVertical].tar,"two-row toolbar places finish after both flips on the bottom row");
+			expect(scene.impl_->twoRows && scene.impl_->y[Finish].tar>scene.impl_->y[Color].tar && (preset==PresetKind::Circle || scene.impl_->x[Finish].tar>scene.impl_->x[FlipVertical].tar),"two-row toolbar places finish after both flips on the bottom row");
 			scene.ReleaseDeviceResources();
 			expect(SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch())), "editor device resources rebuild");
 			expect(SUCCEEDED(present()), "rebuilt resources still present actual SVG controls");
@@ -4235,6 +4308,19 @@ namespace Inkeys::UI::Bar
 				{
 					scene.Configure(state,{0,0,1400,1000},{}); now+=std::chrono::milliseconds(17); scene.Advance(now);
 					if(SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch())) && SUCCEEDED(scene.Present([](const auto&)->BOOL{return TRUE;}))) scene.CommitPresented();
+					if(i==3) {
+						// 首帧入场尚未结束时走真实 Contact，而非只验证稳定后的 Pointer。
+						expect(scene.impl_->toolbarMotion.Active(),"first corner regression runs while toolbar is entering");
+						const POINT start{200,200},end{180,175}; actions.clear();
+						expect(scene.Hit(start).handle==1000&&!scene.Hit(start).body,"visible first corner takes priority over interior during entry");
+						scene.Contact(WM_LBUTTONDOWN,start,51,1,true,false,.1,true,scene.PresentedGeneration());
+						scene.Contact(WM_MOUSEMOVE,end,51,1,true,false,.12,true,scene.PresentedGeneration());
+						scene.Contact(WM_LBUTTONUP,end,51,1,true,false,.14,true,scene.PresentedGeneration());
+						expect(actions.size()==3&&actions.front().handleId==1000&&actions.back().kind==ShapeUiActionKind::CommitEdit
+							&&!actions.back().gestureTransform,"first contact resizes the corner instead of starting body translation");
+						expect(scene.impl_->localSnapshot&&scene.impl_->localSnapshot->object!=state->object,"first visible corner drag changes the local shape");
+						scene.CancelPointer(); actions.clear();
+					}
 				}
 				expect(scene.Hit({340,350}).body && scene.Hit({480,350}).body,"unfilled rectangle interior is a movable editor region");
 				const auto send=[&](UINT message,POINT point,unsigned finger,double time,bool touch=true,bool pen=false)

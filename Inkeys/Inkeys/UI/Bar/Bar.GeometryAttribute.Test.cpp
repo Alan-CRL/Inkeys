@@ -8,6 +8,7 @@
 #include "../../../resource.h"
 #include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "Bar.ThemeMaterial.h"
+#include "../../Input/UiTouchRouting.h"
 #include <d2d1_1helper.h>
 #include <wincodec.h>
 #include <crtdbg.h>
@@ -648,6 +649,25 @@ namespace Inkeys::UI::Bar
 			return Intersect(crop,{double(mapping.workArea.left-receipt.destination.x),double(mapping.workArea.top-receipt.destination.y),double(mapping.workArea.right-receipt.destination.x),double(mapping.workArea.bottom-receipt.destination.y)});
 		};
 		auto fullyOnScreen = [&](EraserAttributeRect crop) { const auto visible=onScreen(crop); return std::abs(visible.Width()-crop.Width())<.01 && std::abs(visible.Height()-crop.Height())<.01; };
+		// 业务 Pointer 测试无法覆盖原生准入漏接；直接经过实际场景提交后的 Touch 探针。
+		auto checkTouchAdmission = [&](const GeometryAttributePresentation& presented)
+		{
+			using Inkeys::Input::UiPointer::Touch::Hit;
+			unsigned checked = 0;
+			for (const auto& button : presented.hits)
+			{
+				if (!button.visible || !button.enabled) continue;
+				const auto& r = button.boundsDip;
+				const auto rect = clientRect({r.left,r.top,r.right,r.bottom},presented);
+				if (!fullyOnScreen(rect)) continue;
+				const POINT screen{static_cast<LONG>(std::lround(EraserRectCenterX(rect)+receipt.destination.x)),
+					static_cast<LONG>(std::lround(EraserRectCenterY(rect)+receipt.destination.y))};
+				expect(owner.ProbeTouchScreen(screen).hit == Hit::Accept,"committed geometry controls pass native touch admission");
+				++checked;
+			}
+			expect(checked > 0,"touch admission covers visible geometry buttons");
+		};
+		checkTouchAdmission(owner.geometryAttribute.PresentationSnapshot());
 		auto pixel = [&](double x, double y)
 		{
 			const LONG px = static_cast<LONG>(std::floor(x)), py = static_cast<LONG>(std::floor(y));
@@ -687,6 +707,7 @@ namespace Inkeys::UI::Bar
 		std::array<unsigned,GeometryCategoryCount> futurePixelCases{};
 		auto checkFuturePixels = [&](const GeometryAttributePresentation& presented)
 		{
+			checkTouchAdmission(presented);
 			for (int i = 0; i < GeometryCategoryCount; ++i)
 			{
 				if (catalog[i].preset || catalog[i].category != presented.category) continue;

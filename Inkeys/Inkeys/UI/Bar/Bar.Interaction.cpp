@@ -2046,6 +2046,7 @@ namespace Inkeys::UI::Bar
 				&& previous.surface.semanticRevision == next.surface.semanticRevision
 				&& previous.surface.captureTicket == next.surface.captureTicket
 				&& previous.surface.contactId == next.surface.contactId && previous.surface.touch == next.surface.touch
+				&& previous.surface.contactSource == next.surface.contactSource && previous.surface.pen == next.surface.pen
 				&& previous.surface.wParam == next.surface.wParam;
 		},[registration](auto& admitted){
 			std::lock_guard lock(registration->callbackMutex);
@@ -2381,6 +2382,7 @@ namespace Inkeys::UI::Bar
 		struct Probe
 		{
 			unsigned down = 0, up = 0, cancelled = 0, logicalCancelled = 0, repeat = 0;
+			unsigned moves = 0; POINT lastPoint{};
 			std::uint64_t cancelledCaptureTicket=0,cancelledTouchRegistration=0,cancelledTouchRouteGeneration=0;
 			bool throwOnCancel=false;
 			bool held = false;
@@ -2390,6 +2392,7 @@ namespace Inkeys::UI::Bar
 		const auto handler = +[](const SurfaceInputEvent& input, void* opaque)
 		{
 			auto& probe = *static_cast<Probe*>(opaque);
+			if (input.message == WM_MOUSEMOVE) { ++probe.moves; probe.lastPoint=input.screenPoint; }
 			if (input.message == WM_LBUTTONDOWN)
 			{
 				++probe.down; probe.held = true;
@@ -2489,6 +2492,24 @@ namespace Inkeys::UI::Bar
 			for (const auto& probe : probes) check(probe.down == 1, "all-targets-progress-during-main-wait");
 			(void)PumpSharedInteraction(context, InteractionClock::now() + std::chrono::seconds(1));
 			for (const auto& probe : probes) check(probe.repeat == 1, "late-deadline-emits-once-without-render");
+			{
+				// 三维位置柄允许积压 Move 合并，但 Down/Up 和来源边界必须保留。
+				const auto saved=probes[3]; probes[3]={};
+				SurfaceInputEvent e; e.window=reinterpret_cast<HWND>(4); e.generation=7;
+				e.captureTicket=77; e.captureOwned=true; e.contactSource=55; e.contactId=3; e.touch=true;
+				e.message=WM_LBUTTONDOWN; check(SubmitSurfaceInput(e),"position-burst-down-admitted");
+				e.message=WM_MOUSEMOVE;
+				for(LONG x=1;x<=80;++x) { e.screenPoint={x,120}; check(SubmitSurfaceInput(e),"position-burst-move-admitted"); }
+				e.message=WM_LBUTTONUP; check(SubmitSurfaceInput(e),"position-burst-up-admitted");
+				(void)PumpSharedInteraction(context,InteractionClock::now());
+				check(probes[3].down==1&&probes[3].up==1&&!probes[3].held&&probes[3].moves==1&&probes[3].lastPoint.x==80,
+					"position-burst-coalesces-to-last-move-with-one-terminal");
+				e.message=WM_MOUSEMOVE; e.contactSource=56; (void)SubmitSurfaceInput(e);
+				e.contactSource=57; (void)SubmitSurfaceInput(e); e.pen=true; (void)SubmitSurfaceInput(e);
+				(void)PumpSharedInteraction(context,InteractionClock::now());
+				check(probes[3].moves==4,"surface-coalescing-keeps-source-device-and-pen-boundaries");
+				probes[3]=saved;
+			}
 			SurfaceInputEvent oldNativeCancel;oldNativeCancel.window=reinterpret_cast<HWND>(1);
 			oldNativeCancel.generation=7;oldNativeCancel.message=WM_CANCELMODE;oldNativeCancel.captureTicket=11;oldNativeCancel.nativeCaptureReleased=true;
 			SurfaceInputEvent nextContact=oldNativeCancel;nextContact.message=WM_LBUTTONDOWN;

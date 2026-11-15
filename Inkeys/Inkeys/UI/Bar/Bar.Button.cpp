@@ -2837,8 +2837,9 @@ void BarUISetClass::PreparePresentedButtonHits(const StateModeClass& stateMode)
 	// open 可能早于动画首帧：透明 hit 区只在所属表面已经实际呈现后准入。
 	const bool draw = barState.drawAttribute && !fold && SurfaceVisible(Shape::DrawAttributeBar);
 	const bool pen = stateMode.StateModeSelect == StateModeSelectEnum::IdtPen;
-	const bool geometry = barState.geometryAttribute && stateMode.StateModeSelect == StateModeSelectEnum::IdtShape
-		&& SurfaceVisible(Shape::GeometryAttributeBar);
+	const auto& geometryFrame = geometryAttribute.frame_;
+	const bool geometry = barState.geometryAttribute && !fold && stateMode.StateModeSelect == StateModeSelectEnum::IdtShape
+		&& geometryFrame.visible && geometryFrame.acceptsInput;
 	const bool eraser = barState.eraserAttribute, recall = barState.recallAttribute;
 	const bool moreOpen = barState.moreExpanded && !fold && SurfaceVisible(Shape::MorePanel);
 	const bool eraserMenu = barState.eraserSensitivityOpen;
@@ -2894,10 +2895,9 @@ void BarUISetClass::PreparePresentedButtonHits(const StateModeClass& stateMode)
 	for (const auto& button : barButtonSet.buttonList.Snapshot()) AddButton(button, !fold, TouchRegionSpace::Body);
 	AddShape(Shape::MainBar, !fold, true, TouchRegionSpace::Body);
 
-	AddShape(Shape::GeometryAttributeBar, geometry, true);
-	AddShapes({ Shape::GeometryAttributeBar_StraightLine, Shape::GeometryAttributeBar_Rectangle,
-		Shape::GeometryAttributeBar_ThicknessFine, Shape::GeometryAttributeBar_ThicknessMedium,
-		Shape::GeometryAttributeBar_ThicknessCoarse, Shape::GeometryAttributeBar_Close }, geometry);
+	// 独立面板与主栏同帧提交触摸准入，不能继续读取已经退役的透明 GeometryAttributeBar 控件。
+	// 退场/布局切换中的可见面板仍阻挡；具体按钮可用性由面板的已呈现快照裁决。
+	AddPanel(geometryFrame.panel, geometryFrame.pose.scale, geometryFrame.visible, geometry);
 	const bool popup = slider && (view == ThicknessViewMode::Slider || view == ThicknessViewMode::FineDial);
 	AddShape(Shape::DrawAttributeBar_ThicknessPreviewPopupSurface, popup && !(view == ThicknessViewMode::FineDial && rangeTransition), true);
 	if (slider && view == ThicknessViewMode::Slider)

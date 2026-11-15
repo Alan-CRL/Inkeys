@@ -545,6 +545,7 @@ public:
 	bool Active() const noexcept { return active_; }
 	bool WantsKeyboard() const noexcept { return visible_.load(); }
 private:
+	friend class BarUISetClass;
 	friend class BarGeometryAttributeTestAccess;
 	void Initialize();
 	void Execute(BarUISetClass& owner, int item, std::uint64_t revision, bool* accepted = nullptr);

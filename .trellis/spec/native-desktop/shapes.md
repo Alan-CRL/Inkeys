@@ -350,3 +350,36 @@ Good：两指缩放后首指抬起，余指无跳变继续平移，末指 Up 仅
 
 ### 7. Wrong vs Correct
 Wrong：`style.width=screenWidth`，每指各自 Begin/Commit，或直接把 predictedPoint 传进真实会话。Correct：`style.width=screenWidth/ShapeWidthScale(object)`，整组共享一个事务，预测会话复制后只发布临时几何。
+
+
+## 场景：第七轮可见控件与原生输入准入
+
+### 1. Scope / Trigger
+形状控件入场、几何面板触摸、预测拖动及镜像后 UI 停靠变更适用。
+
+### 2. Signatures
+`ShapeEditorSurface::Contact/Hit/PreservePointerTrajectory`、`SelectionOverlay::NativeContactRouting`、`BarUISetClass::PreparePresentedButtonHits/ProbeTouchScreen`、`SubmitSurfaceInput`。
+
+### 3. Contracts
+- 控制点已成功呈现且编辑层可见即可接纳首个 Down；浮条按钮的动画稳定门单独保留，不能把几何控件一起禁用。
+- 新几何面板须以同次呈现帧加入 TouchRegions，不能读取已退役旧控件；可见退场面板 Blocked，成功提交前不发布新命中。
+- 绝对位置控件可按同窗口、生命周期、捕获、来源、触点和呈现身份合并相邻 Move；Down/Up/Cancel 不合并。Angle/Rotate 的累计角及多指中心接触保留有序轨迹，预测不等于保留全部昂贵几何重建。
+- 圆省略两项翻转，其他预设保留；胶囊与移动钮独立于几何镜像保持屏幕停靠和左右顺序，实际旋转仍跟随框边。重新选中镜像对象也须确定屏幕上边。
+
+### 4. Validation & Error Matrix
+| 输入/状态 | 必须结果 |
+| --- | --- |
+| 首笔完成、入场未结束、触摸角点 | 首个 Down 即启动该角点编辑，非框内平移 |
+| 已呈现几何面板各类按钮 | 原生 Touch Probe 接纳，业务按原按钮执行 |
+| 同接触连续位置 Move | 旧位置合并，最新点与唯一 Up 保留 |
+| 不同 source/pen 或终态分隔 | 不跨身份/屏障合并 |
+| 翻转及重新选中 | 顶部控件不随镜像落底，胶囊不倒序 |
+
+### 5. Good/Base/Bad Cases
+Good：同一成功呈现帧验证原生准入和业务候选。Base：稳定鼠标点击/角度绕圈继续可用。Bad：只调用 Pointer，或只检测动作枚举便宣称实际控件和触摸正确。
+
+### 6. Tests Required
+入场期间真实 Contact；所有可操作 Scale/Vertex 控件的候选变化；真实队列绝对位置合并与绕圈保留；几何离屏各语言/DPI/停靠同帧 Touch Probe；镜像和重新选中。真实设备延迟另行验收，队列数量断言不等同实测时延。
+
+### 7. Wrong vs Correct
+Wrong：所有控件等待浮条动画完毕，所有拖动 preserveMoveSamples=true。Correct：控件可见性决定几何准入，按手势所需轨迹保留样本；绝对位置合并并保留可靠终态。
