@@ -510,3 +510,43 @@ User final device test accepted. Touch release decisions, bounded fallback, curs
 
 - 未来采用多线程动态绑定：旧Unadvise/Release被闸门阻塞时，新绑定仍可Active，且旧回调/命令/页码不污染新session；本轮未实现。
 - 同步清理阻塞仍待后续架构处理；两次结束放映后未响应需对应现场，不能视作已修复。
+
+
+## Session 187: 形状第十一轮收尾与合并 dev 前审阅
+<!-- trellis-session: v=2 fp=4bd19ade8d5c25b9 -->
+
+**Date**: 2026-11-15
+**Task**: 形状第十一轮收尾与合并 dev 前审阅
+**Branch**: `feature/shape`
+
+### Summary
+
+主栏触摸与鼠标同准入、手掌与图形规则、移除未要求的局部键盘操作，并归档整棵图形任务树
+
+### Main Changes
+
+- 删除主栏手写触摸名单；所有建笔失败释放 touch key；构造确认幂等
+- 手掌：构造中/编辑模式禁用，空闲多步工具可提升并取消本触点新建构造
+- 移除主栏/图形编辑/橡皮/撤回/取色器键盘与白板菜单 Esc；保留全局快捷键与 PPT 转发
+- Claude 规划/审阅，Codex gpt-6.1-sol High 审阅与实现
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b0f96e29` | refactor(shapes): unify bar touch admission and clean up before dev merge |
+| `3375f115` | chore(trellis): archive shape selection task tree |
+
+### Testing
+
+- [OK] InkeysRepo.sln 与 inkStrokeModelerTest.sln Debug|ARM64 构建通过
+- [OK] 7 组离屏测试 0 失败；headless whiteboard iconic 与 highlighter line 663 为 dev 既有失败
+- [OK] 实机验证通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 由用户开启 feature/shape -> dev PR
