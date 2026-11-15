@@ -397,18 +397,50 @@ Wrong：所有控件等待浮条动画完毕，所有拖动 preserveMoveSamples=
 ### 3. Contracts
 - 角标位于按钮外框右上内收 4DIP、直径 10DIP；`below` 0→1 在右上与右下之间插值（主栏 `primaryBar`，拖动中锁存）。显隐为 `progress`（默认操作时长一半，进场 EaseOutBack、离场 EaseInBack），以角标中心缩放并旋转（进场 -45°→0，离场 0→+45°）；旋转为独立 `angle` 动画值，仅自完全隐藏进场时直接设 -45°，中途反向从当前角度连续过渡；关闭动画直接终态。颜色/透明度跟随按钮图标；包络按旋转外接圆并入按钮 cull 与主栏 dirty。
 - 固定只属于当前选择，仅会话内：直线/箭头恒固定且不记手动位；长按其它类别选中并固定，已手动固定的同一类别再长按取消；换到其他图形即清除，同图形参数与临时切笔保留。主栏几何按钮在已选图形工具且固定时显示角标，固定位并入 styleKey。
-- 长按：可选择类别 Down 记录起点；交互 owner 在 0.5s 请求一次渲染，之后 render 按帧时间推进进度 `(t-.5)/1.5`；2.0s 由 owner 以 Down 时 revision 调用 `ToggleShapeToolPinIfRevision`。0.5s 前移出按钮/超过 5DIP 移动只中止长按（未离开按钮仍可短按）；进度环出现后任何中止都作废本次按下；取消/捕获丢失中止；进度环出现后未满抬起不选中不固定；Up 先于到期唤醒且已满 2.0s 时在 Up 内提交一次；完成后的 Up 不触发短按。提交被拒（revision 过期、面板/分类已变）时环不定格满格，按退出时间淡出；仓库无主动拒绝触觉，成功与被拒均不发长按触觉。
+- 长按：可选择类别 Down 记录起点；交互 owner 在 0.2s（第十轮由 0.5s 缩短）请求一次渲染，之后 render 按帧时间推进进度 `(t-.2)/.8`（由 HoldRingDelay/HoldCommitDelay 常量推导）；1.0s 由 owner 以 Down 时 revision 调用 `ToggleShapeToolPinIfRevision`。0.2s 前移出按钮/超过 5DIP 移动只中止长按（未离开按钮仍可短按）；进度环出现后任何中止都作废本次按下；取消/捕获丢失中止；进度环出现后未满抬起不选中不固定；Up 先于到期唤醒且已满 1.0s 时在 Up 内提交一次；完成后的 Up 不触发短按。提交被拒（revision 过期、面板/分类已变）时环不定格满格，按退出时间淡出；仓库无主动拒绝触觉，成功与被拒均不发长按触觉。
 - 进度环与页码加载环共用 `ButtonFrameRing`：边框内侧圆角路径、圆头、无轨道、IconPrimary；进度模式从顶边中点顺时针 0→整圈，不旋转，淡入淡出沿用 `PageLoadingStyle`。页码模式逐像素保持抽取前结果。环绘制失败只在本次长按内停止重试，新长按开始时（render 线程）清除失败标记并重置路径缓存。
 - `RestoreToolAfterShapeEditing`：当前图形已固定时不恢复入口工具且保留 `shapeReturnMode`（epoch/workspace 守卫不变）；取消固定后的下一次结束编辑恢复入口工具，下次进入几何会覆盖该记录。不新增 Draw3 ToolSpec/ProductVisualStyle 字段。
 
 ### 4. Validation & Error Matrix
 | 条件 | 结果 |
 | --- | --- |
-| 抬起 <0.5s | 原短按 |
-| 0.5–2.0s 抬起/移出/取消 | 不选中不固定，环淡出 |
-| 满 2.0s | 选中+固定/取消固定，Up 不短按 |
+| 抬起 <0.2s | 原短按 |
+| 0.2–1.0s 抬起/移出/取消 | 不选中不固定，环淡出 |
+| 满 1.0s | 选中+固定/取消固定，Up 不短按 |
 | 直线/箭头长按 | 选中，保持固定，无手动位 |
 | 过期 revision | 拒绝，不改工具；进度环停在当前进度并淡出 |
 
 ### 5. Tests Required
 `--shape-tool-state-test` 覆盖固定语义与编辑结束保持/恢复；`--ui3-geometry-attribute-test` 覆盖面板角标、长按中止/完成/取消/阈值、Up 不短按、进度环实际像素方向、页码环抽取逐像素一致、主栏角标进出场/倒转/包络/动画关闭与 render loop 发布倒转侧。真实触摸长按与主栏视觉须实机验收。
+
+## 第十轮：触摸构造、提示栏触摸、离散旋转与样式栏冻结（2026-11-15）
+
+### 1. Scope / Trigger
+修复触摸折线/自由多边形加点被吞、构造步骤提示栏无触摸；新增顺时针 45°/90° 旋转；样式栏操作后 3s 内不移位；长按固定缩短为 0.2s+0.8s。
+
+### 2. Signatures
+`draw3::shapes::RotateShape(before, radians, revision, options)`；`ShapeUiActionKind::Rotate45Clockwise/Rotate90Clockwise`；编辑器按钮 `Rotate45/Rotate90`（图标 `barShapeRotate45/90`，文案 `UI/Bar/GeometryAttributes/Rotate45Label/Rotate90Label`）；`ShapeEditorSurface::TickToolbarIdle(now)`；`BarConstructionPrompt::Pointer(..., bool* accepted)`。
+
+### 3. Contracts
+- 构造输入覆盖：SelectionOverlay 是按像素 alpha 收触摸的 ULW，原生覆盖必须与 `Hit()` 一致。构造期只覆盖顶点圆（22×scale），不得填包围盒；否则 `WM_TOUCH` 被收下又因未命中丢弃，画布收不到加点（鼠标靠 `HTTRANSPARENT` 穿透不受影响）。
+- 触摸身份释放：画布 Touch Down 在建笔前已 `touchContacts.TryRegister(CanvasTouchKey)`；图形建笔被拒（构造会话占用、`InitializeRuntimeShape` 失败）必须走 `RejectShapeStrokeInitialization`：先保存 key、Discard 后 Release。漏释放会让循环复用的 ContactId 被判为重复接触，只跟踪手势不建笔，表现为多指被拒后单指加点偶发无响应（真机日志确认）。
+- 构造连点时序：构造步骤的帧末确认（`finishShapeContact`）晚于入口批处理；快速连点时 Up₁ 与 Down₂ 可同批出队，Down₂ 时 `contactActive` 仍为真。`beginShapeContact` 必须先用 `FindPendingConstructionContact` 找到同会话已 ended 未确认的接触并按真实顺序确认，再接受新接触；`constructionFinished` 保证帧末不重复确认。手指仍按着的接触照旧单接触拒收。
+- 构造提示触摸：提示按钮必须进入 `PreparePresentedButtonHits()` 的同帧候选触摸表（Rigid）：可用按钮 Accept，禁用按钮与可见面板 Blocked，随成功呈现事务发布。`Pointer()` 区分 consumed 与 accepted，只有意图提交成功才调用 `AcceptBarButtonFeedback()`。
+- 离散旋转：pivot 与旋转把手相同（变换后局部路径框中心）；外层组合，y 向下正角为顺时针；保留 construction 并重建，走属性候选与单次 Replace 历史。立体（`preset >= Cuboid`）核心拒绝、UI 不显示；圆不显示。按钮顺序：翻转H、翻转V、旋转45、旋转90、完成。
+- 样式栏冻结：样式栏任一按钮 Down、`Activate()`、子层/取色 Move/Up、点外关闭子层都冻结在最近成功呈现的锚点，期限 now+3s，每次操作续期；按钮或取色手势进行中不过期，Up 后再满 3s。到期只发一次唤醒（SelectionOverlay Tick 合并 deadline），从冻结点用既有 .4s EaseOutCubic 残差动画移向最新目标（同一停靠分支也动画）。直接操作图形本体/控制点立即解冻并动画回跟随；Finish、关闭编辑器、会话/对象/文档/显示/工作区/页面变化立即清除。冻结只接受与当前已配置场景同身份的呈现帧，旧帧迟到的操作不得把旧锚点冻结到新图形。冻结期间尺寸/显隐动画照常，仅锁左上锚点，并做屏内钳制。
+
+### 4. Validation & Error Matrix
+| 条件 | 结果 |
+| --- | --- |
+| 触摸点在构造包围盒内、顶点外 | alpha=0，落到画布加点 |
+| 触摸点在顶点圆内 | 编辑器收下，移点 |
+| Up₁/Down₂ 同批出队 | 先确认上一步再加新点，不拒收 |
+| 构造期第二指被拒后同 ContactId 复用 | key 已释放，单指照常加点 |
+| 提示禁用按钮 / 退场中 | 触摸 Blocked，不穿透到主栏 |
+| 旋转立体 | 核心拒绝；按钮隐藏 |
+| 操作后 2999ms | 位置不变 |
+| 操作后 3000ms | 一次唤醒，残差动画移位 |
+| 冻结中拖动图形 | 立即解冻并动画跟随 |
+
+### 5. Tests Required
+`--ui3-shape-editor-test`：构造 Present 回读 alpha 与逻辑命中（1x/1.5x）、旋转按钮可见性/顺序/动作、样式栏冻结 2999/3000ms、续期、长按、取色、拖动/Finish/换会话/旧帧迟到操作清除。`--draw3-control-fence-test`：图形拒收释放 Touch 身份、ContactId 复用可再建笔。`--draw3-shape-core-test`：同批 Up₁/Down₂ 先确认后续接、按住不返回、不重复确认；旋转几何、立体拒绝、Replace/undo/redo。`--ui3-geometry-attribute-test`：提示触摸准入（启用/禁用/退场/DPI/折叠）与一次 Down/Up 一次意图，长按新时间线。真实触摸加点、提示栏触摸与样式栏观感须实机验收。

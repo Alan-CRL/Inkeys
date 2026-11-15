@@ -49,11 +49,11 @@ namespace Inkeys::UI::Bar
 	{
 		constexpr unsigned Color = 1, Style = 2, Pattern = 5, Thickness = 9, Sides = 12, Swatch = Sides+GeometrySidesCount, Tone = Swatch+11, Rotate = Tone+1;
 		constexpr unsigned SidesEntry = Rotate+1, Aux = SidesEntry+1, Custom = Aux+3, PickerClose = Custom+1;
-		constexpr unsigned TriangleMode = PickerClose+1, TrapezoidMode = TriangleMode+3, Finish = TrapezoidMode+1, FlipHorizontal = Finish+1, FlipVertical = FlipHorizontal+1, Count = FlipVertical+1;
+		constexpr unsigned TriangleMode = PickerClose+1, TrapezoidMode = TriangleMode+3, Finish = TrapezoidMode+1, FlipHorizontal = Finish+1, FlipVertical = FlipHorizontal+1, Rotate45 = FlipVertical+1, Rotate90 = Rotate45+1, Count = Rotate90+1;
 		constexpr unsigned PaletteHit = 100, OutsideLayerHit = 101;
 		constexpr std::array<Auxiliary, 3> AuxiliaryBits{Auxiliary::Center, Auxiliary::Foci, Auxiliary::Diagonals};
-		constexpr std::array<unsigned, 21> ToolbarItems{Color, Style, Style+1, Pattern, Pattern+1, Pattern+2, Pattern+3,
-			Thickness, Thickness+1, Thickness+2, SidesEntry, TriangleMode, TriangleMode+1, TriangleMode+2, TrapezoidMode, Aux, Aux+1, Aux+2, FlipHorizontal, FlipVertical, Finish};
+		constexpr std::array<unsigned, 23> ToolbarItems{Color, Style, Style+1, Pattern, Pattern+1, Pattern+2, Pattern+3,
+			Thickness, Thickness+1, Thickness+2, SidesEntry, TriangleMode, TriangleMode+1, TriangleMode+2, TrapezoidMode, Aux, Aux+1, Aux+2, FlipHorizontal, FlipVertical, Rotate45, Rotate90, Finish};
 		constexpr std::array<unsigned, 8> GroupStarts{Style, Pattern, Thickness, SidesEntry, TriangleMode, TrapezoidMode, Aux, Finish};
 		unsigned EditorPanel(unsigned id)
 		{
@@ -357,7 +357,8 @@ namespace Inkeys::UI::Bar
 			dc->SetPrimitiveBlend(D2D1_PRIMITIVE_BLEND_COPY);
 			dc->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
 			const auto& b = snapshot.bounds;
-			if (b.valid) dc->FillRectangle({static_cast<FLOAT>(snapshot.canvasOriginX+b.left-bounds.left-3*scale),
+			// 构造期只覆盖顶点热区，空白包围盒必须让原生触摸落回画布加点。
+			if (b.valid && !snapshot.construction.active) dc->FillRectangle({static_cast<FLOAT>(snapshot.canvasOriginX+b.left-bounds.left-3*scale),
 				static_cast<FLOAT>(snapshot.canvasOriginY+b.top-bounds.top-3*scale),
 				static_cast<FLOAT>(snapshot.canvasOriginX+b.right-bounds.left+3*scale),
 				static_cast<FLOAT>(snapshot.canvasOriginY+b.bottom-bounds.top+3*scale)}, brush);
@@ -387,6 +388,8 @@ namespace Inkeys::UI::Bar
 			if (id == Finish) return L"fluentCheckmark12Filled";
 			if (id == FlipHorizontal) return L"barShapeFlipHorizontal";
 			if (id == FlipVertical) return L"barShapeFlipVertical";
+			if (id == Rotate45) return L"barShapeRotate45";
+			if (id == Rotate90) return L"barShapeRotate90";
 			if (id == Rotate) return L"barShapeRotate";
 			if (id == Tone) return L"colorSun";
 			if ((id >= Swatch && id<Tone) || id == Custom) return L"colorSelect";
@@ -636,6 +639,18 @@ namespace Inkeys::UI::Bar
 		};
 		Frame candidate, presented;
 		mutable std::mutex inputMutex;
+		// 输入worker与渲染线程共用期限；锚点存屏幕像素，DPI变化时才重新换算。
+		std::chrono::steady_clock::time_point toolbarHoldUntil{};
+		std::function<std::chrono::steady_clock::time_point()> toolbarNow = [] { return std::chrono::steady_clock::now(); };
+		double toolbarHoldX = 0, toolbarHoldY = 0;
+		bool toolbarHoldFrozen = false, toolbarHoldResume = false, toolbarOperationActive = false;
+		// 当前已配置的编辑场景；旧呈现帧上的迟到操作不得把旧锚点冻结到新图形上。
+		ShapeUiIdentity toolbarScene{};
+		static bool SameToolbarScene(const ShapeUiIdentity& a, const ShapeUiIdentity& b)
+		{
+			return a.session == b.session && a.objectId == b.objectId && a.documentGeneration == b.documentGeneration
+				&& a.displayGeneration == b.displayGeneration && a.workspace == b.workspace && a.pageId == b.pageId && a.pageIndex == b.pageIndex;
+		}
 		ButtonPointerState pointer;
 		unsigned hover = 0, pressed = 0, appliedHover = 0, appliedPressed = 0;
 		std::atomic_uint focused = 0;
@@ -783,6 +798,35 @@ namespace Inkeys::UI::Bar
 			attributes.Replace(std::move(list));
 		}
 
+		void HoldToolbar(const Frame& frame, bool inProgress = false)
+		{
+			std::scoped_lock lock(inputMutex);
+			if (!frame.snapshot || !SameToolbarScene(frame.snapshot->identity, toolbarScene)) return;
+			if (!toolbarHoldFrozen)
+			{
+				// 必须从成功呈现的坐标冻结，不能锁存尚未上屏的候选位置。
+				toolbarHoldX = frame.bounds.left+frame.toolbar.left*frame.scale;
+				toolbarHoldY = frame.bounds.top+frame.toolbar.top*frame.scale;
+				toolbarHoldFrozen = true; toolbarHoldResume = false;
+			}
+			toolbarOperationActive = inProgress;
+			toolbarHoldUntil = toolbarNow()+std::chrono::seconds(3);
+		}
+		void ClearToolbarHold(bool animate)
+		{
+			std::scoped_lock lock(inputMutex);
+			toolbarHoldResume = animate && (toolbarHoldFrozen || toolbarHoldResume);
+			toolbarHoldFrozen = toolbarOperationActive = false;
+			toolbarHoldUntil = {};
+		}
+		std::chrono::steady_clock::time_point TickToolbarIdle(std::chrono::steady_clock::time_point now)
+		{
+			std::scoped_lock lock(inputMutex);
+			if (!toolbarHoldFrozen || toolbarOperationActive) return std::chrono::steady_clock::time_point::max();
+			if (now < toolbarHoldUntil) return toolbarHoldUntil;
+			toolbarHoldFrozen = false; toolbarHoldResume = true;
+			return now; // 只返回一次到期信号，随后由既有残差动画续帧。
+		}
 		bool Emit(ShapeUiAction action)
 		{
 			std::function<void(const ShapeUiAction&)> sink;
@@ -928,6 +972,8 @@ namespace Inkeys::UI::Bar
 
 		void Configure(std::shared_ptr<const ShapeUiSnapshot> next, RECT nextWork, RECT nextBar)
 		{
+			if (!next || !next->object || (snapshot && !SameToolbarScene(next->identity, snapshot->identity))) ClearToolbarHold(false);
+			{ std::scoped_lock lock(inputMutex); toolbarScene = next ? next->identity : ShapeUiIdentity{}; }
 			const auto updateWidths = [&]
 			{
 				if (!snapshot || !snapshot->object) return;
@@ -1128,6 +1174,10 @@ namespace Inkeys::UI::Bar
 				buttons[id]->name.SetStringImmediate(I18n::getWOr(id == FlipHorizontal ? "UI/Bar/GeometryAttributes/FlipHorizontalLabel" : "UI/Bar/GeometryAttributes/FlipVerticalLabel",id == FlipHorizontal ? L"水平翻转" : L"竖直翻转"));
 				buttons[id]->name.enable.Initialization(false); // 保留语义名称，按钮仅显示专属图标。
 			}
+			for (unsigned id : {Rotate45,Rotate90}) {
+				buttons[id]->name.SetStringImmediate(I18n::getWOr(id == Rotate45 ? "UI/Bar/GeometryAttributes/Rotate45Label" : "UI/Bar/GeometryAttributes/Rotate90Label",id == Rotate45 ? L"顺时针旋转45°" : L"顺时针旋转90°"));
+				buttons[id]->name.enable.Initialization(false);
+			}
 			auxiliaryFontFamily = renderer.GetFontFamily(); auxiliaryLocale = renderer.GetTextLocale();
 			auxiliaryFontGeneration = renderer.GetDeviceGeneration();
 			std::array<bool, Count> wanted{};
@@ -1135,6 +1185,7 @@ namespace Inkeys::UI::Bar
 			{
 				// 圆在任意平面角度下镜像外观不变；其余预设保留屏幕轴翻转。
 			wanted[id] = id == Color || id == Finish || ((id == FlipHorizontal || id == FlipVertical) && preset != PresetKind::Circle) || (id >= Style && id<Pattern && showStyle) || (id >= Pattern && id<Sides && showStroke)
+					|| ((id == Rotate45 || id == Rotate90) && preset != PresetKind::Circle && preset < PresetKind::Cuboid)
 					|| (id == SidesEntry && capabilities.regularSides) || (id >= Aux && id<Aux+3 && showStroke && (SupportedAuxiliary(preset)&AuxiliaryBits[id-Aux]) != Auxiliary::None)
 					|| (id >= TriangleMode && id<TriangleMode+3 && preset == PresetKind::Triangle) || (id == TrapezoidMode && (preset == PresetKind::Trapezoid || preset == PresetKind::Prism || preset == PresetKind::Pyramid));
 				buttons[id]->hide = !wanted[id];
@@ -1310,10 +1361,9 @@ namespace Inkeys::UI::Bar
 			};
 			const bool currentFits = fits(candidatePose(toolbarBelow));
 			const bool nextBelow = !currentFits && fits(candidatePose(!toolbarBelow)) ? !toolbarBelow : toolbarBelow;
-			toolbarBelow = nextBelow;
-			int nextPlacement = toolbarBelow ? 0 : 1;
-			auto position = FitEditorPose(candidatePose(toolbarBelow), {0, 0, toolbarWidth, toolbarHeight}, safeWork);
-			if (!currentFits && !fits(candidatePose(!toolbarBelow)))
+			int nextPlacement = nextBelow ? 0 : 1;
+			auto position = FitEditorPose(candidatePose(nextBelow), {0, 0, toolbarWidth, toolbarHeight}, safeWork);
+			if (!currentFits && !fits(candidatePose(!nextBelow)))
 			{
 				// 两侧都放不下时优先避开主栏和图形，再选择离当前显示位置最近的候选，避免来回跳边。
 				const EraserAttributeRect shapeRect{(snapshot->canvasOriginX+minX)/scale,(snapshot->canvasOriginY+minY)/scale,
@@ -1321,21 +1371,32 @@ namespace Inkeys::UI::Bar
 				const EraserAttributeRect mainRect{bar.left/scale,bar.top/scale,bar.right/scale,bar.bottom/scale};
 				auto overlap = [](const EraserAttributeRect& a,const EraserAttributeRect& b) { return (std::max)(0.,(std::min)(a.right,b.right)-(std::max)(a.left,b.left))*(std::max)(0.,(std::min)(a.bottom,b.bottom)-(std::max)(a.top,b.top)); };
 				auto score = [&](const EraserSurfacePose& pose) { const auto r=pose.Apply({0,0,toolbarWidth,toolbarHeight}); return std::array<double,3>{overlap(r,mainRect),overlap(r,shapeRect),std::hypot(pose.x-toolbarX.val,pose.y-toolbarY.val)}; };
-				const std::array<EraserSurfacePose,4> choices{candidatePose(toolbarBelow),candidatePose(!toolbarBelow),
+				const std::array<EraserSurfacePose,4> choices{candidatePose(nextBelow),candidatePose(!nextBelow),
 					EraserSurfacePose{toolbarFit,shapeRect.left-16-fittedWidth,EraserRectCenterY(shapeRect)-fittedHeight/2},
 					EraserSurfacePose{toolbarFit,shapeRect.right+16,EraserRectCenterY(shapeRect)-fittedHeight/2}};
-				for (size_t index=0;index<choices.size();++index) { auto fitted=FitEditorPose(choices[index],{0,0,toolbarWidth,toolbarHeight},safeWork); if (score(fitted)<score(position)) { position=fitted; nextPlacement=index<2 ? (index==0 ? (toolbarBelow?0:1) : (toolbarBelow?1:0)) : static_cast<int>(index); } }
+				for (size_t index=0;index<choices.size();++index) { auto fitted=FitEditorPose(choices[index],{0,0,toolbarWidth,toolbarHeight},safeWork); if (score(fitted)<score(position)) { position=fitted; nextPlacement=index<2 ? (index==0 ? (nextBelow?0:1) : (nextBelow?1:0)) : static_cast<int>(index); } }
 			}
 			toolbarFit = position.scale;
-			// 几何跟随实时更新；只有停靠分支切换才把旧位置差作为残差消退。
-			if (!initialized) { dockResidualX.SetDirect(0); dockResidualY.SetDirect(0); }
-			else if (toolbarPlacement != nextPlacement) {
-				dockResidualX.SetDirect(toolbarX.val-position.x); dockResidualY.SetDirect(toolbarY.val-position.y);
+			TickToolbarIdle(now);
+			bool frozen, resume; double frozenX, frozenY;
+			{
+				std::scoped_lock lock(inputMutex);
+				frozen = toolbarHoldFrozen; resume = toolbarHoldResume; toolbarHoldResume = false;
+				frozenX = toolbarHoldX/scale; frozenY = toolbarHoldY/scale;
+			}
+			// 保护期只更新期望停靠点；解除时同一分支也从冻结点消退残差。
+			if (!initialized || frozen) { dockResidualX.SetDirect(0); dockResidualY.SetDirect(0); }
+			else if (resume || toolbarPlacement != nextPlacement) {
+				dockResidualX.SetDirect((resume ? frozenX : static_cast<double>(toolbarX.val))-position.x); dockResidualY.SetDirect((resume ? frozenY : static_cast<double>(toolbarY.val))-position.y);
 				const BarUiCurveSpecClass curve{BarUiCurveEnum::EaseOutCubic,BarUiCurveEnum::EaseOutCubic,0,false};
 				dockResidualX.SetTar(0,.4,std::nullopt,true,curve); dockResidualY.SetTar(0,.4,std::nullopt,true,curve);
 			}
-			step(dockResidualX); step(dockResidualY); toolbarPlacement=nextPlacement;
+			// 到期前的空闲间隔不计入新残差动画，首帧仍从冻结位置开始。
+			const BarUiAnimationAdvanceContextClass dockAnim{resume ? 0.0 : dt,speed,static_cast<bool>(BarUiAnimationEnabled),false};
+			for (auto* value : {&dockResidualX,&dockResidualY}) { const auto r=BarUiAdvanceAnimation(*value,dockAnim); active|=r.active; changed|=r.changed; }
+			if (!frozen) { toolbarPlacement=nextPlacement; toolbarBelow=nextBelow; }
 			dockTargetX=position.x; dockTargetY=position.y;
+			if (frozen) { position.x=frozenX; position.y=frozenY; position=FitEditorPose(position,{0,0,toolbarWidth,toolbarHeight},safeWork); }
 			toolbarX.SetDirect(position.x+dockResidualX.val); toolbarY.SetDirect(position.y+dockResidualY.val);
 			const auto& anchor = toolbarBelow ? bottomAnchor : topAnchor;
 			const double anchorX = ((snapshot->canvasOriginX+anchor.x)/scale-toolbarX.val)/toolbarFit;
@@ -1343,6 +1404,13 @@ namespace Inkeys::UI::Bar
 			auto barFrame = ResolveBarAttributePanelFrame(toolbarMotion, {0, 0, toolbarWidth, toolbarHeight}, {anchorX, anchorY, anchorX, anchorY}, 60);
 			std::array<EraserSurfacePose, 4> poses{};
 			poses[0] = FitEditorPose(ComposeEraserPose({toolbarFit, toolbarX.val, toolbarY.val}, barFrame.pose), {0, 0, toolbarWidth, toolbarHeight}, safeWork);
+			if (frozen)
+			{
+				// 显隐和尺寸动画照常推进，只锁存最终表面的左上锚点。
+				poses[0].x=position.x; poses[0].y=position.y;
+				poses[0]=FitEditorPose(poses[0],{0,0,toolbarWidth,toolbarHeight},safeWork);
+				std::scoped_lock lock(inputMutex); toolbarHoldX=poses[0].x*scale; toolbarHoldY=poses[0].y*scale;
+			}
 			const bool below = toolbarBelow;
 			const auto layerPose = [&](const BarAttributePanelMotion& motion, EraserAttributeRect panel, EraserAttributeRect parent,
 				double triggerX, double triggerY, bool preferBelow, bool& placedBelow)
@@ -2060,6 +2128,7 @@ namespace Inkeys::UI::Bar
 		void Activate(unsigned id, const Frame& frame, POINT screen)
 		{
 			if (!frame.snapshot || !frame.snapshot->object) return;
+			if (id == Finish) ClearToolbarHold(false); else HoldToolbar(frame);
 			if (id == Color)
 			{
 				std::scoped_lock lock(inputMutex);
@@ -2086,6 +2155,7 @@ namespace Inkeys::UI::Bar
 				a.style.fill = id != Style;
 			}
 			else if (id == FlipHorizontal || id == FlipVertical) a.kind = id == FlipHorizontal ? ShapeUiActionKind::FlipHorizontal : ShapeUiActionKind::FlipVertical;
+			else if (id == Rotate45 || id == Rotate90) a.kind = id == Rotate45 ? ShapeUiActionKind::Rotate45Clockwise : ShapeUiActionKind::Rotate90Clockwise;
 			else if (id >= Pattern && id<Thickness) a.style.linePattern = static_cast<LinePattern>(id-Pattern);
 			else if (id >= Thickness && id<Sides) a.style.width = static_cast<float>(frame.widths[id-Thickness]/ShapeWidthScale(*frame.snapshot->object));
 			else if (id >= Sides && id<Swatch)
@@ -2134,6 +2204,10 @@ namespace Inkeys::UI::Bar
 	bool ShapeEditorSurface::Advance(std::chrono::steady_clock::time_point now)
 	{
 		return impl_->Advance(now);
+	}
+	std::chrono::steady_clock::time_point ShapeEditorSurface::TickToolbarIdle(std::chrono::steady_clock::time_point now)
+	{
+		return impl_->TickToolbarIdle(now);
 	}
 
 	bool ShapeEditorSurface::Visible() const noexcept
@@ -2284,11 +2358,12 @@ namespace Inkeys::UI::Bar
 		if (message == WM_MOUSEWHEEL) return hit.occupied;
 		if (p.dismissGesture)
 		{
-			if (message == WM_LBUTTONUP) p.dismissGesture = false;
+			if (message == WM_LBUTTONUP) { p.dismissGesture = false; p.HoldToolbar(frame); }
 			return true;
 		}
 		if (message == WM_LBUTTONDOWN && hit.button == OutsideLayerHit)
 		{
+			p.HoldToolbar(frame,true);
 			p.CloseTopLayer(); p.dismissGesture = true; p.focused = 0;
 			return true;
 		}
@@ -2335,7 +2410,7 @@ namespace Inkeys::UI::Bar
 		{
 			if (!frame.snapshot || frame.snapshot->identity.session != p.pickerIdentity.session
 				|| frame.snapshot->identity.objectId != p.pickerIdentity.objectId || !p.pickerOpen.load()) { CancelPointer(); return true; }
-			if (message == WM_MOUSEMOVE || message == WM_LBUTTONUP) p.UpdatePickerPoint(frame, point);
+			if (message == WM_MOUSEMOVE || message == WM_LBUTTONUP) { p.HoldToolbar(frame,message != WM_LBUTTONUP); p.UpdatePickerPoint(frame, point); }
 			if (message == WM_LBUTTONUP)
 			{
 				ShapeUiAction action; action.kind = ShapeUiActionKind::SetStyle; action.identity = p.pickerIdentity;
@@ -2353,6 +2428,7 @@ namespace Inkeys::UI::Bar
 
 		if (message == WM_LBUTTONDOWN && hit.occupied && !hit.button && (hit.body || hit.handle))
 		{
+			p.ClearToolbarHold(true);
 			p.focused = 0;
 			p.gesture = true; p.constructionGesture = frame.snapshot->construction.active;
 			p.gestureIdentity = hit.identity;
@@ -2383,6 +2459,7 @@ namespace Inkeys::UI::Bar
 
 		if (message == WM_LBUTTONDOWN && hit.button == PaletteHit)
 		{
+			p.HoldToolbar(frame,true);
 			p.paletteGesture = true;
 			p.pickerIdentity = frame.snapshot->identity; p.pickerBaseStyle = frame.snapshot->object->style;
 			{
@@ -2394,6 +2471,12 @@ namespace Inkeys::UI::Bar
 		}
 
 		if (message == WM_LBUTTONDOWN && !hit.button) p.focused = 0;
+		if (message == WM_LBUTTONDOWN && hit.button) p.HoldToolbar(frame,true);
+		if (message == WM_LBUTTONUP)
+		{
+			std::scoped_lock lock(p.inputMutex);
+			if (p.toolbarOperationActive) { p.toolbarOperationActive=false; p.toolbarHoldUntil=p.toolbarNow()+std::chrono::seconds(3); }
+		}
 		ButtonPointerEvent event = message == WM_LBUTTONDOWN ? ButtonPointerEvent::Down : message == WM_LBUTTONUP ? ButtonPointerEvent::Up : message == WM_MOUSELEAVE ? ButtonPointerEvent::Leave : ButtonPointerEvent::Move;
 		unsigned activate = 0;
 		{
@@ -2527,6 +2610,7 @@ namespace Inkeys::UI::Bar
 		}
 
 		std::scoped_lock lock(p.inputMutex);
+		if (p.toolbarOperationActive) { p.toolbarOperationActive=false; p.toolbarHoldUntil=p.toolbarNow()+std::chrono::seconds(3); }
 		p.gesture = p.paletteGesture = p.dismissGesture = false;
 		p.pickerDragging = p.pickerLocked = false;
 		p.pointer.Reset();
@@ -2570,8 +2654,9 @@ namespace Inkeys::UI::Bar
 		{
 			if (down)
 			{
-				if (p.CloseTopLayer()) { CancelPointer(); return true; }
+				if (p.CloseTopLayer()) { p.HoldToolbar(frame); CancelPointer(); return true; }
 				CancelPointer();
+				p.ClearToolbarHold(false);
 				ShapeUiAction a;
 				a.kind = ShapeUiActionKind::CloseEditor;
 				a.identity = frame.snapshot->identity;
@@ -3697,6 +3782,14 @@ namespace Inkeys::UI::Bar
 				expect(actions.size()==1 && actions.back().kind==(id==FlipHorizontal ? ShapeUiActionKind::FlipHorizontal : ShapeUiActionKind::FlipVertical),"flip button publishes its distinct object action");
 				expect(!scene.impl_->buttons[id]->icon.svg.GetVal().empty(),"flip button uses embedded dedicated icon");
 			}
+			for (unsigned id : {Rotate45,Rotate90}) {
+				expect(scene.impl_->memberWanted[id] == (preset!=PresetKind::Circle && preset<PresetKind::Cuboid),"rotation is visible only for non-circle planar presets");
+				actions.clear(); scene.impl_->Activate(id,scene.impl_->presented,{});
+				expect(actions.size()==1 && actions.back().kind==(id==Rotate45 ? ShapeUiActionKind::Rotate45Clockwise : ShapeUiActionKind::Rotate90Clockwise),"rotation button publishes its distinct property action");
+				expect(!scene.impl_->buttons[id]->icon.svg.GetVal().empty(),"rotation button uses its embedded dedicated icon");
+				if (scene.impl_->memberWanted[id]) expect(scene.impl_->y[id].tar==scene.impl_->y[Finish].tar && scene.impl_->x[id].tar>scene.impl_->x[FlipVertical].tar && scene.impl_->x[id].tar<scene.impl_->x[Finish].tar,"rotation follows flips on the bottom row before Finish");
+			}
+			expect(ToolbarItems.back()==Finish && (preset==PresetKind::Circle || preset>=PresetKind::Cuboid || scene.impl_->x[Rotate45].tar<scene.impl_->x[Rotate90].tar),"45 then 90 then Finish preserves explicit toolbar order");
 			expect(scene.impl_->twoRows && scene.impl_->y[Finish].tar>scene.impl_->y[Color].tar && (preset==PresetKind::Circle || scene.impl_->x[Finish].tar>scene.impl_->x[FlipVertical].tar),"two-row toolbar places finish after both flips on the bottom row");
 			scene.ReleaseDeviceResources();
 			expect(SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch())), "editor device resources rebuild");
@@ -4105,6 +4198,96 @@ namespace Inkeys::UI::Bar
 						"authoritative post-commit snapshot replaces the local candidate");
 					expect(!frame(), "after the gesture settles no further presentation is requested");
 				}
+			}
+		}
+		// 真实构造快照经Present回读alpha，覆盖ULW原生触摸与逻辑命中的一致性。
+		for (auto preset : {PresetKind::Polyline,PresetKind::Polygon}) for (float displayScale : {1.f,1.5f})
+		{
+			++scenes; ObjectId id{}; id[0]=31;
+			ConstructionSession construction;
+			expect(construction.Begin({preset,CreationMode::Points},{},id),"coverage fixture begins real point construction");
+			for (auto point : {Vec2{600,300},Vec2{1000,700},Vec2{1000,300}})
+				expect(construction.ConfirmDrag(point,point),"coverage fixture confirms construction vertex");
+			auto state=std::make_shared<ShapeUiSnapshot>(); state->object=construction.Candidate(); state->construction=construction.Status();
+			state->identity.session=131; state->identity.objectId=id; state->displayScale=displayScale;
+			state->canvasOriginX=-180; state->canvasOriginY=-80;
+			for (size_t i=0;i<construction.Points().size();++i) state->handles.push_back({static_cast<uint32_t>(1000+i),EditHandleKind::Vertex,construction.Points()[i]});
+			if (!state->object) { expect(false,"coverage fixture has live preview"); continue; }
+			GeometryResult geometry; expect(BuildGeometry(*state->object,geometry,{displayScale}),"coverage preview builds"); state->bounds=geometry.bounds;
+			ShapeEditorSurface scene; scene.Configure(state,{-200,-100,1400,1000},{});
+			for (int i=0;i<40;++i) { now+=std::chrono::milliseconds(17); scene.Advance(now); }
+			SIZE extent{};
+			expect(SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch())),"construction coverage target initializes");
+			expect(SUCCEEDED(scene.Present([&](const UPDATELAYEREDWINDOWINFO& info)->BOOL { extent=*info.psize; return TRUE; })),"construction coverage uses real Present");
+			scene.CommitPresented();
+			const auto pixels=ReadEditorPixels(scene.Renderer(),extent); const auto bounds=scene.Bounds();
+			const auto alpha=[&](POINT canvas)->int {
+				const int x=canvas.x+state->canvasOriginX-bounds.left,y=canvas.y+state->canvasOriginY-bounds.top;
+				if (x<0 || y<0 || x>=extent.cx || y>=extent.cy || pixels.size()!=static_cast<size_t>(extent.cx)*extent.cy*4) return -1;
+				return pixels[(static_cast<size_t>(y)*extent.cx+x)*4+3];
+			};
+			expect(alpha({800,450})==0,"construction bounds blank pixel stays alpha zero for native canvas touch");
+			expect(alpha({600,300})>0,"construction vertex retains nonzero native input alpha");
+			expect(!scene.Hit({800+state->canvasOriginX,450+state->canvasOriginY}).occupied && scene.Hit({600+state->canvasOriginX,300+state->canvasOriginY}).handle==1000,"real construction frame accepts vertices and leaves bounds blank unoccupied");
+		}
+		// 注入墙钟，确认三秒期限不会被帧dt或同一停靠分支的目标变化绕过。
+		{
+			++scenes; ObjectId id{}; id[0]=32;
+			const auto object=MakePresetShape({PresetKind::Rectangle,CreationMode::Drag},{600,300},{1000,500},{},id);
+			expect(object.has_value(),"toolbar hold fixture creates rectangle");
+			if (object)
+			{
+				auto state=std::make_shared<ShapeUiSnapshot>(); state->object=*object; state->identity.session=132; state->identity.objectId=id;
+				ShapeEditorSurface scene; scene.impl_->toolbarNow=[&] { return now; };
+				scene.SetActionSink([](const ShapeUiAction&){});
+				const auto geometry=[&] {
+					state->handles=BuildEditHandles(*state->object,{1,.25f},&state->frameRect);
+					GeometryResult g; expect(BuildGeometry(*state->object,g),"hold fixture geometry builds"); state->bounds=g.bounds;
+				};
+				geometry();
+				const auto frame=[&] {
+					scene.Configure(state,{0,0,1600,1000},{}); scene.Advance(now);
+					expect(SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch())),"hold frame target initializes");
+					expect(SUCCEEDED(scene.Present([](const UPDATELAYEREDWINDOWINFO&)->BOOL { return TRUE; })),"hold frame presents"); scene.CommitPresented();
+				};
+				const auto settle=[&] { for(int i=0;i<40;++i) { now+=std::chrono::milliseconds(17); frame(); } };
+				const auto anchor=[&] { const auto& f=scene.impl_->presented; return std::array<double,2>{f.bounds.left+f.toolbar.left*f.scale,f.bounds.top+f.toolbar.top*f.scale}; };
+				const auto button=[&](unsigned id) { const auto& f=scene.impl_->presented; const auto r=f.buttons[id].boundsDip; return POINT{f.bounds.left+static_cast<LONG>((r.left+r.right)*f.scale/2),f.bounds.top+static_cast<LONG>((r.top+r.bottom)*f.scale/2)}; };
+				const auto click=[&](unsigned id) { const auto p=button(id); expect(scene.Hit(p).button==id,"hold operation hits actual presented button"); scene.Pointer(WM_LBUTTONDOWN,p); scene.Pointer(WM_LBUTTONUP,p); };
+				const auto moveTarget=[&](float y) { state=std::make_shared<ShapeUiSnapshot>(*state); state->object->transform.dy=y; geometry(); };
+				const auto same=[&](const auto& a,const auto& b) { return std::hypot(a[0]-b[0],a[1]-b[1])<.001; };
+				settle(); const auto frozen=anchor(); click(Pattern+1); const auto deadline=scene.TickToolbarIdle(now);
+				expect(deadline==now+std::chrono::seconds(3),"toolbar operation exposes one finite three-second deadline");
+				moveTarget(120); now+=std::chrono::milliseconds(2999); frame();
+				expect(same(anchor(),frozen) && scene.impl_->toolbarHoldFrozen,"2999ms keeps last presented anchor despite changed target");
+				now+=std::chrono::milliseconds(1);
+				expect(scene.TickToolbarIdle(now)==now && scene.TickToolbarIdle(now)==std::chrono::steady_clock::time_point::max(),"3000ms wake is emitted exactly once"); frame();
+				expect(!scene.impl_->toolbarHoldFrozen && !scene.impl_->dockResidualY.IsSame() && scene.AnimationActive(),"expiry starts existing residual animation even on same placement branch");
+				settle(); expect(!same(anchor(),frozen),"expired hold reaches latest target");
+				const auto renewed=anchor(); click(Pattern+2); moveTarget(180); now+=std::chrono::seconds(2); frame(); click(Pattern+3);
+				now+=std::chrono::milliseconds(2999); frame(); expect(same(anchor(),renewed),"second operation renews deadline without recapturing target");
+				now+=std::chrono::milliseconds(1); frame(); expect(!scene.impl_->toolbarHoldFrozen,"renewed hold expires at its own 3000ms"); settle();
+				const auto longPress=anchor(); const auto p=button(Pattern); scene.Pointer(WM_LBUTTONDOWN,p); moveTarget(220);
+				now+=std::chrono::milliseconds(3500); frame(); expect(same(anchor(),longPress) && scene.TickToolbarIdle(now)==std::chrono::steady_clock::time_point::max(),"active button gesture stays frozen beyond three seconds without idle wake");
+				scene.Pointer(WM_LBUTTONUP,p); expect(scene.TickToolbarIdle(now)==now+std::chrono::seconds(3),"button release starts full three-second idle deadline");
+				const POINT body{800,620}; expect(scene.Hit(body).body,"hold fixture shape body remains directly draggable"); scene.Pointer(WM_LBUTTONDOWN,body);
+				expect(!scene.impl_->toolbarHoldFrozen && scene.impl_->toolbarHoldResume,"shape manipulation immediately clears hold with animated resume");
+				now+=std::chrono::milliseconds(17); frame(); expect(!scene.impl_->dockResidualY.IsSame(),"shape drag resumes residual motion from frozen position"); scene.CancelPointer(); settle();
+				click(Pattern+1); click(Finish); expect(!scene.impl_->toolbarHoldFrozen && !scene.impl_->toolbarHoldResume,"Finish clears the hold immediately");
+				click(Pattern+1); state=std::make_shared<ShapeUiSnapshot>(*state); ++state->identity.session; frame(); expect(!scene.impl_->toolbarHoldFrozen,"new editor session clears old hold");
+				// 新场景已配置但尚未呈现时，旧帧上的迟到点击不能重新冻结。
+				settle(); state=std::make_shared<ShapeUiSnapshot>(*state); ++state->identity.session; scene.Configure(state,{0,0,1600,1000},{});
+				click(Pattern+1); expect(!scene.impl_->toolbarHoldFrozen && !scene.impl_->toolbarOperationActive,"stale presented frame cannot re-arm hold for the new scene"); frame();
+				settle(); click(Color); settle(); click(Custom); settle();
+				const auto& picker=scene.impl_->presented; const auto palette=picker.palette;
+				const POINT pick{picker.bounds.left+static_cast<LONG>((palette.left+palette.right)*picker.scale/2),picker.bounds.top+static_cast<LONG>((palette.top+palette.bottom)*picker.scale/2)};
+				expect(scene.Hit(pick).button==PaletteHit,"hold fixture reaches actual picker palette");
+				scene.Pointer(WM_LBUTTONDOWN,pick); now+=std::chrono::milliseconds(3500); frame();
+				expect(scene.impl_->toolbarHoldFrozen && scene.TickToolbarIdle(now)==std::chrono::steady_clock::time_point::max(),"active picker gesture suppresses idle expiry");
+				scene.Pointer(WM_MOUSEMOVE,{pick.x+3,pick.y+3}); scene.Pointer(WM_LBUTTONUP,{pick.x+3,pick.y+3});
+				expect(scene.TickToolbarIdle(now)==now+std::chrono::seconds(3),"picker Move and Up renew the full hold deadline");
+				scene.Pointer(WM_LBUTTONDOWN,pick); scene.CancelPointer();
+				expect(scene.TickToolbarIdle(now)==now+std::chrono::seconds(3),"cancelled picker gesture releases the hold into idle countdown");
 			}
 		}
 		// 换边粘性与主栏遮挡用真实Advance放置，双侧不足时重复帧必须保持稳定。

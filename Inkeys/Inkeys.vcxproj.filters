@@ -2770,6 +2770,12 @@
     <None Include="src\UI\barShapeFlipVertical.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\UI\barShapeRotate45.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeRotate90.svg">
+      <Filter>资源文件</Filter>
+    </None>
     <None Include="src\UI\barShapeRectangle.svg">
       <Filter>资源文件</Filter>
     </None>

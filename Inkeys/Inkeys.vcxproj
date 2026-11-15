@@ -1266,6 +1266,8 @@
     <None Include="src\UI\barShapeStraightLine.svg" />
     <None Include="src\UI\barShapeFlipHorizontal.svg" />
     <None Include="src\UI\barShapeFlipVertical.svg" />
+    <None Include="src\UI\barShapeRotate45.svg" />
+    <None Include="src\UI\barShapeRotate90.svg" />
     <None Include="src\UI\barShapeRectangle.svg" />
     <None Include="src\UI\color\colorSun.svg" />
     <None Include="src\UI\color\colorMoon.svg" />

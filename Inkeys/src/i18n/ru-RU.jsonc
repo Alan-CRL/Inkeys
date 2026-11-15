@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "Равносторонний",
         "FlipHorizontalLabel": "Отразить по горизонтали",
         "FlipVerticalLabel": "Отразить по вертикали",
+        "Rotate45Label": "Повернуть на 45° по часовой стрелке",
+        "Rotate90Label": "Повернуть на 90° по часовой стрелке",
         "RightPrismLabel": "Прямая призма",
         "RightPyramidLabel": "Прямая пирамида",
         "StraightLineLabel": "Линия",

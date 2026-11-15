@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "Đều",
         "FlipHorizontalLabel": "Lật ngang",
         "FlipVerticalLabel": "Lật dọc",
+        "Rotate45Label": "Xoay 45° theo chiều kim đồng hồ",
+        "Rotate90Label": "Xoay 90° theo chiều kim đồng hồ",
         "RightPrismLabel": "Lăng trụ đứng",
         "RightPyramidLabel": "Hình chóp đứng",
         "StraightLineLabel": "Đường",

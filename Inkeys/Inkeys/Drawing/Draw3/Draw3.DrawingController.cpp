@@ -2369,6 +2369,7 @@ namespace Inkeys::Drawing::Draw3
 			std::function<uint64_t(const draw3::shapes::ObjectId&,uint64_t)> nextRevision;
 			std::shared_ptr<ShapeConstructionRuntime> construction;
 			bool constructionStepOnly = false, constructionStepDiscarded = false;
+			bool constructionFinished = false; // 构造步骤只确认一次：同批新 Down 可能已提前确认。
 			std::optional<draw3::shapes::ShapeObject> object;
 			draw3::shapes::RenderData renderData;
 			DirectX::XMFLOAT2 rawEndpoint = {};
@@ -4050,6 +4051,16 @@ namespace Inkeys::Drawing::Draw3
 			}
 			return refreshed;
 		}
+		// 快速连点时上一根接触的 Up 与新 Down 可能落在同一入口批次：Up 已出队（ended）但帧末确认尚未执行。
+		// 返回同一构造会话中这根待确认接触，供新 Down 先按真实顺序确认；手指仍按着的接触不返回（仍按单接触拒收）。
+		RuntimeStroke* FindPendingConstructionContact(const std::vector<RuntimeStroke*>& active, const RuntimeStroke& next,
+			const std::shared_ptr<ShapeConstructionRuntime>& owner) noexcept
+		{
+			if (!owner || !owner->contactActive) return nullptr;
+			for (RuntimeStroke* other : active)
+				if (other && other != &next && other->ended && !other->shape.constructionFinished && other->shape.construction == owner) return other;
+			return nullptr;
+		}
 		// Run和无窗口生产测试共用：真实Up只确认当前阶段，最后一步才允许普通创建提交。
 		bool ConfirmRuntimeConstructionContact(RuntimeStroke& runtime)
 		{
@@ -5332,6 +5343,16 @@ namespace Inkeys::Drawing::Draw3
 		{
 			// 同 key 可能已属于下一次 Down；只交出失败旧笔的精确代次，等物理终态回收。
 			input.DiscardUntilTerminal(handle);
+		}
+		// 图形建笔被拒（构造会话占用/初始化失败）：TryRegister 已登记的 Touch 身份必须随拒收释放。
+		// 与 Laser 资源失败同序：Discard 后 producer 可复用 record，先保存 key 再释放；
+		// 否则 ContactId 循环复用时同 key 被判为重复接触，只跟踪手势、不再建笔（单指加点“偶发无响应”）。
+		void RejectShapeStrokeInitialization(ContactInputCoordinator& input, TouchContactRegistry& touchContacts,
+			ContactHandle handle, const ContactSnapshot& down, InputDeviceType deviceType) noexcept
+		{
+			const uint64_t registeredKey = deviceType == InputDeviceType::Touch ? CanvasTouchKey(handle) : 0;
+			RejectStrokeInitialization(input, handle, down);
+			if (registeredKey) touchContacts.Release(registeredKey);
 		}
 
 		bool IgnoreAdditionalTouch(ContactInputCoordinator& input, ContactHandle handle,
@@ -7101,6 +7122,32 @@ namespace Inkeys::Drawing::Draw3
 				check(touchContacts.Count() == 0, "chained Up leaves no prior reconnect identity");
 			}
 			input.Recycle(runtime.handle);
+		}
+		{
+			// 图形建笔拒收必须释放已登记的 Touch 身份：ContactId 循环复用后同 key 仍须能建笔。
+			ContactInputCoordinator input;
+			TouchContactRegistry touchContacts;
+			ContactSnapshot snapshot{};
+			snapshot.position = { 20.0f, 20.0f };
+			snapshot.qpc = 100;
+			ContactRecord* record = nullptr;
+			if (input.PublishDown(0xF536, 12, InputDeviceType::Touch, snapshot) && input.TryDequeue(record) && record)
+			{
+				const ContactHandle handle{ record, record->Generation() };
+				const uint64_t key = CanvasTouchKey(handle);
+				check(touchContacts.TryRegister(key), "rejected shape touch registers before construction admission");
+				RejectShapeStrokeInitialization(input, touchContacts, handle, snapshot, InputDeviceType::Touch);
+				check(!touchContacts.Contains(key) && touchContacts.Count() == 0, "shape rejection releases the registered touch identity");
+				snapshot.qpc = 150;
+				check(input.PublishUp(0xF536, 12, snapshot), "rejected shape touch still reaches its physical terminal");
+				record = nullptr;
+				snapshot.qpc = 200;
+				if (input.PublishDown(0xF536, 12, InputDeviceType::Touch, snapshot))
+					while (input.TryDequeue(record)) if (record && record->Generation() != handle.generation) break;
+				check(record && touchContacts.TryRegister(CanvasTouchKey({ record, record->Generation() })),
+					"reused ContactId after a shape rejection is drawable again");
+			}
+			else check(false, "rejected shape touch enters coordinator");
 		}
 		{
 			// 笔尾橡皮也允许重连，但不能取得 Touch 手势身份或清掉其它接触。
@@ -17541,7 +17588,7 @@ namespace Inkeys::Drawing::Draw3
 				if (IsShapeDrawingTool(runtime->tool) && !InitializeRuntimeShape(*runtime))
 				{
 					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
-					RejectStrokeInitialization(input_, handle, down);
+					RejectShapeStrokeInitialization(input_, touchContacts, handle, down, deviceType);
 					runtime->cancelled = true;
 					handBackSpeedEraserController(*runtime);
 					runtime->handle = {};
@@ -17550,7 +17597,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (beginShapeContact && !beginShapeContact(*runtime))
 				{
-					RejectStrokeInitialization(input_,handle,down); runtime->cancelled = true;
+					RejectShapeStrokeInitialization(input_,touchContacts,handle,down,deviceType); runtime->cancelled = true;
 					runtime->handle = {}; runtime->inUse = false; return false;
 				}
 				const Input downInput{

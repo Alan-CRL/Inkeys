@@ -143,7 +143,9 @@ namespace Inkeys::UI::SelectionOverlay
 			const auto prediction=target?target->TickPrediction(now):std::chrono::steady_clock::time_point::max();
 			if(prediction!=std::chrono::steady_clock::time_point::max()||previousPrediction<=now)Request();
 			previousPrediction=prediction;
-			return (std::min)({prediction,Bar::RetryShapeUiIntents(now),restorePending?now+std::chrono::milliseconds(8):std::chrono::steady_clock::time_point::max()});
+			const auto toolbar=target?target->TickToolbarIdle(now):std::chrono::steady_clock::time_point::max();
+			if(toolbar<=now)Request();
+			return (std::min)({prediction,toolbar>now?toolbar:std::chrono::steady_clock::time_point::max(),Bar::RetryShapeUiIntents(now),restorePending?now+std::chrono::milliseconds(8):std::chrono::steady_clock::time_point::max()});
 		}
 		void Cancel(const Bar::SurfaceInputEvent& e,void*)
 		{

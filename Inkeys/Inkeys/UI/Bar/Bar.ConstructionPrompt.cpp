@@ -277,8 +277,9 @@ void BarConstructionPrompt::Draw(BarUIRendering& renderer,ID2D1DeviceContext* dc
 void BarConstructionPrompt::CommitPresented(){std::scoped_lock lock(mutex_);presented_=frame_;}
 RECT BarConstructionPrompt::Bounds()const{return frame_.visible?PromptPixels(frame_.visualPanel,frame_.zoom,PromptOutset(frame_.zoom,frame_.scale)):RECT{};}
 std::array<RECT,1> BarConstructionPrompt::PresentedRegions()const{std::scoped_lock lock(mutex_);return {presented_.visible?PromptPixels(presented_.visualPanel,presented_.zoom):RECT{}};}
-bool BarConstructionPrompt::Pointer(BarUISetClass& owner,const ExMessage& message,bool cancelled)
+bool BarConstructionPrompt::Pointer(BarUISetClass& owner,const ExMessage& message,bool cancelled,bool* accepted)
 {
+	if(accepted)*accepted=false;
 	Frame f;{std::scoped_lock lock(mutex_);f=presented_;}if(!f.visible)return false;
 	const int previousHover=hovered_,previousPress=pressed_;
 	if(cancelled){hovered_=pressed_=-1;if(previousHover>=0||previousPress>=0)owner.UpdateRendering(false);return previousHover>=0||previousPress>=0;}
@@ -290,7 +291,13 @@ bool BarConstructionPrompt::Pointer(BarUISetClass& owner,const ExMessage& messag
 	else if(message.message==WM_LBUTTONUP)
 	{
 		const int pressed=pressed_;pressed_=hovered_=-1;
-		if(pressed>=0&&pressed==hit&&pressedIdentity_==f.identity){ShapeUiAction action;action.identity=pressedIdentity_;action.kind=PromptActions[hit];(void)SubmitShapeUiIntent(action);}
+		if(pressed>=0&&pressed==hit&&pressedIdentity_==f.identity)
+		{
+			ShapeUiAction action;action.identity=pressedIdentity_;action.kind=PromptActions[hit];
+			const bool submitted=submit_?submit_(action):SubmitShapeUiIntent(action);
+			// 消费留白、禁用或取消与真正接受动作分开，只有接受成功才触发公共反馈。
+			if(accepted)*accepted=submitted;
+		}
 	}
 	if(inside||previousHover!=hovered_||previousPress!=pressed_)owner.UpdateRendering(false);
 	return inside||previousPress>=0;

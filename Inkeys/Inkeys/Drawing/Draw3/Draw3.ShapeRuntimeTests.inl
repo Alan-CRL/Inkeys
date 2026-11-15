@@ -107,6 +107,27 @@ int RunShapeInteractionProductionTest()
 	for (PresetKind preset : {PresetKind::Polyline,PresetKind::Polygon})
 	{
 		{
+			// 快速连点：Up₁ 与 Down₂ 落在同一入口批次，Up₁ 已出队但帧末确认未执行；新 Down 须先确认上一步再续接，不能整根拒收。
+			auto first = begin({preset,CreationMode::Points},{30,30}); const auto queued = first->shape.construction;
+			RuntimeStroke probe(configuration.expectedSpeed); const std::vector<RuntimeStroke*> batch{first.get()};
+			check(!FindPendingConstructionContact(batch,probe,queued),"finger still down keeps single-contact rejection");
+			auto terminal = first->lastInputSnapshot; terminal.position = {30,30}; terminal.qpc += 20;
+			check(input.PublishUp(0x5A91,first->handle.record->ContactId(),terminal) && input.TryReadSnapshot(first->handle,terminal),"queued Up is consumed");
+			first->lastInputSnapshot = terminal; first->lastConsumedSequence = terminal.sequence;
+			first->shape.rawEndpoint = {30,30}; first->ended = true; SetShapeVisualEndpoint(first->shape,{30,30});
+			check(queued->contactActive,"ended contact stays active until end-of-frame confirmation");
+			RuntimeStroke* pending = FindPendingConstructionContact(batch,probe,queued);
+			check(pending == first.get(),"same-batch Down finds the ended unconfirmed contact");
+			if (pending) { pending->shape.constructionFinished = true; ConfirmRuntimeConstructionContact(*pending); }
+			const auto confirmedPoints = queued->session.Points().size();
+			check(!queued->contactActive && confirmedPoints >= 1,"early confirmation records the previous point and frees the session");
+			check(!FindPendingConstructionContact(batch,probe,queued),"confirmed contact is not confirmed twice");
+			(void)CommitRuntimeStoredStrokeCpu(*first,document,pages,0,0,StoredStrokeCommitMode::NormalUp,allocate); input.Recycle(first->handle);
+			auto second = begin({preset,CreationMode::Points},{120,30},queued);
+			check(!up(*second,{120,30}) && queued->session.Points().size() == confirmedPoints + 1,"next tap in the same batch adds its point");
+			queued->session.Cancel(); queued->cancelled = true;
+		}
+		{
 			auto firstDrag = begin({preset,CreationMode::Points},{10,10});
 			check(firstDrag->shape.object.has_value() && !firstDrag->shape.renderData.batches.empty(),"first point is visible on Down");
 			move(*firstDrag,{90,60},{95,65});
@@ -279,6 +300,23 @@ int RunShapeInteractionProductionTest()
 		const auto restyled = RestyleShape(current,changedStyle,pages[0].shapeRevisionAllocator.Next(current.id,current.revision));
 		check(restyled && CommitRuntimeShapeEditCpu(*canvas,pages[0],*item,current,*restyled,allocate).has_value() && window.ProductVisualStyleSnapshot().shapeStyle == style,
 			"style edit commits current object without altering next tool snapshot");
+	}
+	// 离散旋转与翻转共用属性候选和Replace历史，不能追加新对象。
+	for (auto kind : {ShapeUiActionKind::Rotate45Clockwise,ShapeUiActionKind::Rotate90Clockwise})
+	{
+		auto drawn = begin({PresetKind::Rectangle,CreationMode::Drag},{40,50});
+		const auto created = up(*drawn,{160,130}); check(created.has_value(),"rotation fixture commits");
+		if (!created) continue;
+		const auto item = pages[0].history.LastVisibleItem(); if (!item) continue;
+		const auto before = *canvas->Strokes()[created->strokeIndex].Shape();
+		ShapeUiAction rotate; rotate.kind = kind;
+		const auto after = BuildShapePropertyCandidate(before,rotate,pages[0].shapeRevisionAllocator.Next(before.id,before.revision));
+		const auto cursor = pages[0].operationCursor, count = canvas->Strokes().size();
+		check(after && CommitRuntimeShapeEditCpu(*canvas,pages[0],*item,before,*after,allocate) &&
+			pages[0].operationCursor == cursor+1 && pages[0].operations.back().kind == CanvasOperationKind::Replace && canvas->Strokes().size() == count,
+			"rotation records one Replace without append");
+		check(ApplyRuntimeJournalCpu(*canvas,pages[0],false,allocate) && SameShapeSemantics(*canvas->Strokes()[created->strokeIndex].Shape(),before),"rotation undo restores before geometry");
+		check(after && ApplyRuntimeJournalCpu(*canvas,pages[0],true,allocate) && SameShapeSemantics(*canvas->Strokes()[created->strokeIndex].Shape(),*after),"rotation redo restores after geometry");
 	}
 	// SetStyle辅助开关只替换当前对象，撤销/重做和冷历史都沿用同一journal。
 	for (auto preset : {PresetKind::Rectangle,PresetKind::Circle,PresetKind::Ellipse})

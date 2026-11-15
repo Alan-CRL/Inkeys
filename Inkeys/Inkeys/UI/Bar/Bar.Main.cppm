@@ -484,12 +484,13 @@ namespace Inkeys::UI::Bar
 class BarConstructionPrompt
 {
 	friend class BarGeometryAttributeTestAccess;
+	friend class BarUISetClass; // 触摸准入只读取同帧候选，随成功呈现事务发布。
 public:
 	bool Advance(BarUISetClass&, std::shared_ptr<const Inkeys::Drawing::Draw3::ShapeUiSnapshot>, double dt, double speed,
 		double zoom, RECT workArea, POINT origin, double rigidX, double rigidY, const BarUiTimelineClass* parentTimeline = nullptr);
 	void Draw(BarUIRendering&, ID2D1DeviceContext*);
 	void CommitPresented();
-	bool Pointer(BarUISetClass&, const ExMessage&, bool cancelled = false);
+	bool Pointer(BarUISetClass&, const ExMessage&, bool cancelled = false, bool* accepted = nullptr);
 	struct KeyboardMessage { BYTE key = 0; bool down = false, shift = false; };
 	bool Keyboard(BarUISetClass&, const KeyboardMessage&);
 	bool WantsKeyboard() const;
@@ -510,6 +511,8 @@ private:
 		bool visible = false, input = false, ring = false;
 	};
 	Frame frame_, presented_;
+	// 离屏 fixture 可替换意图出口，以核对一次触摸只提交一次；产品走 SubmitShapeUiIntent。
+	std::function<bool(const Inkeys::Drawing::Draw3::ShapeUiAction&)> submit_;
 	mutable std::mutex mutex_;
 	BarButtonListClass list_;
 	std::array<std::shared_ptr<BarButtonClass>,4> buttons_;
@@ -1595,6 +1598,7 @@ namespace Inkeys::UI::Bar
 		BarUISetClass& owner, std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> present);
 	export int RunUi3MultiTargetOffscreenBenchmark();
 	export int RunGeometryAttributeOffscreenTest();
+	bool RunConstructionPromptTouchRouteTest(POINT screen);
 	export int RunIdleBackingResourceLifecycleTest() noexcept;
 	export int RunUi3WorkspaceCenteringTest();
 	export int RunUi3BottomDockTransitionTest();

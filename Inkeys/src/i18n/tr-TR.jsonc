@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "Eşkenar",
         "FlipHorizontalLabel": "Yatay çevir",
         "FlipVerticalLabel": "Dikey çevir",
+        "Rotate45Label": "Saat yönünde 45° döndür",
+        "Rotate90Label": "Saat yönünde 90° döndür",
         "RightPrismLabel": "Dik prizma",
         "RightPyramidLabel": "Dik piramit",
         "StraightLineLabel": "Çizgi",

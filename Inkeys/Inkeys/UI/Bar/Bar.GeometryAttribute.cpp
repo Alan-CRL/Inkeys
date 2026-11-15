@@ -29,8 +29,8 @@ namespace
 	constexpr int SegmentBegin = GeometrySegmentBegin;
 	constexpr std::array<Auxiliary,3> AuxiliaryBits{Auxiliary::Center,Auxiliary::Foci,Auxiliary::Diagonals};
 	constexpr int ThicknessBegin = GeometryThicknessBegin, ThicknessCount = GeometryThicknessCount, CloseButton = GeometryCloseButton;
-	// 长按固定：与形状颜色面板“保持”同节奏，0.5s 后出现进度环，再 1.5s 走满；移动阈值沿用粗细预览的触摸阈值。
-	constexpr auto HoldRingDelay = std::chrono::milliseconds(500), HoldCommitDelay = std::chrono::milliseconds(2000);
+	// 长按固定：0.2s 后出现进度环，再 0.8s 走满（合计 1s，比颜色面板“保持”更短）；移动阈值沿用粗细预览的触摸阈值。
+	constexpr auto HoldRingDelay = std::chrono::milliseconds(200), HoldCommitDelay = std::chrono::milliseconds(1000);
 	constexpr double HoldMoveSlopDip = 5.0;
 	// -1/-2为属性list内部的两枚分隔项，不占用户控件/命中索引。
 	constexpr std::array<int,11> AttributeItems{StyleBegin,StyleBegin+1,-1,
@@ -646,10 +646,11 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	{
 		std::lock_guard lock(holdMutex_);
 		const bool holding = holdItem_ >= 0 && !holdCommitted_;
+		constexpr double ringSeconds = std::chrono::duration<double>(HoldRingDelay).count(), commitSeconds = std::chrono::duration<double>(HoldCommitDelay).count();
 		const double still = holding ? std::chrono::duration<double>(frameTime - holdStart_).count() : 0.0;
-		if (holding && (still >= 0.5 || holdRingWake_))
+		if (holding && (still >= ringSeconds || holdRingWake_))
 		{
-			ringItem_ = holdItem_; ringProgress_ = (std::clamp)((still - 0.5) / 1.5, 0.0, 1.0); ringVisible = true;
+			ringItem_ = holdItem_; ringProgress_ = (std::clamp)((still - ringSeconds) / (commitSeconds - ringSeconds), 0.0, 1.0); ringVisible = true;
 		}
 		else if (holdCommitted_ && holdAccepted_ && holdItem_ >= 0 && ringItem_ == holdItem_) ringProgress_ = 1.0;
 	}

@@ -47,6 +47,8 @@ public:
 	static auto Attributes(const BarGeometryAttributePanel& p) { return p.attributeList_.Snapshot(); }
 	static auto Candidate(const BarGeometryAttributePanel& p) { return p.frame_; }
 	static auto PromptFrame(const BarConstructionPrompt& p) { return p.presented_; }
+	static auto PromptCandidate(const BarConstructionPrompt& p) { return p.frame_; }
+	static void PromptSubmit(BarConstructionPrompt& p, std::function<bool(const Inkeys::Drawing::Draw3::ShapeUiAction&)> submit) { p.submit_=std::move(submit); }
 	static const BarUiWordClass& PromptLabel(const BarConstructionPrompt& p) { return p.label_; }
 	static const BarUiWordClass& PromptRingLabel(const BarConstructionPrompt& p) { return p.ringLabel_; }
 	static double PromptRingProgress(const BarConstructionPrompt& p) { return p.ringProgress_.val; }
@@ -540,21 +542,21 @@ namespace Inkeys::UI::Bar
 			click(ellipse);
 			expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse && !pinned() && badge(ellipse).progress.val == 0, "short tap still selects without pinning");
 
-			// 0.5s 前不出现进度环；期限由交互 owner 消费，不依赖帧率。
+			// 0.2s 前不出现进度环；期限由交互 owner 消费，不依赖帧率。
 			const auto beforeHold = GetStateModeVersionedSnapshot();
 			expect(pointer(WM_LBUTTONDOWN, rect, true), "hold down consumed");
 			auto wake = panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now());
-			expect(wake != std::chrono::steady_clock::time_point{} && wake - std::chrono::steady_clock::now() <= 500ms, "hold arms the half-second ring deadline");
+			expect(wake != std::chrono::steady_clock::time_point{} && wake - std::chrono::steady_clock::now() <= 200ms, "hold arms the 0.2s ring deadline");
 			tick(5); expect(BarGeometryAttributeTestAccess::RingItem(panel) < 0, "no progress ring before half a second");
-			BarGeometryAttributeTestAccess::ShiftHold(panel, 600ms);
+			BarGeometryAttributeTestAccess::ShiftHold(panel, 250ms);
 			wake = panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now());
-			expect(wake != std::chrono::steady_clock::time_point{} && wake - std::chrono::steady_clock::now() <= 1400ms && wake - std::chrono::steady_clock::now() > 1000ms, "ring wake then hands over the two-second commit deadline");
+			expect(wake != std::chrono::steady_clock::time_point{} && wake - std::chrono::steady_clock::now() <= 750ms && wake - std::chrono::steady_clock::now() > 600ms, "ring wake then hands over the one-second commit deadline");
 			tick(1);
 			expect(BarGeometryAttributeTestAccess::RingItem(panel) == rect && BarGeometryAttributeTestAccess::RingProgress(panel) > 0
 				&& BarGeometryAttributeTestAccess::RingProgress(panel) < .2 && panel.Active(), "progress ring starts after the delay and keeps frames active");
-			BarGeometryAttributeTestAccess::ShiftHold(panel, 500ms); tick(30);
+			BarGeometryAttributeTestAccess::ShiftHold(panel, 270ms); tick(30);
 			const double midProgress = BarGeometryAttributeTestAccess::RingProgress(panel);
-			expect(midProgress > .35 && midProgress < .6 && BarGeometryAttributeTestAccess::RingOpacity(panel) == 1, "ring progress follows elapsed time from 0.5s over 1.5s");
+			expect(midProgress > .35 && midProgress < .6 && BarGeometryAttributeTestAccess::RingOpacity(panel) == 1, "ring progress follows elapsed time from 0.2s over 0.8s");
 			{
 				// 从顶边中点顺时针：约四成进度时右上有环、左上仍空。
 				auto* dc = owner.spec.GetDeviceContext(); owner.spec.SetFrameZoom(zoom);
@@ -584,7 +586,7 @@ namespace Inkeys::UI::Bar
 				"releasing before completion neither selects nor pins and the ring fades out");
 
 			// 移出按钮中止。
-			pointer(WM_LBUTTONDOWN, rect, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 800ms);
+			pointer(WM_LBUTTONDOWN, rect, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 360ms);
 			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); tick(2);
 			pointer(WM_MOUSEMOVE, ellipse, true);
 			expect(BarGeometryAttributeTestAccess::HoldItem(panel) < 0, "leaving the button aborts the hold");
@@ -607,15 +609,15 @@ namespace Inkeys::UI::Bar
 
 			// 取消中止。
 			const auto beforeCancel = GetStateModeVersionedSnapshot();
-			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1500ms);
+			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 730ms);
 			{ ExMessage lost{}; panel.Pointer(owner, lost, true); }
 			BarGeometryAttributeTestAccess::ShiftHold(panel, 1000ms);
 			expect(panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()) == std::chrono::steady_clock::time_point{}, "cancelled hold cannot commit later");
 			pointer(WM_LBUTTONUP, ellipse, false); tick(40);
 			expect(SameBusinessSnapshot(beforeCancel, GetStateModeVersionedSnapshot()), "pointer cancellation leaves no side effect");
 
-			// 满 2s：选中并固定；随后的抬起不触发短按。
-			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2100ms);
+			// 满 1s：选中并固定；随后的抬起不触发短按。
+			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1100ms);
 			expect(panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()) == std::chrono::steady_clock::time_point{}, "commit deadline is consumed once");
 			expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse && pinned() && GetStateModeSnapshot().Shape.pinnedPreset == PresetKind::Ellipse,
 				"completed hold selects and pins the category");
@@ -630,22 +632,22 @@ namespace Inkeys::UI::Bar
 			expect(badge(ellipse).progress.val == 1 && std::abs(badgeGeometry(ellipse).angle) < .000001 && badge(rect).progress.val == 0, "panel badge settles on the pinned category only");
 
 			// 再次长按取消固定，角标旋转离场。
-			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2100ms);
+			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1100ms);
 			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); pointer(WM_LBUTTONUP, ellipse, false); tick(9);
 			expect(!pinned() && GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse, "second hold unpins");
 			expect(badge(ellipse).progress.val > 0 && badgeGeometry(ellipse).angle > 0, "unpinned badge rotates out");
 			tick(60); expect(badge(ellipse).progress.val == 0, "unpinned badge disappears");
 
 			// 直线/箭头：长按不改变固定状态。
-			pointer(WM_LBUTTONDOWN, line, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2100ms);
+			pointer(WM_LBUTTONDOWN, line, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1100ms);
 			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); pointer(WM_LBUTTONUP, line, false); tick(10);
 			expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Line && pinned() && !GetStateModeSnapshot().Shape.pinnedPreset, "hold on line selects it and keeps it pinned");
-			pointer(WM_LBUTTONDOWN, line, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2100ms);
+			pointer(WM_LBUTTONDOWN, line, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1100ms);
 			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); pointer(WM_LBUTTONUP, line, false); tick(60);
 			expect(pinned() && badge(line).progress.val == 1 && badge(arrow).progress.val == 1, "repeated hold cannot unpin line");
 
 			// 切换到其他图形清除固定；回到原图形也不恢复。
-			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2100ms);
+			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1100ms);
 			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); pointer(WM_LBUTTONUP, ellipse, false); tick(60);
 			expect(pinned(), "ellipse pinned again");
 			click(rect); expect(!pinned() && !GetStateModeSnapshot().Shape.pinnedPreset, "switching category clears the pin");
@@ -653,7 +655,7 @@ namespace Inkeys::UI::Bar
 
 			// 关闭动画时角标直接跳到终态。
 			BarUiAnimationEnabled = false;
-			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2100ms);
+			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1100ms);
 			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); pointer(WM_LBUTTONUP, ellipse, false); tick(1);
 			expect(pinned() && badge(ellipse).progress.val == 1, "animation-disabled badge jumps to its end state");
 			BarUiAnimationEnabled = true;
@@ -682,9 +684,9 @@ namespace Inkeys::UI::Bar
 			};
 
 			// 正常提交：进度环在已接受的提交后定格满格。
-			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1400ms);
+			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 680ms);
 			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); tick(30);
-			BarGeometryAttributeTestAccess::ShiftHold(panel, 700ms);
+			BarGeometryAttributeTestAccess::ShiftHold(panel, 420ms);
 			expect(panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()) == std::chrono::steady_clock::time_point{}, "accepted hold commits on the deadline");
 			tick(1);
 			expect(pinned() && BarGeometryAttributeTestAccess::RingProgress(panel) == 1, "accepted hold freezes the ring at full progress");
@@ -693,15 +695,15 @@ namespace Inkeys::UI::Bar
 
 			// revision 过期：保留按下时守卫，不固定；环不定格满格，按退出时序淡出。
 			{
-				pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1400ms);
+				pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 680ms);
 				(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); tick(30);
-				BarGeometryAttributeTestAccess::ShiftHold(panel, 300ms); tick(1);
+				BarGeometryAttributeTestAccess::ShiftHold(panel, 160ms); tick(1);
 				const double lastProgress = BarGeometryAttributeTestAccess::RingProgress(panel);
 				expect(lastProgress > .7 && lastProgress < .95 && BarGeometryAttributeTestAccess::RingOpacity(panel) == 1, "ring is mid-progress before the stale commit");
 				// 其他来源推进 revision（值不变也计一次），使按下时的 revision 过期。
 				{ const auto s = GetStateModeVersionedSnapshot(); (void)SetShapeLinePatternIfRevision(GetShapeStyle(s.state).linePattern, s.revision); }
 				const auto staleRevision = StateModeTransitionRevision();
-				BarGeometryAttributeTestAccess::ShiftHold(panel, 400ms);
+				BarGeometryAttributeTestAccess::ShiftHold(panel, 260ms);
 				expect(panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()) == std::chrono::steady_clock::time_point{}, "stale hold deadline is consumed once");
 				expect(!pinned() && GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Rectangle && StateModeTransitionRevision() == staleRevision,
 					"stale revision neither selects nor pins and is not retried");
@@ -719,7 +721,7 @@ namespace Inkeys::UI::Bar
 			// 进度环出现后在按钮内超出移动阈值：中止，抬起既不选中也不固定。
 			{
 				const auto before = GetStateModeVersionedSnapshot();
-				pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 800ms);
+				pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 360ms);
 				(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); tick(2);
 				const auto fr = panel.PresentationSnapshot(); const auto r = fr.items[ellipse];
 				ExMessage drift{}; drift.message = WM_MOUSEMOVE; drift.lbutton = true;
@@ -730,9 +732,9 @@ namespace Inkeys::UI::Bar
 				expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()) && !pinned() && !pointerAccepted, "drift abort after the ring neither selects nor pins on release");
 			}
 
-			// Up 在 2.0s 之后、到期唤醒之前被处理：长按恰好提交一次，不触发短按。
+			// Up 在 1.0s 之后、到期唤醒之前被处理：长按恰好提交一次，不触发短按。
 			{
-				pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2050ms);
+				pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1050ms);
 				const auto beforeUp = StateModeTransitionRevision();
 				pointer(WM_LBUTTONUP, ellipse, false);
 				expect(pinned() && GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse && StateModeTransitionRevision() == beforeUp + 1 && !pointerAccepted,
@@ -744,14 +746,14 @@ namespace Inkeys::UI::Bar
 
 			// 注入进度环绘制失败：同一次长按内不重试，下一次长按重新绘制。
 			{
-				pointer(WM_LBUTTONDOWN, rect, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1100ms);
+				pointer(WM_LBUTTONDOWN, rect, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 520ms);
 				(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); tick(30);
 				expect(ringContrast(rect) > 150, "ring draws before the injected failure");
 				BarGeometryAttributeTestAccess::FailRing(panel); tick(1);
 				expect(ringContrast(rect) < 150 && BarGeometryAttributeTestAccess::RingFailed(panel), "failed ring is not retried within the same hold");
 				pointer(WM_LBUTTONUP, rect, false); tick(60);
 				expect(BarGeometryAttributeTestAccess::RingItem(panel) < 0, "aborted ring fades out");
-				pointer(WM_LBUTTONDOWN, rect, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1100ms);
+				pointer(WM_LBUTTONDOWN, rect, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 520ms);
 				(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); tick(30);
 				const int contrast = ringContrast(rect);
 				report << "HoldRingRetry contrast=" << contrast << '\n';
@@ -1670,6 +1672,52 @@ namespace Inkeys::UI::Bar
 		unsigned promptSession=80;
 		const auto publishPrompt=[&](const std::shared_ptr<Inkeys::Drawing::Draw3::ShapeUiSnapshot>& snapshot)
 		{Inkeys::Drawing::Draw3::PublishShapeUiSnapshot(snapshot);owner.UpdateRendering(false);};
+		const auto promptScreenCenter=[&](const auto& rect,double frameZoom)
+		{
+			GeometryAttributePresentation coordinates;coordinates.zoom=frameZoom;
+			const auto client=clientRect({rect.left,rect.top,rect.right,rect.bottom},coordinates);
+			return POINT{static_cast<LONG>(std::lround(EraserRectCenterX(client)+receipt.destination.x)),
+				static_cast<LONG>(std::lround(EraserRectCenterY(client)+receipt.destination.y))};
+		};
+		const auto checkPromptTouch=[&](bool outsideBody=true)
+		{
+			using Inkeys::Input::UiPointer::Touch::Hit;
+			using Inkeys::Drawing::Draw3::ShapeUiAction;
+			using Inkeys::Drawing::Draw3::ShapeUiActionKind;
+			const auto frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+			const std::array actions{ShapeUiActionKind::ConstructionBack,ShapeUiActionKind::ConstructionForward,
+				ShapeUiActionKind::ConstructionComplete,ShapeUiActionKind::ConstructionCancel};
+			std::vector<ShapeUiAction> intents;
+			BarGeometryAttributeTestAccess::PromptSubmit(owner.constructionPrompt,[&](const ShapeUiAction& action){intents.push_back(action);return true;});
+			struct ResetSubmit { BarConstructionPrompt& prompt; ~ResetSubmit(){BarGeometryAttributeTestAccess::PromptSubmit(prompt,{});} } reset{owner.constructionPrompt};
+			unsigned checked=0;
+			for(size_t i=0;i<frame.buttons.size();++i)
+			{
+				const auto& button=frame.buttons[i];if(!button.visible)continue;
+				const auto& r=button.boundsDip;
+				const auto screen=promptScreenCenter(r,frame.zoom);
+				if(outsideBody)
+				{
+					// 选主栏本体之外的中心，防止漏登提示时借下层 Accept 让回归误通过。
+					const auto body=owner.shapeMap[BarUISetShapeEnum::MainBar];
+					const double x=(r.left+r.right)/2,y=(r.top+r.bottom)/2;
+					expect(x<body->inhX||x>=body->inhX+body->w.val||y<body->inhY||y>=body->inhY+body->h.val,
+						"prompt touch samples are outside the main bar body");
+				}
+				const bool enabled=frame.input&&button.enabled;
+				expect(owner.ProbeTouchScreen(screen).hit==(enabled?Hit::Accept:Hit::Blocked),
+					"successful prompt frame admits enabled buttons and blocks disabled buttons");
+				if(enabled)
+				{
+					const auto count=intents.size();
+					expect(RunConstructionPromptTouchRouteTest(screen),"prompt touch Down/Up uses the ordinary Bar mailbox and rejects a late Up");
+					expect(intents.size()==count+1&&intents.back().kind==actions[i]&&intents.back().identity==frame.identity,
+						"each prompt touch emits exactly one intent with the presented action and identity");
+				}
+				++checked;
+			}
+			expect(checked>0,"touch admission checks visible construction prompt buttons");
+		};
 		const auto promptKey=[&](BYTE key,bool down,bool shift=false)
 		{
 			const BarConstructionPrompt::KeyboardMessage message{key,down,shift};
@@ -1691,10 +1739,14 @@ namespace Inkeys::UI::Bar
 			expect(!owner.constructionPrompt.WantsKeyboard(),"unpresented first prompt does not capture keyboard");
 			rejectedPresent=false;rejectNextPresent=true;sceneTick(1);
 			expect(rejectedPresent&&owner.constructionPrompt.Visible()&&!owner.constructionPrompt.WantsKeyboard(),"failed first presentation keeps keyboard gate on the hidden successful frame");
+			const auto unpresented=BarGeometryAttributeTestAccess::PromptCandidate(owner.constructionPrompt);
+			expect(owner.ProbeTouchScreen(promptScreenCenter(unpresented.buttons[3].boundsDip,unpresented.zoom)).hit!=Inkeys::Input::UiPointer::Touch::Hit::Accept,
+				"failed first presentation does not publish candidate prompt touch admission");
 			for(const BYTE key:{BYTE(VK_LEFT),BYTE(VK_RIGHT),BYTE(VK_SPACE),BYTE(VK_TAB)})
 				expect(!promptKey(key,true)&&!promptKey(key,false),"unpresented prompt leaves PPT arrows, Space and Tab unconsumed");
 			previousPixels.clear();sceneTick(90);
 			expect(owner.constructionPrompt.WantsKeyboard()&&promptKey(VK_RIGHT,false)&&promptKey(VK_SPACE,false),"successful retry enables the same presented keyboard state");
+			checkPromptTouch();
 		}
 		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});sceneTick(2);BarUiAnimationEnabled=true;
 		for(const bool dark:{true,false})for(const double scale:{1.,2.})
@@ -1721,12 +1773,14 @@ namespace Inkeys::UI::Bar
 			auto frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
 			expect(frame.visible&&frame.input&&frame.ring&&std::abs(frame.panel.Height()-42.5)<.01,"fixed-step prompt keeps final height and visible ring");
 			expect(!frame.buttons[0].enabled&&!frame.buttons[1].enabled&&!frame.buttons[2].visible&&frame.buttons[3].enabled,"arc first step exposes disabled Back/Forward and enabled Cancel");
+			checkPromptTouch();
 			expect(BarGeometryAttributeTestAccess::PromptRingLabel(owner.constructionPrompt).content.GetVal()==L"1/2"&&BarGeometryAttributeTestAccess::PromptRingProgress(owner.constructionPrompt)==0,"first-step ring shows 1/2 with empty progress");
 			const auto& surface=BarGeometryAttributeTestAccess::PromptSurface(owner.constructionPrompt);
 			expect(surface.themeSurface&&surface.residentSurface&&surface.framePrimaryLightEnabled&&surface.frameCursorLightIntensityScale==1.,"prompt uses resident material and complete primary/cursor lighting");
 			checkPromptPixels((L"construction-arc-1-"+suffix).c_str());
 			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
 			construction->construction.step=2;construction->construction.confirmedSteps=1;construction->construction.canBack=true;publishPrompt(construction);sceneTick(120);
+			checkPromptTouch();
 			expect(BarGeometryAttributeTestAccess::PromptRingLabel(owner.constructionPrompt).content.GetVal()==L"2/2"&&std::abs(BarGeometryAttributeTestAccess::PromptRingProgress(owner.constructionPrompt)-.5)<.000001,"second-step ring shows 2/2 and half completed");
 			checkPromptPixels((L"construction-arc-2-"+suffix).c_str());
 			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
@@ -1759,13 +1813,16 @@ namespace Inkeys::UI::Bar
 			construction->construction.step=1;construction->construction.confirmedSteps=0;construction->construction.canBack=false;construction->construction.canForward=true;publishPrompt(construction);sceneTick(120);
 			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
 			expect(!frame.buttons[0].enabled&&frame.buttons[1].enabled,"backed-out step enables only Forward and Cancel");
+			checkPromptTouch();
 			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
 			construction->construction.preset=PresetKind::Polygon;construction->construction.totalSteps=0;construction->construction.step=3;
 			construction->construction.confirmedSteps=2;construction->construction.canBack=true;construction->construction.canForward=false;publishPrompt(construction);sceneTick(120);
 			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
 			expect(!frame.ring&&frame.buttons[2].visible&&!frame.buttons[2].enabled,"polygon has no ring and Complete waits for three points");
+			checkPromptTouch();
 			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;
 			construction->construction.step=4;construction->construction.confirmedSteps=3;construction->construction.canComplete=true;publishPrompt(construction);sceneTick(120);
+			checkPromptTouch();
 			expect(BarGeometryAttributeTestAccess::PromptLabel(owner.constructionPrompt).content.GetVal().find(L"已确定 3 个点")!=std::wstring::npos,"polygon labels confirmed points");
 			checkPromptPixels((L"construction-polygon-"+suffix).c_str());
 			const auto& cancelButton=BarGeometryAttributeTestAccess::PromptButton(owner.constructionPrompt,3).button;
@@ -1791,15 +1848,29 @@ namespace Inkeys::UI::Bar
 			expect(SameBusinessSnapshot(before,GetStateModeVersionedSnapshot()),"prompt keyboard traversal never changes next-tool style");
 			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;construction->constructionContactActive=true;publishPrompt(construction);sceneTick(90);
 			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);for(const auto& action:frame.buttons)expect(!action.enabled,"all actions disable during physical contact");
+			checkPromptTouch();
 			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;construction->constructionContactActive=false;publishPrompt(construction);sceneTick(90);
 			// 人工收起仍展示提示，并以主按钮而非已隐藏主栏的中心定位。
 			BarGeometryAttributeTestAccess::MoveRoot(owner,600,650);sceneTick(90);owner.barState.fold=true;sceneTick(120);
 			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);const auto currentRoot=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
 			expect(frame.visible&&frame.input&&std::abs((frame.panel.left+frame.panel.right)/2-(currentRoot->inhX+currentRoot->w.val/2))<.1,"manual collapse retains prompt anchored to main button");
+			checkPromptTouch();
 			screenshot(L"construction-folded-"+suffix);
-			Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});bool retiring=false;
-			for(int sample=0;sample<50;++sample){sceneTick(1);const auto retiringFrame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);retiring|=retiringFrame.scale>.01&&retiringFrame.scale<.99;if(sample==12)screenshot(L"construction-disappear-"+suffix);}
+			Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});bool retiring=false,retiringTouchChecked=false;
+			for(int sample=0;sample<50;++sample)
+			{
+				sceneTick(1);const auto retiringFrame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);retiring|=retiringFrame.scale>.01&&retiringFrame.scale<.99;
+				// 缩到亚像素后中心会被屏幕整数舍入挤出；在仍有实际面积时验证退场阻挡。
+				if(retiringFrame.visible&&retiringFrame.scale>.1)
+				{
+					retiringTouchChecked=true;
+					expect(!retiringFrame.input&&owner.ProbeTouchScreen(promptScreenCenter(retiringFrame.visualPanel,retiringFrame.zoom)).hit==Inkeys::Input::UiPointer::Touch::Hit::Blocked,
+						"visible retiring prompt blocks touch before exposing lower layers");
+				}
+				if(sample==12)screenshot(L"construction-disappear-"+suffix);
+			}
 			expect(retiring&&!owner.constructionPrompt.Visible(),"disappearance traverses intermediate scale and retires fully");
+			expect(retiringTouchChecked,"retiring prompt has a committed blocked touch sample");
 			expect(!promptKey(VK_TAB,true,false)&&!promptKey(VK_ESCAPE,true),"hidden prompt does not consume keyboard");owner.barState.fold=false;sceneTick(90);
 		}
 		// 窄屏提示改成双列换行，叉勾仍必须同排；动作索引不随视觉顺序变动。
@@ -1832,6 +1903,7 @@ namespace Inkeys::UI::Bar
 		BarGeometryAttributeTestAccess::Display(owner,460,420,192);owner.barStyle.configZoom=1;sceneTick(120);
 		const auto compact=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
 		expect(compact.visible&&compact.input,"restricted workspace prompt settles and accepts input");
+		checkPromptTouch(false);
 		for(const auto& action:compact.buttons)if(action.visible)expect(action.boundsDip.left>=compact.panel.left&&action.boundsDip.right<=compact.panel.right&&action.boundsDip.top>=compact.panel.top&&action.boundsDip.bottom<=compact.panel.bottom,"wrapped prompt preserves full standard button bounds");
 		checkPromptPixels(L"construction-compact-200.png");
 		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});owner.UpdateRendering(false);sceneTick(90);

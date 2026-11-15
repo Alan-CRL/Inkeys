@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "等边",
         "FlipHorizontalLabel": "水平翻转",
         "FlipVerticalLabel": "竖直翻转",
+        "Rotate45Label": "顺时针旋转 45°",
+        "Rotate90Label": "顺时针旋转 90°",
         "RightPrismLabel": "正棱柱",
         "RightPyramidLabel": "正棱锥",
         "StraightLineLabel": "直线",

@@ -420,6 +420,8 @@ BARSHAPELOGARITHMIC     UI                      "src\\UI\\barShapeLogarithmic.sv
 BARSHAPEMOVE            UI                      "src\\UI\\barShapeMove.svg"
 BARSHAPEFLIPHORIZONTAL            UI                      "src\\UI\\barShapeFlipHorizontal.svg"
 BARSHAPEFLIPVERTICAL            UI                      "src\\UI\\barShapeFlipVertical.svg"
+BARSHAPEROTATE45            UI                      "src\\UI\\barShapeRotate45.svg"
+BARSHAPEROTATE90            UI                      "src\\UI\\barShapeRotate90.svg"
 BARSHAPEAUXCENTER       UI                      "src\\UI\\barShapeAuxCenter.svg"
 
 BARSHAPEAUXFOCI         UI                      "src\\UI\\barShapeAuxFoci.svg"

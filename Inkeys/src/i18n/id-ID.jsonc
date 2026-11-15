@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "Sama sisi",
         "FlipHorizontalLabel": "Balik horizontal",
         "FlipVerticalLabel": "Balik vertikal",
+        "Rotate45Label": "Putar 45° searah jarum jam",
+        "Rotate90Label": "Putar 90° searah jarum jam",
         "RightPrismLabel": "Prisma tegak",
         "RightPyramidLabel": "Limas tegak",
         "StraightLineLabel": "Garis",

@@ -519,6 +519,10 @@ beginShapeContact = [&](RuntimeStroke& runtime)
 		shapeUi.construction->session.Cancel(); shapeUi.construction->cancelled = true; shapeUi.construction.reset();
 		shapeUi.completedConstruction = {};
 	}
+	// 快速连点时上一根接触的 Up 与本次 Down 可能落在同一入口批次：Up 已出队但帧末确认尚未执行，
+	// contactActive 仍为真会把这次加点整根拒收。按真实先后顺序先确认上一步，再接受本次接触。
+	if (finishShapeContact)
+		if (RuntimeStroke* pending = FindPendingConstructionContact(active,runtime,shapeUi.construction)) finishShapeContact(*pending);
 	if (!shapeUi.construction)
 	{
 		auto state = std::make_shared<ShapeConstructionRuntime>(); state->identity = scene.identity;
@@ -538,7 +542,8 @@ beginShapeContact = [&](RuntimeStroke& runtime)
 };
 finishShapeContact = [&](RuntimeStroke& runtime)
 {
-	if (!runtime.shape.construction) return;
+	if (!runtime.shape.construction || runtime.shape.constructionFinished) return;
+	runtime.shape.constructionFinished = true;
 	ConfirmRuntimeConstructionContact(runtime);
 	if (runtime.shape.construction->cancelled || runtime.shape.construction->completed)
 		if (shapeUi.construction == runtime.shape.construction)
@@ -636,7 +641,8 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 	if (!revision) return;
 	if ((action.kind == ShapeUiActionKind::SetStyle || action.kind == ShapeUiActionKind::SetSides ||
 		action.kind == ShapeUiActionKind::SetConstraint || action.kind == ShapeUiActionKind::SetRightSolid ||
-		action.kind == ShapeUiActionKind::FlipHorizontal || action.kind == ShapeUiActionKind::FlipVertical) && !shapeUi.editor.gestureActive)
+		action.kind == ShapeUiActionKind::FlipHorizontal || action.kind == ShapeUiActionKind::FlipVertical ||
+		action.kind == ShapeUiActionKind::Rotate45Clockwise || action.kind == ShapeUiActionKind::Rotate90Clockwise) && !shapeUi.editor.gestureActive)
 		candidate = BuildShapePropertyCandidate(*shapeUi.editor.object,action,revision,{scene.displayScale,.25f});
 	else if (inGesture && (action.kind == ShapeUiActionKind::PreviewEdit || action.kind == ShapeUiActionKind::CommitEdit))
 	{

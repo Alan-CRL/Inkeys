@@ -498,6 +498,22 @@ std::optional<ShapeObject> FlipShape(const ShapeObject& before, bool horizontal,
 	shape.transform = ComposeTransforms(flip,shape.transform);
 	return RebuildEdited(std::move(shape),revision,error);
 }
+std::optional<ShapeObject> RotateShape(const ShapeObject& before, float radians, uint64_t revision,
+	const BuildOptions& options, std::string* error)
+{
+	if (!Validate(before) || revision <= before.revision || !Finite(radians) ||
+		(before.construction && before.construction->tool.preset >= PresetKind::Cuboid))
+	{ SetError(error,"invalid rotation"); return std::nullopt; }
+	auto shape = PromoteShape(before,options);
+	const auto bounds = LocalShapeBounds(shape,options);
+	if (!bounds.valid) { SetError(error,"invalid rotation geometry"); return std::nullopt; }
+	const Vec2 center = ApplyTransform(shape.transform,{(bounds.left+bounds.right)*.5f,(bounds.top+bounds.bottom)*.5f});
+	// 与旋转把手共用局部框中心；外层正角在屏幕向下的y轴中顺时针旋转。
+	Transform rotate; rotate.m11 = rotate.m22 = std::cos(radians); rotate.m12 = std::sin(radians); rotate.m21 = -rotate.m12;
+	const auto rotated = ApplyTransform(rotate,center); rotate.dx = center.x-rotated.x; rotate.dy = center.y-rotated.y;
+	shape.transform = ComposeTransforms(rotate,shape.transform);
+	return RebuildEdited(std::move(shape),revision,error);
+}
 std::optional<ShapeObject> TransformShapeGesture(const ShapeObject& before, Vec2 pivot, Vec2 translation,
 	float scale, float rotation, uint64_t revision, const BuildOptions& options, std::string* error)
 {

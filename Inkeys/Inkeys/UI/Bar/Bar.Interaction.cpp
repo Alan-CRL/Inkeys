@@ -2320,6 +2320,49 @@ namespace Inkeys::UI::Bar
 	}
 #endif
 
+	bool RunConstructionPromptTouchRouteTest(POINT screen)
+	{
+		if (interactionWorkerRunning.load(std::memory_order_acquire)
+			|| barUISet.ProbeTouchScreen(screen).hit != Pointer::Touch::Hit::Accept) return false;
+		// 使用普通 Bar 按钮的真实邮箱、来源会话和屏幕→Rigid 映射，不创建 HWND。
+		MainInteractionAwaitContext context;
+		auto* previous = mainInteractionAwaitContext;
+		mainInteractionAwaitContext = &context;
+		struct Restore
+		{
+			MainInteractionAwaitContext* previous;
+			~Restore() { FinishBarPointerSession(); mainInteractionAwaitContext = previous; }
+		} restore{previous};
+		FinishBarPointerSession();
+		unsigned consumed = 0, activations = 0;
+		for (unsigned phase = 0; phase < 3; ++phase)
+		{
+			Pointer::Sample sample;
+			sample.source = Pointer::Source::Touch;
+			sample.kind = phase == 0 ? Pointer::Kind::Down : Pointer::Kind::Up;
+			sample.screen = screen; sample.tick = sample.messageTime = 4000 + phase;
+			sample.generation = 901; sample.device = 9; sample.contact = 39;
+			ExMessage translated{};
+			translated.message = phase == 0 ? WM_LBUTTONDOWN : WM_LBUTTONUP;
+			translated.lbutton = phase == 0;
+			if (!EnqueueBarPointerSample(nullptr, translated, sample, 0)) return false;
+			(void)PumpSharedInteraction(context, InteractionClock::now());
+			ExMessage message{};
+			if (!TryReadBarPointerMessage(message, EM_MOUSE, nullptr, false, nullptr))
+			{
+				if (phase < 2) return false;
+				continue; // 同一触摸的迟到 Up 必须在来源会话层丢弃。
+			}
+			bool accepted = false;
+			if (!IsBarTouchPointerMessage(message) || IsBarPointerCancelMessage(message)
+				|| !barUISet.constructionPrompt.Pointer(barUISet, message, false, &accepted)) return false;
+			++consumed;
+			if (accepted) { ++activations; AcceptBarButtonFeedback(); }
+			if ((phase == 0 && accepted) || (phase == 1 && !accepted)) return false;
+		}
+		return consumed == 2 && activations == 1;
+	}
+
 	int RunSharedInteractionWorkerTests() noexcept
 	{
 		if (interactionWorkerRunning.load(std::memory_order_acquire)) return 2;
@@ -8499,8 +8542,15 @@ public:
 			if (dockIndicatorResult == BarInteractionStageResult::Shutdown) break;
 			if (dockIndicatorResult == BarInteractionStageResult::Consumed) continue;
 
-			if (barUISet.constructionPrompt.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg)))
+			bool promptAccepted = false;
+			if (barUISet.constructionPrompt.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), &promptAccepted))
+			{
+				if (promptAccepted) AcceptBarButtonFeedback();
+				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
+				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
+				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }
 				continue;
+			}
 			bool statusAccepted=false;
 			if(barUISet.statusIndicator.Pointer(barUISet,msg,IsBarPointerCancelMessage(msg),IsBarTouchPointerMessage(msg),&statusAccepted))
 			{

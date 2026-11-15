@@ -245,6 +245,7 @@ export namespace Inkeys::UI::Bar
 		bool Contact(UINT message, POINT screen, std::uint64_t source, std::uint32_t contactId,
 			bool touch, bool pen, double seconds, bool captureOwned, std::uint64_t presentedRevision);
 		std::chrono::steady_clock::time_point TickPrediction(std::chrono::steady_clock::time_point);
+		std::chrono::steady_clock::time_point TickToolbarIdle(std::chrono::steady_clock::time_point);
 		std::uint64_t PresentedGeneration() const;
 		bool Keyboard(BYTE key, bool down);
 		bool HasKeyboardFocus() const;

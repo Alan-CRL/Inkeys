@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "Equilateral",
         "FlipHorizontalLabel": "Flip horizontally",
         "FlipVerticalLabel": "Flip vertically",
+        "Rotate45Label": "Rotate 45° clockwise",
+        "Rotate90Label": "Rotate 90° clockwise",
         "RightPrismLabel": "Right prism",
         "RightPyramidLabel": "Right pyramid",
         "StraightLineLabel": "Line",

@@ -31,7 +31,8 @@
     "11-14-shape-round6-interaction",
     "11-15-shape-round7-input-fixes",
     "11-15-shape-round8-visual-polish",
-    "11-15-shape-round9-pin-badge"
+    "11-15-shape-round9-pin-badge",
+    "11-15-shape-round10-touch-rotate"
   ],
   "parent": "10-17-shape-selection-system",
   "relatedFiles": [],

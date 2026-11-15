@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "Gleichseitig",
         "FlipHorizontalLabel": "Horizontal spiegeln",
         "FlipVerticalLabel": "Vertikal spiegeln",
+        "Rotate45Label": "Um 45° im Uhrzeigersinn drehen",
+        "Rotate90Label": "Um 90° im Uhrzeigersinn drehen",
         "RightPrismLabel": "Gerades Prisma",
         "RightPyramidLabel": "Gerade Pyramide",
         "StraightLineLabel": "Linie",

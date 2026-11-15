@@ -20,6 +20,8 @@ namespace draw3::shapes
 		std::optional<float> angleDelta = std::nullopt);
 	std::optional<ShapeObject> FlipShape(const ShapeObject&, bool horizontal, uint64_t newRevision,
 		const BuildOptions& = {}, std::string* error = nullptr);
+	std::optional<ShapeObject> RotateShape(const ShapeObject&, float radians, uint64_t newRevision,
+		const BuildOptions& = {}, std::string* error = nullptr);
 	std::optional<ShapeObject> TransformShapeGesture(const ShapeObject&, Vec2 pivot, Vec2 translation,
 		float scale, float rotation, uint64_t newRevision, const BuildOptions& = {}, std::string* error = nullptr);
 	std::optional<ShapeObject> RestyleShape(const ShapeObject& before, const ShapeStyle&,

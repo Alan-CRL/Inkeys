@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "Echilateral",
         "FlipHorizontalLabel": "Răsturnare orizontală",
         "FlipVerticalLabel": "Răsturnare verticală",
+        "Rotate45Label": "Rotește cu 45° în sensul acelor de ceasornic",
+        "Rotate90Label": "Rotește cu 90° în sensul acelor de ceasornic",
         "RightPrismLabel": "Prismă dreaptă",
         "RightPyramidLabel": "Piramidă dreaptă",
         "StraightLineLabel": "Linie",

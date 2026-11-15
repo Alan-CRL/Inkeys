@@ -39,7 +39,8 @@ namespace Inkeys::Drawing::Draw3
 	{
 		BeginEdit, PreviewEdit, CommitEdit, CancelEdit, CloseEditor,
 		SetStyle, SetSides, SetConstraint, ConstructionComplete, ConstructionBack, ConstructionCancel, ConstructionForward, SetRightSolid,
-		ConstructionBeginPointEdit, ConstructionPreviewPointEdit, ConstructionCommitPointEdit, ConstructionCancelPointEdit, FlipHorizontal, FlipVertical
+		ConstructionBeginPointEdit, ConstructionPreviewPointEdit, ConstructionCommitPointEdit, ConstructionCancelPointEdit, FlipHorizontal, FlipVertical,
+		Rotate45Clockwise, Rotate90Clockwise
 	};
 	struct ShapeGestureTransform
 	{
@@ -77,6 +78,8 @@ namespace Inkeys::Drawing::Draw3
 			return draw3::shapes::SetRightSolid(before,action.rightSolid,revision);
 		if (action.kind == ShapeUiActionKind::FlipHorizontal || action.kind == ShapeUiActionKind::FlipVertical)
 			return draw3::shapes::FlipShape(before,action.kind == ShapeUiActionKind::FlipHorizontal,revision,options);
+		if (action.kind == ShapeUiActionKind::Rotate45Clockwise || action.kind == ShapeUiActionKind::Rotate90Clockwise)
+			return draw3::shapes::RotateShape(before,action.kind == ShapeUiActionKind::Rotate45Clockwise ? .7853981633974483f : 1.5707963267948966f,revision,options);
 		return std::nullopt;
 	}
 

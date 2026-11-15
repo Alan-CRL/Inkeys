@@ -2932,6 +2932,12 @@ void BarUISetClass::PreparePresentedButtonHits(const StateModeClass& stateMode)
 		hit.visible = true; hit.radiusX = hit.radiusY = BarMainBarCornerRadiusDip * scale;
 		Append(hit, active, TouchRegionSpace::Rigid);
 	};
+	// 提示先于下层主栏命中；禁用按钮不能借面板或主栏的 Accept 重新准入。
+	const auto& promptFrame = constructionPrompt.frame_;
+	if (promptFrame.visible && promptFrame.input)
+		for (const auto& button : promptFrame.buttons)
+			Append(button, button.enabled, TouchRegionSpace::Rigid);
+	AddPanel(promptFrame.visualPanel, promptFrame.scale, promptFrame.visible, promptFrame.input);
 	auto SurfaceVisible = [&](Shape id)
 	{
 		const auto found = shapeMap.find(id);
@@ -3057,6 +3063,8 @@ void BarUISetClass::PreparePresentedButtonHits(const StateModeClass& stateMode)
 	Mix(stateMode.laserActive); Mix(fold); Mix(draw); Mix(geometry); Mix(eraser); Mix(recall); Mix(moreOpen);
 	Mix(picker); Mix(menu); Mix(annotationPopup); Mix(overflowPopup); Mix(slider); Mix(rangeTransition);
 	Mix(static_cast<std::uint64_t>(view)); Mix(eraserMenu); Mix(annotationPinned); Mix(overflowPinned);
+	Mix(promptFrame.visible); Mix(promptFrame.input);
+	for (const auto& button : promptFrame.buttons) { Mix(button.visible); Mix(button.enabled); }
 	candidateTouchRegions_ = std::move(touch);
 	// 分配和几何整理在 seqlock 奇数区之外完成，提交段只交换已经构造好的表。
 	candidateButtonHits_=std::move(next);candidateVisualHits_=std::move(visualHits);

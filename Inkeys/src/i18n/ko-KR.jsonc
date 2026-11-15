@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "정삼각형",
         "FlipHorizontalLabel": "좌우 반전",
         "FlipVerticalLabel": "상하 반전",
+        "Rotate45Label": "시계 방향으로 45° 회전",
+        "Rotate90Label": "시계 방향으로 90° 회전",
         "RightPrismLabel": "직각기둥",
         "RightPyramidLabel": "직각뿔",
         "StraightLineLabel": "직선",

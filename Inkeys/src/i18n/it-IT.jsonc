@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "Equilatero",
         "FlipHorizontalLabel": "Capovolgi orizzontalmente",
         "FlipVerticalLabel": "Capovolgi verticalmente",
+        "Rotate45Label": "Ruota di 45° in senso orario",
+        "Rotate90Label": "Ruota di 90° in senso orario",
         "RightPrismLabel": "Prisma retto",
         "RightPyramidLabel": "Piramide retta",
         "StraightLineLabel": "Linea",

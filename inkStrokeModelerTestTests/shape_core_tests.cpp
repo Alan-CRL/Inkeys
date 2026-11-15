@@ -1183,6 +1183,38 @@ int RunShapeCoreTests()
 				SHAPE_CHECK(edited && Validate(*edited)); break;
 			}
 		}
+		for (unsigned turns : {4u,8u})
+		{
+			const float angle = turns == 4 ? 1.5707963267948966f : .7853981633974483f;
+			auto rotated = RotateShape(*original,angle,2);
+			if (preset >= PresetKind::Cuboid) { SHAPE_CHECK(!rotated); continue; }
+			SHAPE_CHECK(rotated); if (!rotated) continue;
+			// 第一圈前验证屏幕正角方向；局部框中心与旋转把手共用。
+			auto local = *original; local.transform = {}; GeometryResult localGeometry; SHAPE_CHECK(BuildGeometry(local,localGeometry));
+			Bounds pathBounds;
+			for (const auto& part : localGeometry.parts) for (const auto& path : part.paths) for (const auto p : path.points)
+			{
+				if (!pathBounds.valid) pathBounds = {p.x,p.y,p.x,p.y,true};
+				else { pathBounds.left=(std::min)(pathBounds.left,p.x); pathBounds.right=(std::max)(pathBounds.right,p.x); pathBounds.top=(std::min)(pathBounds.top,p.y); pathBounds.bottom=(std::max)(pathBounds.bottom,p.y); }
+			}
+			const auto center=ApplyTransform(original->transform,{(pathBounds.left+pathBounds.right)*.5f,(pathBounds.top+pathBounds.bottom)*.5f});
+			GeometryResult first; SHAPE_CHECK(BuildGeometry(*rotated,first));
+			const auto a=base.parts.front().paths.front().points.front(), b=first.parts.front().paths.front().points.front();
+			if (turns == 4) SHAPE_CHECK(std::hypot(b.x-(center.x-(a.y-center.y)),b.y-(center.y+(a.x-center.x)))<.001);
+			SHAPE_CHECK(rotated->construction == original->construction && rotated->style == original->style);
+			SHAPE_CHECK(std::abs(first.parts.front().style.width-base.parts.front().style.width)<.001);
+			for (unsigned turn=1;turn<turns && rotated;++turn) rotated=RotateShape(*rotated,angle,rotated->revision+1);
+			SHAPE_CHECK(rotated); if (!rotated) continue;
+			GeometryResult full; SHAPE_CHECK(BuildGeometry(*rotated,full));
+			SHAPE_CHECK(full.parts.size()==base.parts.size());
+			for (size_t i=0;i<full.parts.size() && i<base.parts.size();++i)
+				for (size_t j=0;j<full.parts[i].paths.size();++j)
+					for (size_t k=0;k<full.parts[i].paths[j].points.size();++k)
+					{
+						const auto a=full.parts[i].paths[j].points[k], b=base.parts[i].paths[j].points[k];
+						SHAPE_CHECK(std::hypot(a.x-b.x,a.y-b.y)<.002);
+					}
+		}
 		const Vec2 pivot{80,70}, delta{15,-20};
 		EditSession session; SHAPE_CHECK(session.Begin(*original,0,pivot));
 		SHAPE_CHECK(session.PreviewTransform(pivot,delta,1.5f,.4f,4));
@@ -1198,6 +1230,12 @@ int RunShapeCoreTests()
 		else SHAPE_CHECK(std::abs(transformed->transform.m12-1.5f*std::sin(.4f))<.001);
 		SHAPE_CHECK(session.Begin(*original,0,pivot));
 		SHAPE_CHECK(!session.PreviewTransform(pivot,delta,0,0,5) && !session.Commit());
+	}
+	for (auto preset : {PresetKind::Triangle,PresetKind::Trapezoid})
+	{
+		Construction c{{preset,CreationMode::Drag},{20,30},{140,110}}; c.tool.constraint=PlanarConstraint::Isosceles;
+		const auto before=MakeConstructedShape(c,{},Id(62)); SHAPE_CHECK(before);
+		if (before) { const auto after=RotateShape(*before,.7853981633974483f,2); SHAPE_CHECK(after && after->construction==before->construction && after->style==before->style); }
 	}
 	RunAuxiliaryTests(failures);
 	RunEditInteractionTests(failures);

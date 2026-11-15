@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "Równoboczny",
         "FlipHorizontalLabel": "Odbij w poziomie",
         "FlipVerticalLabel": "Odbij w pionie",
+        "Rotate45Label": "Obróć o 45° w prawo",
+        "Rotate90Label": "Obróć o 90° w prawo",
         "RightPrismLabel": "Graniastosłup prosty",
         "RightPyramidLabel": "Ostrosłup prosty",
         "StraightLineLabel": "Linia",

@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "Équilatéral",
         "FlipHorizontalLabel": "Retourner horizontalement",
         "FlipVerticalLabel": "Retourner verticalement",
+        "Rotate45Label": "Rotation de 45° dans le sens horaire",
+        "Rotate90Label": "Rotation de 90° dans le sens horaire",
         "RightPrismLabel": "Prisme droit",
         "RightPyramidLabel": "Pyramide droite",
         "StraightLineLabel": "Ligne",

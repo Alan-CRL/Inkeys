@@ -176,6 +176,8 @@
         "ConstraintEquilateralLabel": "正三角形",
         "FlipHorizontalLabel": "左右反転",
         "FlipVerticalLabel": "上下反転",
+        "Rotate45Label": "時計回りに 45° 回転",
+        "Rotate90Label": "時計回りに 90° 回転",
         "RightPrismLabel": "直角柱",
         "RightPyramidLabel": "直角錐",
         "StraightLineLabel": "直線",
