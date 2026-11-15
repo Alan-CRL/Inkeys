@@ -433,6 +433,9 @@ void BarButtonSetClass::PresetInitialization()
 			obj->icon.Initialization(0.0, 0.0, defaultIconColor, defaultIconColor);
 			obj->icon.InitializationFromResource(L"UI", L"barGeometry");
 			obj->icon.enable.Initialization(true);
+			// 固定工具的大头针角标；在发布给渲染线程前挂载。
+			obj->badge.emplace();
+			Inkeys::UI::Bar::InitializeBarButtonBadge(*obj->badge);
 		}
 
 		{
@@ -1280,13 +1283,16 @@ void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMod
 	static mutex mtx;
 	const bool selected = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape && !IsCanvasDebugVisualActive();
 	const auto tool = GetShapeToolSpec(stateMode);
+	// 当前图形工具处于固定状态时显示角标；固定位并入 styleKey，切换时才重投影。
+	const bool pinned = selected && IsShapeToolPinned(stateMode);
 	const int styleKey = selected ? 1 + static_cast<int>(tool.preset) * 100
-		+ static_cast<int>(tool.creationMode) * 16 + static_cast<int>(tool.sides) : 0;
+		+ static_cast<int>(tool.creationMode) * 16 + static_cast<int>(tool.sides) + (pinned ? 1 << 20 : 0) : 0;
 	if (geometryButtonStyleKey == styleKey) return;
 	lock_guard<mutex> lock(mtx);
 	if (geometryButtonStyleKey == styleKey) return;
 	auto* button = preset[(int)BarButtonPresetEnum::Geometry];
 	if (!button) return;
+	if (button->badge) button->badge->shown = pinned;
 	button->TransitionContent(selected ? Inkeys::UI::Bar::ShapeToolIconResource(tool) : L"barGeometry",
 		selected ? Inkeys::UI::Bar::ShapeToolLabel(tool.preset) : IW(I18nKey.UI.Bar.MainButtons.GeometryLabel), immediateLabel);
 	geometryButtonStyleKey = styleKey;
@@ -2249,6 +2255,70 @@ namespace Inkeys::UI::Bar
 		};
 	}
 
+	void InitializeBarButtonBadge(BarButtonBadgeClass& badge, const wchar_t* resource)
+	{
+		const COLORREF color = GetThemeColor(BarThemeColorEnum::IconPrimary);
+		badge.svg.Initialization(0, 0, color, color);
+		badge.svg.InitializationFromResource(L"UI", resource);
+		badge.svg.enable.Initialization(true);
+		badge.svg.pct.SetDirect(1);
+	}
+
+	BarButtonBadgeGeometry ResolveBarButtonBadgeGeometry(BarButtonClass& button,
+		const BarUiInheritClass& buttonInherit) noexcept
+	{
+		if (!button.badge) return {};
+		auto& badge = *button.badge;
+		double unit = badge.scale;
+		if (!std::isfinite(unit) || unit <= 0.0) unit = 1.0;
+		const double diameter = BarButtonBadgeDiameterDip * unit, inset = BarButtonBadgeInsetDip * unit;
+		const double below = std::clamp(static_cast<double>(badge.below.val), 0.0, 1.0);
+		const double progress = (std::max)(0.0, static_cast<double>(badge.progress.val));
+		BarButtonBadgeGeometry result;
+		result.diameter = diameter;
+		result.centerX = buttonInherit.x + button.button.w.val - inset - diameter / 2;
+		// 倒转时沿按钮右边在右上与右下之间插值，按钮尺寸动画只平移角标。
+		result.centerY = buttonInherit.y + inset + diameter / 2
+			+ below * (static_cast<double>(button.button.h.val) - 2 * inset - diameter);
+		result.scale = progress;
+		result.angle = badge.angle.val;
+		return result;
+	}
+
+	RECT ResolveBarButtonBadgeBounds(BarButtonClass& button,
+		const BarUiInheritClass& buttonInherit, double zoom) noexcept
+	{
+		const auto g = ResolveBarButtonBadgeGeometry(button, buttonInherit);
+		if (g.scale <= 0.000001 || g.diameter <= 0 || !std::isfinite(zoom) || zoom <= 0
+			|| !std::isfinite(g.centerX) || !std::isfinite(g.centerY)) return {};
+		// 旋转方块取外接圆，回弹超出 1 的缩放也包含在内。
+		const double radius = g.diameter * g.scale * 0.70710678118654752;
+		const LONG padding = BarRenderingAttribute::dirtyAntialiasPadding;
+		return { static_cast<LONG>(std::floor((g.centerX - radius) * zoom)) - padding,
+			static_cast<LONG>(std::floor((g.centerY - radius) * zoom)) - padding,
+			static_cast<LONG>(std::ceil((g.centerX + radius) * zoom)) + padding,
+			static_cast<LONG>(std::ceil((g.centerY + radius) * zoom)) + padding };
+	}
+
+	namespace
+	{
+		bool DrawBarButtonBadge(BarUIRendering& renderer, ID2D1DeviceContext* context,
+			BarButtonClass& button, const BarUiInheritClass& buttonInherit)
+		{
+			if (!button.badge) return false;
+			const auto g = ResolveBarButtonBadgeGeometry(button, buttonInherit);
+			if (g.scale <= 0.000001 || g.diameter <= 0) return false;
+			auto& svg = button.badge->svg;
+			// 角标跟随按钮图标的颜色与透明度，自身只负责显隐的缩放和旋转。
+			svg.w.SetDirect(g.diameter); svg.h.SetDirect(g.diameter);
+			svg.angle.SetDirect(g.angle); svg.contentScale = g.scale;
+			svg.pct.SetDirect(button.icon.pct.val);
+			if (button.icon.color1 && svg.color1) svg.color1->SetDirect(button.icon.color1->val);
+			if (button.icon.color1 && svg.color2) svg.color2->SetDirect(button.icon.color1->val);
+			return renderer.Svg(context, svg, svg.UpInh({ g.centerX - g.diameter / 2, g.centerY - g.diameter / 2 }));
+		}
+	}
+
 	bool DrawBarButtonVisual(BarUIRendering& renderer,
 		ID2D1DeviceContext* deviceContext, BarButtonClass& button,
 		const BarUiInheritClass& inherit,
@@ -2263,8 +2333,19 @@ namespace Inkeys::UI::Bar
 		// 自定义内容没有额外包络合同，不能连同标准按钮一起猜测裁掉。
 		if (!options.underlay && !options.content)
 		{
-			const auto bounds = ComputeBarButtonVisualBounds(renderer, { button.button,
+			auto bounds = ComputeBarButtonVisualBounds(renderer, { button.button,
 				options.drawIcon ? &button.icon : nullptr, &button.name }, visualInheritance, options.secondary);
+			if (bounds && button.badge)
+			{
+				const RECT badge = ResolveBarButtonBadgeBounds(button, visualInheritance.button, renderer.GetFrameZoom());
+				if (badge.left < badge.right && badge.top < badge.bottom)
+				{
+					bounds->left = (std::min)(bounds->left, static_cast<FLOAT>(badge.left));
+					bounds->top = (std::min)(bounds->top, static_cast<FLOAT>(badge.top));
+					bounds->right = (std::max)(bounds->right, static_cast<FLOAT>(badge.right));
+					bounds->bottom = (std::max)(bounds->bottom, static_cast<FLOAT>(badge.bottom));
+				}
+			}
 			if (bounds && !renderer.ShouldDrawFrameBounds(deviceContext, *bounds)) return false;
 		}
 
@@ -2300,6 +2381,9 @@ namespace Inkeys::UI::Bar
 				rendered = renderer.Word(deviceContext, *options.secondary,
 					*visualInheritance.secondary,
 					options.secondaryWeight) || rendered;
+			// 角标在图标和文字之上，位于按压变换之内。
+			rendered = DrawBarButtonBadge(renderer, deviceContext, button,
+				visualInheritance.button) || rendered;
 		}
 		return rendered;
 	}
@@ -2511,6 +2595,27 @@ namespace Inkeys::UI::Bar
 			button.icon.ObserveFiniteRequirement(button.iconKind == BarButtonIconKindEnum::Svg && !divider);
 		Join(AdvanceBarWordVisual(button.name, frame));
 		if (secondary) Join(AdvanceBarWordVisual(*secondary, frame, Part::Secondary));
+		if (button.badge)
+		{
+			// 角标显隐时长与曲线沿用图标换图的单程：进场 EaseOutBack，离场 EaseInBack。
+			auto& badge = *button.badge;
+			const bool shown = badge.shown;
+			const auto curve = shown ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack;
+			// 仅从完全隐藏进场时把角度置为 -45 起点；中途反向沿当前角度继续。
+			const bool enterFromHidden = shown && badge.progress.tar < 0.5 && badge.progress.val <= 0.000001;
+			badge.progress.SetTar(shown ? 1.0 : 0.0, BarUiDefaultOperationDur * 0.5,
+				std::nullopt, false, { curve, curve, 0.0, false });
+			if (enterFromHidden) badge.angle.SetDirect(-45.0);
+			badge.angle.SetTar(shown ? 0.0 : 45.0, BarUiDefaultOperationDur * 0.5,
+				std::nullopt, false, { curve, curve, 0.0, false });
+			badge.below.SetTar(badge.belowTarget ? 1.0 : 0.0, BarUiDefaultOperationDur,
+				std::nullopt, false, { BarUiCurveEnum::EaseInOutCubic, BarUiCurveEnum::EaseInOutCubic, 0.0, false });
+			ButtonAnimationVisitor v{frame, &badge, Part::Badge};
+			v.Advance(badge.progress, frame.forceReplace, Property::Visibility);
+			v.Advance(badge.angle, frame.forceReplace, Property::Geometry);
+			v.Advance(badge.below, frame.forceReplace, Property::Geometry);
+			Join(v.result);
+		}
 		return result;
 	}
 

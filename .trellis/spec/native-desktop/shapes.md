@@ -383,3 +383,32 @@ Good：同一成功呈现帧验证原生准入和业务候选。Base：稳定鼠
 
 ### 7. Wrong vs Correct
 Wrong：所有控件等待浮条动画完毕，所有拖动 preserveMoveSamples=true。Correct：控件可见性决定几何准入，按手势所需轨迹保留样本；绝对位置合并并保留可靠终态。
+
+## 第九轮：主栏按钮角标与图形长按固定（2026-11-15）
+
+### 1. Scope / Trigger
+修改主栏/面板按钮角标、几何面板长按固定、固定状态或编辑结束恢复入口工具时适用。框外拖动起笔（R3 原方案）已撤销，不在本合同内。
+
+### 2. Signatures
+- `BarButtonBadgeClass`（`BarButtonClass::badge` 可选，发布给渲染线程前挂载）；`InitializeBarButtonBadge`、`ResolveBarButtonBadgeGeometry`、`ResolveBarButtonBadgeBounds`；`BarButtonAnimationPart::Badge`。
+- `StateModeClass::Shape.pinnedPreset`；`IsAlwaysPinnedShapePreset`、`IsShapeToolPinned(snapshot)`、`ToggleShapeToolPinIfRevision(preset, revision)`。
+- `BarGeometryAttributePanel::ConsumeHoldWake(owner, now)`；共享 `ButtonFrameRing::Draw`（`Bar.ButtonFrameRing.h`）。
+
+### 3. Contracts
+- 角标位于按钮外框右上内收 4DIP、直径 10DIP；`below` 0→1 在右上与右下之间插值（主栏 `primaryBar`，拖动中锁存）。显隐为 `progress`（默认操作时长一半，进场 EaseOutBack、离场 EaseInBack），以角标中心缩放并旋转（进场 -45°→0，离场 0→+45°）；旋转为独立 `angle` 动画值，仅自完全隐藏进场时直接设 -45°，中途反向从当前角度连续过渡；关闭动画直接终态。颜色/透明度跟随按钮图标；包络按旋转外接圆并入按钮 cull 与主栏 dirty。
+- 固定只属于当前选择，仅会话内：直线/箭头恒固定且不记手动位；长按其它类别选中并固定，已手动固定的同一类别再长按取消；换到其他图形即清除，同图形参数与临时切笔保留。主栏几何按钮在已选图形工具且固定时显示角标，固定位并入 styleKey。
+- 长按：可选择类别 Down 记录起点；交互 owner 在 0.5s 请求一次渲染，之后 render 按帧时间推进进度 `(t-.5)/1.5`；2.0s 由 owner 以 Down 时 revision 调用 `ToggleShapeToolPinIfRevision`。0.5s 前移出按钮/超过 5DIP 移动只中止长按（未离开按钮仍可短按）；进度环出现后任何中止都作废本次按下；取消/捕获丢失中止；进度环出现后未满抬起不选中不固定；Up 先于到期唤醒且已满 2.0s 时在 Up 内提交一次；完成后的 Up 不触发短按。提交被拒（revision 过期、面板/分类已变）时环不定格满格，按退出时间淡出；仓库无主动拒绝触觉，成功与被拒均不发长按触觉。
+- 进度环与页码加载环共用 `ButtonFrameRing`：边框内侧圆角路径、圆头、无轨道、IconPrimary；进度模式从顶边中点顺时针 0→整圈，不旋转，淡入淡出沿用 `PageLoadingStyle`。页码模式逐像素保持抽取前结果。环绘制失败只在本次长按内停止重试，新长按开始时（render 线程）清除失败标记并重置路径缓存。
+- `RestoreToolAfterShapeEditing`：当前图形已固定时不恢复入口工具且保留 `shapeReturnMode`（epoch/workspace 守卫不变）；取消固定后的下一次结束编辑恢复入口工具，下次进入几何会覆盖该记录。不新增 Draw3 ToolSpec/ProductVisualStyle 字段。
+
+### 4. Validation & Error Matrix
+| 条件 | 结果 |
+| --- | --- |
+| 抬起 <0.5s | 原短按 |
+| 0.5–2.0s 抬起/移出/取消 | 不选中不固定，环淡出 |
+| 满 2.0s | 选中+固定/取消固定，Up 不短按 |
+| 直线/箭头长按 | 选中，保持固定，无手动位 |
+| 过期 revision | 拒绝，不改工具；进度环停在当前进度并淡出 |
+
+### 5. Tests Required
+`--shape-tool-state-test` 覆盖固定语义与编辑结束保持/恢复；`--ui3-geometry-attribute-test` 覆盖面板角标、长按中止/完成/取消/阈值、Up 不短按、进度环实际像素方向、页码环抽取逐像素一致、主栏角标进出场/倒转/包络/动画关闭与 render loop 发布倒转侧。真实触摸长按与主栏视觉须实机验收。

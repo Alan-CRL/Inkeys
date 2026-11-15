@@ -3,6 +3,7 @@ module;
 #include "../../../IdtMain.h"
 #include "../../../IdtState.h"
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -66,6 +67,22 @@ enum class BarButtonIconKindEnum : int
 	Png,
 };
 
+// 按钮角标：相对按钮外框固定，独立显隐动画；默认不挂载，其他按钮不受影响。
+class BarButtonBadgeClass
+{
+public:
+	BarUiSVGClass svg;
+	// 可见度驱动以角标中心为原点的缩放与旋转；below 为 0 右上、1 右下的换边过渡。
+	BarUiValueClass progress = BarUiValueClass(0.0);
+	BarUiValueClass below = BarUiValueClass(0.0);
+	// 独立旋转角：进场 -45→0，离场 →+45；中途反向从当前角度继续，避免按目标重算产生跳变。
+	BarUiValueClass angle = BarUiValueClass(45.0);
+	IdtAtomic<bool> shown = false;
+	IdtAtomic<bool> belowTarget = false;
+	// 所在面板的姿态缩放；主栏为 1。
+	IdtAtomic<double> scale = 1.0;
+};
+
 class BarButtonClass
 {
 public:
@@ -95,6 +112,7 @@ public:
 		iconKind(other.iconKind),
 		clickFunc(other.clickFunc),
 		closeMoreAfterAction(other.closeMoreAfterAction),
+		badge(other.badge),
 		localState(other.localState),
 		state(other.state == &other.localState ? &localState : other.state)
 	{}
@@ -145,6 +163,8 @@ public:
 	function<void()> clickFunc;
 	// 默认动作完成后关闭更多浮层；需要连续操作的按钮可显式保留浮层。
 	bool closeMoreAfterAction = true;
+	// 可选角标须在按钮发布给渲染线程前挂载，运行期只改其目标值。
+	std::optional<BarButtonBadgeClass> badge;
 
 	BarButtonStateClass localState;
 	BarButtonStateClass* state = nullptr;

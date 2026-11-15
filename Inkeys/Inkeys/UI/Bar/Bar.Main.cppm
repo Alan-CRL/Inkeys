@@ -16,6 +16,7 @@
 #include "Bar.BottomDock.h"
 #include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "Bar.StatusIndicator.h"
+#include "Bar.ButtonFrameRing.h"
 #include <deque>
 #include <map>
 #include "Bar.InteractionWorker.h"
@@ -295,6 +296,16 @@ namespace Inkeys::UI::Bar
 		bool iconVisible = true, std::optional<COLORREF> fillColorOverride = std::nullopt,
 		std::optional<COLORREF> frameColorOverride = std::nullopt) noexcept;
 
+	// 角标：按钮外框右上（倒转时右下）内收 4DIP、直径 10DIP；缩放与旋转以角标中心为原点。
+	inline constexpr double BarButtonBadgeDiameterDip = 10.0, BarButtonBadgeInsetDip = 4.0;
+	struct BarButtonBadgeGeometry { double centerX = 0, centerY = 0, diameter = 0, scale = 0, angle = 0; };
+	void InitializeBarButtonBadge(BarButtonBadgeClass& badge, const wchar_t* resource = L"barStatusPin");
+	[[nodiscard]] BarButtonBadgeGeometry ResolveBarButtonBadgeGeometry(BarButtonClass& button,
+		const BarUiInheritClass& buttonInherit) noexcept;
+	// 旋转角标的外接圆包络（像素）；无角标或已完全隐藏时为空。
+	[[nodiscard]] RECT ResolveBarButtonBadgeBounds(BarButtonClass& button,
+		const BarUiInheritClass& buttonInherit, double zoom) noexcept;
+
 	// 固定属性借用已有字段，不复制控件，不进入注册表。
 	struct BarButtonVisualParts
 	{
@@ -332,7 +343,7 @@ namespace Inkeys::UI::Bar
 	};
 
 	// 所有目标消费同一个渲染批次时间；观察者只接收实际推进结果，不再推进动画。
-	enum class BarButtonAnimationPart { Shape, Icon, Primary, Secondary, Press };
+	enum class BarButtonAnimationPart { Shape, Icon, Primary, Secondary, Press, Badge };
 	enum class BarButtonAnimationProperty { Geometry, Visibility, Color, Content };
 	struct BarButtonAnimationContext
 	{
@@ -537,6 +548,9 @@ public:
 	void StopCarousel() noexcept;
 	std::chrono::steady_clock::time_point ConsumeCarouselWake(
 		std::chrono::steady_clock::time_point now, bool& due);
+	// 长按固定期限由交互 owner 消费：0.5s 请求进度环帧，2.0s 提交选中并固定，不依赖帧率。
+	std::chrono::steady_clock::time_point ConsumeHoldWake(BarUISetClass& owner,
+		std::chrono::steady_clock::time_point now);
 	RECT Bounds() const;
 	std::array<RECT,1> PresentedRegions() const;
 	Inkeys::UI::Bar::GeometryAttributePresentation PresentationSnapshot() const;
@@ -550,7 +564,8 @@ private:
 	void Initialize();
 	void Execute(BarUISetClass& owner, int item, std::uint64_t revision, bool* accepted = nullptr);
 	void UpdateCarousel(bool enabled, std::chrono::steady_clock::time_point now);
-	mutable std::mutex presentationMutex_, carouselMutex_;
+	bool CancelHold();
+	mutable std::mutex presentationMutex_, carouselMutex_, holdMutex_;
 	Inkeys::UI::Bar::GeometryAttributePresentation frame_, presented_;
 	Inkeys::UI::Bar::EraserAttributeRect previousPanel_, previousAnchor_;
 	Inkeys::UI::Bar::BarAttributePanelMotion motion_;
@@ -572,7 +587,19 @@ private:
 	BarUiShapeClass auxiliaryHintSurface_;
 	BarUiWordClass auxiliaryHint_;
 	bool auxiliaryHintVisible_ = false;
-	BarUiSVGClass pinBadge_; // 直线/箭头类别右上角的固定标记。
+	// 长按：输入 worker 写入，render 只读取进度；holdMutex_ 保护。
+	int holdItem_ = -1;
+	std::chrono::steady_clock::time_point holdStart_{};
+	POINT holdOrigin_{};
+	bool holdRingWake_ = false, holdCommitted_ = false;
+	// 提交是否被工具状态接受；被拒（旧 revision 等）时进度环不定格满格。
+	bool holdAccepted_ = false;
+	// 进度环由 render owner 推进与绘制；绘制失败后本次长按内不再尝试，下一次长按开始时重试。
+	int ringItem_ = -1;
+	double ringProgress_ = 0;
+	BarUiValueClass ringOpacity_{0};
+	Inkeys::UI::Bar::ButtonFrameRing ring_;
+	bool ringFailed_ = false, ringShown_ = false;
 	BarUiShapeClass surface_, scrollRail_, scrollThumb_;
 	BarUiValueClass width_{0}, height_{0}, viewportHeight_{0}, scroll_{0};
 	// worker只发布滚动意图；共享动画值由唯一render owner推进。

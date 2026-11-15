@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/native-desktop/shapes.md", "reason": "形状编辑器、固定与框外接触合同"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "主栏按钮视觉与动画"}
+{"file": ".trellis/spec/native-desktop/ui-pointer-session.md", "reason": "长按与指针会话"}

@@ -1737,6 +1737,8 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 		const auto carouselWake = barUISet.geometryAttribute.ConsumeCarouselWake(now,carouselDue);
 		if (carouselWake != InteractionClock::time_point{}) deadline = (std::min)(deadline,carouselWake);
 		if (carouselDue) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+		const auto holdWake = barUISet.geometryAttribute.ConsumeHoldWake(barUISet, now);
+		if (holdWake != InteractionClock::time_point{}) deadline = (std::min)(deadline, holdWake);
 		for (unsigned budget = 0; budget != 32 && ResumeMainInteraction(context, now); ++budget) {}
 		return (std::min)(deadline, context.deadline);
 	}

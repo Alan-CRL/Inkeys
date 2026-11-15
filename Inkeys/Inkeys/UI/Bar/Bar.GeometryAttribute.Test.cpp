@@ -8,6 +8,7 @@
 #include "../../../resource.h"
 #include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "Bar.ThemeMaterial.h"
+#include "Bar.ButtonFrameRing.h"
 #include "../../Input/UiTouchRouting.h"
 #include <d2d1_1helper.h>
 #include <wincodec.h>
@@ -59,6 +60,17 @@ public:
 	static void Focus(BarGeometryAttributePanel& p, int item) { p.focused_ = item; }
 	static void Execute(BarGeometryAttributePanel& p, BarUISetClass& owner, int item, std::uint64_t revision) { p.Execute(owner, item, revision); }
 	static double ScrollRequest(const BarGeometryAttributePanel& p) { return p.scrollRequest_; }
+	static BarButtonClass& MutableButton(BarGeometryAttributePanel& p, int item) { return *p.buttons_[item]; }
+	// 长按期限用真实 steady_clock；测试把起点前移代替真实等待。
+	static void ShiftHold(BarGeometryAttributePanel& p, std::chrono::milliseconds by) { std::lock_guard lock(p.holdMutex_); p.holdStart_ -= by; }
+	static int HoldItem(BarGeometryAttributePanel& p) { std::lock_guard lock(p.holdMutex_); return p.holdItem_; }
+	static int RingItem(const BarGeometryAttributePanel& p) { return p.ringItem_; }
+	static double RingProgress(const BarGeometryAttributePanel& p) { return p.ringProgress_; }
+	static double RingOpacity(const BarGeometryAttributePanel& p) { return p.ringOpacity_.val; }
+	static double RingOpacityTarget(const BarGeometryAttributePanel& p) { return p.ringOpacity_.tar; }
+	// 模拟进度环绘制失败（render owner 同线程写入）。
+	static void FailRing(BarGeometryAttributePanel& p) { p.ringFailed_ = true; }
+	static bool RingFailed(const BarGeometryAttributePanel& p) { return p.ringFailed_; }
 	static bool ScrollDragging(const BarGeometryAttributePanel& p) { return p.scrollDragging_; }
 	static void MoveRoot(BarUISetClass& owner, double x, double y)
 	{
@@ -97,7 +109,7 @@ namespace
 			stroke(a.Pen.Laser, b.Pen.Laser) && std::equal(std::begin(a.Pen.Laser.widthPreset), std::end(a.Pen.Laser.widthPreset), std::begin(b.Pen.Laser.widthPreset)) &&
 			a.Shape.ModeSelect == b.Shape.ModeSelect && a.Shape.circleMode == b.Shape.circleMode && a.Shape.polygonSides == b.Shape.polygonSides && a.Shape.prismSides == b.Shape.prismSides && a.Shape.pyramidSides == b.Shape.pyramidSides &&
 			a.Shape.fillMode == b.Shape.fillMode && a.Shape.openPattern == b.Shape.openPattern && a.Shape.closedPattern == b.Shape.closedPattern &&
-			a.Shape.auxiliary == b.Shape.auxiliary && a.Shape.auxiliaryChoices == b.Shape.auxiliaryChoices &&
+			a.Shape.auxiliary == b.Shape.auxiliary && a.Shape.auxiliaryChoices == b.Shape.auxiliaryChoices && a.Shape.pinnedPreset == b.Shape.pinnedPreset &&
 			stroke(a.Shape.StraightLine1, b.Shape.StraightLine1) && stroke(a.Shape.Rectangle1, b.Shape.Rectangle1);
 	}
 	EraserAttributeRect Intersect(EraserAttributeRect a, EraserAttributeRect b)
@@ -116,6 +128,46 @@ namespace
 		std::vector<unsigned char> bytes(size.width * size.height * 4);
 		for (UINT y = 0; y < size.height; ++y) std::memcpy(bytes.data() + y * size.width * 4, map.bits + y * map.pitch, size.width * 4);
 		readable->Unmap(); return bytes;
+	}
+	// 抽取前页码加载环的原实现，仅用于证明共享 ButtonFrameRing 的页码模式逐像素不变。
+	bool DrawLegacyPageRing(ID2D1DeviceContext* context, EraserAttributeRect r, float corner, float z, PageLoadingArc arc, COLORREF color, float alpha)
+	{
+		constexpr float inset=static_cast<float>(BarButtonFrameThicknessDip)+PageLoadingStyle::Gap+PageLoadingStyle::Width/2;
+		const float width=static_cast<float>(r.Width())-2*inset,height=static_cast<float>(r.Height())-2*inset;
+		if(width<=PageLoadingStyle::Width||height<=PageLoadingStyle::Width)return true;
+		const float radius=(std::max)(.5F,(std::min)({corner,width/2,height/2}));
+		ComPtr<ID2D1Factory> factory;context->GetFactory(factory.GetAddressOf());if(!factory)return false;
+		ComPtr<ID2D1PathGeometry> path;ComPtr<ID2D1GeometrySink> sink;ComPtr<ID2D1SolidColorBrush> brush;
+		HRESULT hr=factory->CreatePathGeometry(path.GetAddressOf());
+		if(SUCCEEDED(hr))hr=path->Open(sink.GetAddressOf());
+		if(SUCCEEDED(hr)){
+			const auto point=[](float x,float y){return D2D1::Point2F(x,y);};
+			const auto corner90=[&](float x,float y){sink->AddArc(D2D1::ArcSegment(point(x,y),D2D1::SizeF(radius,radius),0,D2D1_SWEEP_DIRECTION_CLOCKWISE,D2D1_ARC_SIZE_SMALL));};
+			sink->BeginFigure(point(width/2,0),D2D1_FIGURE_BEGIN_HOLLOW);
+			sink->AddLine(point(width-radius,0));corner90(width,radius);
+			sink->AddLine(point(width,height-radius));corner90(width-radius,height);
+			sink->AddLine(point(radius,height));corner90(0,height-radius);
+			sink->AddLine(point(0,radius));corner90(radius,0);
+			sink->AddLine(point(width/2,0));
+			sink->EndFigure(D2D1_FIGURE_END_CLOSED);hr=sink->Close();
+		}
+		float length=0;
+		if(SUCCEEDED(hr))hr=path->ComputeLength(nullptr,D2D1_DEFAULT_FLATTENING_TOLERANCE,&length);
+		if(SUCCEEDED(hr))hr=context->CreateSolidColorBrush(D2D1::ColorF(0,0,0,0),brush.GetAddressOf());
+		if(FAILED(hr)||length<=PageLoadingStyle::Width*3)return false;
+		const float weight=PageLoadingStyle::Width,perimeter=length;
+		const float visible=(std::clamp)(static_cast<float>(arc.length)*perimeter,weight,perimeter-3*weight);
+		const float dashes[2]={(visible-weight)/weight,(perimeter-(visible-weight))/weight};
+		const float offset=(perimeter-static_cast<float>(arc.start)*perimeter)/weight;
+		ComPtr<ID2D1StrokeStyle> stroke;
+		const auto properties=D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND,D2D1_CAP_STYLE_ROUND,
+			D2D1_CAP_STYLE_ROUND,D2D1_LINE_JOIN_ROUND,10.0F,D2D1_DASH_STYLE_CUSTOM,offset);
+		if(FAILED(factory->CreateStrokeStyle(properties,dashes,2,stroke.GetAddressOf())))return true;
+		brush->SetColor(D2D1::ColorF(GetRValue(color)/255.0F,GetGValue(color)/255.0F,GetBValue(color)/255.0F,alpha));
+		D2D1_MATRIX_3X2_F original;context->GetTransform(&original);
+		context->SetTransform(D2D1::Matrix3x2F::Scale(z,z)*D2D1::Matrix3x2F::Translation(static_cast<FLOAT>((r.left+inset)*z),static_cast<FLOAT>((r.top+inset)*z))*original);
+		context->DrawGeometry(path.Get(),brush.Get(),weight,stroke.Get());
+		context->SetTransform(original);return true;
 	}
 	bool SavePng(const std::filesystem::path& path, const std::vector<unsigned char>& bytes, UINT width, UINT height)
 	{
@@ -466,6 +518,278 @@ namespace Inkeys::UI::Bar
 		click(GeometryCloseButton); expect(!owner.barState.geometryAttribute && !owner.barState.drawAttribute, "only side-rail button closes panel without opening another view");
 		owner.barState.geometryAttribute = true; tick(90);
 
+		// R1/R2：类别角标、长按固定与进度环（真实面板输入入口 + 交互 owner 期限）。
+		{
+			using namespace std::chrono_literals;
+			caseContext = "pin-badge-hold";
+			auto& panel = owner.geometryAttribute;
+			const auto indexOf = [&](PresetKind p) { for (int i = 0; i < GeometryCategoryCount; ++i) if (catalog[i].preset == p) return i; return -1; };
+			const int line = indexOf(PresetKind::Line), arrow = indexOf(PresetKind::Arrow), rect = indexOf(PresetKind::Rectangle), ellipse = indexOf(PresetKind::Ellipse);
+			const auto badge = [&](int item) -> BarButtonBadgeClass& { return *BarGeometryAttributeTestAccess::MutableButton(panel,item).badge; };
+			const auto badgeGeometry = [&](int item) { auto& b = BarGeometryAttributeTestAccess::MutableButton(panel,item); return ResolveBarButtonBadgeGeometry(b,{b.button.inhX,b.button.inhY}); };
+			const auto pinned = [] { return IsShapeToolPinned(GetStateModeSnapshot()); };
+			for (int i = 0; i < GeometryCategoryCount; ++i)
+				expect(BarGeometryAttributeTestAccess::Button(panel,i).badge.has_value() == catalog[i].preset.has_value(), "only selectable categories own an optional badge");
+			preset(PresetKind::Rectangle);
+			expect(badge(line).progress.val == 1 && badge(arrow).progress.val == 1 && badge(rect).progress.val == 0, "line and arrow categories keep resident pin badges");
+			{
+				const auto g = badgeGeometry(line); const auto r = panel.PresentationSnapshot().items[line];
+				expect(std::abs(g.centerX-(r.right-BarButtonBadgeInsetDip-BarButtonBadgeDiameterDip/2)) < .01 && std::abs(g.centerY-(r.top+BarButtonBadgeInsetDip+BarButtonBadgeDiameterDip/2)) < .01
+					&& g.diameter == BarButtonBadgeDiameterDip && std::abs(g.angle) < .000001, "panel badge sits at the top-right inset of its category");
+			}
+			click(ellipse);
+			expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse && !pinned() && badge(ellipse).progress.val == 0, "short tap still selects without pinning");
+
+			// 0.5s 前不出现进度环；期限由交互 owner 消费，不依赖帧率。
+			const auto beforeHold = GetStateModeVersionedSnapshot();
+			expect(pointer(WM_LBUTTONDOWN, rect, true), "hold down consumed");
+			auto wake = panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now());
+			expect(wake != std::chrono::steady_clock::time_point{} && wake - std::chrono::steady_clock::now() <= 500ms, "hold arms the half-second ring deadline");
+			tick(5); expect(BarGeometryAttributeTestAccess::RingItem(panel) < 0, "no progress ring before half a second");
+			BarGeometryAttributeTestAccess::ShiftHold(panel, 600ms);
+			wake = panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now());
+			expect(wake != std::chrono::steady_clock::time_point{} && wake - std::chrono::steady_clock::now() <= 1400ms && wake - std::chrono::steady_clock::now() > 1000ms, "ring wake then hands over the two-second commit deadline");
+			tick(1);
+			expect(BarGeometryAttributeTestAccess::RingItem(panel) == rect && BarGeometryAttributeTestAccess::RingProgress(panel) > 0
+				&& BarGeometryAttributeTestAccess::RingProgress(panel) < .2 && panel.Active(), "progress ring starts after the delay and keeps frames active");
+			BarGeometryAttributeTestAccess::ShiftHold(panel, 500ms); tick(30);
+			const double midProgress = BarGeometryAttributeTestAccess::RingProgress(panel);
+			expect(midProgress > .35 && midProgress < .6 && BarGeometryAttributeTestAccess::RingOpacity(panel) == 1, "ring progress follows elapsed time from 0.5s over 1.5s");
+			{
+				// 从顶边中点顺时针：约四成进度时右上有环、左上仍空。
+				auto* dc = owner.spec.GetDeviceContext(); owner.spec.SetFrameZoom(zoom);
+				owner.spec.PrepareFrameLighting(1.0 / 60, {}, static_cast<int>(StateModeSelectEnum::IdtShape), 0, GetPenColor(GetStateModeSnapshot()), 0);
+				dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0, 0, 0, 0)); panel.Draw(owner.spec, dc);
+				expect(SUCCEEDED(dc->EndDraw()), "panel with progress ring draws");
+				const auto pixels = ReadPixels(dc, owner.spec.GetTargetBitmap()); const auto r = panel.PresentationSnapshot().items[rect];
+				const UINT width = owner.spec.GetTargetBitmap()->GetPixelSize().width;
+				// 面板底色不透明，按与环色（IconPrimary）的最小色差比较左右两侧。
+				const COLORREF ringColor = GetThemeColor(BarThemeColorEnum::IconPrimary);
+				const auto distance = [&](size_t i) { return std::abs(static_cast<int>(pixels[i]) - GetBValue(ringColor)) + std::abs(static_cast<int>(pixels[i + 1]) - GetGValue(ringColor))
+					+ std::abs(static_cast<int>(pixels[i + 2]) - GetRValue(ringColor)); };
+				int right = 765, left = 765;
+				for (int y = static_cast<int>(r.top); y < static_cast<int>(r.top) + 10; ++y) for (int dx = 4; dx < 9; ++dx)
+				{
+					const size_t a = (static_cast<size_t>(y) * width + static_cast<size_t>(EraserRectCenterX(r) + dx)) * 4;
+					const size_t b = (static_cast<size_t>(y) * width + static_cast<size_t>(EraserRectCenterX(r) - dx)) * 4;
+					if (b + 3 < pixels.size() && a + 3 < pixels.size()) { right = (std::min)(right, distance(a)); left = (std::min)(left, distance(b)); }
+				}
+				report << "HoldRingPixels rightDistance=" << right << " leftDistance=" << left << '\n';
+				(void)SavePng(L"Build/shape-p2-ui/hold-ring.png", pixels, width, owner.spec.GetTargetBitmap()->GetPixelSize().height);
+				expect(right < 90 && left > right + 150, "progress ring is drawn clockwise from the top-edge midpoint");
+			}
+			expect(SameBusinessSnapshot(beforeHold, GetStateModeVersionedSnapshot()), "ring phase has no business side effects");
+			pointer(WM_LBUTTONUP, rect, false); tick(40);
+			expect(SameBusinessSnapshot(beforeHold, GetStateModeVersionedSnapshot()) && !pointerAccepted && BarGeometryAttributeTestAccess::RingItem(panel) < 0,
+				"releasing before completion neither selects nor pins and the ring fades out");
+
+			// 移出按钮中止。
+			pointer(WM_LBUTTONDOWN, rect, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 800ms);
+			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); tick(2);
+			pointer(WM_MOUSEMOVE, ellipse, true);
+			expect(BarGeometryAttributeTestAccess::HoldItem(panel) < 0, "leaving the button aborts the hold");
+			BarGeometryAttributeTestAccess::ShiftHold(panel, 2000ms);
+			expect(panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()) == std::chrono::steady_clock::time_point{}, "aborted hold schedules nothing");
+			pointer(WM_LBUTTONUP, ellipse, false); tick(40);
+			expect(SameBusinessSnapshot(beforeHold, GetStateModeVersionedSnapshot()), "aborted hold leaves the tool unchanged");
+
+			// 超过移动阈值只中止长按，原按钮内抬起仍是短按。
+			{
+				const auto fr = panel.PresentationSnapshot(); const auto r = fr.items[rect];
+				pointer(WM_LBUTTONDOWN, rect, true);
+				ExMessage drift{}; drift.message = WM_MOUSEMOVE; drift.lbutton = true;
+				drift.x = static_cast<short>(std::lround(EraserRectCenterX(r) * fr.zoom) + 8); drift.y = static_cast<short>(std::lround(EraserRectCenterY(r) * fr.zoom));
+				panel.Pointer(owner, drift);
+				expect(BarGeometryAttributeTestAccess::HoldItem(panel) < 0, "moving beyond the slop aborts the hold");
+				pointer(WM_LBUTTONUP, rect, false); tick(60);
+				expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Rectangle && !pinned(), "drifted press inside the button keeps the short tap");
+			}
+
+			// 取消中止。
+			const auto beforeCancel = GetStateModeVersionedSnapshot();
+			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1500ms);
+			{ ExMessage lost{}; panel.Pointer(owner, lost, true); }
+			BarGeometryAttributeTestAccess::ShiftHold(panel, 1000ms);
+			expect(panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()) == std::chrono::steady_clock::time_point{}, "cancelled hold cannot commit later");
+			pointer(WM_LBUTTONUP, ellipse, false); tick(40);
+			expect(SameBusinessSnapshot(beforeCancel, GetStateModeVersionedSnapshot()), "pointer cancellation leaves no side effect");
+
+			// 满 2s：选中并固定；随后的抬起不触发短按。
+			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2100ms);
+			expect(panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()) == std::chrono::steady_clock::time_point{}, "commit deadline is consumed once");
+			expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse && pinned() && GetStateModeSnapshot().Shape.pinnedPreset == PresetKind::Ellipse,
+				"completed hold selects and pins the category");
+			const auto afterCommit = StateModeTransitionRevision();
+			tick(3);
+			{
+				const auto g = badgeGeometry(ellipse);
+				expect(badge(ellipse).progress.val > 0 && badge(ellipse).progress.val < 1 && g.angle < 0 && g.angle > -45, "pinned category badge scales and rotates in");
+			}
+			pointer(WM_LBUTTONUP, ellipse, false); tick(60);
+			expect(StateModeTransitionRevision() == afterCommit && pinned(), "release after a completed hold does not short-tap");
+			expect(badge(ellipse).progress.val == 1 && std::abs(badgeGeometry(ellipse).angle) < .000001 && badge(rect).progress.val == 0, "panel badge settles on the pinned category only");
+
+			// 再次长按取消固定，角标旋转离场。
+			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2100ms);
+			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); pointer(WM_LBUTTONUP, ellipse, false); tick(9);
+			expect(!pinned() && GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse, "second hold unpins");
+			expect(badge(ellipse).progress.val > 0 && badgeGeometry(ellipse).angle > 0, "unpinned badge rotates out");
+			tick(60); expect(badge(ellipse).progress.val == 0, "unpinned badge disappears");
+
+			// 直线/箭头：长按不改变固定状态。
+			pointer(WM_LBUTTONDOWN, line, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2100ms);
+			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); pointer(WM_LBUTTONUP, line, false); tick(10);
+			expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Line && pinned() && !GetStateModeSnapshot().Shape.pinnedPreset, "hold on line selects it and keeps it pinned");
+			pointer(WM_LBUTTONDOWN, line, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2100ms);
+			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); pointer(WM_LBUTTONUP, line, false); tick(60);
+			expect(pinned() && badge(line).progress.val == 1 && badge(arrow).progress.val == 1, "repeated hold cannot unpin line");
+
+			// 切换到其他图形清除固定；回到原图形也不恢复。
+			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2100ms);
+			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); pointer(WM_LBUTTONUP, ellipse, false); tick(60);
+			expect(pinned(), "ellipse pinned again");
+			click(rect); expect(!pinned() && !GetStateModeSnapshot().Shape.pinnedPreset, "switching category clears the pin");
+			click(ellipse); expect(!pinned() && badge(ellipse).progress.val == 0, "returning to the old category does not resurrect the pin");
+
+			// 关闭动画时角标直接跳到终态。
+			BarUiAnimationEnabled = false;
+			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2100ms);
+			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); pointer(WM_LBUTTONUP, ellipse, false); tick(1);
+			expect(pinned() && badge(ellipse).progress.val == 1, "animation-disabled badge jumps to its end state");
+			BarUiAnimationEnabled = true;
+			click(rect); tick(60);
+
+			// 实际绘制面板，按顶边中点右/左两侧与环色的色差判断进度环是否画出（约四成进度时）。
+			const auto ringContrast = [&](int item)
+			{
+				auto* dc = owner.spec.GetDeviceContext(); owner.spec.SetFrameZoom(zoom);
+				owner.spec.PrepareFrameLighting(1.0 / 60, {}, static_cast<int>(StateModeSelectEnum::IdtShape), 0, GetPenColor(GetStateModeSnapshot()), 0);
+				dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0, 0, 0, 0)); panel.Draw(owner.spec, dc);
+				expect(SUCCEEDED(dc->EndDraw()), "panel draws for ring sampling");
+				const auto pixels = ReadPixels(dc, owner.spec.GetTargetBitmap()); const auto r = panel.PresentationSnapshot().items[item];
+				const UINT width = owner.spec.GetTargetBitmap()->GetPixelSize().width;
+				const COLORREF ringColor = GetThemeColor(BarThemeColorEnum::IconPrimary);
+				const auto distance = [&](size_t i) { return std::abs(static_cast<int>(pixels[i]) - GetBValue(ringColor)) + std::abs(static_cast<int>(pixels[i + 1]) - GetGValue(ringColor))
+					+ std::abs(static_cast<int>(pixels[i + 2]) - GetRValue(ringColor)); };
+				int right = 765, left = 765;
+				for (int y = static_cast<int>(r.top); y < static_cast<int>(r.top) + 10; ++y) for (int dx = 4; dx < 9; ++dx)
+				{
+					const size_t a = (static_cast<size_t>(y) * width + static_cast<size_t>(EraserRectCenterX(r) + dx)) * 4;
+					const size_t b = (static_cast<size_t>(y) * width + static_cast<size_t>(EraserRectCenterX(r) - dx)) * 4;
+					if (b + 3 < pixels.size() && a + 3 < pixels.size()) { right = (std::min)(right, distance(a)); left = (std::min)(left, distance(b)); }
+				}
+				return left - right;
+			};
+
+			// 正常提交：进度环在已接受的提交后定格满格。
+			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1400ms);
+			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); tick(30);
+			BarGeometryAttributeTestAccess::ShiftHold(panel, 700ms);
+			expect(panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()) == std::chrono::steady_clock::time_point{}, "accepted hold commits on the deadline");
+			tick(1);
+			expect(pinned() && BarGeometryAttributeTestAccess::RingProgress(panel) == 1, "accepted hold freezes the ring at full progress");
+			pointer(WM_LBUTTONUP, ellipse, false); tick(60);
+			click(rect); tick(60); expect(!pinned(), "switching back to rectangle clears the accepted pin");
+
+			// revision 过期：保留按下时守卫，不固定；环不定格满格，按退出时序淡出。
+			{
+				pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1400ms);
+				(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); tick(30);
+				BarGeometryAttributeTestAccess::ShiftHold(panel, 300ms); tick(1);
+				const double lastProgress = BarGeometryAttributeTestAccess::RingProgress(panel);
+				expect(lastProgress > .7 && lastProgress < .95 && BarGeometryAttributeTestAccess::RingOpacity(panel) == 1, "ring is mid-progress before the stale commit");
+				// 其他来源推进 revision（值不变也计一次），使按下时的 revision 过期。
+				{ const auto s = GetStateModeVersionedSnapshot(); (void)SetShapeLinePatternIfRevision(GetShapeStyle(s.state).linePattern, s.revision); }
+				const auto staleRevision = StateModeTransitionRevision();
+				BarGeometryAttributeTestAccess::ShiftHold(panel, 400ms);
+				expect(panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()) == std::chrono::steady_clock::time_point{}, "stale hold deadline is consumed once");
+				expect(!pinned() && GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Rectangle && StateModeTransitionRevision() == staleRevision,
+					"stale revision neither selects nor pins and is not retried");
+				tick(1);
+				const double fading = BarGeometryAttributeTestAccess::RingOpacity(panel);
+				expect(BarGeometryAttributeTestAccess::RingProgress(panel) == lastProgress && BarGeometryAttributeTestAccess::RingOpacityTarget(panel) == 0 && fading < 1,
+					"rejected commit keeps the last progress instead of a full ring and starts fading");
+				tick(2);
+				expect(BarGeometryAttributeTestAccess::RingProgress(panel) < 1 && BarGeometryAttributeTestAccess::RingOpacity(panel) < fading, "rejected ring keeps fading out");
+				pointer(WM_LBUTTONUP, ellipse, false); tick(40);
+				expect(!pinned() && GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Rectangle && !pointerAccepted && BarGeometryAttributeTestAccess::RingItem(panel) < 0,
+					"release after a rejected hold does not short-tap and the ring is gone");
+			}
+
+			// 进度环出现后在按钮内超出移动阈值：中止，抬起既不选中也不固定。
+			{
+				const auto before = GetStateModeVersionedSnapshot();
+				pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 800ms);
+				(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); tick(2);
+				const auto fr = panel.PresentationSnapshot(); const auto r = fr.items[ellipse];
+				ExMessage drift{}; drift.message = WM_MOUSEMOVE; drift.lbutton = true;
+				drift.x = static_cast<short>(std::lround(EraserRectCenterX(r) * fr.zoom) + 8); drift.y = static_cast<short>(std::lround(EraserRectCenterY(r) * fr.zoom));
+				panel.Pointer(owner, drift);
+				expect(BarGeometryAttributeTestAccess::HoldItem(panel) < 0, "drift after the ring appeared aborts the hold");
+				pointer(WM_LBUTTONUP, ellipse, false); tick(60);
+				expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()) && !pinned() && !pointerAccepted, "drift abort after the ring neither selects nor pins on release");
+			}
+
+			// Up 在 2.0s 之后、到期唤醒之前被处理：长按恰好提交一次，不触发短按。
+			{
+				pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 2050ms);
+				const auto beforeUp = StateModeTransitionRevision();
+				pointer(WM_LBUTTONUP, ellipse, false);
+				expect(pinned() && GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse && StateModeTransitionRevision() == beforeUp + 1 && !pointerAccepted,
+					"up after the deadline commits the hold exactly once without a short tap");
+				expect(panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()) == std::chrono::steady_clock::time_point{} && StateModeTransitionRevision() == beforeUp + 1,
+					"late deadline wake does not commit again");
+				tick(60); click(rect); tick(60); expect(!pinned(), "late-up pin cleared by switching category");
+			}
+
+			// 注入进度环绘制失败：同一次长按内不重试，下一次长按重新绘制。
+			{
+				pointer(WM_LBUTTONDOWN, rect, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1100ms);
+				(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); tick(30);
+				expect(ringContrast(rect) > 150, "ring draws before the injected failure");
+				BarGeometryAttributeTestAccess::FailRing(panel); tick(1);
+				expect(ringContrast(rect) < 150 && BarGeometryAttributeTestAccess::RingFailed(panel), "failed ring is not retried within the same hold");
+				pointer(WM_LBUTTONUP, rect, false); tick(60);
+				expect(BarGeometryAttributeTestAccess::RingItem(panel) < 0, "aborted ring fades out");
+				pointer(WM_LBUTTONDOWN, rect, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1100ms);
+				(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); tick(30);
+				const int contrast = ringContrast(rect);
+				report << "HoldRingRetry contrast=" << contrast << '\n';
+				expect(!BarGeometryAttributeTestAccess::RingFailed(panel) && contrast > 150, "next long press clears the failure and draws the ring again");
+				pointer(WM_LBUTTONUP, rect, false); tick(60);
+				expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Rectangle && !pinned(), "ring retry holds have no business side effects");
+			}
+
+			// 页码加载环抽取前后逐像素一致；进度模式整圈闭合。
+			{
+				auto* dc = owner.spec.GetDeviceContext(); ButtonFrameRing shared;
+				const COLORREF color = GetThemeColor(BarThemeColorEnum::IconPrimary);
+				for (const float z : {1.0F, 1.5F})
+					for (const auto& arc : {PageLoadingArc{0,.10},PageLoadingArc{.37,.42},PageLoadingArc{.9,.95},PageLoadingArcAt(.8,true)})
+					{
+						const EraserAttributeRect r{100.25,60.5,170.25,95.5};
+						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0,0,0,0));
+						const bool legacyOk = DrawLegacyPageRing(dc, r, 8, z, arc, color, .8F); expect(SUCCEEDED(dc->EndDraw()) && legacyOk, "legacy page ring reference draws");
+						const auto legacy = ReadPixels(dc, owner.spec.GetTargetBitmap());
+						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0,0,0,0));
+						const bool sharedOk = shared.Draw(dc, r.left, r.top, r.Width(), r.Height(), 8, static_cast<float>(BarButtonFrameThicknessDip), 1, z, {arc.start, arc.length, false}, color, .8F);
+						expect(SUCCEEDED(dc->EndDraw()) && sharedOk, "shared page ring draws");
+						const auto current = ReadPixels(dc, owner.spec.GetTargetBitmap());
+						expect(!legacy.empty() && legacy == current && std::any_of(current.begin(), current.end(), [](auto v){ return v != 0; }), "page loading ring is pixel-identical after extraction");
+					}
+				const EraserAttributeRect r{100,60,170,130};
+				dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0,0,0,0));
+				(void)shared.Draw(dc, r.left, r.top, r.Width(), r.Height(), 8, static_cast<float>(BarButtonFrameThicknessDip), 1, 1, {0, 1, true}, color, 1);
+				expect(SUCCEEDED(dc->EndDraw()), "full progress ring draws");
+				const auto full = ReadPixels(dc, owner.spec.GetTargetBitmap()); const UINT width = owner.spec.GetTargetBitmap()->GetPixelSize().width;
+				const auto alphaAt = [&](double x, double y) { const size_t i = (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4 + 3; return i < full.size() ? full[i] : 0; };
+				const double edge = 3.25; // 边框 + 间隙 + 半线宽
+				expect(alphaAt(135, 60 + edge) > 128 && alphaAt(131, 60 + edge) > 128 && alphaAt(170 - edge, 95) > 128 && alphaAt(135, 130 - edge) > 128 && alphaAt(100 + edge, 95) > 128,
+					"completed progress ring closes around the button");
+			}
+			caseContext.clear();
+		}
+
 		// 正式资源、三语、DPI、上下展开、主题与设备代次均通过实际面板渲染。
 		int frames = 0;
 		for (const wchar_t* language : {L"zh-CN", L"zh-TW", L"en-US"})
@@ -549,6 +873,90 @@ namespace Inkeys::UI::Bar
 		InitializeUI(owner); BarGeometryAttributeTestAccess::Display(owner, 1200, 800);
 		owner.barStyle.dpiZoom = 1; owner.barStyle.configZoom = 1; owner.barStyle.zoom = 1;
 		owner.barButtonSet.Load(); owner.barButtonSet.StateUpdate();
+		{
+			caseContext = "main-geometry-badge";
+			auto* geometry = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Geometry)];
+			expect(geometry && geometry->badge.has_value(), "main geometry button owns the optional badge");
+			int otherBadges = 0;
+			for (int id = 0; id < owner.barButtonSet.tot; ++id) if (auto* b = owner.barButtonSet.buttonList.Get(id); b && b != geometry && b->badge) ++otherBadges;
+			expect(otherBadges == 0, "other main-bar buttons stay without badges");
+			const BarButtonAnimationContext frame{1.0 / 60, 1, true, false, true, true};
+			const auto advance = [&](int frames) { for (int i = 0; i < frames; ++i) (void)AdvanceBarButtonVisual(*geometry, frame); };
+			const auto savedPreset = GetShapeToolSpec(GetStateModeSnapshot()).preset;
+			geometry->button.w.SetDirect(70); geometry->button.h.SetDirect(70);
+			const BarUiInheritClass origin{200, 20};
+			ChangeStateModeToShape(); (void)SetShapeToolPresetIfRevision(PresetKind::Rectangle, StateModeTransitionRevision());
+			owner.barButtonSet.StateUpdate(); advance(60);
+			expect(!geometry->badge->shown && geometry->badge->progress.val == 0, "unpinned rectangle has no main badge");
+			(void)ToggleShapeToolPinIfRevision(PresetKind::Rectangle, StateModeTransitionRevision()); owner.barButtonSet.StateUpdate();
+			expect(geometry->badge->shown, "user-pinned shape publishes the main badge target");
+			advance(3);
+			auto g = ResolveBarButtonBadgeGeometry(*geometry, origin);
+			expect(g.scale > 0 && g.scale < 1.2 && g.angle < 0 && g.angle > -45, "main badge enters scaling up with rotation");
+			const RECT entering = ResolveBarButtonBadgeBounds(*geometry, origin, 1.5);
+			const double envelope = g.diameter * g.scale * 0.7071 * 1.5;
+			expect(entering.right - entering.left >= static_cast<LONG>(2 * envelope) && entering.left <= static_cast<LONG>(g.centerX * 1.5 - envelope), "badge dirty bounds cover the rotated envelope");
+			advance(60); g = ResolveBarButtonBadgeGeometry(*geometry, origin);
+			expect(geometry->badge->progress.val == 1 && std::abs(g.angle) < .000001 && std::abs(g.centerX - (origin.x + 70 - 9)) < .01 && std::abs(g.centerY - (origin.y + 9)) < .01,
+				"main badge settles at the top-right corner");
+			// 主栏倒转：换到右下角并随换边过渡。
+			geometry->badge->belowTarget = true; advance(6); g = ResolveBarButtonBadgeGeometry(*geometry, origin);
+			expect(geometry->badge->below.val > 0 && geometry->badge->below.val < 1 && g.centerY > origin.y + 9 && g.centerY < origin.y + 61, "inverted bar moves the badge along the right edge");
+			advance(60); g = ResolveBarButtonBadgeGeometry(*geometry, origin);
+			expect(std::abs(g.centerY - (origin.y + 70 - 9)) < .01 && std::abs(g.centerX - (origin.x + 61)) < .01, "inverted bar places the badge at the bottom-right corner");
+			geometry->button.h.SetDirect(32.5); g = ResolveBarButtonBadgeGeometry(*geometry, origin);
+			expect(std::abs(g.centerY - (origin.y + 32.5 - 9)) < .01 && g.diameter == 10, "button size changes translate without rescaling the badge");
+			geometry->button.h.SetDirect(70); geometry->badge->belowTarget = false; advance(60);
+			// 切到其他图形清除固定，角标旋转离场。
+			(void)SetShapeToolPresetIfRevision(PresetKind::Ellipse, StateModeTransitionRevision()); owner.barButtonSet.StateUpdate(); advance(9);
+			g = ResolveBarButtonBadgeGeometry(*geometry, origin);
+			expect(!geometry->badge->shown && g.scale > 0 && g.angle > 0, "switching shape hides the main badge with exit rotation");
+			advance(60); expect(geometry->badge->progress.val == 0 && ResolveBarButtonBadgeBounds(*geometry, origin, 1).right == 0, "hidden badge leaves no dirty bounds");
+			{
+				// 进出场中途反向：角度沿当前值连续变化，不按新目标重算出现瞬跳。
+				const auto angle = [&] { return ResolveBarButtonBadgeGeometry(*geometry, origin).angle; };
+				const BarButtonAnimationContext still{0.0, 1, true, false, true, true};
+				double referenceStep = 0;
+				geometry->badge->shown = true; advance(1);
+				for (double previous = angle(), i = 0; i < 60; ++i) { advance(1); const double a = angle(); referenceStep = (std::max)(referenceStep, std::abs(a - previous)); previous = a; }
+				geometry->badge->shown = false; advance(60);
+				expect(geometry->badge->progress.val == 0 && std::abs(angle() - 45) < .000001 && referenceStep > 0, "uninterrupted badge cycle settles hidden at the exit angle");
+				const auto reverse = [&](bool shown, const char* label)
+				{
+					const double before = angle();
+					geometry->badge->shown = shown; (void)AdvanceBarButtonVisual(*geometry, still);
+					expect(std::abs(angle() - before) < .000001, label);
+					double previous = angle(), maxStep = 0, firstStep = -1;
+					for (int i = 0; i < 60; ++i)
+					{
+						advance(1); const double a = angle(); const double step = std::abs(a - previous);
+						if (firstStep < 0) firstStep = step;
+						maxStep = (std::max)(maxStep, step); previous = a;
+					}
+					report << "BadgeReverse shown=" << shown << " before=" << before << " first=" << firstStep << " max=" << maxStep << " reference=" << referenceStep << '\n';
+					// 反向距离最多 90 度（参考整段为 45 度），单帧变化不超过参考单帧步长的两倍；首帧从零速度起步。
+					expect(firstStep < referenceStep && maxStep <= referenceStep * 2 + .000001, "reversed badge rotation stays within a single-frame step");
+				};
+				geometry->badge->shown = true; advance(4);
+				expect(geometry->badge->progress.val > 0 && angle() < 0 && angle() > -45, "badge is mid-entry before reversing");
+				reverse(false, "reversing mid-entry keeps the current angle");
+				expect(geometry->badge->progress.val == 0 && std::abs(angle() - 45) < .000001, "reversed entry settles at the exit angle");
+				geometry->badge->shown = true; advance(60); geometry->badge->shown = false; advance(4);
+				expect(geometry->badge->progress.val > 0 && angle() > -10 && angle() < 45, "badge is mid-exit before reversing");
+				reverse(true, "reversing mid-exit keeps the current angle instead of restarting at -45");
+				expect(geometry->badge->progress.val == 1 && std::abs(angle()) < .000001, "reversed exit settles upright");
+				geometry->badge->shown = false; advance(60);
+			}
+			(void)SetShapeToolPresetIfRevision(PresetKind::Line, StateModeTransitionRevision()); owner.barButtonSet.StateUpdate();
+			expect(geometry->badge->shown, "line tool always shows the main badge");
+			ChangeStateModeToPen(); owner.barButtonSet.StateUpdate();
+			expect(!geometry->badge->shown, "badge only follows the selected shape tool");
+			BarUiAnimationEnabled = false; ChangeStateModeToShape(); owner.barButtonSet.StateUpdate();
+			(void)AdvanceBarButtonVisual(*geometry, {1.0 / 60, 1, false, false, true, true});
+			expect(geometry->badge->progress.val == 1, "animation-disabled main badge jumps to the end state");
+			BarUiAnimationEnabled = true; (void)SetShapeToolPresetIfRevision(savedPreset, StateModeTransitionRevision()); owner.barButtonSet.StateUpdate(); advance(60);
+			caseContext.clear();
+		}
 		owner.barState.fold = false; owner.barState.geometryAttribute = true;
 		owner.barState.drawAttribute = false; BarUiAnimationEnabled = true;
 		unsigned actualCommits = 0;
@@ -1173,6 +1581,8 @@ namespace Inkeys::UI::Bar
 		const unsigned settledCommits = actualCommits; sceneTick(20, false);
 		expect(actualCommits == settledCommits && sceneResult == RenderPipeline::FrameResult::Idle && !owner.geometryAttribute.Active(),
 			"actual settled scene sleeps with no animation-disabled carousel or repeated presentation");
+		if (auto* geometry = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Geometry)]; geometry && geometry->badge)
+			expect(static_cast<bool>(geometry->badge->belowTarget) == static_cast<bool>(owner.barState.widgetPosition.primaryBar), "render loop publishes the inverted side to the main badge");
 		owner.geometryAttribute.Close(owner); sceneTick(2); const unsigned hiddenCommits = actualCommits; sceneTick(20, false);
 		expect(actualCommits == hiddenCommits && !owner.geometryAttribute.PresentationSnapshot().visible && !BarGeometryAttributeTestAccess::CarouselArmed(owner.geometryAttribute),
 			"hidden actual scene has no residual shape-list animation or timer wake");

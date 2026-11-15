@@ -1745,6 +1745,7 @@ namespace
 			saved->laserActive = false;
 			saved->Pen.ModeSelect = PenModeSelectEnum::IdtPenSoftPen;
 			saved->Shape.ModeSelect = ShapeModeSelectEnum::IdtShapeStraightLine1;
+			saved->Shape.pinnedPreset.reset();
 		}
 		const bool exitSelectionPending = ExitSelectionHandoffPending();
 		const auto widthContext = stateMode.penWidthContext;
@@ -2479,6 +2480,8 @@ bool RestoreToolAfterShapeEditing(std::uint8_t workspace, std::uint64_t entryEpo
 		// 旧编辑完成通知不能覆盖新工作区、新一轮几何或用户主动选择的新工具。
 		if (!shapeReturnMode || entryEpoch != shapeReturnEntryEpoch || workspace != static_cast<std::uint8_t>(shapeReturnWorkspace) ||
 			stateModeWorkspace != shapeReturnWorkspace || stateMode.StateModeSelect != StateModeSelectEnum::IdtShape) return false;
+		// 已固定的图形：编辑结束仍保持当前图形工具；保留入口记录，取消固定后的下次结束编辑仍能恢复入口工具。
+		if (IsShapeToolPinned(stateMode)) return false;
 		const auto mode = *shapeReturnMode; shapeReturnMode.reset();
 		if (mode == StateModeSelectEnum::IdtSelection) ApplySelectionTransitionLocked();
 		else
@@ -2518,6 +2521,8 @@ static bool SetShapeModeSelectImpl(ShapeModeSelectEnum shape,
 		}
 		stateMode.Shape.ModeSelect = shape;
 		stateMode.Shape.openPattern = pattern;
+		// 换成其他图形即清除长按固定。
+		if (stateMode.Shape.pinnedPreset != GetShapeToolSpec(stateMode).preset) stateMode.Shape.pinnedPreset.reset();
 	}
 	SyncDraw3State();
 	return true;
@@ -2650,7 +2655,7 @@ bool SetShapeAuxiliaryIfRevision(draw3::shapes::Auxiliary bit, bool enabled, std
 	});
 }
 
-bool SetShapeToolPresetIfRevision(draw3::shapes::PresetKind preset, std::uint64_t expected)
+static std::optional<ShapeModeSelectEnum> ShapeModeForPreset(draw3::shapes::PresetKind preset) noexcept
 {
 	using namespace draw3::shapes;
 	ShapeModeSelectEnum mode;
@@ -2677,12 +2682,44 @@ bool SetShapeToolPresetIfRevision(draw3::shapes::PresetKind preset, std::uint64_
 	case PresetKind::Cone: mode = ShapeModeSelectEnum::IdtShapeCone1; break;
 	case PresetKind::Prism: mode = ShapeModeSelectEnum::IdtShapePrism1; break;
 	case PresetKind::Pyramid: mode = ShapeModeSelectEnum::IdtShapePyramid1; break;
-	default: return false;
+	default: return std::nullopt;
 	}
+	return mode;
+}
+
+bool SetShapeToolPresetIfRevision(draw3::shapes::PresetKind preset, std::uint64_t expected)
+{
+	const auto mode = ShapeModeForPreset(preset);
+	if (!mode) return false;
 	return ChangeShapeProperty(expected, [&] {
-		const bool changed = stateMode.Shape.ModeSelect != mode;
-		stateMode.Shape.ModeSelect = mode;
-		return changed;
+		const bool changed = stateMode.Shape.ModeSelect != *mode;
+		stateMode.Shape.ModeSelect = *mode;
+		// 固定只属于当前选择：换到其他图形即清除，同一图形的参数变化保留。
+		const bool unpinned = stateMode.Shape.pinnedPreset && *stateMode.Shape.pinnedPreset != GetShapeToolSpec(stateMode).preset;
+		if (unpinned) stateMode.Shape.pinnedPreset.reset();
+		return changed || unpinned;
+	});
+}
+
+bool IsShapeToolPinned(const StateModeClass& snapshot) noexcept
+{
+	const auto preset = GetShapeToolSpec(snapshot).preset;
+	return IsAlwaysPinnedShapePreset(preset) || snapshot.Shape.pinnedPreset == preset;
+}
+
+bool ToggleShapeToolPinIfRevision(draw3::shapes::PresetKind preset, std::uint64_t expected)
+{
+	const auto mode = ShapeModeForPreset(preset);
+	if (!mode) return false;
+	return ChangeShapeProperty(expected, [&] {
+		const auto beforeMode = stateMode.Shape.ModeSelect;
+		const auto beforePin = stateMode.Shape.pinnedPreset;
+		stateMode.Shape.ModeSelect = *mode;
+		const auto selected = GetShapeToolSpec(stateMode).preset;
+		// 直线/箭头恒为固定，不记录手动位；已手动固定的同一图形再次长按取消固定。
+		if (IsAlwaysPinnedShapePreset(selected) || beforePin == selected) stateMode.Shape.pinnedPreset.reset();
+		else stateMode.Shape.pinnedPreset = selected;
+		return beforeMode != stateMode.Shape.ModeSelect || beforePin != stateMode.Shape.pinnedPreset;
 	});
 }
 
@@ -2920,6 +2957,49 @@ int RunShapeToolStateProductionTest() noexcept
 			StateModeTransitionRevision() == sameLineIntent + 1 &&
 			Inkeys::Drawing::Draw3::ProductHost().ProductBridge().Snapshot().revision == sameLineBridge,
 			"unchanged legacy click updates user intent without duplicate publication");
+		// 长按固定只属于当前选择：换图形清除，同图形参数与临时切笔保留；直线/箭头恒为固定。
+		{
+			const auto pinned = [] { return IsShapeToolPinned(GetStateModeSnapshot()); };
+			const auto manual = [] { return GetStateModeSnapshot().Shape.pinnedPreset; };
+			(void)SetShapeToolPresetIfRevision(PresetKind::Line, StateModeTransitionRevision());
+			check(pinned() && !manual(), "line is always pinned without a manual bit");
+			(void)ToggleShapeToolPinIfRevision(PresetKind::Arrow, StateModeTransitionRevision());
+			check(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Arrow && pinned() && !manual(), "long press on arrow selects it and keeps it pinned");
+			(void)ToggleShapeToolPinIfRevision(PresetKind::Arrow, StateModeTransitionRevision());
+			check(pinned() && !manual(), "repeated long press cannot unpin arrow");
+			check(ToggleShapeToolPinIfRevision(PresetKind::RegularPolygon, StateModeTransitionRevision()) &&
+				GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::RegularPolygon && pinned() && manual() == PresetKind::RegularPolygon,
+				"long press selects and pins another preset");
+			(void)SetShapePolygonSidesIfRevision(5, StateModeTransitionRevision());
+			check(pinned(), "same preset parameter change keeps pin");
+			ChangeStateModeToPen(); ChangeStateModeToShape();
+			check(pinned(), "temporary pen switch keeps pinned selection");
+			const auto stale = StateModeTransitionRevision();
+			check(ToggleShapeToolPinIfRevision(PresetKind::RegularPolygon, stale) && !pinned() && !manual(), "second long press unpins");
+			check(!ToggleShapeToolPinIfRevision(PresetKind::RegularPolygon, stale) && !pinned(), "stale long press rejected");
+			(void)ToggleShapeToolPinIfRevision(PresetKind::Circle, StateModeTransitionRevision());
+			check(pinned() && manual() == PresetKind::Circle, "circle pinned");
+			(void)SetShapeToolPresetIfRevision(PresetKind::Rectangle, StateModeTransitionRevision());
+			check(!pinned() && !manual(), "switching preset clears pin");
+			(void)SetShapeToolPresetIfRevision(PresetKind::Circle, StateModeTransitionRevision());
+			check(!pinned(), "returning to the old preset does not resurrect pin");
+			// 编辑结束：已固定保持当前图形工具并消费入口记录；未固定恢复入口工具。
+			ChangeStateModeToPen(); ChangeStateModeToShape();
+			(void)ToggleShapeToolPinIfRevision(PresetKind::Ellipse, StateModeTransitionRevision());
+			const auto pinnedEntry = Inkeys::Drawing::Draw3::ShapeToolEntryEpoch().load();
+			const auto workspace = static_cast<std::uint8_t>(stateModeWorkspace);
+			check(!RestoreToolAfterShapeEditing(workspace, pinnedEntry) && GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtShape &&
+				GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse && pinned(), "pinned shape stays after editing ends");
+			(void)ToggleShapeToolPinIfRevision(PresetKind::Ellipse, StateModeTransitionRevision());
+			check(!pinned() && RestoreToolAfterShapeEditing(workspace, pinnedEntry) && GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtPen,
+				"pinned finish keeps the entry record so a later unpinned finish restores it");
+			ChangeStateModeToPen(); ChangeStateModeToShape();
+			const auto unpinnedEntry = Inkeys::Drawing::Draw3::ShapeToolEntryEpoch().load();
+			check(RestoreToolAfterShapeEditing(workspace, unpinnedEntry) && GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtPen,
+				"unpinned shape restores entry tool");
+			ChangeStateModeToShape();
+			(void)SetShapeToolPresetIfRevision(PresetKind::Line, StateModeTransitionRevision());
+		}
 		// UI 手势必须携带发布当时的完整身份，队列中的快照不能被发布者随后改写。
 		{
 			using namespace Inkeys::Drawing::Draw3;

@@ -5231,6 +5231,9 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	{
 		button.button.lightMaterial = lightMaterial;
 		if (barMaterialActive) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(&button.button));
+		// 主栏倒转（停靠上方、向下展开）时角标换到右下；拖动中锁存，松手后再过渡。
+		if (button.badge && !frame.bottomDockDragActive)
+			button.badge->belowTarget = static_cast<bool>(state.barState.widgetPosition.primaryBar);
 		Inkeys::UI::Bar::BarButtonAnimationContext context;
 		context.dtSeconds = animationDtSeconds;
 		context.speedRate = currentAnimationSpeedRate;
@@ -8623,6 +8626,17 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				RECT nameBounds = ObserveWord(
 					&button->name, includeGroup, transform);
 				if (includeGroup) AddGroupBounds(group, nameBounds);
+				if (button->badge)
+				{
+					const auto badgeKey = GetBarDirtyVisualKey(&*button->badge);
+					if (includeGroup || state.dirtyRegionTracker.ShouldObserve(badgeKey))
+					{
+						const RECT badgeBounds = TransformBottomDockBounds(Inkeys::UI::Bar::ResolveBarButtonBadgeBounds(*button,
+							BarUiInheritClass(button->button.inhX, button->button.inhY), static_cast<double>(frameZoom)), transform);
+						state.dirtyRegionTracker.Observe(badgeKey, badgeBounds);
+						if (includeGroup) AddGroupBounds(group, badgeBounds);
+					}
+				}
 			};
 		for (int id = 0; id < state.barButtonSet.tot; ++id)
 			ObserveRegisteredButton(

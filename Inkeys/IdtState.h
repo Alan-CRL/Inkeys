@@ -149,6 +149,8 @@ public:
 		draw3::shapes::LinePattern closedPattern = draw3::shapes::LinePattern::Solid;
 		draw3::shapes::Auxiliary auxiliary = draw3::shapes::Auxiliary::None;
 		draw3::shapes::Auxiliary auxiliaryChoices = draw3::shapes::Auxiliary::None; // 每位首次选择前使用该模板默认值。
+		// 长按固定只属于当前选择，切换到其他图形即清除；仅会话内有效，不写入配置。
+		std::optional<draw3::shapes::PresetKind> pinnedPreset;
 
 		struct
 		{
@@ -273,6 +275,14 @@ bool SetShapeAuxiliaryIfRevision(draw3::shapes::Auxiliary bit, bool enabled, std
 draw3::shapes::FillMode GetShapeFillMode(const StateModeClass& snapshot) noexcept;
 bool IsOpenShapeTool(const StateModeClass& snapshot) noexcept;
 bool SetShapeToolPresetIfRevision(draw3::shapes::PresetKind preset, std::uint64_t expectedRevision);
+// 直线/箭头恒为固定工具；其它图形由几何面板长按固定当前选择。
+inline bool IsAlwaysPinnedShapePreset(draw3::shapes::PresetKind preset) noexcept
+{
+	return preset == draw3::shapes::PresetKind::Line || preset == draw3::shapes::PresetKind::Arrow;
+}
+bool IsShapeToolPinned(const StateModeClass& snapshot) noexcept;
+// 长按：选中该图形并固定；对已手动固定的同一图形再次长按取消固定，直线/箭头保持固定。
+bool ToggleShapeToolPinIfRevision(draw3::shapes::PresetKind preset, std::uint64_t expectedRevision);
 bool SetShapeFillModeIfRevision(draw3::shapes::FillMode mode, std::uint64_t expectedRevision);
 bool SetShapeLinePatternIfRevision(draw3::shapes::LinePattern pattern, std::uint64_t expectedRevision);
 bool SetShapeCircleModeIfRevision(draw3::shapes::CreationMode mode, std::uint64_t expectedRevision);

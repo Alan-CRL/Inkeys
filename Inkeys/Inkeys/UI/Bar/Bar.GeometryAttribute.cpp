@@ -3,6 +3,7 @@
 #include "../../../IdtState.h"
 #include "Bar.InteractionWorker.h"
 #include "Bar.ThemeMaterial.h"
+#include "Bar.ButtonFrameRing.h"
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include <d2d1_1helper.h>
@@ -28,6 +29,9 @@ namespace
 	constexpr int SegmentBegin = GeometrySegmentBegin;
 	constexpr std::array<Auxiliary,3> AuxiliaryBits{Auxiliary::Center,Auxiliary::Foci,Auxiliary::Diagonals};
 	constexpr int ThicknessBegin = GeometryThicknessBegin, ThicknessCount = GeometryThicknessCount, CloseButton = GeometryCloseButton;
+	// 长按固定：与形状颜色面板“保持”同节奏，0.5s 后出现进度环，再 1.5s 走满；移动阈值沿用粗细预览的触摸阈值。
+	constexpr auto HoldRingDelay = std::chrono::milliseconds(500), HoldCommitDelay = std::chrono::milliseconds(2000);
+	constexpr double HoldMoveSlopDip = 5.0;
 	// -1/-2为属性list内部的两枚分隔项，不占用户控件/命中索引。
 	constexpr std::array<int,11> AttributeItems{StyleBegin,StyleBegin+1,-1,
 		PatternBegin,PatternBegin+1,PatternBegin+2,PatternBegin+3,-2,ThicknessBegin,ThicknessBegin+1,ThicknessBegin+2};
@@ -235,6 +239,8 @@ void BarGeometryAttributePanel::Initialize()
 		resourceTargets_[i] = resource; labelTargets_[i] = ItemLabel(i);
 		b.icon.SetWH(i < CategoryCount ? 28 : 20, i < CategoryCount ? 28 : 20);
 		b.icon.w.SetDirect(b.icon.w.tar); b.icon.h.SetDirect(b.icon.h.tar);
+		// 可选择的图形类别挂大头针角标，显隐由固定状态驱动。
+		if (i < CategoryCount && ShapeCategoryCatalog()[i].preset) { b.badge.emplace(); InitializeBarButtonBadge(*b.badge); }
 	}
 	// 图形自己持有类别list，使用独立六列策略与共享标准按钮；固定成员只打包一次。
 	categoryList_.Replace(std::vector<std::shared_ptr<BarButtonClass>>(buttons_.begin(), buttons_.begin() + CategoryCount));
@@ -276,8 +282,6 @@ void BarGeometryAttributePanel::Initialize()
 	auxiliaryHintSurface_.enable.Initialization(true); auxiliaryHintSurface_.pct.SetDirect(BarDrawAttributeSurfaceOpacity);
 	auxiliaryHint_.Initialization(0, 0, 0, 0, L"", 12, GetThemeColor(BarThemeColorEnum::TextPrimary));
 	auxiliaryHint_.enable.Initialization(true); auxiliaryHint_.pct.SetDirect(1);
-	pinBadge_.Initialization(0, 0, GetThemeColor(BarThemeColorEnum::TextPrimary), GetThemeColor(BarThemeColorEnum::TextPrimary));
-	pinBadge_.enable.Initialization(true); pinBadge_.InitializationFromResource(L"UI", L"barStatusPin");
 	initialized_ = true;
 }
 
@@ -308,6 +312,52 @@ std::chrono::steady_clock::time_point BarGeometryAttributePanel::ConsumeCarousel
 	if (now < carouselDeadline_) return carouselDeadline_;
 	// 输入 owner 只请求一帧，图标与下个期限仍由 render owner 推进。
 	carouselWakeRequested_ = true; due = true; return {};
+}
+bool BarGeometryAttributePanel::CancelHold()
+{
+	std::lock_guard lock(holdMutex_);
+	// 已提交的长按保持消费标记，随后的 Up 不能再触发短按。
+	if (holdItem_ < 0 || holdCommitted_) return false;
+	holdItem_ = -1; holdRingWake_ = false; return true;
+}
+std::chrono::steady_clock::time_point BarGeometryAttributePanel::ConsumeHoldWake(
+	BarUISetClass& owner, std::chrono::steady_clock::time_point now)
+{
+	int item = -1;
+	bool requestRing = false;
+	std::chrono::steady_clock::time_point next{};
+	{
+		std::lock_guard lock(holdMutex_);
+		if (holdItem_ < 0 || holdCommitted_) return {};
+		if (now < holdStart_ + HoldRingDelay) return holdStart_ + HoldRingDelay;
+		if (now < holdStart_ + HoldCommitDelay)
+		{
+			// 只唤醒一次，之后由 render owner 连续推进进度环。
+			requestRing = !holdRingWake_; holdRingWake_ = true; next = holdStart_ + HoldCommitDelay;
+		}
+		else { holdCommitted_ = true; item = holdItem_; }
+	}
+	if (item < 0) { if (requestRing) owner.UpdateRendering(false); return next; }
+	// 满 2 秒：选中并固定（已手动固定则取消）；旧分类或已关闭面板不进入工具状态。
+	const auto f = PresentationSnapshot();
+	const auto preset = ShapeCategoryCatalog()[item].preset;
+	bool accepted = false;
+	if (preset && owner.barState.geometryAttribute && ShapeCategoryCatalog()[item].category == f.category
+		&& categoryRequest_ == static_cast<int>(f.category))
+	{
+		// 保留按下时 revision 守卫，不用新 revision 重试；返回值只表示有无变化（直线重复长按为 false），
+		// 故调用前 revision 必须仍等于按下值，调用后恰好推进一次才算接受。
+		const bool current = StateModeTransitionRevision() == pressRevision_;
+		const bool changed = ToggleShapeToolPinIfRevision(*preset, pressRevision_);
+		accepted = changed || (current && StateModeTransitionRevision() == pressRevision_ + 1);
+	}
+	{
+		// 结果交给 render owner：仅被接受时进度环定格满格；被拒则从当前进度按退出时序淡出。
+		std::lock_guard lock(holdMutex_);
+		if (holdCommitted_ && holdItem_ == item) holdAccepted_ = accepted;
+	}
+	owner.UpdateRendering();
+	return {};
 }
 
 bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeClass& state,
@@ -592,6 +642,30 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		}
 		carouselSides = carouselSides_;
 	}
+	bool ringVisible = false;
+	{
+		std::lock_guard lock(holdMutex_);
+		const bool holding = holdItem_ >= 0 && !holdCommitted_;
+		const double still = holding ? std::chrono::duration<double>(frameTime - holdStart_).count() : 0.0;
+		if (holding && (still >= 0.5 || holdRingWake_))
+		{
+			ringItem_ = holdItem_; ringProgress_ = (std::clamp)((still - 0.5) / 1.5, 0.0, 1.0); ringVisible = true;
+		}
+		else if (holdCommitted_ && holdAccepted_ && holdItem_ >= 0 && ringItem_ == holdItem_) ringProgress_ = 1.0;
+	}
+	if (ringVisible && !ringShown_)
+	{
+		// 新一次长按的进度环：清除上次绘制失败并重建路径缓存，同一次长按内不反复重试。
+		ringFailed_ = false; ring_.Reset();
+	}
+	ringShown_ = ringVisible;
+	// 进度环沿用页码加载环的淡入淡出；中止或完成后淡出，不旋转。
+	ringOpacity_.SetTar(ringVisible ? 1.0 : 0.0, ringVisible ? PageLoadingStyle::FadeInSeconds : PageLoadingStyle::FadeOutSeconds);
+	if (context.animationEnabled && dt <= 0 && !ringOpacity_.IsSame()) active_ = true;
+	else { const auto advanced = BarUiAdvanceAnimation(ringOpacity_, context); changed_ |= advanced.changed; active_ |= advanced.active; }
+	if (ringVisible) { active_ = true; changed_ = true; }
+	else if (ringOpacity_.val <= 0.000001) ringItem_ = -1;
+	const bool shapePinned = IsShapeToolPinned(state);
 	for (int i = 0; i < static_cast<int>(buttons_.size()); ++i)
 	{
 		auto& b = *buttons_[i];
@@ -704,6 +778,14 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		}
 		// contentScale归共享SVG转换独占；面板姿态只改标准布局尺寸，不覆盖换图动画。
 		b.name.enable.Initialization(!label.empty()); b.icon.enable.Initialization(!resource.empty());
+		if (b.badge)
+		{
+			// 直线/箭头常驻；其它图形仅在当前选择被长按固定时显示。
+			const auto entry = ShapeCategoryCatalog()[i].preset;
+			b.badge->shown = entry && (IsAlwaysPinnedShapePreset(*entry) || (shapePinned && tool.preset == *entry));
+			b.badge->scale = pf.pose.scale;
+			if (initializeLayout) { b.badge->progress.SetDirect(b.badge->shown ? 1.0 : 0.0); b.badge->angle.SetDirect(b.badge->shown ? 0.0 : 45.0); }
+		}
 		// 退出中的控件继续按同一帧时钟推进，不能以业务hidden强制落定共享透明度。
 		const BarButtonAnimationContext buttonContext{dt, speed, context.animationEnabled, false,
 			(wanted || HasButtonOpacity(b)) && pf.visible, available && wanted && !selected};
@@ -791,7 +873,8 @@ void BarGeometryAttributePanel::Draw(BarUIRendering& renderer, ID2D1DeviceContex
 	if (!initialized_ || !frame_.visible) return;
 	if (deviceGeneration_ != renderer.GetDeviceGeneration())
 	{
-		for (auto& b : buttons_) b->icon.ResetCache(); pinBadge_.ResetCache(); deviceGeneration_ = renderer.GetDeviceGeneration();
+		for (auto& b : buttons_) { b->icon.ResetCache(); if (b->badge) b->badge->svg.ResetCache(); }
+		ring_.Reset(); ringFailed_ = false; deviceGeneration_ = renderer.GetDeviceGeneration();
 	}
 	renderer.PushPanelOpacity(context, PixelRect(frame_.panel, frame_.zoom), frame_.opacity);
 	renderer.SetFrameDiffuseMaskGeometryScale(1 / frame_.pose.scale);
@@ -825,16 +908,17 @@ void BarGeometryAttributePanel::Draw(BarUIRendering& renderer, ID2D1DeviceContex
 				return true;
 			};
 		}
-		if (i < CategoryCount && (ShapeCategoryCatalog()[i].preset == PresetKind::Line || ShapeCategoryCatalog()[i].preset == PresetKind::Arrow))
+		if (static_cast<int>(i) == ringItem_ && i < CategoryCount && !ringFailed_ && ringProgress_ > 0 && ringOpacity_.val > 0.000001)
 		{
-			// 直线/箭头选中后保持工具可连续绘制：右上角固定标记跟随图标颜色、透明度与按压缩放。
+			// 长按进度环：与页码加载环同款路径与描边，从顶边中点顺时针走 0→100%。
 			options.content = [&](BarUIRendering& r, ID2D1DeviceContext* dc, BarButtonClass& button, const BarButtonVisualInheritance& inh)
 			{
-				const double scale = frame_.pose.scale, d = 10 * scale;
-				pinBadge_.w.SetDirect(d); pinBadge_.h.SetDirect(d); pinBadge_.pct.SetDirect(button.icon.pct.val);
-				if (button.icon.color1 && pinBadge_.color1) pinBadge_.color1->SetDirect(button.icon.color1->val);
-				if (button.icon.color1 && pinBadge_.color2) pinBadge_.color2->SetDirect(button.icon.color1->val);
-				return r.Svg(dc, pinBadge_, pinBadge_.UpInh({inh.button.x + button.button.w.val - 4 * scale - d, inh.button.y + 4 * scale}));
+				const float scale = static_cast<float>(frame_.pose.scale);
+				const float corner = button.button.rw ? static_cast<float>(button.button.rw->val) : static_cast<float>(BarButtonCornerRadiusDip) * scale;
+				if (!ring_.Draw(dc, inh.button.x, inh.button.y, button.button.w.val, button.button.h.val, corner,
+					static_cast<float>(BarButtonFrameThicknessDip), scale, static_cast<float>(r.GetFrameZoom()), {0.0, ringProgress_, true},
+					GetThemeColor(BarThemeColorEnum::IconPrimary), static_cast<float>(ringOpacity_.val))) ringFailed_ = true;
+				return true;
 			};
 		}
 		DrawBarButtonVisual(renderer, context, b, BarUiInheritClass(b.button.inhX, b.button.inhY), options);
@@ -900,7 +984,13 @@ void BarGeometryAttributePanel::Close(BarUISetClass& owner)
 }
 bool BarGeometryAttributePanel::ResetPointerFeedback()
 {
-	const bool changed = hovered_ >= 0 || pressed_ >= 0 || scrollDragging_;
+	bool holding = false;
+	{
+		// 取消或捕获丢失即中止长按，包括已提交后的续包；不选中也不固定。
+		std::lock_guard lock(holdMutex_);
+		holding = holdItem_ >= 0; holdItem_ = -1; holdRingWake_ = holdCommitted_ = holdAccepted_ = false;
+	}
+	const bool changed = hovered_ >= 0 || pressed_ >= 0 || scrollDragging_ || holding;
 	hovered_ = -1; pressed_ = -1; scrollDragging_ = false; pressCancelled_ = true; return changed;
 }
 void BarGeometryAttributePanel::Execute(BarUISetClass& owner, int item, std::uint64_t revision, bool* accepted)
@@ -1006,6 +1096,16 @@ bool BarGeometryAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& m
 	if (message.message == WM_MOUSEMOVE)
 	{
 		if (pressed_ >= 0 && hit != pressed_) pressCancelled_ = true;
+		// 移出按钮或超出移动阈值即中止长按；短按仍按原规则判定。
+		bool cancelHold = pressed_ >= 0 && hit != pressed_;
+		{
+			std::lock_guard lock(holdMutex_);
+			const double slop = HoldMoveSlopDip * f.zoom;
+			cancelHold |= holdItem_ >= 0 && (abs(message.x - holdOrigin_.x) > slop || abs(message.y - holdOrigin_.y) > slop);
+			// 进度环已出现后中止：本次按下整体作废，抬起不能退化成短按选中。
+			if (cancelHold && holdItem_ >= 0 && !holdCommitted_ && std::chrono::steady_clock::now() >= holdStart_ + HoldRingDelay) pressCancelled_ = true;
+		}
+		if (cancelHold && CancelHold()) owner.UpdateRendering(false);
 		const int hover = pressed_ >= 0 ? -1 : hit;
 		if (hovered_ != hover || pressed_ >= 0) { hovered_ = hover; focused_ = -1; owner.UpdateRendering(false); }
 		return inside || pressed_ >= 0;
@@ -1015,12 +1115,29 @@ bool BarGeometryAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& m
 		const auto state = GetStateModeVersionedSnapshot();
 		pressed_ = owner.barState.geometryAttribute && state.state.StateModeSelect == StateModeSelectEnum::IdtShape ? hit : -1;
 		pressRevision_ = state.revision; pressCancelled_ = false; hovered_ = -1; focused_ = -1;
+		{
+			// 只有可选择的图形类别参与长按固定，期限由交互 owner 的 ConsumeHoldWake 推进。
+			std::lock_guard lock(holdMutex_);
+			const int item = pressed_;
+			holdItem_ = item >= 0 && item < CategoryCount && ShapeCategoryCatalog()[item].preset ? item : -1;
+			holdStart_ = std::chrono::steady_clock::now(); holdOrigin_ = {message.x, message.y};
+			holdRingWake_ = holdCommitted_ = holdAccepted_ = false;
+		}
 		if (pressed_ >= 0) StopCarousel(); owner.UpdateRendering(false); return inside;
 	}
 	if (message.message == WM_LBUTTONUP)
 	{
 		const int pressed = pressed_; pressed_ = -1;
-		if (pressed >= 0 && hit == pressed && !pressCancelled_ && owner.barState.geometryAttribute) Execute(owner, pressed, pressRevision_, accepted);
+		bool holdConsumed = false;
+		// Up 可能先于到期唤醒被处理：已满 2 秒则先按长按提交，避免环满却无效果。
+		(void)ConsumeHoldWake(owner, std::chrono::steady_clock::now());
+		{
+			// 完成后的抬起不再触发短按；进度环出现后未满即抬起视为中止，不选中也不固定。
+			std::lock_guard lock(holdMutex_);
+			holdConsumed = holdCommitted_ || (holdItem_ >= 0 && std::chrono::steady_clock::now() >= holdStart_ + HoldRingDelay);
+			holdItem_ = -1; holdRingWake_ = holdCommitted_ = holdAccepted_ = false;
+		}
+		if (!holdConsumed && pressed >= 0 && hit == pressed && !pressCancelled_ && owner.barState.geometryAttribute) Execute(owner, pressed, pressRevision_, accepted);
 		// 接触输入和鼠标都等待新的 Move 恢复悬停，释放回弹不被 hover 抢占。
 		hovered_ = -1; if (contactPointer) focused_ = -1;
 		if (pressed >= 0) owner.UpdateRendering(false); return inside || pressed >= 0;
