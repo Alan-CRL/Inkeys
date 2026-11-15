@@ -97,6 +97,8 @@ public:
 public:
 	ID2D1SolidColorBrush* ContentSolidBrush(COLORREF color, double opacity = 1.0)
 	{ return GetFrameSolidColorBrush(deviceContext.Get(), color, opacity); }
+	// 画笔与当前图形共用色板渐变资源和色义，调用方仅适配目标。
+	void ColorPalette(ID2D1DeviceContext*, D2D1_RECT_F, bool darkTone, bool below, double opacity = 1);
 	bool Shape(ID2D1DeviceContext* deviceContext, const BarUiShapeClass& shape, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Superellipse(ID2D1DeviceContext* deviceContext, const BarUiSuperellipseClass& superellipse, const BarUiInheritClass& inh, RECT* targetRect = nullptr, bool clip = false);
 	bool Svg(ID2D1DeviceContext* deviceContext, BarUiSVGClass& svg, const BarUiInheritClass& inh);
@@ -354,6 +356,8 @@ protected:
 		ID2D1DeviceContext* deviceContext, COLORREF color,
 		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint,
 		FLOAT leftOpacity, FLOAT opacity);
+	// 编辑器复用主栏既有色板渐变与双颜色保持圆环。
+public:
 	ID2D1LinearGradientBrush* GetColorPickerHueGradientBrush(
 		ID2D1DeviceContext* deviceContext,
 		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint);
@@ -361,10 +365,12 @@ protected:
 		ID2D1DeviceContext* deviceContext, bool darkTone,
 		D2D1_POINT_2F startPoint, D2D1_POINT_2F endPoint,
 		FLOAT opacity);
+	// 构造提示复用双配色进度环；圆头可选，原有调用默认保持原样。
 	void DrawProgressRing(ID2D1DeviceContext* deviceContext,
 		D2D1_POINT_2F center, FLOAT radius, FLOAT strokeWidth,
 		FLOAT progress, COLORREF trackColor, COLORREF progressColor,
-		FLOAT trackOpacity, FLOAT progressOpacity);
+		FLOAT trackOpacity, FLOAT progressOpacity, bool roundCaps = false);
+protected:
 	ID2D1PathGeometry* GetThicknessPreviewPath();
 	ID2D1StrokeStyle1* GetThicknessPreviewStrokeStyle();
 	ID2D1StrokeStyle* GetRoundStrokeStyle();
@@ -546,3 +552,16 @@ protected:
 	friend class BarRenderLoopCoordinator;
 	friend class BarStatusIndicatorPanel;
 };
+
+// 输入几何均为像素；主栏保留每层独立合成，编辑器可对整枚Thumb统一淡出。
+export struct BarSliderThumbStyle
+{
+	D2D1_POINT_2F centerPx{};
+	FLOAT outerDiameterPx = 20, centerDiameterPx = 12;
+	double accentOpacity = 1, lightWeight = 0, opacity = 1;
+	FLOAT frameThicknessPx = 1;
+	COLORREF surfaceColor = RGB(0, 0, 0), accentColor = RGB(88, 255, 236);
+	bool compositeOpacity = false;
+};
+export void DrawBarSliderThumb(BarUIRendering& renderer, ID2D1DeviceContext* dc,
+	const BarSliderThumbStyle& style, BarUiSVGClass* iconSvg = nullptr, double iconScale = 1.0);

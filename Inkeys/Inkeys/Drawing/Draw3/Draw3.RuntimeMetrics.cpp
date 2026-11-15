@@ -146,6 +146,7 @@ namespace Inkeys::Drawing::Draw3
 			case DrawingTool::DashedLine: return "DashedLine";
 			case DrawingTool::OutlineRectangle: return "OutlineRectangle";
 			case DrawingTool::FilledRectangle: return "FilledRectangle";
+			case DrawingTool::Shape: return "Shape";
 			default: return "Unknown";
 			}
 		}

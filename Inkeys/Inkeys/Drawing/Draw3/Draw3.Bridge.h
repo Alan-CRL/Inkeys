@@ -2,6 +2,8 @@
 
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.WhiteboardModel.h"
+#include "Draw3.ShapeInteraction.h"
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 #include "Draw3.CursorSettings.h"
 #include "../../Business/PenWidthPolicy.hpp"
 
@@ -37,7 +39,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		DashedLine,
 		OutlineRectangle,
 		FilledRectangle,
-		ConfiguredEraser // 普通橡皮按输入入口配置；FixedEraser/SpeedEraser仍是显式工具。
+		ConfiguredEraser, // 普通橡皮按输入入口配置；FixedEraser/SpeedEraser仍是显式工具。
+		Shape // 通用参数图形；既有工具编号不变。
 	};
 
 	// 鼠标类型只作用于软/硬笔；荧光笔预览独立开启，其余工具保留专用或系统策略。
@@ -157,6 +160,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		std::optional<PresentationReadyIdentity> presentation;
 		std::uint64_t sceneGeneration = 0;
 		std::uint64_t hostGeneration = 0;
+		bool shapeConstruction = false; // 绘制线程锁存，首笔通知不依赖稍后发布的构造快照。
 	};
 
 	// PPT 的总页数只含真实幻灯片；结束页固定占用同文稿的附加内部页槽。
@@ -223,6 +227,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		InputTest,
 		PrepareExitAutoSave,
 		SetWhiteboardTheme,
+		ShapeInteraction,
 		ShortcutFence,
 	};
 
@@ -250,6 +255,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		Tool tool = Tool::Pen;
 		std::uint32_t colorRgba = 0x000000FFu;
 		double widthDip = 2.0;
+		draw3::shapes::ToolSpec shapeTool;
+		draw3::shapes::ShapeStyle shapeStyle; // width 是 DIP，在 Down 时转换一次。
 		Inkeys::Business::PenWidth::Context penWidthContext;
 		int paintDevice = 1; // 0 大屏，1 笔电；沿用已有绘图设备选项。
 		SpeedEraser::InputSettings eraserInputs;
@@ -273,6 +280,7 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		WhiteboardTheme whiteboardTheme;
 		std::uint64_t whiteboardGeneration = 0;
 		std::size_t whiteboardPage = 0;
+		std::shared_ptr<const ShapeUiAction> shapeAction;
 		std::shared_ptr<const Shortcuts::Request> shortcut;
 	};
 
@@ -301,6 +309,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		bool ClearPresentationTarget() noexcept;
 		ProductState Snapshot() const noexcept;
 		CommandResult Publish(CommandType type) noexcept;
+		// PreviewEdit 对同一手势 latest-wins；coalesced=true 表示覆盖了未消费预览，调用方不得再登记新唤醒。
+		CommandResult PublishShapeAction(const ShapeUiAction&, bool* coalesced = nullptr) noexcept;
 		CommandResult PublishWhiteboardTheme(WhiteboardTheme theme, std::uint64_t generation, std::size_t page) noexcept;
 		CommandResult PublishShortcut(CommandType type,
 			std::shared_ptr<const Shortcuts::Request> request) noexcept;

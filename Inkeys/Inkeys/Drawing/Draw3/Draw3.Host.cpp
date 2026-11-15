@@ -1828,6 +1828,7 @@ namespace Inkeys::Drawing::Draw3
 			case Bridge::Tool::DashedLine: tool = DrawingTool::DashedLine; break;
 			case Bridge::Tool::OutlineRectangle: tool = DrawingTool::OutlineRectangle; break;
 			case Bridge::Tool::FilledRectangle: tool = DrawingTool::FilledRectangle; break;
+			case Bridge::Tool::Shape: tool = DrawingTool::Shape; break;
 			default: break;
 			}
 			window.SetActiveTool(tool);
@@ -1846,7 +1847,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			window.SetEraserToolPolicy(state.tool==Bridge::Tool::FixedEraser?SpeedEraser::EraserToolPolicy::Fixed:
 				state.tool==Bridge::Tool::SpeedEraser?SpeedEraser::EraserToolPolicy::Speed:SpeedEraser::EraserToolPolicy::ByEntry);
-			window.SetProductVisualStyle(state.colorRgba, state.widthDip, state.penWidthContext);
+			window.SetProductVisualStyle(state.colorRgba, state.widthDip, state.penWidthContext,
+				state.shapeTool, state.shapeStyle);
 			const bool dispatchScene = PresentationSceneNeedsDispatch(state,
 				workspace.load(std::memory_order_acquire), requestedWorkspace,
 				requestedPresentationTargetRevision, restoreLatestScene);
@@ -1967,6 +1969,8 @@ namespace Inkeys::Drawing::Draw3
 			CanvasCommand canvas;
 			switch (command.type)
 			{
+			case Bridge::CommandType::ShapeInteraction:
+				canvas.type = CanvasCommandType::ShapeInteraction; canvas.shapeAction = command.shapeAction; break;
 			case Bridge::CommandType::SetWhiteboardTheme:
 				canvas.type = CanvasCommandType::SetWhiteboardTheme;
 				canvas.whiteboardTheme = command.whiteboardTheme;
@@ -3465,6 +3469,18 @@ namespace Inkeys::Drawing::Draw3
 		if (!impl_->input.TryReserveCommandWake()) return Bridge::CommandResult::QueueFull;
 		const auto result = impl_->bridge.PublishWhiteboardTheme(theme, generation, page);
 		if (result == Bridge::CommandResult::Accepted) impl_->input.PublishReservedCommandWake();
+		else impl_->input.CancelReservedCommandWake();
+		return result;
+	}
+
+	Bridge::CommandResult Host::PublishShapeAction(const ShapeUiAction& action) noexcept
+	{
+		std::scoped_lock lock(impl_->commandPublishMutex);
+		if (!impl_->input.TryReserveCommandWake()) return Bridge::CommandResult::QueueFull;
+		bool coalesced = false;
+		const auto result = impl_->bridge.PublishShapeAction(action, &coalesced);
+		// 覆盖已排队预览时其原有唤醒仍在，预留的新唤醒必须退回，保持唤醒与命令一一对应。
+		if (result == Bridge::CommandResult::Accepted && !coalesced) impl_->input.PublishReservedCommandWake();
 		else impl_->input.CancelReservedCommandWake();
 		return result;
 	}

@@ -50,7 +50,8 @@ export namespace Inkeys::Drawing::Draw3
 		SolidLine = 5,
 		DashedLine = 6,
 		OutlineRectangle = 7,
-		FilledRectangle = 8
+		FilledRectangle = 8,
+		Shape = 9
 	};
 
 	// 橡皮宽度模式由窗口线程低频发布，绘制线程在物理批次首个 Down 锁定。
@@ -80,7 +81,8 @@ export namespace Inkeys::Drawing::Draw3
 	constexpr bool IsShapeDrawingTool(DrawingTool tool) noexcept
 	{
 		return tool == DrawingTool::SolidLine || tool == DrawingTool::DashedLine ||
-			tool == DrawingTool::OutlineRectangle || tool == DrawingTool::FilledRectangle;
+			tool == DrawingTool::OutlineRectangle || tool == DrawingTool::FilledRectangle ||
+			tool == DrawingTool::Shape;
 	}
 
 	// 表示当前客户区尺寸。
@@ -95,6 +97,8 @@ export namespace Inkeys::Drawing::Draw3
 		uint32_t colorRgba = 0x000000FFu;
 		double widthDip = 2.0;
 		Inkeys::Business::PenWidth::Context penWidthContext;
+		draw3::shapes::ToolSpec shapeTool;
+		draw3::shapes::ShapeStyle shapeStyle;
 	};
 
 	enum class CanvasCommandType : uint8_t
@@ -113,6 +117,7 @@ export namespace Inkeys::Drawing::Draw3
 		PrepareExitAutoSave,
 		SetWhiteboardTheme,
 		WhiteboardPersistenceCompleted,
+		ShapeInteraction,
 		ShortcutFence,
 		RePresentWhiteboardPage, // 冷页失败只补原白板页呈现，不执行绝对切页。
 	};
@@ -120,6 +125,7 @@ export namespace Inkeys::Drawing::Draw3
 	struct CanvasCommand
 	{
 		CanvasCommandType type = CanvasCommandType::Undo;
+		std::shared_ptr<const ShapeUiAction> shapeAction;
 		float deltaX = 0.0f;
 		float deltaY = 0.0f;
 		std::size_t pageIndex = 0;
@@ -244,7 +250,9 @@ export namespace Inkeys::Drawing::Draw3
 		CanvasPanDisplaySnapshot CanvasPanDisplayContextSnapshot() const;
 		// 宽度和显示上下文同锁发布，实际绘制仍由绘制线程消费。
 		void SetProductVisualStyle(uint32_t colorRgba, double widthDip,
-			const Inkeys::Business::PenWidth::Context& context = {}) noexcept;
+			const Inkeys::Business::PenWidth::Context& context = {},
+			const draw3::shapes::ToolSpec& shapeTool = {},
+			const draw3::shapes::ShapeStyle& shapeStyle = {}) noexcept;
 		ProductVisualStyle ProductVisualStyleSnapshot() const noexcept;
 		void EnqueueCanvasCommand(CanvasCommand command);
 		// 单个预留终态槽不分配；占用时调用者保留 payload，消费后唤醒继续交付。

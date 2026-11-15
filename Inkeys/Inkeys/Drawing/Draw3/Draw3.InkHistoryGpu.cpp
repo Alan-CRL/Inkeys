@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -163,6 +164,8 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
+	namespace { std::atomic<uint64_t> compositionRestoreCallsTotal = 0; }
+
 	struct InkHistoryGpuCache::Impl
 	{
 		struct UndoPage
@@ -275,6 +278,7 @@ namespace Inkeys::Drawing::Draw3
 		uint64_t nextCompositionKeyId = 1;
 		bool scratchReady = false;
 		bool compositionPassAvailable = false;
+		uint64_t restoreCalls = 0;
 
 		Impl() : undoPlanner(undoPolicy), compositionPlanner(compositionPolicy) {}
 
@@ -1359,6 +1363,8 @@ namespace Inkeys::Drawing::Draw3
 		const CompositionRestoreRequest& request)
 	{
 		CompositionRestoreResult result;
+		if (impl_) ++impl_->restoreCalls;
+		compositionRestoreCallsTotal.fetch_add(1, std::memory_order_relaxed);
 		if (!impl_ || !impl_->renderer || !request.documentCanvas || !request.history ||
 			request.canvas.pageGuid.IsZero() || request.canvas.device != request.rasterKey.device ||
 			request.canvasWidth <= 0 || request.canvasHeight <= 0 ||
@@ -1557,5 +1563,15 @@ namespace Inkeys::Drawing::Draw3
 		impl_->freeCompositionSlots.clear();
 		impl_->compositionPages.clear();
 		impl_->compositionPlanner = CompositionCachePlanner(impl_->compositionPolicy);
+	}
+
+	uint64_t CompositionRestoreCallsTotal() noexcept
+	{
+		return compositionRestoreCallsTotal.load(std::memory_order_relaxed);
+	}
+
+	uint64_t InkHistoryGpuCache::CompositionRestoreCount() const noexcept
+	{
+		return impl_ ? impl_->restoreCalls : 0;
 	}
 }

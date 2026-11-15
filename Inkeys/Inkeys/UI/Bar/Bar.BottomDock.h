@@ -138,6 +138,11 @@ namespace Inkeys::UI::Bar
 		FadeOut,
 	};
 
+	enum class BarBottomDockIndicatorContentPhase
+	{
+		Stable, ExpandingFrame, SwappingText, ShrinkingFrame,
+	};
+
 	enum class BarBottomDockIndicatorContentAction
 	{
 		None,
@@ -175,6 +180,77 @@ namespace Inkeys::UI::Bar
 		if (currentTextWidthDip + 0.000001 < targetTextWidthDip)
 			return BarBottomDockIndicatorContentAction::ExpandFrame;
 		return BarBottomDockIndicatorContentAction::None;
+	}
+
+	// 共用原底栏提示的决策与阶段收尾；回调仍由各自渲染owner设置动画和损伤。
+	template<class Width, class ContentMatches, class StartWidth, class StartTextSwap>
+	inline void AdvanceBarIndicatorContent(BarBottomDockIndicatorContentPhase& phase, Width& width,
+		double currentWidthDip, double desiredWidthDip, bool textMatches,
+		ContentMatches contentMatches, StartWidth startWidth, StartTextSwap startTextSwap)
+	{
+		switch (phase)
+		{
+		case BarBottomDockIndicatorContentPhase::Stable:
+			switch (ResolveBarBottomDockIndicatorContentAction(
+				currentWidthDip, desiredWidthDip, textMatches))
+			{
+			case BarBottomDockIndicatorContentAction::ExpandFrame:
+				startWidth(desiredWidthDip,
+					BarBottomDockIndicatorContentPhase::ExpandingFrame);
+				break;
+			case BarBottomDockIndicatorContentAction::SwapText:
+				startTextSwap();
+				break;
+			case BarBottomDockIndicatorContentAction::ShrinkFrame:
+				startWidth(desiredWidthDip,
+					BarBottomDockIndicatorContentPhase::ShrinkingFrame);
+				break;
+			case BarBottomDockIndicatorContentAction::None:
+				break;
+			}
+			break;
+		case BarBottomDockIndicatorContentPhase::ExpandingFrame:
+			if (textMatches && desiredWidthDip + 0.000001
+				< width.tar)
+				startWidth(desiredWidthDip,
+					BarBottomDockIndicatorContentPhase::ShrinkingFrame);
+			else if (desiredWidthDip
+				> width.tar + 0.000001)
+				startWidth(desiredWidthDip,
+					BarBottomDockIndicatorContentPhase::ExpandingFrame);
+			break;
+		case BarBottomDockIndicatorContentPhase::SwappingText:
+			if (!textMatches) startTextSwap();
+			else if (currentWidthDip > desiredWidthDip + 0.000001)
+				startWidth(desiredWidthDip,
+					BarBottomDockIndicatorContentPhase::ShrinkingFrame);
+			else phase =
+				BarBottomDockIndicatorContentPhase::Stable;
+			break;
+		case BarBottomDockIndicatorContentPhase::ShrinkingFrame:
+			if (!textMatches)
+			{
+				if (currentWidthDip + 0.000001 < desiredWidthDip)
+					startWidth(desiredWidthDip,
+						BarBottomDockIndicatorContentPhase::ExpandingFrame);
+				else startTextSwap();
+			}
+			break;
+		}
+		if (phase
+			== BarBottomDockIndicatorContentPhase::ExpandingFrame
+			&& width.IsSame())
+		{
+			if (!contentMatches())
+				startTextSwap();
+			else phase =
+				BarBottomDockIndicatorContentPhase::Stable;
+		}
+		else if (phase
+			== BarBottomDockIndicatorContentPhase::ShrinkingFrame
+			&& width.IsSame())
+			phase =
+				BarBottomDockIndicatorContentPhase::Stable;
 	}
 
 	[[nodiscard]] inline bool ResolveBarBottomDockIndicatorTarget(

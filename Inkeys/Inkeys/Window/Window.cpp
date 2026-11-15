@@ -81,7 +81,7 @@ namespace
 
 	[[nodiscard]] constexpr bool IsUiPopup(WindowRole role) noexcept
 	{
-		return IsPpt(role) || role == WindowRole::Bar;
+		return IsPpt(role) || role == WindowRole::Bar || role == WindowRole::SelectionOverlay;
 	}
 
 	[[nodiscard]] constexpr int OverlayChainPosition(WindowRole role) noexcept
@@ -184,6 +184,7 @@ namespace
 		case WindowRole::PptMiddleLeft: return L"Inkeys.Window.PptMiddleLeft";
 		case WindowRole::PptMiddleRight: return L"Inkeys.Window.PptMiddleRight";
 		case WindowRole::Bar: return L"Inkeys.Window.Bar";
+		case WindowRole::SelectionOverlay: return L"Inkeys.Window.SelectionOverlay";
 		case WindowRole::Setting: return L"Inkeys.Window.Setting";
 		case WindowRole::DisplayObserver: return L"Inkeys.Window.DisplayObserver";
 		default: return L"Inkeys.Window.Unknown";
@@ -359,7 +360,7 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::Bar,
+				WindowRole::Bar, WindowRole::SelectionOverlay,
 				WindowRole::DisplayObserver,
 			};
 			for (const auto role : overlayRoles)
@@ -389,7 +390,7 @@ namespace Inkeys::Window
 				WindowRole::MagnifierHost,
 				WindowRole::Freeze,
 				WindowRole::Drawpad,
-				WindowRole::Bar,
+				WindowRole::Bar, WindowRole::SelectionOverlay,
 			};
 			for (const auto role : order)
 			{
@@ -1418,7 +1419,7 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::Bar,
+				WindowRole::Bar, WindowRole::SelectionOverlay,
 				WindowRole::DisplayObserver,
 			};
 
@@ -1818,7 +1819,7 @@ namespace Inkeys::Window
 		void DestroyGroup(bool settingGroup) noexcept
 		{
 			constexpr WindowRole overlayDestructionOrder[] = {
-				WindowRole::Bar,
+				WindowRole::SelectionOverlay, WindowRole::Bar,
 				WindowRole::PptMiddleRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptBottomRight,
@@ -2507,16 +2508,29 @@ namespace Inkeys::Window
 				overlayTopmost_.load(std::memory_order_acquire) && !WhiteboardWindowMode(), order, operations);
 		}
 
+		[[nodiscard]] bool PlaceSelectionOverlayBelowBar(const Command* command = nullptr)
+		{
+			const HWND editor = Handle(WindowRole::SelectionOverlay);
+			if (!editor || !IsWindowVisible(editor)) return true;
+			const HWND bar = Handle(WindowRole::Bar);
+			if (!bar || (command && !CommandCurrent(*command))) return false;
+			// 新版整组排序完成后，仍让图形编辑层位于画布上方、主栏下方。
+			return SetWindowPos(editor, bar, 0, 0, 0, 0,
+				SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER)
+				&& (!command || CommandCurrent(*command));
+		}
+
 		[[nodiscard]] bool CommitOverlayGroupPolicy(const Command* command = nullptr, HWND promoted = nullptr)
 		{
 			const HWND root = OverlayRoot();
 			if (!root) return false;
 			// mode=false 的离场及重入也只交接物理政策，不依赖前台许可或全局连续性。
-			return Detail::CommitOverlayGroupPolicy([this] { return CaptureGroupZOrder(); },
+			const bool succeeded = Detail::CommitOverlayGroupPolicy([this] { return CaptureGroupZOrder(); },
 				[this, command](const GroupSnapshot& identity, const Detail::PptZOrder& order)
 				{ return ReconcileRelativeOverlayGroup(identity, order, command); },
 				[this, root] { ApplyOverlayFullscreen(root); },
 				[this, command] { return !command || CommandCurrent(*command); }, promoted);
+			return succeeded && PlaceSelectionOverlayBelowBar(command);
 		}
 
 		[[nodiscard]] bool RefreshOverlayGroup(const Command* command = nullptr, HWND promoted = nullptr)
@@ -2585,7 +2599,7 @@ namespace Inkeys::Window
 					for (std::size_t j = 4; j < 8; ++j) { if (after->windows[j] == ppt[i-1]) a = j; if (after->windows[j] == ppt[i]) b = j; }
 					ordered = after->Above(a, b);
 				}
-				if (ordered && current()) { ApplyOverlayFullscreen(root); return true; }
+				if (ordered && current()) { ApplyOverlayFullscreen(root); return PlaceSelectionOverlayBelowBar(command); }
 			}
 			SetLastError(ERROR_GEN_FAILURE);
 			return false;
@@ -2856,7 +2870,7 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::Bar,
+				WindowRole::Bar, WindowRole::SelectionOverlay,
 			};
 			struct WindowStyleSnapshot
 			{
@@ -2984,7 +2998,7 @@ namespace Inkeys::Window
 				WindowRole::MagnifierHost, WindowRole::Freeze,
 				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
 				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
-				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
+				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight, WindowRole::SelectionOverlay,
 			};
 			for (const WindowRole role : roles)
 			{
@@ -3025,7 +3039,7 @@ namespace Inkeys::Window
 				WindowRole::MagnifierHost, WindowRole::Freeze,
 				WindowRole::DrawpadPresentation, WindowRole::Drawpad,
 				WindowRole::PptBottomLeft, WindowRole::PptBottomRight,
-				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight,
+				WindowRole::PptMiddleLeft, WindowRole::PptMiddleRight, WindowRole::SelectionOverlay,
 			};
 			const HWND anchor = Handle(WindowRole::Freeze);
 			if (!anchor || !IsWindow(anchor)) return false;
@@ -3079,7 +3093,7 @@ namespace Inkeys::Window
 			constexpr WindowRole roles[] = {
 				WindowRole::Drawpad, WindowRole::PptBottomLeft,
 				WindowRole::PptBottomRight, WindowRole::PptMiddleLeft,
-				WindowRole::PptMiddleRight, WindowRole::Bar,
+				WindowRole::PptMiddleRight, WindowRole::Bar, WindowRole::SelectionOverlay,
 			};
 			for (const WindowRole role : roles)
 			{
@@ -4117,7 +4131,7 @@ namespace Inkeys::Window
 						ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 						// 首次显示只维护目标与 Bar 的相对位置；普通 Show 不是整组 promote。
 						const HWND bar = Handle(WindowRole::Bar);
-						if (IsPpt(command.role) && bar && IsWindow(bar))
+						if ((IsPpt(command.role) || command.role == WindowRole::SelectionOverlay) && bar && IsWindow(bar))
 							succeeded = SetWindowPos(hwnd, bar, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) != FALSE;
 						if (!succeeded) error = GetLastError();
 					}
@@ -4416,7 +4430,7 @@ namespace Inkeys::Window
 				WindowRole::PptBottomRight,
 				WindowRole::PptMiddleLeft,
 				WindowRole::PptMiddleRight,
-				WindowRole::Bar,
+				WindowRole::Bar, WindowRole::SelectionOverlay,
 			};
 			bool hidden = true;
 			const HWND captured = GetCapture();
@@ -4692,6 +4706,7 @@ namespace Inkeys::Window
 			}
 			if (role == WindowRole::Drawpad)
 			{
+				if (Handle(WindowRole::SelectionOverlay)) return false;
 				for (auto popup = WindowRole::PptBottomLeft;
 					popup <= WindowRole::Bar;
 					popup = static_cast<WindowRole>(static_cast<unsigned>(popup) + 1))

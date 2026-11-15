@@ -1,5 +1,6 @@
 module;
 
+#include "shape_core.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -7,6 +8,7 @@ module;
 #include <limits>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <variant>
@@ -16,6 +18,8 @@ module draw3.uink_draw3_import;
 
 namespace draw3::uink
 {
+#include "shape_uink_import.inl"
+
 	namespace
 	{
 		UInkMessagePackValue TextValue(std::string value)
@@ -61,7 +65,7 @@ namespace draw3::uink
 			return result;
 		}
 
-		std::optional<Draw3UInkStrokeSnapshot> ImportShape(const UInkShape& shape)
+		std::optional<Draw3UInkStrokeSnapshot> ImportLegacyShape(const UInkShape& shape)
 		{
 			if (shape.renderOnlyWhenLatest || shape.extra) return std::nullopt;
 			Draw3UInkStrokeSnapshot result;
@@ -72,7 +76,8 @@ namespace draw3::uink
 					!shape.stroke || shape.fill || shape.stroke->color.extended ||
 					shape.stroke->effectiveStartMarker != 0 ||
 					shape.stroke->effectiveEndMarker != 0 ||
-					!IsFinitePositive(shape.stroke->width)) return std::nullopt;
+					!IsFinitePositive(shape.stroke->width) || shape.stroke->dashOffset != 0 ||
+					(!shape.stroke->dashArray.empty() && shape.stroke->dashArray != std::vector<float>{ 4 * shape.stroke->width, 6 * shape.stroke->width })) return std::nullopt;
 				result.style.kind = shape.stroke->dashArray.empty()
 					? Draw3UInkStrokeKind::SolidLine
 					: Draw3UInkStrokeKind::DashedLine;
@@ -92,11 +97,26 @@ namespace draw3::uink
 				!IsFinitePositive(rectangle->width) || !IsFinitePositive(rectangle->height) ||
 				rectangle->rotation != 0.0f || static_cast<bool>(shape.stroke) ==
 					static_cast<bool>(shape.fill)) return std::nullopt;
+			// 只有旧 renderer 的固定圆角才走兼容路径，其余矩形必须保留标准参数。
+			// 旧导出写 min(4*dpiScale, 半短边) 而文件不存 dpiScale，故按 Windows 标准缩放档位（至 400%）逐一匹配。
+			if (rectangle->cornerRadiusX != rectangle->cornerRadiusY) return std::nullopt;
+			const float halfShort = std::min(rectangle->width, rectangle->height) * 0.5f;
+			bool legacyRadius = false;
+			for (const float scale : { 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 3.0f, 3.5f, 4.0f })
+			{
+				const float expected = std::min(4.0f * scale, halfShort);
+				if (std::abs(rectangle->cornerRadiusX - expected) <= expected * 1e-5f)
+				{
+					legacyRadius = true;
+					break;
+				}
+			}
+			if (!legacyRadius) return std::nullopt;
 			float width = 1.0f;
 			if (shape.stroke)
 			{
 				if (shape.stroke->color.extended || !shape.stroke->dashArray.empty() ||
-					!IsFinitePositive(shape.stroke->width)) return std::nullopt;
+					!IsFinitePositive(shape.stroke->width) || shape.stroke->dashOffset != 0) return std::nullopt;
 				result.style.kind = Draw3UInkStrokeKind::OutlineRectangle;
 				result.style.opacity = shape.stroke->opacity;
 				result.style.fallbackRgb = shape.stroke->color.fallbackRgb;
@@ -119,39 +139,120 @@ namespace draw3::uink
 		}
 
 		bool ImportCanvasContent(const UInkCanvas& canvas,
-			Draw3UInkCanvasSnapshot& imported)
+			Draw3UInkCanvasSnapshot& imported, std::set<shapes::ObjectId>& shapeIds,
+			std::vector<UInkDiagnostic>& diagnostics)
 		{
-			for (std::size_t contentIndex = 0;
-				contentIndex < canvas.content.size(); ++contentIndex)
+			uint32_t previousUndo = 0;
+			bool previousFallback = false, first = true;
+			for (size_t contentIndex = 0; contentIndex < canvas.content.size(); ++contentIndex)
 			{
 				std::optional<Draw3UInkStrokeSnapshot> stroke;
 				const UInkClear* clear = nullptr;
+				uint32_t sourceUndo = 0;
+				bool fallback = false;
 				if (const auto* ink = std::get_if<UInkInk>(&canvas.content[contentIndex]))
 				{
-					if (ink->contentId == contentIndex) stroke = ImportInk(*ink);
+					if (ink->contentId != contentIndex) return false;
+					sourceUndo = ink->undoId;
+					stroke = ImportInk(*ink);
 				}
-				else if (const auto* shape =
-					std::get_if<UInkShape>(&canvas.content[contentIndex]))
+				else if (const auto* source = std::get_if<UInkShape>(&canvas.content[contentIndex]))
 				{
-					if (shape->contentId == contentIndex) stroke = ImportShape(*shape);
+					if (source->contentId != contentIndex || source->renderOnlyWhenLatest) return false;
+					sourceUndo = source->undoId;
+					bool validExtra = true;
+					const auto* metadata = ShapeMetadata(source->extra, validExtra);
+					if (!validExtra) return false;
+					if (metadata)
+					{
+						auto decoded = DecodeInkeysShapeMetadata(*metadata);
+						if (decoded.status == Draw3ShapeMetadataStatus::Invalid) return false;
+						if (decoded.status == Draw3ShapeMetadataStatus::Valid)
+						{
+							uint32_t partIndex = 0, partCount = 0;
+							shapes::GeometryResult auxiliary;
+							if (!shapes::BuildAuxiliaryGeometry(*decoded.shape,auxiliary)) return false;
+							shapes::GeometryResult body;
+							if (!shapes::BuildGeometry(*decoded.shape,body)) return false;
+							body.parts.insert(body.parts.end(),auxiliary.parts.begin(),auxiliary.parts.end());
+							size_t expectedParts = 0;
+							for (const auto& part : body.parts)
+								expectedParts += part.style.stroke && part.style.linePattern != shapes::LinePattern::Solid &&
+									!part.paths.empty() && part.paths.front().closed && part.paths.front().lengths.back() > 0 ?
+									8 + (part.style.fill ? 1 : 0) : 1;
+							if (!ShapeGroupNumber(*metadata, "partIndex", partIndex) || partIndex != 0 ||
+								!ShapeGroupNumber(*metadata, "partCount", partCount) || !partCount ||
+								partCount > canvas.content.size() - contentIndex ||
+								partCount != expectedParts) return false;
+							for (uint32_t index = 1; index < partCount; ++index)
+							{
+								const auto* part = std::get_if<UInkShape>(&canvas.content[contentIndex + index]);
+								if (!part || part->contentId != contentIndex + index || part->undoId != sourceUndo || part->renderOnlyWhenLatest) return false;
+								bool partValid = true;
+								const auto* partMetadata = ShapeMetadata(part->extra, partValid);
+								if (!partValid || !partMetadata ||
+									!ShapeGroupReference(*partMetadata, *decoded.shape, index, partCount, *metadata)) return false;
+							}
+							contentIndex += partCount - 1;
+							stroke = SnapshotFromShape(std::move(*decoded.shape), sourceUndo);
+						}
+						else
+						{
+							// 未知版本只使用标准几何，并明确失去精确参数/复合分组。
+							fallback = true;
+							diagnostics.push_back({ UInkDiagnosticCode::UnsupportedVersion,
+								UInkDiagnosticSeverity::Warning, 0, contentIndex, "shape.extra.inkeysShape", 0 });
+							auto object = ShapeFromStandard(*source);
+							if (object) stroke = SnapshotFromShape(std::move(*object), sourceUndo);
+						}
+					}
+					else
+					{
+						// 无私有根的标准部件各自恢复；第三方可能仍保留共同undoId。
+						fallback = true;
+						stroke = ImportLegacyShape(*source);
+						if (stroke)
+						{
+							const auto id = CreateUInkGuid();
+							if (!id) return false;
+							const auto legacy = static_cast<shapes::LegacyKind>(
+								static_cast<uint32_t>(stroke->style.kind) - static_cast<uint32_t>(Draw3UInkStrokeKind::SolidLine) + 1);
+							stroke->shape = shapes::MakeLegacyShape(legacy,
+								{ stroke->points[0].x, stroke->points[0].y }, { stroke->points[1].x, stroke->points[1].y },
+								stroke->points[0].width, stroke->style.fallbackRgb, stroke->style.opacity, id->Bytes());
+							if (!stroke->shape) return false;
+						}
+						else
+						{
+							auto object = ShapeFromStandard(*source);
+							if (object) stroke = SnapshotFromShape(std::move(*object), sourceUndo);
+						}
+					}
 				}
-				else if (const auto* sourceClear =
-					std::get_if<UInkClear>(&canvas.content[contentIndex]))
+				else if (const auto* source = std::get_if<UInkClear>(&canvas.content[contentIndex]))
 				{
-					if (sourceClear->contentId == contentIndex) clear = sourceClear;
+					if (source->contentId != contentIndex) return false;
+					clear = source;
+					sourceUndo = source->undoId;
 				}
-				if (!stroke && !clear) return false;
-				const uint32_t undoId = stroke ? stroke->undoId : clear->undoId;
-				if (undoId != contentIndex) return false;
+				if ((!stroke && !clear) || (first && sourceUndo != 0) || (!first &&
+					(sourceUndo < previousUndo || sourceUndo > uint64_t(previousUndo) + 1 ||
+						(sourceUndo == previousUndo && !(fallback && previousFallback))))) return false;
+				previousUndo = sourceUndo;
+				previousFallback = fallback;
+				first = false;
+				const auto logicalUndo = static_cast<uint32_t>(imported.operations.size());
 				if (stroke)
 				{
+					if (stroke->shape && !shapeIds.insert(stroke->shape->id).second) return false;
+					stroke->undoId = logicalUndo;
 					imported.operations.emplace_back(*stroke);
 					imported.strokes.push_back(std::move(*stroke));
 				}
 				else
 				{
 					Draw3UInkClearSnapshot importedClear;
-					importedClear.undoId = clear->undoId;
+					importedClear.undoId = logicalUndo;
 					importedClear.extra = clear->extra;
 					imported.operations.emplace_back(std::move(importedClear));
 					imported.strokes.clear();
@@ -235,6 +336,7 @@ namespace draw3::uink
 			snapshot.assignedIndependentUndoGroups = true;
 			snapshot.dpiScale = 1.0f;
 			std::map<uint32_t, Draw3UInkCanvasSnapshot> ordered;
+			std::set<shapes::ObjectId> shapeIds;
 			for (const UInkCanvas& canvas : document.canvases)
 			{
 				if (!canvas.workspaceGuid || *canvas.workspaceGuid != workspace.guid ||
@@ -255,7 +357,7 @@ namespace draw3::uink
 				imported.slideId = canvas.slideId;
 				imported.viewport = *canvas.viewport;
 				imported.extra = canvas.extra;
-				if (!ImportCanvasContent(canvas, imported) ||
+				if (!ImportCanvasContent(canvas, imported, shapeIds, result.diagnostics) ||
 					!ordered.emplace(canvas.pageIndex, std::move(imported)).second)
 				{
 					result.status = Draw3UInkImportStatus::UnsupportedContent;
@@ -338,6 +440,7 @@ namespace draw3::uink
 			snapshot.workspaceExtra = workspace.extra;
 			snapshot.assignedIndependentUndoGroups = true;
 			std::map<uint32_t, Draw3UInkCanvasSnapshot> ordered;
+			std::set<shapes::ObjectId> shapeIds;
 			std::map<int32_t, Draw3UInkCanvasSnapshot> bySlideId;
 			std::optional<Draw3UInkCanvasSnapshot> endScreen;
 			for (const UInkCanvas& canvas : document.canvases)
@@ -373,7 +476,7 @@ namespace draw3::uink
 				imported.viewport = *canvas.viewport;
 				imported.extra = canvas.extra;
 				imported.retained = stable && HasInkeysPageStateExtra(canvas.extra, true);
-				if (!ImportCanvasContent(canvas, imported))
+				if (!ImportCanvasContent(canvas, imported, shapeIds, result.diagnostics))
 				{
 					result.status = Draw3UInkImportStatus::UnsupportedContent;
 					result.error = "content";

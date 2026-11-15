@@ -6,8 +6,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <memory>
 #include <span>
 #include <vector>
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 
 export module Inkeys.Drawing.Draw3.ink_document;
 
@@ -63,7 +65,8 @@ export namespace Inkeys::Drawing::Draw3
 		SolidLine = 3,
 		DashedLine = 4,
 		OutlineRectangle = 5,
-		FilledRectangle = 6
+		FilledRectangle = 6,
+		Shape = 7 // 参数化图形；既有枚举值保持不变。
 	};
 
 	constexpr bool IsStoredShapeType(StoredInkType type) noexcept
@@ -93,11 +96,14 @@ export namespace Inkeys::Drawing::Draw3
 	{
 	public:
 		InkStroke(StoredInkStyle style, std::vector<StoredInkPoint> points,
-			std::optional<size_t> debugTailSegmentStart = std::nullopt) noexcept;
+			std::optional<size_t> debugTailSegmentStart = std::nullopt,
+			std::optional<draw3::shapes::ShapeObject> shape = std::nullopt);
 		// 临时诊断元数据随内存 Stroke 重绘，不写入文档或改变持久样式。
 		std::optional<size_t> DebugTailSegmentStart() const noexcept;
 
 		const StoredInkStyle& Style() const noexcept;
+		const std::optional<draw3::shapes::ShapeObject>& Shape() const noexcept;
+		const draw3::shapes::GeometryResult* ShapeGeometry() const noexcept;
 		std::span<const StoredInkPoint> Points() const noexcept;
 		bool IsValid() const noexcept;
 
@@ -105,6 +111,10 @@ export namespace Inkeys::Drawing::Draw3
 		StoredInkStyle style_ = {};
 		std::vector<StoredInkPoint> points_;
 		std::optional<size_t> debugTailSegmentStart_;
+		std::optional<draw3::shapes::ShapeObject> shape_;
+		std::shared_ptr<const draw3::shapes::GeometryResult> shapeGeometry_;
+		bool shapeValid_ = false;
+		bool legacyIdentityFailed_ = false;
 	};
 
 	class InkCanvas
@@ -118,6 +128,11 @@ export namespace Inkeys::Drawing::Draw3
 
 		// 非法 Stroke 不改变容器；成功时返回不会随扩容变化的索引。
 		std::optional<size_t> AppendStroke(InkStroke stroke);
+		// 仅接收一次性创建命令；编辑命令将在选择系统阶段接入历史。
+		std::optional<size_t> AppendShape(const draw3::shapes::ShapeCommand& command);
+		// 同层位替换仅允许同一稳定图形身份；非法候选不改变原项。
+		bool ReplaceStroke(size_t index, InkStroke replacement);
+		bool ReplaceShape(size_t index, const draw3::shapes::ShapeCommand& command);
 		// 清空当前 Canvas 的全部最终 Stroke；viewport 保持不变。
 		void ClearStrokes() noexcept;
 

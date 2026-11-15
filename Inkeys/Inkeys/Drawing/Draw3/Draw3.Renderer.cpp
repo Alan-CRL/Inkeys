@@ -12,6 +12,7 @@
 #include "Draw3.EraserCursor.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.Win7GuardedShader.h"
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 
 #include <algorithm>
 #include <array>
@@ -445,9 +446,24 @@ namespace Inkeys::Drawing::Draw3
 
 	bool InkRenderer::CreateSizeDependentResources(IDXGISwapChain1* swapChain, UINT width, UINT height)
 	{
-		if (!device || !context || !swapChain || width == 0 || height == 0) return false;
-		if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D),
-			reinterpret_cast<void**>(backBufferTexture.ReleaseAndGetAddressOf())))) return false; // 取得最终呈现缓冲区。
+		if (!device || !context || width == 0 || height == 0) return false;
+		if (swapChain)
+		{
+			if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D),
+				reinterpret_cast<void**>(backBufferTexture.ReleaseAndGetAddressOf())))) return false;
+		}
+		else
+		{
+			// 无窗口测试仍创建正式 renderer 的全部离屏资源，不需要 HWND 或 Present。
+			D3D11_TEXTURE2D_DESC offscreen = {};
+			offscreen.Width = width; offscreen.Height = height;
+			offscreen.MipLevels = 1; offscreen.ArraySize = 1;
+			offscreen.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			offscreen.SampleDesc.Count = 1;
+			offscreen.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+			if (FAILED(device->CreateTexture2D(&offscreen, nullptr,
+				backBufferTexture.ReleaseAndGetAddressOf()))) return false;
+		}
 		if (FAILED(device->CreateRenderTargetView(backBufferTexture.Get(), nullptr,
 			backBufferRTV.ReleaseAndGetAddressOf()))) return false;
 
@@ -491,6 +507,8 @@ namespace Inkeys::Drawing::Draw3
 		backBufferRTV.Reset();
 		backBufferTexture.Reset();
 		ReleaseTrustedL2SnapshotResources();
+		shapeMaterialLayer_ = {};
+		shapeCompositeLayer_ = {};
 		layerL2RTV.Reset();
 		layerL2Texture.Reset();
 		layerL1.addRTV.Reset();
@@ -512,6 +530,11 @@ namespace Inkeys::Drawing::Draw3
 	{
 		laserParticleSystem_.Release();
 		ReleaseSizeDependentResources();
+		shapeVertexShader_.Reset();
+		shapePixelShader_.Reset();
+		shapeCB_.Reset();
+		shapeOrderedBlend_.Reset();
+		shapeRenderCache_.clear();
 		vertexShader.Reset();
 		pixelShader.Reset();
 		globalCB.Reset();
@@ -749,7 +772,7 @@ namespace Inkeys::Drawing::Draw3
 		if (FAILED(device->CreateSamplerState(&samplerDescription,
 			eraserCursorSampler_.ReleaseAndGetAddressOf()))) return false;
 		CreateTrustedL2SnapshotPipeline(); // 可选 pass 失败时仅禁用动态快照兜底。
-		return LoadShaders(driver);
+		return LoadShaders(driver) && EnsureShapePipeline();
 	}
 
 	bool InkRenderer::LoadShaders(D3D_DRIVER_TYPE driver)
@@ -1142,6 +1165,22 @@ namespace Inkeys::Drawing::Draw3
 				renderer.SetOperatorTarget(renderer.layerL0);
 				check(renderer.DrawStroke(second, green) == 0, "laser dots to stroke interleave");
 				checkOffset(mode == 1 ? 1 : 0);
+
+				// 参数图形和普通笔共用 InkData，三种上传策略都必须保留批次边界和实际像素。
+				::draw3::shapes::ShapeObject parameterShape;
+				parameterShape.id[0] = 1;
+				parameterShape.kind = ::draw3::shapes::Kind::Circle;
+				parameterShape.geometry.start = { 44, 18 };
+				parameterShape.geometry.radius = 6;
+				parameterShape.style.strokeRgb = 0xFF0000;
+				parameterShape.style.fill = true;
+				parameterShape.style.fillRgb = 0x2040FF;
+				check(renderer.DrawShapeObject(parameterShape), "production parametric shape selected upload path");
+				const UINT afterShapeOffset = mode == 1 ? static_cast<UINT>(renderer.m_bufferHead) : 0;
+				renderer.SetOperatorTarget(renderer.layerL0);
+				check(renderer.DrawStroke(second, green) == 0, "parametric shape to stroke interleave");
+				checkOffset(afterShapeOffset);
+				composite();
 
 				// 同一命令序列的实际像素必须一致，避免只验证 CPU 内容而漏掉 Draw 顺序/偏移。
 				testContext->OMSetRenderTargets(0, nullptr, nullptr);

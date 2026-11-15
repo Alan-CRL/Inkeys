@@ -13,6 +13,7 @@ module;
 #include <optional>
 #include <string>
 #include <vector>
+#include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 
 export module Inkeys.UI.Bar:Scene;
 export import Inkeys.UI.Bar.Metrics;
@@ -182,4 +183,51 @@ export namespace Inkeys::UI::Bar
 		struct Impl;
 		std::unique_ptr<Impl> impl_;
 	};
+	// 当前对象编辑场景：窗口/输入适配不拥有按钮、动画或文档。
+	struct ShapeEditorHit
+	{
+		bool occupied = false;
+		std::uint32_t handle = 0, button = 0;
+		bool body = false;
+		Inkeys::Drawing::Draw3::ShapeUiIdentity identity;
+	};
+	bool SubmitShapeUiIntent(const Inkeys::Drawing::Draw3::ShapeUiAction&) noexcept;
+	std::chrono::steady_clock::time_point RetryShapeUiIntents(std::chrono::steady_clock::time_point) noexcept;
+	void ClearShapeUiIntents() noexcept;
+	int RunShapeEditorOffscreenTest();
+	class ShapeEditorSurface
+	{
+	public:
+		ShapeEditorSurface();
+		~ShapeEditorSurface();
+		void Configure(std::shared_ptr<const Inkeys::Drawing::Draw3::ShapeUiSnapshot>, RECT workArea, RECT barBounds);
+		bool Advance(std::chrono::steady_clock::time_point);
+		bool Visible() const noexcept;
+		bool AnimationActive() const noexcept;
+		RECT Bounds() const noexcept;
+		HRESULT EnsureDeviceResources(const RenderPipeline::DeviceEpoch&);
+		BarUIRendering& Renderer() noexcept;
+		void Draw();
+		HRESULT Present(const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>&);
+		void CommitPresented(bool inputEnabled = true);
+		// 自上次成功提交后输入快照、布局、动画或光照有变化才需要回读与 ULW。
+		bool NeedsPresent() const noexcept;
+		ShapeEditorHit Hit(POINT screen) const;
+		bool PreservePointerTrajectory(POINT down) const;
+		bool Pointer(UINT message, POINT screen, bool captureOwned = true, std::uint64_t expectedPresentation = 0, short wheelDelta = 0);
+		bool Contact(UINT message, POINT screen, std::uint64_t source, std::uint32_t contactId,
+			bool touch, bool pen, double seconds, bool captureOwned, std::uint64_t presentedRevision);
+		std::chrono::steady_clock::time_point TickPrediction(std::chrono::steady_clock::time_point);
+		std::chrono::steady_clock::time_point TickToolbarIdle(std::chrono::steady_clock::time_point);
+		std::uint64_t PresentedGeneration() const;
+		void CancelPointer();
+		void ReleaseDeviceResources();
+		// 离屏测试与生产输入共用同一动作出口；不改业务状态。
+		void SetActionSink(std::function<void(const Inkeys::Drawing::Draw3::ShapeUiAction&)>);
+		friend int RunShapeEditorOffscreenTest();
+	private:
+		struct Impl;
+		std::unique_ptr<Impl> impl_;
+	};
+
 }

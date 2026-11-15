@@ -31,8 +31,10 @@ export namespace Inkeys::UI::Bar
 	inline EraserSurfacePose FitEraserSurfacePose(EraserSurfacePose pose,EraserAttributeRect shell,EraserAttributeRect work) noexcept
 	{
 		const auto actual=pose.Apply(shell);
-		if(actual.Width()<=work.Width())pose.x+=(std::clamp)(actual.left,work.left,work.right-actual.Width())-actual.left;
-		if(actual.Height()<=work.Height())pose.y+=(std::clamp)(actual.top,work.top,work.bottom-actual.Height())-actual.top;
+		// 贴边缩放的浮点尾差不能使整轴跳过夹紧；容差内保证clamp上下界有序。
+		constexpr double epsilon=1e-6;
+		if(actual.Width()<=work.Width()+epsilon)pose.x+=(std::clamp)(actual.left,work.left,(std::max)(work.left,work.right-actual.Width()))-actual.left;
+		if(actual.Height()<=work.Height()+epsilon)pose.y+=(std::clamp)(actual.top,work.top,(std::max)(work.top,work.bottom-actual.Height()))-actual.top;
 		return pose;
 	}
 	// 分页、属性面板可共用的保守回弹包络；父/子矩形使用同一曲线极值与姿态组合。

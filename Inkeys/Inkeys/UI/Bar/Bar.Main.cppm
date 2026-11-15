@@ -14,7 +14,9 @@
 #include <mutex>
 #include <optional>
 #include "Bar.BottomDock.h"
+#include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "Bar.StatusIndicator.h"
+#include "Bar.ButtonFrameRing.h"
 #include <deque>
 #include <map>
 #include "Bar.InteractionWorker.h"
@@ -162,7 +164,6 @@ public:
 	void CommitPresented();
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool ResetPointerFeedback();
-	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
 	void Close(BarUISetClass& owner);
 	RECT Bounds() const;
 	std::array<RECT,3> PresentedRegions() const;
@@ -170,7 +171,6 @@ public:
 	bool Changed() const noexcept { return changed_; }
 	bool Active() const noexcept { return active_; }
 	bool IdleFadeProtected() const noexcept { return panelMotion_.Visible() || menuMotion_.Visible(); }
-	bool WantsKeyboard() const noexcept { return visible_.load(); }
 	void RememberEntryFromSelection(bool value) noexcept { returnToSelectionOnClear_ = value; }
 private:
 	void Initialize();
@@ -189,8 +189,7 @@ private:
 	bool previousBelow_ = false, previousReversed_ = false;
 	int menuSide_ = -1;
 	int appliedHover_ = -1; // 仅渲染线程消费输入反馈并操作按钮动画。
-	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
-	IdtAtomic<bool> visible_ = false;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1;
 	bool returnToSelectionOnClear_ = false;
 	Inkeys::UI::Bar::EraserSurfaceMotion panelMotion_, menuMotion_;
 	std::array<BarButtonClass,11> buttons_;
@@ -201,8 +200,6 @@ private:
 	std::array<BarUiValueClass,3> circleSelection_, circleHover_, circlePress_;
 	BarUiShapeClass surface_, menu_;
 	BarUiWordClass title_;
-	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
-	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
 	std::array<Microsoft::WRL::ComPtr<ID2D1Bitmap1>,3> previewBitmaps_;
 	std::array<bool,3> previewBitmapAttempted_{};
 	std::array<float,3> previewDiametersPx_{}, previewRasterHalfWidths_{};
@@ -231,7 +228,6 @@ public:
 	void CommitPresented();
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool ResetPointerFeedback();
-	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
 	void Close(BarUISetClass& owner);
 	RECT Bounds() const;
 	std::array<RECT,3> PresentedRegions() const;
@@ -239,7 +235,6 @@ public:
 	bool Changed() const noexcept { return changed_; }
 	bool Active() const noexcept { return active_; }
 	bool IdleFadeProtected() const noexcept { return panelMotion_.Visible(); }
-	bool WantsKeyboard() const noexcept { return visible_.load(); }
 private:
 	void Initialize();
 	bool Execute(BarUISetClass& owner, int item);
@@ -255,13 +250,10 @@ private:
 	double sideSwitchExpandDuration_ = 0;
 	bool previousBelow_ = false;
 	int appliedHover_ = -1; // 仅渲染线程消费输入反馈并操作按钮动画。
-	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
-	IdtAtomic<bool> visible_ = false;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1;
 	Inkeys::UI::Bar::RecallSurfaceMotion panelMotion_;
 	BarButtonClass redoButton_;
 	BarUiShapeClass surface_;
-	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
-	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
 	unsigned long long deviceGeneration_ = 0;
 };
 
@@ -293,6 +285,16 @@ namespace Inkeys::UI::Bar
 		double durationSeconds, std::optional<COLORREF> contentColor = std::nullopt,
 		bool iconVisible = true, std::optional<COLORREF> fillColorOverride = std::nullopt,
 		std::optional<COLORREF> frameColorOverride = std::nullopt) noexcept;
+
+	// 角标：按钮外框右上（倒转时右下）内收 4DIP、直径 10DIP；缩放与旋转以角标中心为原点。
+	inline constexpr double BarButtonBadgeDiameterDip = 10.0, BarButtonBadgeInsetDip = 4.0;
+	struct BarButtonBadgeGeometry { double centerX = 0, centerY = 0, diameter = 0, scale = 0, angle = 0; };
+	void InitializeBarButtonBadge(BarButtonBadgeClass& badge, const wchar_t* resource = L"barStatusPin");
+	[[nodiscard]] BarButtonBadgeGeometry ResolveBarButtonBadgeGeometry(BarButtonClass& button,
+		const BarUiInheritClass& buttonInherit) noexcept;
+	// 旋转角标的外接圆包络（像素）；无角标或已完全隐藏时为空。
+	[[nodiscard]] RECT ResolveBarButtonBadgeBounds(BarButtonClass& button,
+		const BarUiInheritClass& buttonInherit, double zoom) noexcept;
 
 	// 固定属性借用已有字段，不复制控件，不进入注册表。
 	struct BarButtonVisualParts
@@ -331,7 +333,7 @@ namespace Inkeys::UI::Bar
 	};
 
 	// 所有目标消费同一个渲染批次时间；观察者只接收实际推进结果，不再推进动画。
-	enum class BarButtonAnimationPart { Shape, Icon, Primary, Secondary, Press };
+	enum class BarButtonAnimationPart { Shape, Icon, Primary, Secondary, Press, Badge };
 	enum class BarButtonAnimationProperty { Geometry, Visibility, Color, Content };
 	struct BarButtonAnimationContext
 	{
@@ -362,7 +364,7 @@ namespace Inkeys::UI::Bar
 		double scale = 1.0, bool direct = false,
 		std::optional<double> iconHeightOverride = std::nullopt,
 		std::optional<double> fontTargetScale = std::nullopt);
-	enum class BarButtonListLayoutKind { Main, GroupedGrid, SingleRow };
+	enum class BarButtonListLayoutKind { Main, GroupedGrid, SingleRow, GeometryGrid };
 	struct BarButtonListPlacement
 	{
 		std::shared_ptr<BarButtonClass> button;
@@ -421,6 +423,201 @@ namespace Inkeys::UI::Bar
 	export void PublishBorderCursorSurfaceBounds(
 		unsigned int index, const RECT& bounds, bool visible) noexcept;
 }
+namespace Inkeys::UI::Bar
+{
+	wstring ShapeToolIconResource(const draw3::shapes::ToolSpec& tool,
+		std::optional<unsigned> carouselSides = std::nullopt);
+	wstring ShapeToolLabel(draw3::shapes::PresetKind preset);
+	wstring ShapeAuxiliaryLabel(draw3::shapes::Auxiliary auxiliary, draw3::shapes::PresetKind preset = draw3::shapes::PresetKind::Rectangle);
+	wstring ShapePlanarConstraintLabel(draw3::shapes::PlanarConstraint constraint);
+	bool ApplyBarThicknessPresetIfRevision(int preset, std::uint64_t revision, bool save = true);
+	// 目录属于UI层；没有真实preset的未来工具只占位，不能进入业务状态或文档。
+	inline constexpr int GeometryCategoryCount = 35, GeometryImplementedCategoryCount = 20;
+	inline constexpr int GeometryCircleCenter = GeometryCategoryCount, GeometryCircleBox = GeometryCircleCenter + 1;
+	inline constexpr int GeometrySidesBegin = GeometryCircleBox + 1, GeometrySidesCount = 12;
+	inline constexpr int GeometryAuxBegin = GeometrySidesBegin + GeometrySidesCount;
+	inline constexpr int GeometryTriangleModeBegin = GeometryAuxBegin + 3, GeometryTrapezoidMode = GeometryTriangleModeBegin + 3;
+	inline constexpr int GeometryStyleBegin = GeometryTrapezoidMode + 1;
+	inline constexpr int GeometryPatternBegin = GeometryStyleBegin + 3, GeometryThicknessBegin = GeometryPatternBegin + 4;
+	inline constexpr int GeometryThicknessCount = 3, GeometryCloseButton = GeometryThicknessBegin + GeometryThicknessCount;
+	inline constexpr int GeometrySegmentBegin = GeometryCloseButton + 1, GeometrySegmentCount = 3;
+	inline constexpr int GeometryControlCount = GeometrySegmentBegin + GeometrySegmentCount;
+	enum class ShapeToolbarCategory { Regular, Solid, CoordinateFunction };
+	struct ShapeCategoryDescriptor
+	{
+		const wchar_t* key;
+		const wchar_t* resource;
+		const char* labelKey;
+		const wchar_t* fallbackLabel;
+		std::optional<draw3::shapes::PresetKind> preset;
+		ShapeToolbarCategory category = ShapeToolbarCategory::Regular;
+	};
+	const std::array<ShapeCategoryDescriptor, GeometryCategoryCount>& ShapeCategoryCatalog();
+	wstring ShapeCategoryLabel(size_t index);
+
+	struct GeometryAttributePresentation
+	{
+		EraserAttributeRect panel, parameterClip, categoryClip, scrollTrack, scrollThumb, workArea;
+		std::array<EraserAttributeRect,GeometryControlCount> items{};
+		std::array<BarButtonHitSnapshot,GeometryControlCount> hits{};
+		EraserSurfacePose pose;
+		double zoom = 1, opacity = 0;
+		bool visible = false, acceptsInput = false, categoriesAcceptInput = false, below = false;
+		double scrollOffset = 0, scrollMaximum = 0, categoryViewportHeight = 0, categoryContentHeight = 0;
+		draw3::shapes::ToolSpec tool{};
+		ShapeToolbarCategory category = ShapeToolbarCategory::Regular;
+		std::array<wstring,GeometryControlCount> accessibleNames{};
+	};
+}
+
+// 跨笔构造提示独占状态；沿用居中提示锚点和公共按钮，不覆盖原dock提示状态。
+class BarConstructionPrompt
+{
+	friend class BarGeometryAttributeTestAccess;
+public:
+	bool Advance(BarUISetClass&, std::shared_ptr<const Inkeys::Drawing::Draw3::ShapeUiSnapshot>, double dt, double speed,
+		double zoom, RECT workArea, POINT origin, double rigidX, double rigidY, const BarUiTimelineClass* parentTimeline = nullptr);
+	void Draw(BarUIRendering&, ID2D1DeviceContext*);
+	void CommitPresented();
+	bool Pointer(BarUISetClass&, const ExMessage&, bool cancelled = false, bool* accepted = nullptr);
+	bool Visible() const noexcept { return visible_.load(); }
+	bool Changed() const noexcept { return changed_; }
+	RECT Bounds() const;
+	std::array<RECT,1> PresentedRegions() const;
+private:
+	void Initialize();
+	struct Frame
+	{
+		Inkeys::Drawing::Draw3::ShapeUiIdentity identity;
+		Inkeys::UI::Bar::EraserAttributeRect panel;
+		std::array<Inkeys::UI::Bar::BarButtonHitSnapshot,4> buttons;
+		std::array<std::wstring,4> accessibleNames, tooltips;
+		Inkeys::UI::Bar::EraserAttributeRect visualPanel;
+		double zoom = 1, opacity = 0, scale = 0;
+		bool visible = false, input = false, ring = false;
+	};
+	Frame frame_, presented_;
+	// 离屏 fixture 可替换意图出口，以核对一次触摸只提交一次；产品走 SubmitShapeUiIntent。
+	std::function<bool(const Inkeys::Drawing::Draw3::ShapeUiAction&)> submit_;
+	// 指针意图出口，测试替换 submit_ 时可截获。
+	bool Submit(const Inkeys::Drawing::Draw3::ShapeUiAction& action) const;
+	mutable std::mutex mutex_;
+	BarButtonListClass list_;
+	std::array<std::shared_ptr<BarButtonClass>,4> buttons_;
+	std::shared_ptr<BarButtonClass> divider_;
+	std::array<BarUiValueClass,4> x_, y_;
+	BarUiShapeClass surface_;
+	BarUiWordClass label_, ringLabel_;
+	BarUiValueClass opacity_{0}, ringProgress_{0}, textWidth_{0};
+	BarUiValueClass left_, top_, width_, height_;
+	BarUiTimelineClass layoutTimeline_;
+	Inkeys::UI::Bar::BarBottomDockIndicatorContentPhase contentPhase_ = Inkeys::UI::Bar::BarBottomDockIndicatorContentPhase::Stable;
+	std::wstring desiredLabel_, desiredRingLabel_;
+	unsigned buttonState_ = ~0u;
+	Inkeys::Drawing::Draw3::ShapeUiIdentity pressedIdentity_;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1;
+	int appliedHover_ = -1;
+	IdtAtomic<bool> visible_ = false;
+	draw3::shapes::ConstructionStatus status_;
+	bool initialized_ = false, changed_ = false, textTransition_ = false;
+};
+
+// 图形面板仅保存拓扑和资源，按钮行为与动画交给共享 BarButton 运行时。
+class BarGeometryAttributePanel
+{
+public:
+	bool Advance(BarUISetClass& owner, const StateModeClass& state, double dt, double speed,
+		double zoom, RECT workArea, POINT origin, double rigidX, double rigidY,
+		const BarUiTimelineClass* parentTimeline = nullptr, bool dragPlacementLocked = false,
+		std::chrono::steady_clock::time_point frameTime = std::chrono::steady_clock::now());
+	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
+	void CommitPresented();
+	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
+	bool ResetPointerFeedback();
+	void Close(BarUISetClass& owner);
+	void StopCarousel() noexcept;
+	std::chrono::steady_clock::time_point ConsumeCarouselWake(
+		std::chrono::steady_clock::time_point now, bool& due);
+	// 长按固定期限由交互 owner 消费：0.5s 请求进度环帧，2.0s 提交选中并固定，不依赖帧率。
+	std::chrono::steady_clock::time_point ConsumeHoldWake(BarUISetClass& owner,
+		std::chrono::steady_clock::time_point now);
+	RECT Bounds() const;
+	std::array<RECT,1> PresentedRegions() const;
+	Inkeys::UI::Bar::GeometryAttributePresentation PresentationSnapshot() const;
+	bool IdleFadeProtected() const noexcept { return motion_.Visible(); }
+	bool Changed() const noexcept { return changed_; }
+	bool Active() const noexcept { return active_; }
+private:
+	friend class BarUISetClass;
+	friend class BarGeometryAttributeTestAccess;
+	void Initialize();
+	void Execute(BarUISetClass& owner, int item, std::uint64_t revision, bool* accepted = nullptr);
+	void UpdateCarousel(bool enabled, std::chrono::steady_clock::time_point now);
+	bool CancelHold();
+	mutable std::mutex presentationMutex_, carouselMutex_, holdMutex_;
+	Inkeys::UI::Bar::GeometryAttributePresentation frame_, presented_;
+	Inkeys::UI::Bar::EraserAttributeRect previousPanel_, previousAnchor_;
+	Inkeys::UI::Bar::BarAttributePanelMotion motion_;
+	std::array<std::shared_ptr<BarButtonClass>,Inkeys::UI::Bar::GeometryControlCount> buttons_;
+	BarButtonListClass categoryList_, attributeList_;
+	Inkeys::UI::Bar::BarButtonListLayout categoryLayout_, attributeLayout_;
+	IdtAtomic<int> categoryRequest_ = 0;
+	Inkeys::UI::Bar::ShapeToolbarCategory category_ = Inkeys::UI::Bar::ShapeToolbarCategory::Regular;
+	std::array<BarUiValueClass,Inkeys::UI::Bar::GeometryCategoryCount> categoryX_, categoryY_;
+	std::array<Inkeys::UI::Bar::EraserAttributeRect,Inkeys::UI::Bar::GeometryCategoryCount> categoryAnchors_{};
+	std::array<Inkeys::UI::Bar::EraserAttributeRect,Inkeys::UI::Bar::GeometryStyleBegin-Inkeys::UI::Bar::GeometryCircleCenter> parameterAnchors_{};
+	BarUiTimelineClass layoutTimeline_;
+	std::array<std::shared_ptr<BarButtonClass>,2> attributeDividers_;
+	std::array<BarUiValueClass,11> attributeX_;
+	std::uint32_t attributeVisibility_ = ~0u;
+	double attributeMaxWidth_ = 0;
+	std::array<wstring,Inkeys::UI::Bar::GeometryControlCount> resourceTargets_, labelTargets_;
+	std::array<BarUiShapeClass,3> dividers_;
+	BarUiShapeClass auxiliaryHintSurface_;
+	BarUiWordClass auxiliaryHint_;
+	bool auxiliaryHintVisible_ = false;
+	// 长按：输入 worker 写入，render 只读取进度；holdMutex_ 保护。
+	int holdItem_ = -1;
+	std::chrono::steady_clock::time_point holdStart_{};
+	POINT holdOrigin_{};
+	bool holdRingWake_ = false, holdCommitted_ = false;
+	// 提交是否被工具状态接受；被拒（旧 revision 等）时进度环不定格满格。
+	bool holdAccepted_ = false;
+	// 调用方持有 holdMutex_：结束本次长按的全部状态。
+	void ResetHoldLocked() noexcept { holdItem_ = -1; holdRingWake_ = holdCommitted_ = holdAccepted_ = false; }
+	// 进度环由 render owner 推进与绘制；绘制失败后本次长按内不再尝试，下一次长按开始时重试。
+	int ringItem_ = -1;
+	double ringProgress_ = 0;
+	BarUiValueClass ringOpacity_{0};
+	Inkeys::UI::Bar::ButtonFrameRing ring_;
+	bool ringFailed_ = false, ringShown_ = false;
+	BarUiShapeClass surface_, scrollRail_, scrollThumb_;
+	BarUiValueClass width_{0}, height_{0}, viewportHeight_{0}, scroll_{0};
+	// worker只发布滚动意图；共享动画值由唯一render owner推进。
+	IdtAtomic<double> scrollRequest_ = 0;
+	IdtAtomic<bool> scrollDragging_ = false;
+	Inkeys::UI::Bar::GeometryAttributePresentation scrollGesture_;
+	double scrollDragY_ = 0, scrollDragOffset_ = 0;
+	std::uint64_t scrollRevision_ = 0;
+	bool initialized_ = false, changed_ = false, active_ = false, previousBelow_ = false;
+	bool sideSwitch_ = false, hadOpen_ = false, requestedOpen_ = false;
+	int appliedHover_ = -1;
+	double parameterOpacity_ = 0;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1;
+	std::uint64_t pressRevision_ = 0;
+	IdtAtomic<bool> pressCancelled_ = false;
+	std::chrono::steady_clock::time_point carouselDeadline_{};
+	bool carouselEnabled_ = false, carouselArmed_ = false, carouselWakeRequested_ = false;
+	unsigned carouselSides_ = 3;
+	std::array<double,3> thicknessPreviewWidths_{};
+	wstring measuredFontFamily_, measuredLocale_;
+	unsigned long long measuredDeviceGeneration_ = 0;
+	std::array<double,Inkeys::UI::Bar::GeometryCategoryCount> categoryFontSizes_{};
+	std::array<double,2> circleTextWidths_{};
+	std::array<double,10> optionTextWidths_{};
+	unsigned long long deviceGeneration_ = 0;
+};
+
 // 控件枚举
 enum class BarUISetShapeEnum : int
 {
@@ -702,7 +899,6 @@ public:
 		double layoutXDip, double layoutYDip) const;
 	bool HitTestPresentedShape(const BarUiSuperellipseClass& shape,
 		double layoutXDip, double layoutYDip) const;
-	Inkeys::Input::UiPointer::Touch::Probe ProbeTouchScreen(POINT screen) const;
 
 	bool InitializeStartupPlacement(Inkeys::UI::StartupPlacement placement) noexcept;
 	// 启动前写入后只读，渲染线程仅在首次完整布局时应用一次。
@@ -710,6 +906,8 @@ public:
 		Inkeys::UI::StartupPlacement::CenteredBottomBar;
 	BarStateClass barState;
 	BarStyleClass barStyle;
+	BarGeometryAttributePanel geometryAttribute;
+	BarConstructionPrompt constructionPrompt;
 	BarEraserAttributePanel eraserAttribute;
 	BarStatusIndicatorPanel statusIndicator;
 	BarRecallAttributePanel recallAttribute;
@@ -1095,21 +1293,6 @@ protected:
 	mutable std::mutex presentedButtonHitsMutex_;
 	std::unordered_map<const BarButtonClass*, Inkeys::UI::Bar::BarButtonHitSnapshot> presentedButtonHits_, candidateButtonHits_;
 	std::unordered_map<const void*, Inkeys::UI::Bar::BarButtonHitSnapshot> presentedVisualHits_, candidateVisualHits_;
-	enum class TouchRegionSpace { Rigid, Body, Grip };
-	struct PresentedTouchRegion
-	{
-		Inkeys::UI::Bar::BarButtonHitSnapshot geometry;
-		TouchRegionSpace space = TouchRegionSpace::Rigid;
-		Inkeys::Input::UiPointer::Touch::Hit disposition = Inkeys::Input::UiPointer::Touch::Hit::Miss;
-	};
-	struct PresentedTouchRegions
-	{
-		std::vector<PresentedTouchRegion> regions;
-		std::uint64_t semantic = 0;
-	};
-	// 只在成功 commit 时交换不可变小值快照；native probe 不读动画或控件对象。
-	std::shared_ptr<const PresentedTouchRegions> presentedTouchRegions_, candidateTouchRegions_;
-	double presentedTouchRebaseXDip_ = 0.0, presentedTouchRebaseYDip_ = 0.0;
 	void BeginBottomDockTransition() noexcept
 	{
 		Inkeys::UI::Bar::BeginBarBottomDockTransition(bottomDockTransitionSerial);
@@ -1188,7 +1371,6 @@ protected:
 				}
 			};
 			shiftHits(presentedButtonHits_); shiftHits(presentedVisualHits_);
-			presentedTouchRebaseXDip_ += dx; presentedTouchRebaseYDip_ += dy;
 		}
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_release);
 	}
@@ -1359,6 +1541,7 @@ protected:
 	atomic<unsigned long long> bottomDockDeferredTransitionSerial = 0;
 	atomic<unsigned long long> bottomDockPresentedTransitionSerial = 0;
 
+	friend class BarGeometryAttributeTestAccess;
 	friend class BarUIRendering;
 	friend class BarRenderLoopCoordinator;
 	friend LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -1384,6 +1567,8 @@ namespace Inkeys::UI::Bar
 		const Inkeys::UI::RenderPipeline::FrameContext&)> CreateBarOffscreenRenderCallback(
 		BarUISetClass& owner, std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> present);
 	export int RunUi3MultiTargetOffscreenBenchmark();
+	export int RunGeometryAttributeOffscreenTest();
+	bool RunConstructionPromptTouchRouteTest(POINT screen);
 	export int RunIdleBackingResourceLifecycleTest() noexcept;
 	export int RunUi3WorkspaceCenteringTest();
 	export int RunUi3BottomDockTransitionTest();
@@ -1398,7 +1583,7 @@ namespace Inkeys::UI::Bar
 		bool expandAfterClick = false);
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
-	export int RunBarTouchProbeProductionTest() noexcept;
+	export int RunConstructionAutoCollapseProductionTest() noexcept;
 	export int RunKeyboardShortcutBusinessProductionTest() noexcept;
 	export int RunKeyboardShortcutWhiteboardProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
@@ -1476,7 +1661,6 @@ namespace Inkeys::UI::Bar
 	export void NotifyCanvasStrokeAccepted(
 		const Inkeys::Drawing::Draw3::Bridge::AcceptedStrokeBegin& notice) noexcept;
 	export std::uint64_t AutoCollapseSceneRevision() noexcept;
-	export bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown);
 
 	bool InitializeWindow(BarUISetClass& barUISet);
 	void InitializeUI(BarUISetClass& barUISet);

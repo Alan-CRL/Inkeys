@@ -1,0 +1,28 @@
+{
+  "id": "shape-future-toolbar-ui",
+  "name": "shape-future-toolbar-ui",
+  "title": "图形主栏后续工具 UI 补齐",
+  "description": "补齐原总规划后续图形/坐标/函数工具的主栏按钮、SVG、UI3布局动画；未实现工具禁用；不实施绘制算法或选择编辑。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "ui3",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-10-17",
+  "completedAt": "2026-10-17",
+  "branch": "feature/shape",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "1d4b5472798bab332d3a5a6e02585053586b1f36",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-17-shape-selection-system",
+  "relatedFiles": [],
+  "notes": "A方案已完成、验证并提交1d4b5472；36类UI/11可用25禁用/局部滚动。子任务已归档，无push。",
+  "meta": {
+    "validation": ".trellis/tasks/archive/2026-10/10-17-shape-future-toolbar-ui/validation.md"
+  }
+}

@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/native-desktop/shapes.md", "reason": "形状事务、约束及最新第五轮合同"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "输入来源和历史所有权"}
+{"file": ".trellis/spec/native-desktop/ui-pointer-session.md", "reason": "UI原生输入身份/取消"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "UI呈现和字体"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层核对"}
+{"file": ".trellis/tasks/11-14-shape-round6-interaction/research/baseline.md", "reason": "远程基线与接线证据"}

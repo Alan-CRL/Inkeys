@@ -1448,7 +1448,7 @@ ID2D1LinearGradientBrush* BarUIRendering::GetColorPickerToneGradientBrush(
 void BarUIRendering::DrawProgressRing(ID2D1DeviceContext* deviceContext,
 	D2D1_POINT_2F center, FLOAT radius, FLOAT strokeWidth,
 	FLOAT progress, COLORREF trackColor, COLORREF progressColor,
-	FLOAT trackOpacity, FLOAT progressOpacity)
+	FLOAT trackOpacity, FLOAT progressOpacity, bool roundCaps)
 {
 	if (!deviceContext || radius <= 0.0F || strokeWidth <= 0.0F) return;
 	progress = clamp(progress, 0.0F, 1.0F);
@@ -1488,7 +1488,7 @@ void BarUIRendering::DrawProgressRing(ID2D1DeviceContext* deviceContext,
 		sink->AddArc(arc);
 		sink->EndFigure(D2D1_FIGURE_END_OPEN);
 		if (SUCCEEDED(sink->Close()))
-			(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawGeometry(path.Get(), progressBrush, strokeWidth);
+			(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(deviceContext), deviceContext)->DrawGeometry(path.Get(), progressBrush, strokeWidth, roundCaps ? GetRoundStrokeStyle() : nullptr);
 	}
 }
 
@@ -3462,4 +3462,76 @@ D2D1_SIZE_F BarUIRendering::MeasureText(
 	result.width = static_cast<FLOAT>(maxLineLength * fontSize);
 	result.height = static_cast<FLOAT>(lineCount * fontSize * 1.4);
 	return result;
+}
+
+void BarUIRendering::ColorPalette(ID2D1DeviceContext* dc, D2D1_RECT_F rect, bool darkTone, bool below, double opacity)
+{
+	if (!dc) return;
+	const D2D1_ROUNDED_RECT rounded{rect, 4, 4};
+	if (auto* hue = GetColorPickerHueGradientBrush(dc, {rect.left,rect.top}, {rect.right,rect.top}))
+	{
+		hue->SetOpacity(static_cast<float>(opacity)); dc->FillRoundedRectangle(rounded, hue);
+		const D2D1_POINT_2F nearPoint{rect.left, below ? rect.top : rect.bottom};
+		const D2D1_POINT_2F farPoint{rect.left, below ? rect.bottom : rect.top};
+		if (auto* tone = GetColorPickerToneGradientBrush(dc, darkTone,
+			darkTone ? nearPoint : farPoint, darkTone ? farPoint : nearPoint, static_cast<float>(opacity)))
+			dc->FillRoundedRectangle(rounded, tone);
+	}
+}
+
+void DrawBarSliderThumb(BarUIRendering& renderer, ID2D1DeviceContext* dc,
+	const BarSliderThumbStyle& style, BarUiSVGClass* iconSvg, double iconScale)
+{
+	const auto centerPx = style.centerPx;
+	const FLOAT outerDiameterPx = style.outerDiameterPx, centerDiameterPx = style.centerDiameterPx;
+	const double opacity = style.opacity;
+	if (!dc || outerDiameterPx <= 0.0F || opacity <= 0.0) return;
+	const double lightWeight = BarThemeMaterial::ClampWeight(style.lightWeight);
+	const double accentOpacity = BarThemeMaterial::ClampWeight(style.accentOpacity);
+	const COLORREF darkFill = MixBarUiColor(
+		GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface),
+		GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::TextPrimary), 0.20);
+	const COLORREF outerFill = MixBarUiColor(darkFill, RGB(255, 255, 255), lightWeight);
+	const COLORREF darkFrame = MixBarUiColor(darkFill,
+		GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::TextPrimary), 0.12);
+	const COLORREF lightFrame = MixBarUiColor(
+		GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::Surface),
+		GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::TextPrimary),
+		BarThemeMaterial::LightSliderThumbBorderOpacity);
+	const FLOAT radius = outerDiameterPx / 2.0F;
+	// 主栏旧公式逐圆合成；编辑器内容倍率则在层边界只乘一次。
+	if (style.compositeOpacity) renderer.PushPanelOpacity(dc, {centerPx.x - radius, centerPx.y - radius,
+		centerPx.x + radius, centerPx.y + radius}, opacity);
+	const auto fill = [&](COLORREF color, FLOAT r)
+	{
+		// 帧内solid brush会被下一次取色复用，必须立即消费。
+		if (r > 0.0F)
+			if (auto* brush = renderer.ContentSolidBrush(color, style.compositeOpacity ? 1.0 : opacity))
+			{
+				Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(dc);
+				dc->FillEllipse(D2D1::Ellipse(centerPx, r, r), brush);
+			}
+	};
+	fill(MixBarUiColor(darkFrame, lightFrame, lightWeight), radius);
+	fill(outerFill, (std::max)(0.0F, radius - style.frameThicknessPx));
+	if (!iconSvg)
+	{
+		fill(MixBarUiColor(style.surfaceColor, style.accentColor, accentOpacity),
+			(std::min)(radius * 0.70F, centerDiameterPx / 2.0F));
+		if (style.compositeOpacity) dc->PopLayer();
+		return;
+	}
+	const double zoom = renderer.GetFrameZoom();
+	const double diameter = 16.0 * iconScale;
+	iconSvg->w.SetDirect(diameter);
+	iconSvg->h.SetDirect(diameter);
+	iconSvg->pct.SetDirect(style.compositeOpacity ? 1.0 : opacity);
+	const COLORREF iconColor = MixBarUiColor(outerFill,
+		style.accentColor, accentOpacity);
+	if (iconSvg->color1) iconSvg->color1->SetDirect(iconColor);
+	if (iconSvg->color2) iconSvg->color2->SetDirect(iconColor);
+	const auto inh = iconSvg->UpInh({centerPx.x / zoom - diameter / 2.0,
+		centerPx.y / zoom - diameter / 2.0});
+	renderer.Svg(dc, *iconSvg, inh);
+	if (style.compositeOpacity) dc->PopLayer();
 }

@@ -142,7 +142,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		// 尚未准备好的能力保留显式空接口，产品入口可据此隐藏。
 		if (type == CommandType::Save || type == CommandType::SuperRecovery ||
 			type == CommandType::AutoStraighten || type == CommandType::InputTest ||
-			type == CommandType::PrepareExitAutoSave || type == CommandType::ShortcutFence)
+			type == CommandType::PrepareExitAutoSave || type == CommandType::ShapeInteraction ||
+			type == CommandType::ShortcutFence)
 			return CommandResult::Unsupported;
 		if (commands_.size() >= capacity_) return CommandResult::QueueFull;
 		try
@@ -159,6 +160,58 @@ namespace Inkeys::Drawing::Draw3::Bridge
 			return CommandResult::QueueFull;
 		}
 		return CommandResult::Accepted;
+	}
+
+	CommandResult StateBridge::PublishShapeAction(const ShapeUiAction& action, bool* coalesced) noexcept
+	{
+		if (coalesced) *coalesced = false;
+		std::scoped_lock lock(mutex_);
+		if (!running_) return CommandResult::NotRunning;
+		if (static_cast<std::uint8_t>(state_.workspace) != action.identity.workspace)
+			return CommandResult::Unsupported;
+		auto& metrics = ShapePreviewMetrics();
+		if (IsShapePreviewAction(action.kind))
+		{
+			// 最新预览槽：同一手势未消费的预览直接被覆盖；遇到普通画布命令、同会话终结/其他意图则不得跨越合并。
+			std::size_t pendingPreviews = 0;
+			for (auto it = commands_.rbegin(); it != commands_.rend(); ++it)
+			{
+				if (it->type != CommandType::ShapeInteraction) break;
+				if (!it->shapeAction) continue;
+				const auto& old = *it->shapeAction;
+				if (!IsShapePreviewAction(old.kind))
+				{
+					if (old.identity.session == action.identity.session) break;
+					continue;
+				}
+				if (!SameShapeEditGesture(old, action)) { ++pendingPreviews; continue; }
+				try
+				{
+					auto replacement = std::make_shared<ShapeUiAction>(action);
+					if (!replacement->enqueueMicroseconds) replacement->enqueueMicroseconds = ShapePreviewClockMicroseconds();
+					it->shapeAction = std::move(replacement);
+				}
+				catch (...) { return CommandResult::QueueFull; }
+				metrics.published.fetch_add(1, std::memory_order_relaxed);
+				metrics.bridgeCoalesced.fetch_add(1, std::memory_order_relaxed);
+				if (coalesced) *coalesced = true;
+				return CommandResult::Accepted;
+			}
+			RaiseShapePreviewMaximum(metrics.maxPendingInBridge, pendingPreviews + 1);
+		}
+		if (commands_.size() >= capacity_) return CommandResult::QueueFull;
+		try
+		{
+			Command command{CommandType::ShapeInteraction,nextSequence_,state_.workspace};
+			auto stamped = std::make_shared<ShapeUiAction>(action);
+			if (!stamped->enqueueMicroseconds) stamped->enqueueMicroseconds = ShapePreviewClockMicroseconds();
+			command.shapeAction = std::move(stamped);
+			if (state_.workspace == Workspace::Presentation) command.presentationTarget = state_.presentationTarget;
+			commands_.push_back(std::move(command)); ++nextSequence_;
+			if (IsShapePreviewAction(action.kind)) metrics.published.fetch_add(1, std::memory_order_relaxed);
+			return CommandResult::Accepted;
+		}
+		catch (...) { return CommandResult::QueueFull; }
 	}
 
 	CommandResult StateBridge::PublishWhiteboardTheme(WhiteboardTheme theme,

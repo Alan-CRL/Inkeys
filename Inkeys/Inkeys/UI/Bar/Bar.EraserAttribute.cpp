@@ -66,16 +66,10 @@ namespace
 		shape.x.SetDirect(r.left);shape.y.SetDirect(r.top);shape.w.SetDirect(r.Width());shape.h.SetDirect(r.Height());
 		shape.UpInh(BarUiInheritClass(r.left,r.top));
 	}
-	D2D1_COLOR_F ThemeBrushColor(BarThemeColorEnum role,float opacity=1)
-	{
-		const auto c=GetThemeColor(role);
-		return D2D1::ColorF(GetRValue(c)/255.0f,GetGValue(c)/255.0f,GetBValue(c)/255.0f,opacity);
-	}
 	COLORREF EraserOutlineColor() noexcept
 	{ const auto c=static_cast<BYTE>(std::lround(ERASER_GRIP_OUTLINE_CHANNEL*255));return RGB(c,c,c); }
 
 	bool IsSize(int item) noexcept { return item>=1 && item<=3; }
-	bool IsAutomatic(int item) noexcept { return item==4 || item==5; }
 	bool IsPanelButton(int item) noexcept { return item<6 || item==10; }
 	int ButtonVisual(int item) noexcept { return item==5?4:IsSize(item)?-1:item; }
 	constexpr std::array<int,7> buttonVisuals{0,4,6,7,8,9,10};
@@ -187,7 +181,7 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		owner.barState.recallAttribute;
 	if(shouldClose)Close(owner);
 	const bool open=owner.barState.eraserAttribute;if(!open)owner.barState.eraserSensitivityOpen=false;
-	const bool menuOpen=owner.barState.eraserSensitivityOpen;visible_=open;
+	const bool menuOpen=owner.barState.eraserSensitivityOpen;
 	const BarUiAnimationAdvanceContextClass context{dt,speed,static_cast<bool>(BarUiAnimationEnabled),false};
 	auto advance=[&](auto& value){const auto result=BarUiAdvanceAnimation(value,context);changed_|=result.changed;active_|=result.active;};
 	auto root=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
@@ -431,25 +425,6 @@ void BarEraserAttributePanel::DrawPreview(BarUIRendering& renderer,ID2D1DeviceCo
 	}
 	// 仅叠加原有 PointLight 轮廓，填充和静态描边由缓存位图负责。
 	auto& hover=circles_[index];renderer.Shape(context,hover,BarUiInheritClass(hover.inhX,hover.inhY));
-	if(focused_==static_cast<int>(index+1))
-	{
-		// 焦点沿当前形状内缘，深色光标使用浅色虚线。
-		brush_->SetColor(previewTheme_==EraserCursorTheme::Dark?D2D1::ColorF(0.9f,0.9f,0.9f,1):D2D1::ColorF(0.15f,0.15f,0.15f,1));
-		auto focus=PixelRect(rect,zoom_);
-		const float inset=static_cast<float>((std::min)(rect.Width(),rect.Height())*ERASER_GRIP_OUTLINE_RATIO*zoom_)+2;
-		focus.left+=inset;focus.right-=inset;focus.top+=inset;focus.bottom-=inset;
-		if(focus.right>focus.left && focus.bottom>focus.top)
-		{
-			if(g.shape==EraserShape::Circle)
-				context->DrawEllipse(D2D1::Ellipse(center,(focus.right-focus.left)/2,(focus.bottom-focus.top)/2),brush_.Get(),1,focusStroke_.Get());
-			else
-			{
-				const float radius=(std::max)(0.0f,(std::min)(static_cast<float>(g.previewCornerRadius*zoom_)-inset,
-					(std::min)(focus.right-focus.left,focus.bottom-focus.top)/2));
-				context->DrawRoundedRectangle(D2D1::RoundedRect(focus,radius,radius),brush_.Get(),1,focusStroke_.Get());
-			}
-		}
-	}
 	if(std::abs(press-1.0f)>0.000001f)context->SetTransform(originalTransform);
 	context->PopAxisAlignedClip();
 }
@@ -459,20 +434,12 @@ void BarEraserAttributePanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 	if(!initialized_ || !frame_.panelVisible)return;
 	if(deviceGeneration_!=renderer.GetDeviceGeneration())
 	{
-		brush_.Reset();focusStroke_.Reset();for(auto& bitmap:previewBitmaps_)bitmap.Reset();previewBitmapAttempted_.fill(false);
+		for(auto& bitmap:previewBitmaps_)bitmap.Reset();previewBitmapAttempted_.fill(false);
 		automaticArrow_.ResetCache();for(int i:buttonVisuals)buttons_[i].icon.ResetCache();deviceGeneration_=renderer.GetDeviceGeneration();
 	}
-	if(!brush_ && FAILED(context->CreateSolidColorBrush(D2D1::ColorF(1,1,1,1),&brush_)))return;
-	if(!focusStroke_){ComPtr<ID2D1Factory> factory;context->GetFactory(&factory);auto props=D2D1::StrokeStyleProperties();props.dashStyle=D2D1_DASH_STYLE_DOT;factory->CreateStrokeStyle(props,nullptr,0,&focusStroke_);}
 	const auto& g=frame_.geometry;
 	auto drawSurface=[&](BarUiShapeClass& s){DrawBarBackgroundVisual(renderer,context,s,BarUiInheritClass(s.inhX,s.inhY));};
 	auto drawButton=[&](int i){auto& b=buttons_[i];DrawBarButtonVisual(renderer,context,b,BarUiInheritClass(b.button.inhX,b.button.inhY));};
-	auto focusButton=[&](int i)
-	{
-		const auto& b=buttons_[i];brush_->SetColor(ThemeBrushColor(BarThemeColorEnum::TextPrimary));
-		auto rect=PixelRect(i==4?g.automatic:g.items[i],zoom_);rect.left+=2;rect.right-=2;rect.top+=2;rect.bottom-=2;
-		context->DrawRoundedRectangle(D2D1::RoundedRect(rect,4,4),brush_.Get(),1,focusStroke_.Get());
-	};
 	renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.panel,zoom_),frame_.panelOpacity);renderer.SetFrameDiffuseMaskGeometryScale(1/frame_.panelPose.scale);drawSurface(surface_);
 	context->PushAxisAlignedClip(PixelRect(g.panel,zoom_),D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 	drawButton(0);drawButton(4);drawButton(10);
@@ -488,14 +455,13 @@ void BarEraserAttributePanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 	renderer.Shape(context,automaticDivider_,BarUiInheritClass(automaticDivider_.inhX,automaticDivider_.inhY));
 	renderer.Svg(context,automaticArrow_,BarUiInheritClass(automaticArrow_.x.val,automaticArrow_.y.val));
 	if(std::abs(press-1.0f)>0.000001f)context->SetTransform(originalTransform);
-	const int focus=focused_;if(focus==0 || focus==10 || IsAutomatic(focus))focusButton(ButtonVisual(focus));
 	context->PopAxisAlignedClip();context->PopLayer();renderer.SetFrameDiffuseMaskGeometryScale(1);
 	if(frame_.menuVisible)
 	{
 		renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.menu,zoom_),frame_.menuOpacity);renderer.SetFrameDiffuseMaskGeometryScale(1/frame_.menuPose.scale);drawSurface(menu_);
 		context->PushAxisAlignedClip(PixelRect(g.menu,zoom_),D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 		renderer.Word(context,title_,BarUiInheritClass(g.menuTitle.left,g.menuTitle.top),DWRITE_FONT_WEIGHT_BOLD,DWRITE_TEXT_ALIGNMENT_LEADING);
-		for(int i:{6,7,8,9})drawButton(i);if(focus>=6 && focus<=8)focusButton(focus);
+		for(int i:{6,7,8,9})drawButton(i);
 		context->PopAxisAlignedClip();context->PopLayer();renderer.SetFrameDiffuseMaskGeometryScale(1);
 	}
 }
@@ -527,7 +493,7 @@ std::array<RECT,3> BarEraserAttributePanel::PresentedRegions() const
 }
 void BarEraserAttributePanel::Close(BarUISetClass& owner)
 {
-	owner.barState.eraserAttribute=false;owner.barState.eraserSensitivityOpen=false;pressed_=-1;hovered_=-1;focused_=-1;visible_=false;
+	owner.barState.eraserAttribute=false;owner.barState.eraserSensitivityOpen=false;pressed_=-1;hovered_=-1;
 }
 bool BarEraserAttributePanel::Execute(BarUISetClass& owner,int item)
 {
@@ -603,7 +569,7 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 		if(hovered_!=hit)
 		{
 			// 输入只发布目标，悬停/按压动画统一由 Advance 在渲染线程消费。
-			hovered_=hit;focused_=-1;
+			hovered_=hit;
 			owner.UpdateRendering(false);
 		}
 		if(pressed_>=0 && cancelled){pressed_=-1;owner.UpdateRendering(false);}return inside;
@@ -614,7 +580,7 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 		if(owner.barState.eraserSensitivityOpen && !overMenu && hit!=5){owner.barState.eraserSensitivityOpen=false;owner.UpdateRendering(false);}
 		// 必须是面板收到的新Down才能建立动作票据；主栏开栏的那次Up不能落到中央Clear。
 		pressed_=inside && owner.barState.eraserAttribute && !cancelled?hit:-1;
-		focused_=-1;owner.UpdateRendering(false);return inside;
+		owner.UpdateRendering(false);return inside;
 	}
 	if(message.message==WM_LBUTTONUP)
 	{
@@ -627,25 +593,4 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 		if(pressed>=0 || contactPointer)owner.UpdateRendering(false);return inside || pressed>=0;
 	}
 	return inside;
-}
-bool BarEraserAttributePanel::Keyboard(BarUISetClass& owner,BYTE key,bool down)
-{
-	if(!owner.barState.eraserAttribute)return false;
-	if(key==VK_ESCAPE)
-	{
-		if(down){if(owner.barState.eraserSensitivityOpen)owner.barState.eraserSensitivityOpen=false;else Close(owner);owner.UpdateRendering(false);}return true;
-	}
-	if(key!=VK_TAB && key!=VK_LEFT && key!=VK_RIGHT && key!=VK_RETURN && key!=VK_SPACE)return false;
-	if(!down)return true;
-	if(key==VK_RETURN || key==VK_SPACE){if(focused_>=0)Execute(owner,focused_);return true;}
-	// 焦点顺序即视觉顺序：主面板为 0..5 后接手掌橡皮，浮窗为 6..9。
-	static constexpr std::array<int,4> menuOrder{6,7,8,9};
-	static constexpr std::array<int,7> panelOrder{0,1,2,3,4,5,10};
-	const bool menu=owner.barState.eraserSensitivityOpen;
-	const int count=menu?4:7;
-	auto at=[&](int n){return menu?menuOrder[n]:panelOrder[n];};
-	const int delta=key==VK_LEFT || (key==VK_TAB && (GetKeyState(VK_SHIFT)&0x8000))?-1:1;
-	int index=-1;for(int n=0;n<count;++n)if(at(n)==focused_)index=n;
-	index=index<0?0:(index+delta+count)%count;
-	focused_=at(index);hovered_=-1;owner.UpdateRendering(false);return true;
 }

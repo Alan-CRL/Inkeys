@@ -232,8 +232,7 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 		&& !attribute.thicknessAnnotationPinned && !attribute.thicknessOverflowHover
 		&& !attribute.thicknessOverflowHoverGrace && !attribute.thicknessOverflowPinned
 		&& !attribute.colorPickerPointerPressed && !attribute.colorPickerPointerCapture
-		&& !attribute.colorPickerHoldHintActive && !attribute.colorPickerHoldLocked
-		&& attribute.colorPickerKeyboardDownMask == 0;
+		&& !attribute.colorPickerHoldHintActive && !attribute.colorPickerHoldLocked;
 	signature.flags = (barState.fold ? 1u : 0u) | (barState.drawAttribute ? 2u : 0u)
 		| (barState.geometryAttribute ? 4u : 0u) | (barState.moreExpanded ? 8u : 0u)
 		| (barState.eraserAttribute ? 16u : 0u) | (barState.eraserSensitivityOpen ? 32u : 0u)
@@ -362,6 +361,7 @@ namespace Inkeys::UI::Bar
 		// 主栏帧首应用目标值；分页表面复用同一份已应用值，需要单独唤醒。
 		barUISet.UpdateRendering(false);
 		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::PptPageMask());
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::SelectionOverlay);
 	}
 
 	void SetDebugOptions(bool enable, bool showFrameRate)

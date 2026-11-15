@@ -94,7 +94,6 @@ public:
 		IdtAtomic<bool> colorPickerHoldLocked = false;
 		IdtAtomic<float> colorPickerHoldProgress = 0.0f;
 		IdtAtomic<float> colorPickerPointerY = 0.0f;
-		IdtAtomic<unsigned int> colorPickerKeyboardDownMask = 0;
 	}drawAttributeBar;
 
 	struct

@@ -310,6 +310,124 @@ BARSHAPESTRAIGHTLINE    UI                      "src\\UI\\barShapeStraightLine.s
 
 BARSHAPERECTANGLE       UI                      "src\\UI\\barShapeRectangle.svg"
 
+BARSHAPEARROW            UI                      "src\\UI\\barShapeArrow.svg"
+
+BARSHAPEROUNDEDRECTANGLE UI                      "src\\UI\\barShapeRoundedRectangle.svg"
+
+BARSHAPECIRCLECENTER     UI                      "src\\UI\\barShapeCircleCenter.svg"
+
+BARSHAPECIRCLEBOUNDS     UI                      "src\\UI\\barShapeCircleBounds.svg"
+
+BARSHAPEELLIPSE          UI                      "src\\UI\\barShapeEllipse.svg"
+
+BARSHAPETRIANGLE         UI                      "src\\UI\\barShapeTriangle.svg"
+
+BARSHAPEPARALLELOGRAM    UI                      "src\\UI\\barShapeParallelogram.svg"
+
+BARSHAPERHOMBUS          UI                      "src\\UI\\barShapeRhombus.svg"
+
+BARSHAPETRAPEZOID        UI                      "src\\UI\\barShapeTrapezoid.svg"
+
+BARSHAPEOUTLINE          UI                      "src\\UI\\barShapeOutline.svg"
+
+BARSHAPEFILL             UI                      "src\\UI\\barShapeFill.svg"
+
+BARSHAPEOUTLINEFILL      UI                      "src\\UI\\barShapeOutlineFill.svg"
+
+BARSHAPESOLID            UI                      "src\\UI\\barShapeSolid.svg"
+
+BARSHAPEDASHED           UI                      "src\\UI\\barShapeDashed.svg"
+
+BARSHAPEDOTTED           UI                      "src\\UI\\barShapeDotted.svg"
+
+BARSHAPEROTATE           UI                      "src\\UI\\barShapeRotate.svg"
+BARSHAPEDASHDOT          UI                      "src\\UI\\barShapeDashDot.svg"
+
+BARSHAPEPOLYGON3         UI                      "src\\UI\\barShapePolygon3.svg"
+
+BARSHAPEPOLYGON4         UI                      "src\\UI\\barShapePolygon4.svg"
+
+BARSHAPEPOLYGON5         UI                      "src\\UI\\barShapePolygon5.svg"
+
+BARSHAPEPOLYGON6         UI                      "src\\UI\\barShapePolygon6.svg"
+
+BARSHAPEPOLYGON7         UI                      "src\\UI\\barShapePolygon7.svg"
+
+BARSHAPEPOLYGON8         UI                      "src\\UI\\barShapePolygon8.svg"
+
+BARSHAPEPOLYGON9         UI                      "src\\UI\\barShapePolygon9.svg"
+
+BARSHAPEPOLYGON10        UI                      "src\\UI\\barShapePolygon10.svg"
+
+BARSHAPEPOLYGON11        UI                      "src\\UI\\barShapePolygon11.svg"
+
+BARSHAPEPOLYGON12        UI                      "src\\UI\\barShapePolygon12.svg"
+
+BARSHAPEPOLYGON13        UI                      "src\\UI\\barShapePolygon13.svg"
+
+BARSHAPEPOLYGON14        UI                      "src\\UI\\barShapePolygon14.svg"
+
+BARSHAPEPOLYLINE        UI                      "src\\UI\\barShapePolyline.svg"
+
+BARSHAPEPOLYGON         UI                      "src\\UI\\barShapePolygon.svg"
+
+BARSHAPEARC             UI                      "src\\UI\\barShapeArc.svg"
+
+BARSHAPESECTOR          UI                      "src\\UI\\barShapeSector.svg"
+
+BARSHAPEANGLE           UI                      "src\\UI\\barShapeAngle.svg"
+
+BARSHAPEPARALLEL        UI                      "src\\UI\\barShapeParallel.svg"
+
+BARSHAPEPERPENDICULAR   UI                      "src\\UI\\barShapePerpendicular.svg"
+
+BARSHAPECUBOID          UI                      "src\\UI\\barShapeCuboid.svg"
+
+BARSHAPECUBE            UI                      "src\\UI\\barShapeCube.svg"
+
+BARSHAPECYLINDER        UI                      "src\\UI\\barShapeCylinder.svg"
+
+BARSHAPECONE            UI                      "src\\UI\\barShapeCone.svg"
+
+BARSHAPEPRISM           UI                      "src\\UI\\barShapePrism.svg"
+
+BARSHAPEPYRAMID         UI                      "src\\UI\\barShapePyramid.svg"
+
+BARSHAPENUMBERLINE      UI                      "src\\UI\\barShapeNumberLine.svg"
+
+BARSHAPECARTESIAN       UI                      "src\\UI\\barShapeCartesian.svg"
+
+BARSHAPEGRID            UI                      "src\\UI\\barShapeGrid.svg"
+
+BARSHAPECOORDINATEPOINT UI                      "src\\UI\\barShapeCoordinatePoint.svg"
+
+BARSHAPEPARABOLA        UI                      "src\\UI\\barShapeParabola.svg"
+
+BARSHAPERECIPROCAL      UI                      "src\\UI\\barShapeReciprocal.svg"
+
+BARSHAPEHYPERBOLA       UI                      "src\\UI\\barShapeHyperbola.svg"
+
+BARSHAPESINE            UI                      "src\\UI\\barShapeSine.svg"
+
+BARSHAPECOSINE          UI                      "src\\UI\\barShapeCosine.svg"
+
+BARSHAPETANGENT         UI                      "src\\UI\\barShapeTangent.svg"
+
+BARSHAPEEXPONENTIAL     UI                      "src\\UI\\barShapeExponential.svg"
+
+BARSHAPELOGARITHMIC     UI                      "src\\UI\\barShapeLogarithmic.svg"
+
+BARSHAPEMOVE            UI                      "src\\UI\\barShapeMove.svg"
+BARSHAPEFLIPHORIZONTAL            UI                      "src\\UI\\barShapeFlipHorizontal.svg"
+BARSHAPEFLIPVERTICAL            UI                      "src\\UI\\barShapeFlipVertical.svg"
+BARSHAPEROTATE45            UI                      "src\\UI\\barShapeRotate45.svg"
+BARSHAPEROTATE90            UI                      "src\\UI\\barShapeRotate90.svg"
+BARSHAPEAUXCENTER       UI                      "src\\UI\\barShapeAuxCenter.svg"
+
+BARSHAPEAUXFOCI         UI                      "src\\UI\\barShapeAuxFoci.svg"
+
+BARSHAPEAUXDIAGONALS    UI                      "src\\UI\\barShapeAuxDiagonals.svg"
+
 COLORSELECT             UI                      "src\\UI\\color\\colorSelect.svg"
 
 COLORCUSTOM             PNG                     "src\\UI\\color\\colorCustom.png"
@@ -330,6 +448,10 @@ BARQUESTION             UI                      "src\\UI\\barQuestion.svg"
 
 BARCLOSESMALL           UI                      "src\\UI\\barCloseSmall.svg"
 BARCLOSEWHITEBOARD      UI                      "src\\UI\\barCloseWhiteboard.svg"
+
+BARSTEPBACK             UI                      "src\\UI\\barStepBack.svg"
+
+BARSTEPFORWARD          UI                      "src\\UI\\barStepForward.svg"
 
 BARMORE                 UI                      "src\\UI\\barMore.svg"
 BARMENU                 UI                      "src\\UI\\barMenu.svg"
@@ -401,6 +523,10 @@ IDR_DRAW3_INK_VERTEX_SHADER SHADER               "Inkeys\\Drawing\\Draw3\\Assets
 IDR_DRAW3_LASER_UPDATE_CS SHADER                 "Inkeys\\Drawing\\Draw3\\Assets\\laserParticleUpdateCS.cso"
 
 IDR_DRAW3_LASER_EMIT_CS SHADER                   "Inkeys\\Drawing\\Draw3\\Assets\\laserParticleEmitCS.cso"
+
+IDR_DRAW3_SHAPE_PIXEL_SHADER SHADER              "Inkeys\\Drawing\\Draw3\\Assets\\shapePixelShader.cso"
+
+IDR_DRAW3_SHAPE_VERTEX_SHADER SHADER             "Inkeys\\Drawing\\Draw3\\Assets\\shapeVertexShader.cso"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////

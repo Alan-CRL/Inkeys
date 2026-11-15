@@ -175,7 +175,7 @@ Correct：批次到达/一次读取/逐点选择和lease结果分层观测；纯
 
 - 固定五槽登记指向Bar及四Page本地Context，不另存global currentTouch/active gesture业务FSM；同device/id先找已拥有的本地Context。原非Mouse资源lease仍保护Mouse/Touch互斥，不是第二份Touch业务状态。
 - 原WndProc单次GetTouchInputInfo/CloseTouchInputHandle，route只传值型Packet。合格Down在所有内部锁外WindowFromPoint(Touch屏幕点)，唯一候选必须是五窗精确HWND；再以已呈现Probe复核，Miss/Blocked/外部/设置/画布不接纳、不后层搜索、不抢lease/capture。
-- Bar完整probe与成功present同事务发布，包含同帧工具门、Grip/Body/Rigid映射、More及所有属性/浮窗/FineDial合法占用；不能用窗口rect/装饰阴影替代。Page复用同锁InputPresentation与scene.SamplePointer。Touch查询Scope内可见locked背景是阻挡，常规Mouse NCHITTEST策略不变。
+- 【2026-11-15 第十一轮替代】Bar 不再维护手写触摸区域表（`PresentedTouchRegions`/`ProbeTouchScreen` 已删除）：分层窗口按像素 alpha 把触摸投到 Bar 后，`ProbeBarTouch` 在窗口可见可用、已有成功呈现帧时直接 Accept（关闭信号或消息框显示时 Blocked），具体命中与禁用/退场判断交给 worker 的同一套鼠标逻辑，与鼠标准入一致。新增 Bar 面板无需再登记触摸。Page复用同锁InputPresentation与scene.SamplePointer。Touch查询Scope内可见locked背景是阻挡，常规Mouse NCHITTEST策略不变。
 - WindowFromPoint和SetCapture可同线程重入，回调前不持registry/provider/scene锁；之后核注册代次、本地mutation/identity和语义。Preparing已在目标本地保留，旧取消不得抹掉重入新代。
 - Move/Up锁定Down owner，不因悬浮或当前候选改变而改目标；Down在UI外，后续Move不启动按钮。primary/fallback、不同hSource身份和单UI接触互斥保留。
 - Page与Bar按完整IsPointerGeneratedMouseMessage统一过滤所有Pointer签名WM_MOUSE；Pen/Touch低位只诊断。真实Mouse/触摸板/native+Raw原业务不变，不把Mouse类别枚举或资源租约作为无关清理删除。

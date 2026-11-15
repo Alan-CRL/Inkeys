@@ -558,6 +558,8 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ShapeRendererTests.h"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClInclude>
+    <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_core.h"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
@@ -1862,6 +1864,8 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeMotion.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.GeometryAttribute.cpp"><Filter>Modules\Inkeys\UI\Bar</Filter></ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.GeometryAttribute.Test.cpp"><Filter>Modules\Inkeys\UI\Bar</Filter></ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttribute.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
@@ -2219,6 +2223,10 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererLaser.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererShapes.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ShapeRendererTests.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\shape_core.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTestTests\shape_core_tests.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererPrimitives.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
@@ -2486,6 +2494,9 @@
     <None Include="IdtWindow.h">
       <Filter>头文件</Filter>
     </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\shape.hlsli"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\shapeVertexShader.hlsl"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\shapePixelShader.hlsl"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></None>
     <None Include="additional\imfluent\LICENSE">
       <Filter>头文件\Additional\ImFluent</Filter>
     </None>
@@ -2582,6 +2593,8 @@
     <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.hlsl">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\shapePixelShader.hlsl"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\shapeVertexShader.hlsl"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></FxCompile>
     <FxCompile Include="$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl">
       <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </FxCompile>
@@ -2749,6 +2762,198 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="src\UI\barShapeStraightLine.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeAngle.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeArc.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeArrow.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeAuxCenter.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeAuxDiagonals.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeAuxFoci.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeCartesian.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeCircleBounds.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeCircleCenter.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeCone.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeCoordinatePoint.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeCosine.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeCube.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeCuboid.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeCylinder.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeDashDot.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeDashed.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeDotted.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeEllipse.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeExponential.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeFill.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeGrid.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeHyperbola.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeLogarithmic.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeMove.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeNumberLine.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeOutline.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeOutlineFill.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeParabola.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeParallel.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeParallelogram.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePerpendicular.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon10.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon11.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon12.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon13.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon14.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon3.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon4.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon5.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon6.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon7.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon8.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolygon9.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePolyline.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePrism.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapePyramid.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeReciprocal.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeRhombus.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeRotate.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeRoundedRectangle.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeSector.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeSine.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeSolid.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeTangent.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeTrapezoid.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeTriangle.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barStepBack.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barStepForward.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeFlipHorizontal.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeFlipVertical.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeRotate45.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barShapeRotate90.svg">
       <Filter>资源文件</Filter>
     </None>
     <None Include="src\UI\barShapeRectangle.svg">

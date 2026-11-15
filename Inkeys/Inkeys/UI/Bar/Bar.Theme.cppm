@@ -1,6 +1,7 @@
 module;
 
 #include <windows.h>
+#include <atomic>
 #include "Bar.ThemeMaterial.h"
 
 #ifndef RGBA
@@ -11,6 +12,7 @@ export module Inkeys.UI.Bar:Theme;
 
 import :State;
 import Inkeys.UI.Bar.Metrics;
+import Inkeys.UI.RenderPipeline;
 
 // Bar 主题模式，当前先只区分深浅色。
 export enum class BarThemeModeEnum : int
@@ -142,7 +144,16 @@ export COLORREF GetThemeColor(BarThemeColorEnum color, int alpha = 255)
 	// 默认浅色；绑定样式后由当前 Bar 状态实时决定。
 	if (!currentBarThemeStyle) return GetThemeColor(BarThemeModeEnum::Light, color, alpha);
 
-	return GetThemeColor(currentBarThemeStyle->darkStyle, color, alpha);
+	// 主题与透明度由主栏帧首落地；此处只在已应用值变化时唤醒独立编辑层。
+	// 显式Dark/Light端点查询不走此钩子，避免材质混色误报主题切换。
+	static std::atomic<int> applied{-1};
+	const bool dark = currentBarThemeStyle->darkStyle;
+	const int background = currentBarThemeStyle->backgroundOpacity;
+	const int content = currentBarThemeStyle->contentOpacity;
+	const int key = (dark ? 0x10000 : 0) | ((background & 0xFF) << 8) | (content & 0xFF);
+	if (applied.exchange(key, std::memory_order_relaxed) != key)
+		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::SelectionOverlay);
+	return GetThemeColor(dark, color, alpha);
 }
 
 static_assert(BarThemeMaterial::ResidentBaseFillOpacity == BarMainBarFillOpacity,

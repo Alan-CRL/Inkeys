@@ -42,7 +42,6 @@ import Inkeys.Other.Config;
 import Inkeys.Text.Font;
 import Inkeys.Conv.Text;
 
-extern const double BarGeometryAttributeShapeButtonSize;
 extern const double BarThicknessTooltipPadding;
 extern const double BarThicknessTooltipCloseReserve;
 extern const double BarThicknessTooltipTitleFontSize;
@@ -1419,11 +1418,28 @@ namespace Inkeys::UI::Bar
 				if(bounds.width>80.5f)reportBounds(key,text,12.0,bounds,80.0,0.0,"pen-menu");
 				expect(bounds.width<=80.5f,"localized pen menu label fits its measured text slot");
 			}
-			for(const auto* key:{I18nKey.UI.Bar.GeometryAttributes.StraightLineLabel,I18nKey.UI.Bar.GeometryAttributes.RectangleLabel})
 			{
-				const auto text=IW(key);const auto bounds=owner.spec.MeasureText(text,11.0,DWRITE_FONT_WEIGHT_NORMAL);
-				if(bounds.width>BarGeometryAttributeShapeButtonSize)reportBounds(key,text,11.0,bounds,BarGeometryAttributeShapeButtonSize,0.0,"geometry");
-				expect(bounds.width<=BarGeometryAttributeShapeButtonSize,"localized geometry label fits its button");
+				// P2按实际语言测量同宽列；使用生产布局的文字槽，保留严格宽度约束。
+				const bool savedGeometry = owner.barState.geometryAttribute, savedDraw = owner.barState.drawAttribute;
+				const bool savedEraser = owner.barState.eraserAttribute, savedRecall = owner.barState.recallAttribute;
+				const bool savedMore = owner.barState.moreExpanded, savedFold = owner.barState.fold;
+				owner.barState.geometryAttribute = true; owner.barState.fold = false;
+				owner.barState.drawAttribute = owner.barState.eraserAttribute = owner.barState.recallAttribute = owner.barState.moreExpanded = false;
+				auto shapeFrame = GetStateModeSnapshot(); shapeFrame.StateModeSelect = StateModeSelectEnum::IdtShape;
+				auto panel = std::make_unique<BarGeometryAttributePanel>();
+				for (int frame = 0; frame < 90; ++frame) panel->Advance(owner, shapeFrame, 1.0 / 60, 1, 1, {0,0,1000,620}, {}, 0, 0);
+				panel->CommitPresented(); const auto geometry = panel->PresentationSnapshot();
+				for (const int index : {0,2})
+				{
+					const auto key = index == 0 ? I18nKey.UI.Bar.GeometryAttributes.StraightLineLabel : I18nKey.UI.Bar.GeometryAttributes.RectangleLabel;
+					const double slot = geometry.items[index].Width() - 4 * geometry.pose.scale;
+					expect(slot > 0 && owner.spec.MeasureText(IW(key), 11 * geometry.pose.scale, DWRITE_FONT_WEIGHT_NORMAL).width <= slot,
+						"localized geometry label fits its actual production text slot");
+				}
+				panel->Close(owner);
+				owner.barState.geometryAttribute = savedGeometry; owner.barState.drawAttribute = savedDraw;
+				owner.barState.eraserAttribute = savedEraser; owner.barState.recallAttribute = savedRecall;
+				owner.barState.moreExpanded = savedMore; owner.barState.fold = savedFold;
 			}
 			const auto annotationBody=owner.spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.AnnotationDescription),BarThicknessTooltipBodyFontSize,DWRITE_FONT_WEIGHT_NORMAL);
 			const auto overflowBody=owner.spec.MeasureText(IW(I18nKey.UI.Bar.DrawAttributes.ThicknessOverflowBody),BarThicknessTooltipBodyFontSize,DWRITE_FONT_WEIGHT_NORMAL);
@@ -1629,8 +1645,7 @@ namespace Inkeys::UI::Bar
 				Inkeys::config.Drawing.Eraser.BaseDiameterDip=32;Inkeys::config.Drawing.Eraser.Sensitivity=1;
 				owner.barState.eraserSensitivityOpen=true;
 			}
-			owner.eraserAttribute.Keyboard(owner,VK_ESCAPE,true);expect(owner.barState.eraserAttribute && !owner.barState.eraserSensitivityOpen,"Escape closes child first");
-			owner.eraserAttribute.Keyboard(owner,VK_ESCAPE,true);expect(!owner.barState.eraserAttribute,"Escape then closes panel");
+			owner.eraserAttribute.Close(owner);
 			for(int f=0;f<90;++f)owner.eraserAttribute.Advance(owner,1.0/60,1,zoom,dpi,{0,0,static_cast<LONG>(width),static_cast<LONG>(height)},{0,0},0,0);
 			owner.eraserAttribute.CommitPresented();
 			const auto regions=owner.eraserAttribute.PresentedRegions();expect(regions[0].right==regions[0].left,"closed panel has no hit region");

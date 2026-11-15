@@ -1,5 +1,6 @@
 #include "Draw3.DiagnosticOutput.h"
 #include "Draw3.Product.h"
+#include "Draw3.TouchpadNavigation.h"
 #include "Draw3.HapticDiagnostics.h"
 
 #include <atomic>
@@ -14,10 +15,45 @@ namespace
 	// SetWindowPos 会同步重入 Drawpad WndProc，调用闸门必须允许同一 owner 线程嵌套。
 	std::recursive_mutex productCallMutex;
 	std::atomic_bool productStopping = false;
+	std::shared_ptr<const Inkeys::Drawing::Draw3::ShapeUiSnapshot> shapeUiSnapshot;
+	std::mutex shapeUiRefreshMutex;
+	Inkeys::Drawing::Draw3::ShapeUiRefresh shapeUiRefresh = nullptr;
+	void* shapeUiRefreshContext = nullptr;
 }
 
 namespace Inkeys::Drawing::Draw3
 {
+	std::shared_ptr<const ShapeUiSnapshot> ProductShapeUiSnapshot() noexcept
+	{ return std::atomic_load_explicit(&shapeUiSnapshot,std::memory_order_acquire); }
+	void PublishShapeUiSnapshot(std::shared_ptr<const ShapeUiSnapshot> snapshot) noexcept
+	{
+		std::atomic_store_explicit(&shapeUiSnapshot,std::move(snapshot),std::memory_order_release);
+		std::scoped_lock lock(shapeUiRefreshMutex);
+		if (shapeUiRefresh) shapeUiRefresh(shapeUiRefreshContext);
+	}
+	void SetShapeUiRefreshCallback(ShapeUiRefresh callback, void* context) noexcept
+	{
+		std::scoped_lock lock(shapeUiRefreshMutex);
+		shapeUiRefresh = callback; shapeUiRefreshContext = context;
+	}
+	Bridge::CommandResult PublishShapeUiAction(const ShapeUiAction& action) noexcept
+	{
+		std::scoped_lock lock(productCallMutex);
+		if (productStopping.load(std::memory_order_acquire) || !productHost.Running())
+			return Bridge::CommandResult::NotRunning;
+		return productHost.PublishShapeAction(action);
+	}
+	void RequestShapeEditorFocusLoss() noexcept
+	{
+		// 只发布当前快照身份的 CloseEditor；绘制线程按普通 Close 语义先关闭编辑框再落定。
+		const auto snapshot = ProductShapeUiSnapshot();
+		if (!snapshot || !snapshot->object) return;
+		ShapeUiAction action;
+		action.kind = ShapeUiActionKind::CloseEditor;
+		action.identity = snapshot->identity;
+		(void)PublishShapeUiAction(action);
+	}
+
 	Bridge::CommandResult RequestWhiteboardTheme(const WhiteboardTheme& theme,
 		std::uint64_t generation, std::size_t page) noexcept
 	{
@@ -52,6 +88,7 @@ namespace Inkeys::Drawing::Draw3
 			std::scoped_lock callLock(productCallMutex);
 		}
 		productHost.Stop();
+		PublishShapeUiSnapshot({});
 		productStopping.store(false, std::memory_order_release);
 	}
 
@@ -132,7 +169,8 @@ namespace Inkeys::Drawing::Draw3
 	{
 		// 内部 stop 只取消/释放捕获；不可被 productStopping 或 Running 闸门丢弃。
 		// 不持 productCallMutex 跨 owner 完成等待，Stop 的外层已 drain 普通调用。
-		if (message == Detail::kMouseInputOwnerMessage && wParam == Detail::kMouseInputStop)
+		if ((message == Detail::kMouseInputOwnerMessage && wParam == Detail::kMouseInputStop) ||
+			Detail::IsTouchpadNavigationStopMessage(message,wParam))
 			return productHost.ForwardMessage(window, message, wParam, lParam);
 		if (productStopping.load(std::memory_order_acquire))
 			return DefWindowProcW(window, message, wParam, lParam);
@@ -155,6 +193,9 @@ namespace Inkeys::Drawing::Draw3
 		merged.widthDip = state.widthDip;
 		merged.penWidthContext = state.penWidthContext;
 		merged.colorRgba = state.colorRgba;
+		// 图形构造与样式必须随绘制属性同代发布，不能遗留桥接中的旧工具参数。
+		merged.shapeTool = state.shapeTool;
+		merged.shapeStyle = state.shapeStyle;
 		merged.whiteboardStyle = state.whiteboardStyle;
 		merged.paintDevice = state.paintDevice;
 		merged.eraserInputs = state.eraserInputs;
@@ -334,6 +375,7 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 	{
 		if ((msg == Inkeys::Drawing::Draw3::Detail::kMouseInputOwnerMessage &&
 			wParam == Inkeys::Drawing::Draw3::Detail::kMouseInputStop) ||
+			Inkeys::Drawing::Draw3::Detail::IsTouchpadNavigationStopMessage(msg,wParam) ||
 			Inkeys::Drawing::Draw3::ProductRunning())
 			return Inkeys::Drawing::Draw3::ForwardProductMessage(hWnd, msg, wParam, lParam);
 	}

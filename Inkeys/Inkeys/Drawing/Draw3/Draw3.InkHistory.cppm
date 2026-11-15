@@ -175,7 +175,16 @@ export namespace Inkeys::Drawing::Draw3
 		size_t visibleBarrierCount_ = 0;
 	};
 
-	// Runtime sidecar 只切换尾部可见性；Stroke 保持 append-only，redo 分支可逻辑丢弃。
+	// 操作顺序与绘制层序分离；追加不复制笔迹，编辑才保存语义前后快照。
+	enum class CanvasOperationKind : uint8_t { Append, Replace };
+	struct CanvasOperation
+	{
+		CanvasOperationKind kind = CanvasOperationKind::Append;
+		RenderItemId item;
+		std::optional<InkStroke> before, after;
+	};
+
+	// Render sidecar 管理绘制项可见性与 Tile；文档操作 journal 由页面 runtime 统一持有。
 	class CanvasRuntimeHistory
 	{
 	public:

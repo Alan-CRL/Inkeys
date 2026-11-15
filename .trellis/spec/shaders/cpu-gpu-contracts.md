@@ -1,5 +1,9 @@
 # CPU/GPU Contracts
 
+## 参数化图形扩展
+
+2026-10-17起新增独立shape VS/PS，64-byte GpuPrimitive复用t0四槽、独立b4=64bytes；不改变本页旧ink/32-byte ShapePrimitive协议。完整字段、材质合成及生命周期见[参数化图形合同](../native-desktop/shapes.md)。
+
 ## Structured Buffers
 
 ### InkPoint

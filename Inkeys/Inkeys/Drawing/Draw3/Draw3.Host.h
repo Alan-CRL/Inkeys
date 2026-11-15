@@ -460,6 +460,7 @@ namespace Inkeys::Drawing::Draw3
 		bool SetWorkspaceTransitionPending(std::uint64_t epoch, bool pending,
 			std::uint64_t expectedHostGeneration) noexcept;
 		Bridge::CommandResult PublishCommand(Bridge::CommandType command) noexcept;
+		Bridge::CommandResult PublishShapeAction(const ShapeUiAction&) noexcept;
 		Bridge::CommandResult PublishWhiteboardTheme(WhiteboardTheme theme, std::uint64_t generation, std::size_t page) noexcept;
 		Shortcuts::Context ShortcutContext() const noexcept;
 		std::uint64_t PublishShortcutCommand(Bridge::CommandType type,

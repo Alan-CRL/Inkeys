@@ -11,6 +11,7 @@
 #include <span>
 #include <utility>
 #include <vector>
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 
 module Inkeys.Drawing.Draw3.ink_history;
 
@@ -419,6 +420,34 @@ namespace Inkeys::Drawing::Draw3
 			std::vector<SignedTileCoordinate> result;
 			const std::span<const StoredInkPoint> points = stroke.Points();
 			const StoredInkType inkType = stroke.Style().inkType;
+			if (inkType == StoredInkType::Shape)
+			{
+				const auto* geometry = stroke.ShapeGeometry();
+				if (!geometry) return std::nullopt;
+				// 辅助虚线按实线保守覆盖，辅助点使用填充边界；不改变本体命中几何。
+				draw3::shapes::GeometryResult auxiliary;
+				if (!stroke.Shape() || !draw3::shapes::BuildAuxiliaryGeometry(*stroke.Shape(),auxiliary)) return std::nullopt;
+				const auto addParts = [&](const auto& parts) -> bool
+				{
+					for (const auto& part : parts)
+					{
+						if (part.style.fill && part.bounds.valid && !AddRectangleTiles(
+							{part.bounds.left, part.bounds.top, part.bounds.right, part.bounds.bottom},
+							tileSize, visible, result)) return false;
+						if (!part.style.stroke) continue;
+						const double padding = part.style.width * 0.5 + kFootprintAaPadding;
+						for (const auto& path : part.paths)
+							for (size_t i = 1; i < path.points.size(); ++i)
+								if (!AddSegmentTiles({path.points[i-1].x, path.points[i-1].y},
+									{path.points[i].x, path.points[i].y}, padding, padding,
+									tileSize, visible, visibleTiles, result)) return false;
+					}
+					return true;
+				};
+				if (!addParts(geometry->parts) || !addParts(auxiliary.parts)) return std::nullopt;
+				NormalizeTiles(result);
+				return result;
+			}
 			if (IsStoredShapeType(inkType))
 			{
 				const PointD first{ points[0].x, points[0].y };
@@ -528,6 +557,13 @@ namespace Inkeys::Drawing::Draw3
 
 		std::optional<InkPixelBounds> ComputeStrokeBounds(const InkStroke& stroke) noexcept
 		{
+			if (stroke.Style().inkType == StoredInkType::Shape)
+			{
+				const auto* geometry = stroke.ShapeGeometry();
+				if (!geometry || !geometry->bounds.valid) return std::nullopt;
+				const auto& bounds = geometry->bounds;
+				return InkPixelBounds{bounds.left, bounds.top, bounds.right, bounds.bottom};
+			}
 			const std::span<const StoredInkPoint> points = stroke.Points();
 			if (!stroke.IsValid() || points.empty()) return std::nullopt;
 			if (IsStoredShapeType(stroke.Style().inkType))

@@ -17,6 +17,7 @@
 #include <ink_stroke_modeler/stroke_modeler.h>
 
 #include "Draw3.SpeedEraser.h"
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 
 export module Inkeys.Drawing.Draw3.ink_prediction;
 
@@ -632,6 +633,15 @@ export namespace Inkeys::Drawing::Draw3
 	StoredStrokeRasterResult DrawStoredStroke(const InkStroke& stroke, InkRenderer& renderer,
 		const StoredStrokeRasterTarget& target, std::vector<InkPoint>& pointScratch,
 		HighlighterGeometry& highlighterScratch);
+
+	// 编辑焦点层：把一项画进调用方操作层（L2 不含该项）。普通墨迹与图形都可；transientShape 非空时
+	// 以一次性候选图形代替其显示，不进入长期图形缓存。调用方负责先清空目标层。
+	StoredStrokeRasterResult DrawFocusLayerItem(const InkStroke& stroke,
+		const ::draw3::shapes::ShapeObject* transientShape, InkRenderer& renderer,
+		const StoredStrokeRasterTarget& target, std::vector<InkPoint>& pointScratch,
+		HighlighterGeometry& highlighterScratch);
+	// 落定：焦点层与单位 L0 按完成笔画首次提交的同一仿射算子解析到 L2。
+	bool ResolveFocusLayerToL2(InkRenderer& renderer, const OperatorLayerResources& focusLayer, RECT dirty);
 
 	// 将矩形并入已有脏区。
 	void UnionRectInPlace(RECT& target, const RECT& addition);

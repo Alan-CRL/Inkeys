@@ -16,6 +16,7 @@ import Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
 import Inkeys.UI.Ppt;
 import Inkeys.UI.PageControl;
+import Inkeys.UI.SelectionOverlay;
 import Inkeys.UI.Whiteboard;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Helper.Thread;
@@ -60,6 +61,8 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include <iterator>
 #include <io.h>
 
+int RunShapeCoreTests();
+
 #include "IdtConfiguration.h"
 #include "Inkeys/Drawing/Draw3/Draw3.HapticDiagnostics.h"
 #include "Inkeys/Input/UiPointerDiagnostics.h"
@@ -79,6 +82,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "IdtTime.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
 #include "Inkeys/Drawing/Draw3/Draw3.HiddenWindowTest.h"
+#include "Inkeys/Drawing/Draw3/Draw3.ShapeRendererTests.h"
 #include "Inkeys/Drawing/Draw3/Draw3.PerformanceProbe.h"
 #include "Inkeys/Drawing/Draw3/Draw3.HistoryProbe.h"
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
@@ -1924,6 +1928,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunWhiteboardPatternValidation(); });
 		}
 		// PowerShell 启动可能追加空格；按 argv 识别 GPU 自检，坏参数仍先于产品窗口退出。
+		if (count > 1 && wcscmp(arguments[1], L"--draw3-shape-renderer-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::Drawing::Draw3::RunShapeRendererTests();
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--draw3-shape-core-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return RunShapeCoreTests() + Inkeys::Drawing::Draw3::RunShapeDocumentProductionTest();
+		}
 		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
 			L"--draw3-renderer-pixel-test", -1, TRUE) == CSTR_EQUAL)
 		{
@@ -1939,11 +1955,37 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (count != 2) return 2;
 			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunRendererHardwarePixelTest(); });
 		}
+		if (count > 1 && wcscmp(arguments[1], L"--shape-editor-native-input-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::UI::SelectionOverlay::RunNativeInputRoutingTests();
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--ui3-shape-editor-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::UI::Bar::RunShapeEditorOffscreenTest();
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--ui3-geometry-attribute-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::UI::Bar::RunGeometryAttributeOffscreenTest();
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--shape-tool-state-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return RunShapeToolStateProductionTest();
+		}
 		if (count > 1 && wcscmp(arguments[1], L"--state-mode-production-test") == 0)
 		{
 			// 先退出启动链；保存隔离仅用临时目录，FineDial 只检查失效/取消提交。
 			LocalFree(arguments);
 			if (count != 2) return 2;
+			const int constructionResult = Inkeys::UI::Bar::RunConstructionAutoCollapseProductionTest();
+			if (constructionResult != 0) return constructionResult;
 			const int stateResult = RunStateModeProductionTest();
 			return stateResult != 0 ? stateResult
 				: Inkeys::UI::Bar::RunThicknessFineDialProductionTest();
@@ -2136,6 +2178,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-eraser-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(true); });
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-shape-focus-hidden-test", -1, TRUE) == CSTR_EQUAL)
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunShapeFocusHiddenTest(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--draw3-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunHiddenWindowIntegrationTest(); });
@@ -3992,6 +4037,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					{
 						NotifyWhiteboardWindowMinimizedChanged();
 						Inkeys::UI::PageControl::NotifyLayoutChanged();
+						Inkeys::UI::SelectionOverlay::NotifyStateChanged();
 						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
 						Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::WhiteboardFreeze);
 					};
@@ -4053,6 +4099,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::UI::Ppt::WindowProc(), 0, touchRegisterFuc("middle-right"));
 		AddOverlayWindow(Inkeys::Window::WindowRole::Bar, L"Inkeys5;", L"Inkeys BarWindow",
 			Inkeys::UI::Bar::WindowProc(), 0, touchRegisterFuc("bar"));
+
+		windowSpecs.push_back(Inkeys::UI::SelectionOverlay::MakeWindowSpec());
 
 		Inkeys::Window::WindowSpec settingSpec;
 		settingSpec.role = Inkeys::Window::WindowRole::Setting;
@@ -4294,6 +4342,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return 1;
 		}
 
+		if (!Inkeys::UI::SelectionOverlay::Acquire())
+		{
+			// 与窗口层级失败同序退场；Acquire 失败时未进入 running，无需 Release。
+			SetOffSignal(1);
+			windowService.SetTopmostRefreshObserver({});
+			PublishFatalStartupFailure(0xB003u, L"图形编辑表面初始化失败。");
+			if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
+			Inkeys::UI::Setting::Shutdown();
+			Inkeys::Drawing::Draw3::StopProduct();
+			windowService.StopAndJoin();
+			Inkeys::UI::RenderPipeline::Shutdown();
+			return 1;
+		}
 		IDTLogger->info("[主线程][IdtMain] 窗口初始化完成");
 	}
 	// Draw3 Host 已初始化唯一 RTS producer；不再启动 Draw2 RTS/速度线程。
@@ -4447,6 +4508,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	// Preview 先停止接收 render callback，再注销并销毁 owner HWND。
 	{ ShutdownTrace::Scope trace("main-topmost-observer"); Inkeys::Window::GetService().SetTopmostRefreshObserver({}); }
 	{ ShutdownTrace::Scope trace("main-startup-preview"); Inkeys::UI::StartupPreview::Stop(); }
+	// 当前对象编辑先注销输入和共享渲染，随后才停止画布和窗口 owner。
+	{ ShutdownTrace::Scope trace("main-selection-overlay"); Inkeys::UI::SelectionOverlay::Release(); }
 	if (whiteboardFeatureEnabled) { ShutdownTrace::Scope trace("main-whiteboard"); Inkeys::UI::Whiteboard::Shutdown(); }
 	if (ui3InitializationThread.joinable()) { ShutdownTrace::Scope trace("main-join-ui3-initialization"); ui3InitializationThread.join(); }
 	if (freezeFrameThread.joinable()) { ShutdownTrace::Scope trace("main-join-freeze"); freezeFrameThread.join(); }

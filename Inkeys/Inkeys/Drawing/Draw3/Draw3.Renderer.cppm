@@ -4,6 +4,7 @@
 #define NOMINMAX
 #endif
 
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 #include "Draw3.EraserCursor.h"
 
 #include <cstddef>
@@ -265,6 +266,21 @@ export namespace Inkeys::Drawing::Draw3
 			ID3D11BlendState* blendStateOverride = nullptr,
 			float cornerRadiusOverride = -1.0f,
 			ID3D11RasterizerState* rasterStateOverride = nullptr);
+		// 混合新旧多点图形时保留旧 shader 像素，但逐对象按 source-over 提交。
+		bool DrawOrderedLegacyShapePrimitive(const ShapePrimitive& primitive,
+			ShapePrimitiveKind kind, DirectX::XMFLOAT4 color);
+		// 通用图形接入当前操作层；内部先按材质合成，最后一次提交到调用方 MRT。
+		bool DrawShapeObject(const ::draw3::shapes::ShapeObject& object,
+			float originX = 0, float originY = 0, float displayScale = 1);
+		bool DrawShapeRenderData(const ::draw3::shapes::RenderData& data,
+			float originX = 0, float originY = 0);
+		// 一次性候选（编辑拖动预览）不进入 id/revision 缓存，避免预览修订挤出其他图形。
+		bool DrawTransientShapeObject(const ::draw3::shapes::ShapeObject& object,
+			float originX = 0, float originY = 0, float displayScale = 1);
+		std::size_t ShapeRenderCacheSize() const noexcept;
+		// 页面权威安装清空派生缓存；单对象重放可仅淘汰其全部历史修订。
+		void ClearShapeRenderCache() noexcept;
+		void InvalidateShapeCache(const ::draw3::shapes::ObjectId& id) noexcept;
 		// 按 DPI 配置固定 4 DIP 圆角。
 		void ConfigureShapePrimitives(float dpiScale) noexcept;
 		// 以零像素视口预热 shape 16..19，避免首次选用时驱动延迟编译。
@@ -389,6 +405,24 @@ export namespace Inkeys::Drawing::Draw3
 			bool enableZhaoxinCompatibility);
 
 	private:
+		// 与设备同寿命的独立 shader/b4，以及按当前目标尺寸惰性分配的操作层。
+		bool EnsureShapePipeline();
+		bool EnsureShapeLayers();
+		bool DrawShapeBatch(const ::draw3::shapes::RenderBatch&, float originX, float originY);
+		bool ResolveShapeLayer(const OperatorLayerResources&, ID3D11RenderTargetView* const*, RECT);
+		Microsoft::WRL::ComPtr<ID3D11VertexShader> shapeVertexShader_;
+		Microsoft::WRL::ComPtr<ID3D11PixelShader> shapePixelShader_;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> shapeCB_;
+		Microsoft::WRL::ComPtr<ID3D11BlendState> shapeOrderedBlend_;
+		OperatorLayerResources shapeMaterialLayer_, shapeCompositeLayer_;
+		struct ShapeRenderCacheEntry
+		{
+			::draw3::shapes::ObjectId id;
+			uint64_t revision;
+			float displayScale;
+			::draw3::shapes::RenderData data;
+		};
+		std::vector<ShapeRenderCacheEntry> shapeRenderCache_;
 		friend int RunRendererUploadValidation() noexcept;
 		friend int RunCanvasDebugOverlayValidation() noexcept;
 		friend int RunWhiteboardPatternValidation() noexcept;

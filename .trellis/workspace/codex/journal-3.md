@@ -106,6 +106,34 @@
 [OK] **Completed**
 
 
+## Session 178: 图形整改：规划、编辑性能与图标（检查点）
+<!-- trellis-session: v=2 fp=d5a9916fb0dc3706 -->
+
+**Date**: 2026-11-05
+**Task**: 图形整改：规划、编辑性能与图标（检查点）
+**Branch**: `feature/shape`
+
+### Summary
+
+拆分图形交互与样式整改为6子任务；edit-performance 以 L1 焦点层+预览合并完成；图标统一；P7 套索调研归档；按用户检查点停在 edit-interaction 之前。
+
+### Main Changes
+
+- 编辑中的图形停留 L1，失焦统一落定；预览 latest-wins；浮层本地跟手
+- 28 个图形 SVG 统一风格；数据兼容修复合并（e4d33796）
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `238f3afb` | chore(task): plan shape interaction and style rework |
+| `a58400aa` | feat(ui3): unify shape category icon style |
+| `e2f33d86` | docs(task): archive lasso and mid-Z move research for phase 7 |
+| `4d00bf11` | perf(shapes): keep edited shape in L1 and coalesce edit previews |
+
+### Testing
+
+- [OK] [OK] Debug|ARM64 构建；12 项离屏/无头回归 exit 0；4K/2000 笔基准焦点层每帧约 26-39ms
 ## Session 181: Canvas debug overlay, visual mode and per-device stroke reconnect
 <!-- trellis-session: v=2 fp=9617f1f5915e6606 -->
 
@@ -161,6 +189,7 @@ Added the Draw3 canvas debug plate (FPS, load, 60s chart, aligned contact table 
 
 ### Next Steps
 
+- 读 .trellis/tasks/11-05-shape-ux-rework/handoff.md，start edit-interaction
 - 高风险按需纹理、Freeze/Setting资源恢复、历史回收与进一步legacy去重尚未实施，等待用户确认；WPR补采需Windows管理员权限。
 
 
@@ -481,3 +510,43 @@ User final device test accepted. Touch release decisions, bounded fallback, curs
 
 - 未来采用多线程动态绑定：旧Unadvise/Release被闸门阻塞时，新绑定仍可Active，且旧回调/命令/页码不污染新session；本轮未实现。
 - 同步清理阻塞仍待后续架构处理；两次结束放映后未响应需对应现场，不能视作已修复。
+
+
+## Session 187: 形状第十一轮收尾与合并 dev 前审阅
+<!-- trellis-session: v=2 fp=4bd19ade8d5c25b9 -->
+
+**Date**: 2026-11-15
+**Task**: 形状第十一轮收尾与合并 dev 前审阅
+**Branch**: `feature/shape`
+
+### Summary
+
+主栏触摸与鼠标同准入、手掌与图形规则、移除未要求的局部键盘操作，并归档整棵图形任务树
+
+### Main Changes
+
+- 删除主栏手写触摸名单；所有建笔失败释放 touch key；构造确认幂等
+- 手掌：构造中/编辑模式禁用，空闲多步工具可提升并取消本触点新建构造
+- 移除主栏/图形编辑/橡皮/撤回/取色器键盘与白板菜单 Esc；保留全局快捷键与 PPT 转发
+- Claude 规划/审阅，Codex gpt-6.1-sol High 审阅与实现
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b0f96e29` | refactor(shapes): unify bar touch admission and clean up before dev merge |
+| `3375f115` | chore(trellis): archive shape selection task tree |
+
+### Testing
+
+- [OK] InkeysRepo.sln 与 inkStrokeModelerTest.sln Debug|ARM64 构建通过
+- [OK] 7 组离屏测试 0 失败；headless whiteboard iconic 与 highlighter line 663 为 dev 既有失败
+- [OK] 实机验证通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 由用户开启 feature/shape -> dev PR

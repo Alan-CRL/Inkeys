@@ -21,6 +21,7 @@
 #include <windows.h>
 
 #include "Draw3.SpeedEraser.h"
+#include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 
 module Inkeys.Drawing.Draw3.ink_prediction;
 
@@ -1089,6 +1090,17 @@ namespace Inkeys::Drawing::Draw3
 		renderer.SetScreenSize(static_cast<float>(target.width),
 			static_cast<float>(target.height));
 		renderer.SetOperatorTarget(*target.operatorLayer);
+		if (style.inkType == StoredInkType::Shape)
+		{
+			const auto* geometry = stroke.ShapeGeometry();
+			if (!stroke.Shape() || !geometry ||
+				!renderer.DrawShapeObject(*stroke.Shape(), target.originX, target.originY)) return {};
+			const auto& b = geometry->bounds;
+			return { true, ClampRectToCanvas({SaturatingFloorToLong(double(b.left)-target.originX),
+				SaturatingFloorToLong(double(b.top)-target.originY),
+				SaturatingCeilToLong(double(b.right)-target.originX),
+				SaturatingCeilToLong(double(b.bottom)-target.originY)}, target.width, target.height) };
+		}
 		if (const std::optional<ShapePrimitiveKind> shapeKind =
 			ShapeKindForStoredType(style.inkType))
 		{
@@ -1145,6 +1157,34 @@ namespace Inkeys::Drawing::Draw3
 				pointScratch, target.width, target.height));
 		}
 		return { true, dirty };
+	}
+
+	StoredStrokeRasterResult DrawFocusLayerItem(const InkStroke& stroke,
+		const ::draw3::shapes::ShapeObject* transientShape, InkRenderer& renderer,
+		const StoredStrokeRasterTarget& target, std::vector<InkPoint>& pointScratch,
+		HighlighterGeometry& highlighterScratch)
+	{
+		if (!transientShape)
+			return DrawStoredStroke(stroke, renderer, target, pointScratch, highlighterScratch);
+		if (!target.operatorLayer || !target.operatorLayer->addRTV || !target.operatorLayer->retainRTV ||
+			target.width <= 0 || target.height <= 0 || !std::isfinite(target.originX) || !std::isfinite(target.originY)) return {};
+		// 拖动候选的修订只存在一帧：几何只求外框，绘制走无缓存入口。
+		::draw3::shapes::GeometryResult geometry;
+		if (!::draw3::shapes::BuildGeometry(*transientShape, geometry, { 1.0f, 0.25f }) || !geometry.bounds.valid) return {};
+		renderer.SetScreenSize(static_cast<float>(target.width), static_cast<float>(target.height));
+		renderer.SetOperatorTarget(*target.operatorLayer);
+		if (!renderer.DrawTransientShapeObject(*transientShape, target.originX, target.originY)) return {};
+		const auto& b = geometry.bounds;
+		return { true, ClampRectToCanvas({SaturatingFloorToLong(double(b.left)-target.originX),
+			SaturatingFloorToLong(double(b.top)-target.originY),
+			SaturatingCeilToLong(double(b.right)-target.originX),
+			SaturatingCeilToLong(double(b.bottom)-target.originY)}, target.width, target.height) };
+	}
+
+	bool ResolveFocusLayerToL2(InkRenderer& renderer, const OperatorLayerResources& focusLayer, RECT dirty)
+	{
+		if (IsEmptyRect(dirty)) return true;
+		return renderer.ApplyOperatorLayers(renderer.layerL2RTV.Get(), focusLayer, renderer.layerL0, dirty);
 	}
 
 	ActiveStroke::ActiveStroke(float baseDiameter, float expectedSpeed,

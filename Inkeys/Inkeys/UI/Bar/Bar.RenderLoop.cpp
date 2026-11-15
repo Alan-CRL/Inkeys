@@ -13,6 +13,7 @@ module;
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../Business/PenToolState.hpp"
 #include "../../../IdtState.h"
+#include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "../../Window/Window.Legacy.hpp"
 #include "Bar.DirtyRegion.h"
 #include "Bar.ThemeMaterial.h"
@@ -37,6 +38,7 @@ module;
 
 module Inkeys.UI.Bar;
 import :Main;
+import :Scene;
 import :Rendering;
 import :Scene;
 import :Layout;
@@ -269,14 +271,6 @@ enum class ThicknessFineDialRangeTransitionPhase
 	RetireOldRange,
 };
 
-enum class BarBottomDockIndicatorContentPhase
-{
-	Stable,
-	ExpandingFrame,
-	SwappingText,
-	ShrinkingFrame,
-};
-
 struct BarRenderFrameSnapshot
 {
 	std::vector<std::shared_ptr<BarButtonClass>> mainButtons;
@@ -359,6 +353,8 @@ using Inkeys::UI::Bar::BarBottomDockHorizontalMapping;
 using Inkeys::UI::Bar::BarBottomDockFeedbackAction;
 using Inkeys::UI::Bar::BarBottomDockFeedbackGeometry;
 using Inkeys::UI::Bar::BarBottomDockIndicatorContentAction;
+using Inkeys::UI::Bar::BarBottomDockIndicatorContentPhase;
+using Inkeys::UI::Bar::AdvanceBarIndicatorContent;
 using Inkeys::UI::Bar::BarBottomDockIndicatorCornerRadiusDip;
 using Inkeys::UI::Bar::BarBottomDockIndicatorHeightDip;
 using Inkeys::UI::Bar::BarPresentMappingMode;
@@ -427,7 +423,8 @@ enum class BarDirtyFixedVisual : BarDirtyVisualKey
 	DockTargetIndicator = 0xFFFF000000000007ULL,
 	EraserAttributeGroup = 0xFFFF000000000008ULL,
 	RecallAttributeGroup = 0xFFFF000000000009ULL,
-	StatusIndicator = 0xFFFF00000000000AULL,
+	GeometryPanelGroup = 0xFFFF00000000000AULL,
+	StatusIndicator = 0xFFFF00000000000BULL,
 };
 
 [[nodiscard]] BarDirtyVisualKey GetBarDirtyVisualKey(const void* visual) noexcept
@@ -578,6 +575,7 @@ struct BarRenderLoopState
 	std::atomic<unsigned long long>& mainButtonClickPulseSerial;
 	// 初始化和逐帧更新均从模式锁内复制，绘制阶段只读本帧值。
 	StateModeClass stateModeSnapshot = GetStateModeSnapshot();
+	RECT editorAvoidanceBounds{};
 	WorkspaceSceneSnapshot workspaceSnapshot = GetWorkspaceSceneSnapshot();
 
 	unsigned long long barDeviceResourceFailureGeneration = 0;
@@ -1235,7 +1233,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::WakeAndSnapshot(
 	const auto& stateMode = state.stateModeSnapshot;
 	frame.stateMode = stateMode.StateModeSelect;
 	frame.penMode = stateMode.Pen.ModeSelect;
-	frame.brush1Color = stateMode.Pen.Brush1.color;
+	// Shape 使用当前图形颜色驱动既有主光源，独立颜色槽不借用已记忆的画笔色。
+	frame.brush1Color = stateMode.StateModeSelect == StateModeSelectEnum::IdtShape
+		? GetPenColor(stateMode) : stateMode.Pen.Brush1.color;
 	frame.highlighterColor = stateMode.Pen.Highlighter1.color;
 	frame.laserColor = stateMode.Pen.Laser.color;
 	frame.laserActive = stateMode.laserActive;
@@ -4480,386 +4480,8 @@ for (size_t i = 0; i < 3; ++i)
 				}
 			}
 
-			// 几何属性使用独立批次，但允许在主栏动画前半段加入同一截止时间。
-			{
-				bool batchChange = geometryAttributeVisibilityChange
-					|| geometryAttributeSideSwitch;
-				operationDur = BarUiDefaultOperationDur;
-				double phase = 0.0;
-				bool continuePhase = false;
-				if (batchChange)
-				{
-					if (state.mainBarTimeline.CanJoin())
-					{
-						operationDur = state.mainBarTimeline.GetRemainingDuration();
-						phase = state.mainBarTimeline.GetProgress();
-						continuePhase = phase > 0.0;
-					}
-					state.geometryAttributeTimeline.Restart(operationDur);
-				}
-				else if (state.geometryAttributeTimeline.IsActive())
-				{
-					operationDur = state.geometryAttributeTimeline.GetRemainingDuration();
-					phase = state.geometryAttributeTimeline.GetProgress();
-					continuePhase = phase > 0.0;
-				}
-				syncValueCurveFromBatch = state.geometryAttributeTimeline.IsActive();
-				BarUiCurveEnum valueCurve = state.geometryAttributeTimeline.IsActive()
-					? (state.barState.geometryAttribute
-						? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack)
-					: BarUiCurveEnum::EaseInOutCubic;
-				BarUiCurveEnum pctCurve = state.geometryAttributeTimeline.IsActive()
-					&& !state.barState.geometryAttribute
-					? BarUiCurveEnum::EaseInSine : BarUiCurveEnum::EaseOutSine;
-				syncedValueCurve = { valueCurve, valueCurve, phase, continuePhase };
-				syncedPctCurve = { pctCurve, pctCurve, phase, continuePhase };
-				const BarUiCurveSpecClass sideValueCurve{
-					BarUiCurveEnum::EaseInCubic, BarUiCurveEnum::EaseOutBack,
-					phase, continuePhase };
-				const BarUiCurveSpecClass sidePctCurve{
-					BarUiCurveEnum::EaseOutSine, BarUiCurveEnum::EaseOutSine,
-					phase, continuePhase };
-				auto Compact = [](double value)
-					{
-						return value * BarGeometryAttributeCompactScale;
-					};
-				double layoutScale = state.barState.geometryAttribute
-					? 1.0 : BarGeometryAttributeCompactScale;
-				auto panel = state.shapeMap[BarUISetShapeEnum::GeometryAttributeBar];
-				panel->x.SetTar(0.0);
-				panel->y.SetTar(state.barState.geometryAttribute
-					? (state.barState.widgetPosition.primaryBar
-						? mainBar->GetH() / 2.0
-							+ BarGeometryAttributeExpandedHeight / 2.0 + 10.0
-						: -(mainBar->GetH() / 2.0
-							+ BarGeometryAttributeExpandedHeight / 2.0 + 10.0))
-					: 0.0);
-				panel->w.SetTar(state.barState.geometryAttribute
-					? BarGeometryAttributeExpandedWidth
-					: BarGeometryAttributeCompactWidth);
-				panel->h.SetTar(state.barState.geometryAttribute
-					? BarGeometryAttributeExpandedHeight
-					: BarGeometryAttributeCompactHeight);
-				panel->rw->SetTar(8.0 * layoutScale);
-				panel->rh->SetTar(8.0 * layoutScale);
-				panel->ft->SetTar(layoutScale);
-				panel->pct.SetTar(state.barState.geometryAttribute
-					? BarDrawAttributeSurfaceOpacity : 0.0);
-				panel->framePct->SetTar(state.barState.geometryAttribute ? 0.18 : 0.0);
-				panel->fill->SetTar(GetThemeColor(BarThemeColorEnum::Surface));
-				panel->frame->SetTar(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+			// 图形面板在下方统一推进共享按钮与属性开合运行时。
 
-				struct GeometryButtonLayout
-				{
-					BarUISetShapeEnum shape;
-					BarUISetWordEnum word;
-					double x;
-					double y;
-					double size;
-					bool label;
-					bool selected;
-					bool pressed;
-					IdtAtomic<BarButtonHoverStageEnum>* hoverStage;
-					BarUiValueClass* pressScale;
-				};
-				const GeometryButtonLayout buttons[] =
-				{
-					{ BarUISetShapeEnum::GeometryAttributeBar_StraightLine,
-						BarUISetWordEnum::GeometryAttributeBar_StraightLine,
-						5.0, 5.0, 50.0, true,
-						stateMode.Shape.ModeSelect
-							== ShapeModeSelectEnum::IdtShapeStraightLine1,
-						state.barState.geometryAttributeBar.straightLinePress,
-						&state.geometryStraightLineHoverStage,
-						&state.geometryStraightLinePressScale },
-					{ BarUISetShapeEnum::GeometryAttributeBar_Rectangle,
-						BarUISetWordEnum::GeometryAttributeBar_Rectangle,
-						60.0, 5.0, 50.0, true,
-						stateMode.Shape.ModeSelect
-							== ShapeModeSelectEnum::IdtShapeRectangle1,
-						state.barState.geometryAttributeBar.rectanglePress,
-						&state.geometryRectangleHoverStage,
-						&state.geometryRectanglePressScale },
-					{ BarUISetShapeEnum::GeometryAttributeBar_ThicknessFine,
-						BarUISetWordEnum::GeometryAttributeBar_ThicknessFineNumber,
-						230.0, 65.0, 30.0, false,
-						IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, 0,
-							state.barStyle.dpiZoom, stateMode),
-						state.barState.geometryAttributeBar.thicknessFinePress,
-						&state.geometryThicknessFineHoverStage,
-						&state.geometryThicknessFinePressScale },
-					{ BarUISetShapeEnum::GeometryAttributeBar_ThicknessMedium,
-						BarUISetWordEnum::GeometryAttributeBar_ThicknessMediumNumber,
-						265.0, 65.0, 30.0, false,
-						IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, 1,
-							state.barStyle.dpiZoom, stateMode),
-						state.barState.geometryAttributeBar.thicknessMediumPress,
-						&state.geometryThicknessMediumHoverStage,
-						&state.geometryThicknessMediumPressScale },
-					{ BarUISetShapeEnum::GeometryAttributeBar_ThicknessCoarse,
-						BarUISetWordEnum::GeometryAttributeBar_ThicknessCoarseNumber,
-						300.0, 65.0, 30.0, false,
-						IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, 2,
-							state.barStyle.dpiZoom, stateMode),
-						state.barState.geometryAttributeBar.thicknessCoarsePress,
-						&state.geometryThicknessCoarseHoverStage,
-						&state.geometryThicknessCoarsePressScale },
-				};
-				for (size_t index = 0; index < size(buttons); ++index)
-				{
-					const auto& button = buttons[index];
-					auto shape = state.shapeMap[button.shape];
-					auto word = state.wordMap[button.word];
-					shape->x.SetTar(button.x * layoutScale);
-					shape->y.SetTar(button.y * layoutScale);
-					shape->w.SetTar(button.size * layoutScale);
-					shape->h.SetTar(button.size * layoutScale);
-					shape->rw->SetTar(4.0 * layoutScale);
-					shape->rh->SetTar(4.0 * layoutScale);
-					shape->ft->SetTar(layoutScale);
-					Inkeys::UI::Bar::RetargetBarFixedButtonVisual({*shape,nullptr,nullptr,
-						button.pressScale,button.hoverStage},state.barState.geometryAttribute,
-						true,button.selected,button.pressed,BarUiDefaultOperationDur);
-
-					word->x.SetTar(button.x * layoutScale);
-					word->y.SetTar((button.label ? 35.0 : button.y) * layoutScale);
-					word->w.SetTar(button.size * layoutScale);
-					word->h.SetTar((button.label ? 15.0 : button.size) * layoutScale);
-					word->size.SetTar((button.label ? 11.0 : 10.0) * layoutScale);
-					word->color.SetTar(button.selected
-						? GetThemeColor(BarThemeColorEnum::Accent)
-						: GetThemeColor(BarThemeColorEnum::TextPrimary));
-					if (button.label)
-						word->pct.SetTar(state.barState.geometryAttribute ? 1.0 : 0.0);
-					else
-					{
-						double presetPx = GetBarThicknessPresetPx(
-							PenModeSelectEnum::IdtPenSoftPen, index - 2,
-							state.barStyle.dpiZoom, stateMode);
-						word->content.SetTar(Inkeys::UI::Bar::Detail::FormatWidthDipNumber(
-							GetBarThicknessPresetMetrics(PenModeSelectEnum::IdtPenSoftPen,
-								index - 2, stateMode).resolvedWidthDip));
-						double availableDiameter =
-							(BarGeometryAttributeThicknessButtonSize - 8.0)
-							* layoutScale * static_cast<double>(frameZoom);
-						word->pct.SetTar(state.barState.geometryAttribute
-							&& presetPx * layoutScale > availableDiameter ? 1.0 : 0.0);
-					}
-				}
-
-				// 面板与主栏复用同一组双色 SVG，避免两套图形风格逐渐分叉。
-				for (size_t index = 0; index < 2; ++index)
-				{
-					auto icon = state.svgMap[static_cast<BarUISetSvgEnum>(
-						static_cast<int>(BarUISetSvgEnum::GeometryAttributeBar_StraightLine)
-						+ static_cast<int>(index))];
-					const auto& button = buttons[index];
-					icon->x.SetTar((button.x + 11.0) * layoutScale);
-					icon->y.SetTar((button.y + 3.0) * layoutScale);
-					icon->SetWH(28.0 * layoutScale, 28.0 * layoutScale);
-					COLORREF iconColor = button.selected
-						? GetThemeColor(BarThemeColorEnum::Accent)
-						: GetThemeColor(BarThemeColorEnum::IconPrimary);
-					icon->color1->SetTar(iconColor);
-					icon->color2->SetTar(iconColor);
-					icon->pct.SetTar(state.barState.geometryAttribute
-						? (button.pressed ? 0.70 : 1.0) : 0.0);
-				}
-
-				auto close = state.shapeMap[
-					BarUISetShapeEnum::GeometryAttributeBar_Close];
-				close->x.SetTar(300.0 * layoutScale);
-				close->y.SetTar(5.0 * layoutScale);
-				close->w.SetTar(30.0 * layoutScale);
-				close->h.SetTar(30.0 * layoutScale);
-				close->rw->SetTar(4.0 * layoutScale);
-				close->rh->SetTar(4.0 * layoutScale);
-				close->ft->SetTar(layoutScale);
-				close->fill->SetTar(GetThemeColor(BarThemeColorEnum::PressedFill));
-				if (!state.barState.geometryAttribute) close->pct.SetTar(0.0);
-				else if (state.barState.geometryAttributeBar.closePress)
-					close->pct.SetTar(0.10);
-				else if (state.geometryCloseHoverStage == BarButtonHoverStageEnum::None)
-					close->pct.SetTar(0.0);
-				state.geometryClosePressScale.SetTar(
-					state.barState.geometryAttributeBar.closePress
-						? BarButtonPressScale : 1.0,
-					BarUiDefaultOperationDur, nullopt, false,
-					state.barState.geometryAttributeBar.closePress
-						? state.buttonPressCurve : state.buttonReleaseCurve);
-				auto closeSvg = state.svgMap[
-					BarUISetSvgEnum::GeometryAttributeBar_Close];
-				closeSvg->x.SetTar(306.0 * layoutScale);
-				closeSvg->y.SetTar(11.0 * layoutScale);
-				closeSvg->SetWH(18.0 * layoutScale, 18.0 * layoutScale);
-				closeSvg->color1->SetTar(
-					GetThemeColor(BarThemeColorEnum::IconPrimary));
-				closeSvg->pct.SetTar(state.barState.geometryAttribute ? 1.0 : 0.0);
-
-				auto divider = state.shapeMap[
-					BarUISetShapeEnum::GeometryAttributeBar_Divider];
-				divider->x.SetTar(5.0 * layoutScale);
-				divider->y.SetTar(60.0 * layoutScale);
-				divider->w.SetTar(325.0 * layoutScale);
-				divider->h.SetTar(BarUiDividerWidth * layoutScale);
-				divider->rw->SetTar(BarUiDividerRadius * layoutScale);
-				divider->rh->SetTar(BarUiDividerRadius * layoutScale);
-				divider->ft->SetTar(layoutScale);
-				divider->fill->SetTar(GetThemeColor(BarThemeColorEnum::Divider));
-				divider->frame->SetTar(GetThemeColor(BarThemeColorEnum::Divider));
-				divider->pct.SetTar(state.barState.geometryAttribute ? 0.30 : 0.0);
-				divider->framePct->SetTar(0.0);
-				divider->frameLightPct->SetTar(state.barState.geometryAttribute ? 1.0 : 0.0);
-
-				auto SyncGeometryShape = [&](const shared_ptr<BarUiShapeClass>& shape)
-					{
-						SyncValueDuration(shape->x); SyncValueDuration(shape->y);
-						SyncValueDuration(shape->w); SyncValueDuration(shape->h);
-						if (shape->rw) SyncValueDuration(*shape->rw);
-						if (shape->rh) SyncValueDuration(*shape->rh);
-						if (shape->ft) SyncValueDuration(*shape->ft);
-						SyncPctDuration(shape->pct);
-						if (shape->framePct) SyncPctDuration(*shape->framePct);
-						if (shape->frameLightPct) SyncPctDuration(*shape->frameLightPct);
-					};
-				for (int value = static_cast<int>(BarUISetShapeEnum::GeometryAttributeBar);
-					value <= static_cast<int>(
-						BarUISetShapeEnum::GeometryAttributeBar_Close); ++value)
-					SyncGeometryShape(state.shapeMap[static_cast<BarUISetShapeEnum>(value)]);
-				for (int value = static_cast<int>(
-					BarUISetSvgEnum::GeometryAttributeBar_StraightLine);
-					value <= static_cast<int>(BarUISetSvgEnum::GeometryAttributeBar_Close);
-					++value)
-				{
-					auto svg = state.svgMap[static_cast<BarUISetSvgEnum>(value)];
-					SyncValueDuration(svg->x); SyncValueDuration(svg->y);
-					SyncValueDuration(svg->w); SyncValueDuration(svg->h);
-					SyncValueDuration(svg->angle);
-					SyncPctDuration(svg->pct);
-				}
-				for (int value = static_cast<int>(
-					BarUISetWordEnum::GeometryAttributeBar_StraightLine);
-					value <= static_cast<int>(
-						BarUISetWordEnum::GeometryAttributeBar_ThicknessCoarseNumber); ++value)
-				{
-					auto word = state.wordMap[static_cast<BarUISetWordEnum>(value)];
-					SyncValueDuration(word->x); SyncValueDuration(word->y);
-					SyncValueDuration(word->w); SyncValueDuration(word->h);
-					SyncValueDuration(word->size); SyncPctDuration(word->pct);
-				}
-
-				auto RestartShape = [&](const shared_ptr<BarUiShapeClass>& shape,
-					bool sideSwitch, bool root)
-					{
-						auto middle = [&](double value, bool keepAtZero = false)
-							{
-								return keepAtZero ? 0.0 : Compact(value);
-							};
-						const auto& curve = sideSwitch ? sideValueCurve : syncedValueCurve;
-						const auto& opacityCurve = sideSwitch ? sidePctCurve : syncedPctCurve;
-						optional<double> middleX = sideSwitch
-							? optional<double>(root ? 0.0 : middle(shape->x.tar)) : nullopt;
-						optional<double> middleY = sideSwitch
-							? optional<double>(root ? 0.0 : middle(shape->y.tar)) : nullopt;
-						optional<double> middleW = sideSwitch ? optional<double>(root
-							? BarGeometryAttributeCompactWidth
-							: max(1.0, middle(shape->w.tar))) : nullopt;
-						optional<double> middleH = sideSwitch ? optional<double>(root
-							? BarGeometryAttributeCompactHeight
-							: max(1.0, middle(shape->h.tar))) : nullopt;
-						shape->x.SetTar(shape->x.tar, operationDur, middleX, true, curve);
-						shape->y.SetTar(shape->y.tar, operationDur, middleY, true, curve);
-						shape->w.SetTar(shape->w.tar, operationDur, middleW, true, curve);
-						shape->h.SetTar(shape->h.tar, operationDur, middleH, true, curve);
-						if (shape->rw) shape->rw->SetTar(shape->rw->tar, operationDur,
-							sideSwitch ? optional<double>(middle(shape->rw->tar)) : nullopt,
-							true, curve);
-						if (shape->rh) shape->rh->SetTar(shape->rh->tar, operationDur,
-							sideSwitch ? optional<double>(middle(shape->rh->tar)) : nullopt,
-							true, curve);
-						if (shape->ft) shape->ft->SetTar(shape->ft->tar, operationDur,
-							sideSwitch ? optional<double>(middle(shape->ft->tar)) : nullopt,
-							true, curve);
-						shape->pct.SetTar(shape->pct.tar, operationDur,
-							sideSwitch ? optional<double>(0.0) : nullopt, true, opacityCurve);
-						if (shape->framePct) shape->framePct->SetTar(shape->framePct->tar,
-							operationDur, sideSwitch ? optional<double>(0.0) : nullopt,
-							true, opacityCurve);
-						if (shape->frameLightPct) shape->frameLightPct->SetTar(
-							shape->frameLightPct->tar, operationDur,
-							sideSwitch ? optional<double>(0.0) : nullopt, true, opacityCurve);
-					};
-				auto RestartSvg = [&](const shared_ptr<BarUiSVGClass>& svg)
-					{
-						const auto& curve = geometryAttributeSideSwitch
-							? sideValueCurve : syncedValueCurve;
-						const auto& opacityCurve = geometryAttributeSideSwitch
-							? sidePctCurve : syncedPctCurve;
-						svg->x.SetTar(svg->x.tar, operationDur,
-							geometryAttributeSideSwitch
-								? optional<double>(Compact(svg->x.tar)) : nullopt,
-							true, curve);
-						svg->y.SetTar(svg->y.tar, operationDur,
-							geometryAttributeSideSwitch
-								? optional<double>(Compact(svg->y.tar)) : nullopt,
-							true, curve);
-						svg->w.SetTar(svg->w.tar, operationDur,
-							geometryAttributeSideSwitch
-								? optional<double>(max(1.0, Compact(svg->w.tar))) : nullopt,
-							true, curve);
-					svg->h.SetTar(svg->h.tar, operationDur,
-						geometryAttributeSideSwitch
-							? optional<double>(max(1.0, Compact(svg->h.tar))) : nullopt,
-						true, curve);
-					svg->angle.SetTar(svg->angle.tar, operationDur,
-						nullopt, true, curve);
-					svg->pct.SetTar(svg->pct.tar, operationDur,
-							geometryAttributeSideSwitch ? optional<double>(0.0) : nullopt,
-							true, opacityCurve);
-					};
-				if (geometryAttributeVisibilityChange || geometryAttributeSideSwitch)
-				{
-					for (int value = static_cast<int>(BarUISetShapeEnum::GeometryAttributeBar);
-						value <= static_cast<int>(
-							BarUISetShapeEnum::GeometryAttributeBar_Close); ++value)
-						RestartShape(state.shapeMap[static_cast<BarUISetShapeEnum>(value)],
-							geometryAttributeSideSwitch,
-							value == static_cast<int>(BarUISetShapeEnum::GeometryAttributeBar));
-					for (int value = static_cast<int>(
-						BarUISetWordEnum::GeometryAttributeBar_StraightLine);
-						value <= static_cast<int>(
-							BarUISetWordEnum::GeometryAttributeBar_ThicknessCoarseNumber); ++value)
-					{
-						auto word = state.wordMap[static_cast<BarUISetWordEnum>(value)];
-						const auto& curve = geometryAttributeSideSwitch
-							? sideValueCurve : syncedValueCurve;
-						const auto& opacityCurve = geometryAttributeSideSwitch
-							? sidePctCurve : syncedPctCurve;
-						auto Middle = [&](double target) -> optional<double>
-							{
-								return geometryAttributeSideSwitch
-									? optional<double>(max(1.0, Compact(target))) : nullopt;
-							};
-						word->x.SetTar(word->x.tar, operationDur,
-							geometryAttributeSideSwitch
-								? optional<double>(Compact(word->x.tar)) : nullopt, true, curve);
-						word->y.SetTar(word->y.tar, operationDur,
-							geometryAttributeSideSwitch
-								? optional<double>(Compact(word->y.tar)) : nullopt, true, curve);
-						word->w.SetTar(word->w.tar, operationDur, Middle(word->w.tar), true, curve);
-						word->h.SetTar(word->h.tar, operationDur, Middle(word->h.tar), true, curve);
-						word->size.SetTar(word->size.tar, operationDur, Middle(word->size.tar), true, curve);
-						word->pct.SetTar(word->pct.tar, operationDur,
-							geometryAttributeSideSwitch ? optional<double>(0.0) : nullopt,
-							true, opacityCurve);
-					}
-					for (int value = static_cast<int>(
-						BarUISetSvgEnum::GeometryAttributeBar_StraightLine);
-						value <= static_cast<int>(BarUISetSvgEnum::GeometryAttributeBar_Close);
-						++value)
-						RestartSvg(state.svgMap[static_cast<BarUISetSvgEnum>(value)]);
-				}
-			}
 		}
 	}
 
@@ -5604,52 +5226,14 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		state.moreCloseHoverStage, state.barState.moreExpanded && !state.barState.fold,
 		!state.barState.moreClosePress);
 
-	auto geometryStraightLine =
-		state.shapeMap[BarUISetShapeEnum::GeometryAttributeBar_StraightLine];
-	UpdateHoverAnimation(geometryStraightLine->pct,
-		&geometryStraightLine->fill.value(), state.geometryStraightLineHoverStage,
-		state.barState.geometryAttribute,
-		stateMode.Shape.ModeSelect
-			!= ShapeModeSelectEnum::IdtShapeStraightLine1);
-	auto geometryRectangle =
-		state.shapeMap[BarUISetShapeEnum::GeometryAttributeBar_Rectangle];
-	UpdateHoverAnimation(geometryRectangle->pct,
-		&geometryRectangle->fill.value(), state.geometryRectangleHoverStage,
-		state.barState.geometryAttribute,
-		stateMode.Shape.ModeSelect
-			!= ShapeModeSelectEnum::IdtShapeRectangle1);
-	const BarUISetShapeEnum geometryThicknessShapes[] =
-	{
-		BarUISetShapeEnum::GeometryAttributeBar_ThicknessFine,
-		BarUISetShapeEnum::GeometryAttributeBar_ThicknessMedium,
-		BarUISetShapeEnum::GeometryAttributeBar_ThicknessCoarse,
-	};
-	IdtAtomic<BarButtonHoverStageEnum>* geometryThicknessHoverStages[] =
-	{
-		&state.geometryThicknessFineHoverStage,
-		&state.geometryThicknessMediumHoverStage,
-		&state.geometryThicknessCoarseHoverStage,
-	};
-	for (size_t index = 0; index < 3; ++index)
-	{
-		auto shape = state.shapeMap[geometryThicknessShapes[index]];
-		bool selected = IsBarThicknessPresetSelected(PenModeSelectEnum::IdtPenSoftPen, index,
-							state.barStyle.dpiZoom, stateMode);
-		UpdateHoverAnimation(shape->pct, &shape->fill.value(),
-			*geometryThicknessHoverStages[index],
-			state.barState.geometryAttribute, !selected);
-	}
-	auto geometryClose =
-		state.shapeMap[BarUISetShapeEnum::GeometryAttributeBar_Close];
-	UpdateHoverAnimation(geometryClose->pct,
-		&geometryClose->fill.value(), state.geometryCloseHoverStage,
-		state.barState.geometryAttribute, true);
-
 	// 所有目标直接调用主栏抽取的实际推进逻辑；这里只映射主栏诊断和脏区身份。
 	auto AdvanceButton = [&](BarButtonClass& button, bool moreItem)
 	{
 		button.button.lightMaterial = lightMaterial;
 		if (barMaterialActive) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(&button.button));
+		// 主栏倒转（停靠上方、向下展开）时角标换到右下；拖动中锁存，松手后再过渡。
+		if (button.badge && !frame.bottomDockDragActive)
+			button.badge->belowTarget = static_cast<bool>(state.barState.widgetPosition.primaryBar);
 		Inkeys::UI::Bar::BarButtonAnimationContext context;
 		context.dtSeconds = animationDtSeconds;
 		context.speedRate = currentAnimationSpeedRate;
@@ -7699,6 +7283,27 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			| (unsupported ? Ui3FiniteLifecycleUnsupportedGesture : 0u));
 	}
 
+	const auto shapeUi = Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
+	if (shapeUi && shapeUi->object && (state.barState.geometryAttribute || state.barState.drawAttribute || state.barState.eraserAttribute || state.barState.recallAttribute || state.barState.moreExpanded))
+	{
+		Inkeys::Drawing::Draw3::ShapeUiAction close;
+		close.kind = Inkeys::Drawing::Draw3::ShapeUiActionKind::CloseEditor; close.identity = shapeUi->identity;
+		(void)Inkeys::UI::Bar::SubmitShapeUiIntent(close);
+	}
+	const bool promptChanged = owner_.constructionPrompt.Advance(owner_, shapeUi, animationDtSeconds, currentAnimationSpeedRate,
+		frameZoom, state.activeWorkArea, POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
+			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y}, state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
+		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline);
+	if (promptChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::GeometryPanelGroup));
+
+	const bool geometryChanged = owner_.geometryAttribute.Advance(owner_, state.stateModeSnapshot,
+		animationDtSeconds, currentAnimationSpeedRate, frameZoom, state.activeWorkArea,
+		POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
+			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y},
+		state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
+		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline, frame.bottomDockDragActive, frame.frameTime);
+	if (geometryChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::GeometryPanelGroup));
+
 	const bool eraserChanged = owner_.eraserAttribute.Advance(owner_, animationDtSeconds,
 		currentAnimationSpeedRate, frameZoom, state.activeDisplayDpi, state.activeWorkArea,
 		POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
@@ -7732,7 +7337,9 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 			|| state.barState.eraserAttribute || state.barState.recallAttribute || state.barState.moreExpanded
 			|| state.barState.eraserSensitivityOpen || panels.colorPickerOpen || panels.penTypeMenuOpen
 			|| panels.thicknessSliderPinned || panels.thicknessFineDialPhysicsActive
-			|| owner_.eraserAttribute.IdleFadeProtected() || owner_.recallAttribute.IdleFadeProtected();
+			|| owner_.eraserAttribute.IdleFadeProtected() || owner_.recallAttribute.IdleFadeProtected()
+			// 图形面板退场和跨笔构造提示也必须保持主栏可见。
+			|| owner_.geometryAttribute.IdleFadeProtected() || owner_.constructionPrompt.Visible();
 		// 关闭指令之后仍保护实际退场中的面板，最后一项完全收起才重新计时。
 		for (auto id : {BarUISetShapeEnum::DrawAttributeBar, BarUISetShapeEnum::GeometryAttributeBar,
 			BarUISetShapeEnum::MorePanel, BarUISetShapeEnum::DrawAttributeBar_ColorPickerPanel,
@@ -7772,7 +7379,7 @@ SetAbsoluteHit(pickerPreview, previewSlotLeft, previewSlotTop,
 		if (previousIdleFade != state.pptIdleFade.val || !state.pptIdleFade.IsSame())
 			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::StatusIndicator));
 	}
-	return needRendering || eraserChanged || recallChanged || recallIdleDismissed || statusChanged;
+	return needRendering || promptChanged || geometryChanged || eraserChanged || recallChanged || recallIdleDismissed || statusChanged;
 }
 
 void BarRenderLoopCoordinator::PrepareLightingAndDemand(
@@ -8118,70 +7725,10 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			const bool textMatches = state.bottomDockIndicatorWord.content.GetVal()
 				== state.bottomDockIndicatorDesiredLabel
 				&& !state.bottomDockIndicatorTextTransitionActive;
-			switch (state.bottomDockIndicatorContentPhase)
-			{
-			case BarBottomDockIndicatorContentPhase::Stable:
-				switch (ResolveBarBottomDockIndicatorContentAction(
-					currentWidthDip, desiredTextWidthDip, textMatches))
-				{
-				case BarBottomDockIndicatorContentAction::ExpandFrame:
-					StartIndicatorWidth(desiredTextWidthDip,
-						BarBottomDockIndicatorContentPhase::ExpandingFrame);
-					break;
-				case BarBottomDockIndicatorContentAction::SwapText:
-					StartIndicatorTextSwap();
-					break;
-				case BarBottomDockIndicatorContentAction::ShrinkFrame:
-					StartIndicatorWidth(desiredTextWidthDip,
-						BarBottomDockIndicatorContentPhase::ShrinkingFrame);
-					break;
-				case BarBottomDockIndicatorContentAction::None:
-					break;
-				}
-				break;
-			case BarBottomDockIndicatorContentPhase::ExpandingFrame:
-				if (textMatches && desiredTextWidthDip + 0.000001
-					< state.bottomDockIndicatorTextWidthDip.tar)
-					StartIndicatorWidth(desiredTextWidthDip,
-						BarBottomDockIndicatorContentPhase::ShrinkingFrame);
-				else if (desiredTextWidthDip
-					> state.bottomDockIndicatorTextWidthDip.tar + 0.000001)
-					StartIndicatorWidth(desiredTextWidthDip,
-						BarBottomDockIndicatorContentPhase::ExpandingFrame);
-				break;
-			case BarBottomDockIndicatorContentPhase::SwappingText:
-				if (!textMatches) StartIndicatorTextSwap();
-				else if (currentWidthDip > desiredTextWidthDip + 0.000001)
-					StartIndicatorWidth(desiredTextWidthDip,
-						BarBottomDockIndicatorContentPhase::ShrinkingFrame);
-				else state.bottomDockIndicatorContentPhase =
-					BarBottomDockIndicatorContentPhase::Stable;
-				break;
-			case BarBottomDockIndicatorContentPhase::ShrinkingFrame:
-				if (!textMatches)
-				{
-					if (currentWidthDip + 0.000001 < desiredTextWidthDip)
-						StartIndicatorWidth(desiredTextWidthDip,
-							BarBottomDockIndicatorContentPhase::ExpandingFrame);
-					else StartIndicatorTextSwap();
-				}
-				break;
-			}
-			if (state.bottomDockIndicatorContentPhase
-				== BarBottomDockIndicatorContentPhase::ExpandingFrame
-				&& state.bottomDockIndicatorTextWidthDip.IsSame())
-			{
-				if (state.bottomDockIndicatorWord.content.GetVal()
-					!= state.bottomDockIndicatorDesiredLabel)
-					StartIndicatorTextSwap();
-				else state.bottomDockIndicatorContentPhase =
-					BarBottomDockIndicatorContentPhase::Stable;
-			}
-			else if (state.bottomDockIndicatorContentPhase
-				== BarBottomDockIndicatorContentPhase::ShrinkingFrame
-				&& state.bottomDockIndicatorTextWidthDip.IsSame())
-				state.bottomDockIndicatorContentPhase =
-					BarBottomDockIndicatorContentPhase::Stable;
+			AdvanceBarIndicatorContent(state.bottomDockIndicatorContentPhase,
+				state.bottomDockIndicatorTextWidthDip, currentWidthDip, desiredTextWidthDip, textMatches,
+				[&] { return state.bottomDockIndicatorWord.content.GetVal() == state.bottomDockIndicatorDesiredLabel; },
+				StartIndicatorWidth, StartIndicatorTextSwap);
 		}
 		dockModeTextSize.width = static_cast<FLOAT>(max(0.0,
 			static_cast<double>(state.bottomDockIndicatorTextWidthDip.val)));
@@ -8253,7 +7800,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		const auto dockTargetIndicatorVisualGeometry =
 			ResolveBarBottomDockIndicatorScaledGeometry(
 				dockTargetIndicatorGeometry, dockTargetIndicatorScale);
-		const bool dockTargetIndicatorVisible = dockTargetIndicatorOpacity > 0.000001
+		const bool dockTargetIndicatorVisible = !owner_.constructionPrompt.Visible() && dockTargetIndicatorOpacity > 0.000001
 			&& dockTargetIndicatorScale > 0.000001;
 		RECT dockTargetIndicatorBounds{};
 		RECT dockTargetIndicatorHitBounds{};
@@ -8334,6 +7881,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| state.mainBarTimeline.IsActive()
 			|| state.drawAttributeTimeline.IsActive()
 			|| state.geometryAttributeTimeline.IsActive()
+			|| owner_.constructionPrompt.Changed()
+			|| owner_.geometryAttribute.Changed()
 			|| owner_.eraserAttribute.Changed()
 			|| owner_.recallAttribute.Changed()
 			|| owner_.statusIndicator.Changed()
@@ -8496,6 +8045,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			IncludeShapeBounds(mainBar, BottomDockBoundsTransform::Body);
 			IncludeShapeBounds(drawAttribute, BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(geometryAttribute, BottomDockBoundsTransform::Rigid);
+			IncludeVisibleBounds(owner_.geometryAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
+			IncludeVisibleBounds(owner_.constructionPrompt.Bounds(), BottomDockBoundsTransform::Rigid);
 			IncludeVisibleBounds(owner_.eraserAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
 			IncludeVisibleBounds(owner_.recallAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
 			IncludeShapeBounds(state.shapeMap[BarUISetShapeEnum::MorePanel],
@@ -9075,6 +8626,17 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				RECT nameBounds = ObserveWord(
 					&button->name, includeGroup, transform);
 				if (includeGroup) AddGroupBounds(group, nameBounds);
+				if (button->badge)
+				{
+					const auto badgeKey = GetBarDirtyVisualKey(&*button->badge);
+					if (includeGroup || state.dirtyRegionTracker.ShouldObserve(badgeKey))
+					{
+						const RECT badgeBounds = TransformBottomDockBounds(Inkeys::UI::Bar::ResolveBarButtonBadgeBounds(*button,
+							BarUiInheritClass(button->button.inhX, button->button.inhY), static_cast<double>(frameZoom)), transform);
+						state.dirtyRegionTracker.Observe(badgeKey, badgeBounds);
+						if (includeGroup) AddGroupBounds(group, badgeBounds);
+					}
+				}
 			};
 		for (int id = 0; id < state.barButtonSet.tot; ++id)
 			ObserveRegisteredButton(
@@ -9110,6 +8672,14 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 						dockTargetIndicatorHitBounds,
 						cursorLightInfluence));
 		}
+
+		RECT geometryBounds = TransformBottomDockBounds(owner_.geometryAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
+		BarRenderingAttribute::UnionRectInPlace(geometryBounds, TransformBottomDockBounds(owner_.constructionPrompt.Bounds(), BottomDockBoundsTransform::Rigid));
+		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(BarDirtyFixedVisual::GeometryPanelGroup), geometryBounds);
+		if (observePrimaryLight) BarRenderingAttribute::UnionRectInPlace(primaryLightDamageBounds,
+			IntersectBarWindowRect(geometryBounds, ResolvePrimaryLightInfluence(BottomDockBoundsTransform::Rigid)));
+		if (observeCursorLight) BarRenderingAttribute::UnionRectInPlace(cursorLightDamageBounds,
+			IntersectBarWindowRect(geometryBounds, cursorLightInfluence));
 
 		const RECT statusBounds = TransformBottomDockBounds(owner_.statusIndicator.Bounds(), BottomDockBoundsTransform::Grip);
 		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(BarDirtyFixedVisual::StatusIndicator),statusBounds);
@@ -9242,6 +8812,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| state.mainBarTimeline.IsActive()
 			|| state.drawAttributeTimeline.IsActive()
 			|| state.geometryAttributeTimeline.IsActive()
+			|| owner_.constructionPrompt.Changed()
+			|| owner_.geometryAttribute.Changed()
 			|| owner_.eraserAttribute.Changed()
 			|| owner_.recallAttribute.Changed()
 			|| owner_.statusIndicator.Changed()
@@ -11377,208 +10949,10 @@ bool presetButton = button.presetIndex >= 0;
 					state.spec.SetFrameDiffuseMaskGeometryScale(1.0);
 				}
 
-				// 几何属性
-				{
-					auto panel =
-						state.shapeMap[BarUISetShapeEnum::GeometryAttributeBar];
-					double panelScale = panel->w.val
-						/ BarGeometryAttributeExpandedWidth;
-					if (!isfinite(panelScale) || panelScale <= 0.000001)
-						panelScale = 1.0;
-					state.spec.SetFrameDiffuseMaskGeometryScale(1.0 / panelScale);
-					state.spec.Shape(barDeviceContext, *panel,
-						panel->Inherit(Center,
-							state.barButtonSet.preset[static_cast<int>(
-								BarButtonPresetEnum::Geometry)]->button),
-						&state.current, true);
-
-					auto divider = state.shapeMap[
-						BarUISetShapeEnum::GeometryAttributeBar_Divider];
-					state.spec.Shape(barDeviceContext, *divider,
-						divider->Inherit(TopLeft, *panel));
-
-					struct GeometryShapeButtonRender
-					{
-						BarUISetShapeEnum shape;
-						BarUISetSvgEnum icon;
-						BarUISetWordEnum word;
-						BarUiValueClass* pressScale;
-					};
-					const GeometryShapeButtonRender shapeButtons[] =
-					{
-						{ BarUISetShapeEnum::GeometryAttributeBar_StraightLine,
-							BarUISetSvgEnum::GeometryAttributeBar_StraightLine,
-							BarUISetWordEnum::GeometryAttributeBar_StraightLine,
-							&state.geometryStraightLinePressScale },
-						{ BarUISetShapeEnum::GeometryAttributeBar_Rectangle,
-							BarUISetSvgEnum::GeometryAttributeBar_Rectangle,
-							BarUISetWordEnum::GeometryAttributeBar_Rectangle,
-							&state.geometryRectanglePressScale },
-					};
-					FLOAT uiZoom = static_cast<FLOAT>(frameZoom);
-					ID2D1StrokeStyle* roundStrokeStyle =
-						state.spec.GetRoundStrokeStyle();
-					for(const auto& button:shapeButtons)
-					{
-						auto shape=state.shapeMap[button.shape];
-						auto icon=state.svgMap[button.icon];auto word=state.wordMap[button.word];
-						Inkeys::UI::Bar::BarButtonVisualInheritance inherit{
-							shape->Inherit(TopLeft,*panel),icon->Inherit(TopLeft,*panel),
-							word->Inherit(TopLeft,*panel),std::nullopt};
-						Inkeys::UI::Bar::DrawBarFixedButtonVisual(state.spec,barDeviceContext,
-							{*shape,icon.get(),word.get(),button.pressScale},inherit,
-							DWRITE_FONT_WEIGHT_NORMAL,DWRITE_TEXT_ALIGNMENT_CENTER);
-					}
-
-					const BarUISetShapeEnum thicknessShapes[] =
-					{
-						BarUISetShapeEnum::GeometryAttributeBar_ThicknessFine,
-						BarUISetShapeEnum::GeometryAttributeBar_ThicknessMedium,
-						BarUISetShapeEnum::GeometryAttributeBar_ThicknessCoarse,
-					};
-					const BarUISetWordEnum thicknessWords[] =
-					{
-						BarUISetWordEnum::GeometryAttributeBar_ThicknessFineNumber,
-						BarUISetWordEnum::GeometryAttributeBar_ThicknessMediumNumber,
-						BarUISetWordEnum::GeometryAttributeBar_ThicknessCoarseNumber,
-					};
-					BarUiValueClass* thicknessPressScales[] =
-					{
-						&state.geometryThicknessFinePressScale,
-						&state.geometryThicknessMediumPressScale,
-						&state.geometryThicknessCoarsePressScale,
-					};
-					const bool thicknessPressed[] =
-					{
-						state.barState.geometryAttributeBar.thicknessFinePress,
-						state.barState.geometryAttributeBar.thicknessMediumPress,
-						state.barState.geometryAttributeBar.thicknessCoarsePress,
-					};
-					for (size_t index = 0; index < 3; ++index)
-					{
-						auto shape = state.shapeMap[thicknessShapes[index]];
-						auto numberWord = state.wordMap[thicknessWords[index]];
-						BarUiInheritClass shapeInherit =
-							shape->Inherit(TopLeft, *panel);
-						double pressScale = thicknessPressScales[index]->val;
-						if (!isfinite(pressScale) || pressScale <= 0.0)
-							pressScale = 1.0;
-						D2D1_MATRIX_3X2_F originalTransform;
-						barDeviceContext->GetTransform(&originalTransform);
-						bool transformChanged = abs(pressScale - 1.0) > 0.000001;
-						if (transformChanged)
-						{
-							FLOAT centerX = static_cast<FLOAT>(
-								(shapeInherit.x + shape->w.val / 2.0) * uiZoom);
-							FLOAT centerY = static_cast<FLOAT>(
-								(shapeInherit.y + shape->h.val / 2.0) * uiZoom);
-							barDeviceContext->SetTransform(
-								D2D1::Matrix3x2F::Scale(
-									static_cast<FLOAT>(pressScale),
-									static_cast<FLOAT>(pressScale),
-									D2D1::Point2F(centerX, centerY))
-								* originalTransform);
-						}
-
-						state.spec.Shape(barDeviceContext, *shape, shapeInherit);
-						double panelOpacity = clamp(
-							static_cast<double>(panel->pct.val)
-								/ BarDrawAttributeSurfaceOpacity,
-							0.0, 1.0);
-						FLOAT contentOpacity = static_cast<FLOAT>(panelOpacity
-							* (thicknessPressed[index] ? 0.70 : 1.0));
-						COLORREF contentColor = shape->frame.value().val;
-						ID2D1SolidColorBrush* contentBrush =
-							state.spec.GetFrameSolidColorBrush(barDeviceContext,
-								contentColor, contentOpacity);
-						double presetPx = GetBarThicknessPresetPx(
-							PenModeSelectEnum::IdtPenSoftPen, index,
-							state.barStyle.dpiZoom, stateMode);
-						if (contentBrush && contentOpacity > 0.000001F
-							&& uiZoom > 0.0F)
-						{
-							FLOAT centerX = static_cast<FLOAT>(
-								(shapeInherit.x + shape->w.val / 2.0) * uiZoom);
-							FLOAT centerY = static_cast<FLOAT>(
-								(shapeInherit.y + shape->h.val / 2.0) * uiZoom);
-							FLOAT diameter = max(1.0F,
-								static_cast<FLOAT>(min(shape->w.val, shape->h.val)
-									* uiZoom - 8.0 * panelScale * uiZoom));
-							FLOAT requestedThickness = max(1.0F,
-								static_cast<FLOAT>(presetPx * panelScale));
-							FLOAT previewThickness = min(
-								requestedThickness, diameter);
-							FLOAT halfDiagonal = max(0.0F,
-								(diameter - previewThickness) * 0.5F)
-								/ static_cast<FLOAT>(sqrt(2.0));
-							if (halfDiagonal <= 0.25F)
-							{
-								D2D1_ELLIPSE ellipse = D2D1::Ellipse(
-									D2D1::Point2F(centerX, centerY),
-									previewThickness / 2.0F,
-									previewThickness / 2.0F);
-								(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillEllipse(&ellipse, contentBrush);
-							}
-							else
-							{
-								(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawLine(
-									D2D1::Point2F(centerX - halfDiagonal,
-										centerY + halfDiagonal),
-									D2D1::Point2F(centerX + halfDiagonal,
-										centerY - halfDiagonal),
-									contentBrush, previewThickness,
-									roundStrokeStyle);
-							}
-						}
-						if (numberWord->pct.val > 0.000001)
-						{
-							numberWord->color.SetDirect(
-								GetBarReadableTextColor(contentColor));
-							state.spec.Word(barDeviceContext, *numberWord,
-								numberWord->Inherit(TopLeft, *panel),
-								DWRITE_FONT_WEIGHT_BOLD,
-								DWRITE_TEXT_ALIGNMENT_CENTER);
-						}
-						if (transformChanged)
-							barDeviceContext->SetTransform(originalTransform);
-					}
-
-					auto close = state.shapeMap[
-						BarUISetShapeEnum::GeometryAttributeBar_Close];
-					BarUiInheritClass closeInherit =
-						close->Inherit(TopLeft, *panel);
-					double closePressScale = state.geometryClosePressScale.val;
-					if (!isfinite(closePressScale) || closePressScale <= 0.0)
-						closePressScale = 1.0;
-					D2D1_MATRIX_3X2_F closeOriginalTransform;
-					barDeviceContext->GetTransform(&closeOriginalTransform);
-					bool closeTransformChanged =
-						abs(closePressScale - 1.0) > 0.000001;
-					if (closeTransformChanged)
-					{
-						FLOAT centerX = static_cast<FLOAT>(
-							(closeInherit.x + close->w.val / 2.0) * uiZoom);
-						FLOAT centerY = static_cast<FLOAT>(
-							(closeInherit.y + close->h.val / 2.0) * uiZoom);
-						barDeviceContext->SetTransform(
-							D2D1::Matrix3x2F::Scale(
-								static_cast<FLOAT>(closePressScale),
-								static_cast<FLOAT>(closePressScale),
-								D2D1::Point2F(centerX, centerY))
-							* closeOriginalTransform);
-					}
-					state.spec.Shape(barDeviceContext, *close, closeInherit);
-					auto closeSvg = state.svgMap[
-						BarUISetSvgEnum::GeometryAttributeBar_Close];
-					state.spec.Svg(barDeviceContext, *closeSvg,
-						closeSvg->Inherit(TopLeft, *panel));
-					if (closeTransformChanged)
-						barDeviceContext->SetTransform(closeOriginalTransform);
-					state.spec.SetFrameDiffuseMaskGeometryScale(1.0);
-				}
 
 				// 橡皮与撤回属性都先画，主栏随后覆盖其重叠区域。
 				SetRigidTransform();
+				owner_.geometryAttribute.Draw(state.spec, barDeviceContext);
 				owner_.eraserAttribute.Draw(state.spec, barDeviceContext);
 				owner_.recallAttribute.Draw(state.spec, barDeviceContext);
 
@@ -12510,71 +11884,36 @@ bool presetButton = button.presetIndex >= 0;
 					/ BarDrawAttributeExpandedWidth;
 				FLOAT thumbDiameter = static_cast<FLOAT>(min(
 					sliderThumb->w.val, sliderThumb->h.val) * uiZoom);
-				FLOAT thumbRadius = thumbDiameter / 2.0F;
 				D2D1_POINT_2F thumbCenter = D2D1::Point2F(
 					static_cast<FLOAT>((thumbInherit.x
 						+ sliderThumb->w.val / 2.0) * uiZoom),
 					static_cast<FLOAT>((thumbInherit.y
 						+ sliderThumb->h.val / 2.0) * uiZoom));
-				auto FillThumbCircle = [&](COLORREF color, FLOAT radius)
-					{
-						if (radius <= 0.0F) return;
-						auto brush = state.spec.GetFrameSolidColorBrush(
-							barDeviceContext, color, thumbOpacity);
-						if (!brush) return;
-						D2D1_ELLIPSE ellipse = D2D1::Ellipse(
-							thumbCenter, radius, radius);
-						(Inkeys::UI::Bar::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillEllipse(&ellipse, brush);
-					};
-				COLORREF surfaceColor = panel->fill.has_value()
+				// 动画状态仍由主栏持有；显式传入旧公式依赖的表面色和动画描边厚度。
+				BarSliderThumbStyle thumbStyle;
+				thumbStyle.centerPx = thumbCenter;
+				thumbStyle.outerDiameterPx = thumbDiameter;
+				thumbStyle.frameThicknessPx = static_cast<FLOAT>(panelAnimationScale * uiZoom);
+				thumbStyle.surfaceColor = panel->fill.has_value()
 					? static_cast<COLORREF>(panel->fill.value().val)
 					: GetThemeColor(BarThemeColorEnum::Surface);
-				COLORREF accentColor = GetThemeColor(
-					BarThemeColorEnum::Accent);
-				double accentOpacity = clamp(static_cast<double>(
-					state.drawAttributeThicknessSliderAccentOpacity.val),
-					0.0, 1.0);
-				COLORREF centerColor = MixBarUiColor(
-					surfaceColor, accentColor, accentOpacity);
-				const double lightWeight = BarThemeMaterial::ClampWeight(
-					state.barLightMaterial.val);
-				const COLORREF darkOuterFillColor = MixBarUiColor(
-					GetThemeColor(BarThemeModeEnum::Dark,
-						BarThemeColorEnum::Surface),
-					GetThemeColor(BarThemeModeEnum::Dark,
-						BarThemeColorEnum::TextPrimary), 0.20);
-				// Light 端按 WinUI 3 Slider Thumb：ControlSolidFillColorDefault 纯白底，
-				// 外圈为 ControlElevationBorder 的细描边（约 6%~16% 黑，取 12% 石墨灰）。
-				const COLORREF lightOuterFillColor = RGB(255, 255, 255);
-				const COLORREF lightOuterFrameColor = MixBarUiColor(
-					GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::Surface),
-					GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::TextPrimary),
-					BarThemeMaterial::LightSliderThumbBorderOpacity);
-				COLORREF outerFillColor = MixBarUiColor(
-					darkOuterFillColor, lightOuterFillColor, lightWeight);
-				const COLORREF darkOuterFrameColor = MixBarUiColor(
-					darkOuterFillColor,
-					GetThemeColor(BarThemeModeEnum::Dark,
-						BarThemeColorEnum::TextPrimary), 0.12);
-				COLORREF outerFrameColor = MixBarUiColor(
-					darkOuterFrameColor, lightOuterFrameColor, lightWeight);
-				FillThumbCircle(outerFrameColor, thumbRadius);
-				FillThumbCircle(outerFillColor,
-					max(0.0F, thumbRadius - static_cast<FLOAT>(
-						panelAnimationScale * uiZoom)));
-				FLOAT centerDiameter = static_cast<FLOAT>(
+				thumbStyle.accentColor = GetThemeColor(BarThemeColorEnum::Accent);
+				thumbStyle.accentOpacity = clamp(static_cast<double>(
+					state.drawAttributeThicknessSliderAccentOpacity.val), 0.0, 1.0);
+				thumbStyle.lightWeight = BarThemeMaterial::ClampWeight(state.barLightMaterial.val);
+				thumbStyle.opacity = thumbOpacity;
+				thumbStyle.centerDiameterPx = static_cast<FLOAT>(
 					state.drawAttributeThicknessSliderCenterDiameter.val)
 					* static_cast<FLOAT>(panelAnimationScale * max(0.0,
-						static_cast<double>(
-							state.drawAttributeThicknessSliderThumbScale.val)))
-					* uiZoom;
-				FillThumbCircle(centerColor,
-					min(thumbRadius * 0.70F, centerDiameter / 2.0F));
+						static_cast<double>(state.drawAttributeThicknessSliderThumbScale.val))) * uiZoom;
+				DrawBarSliderThumb(state.spec, barDeviceContext, thumbStyle);
 			}
 		}
 
 		// 绘制函数内部记录的是未套组变换的布局边界，提交时改用同源的实际视觉外框。
 		state.current = currentContentBounds;
+		SetRigidTransform();
+		owner_.constructionPrompt.Draw(state.spec, barDeviceContext);
 		SetBaseTransform();
 		if (dockTargetIndicatorVisible)
 		{
@@ -13185,6 +12524,16 @@ bool presetButton = button.presetIndex >= 0;
 				dockTargetIndicatorHitBounds.bottom, memory_order_relaxed);
 			// 命中与坐标映射共同发布；输入前后校验 serial，不能拼接旧映射和新按钮。
 			owner_.PublishPresentedButtonHits();
+			owner_.geometryAttribute.CommitPresented();
+			// 只在主栏实际外框变化时重新计算编辑浮条避让，稳定光影帧不相互唤醒。
+			const RECT currentEditorAvoidanceBounds{owner_.barWindow.x, owner_.barWindow.y,
+				owner_.barWindow.x + static_cast<LONG>(owner_.barWindow.w), owner_.barWindow.y + static_cast<LONG>(owner_.barWindow.h)};
+			if (!EqualRect(&state.editorAvoidanceBounds, &currentEditorAvoidanceBounds))
+			{
+				state.editorAvoidanceBounds = currentEditorAvoidanceBounds;
+				Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::SelectionOverlay);
+			}
+			owner_.constructionPrompt.CommitPresented();
 			owner_.statusIndicator.CommitPresented();
 			owner_.eraserAttribute.CommitPresented();
 			owner_.recallAttribute.CommitPresented();

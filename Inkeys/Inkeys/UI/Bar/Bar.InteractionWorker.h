@@ -198,11 +198,15 @@ namespace Inkeys::UI::Bar
 		std::uint64_t touchRegistration = 0, touchRouteGeneration = 0;
 		std::uint64_t hitButtonId = 0;
 		std::uint32_t contactId = 0;
+		std::uint64_t contactSource = 0;
+		double inputSeconds = 0;
+		bool pen = false;
 		bool touch = false;
 		bool captureOwned = false;
 		bool nativeCaptureReleased = false;
 		bool logicalPointValid = false;
 		bool backgroundHit = false;
+		bool preserveMoveSamples = false; // 角度手势逐点累计，仍受有界邮箱的溢出取消保护。
 	};
 	using SurfaceInputHandler = void(*)(const SurfaceInputEvent&, void*);
 	using SurfaceInputTick = std::chrono::steady_clock::time_point(*)(std::chrono::steady_clock::time_point, void*);

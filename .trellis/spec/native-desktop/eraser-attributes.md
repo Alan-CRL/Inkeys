@@ -39,11 +39,11 @@ BaseDiameterDip旧16→24、64→40，32/24/40幂等；缺失/非法新键分别
 
 方案B排列为圆组 | 清空 | 自动整体。预览逻辑直径=`DiameterToCanvasPx(B,display)/frameZoom`，稳定pose=1，自定义UI缩放不改变实际预览直径。圆组从面板边缘到分割线的四段留白均为16逻辑单位。自动侧为5+90+5，清空与两侧分割线也各留5；清空中心锚定主栏橡皮入口，默认总宽342逻辑单位，倒转只交换完整侧组。所有工作区均保持5/16 DIP正常留白和自然宽度；窄区仅裁剪溢出，不压缩留白、圆或按钮。命中由相邻中界和可见区域限制。
 
-预览使用Contact白色实体alpha=1，灰色来自EraserGripVisual；共享ERASER_GRIP_OPACITY仍为0.5，画布Hover不变。尺寸选项没有矩形背景/胶囊或悬停内容提示框；选中态是在橡皮外缘外留3 DIP间隙的1 DIP Theme Accent圆环，以独立可逆进度渐显/渐隐并绘制PointLight。Pressed复用普通按钮的缩放值与Press/Release曲线，围绕圆心缩放整个圆形视觉；稳定态不缩放。命中必须先裁当前可见区域，再以点到圆心距离判断真实圆形（当前允许圆外扩5 DIP），外接矩形四角不得响应。键盘焦点为独立内虚线。
+预览使用Contact白色实体alpha=1，灰色来自EraserGripVisual；共享ERASER_GRIP_OPACITY仍为0.5，画布Hover不变。尺寸选项没有矩形背景/胶囊或悬停内容提示框；选中态是在橡皮外缘外留3 DIP间隙的1 DIP Theme Accent圆环，以独立可逆进度渐显/渐隐并绘制PointLight。Pressed复用普通按钮的缩放值与Press/Release曲线，围绕圆心缩放整个圆形视觉；稳定态不缩放。命中必须先裁当前可见区域，再以点到圆心距离判断真实圆形（当前允许圆外扩5 DIP），外接矩形四角不得响应。键盘操作已移除（2026-11-15 第十一轮，仅保留全局快捷键与 PPT 转发）。
 
 自动按钮只绘制一个90×70 BarButtonClass，body/arrow命中宽为70/20并共享Hover、按压及整体缩放；内部1 DIP分割线与主栏Divider等高并垂直居中，复用当前外框色和PointLight，选中时与外框同步Accent。右侧箭头复用绘制属性笔类型入口的`barThicknessAdjust` SVG、菜单方向和0/180度目标角，展开、收起及中途反向均通过同一动画值收敛。菜单打开不改自动选中态。专用barAutoEraser.svg使用主题占位色和路径A，不依赖字体或修改通用barEraser.svg。
 
-菜单182.5×90逻辑单位，两行结构：标题/设置齿轮、三段等宽选项。齿轮支持鼠标/笔/触摸点击及键盘导航，调用 Setting::ShowSpeedEraser，经同一 Show 业务 FIFO 在 HWND owner 线程恢复并激活设置窗口。目标及 Show/Hide 身份在状态锁内同批发布，只由设置渲染线程消费；已显示时直接进入绘制/笔速橡皮，不用 Toggle。隐藏打开时，渲染 owner 在首帧排布前就选中笔速橡皮详情，首帧预热和开屏截图也必须来自该页。原开屏策略允许时复用书写覆盖层：艺术字写完后原地渐隐，字形与遮罩一起淡出，不播放主页横幅归位或先到主页再跳转；总动画关闭或开屏机会已消耗则直接进入。Hide、较新普通 Show 或主动离开详情立即收束，不增加配置或补播机会。标题保持既有左对齐X，其30 DIP标题行在浮窗顶部至三个灵敏度按钮上沿之间垂直居中。文本来自UI/Bar/EraserAttributes生成键，三种语言用i18n.ps1 sync/check维护。
+菜单182.5×90逻辑单位，两行结构：标题/设置齿轮、三段等宽选项。齿轮支持鼠标/笔/触摸点击（键盘操作已移除（2026-11-15 第十一轮，仅保留全局快捷键与 PPT 转发）），调用 Setting::ShowSpeedEraser，经同一 Show 业务 FIFO 在 HWND owner 线程恢复并激活设置窗口。目标及 Show/Hide 身份在状态锁内同批发布，只由设置渲染线程消费；已显示时直接进入绘制/笔速橡皮，不用 Toggle。隐藏打开时，渲染 owner 在首帧排布前就选中笔速橡皮详情，首帧预热和开屏截图也必须来自该页。原开屏策略允许时复用书写覆盖层：艺术字写完后原地渐隐，字形与遮罩一起淡出，不播放主页横幅归位或先到主页再跳转；总动画关闭或开屏机会已消耗则直接进入。Hide、较新普通 Show 或主动离开详情立即收束，不增加配置或补播机会。标题保持既有左对齐X，其30 DIP标题行在浮窗顶部至三个灵敏度按钮上沿之间垂直居中。文本来自UI/Bar/EraserAttributes生成键，三种语言用i18n.ps1 sync/check维护。
 
 正常空间clear.centerX=主栏擦除centerX，panel按非对称侧组分别延伸，menu.centerX=整个automatic.centerX。定位使用MainBar实际高度、上下状态和工作区；直拖扣除同帧直接位移。直拖锁存期间使用上一份已稳定局部布局输入、panel/menu方向和工作区，不能因临时越界重新避让或翻边；松手吸收HWND位移时，必须按当前锚点把锁存的`main / anchor / work`整体重基准，旧侧收拢到透明中点前继续使用该工作区，不能先被新工作区的Resolve/Fit夹取。之后才消费当前目标方向，并沿收拢→紧凑态→换边→展开动画交接。倒转仅交换完整侧组，在透明紧凑态交接。菜单方向锁定，父方向切换才重选。橡皮主面板和菜单均在Main Bar之前绘制，重叠像素由主栏覆盖。
 
@@ -52,7 +52,7 @@ EraserSurfaceMotion复用BarUiValueClass/BarUiPctClass/BarUiTimelineClass及Draw
 Bounds使用实际已变换shell及阴影外扩，不能只拿最终layout矩形。内容在当前shell内裁剪，窗口容量容纳shell与光影。PresentationSnapshot/CommitPresented只在成功呈现后发布，Pointer消费同一实际几何。ResolveEraserAttributeRelease以新Down票据为依据，body/arrow跨区Up仍返回Down所属动作；无Down的旧Up不得清空。沿用Message::IsPointerGeneratedMouseMessage过滤兼容事件；leave/cancel清理反馈，Pen/Touch Up不保留鼠标式Hover。
 
 ### 清空
-橡皮属性Clear不按`ProductRuntimeSnapshot.currentPageHasContent`禁用，空画布及键盘焦点中都允许发布既有`PublishProductCommand(Clear)`。Accepted后立即关闭面板；若本次进入橡皮前是有内容的选择模式，则优先回到选择，即使期间又产生橡皮笔迹；否则按绘制线程原子发布的最近有效笔类恢复绘制/图形/橡皮模式，尚无记录时回绘制。配置与具体笔型记忆不变；同时调用主栏完整状态刷新，使按钮选中态与实际模式一致。Draw3回报当前页无内容后，既有主栏状态刷新将选择态切为精简布局。Clear、撤回/重做、翻页和工作区切换不得覆盖最近笔类；没有新笔迹时再次单击仍按原最近笔类恢复。橡皮属性Clear不提供双击进入选择语义，也不等待系统双击时间。命令拒绝时面板和模式保持不变。
+橡皮属性Clear不按`ProductRuntimeSnapshot.currentPageHasContent`禁用，空画布允许发布既有`PublishProductCommand(Clear)`。Accepted后立即关闭面板；若本次进入橡皮前是有内容的选择模式，则优先回到选择，即使期间又产生橡皮笔迹；否则按绘制线程原子发布的最近有效笔类恢复绘制/图形/橡皮模式，尚无记录时回绘制。配置与具体笔型记忆不变；同时调用主栏完整状态刷新，使按钮选中态与实际模式一致。Draw3回报当前页无内容后，既有主栏状态刷新将选择态切为精简布局。Clear、撤回/重做、翻页和工作区切换不得覆盖最近笔类；没有新笔迹时再次单击仍按原最近笔类恢复。橡皮属性Clear不提供双击进入选择语义，也不等待系统双击时间。命令拒绝时面板和模式保持不变。
 
 绘制线程原有`active.empty()`边界不变：接受命令不等于活动接触尚未结束时已经执行。Clear等待Up/提交，然后清当前页批注，保留viewport和其他页。不得直接清GPU纹理代替业务事务。
 

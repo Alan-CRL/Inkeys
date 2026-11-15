@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 186
-- **Last Active**: 2026-11-14
+- **Total Sessions**: 187
+- **Last Active**: 2026-11-15
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,8 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~483 | Active |
-| `journal-2.md` | ~2029 | Archived |
+| `journal-3.md` | ~552 | Active |
+| `journal-2.md` | ~2054 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 187 | 2026-11-15 | 形状第十一轮收尾与合并 dev 前审阅 | `b0f96e29`, `3375f115` | `feature/shape` |
 | 186 | 2026-11-14 | Close whiteboard input inertia task | `b861d464` | `feature/whiteboard3` |
 | 185 | 2026-11-14 | PptCOM联动阻塞调查、回退与归档 | `10c8be73`, `533c95fc` | `bugfix/pptcom` |
 | 184 | 2026-11-13 | 白板拖动收尾：移除旧曲线并保留当前手感 | `4706ec0e1226aaaf3549b5aaa719eeaf749aa293` | `feature/whiteboard3` |
@@ -39,6 +40,7 @@
 | 181 | 2026-11-06 | Canvas debug overlay, visual mode and per-device stroke reconnect | `e0711662`, `1565cb61`, `0df57184` | `debug/drawpad` |
 | 180 | 2026-11-06 | 完善设置绘制光标样式与透明度 | `c7f3f353` | `chore/ui` |
 | 179 | 2026-11-05 | Unify whiteboard/PPT page-turn loading animation | `9ddb5365`, `ad7d1302`, `70d5ca9a`, `97321dc2` | `debug/wait` |
+| 178 | 2026-11-05 | 图形整改：规划、编辑性能与图标（检查点） | `238f3afb`, `a58400aa`, `e2f33d86`, `4d00bf11` | `feature/shape` |
 | 177 | 2026-11-05 | 重启与设置退出修复验收归档 | `1b0db5fc56a55610677a6838eef7670b1fc06daa`, `407f91951f91c35fdbf35c627a8f8af48d399faf` | `chore/ui` |
 | 176 | 2026-11-05 | 调试等待操作延迟开关 | - | `debug/wait` |
 | 175 | 2026-11-05 | 内存优化任务完成归档 | `e225c210` | `diagnostic/memery` |
@@ -100,6 +102,7 @@
 | 110 | 2026-10-18 | PptCOM 修复提交归档与覆盖层置顶调查 | `0eb1c7c5`, `184cf86e` | `bugfix/pptcom` |
 | 109 | 2026-10-18 | 提交画布卡死修复并归档五个相关任务 | `6b8bc1d73c8b7307528520c28fc952004ee3d8f1`, `83d08514142211ba6ed5ca9c669c42ca9b139f55` | `bugfix/draw3` |
 | 108 | 2026-10-18 | 画布卡死后续修复与最终GUI验收 | - | `bugfix/draw3` |
+| 107 | 2026-10-17 | P2 基础图形 UI3 与预测交付 | - | `feature/shape` |
 | 106 | 2026-10-17 | UI 指针会话与窗口外拖动验收结案 | `f2494f4e5537d4742f8c4c77a30b2442269ea4f5` | `feature/hook` |
 | 104 | 2026-10-15 | 画布 F1–F4 解锁后完整产品 GUI 验收 | - | `bugfix/draw3` |
 | 102 | 2026-10-15 | 画布 F1–F4 修复与生产回归 | - | `bugfix/draw3` |

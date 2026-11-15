@@ -75,6 +75,7 @@ export namespace Inkeys::UI::RenderPipeline
 		PptMiddleRight,
 		Settings,
 		WhiteboardFreeze,
+		SelectionOverlay,
 		Count,
 	};
 

@@ -10,8 +10,10 @@ module;
 #include <utility>
 #include <windows.h>
 #include "Bar.DirtyRegion.h"
+#include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "Bar.ThemeMaterial.h"
 #include "Bar.PageLoadingIndicator.h"
+#include "Bar.ButtonFrameRing.h"
 #include <wrl/client.h>
 #include "../../../PptWaitingDiagnostics.h"
 #include "Bar.InteractionWorker.h"
@@ -95,6 +97,9 @@ namespace Inkeys::UI::Bar
 		}
 	}
 
+	BarSurfaceSharedLighting ReadShapeEditorSharedLighting() noexcept
+	{ std::scoped_lock lock(lightingMutex); return sharedLighting; }
+
 	BarUiFrameLightingSnapshot ResolveBarSurfaceFrameLightingSnapshot(
 		const BarSurfaceSharedLighting& lighting,const RECT& bounds,LONG outset) noexcept
 	{
@@ -141,10 +146,7 @@ namespace Inkeys::UI::Bar
 		PageLoadingIndicator indicator;
 		bool indicatorAllowed=true,indicatorInputDirty=true,indicatorAnimations=true,ringFailed=false;
 		// 环路径按页码按钮内缩圆角矩形缓存；尺寸/圆角变化时重建，设备丢失时随资源一起丢弃。
-		struct RingKey{float width=0,height=0,radius=0;bool operator==(const RingKey&) const noexcept=default;};
-		Microsoft::WRL::ComPtr<ID2D1PathGeometry> ringPath;
-		Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> ringForeground;
-		RingKey ringKey;float ringPerimeter=0;
+		ButtonFrameRing ring;
 		RECT ringDamage{};
 		// 当前页码槽实际显示的文字；门控到点后才换成状态文字。
 		std::wstring shownCurrent,shownTotal;bool shownStatus=false;
@@ -380,7 +382,7 @@ namespace Inkeys::UI::Bar
 		}
 		void ResetRingResources() noexcept
 		{
-			ringPath.Reset();ringForeground.Reset();ringKey={};ringPerimeter=0;ringFailed=false;
+			ring.Reset();ringFailed=false;
 		}
 		// 状态文字只在500ms门控到点后替换常态页码；空串表示该槽不替换。
 		std::pair<std::wstring,std::wstring> DisplayedPages(const BarPageSurfaceContent& value) const
@@ -814,56 +816,13 @@ namespace Inkeys::UI::Bar
             if(id==3&&indicator.Ring()>0&&!ringFailed)options.content=[&](auto& target,auto* context,auto& item,const auto&){
                 // 沿页码按钮边框内侧的圆角矩形画一段弧：无轨道、圆角端帽，弧长与起点由相位推导。
                 const auto r=Bounds(item.button);
-                constexpr float inset=static_cast<float>(BarButtonFrameThicknessDip)+PageLoadingStyle::Gap+PageLoadingStyle::Width/2;
                 const float corner=item.button.rw?static_cast<float>(item.button.rw->val):static_cast<float>(BarButtonCornerRadiusDip);
-                const float width=static_cast<float>(r.Width())-2*inset,height=static_cast<float>(r.Height())-2*inset;
-                if(width<=PageLoadingStyle::Width||height<=PageLoadingStyle::Width)return true;
-                // 圆角与按钮自身圆角一致（环中心线取按钮圆角），仅在放不下时收小。
-                const float radius=(std::max)(.5F,(std::min)({corner,width/2,height/2}));
-                const RingKey key{width,height,radius};
-                Microsoft::WRL::ComPtr<ID2D1Factory> factory;context->GetFactory(factory.GetAddressOf());
-                if(!factory){ringFailed=true;return true;}
-                // 路径只在尺寸变化时重建；装饰失败不改变数字提交或业务恢复状态。
-                if(!ringPath||!(key==ringKey)){
-                    ringPath.Reset();ringPerimeter=0;
-                    Microsoft::WRL::ComPtr<ID2D1PathGeometry> path;Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
-                    HRESULT hr=factory->CreatePathGeometry(path.GetAddressOf());
-                    if(SUCCEEDED(hr))hr=path->Open(sink.GetAddressOf());
-                    if(SUCCEEDED(hr)){
-                        const auto point=[](float x,float y){return D2D1::Point2F(x,y);};
-                        const auto corner90=[&](float x,float y){sink->AddArc(D2D1::ArcSegment(point(x,y),D2D1::SizeF(radius,radius),0,D2D1_SWEEP_DIRECTION_CLOCKWISE,D2D1_ARC_SIZE_SMALL));};
-                        // 起点固定为顶边中点，顺时针一圈。
-                        sink->BeginFigure(point(width/2,0),D2D1_FIGURE_BEGIN_HOLLOW);
-                        sink->AddLine(point(width-radius,0));corner90(width,radius);
-                        sink->AddLine(point(width,height-radius));corner90(width-radius,height);
-                        sink->AddLine(point(radius,height));corner90(0,height-radius);
-                        sink->AddLine(point(0,radius));corner90(radius,0);
-                        sink->AddLine(point(width/2,0));
-                        sink->EndFigure(D2D1_FIGURE_END_CLOSED);hr=sink->Close();
-                    }
-                    float length=0;
-                    if(SUCCEEDED(hr))hr=path->ComputeLength(nullptr,D2D1_DEFAULT_FLATTENING_TOLERANCE,&length);
-                    if(SUCCEEDED(hr)&&!ringForeground)hr=context->CreateSolidColorBrush(D2D1::ColorF(0,0,0,0),ringForeground.GetAddressOf());
-                    if(FAILED(hr)||length<=PageLoadingStyle::Width*3){ringFailed=true;return true;}
-                    ringPath=std::move(path);ringKey=key;ringPerimeter=length;
-                }
-                const float weight=PageLoadingStyle::Width,perimeter=ringPerimeter;
                 const auto arc=PageLoadingArcAt(indicator.phase,indicatorAnimations);
-                // 圆角端帽会向两端各延伸半个线宽，扣除后弧段的可见总长才等于 arc.length。
-                const float visible=(std::clamp)(static_cast<float>(arc.length)*perimeter,weight,perimeter-3*weight);
-                const float dashes[2]={(visible-weight)/weight,(perimeter-(visible-weight))/weight};
-                const float offset=(perimeter-static_cast<float>(arc.start)*perimeter)/weight;
-                Microsoft::WRL::ComPtr<ID2D1StrokeStyle> stroke;
-                const auto properties=D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND,D2D1_CAP_STYLE_ROUND,
-                    D2D1_CAP_STYLE_ROUND,D2D1_LINE_JOIN_ROUND,10.0F,D2D1_DASH_STYLE_CUSTOM,offset);
-                if(FAILED(factory->CreateStrokeStyle(properties,dashes,2,stroke.GetAddressOf())))return true;
-                const auto color=GetThemeColor(BarThemeColorEnum::IconPrimary);
-                ringForeground->SetColor(D2D1::ColorF(GetRValue(color)/255.0F,GetGValue(color)/255.0F,GetBValue(color)/255.0F,static_cast<FLOAT>(indicator.Ring())));
-                D2D1_MATRIX_3X2_F original;context->GetTransform(&original);
-                const float z=static_cast<float>(target.GetFrameZoom());
-                context->SetTransform(D2D1::Matrix3x2F::Scale(z,z)*D2D1::Matrix3x2F::Translation(static_cast<FLOAT>((r.left+inset)*z),static_cast<FLOAT>((r.top+inset)*z))*original);
-                context->DrawGeometry(ringPath.Get(),ringForeground.Get(),weight,stroke.Get());
-                context->SetTransform(original);return true;
+                // 装饰失败不改变数字提交或业务恢复状态。
+                if(!ring.Draw(context,r.left,r.top,r.Width(),r.Height(),corner,static_cast<float>(BarButtonFrameThicknessDip),1.0F,
+                    static_cast<float>(target.GetFrameZoom()),{arc.start,arc.length,false},GetThemeColor(BarThemeColorEnum::IconPrimary),
+                    static_cast<FLOAT>(indicator.Ring())))ringFailed=true;
+                return true;
             };
 			DrawBarButtonVisual(renderer,dc,button,Inherit(button.button),options);
 		}
@@ -977,6 +936,8 @@ namespace Inkeys::UI::Bar
 				if(surface->impl_->NeedsLightingUpdate(previous,value))targets.push_back(surface->impl_->SnapshotHooks());
 		}
 		for(const auto& hooks:targets){if(hooks.invalidate)hooks.invalidate();if(hooks.wake)hooks.wake();}
+		const auto shape = Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
+		if (shape && shape->object) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::SelectionOverlay);
 	}
 	void BarPageSurface::Reset() noexcept
 	{

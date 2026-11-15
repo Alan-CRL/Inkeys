@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/native-desktop/shapes.md", "reason": "旧矩形兼容与 UInk 图形元数据合同"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板历史存储与冷页完整性门禁"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "fatal 启动失败退场顺序"}
