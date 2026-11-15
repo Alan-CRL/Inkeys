@@ -30,6 +30,8 @@
 
 ### 转换、并行和续接
 
+- Shape 工具 Touch 的 Down 若已有多步构造、对象编辑或活动焦点层，则整次接触禁用手掌资格（在结束编辑前锁存），不产生阻塞或邻域手掌，真实 Up 仍释放 contactActive。空闲多步工具由本触点新建的构造可随手掌晋升取消：先成功准备橡皮模型，再经 abandonShapeContact/EndCanvasFocus(Escape) 取消会话、释放 contactActive、清除构造预览/L0 和 completedConstruction 并发布 UI 快照；仅移除仍为该会话的 shapeUi.construction，不写图形历史。准备失败保留原构造；普通 Pen/Eraser 与单步 Shape 沿原规则。
+
 - Palm仅覆盖本Runtime实际tool为Eraser/Fixed，保留selectedTool/global选择/其他接触。原绘制转手掌先准备新模型，再移除本触点CPU几何/Shape/自有Laser层并重建共享L0/L1；不清L2或文档。原实际工具已是橡皮时保留已接受擦除及旧半径，只改后续尺寸，不能恢复已擦内容。
 - 原地面积变化必须被消费，不能被“位置未变”早退吞掉。截止不依赖继续Move；休眠复用既有deadline及Move订阅/sequence/generation握手。
 - 邻域：圆形半径r+max(0.15r,4px)；竖长矩形/正方形按等效直径换算半宽hx、半高hy，各轴外扩max(0.15h,4px)（画布px，统一经`PalmExclusionContains`判定）。尺寸取当前实际直径（笔速手掌用`eraserSize.effectiveDiameterPx`），激活帧抬笔用激活时冻结值。手掌续接不按普通橡皮形状过滤，继承旧笔锁存形状。近邻新独立触点锁存禁止手掌；同批先激活者/Down顺序确定性仲裁。成功续接前的有限候选保留邻域预约。

@@ -30,8 +30,6 @@ namespace Inkeys::UI::SelectionOverlay
 		using namespace Inkeys::UI::RenderPipeline;
 		using Inkeys::Window::WindowRole;
 		std::shared_ptr<Bar::ShapeEditorSurface> scene;
-		Bar::ShapeEditorKeyboardOwnership keyboardOwnership;
-		std::atomic<HWND> keyboardForeground=nullptr;
 		std::atomic_bool running=false;
 		std::atomic_uint64_t lifecycle=0;
 		std::mutex lifecycleMutex;
@@ -118,8 +116,7 @@ namespace Inkeys::UI::SelectionOverlay
 		{
 			const auto target=std::atomic_load(&scene);
 			if(!running.load()||!target||e.generation!=lifecycle.load())return;
-			if(e.message==WM_KEYDOWN||e.message==WM_KEYUP)target->Keyboard(static_cast<BYTE>(e.wParam),e.message==WM_KEYDOWN);
-			else if(e.message==WM_MOUSEWHEEL)target->Pointer(e.message,e.screenPoint,e.captureOwned,e.presentedRevision,GET_WHEEL_DELTA_WPARAM(e.wParam));
+			if(e.message==WM_MOUSEWHEEL)target->Pointer(e.message,e.screenPoint,e.captureOwned,e.presentedRevision,GET_WHEEL_DELTA_WPARAM(e.wParam));
 			else target->Contact(e.message,e.screenPoint,e.contactSource,e.contactId,e.touch,e.pen,e.inputSeconds,e.captureOwned,e.presentedRevision);
 			if(e.message==WM_CANCELMODE||e.message==WM_CAPTURECHANGED)
 				PostMessageW(e.window,ReleaseCaptureMessage,static_cast<WPARAM>(e.captureTicket),0);
@@ -178,7 +175,7 @@ namespace Inkeys::UI::SelectionOverlay
 				if(!nativeRouting.CanBegin(kind,source,id,hit.occupied,body))return false;
 				if(nativeRouting.contacts.empty())
 				{
-					nativeRouting.kind=kind;nativeRouting.body=body;nativeTicket=nextTicket++;keyboardForeground=GetForegroundWindow();
+					nativeRouting.kind=kind;nativeRouting.body=body;nativeTicket=nextTicket++;
 					// 位置编辑只需最新坐标；角度和可加入多指的本体保留有序轨迹，避免三维逐点重建积压。
 					nativeRouting.preserveTrajectory=target->PreservePointerTrajectory(point)||(kind==NativeKind::Touch&&body);
 					// Pointer 自带接触捕获；共用鼠标捕获只维护同一窗口手势生命周期。
@@ -242,7 +239,7 @@ namespace Inkeys::UI::SelectionOverlay
 				if(ContactNative(hwnd,message,point,NativeKind::Mouse,0,0)||message!=WM_MOUSEMOVE)return 0;
 				if(nativeRouting.kind!=NativeKind::None)return 0;
 			}
-			if(message==WM_MOUSEMOVE||message==WM_MOUSELEAVE||message==WM_MOUSEWHEEL||message==WM_KEYDOWN||message==WM_KEYUP)
+			if(message==WM_MOUSEMOVE||message==WM_MOUSELEAVE||message==WM_MOUSEWHEEL)
 			{
 				Bar::SurfaceInputEvent e;e.window=hwnd;e.message=message;e.wParam=wp;e.lParam=lp;e.generation=lifecycle.load();
 				e.screenPoint={GET_X_LPARAM(lp),GET_Y_LPARAM(lp)};if(message!=WM_MOUSEWHEEL)ClientToScreen(hwnd,&e.screenPoint);
@@ -308,57 +305,4 @@ namespace Inkeys::UI::SelectionOverlay
 		(void)Bar::DrainInteractionSurfaceCallbacks();if(const auto target=std::atomic_load(&scene))target->CancelPointer();Bar::ClearShapeUiIntents();(void)Window::GetService().Hide(WindowRole::SelectionOverlay);std::atomic_store(&scene,std::shared_ptr<Bar::ShapeEditorSurface>{});
 	}
 	void NotifyStateChanged() noexcept {Request();}
-	static bool QueueKeyboardDown(BYTE key)
-	{
-		if (!running.load()) return false;
-		const auto target = std::atomic_load(&scene);
-		const HWND hwnd = Window::GetService().Handle(WindowRole::SelectionOverlay);
-		const HWND foreground = GetForegroundWindow();
-		DWORD process = 0;
-		if (foreground) GetWindowThreadProcessId(foreground, &process);
-		POINT point{};
-		const bool editorVisible = target && hwnd && IsWindowVisible(hwnd) && !Window::GetService().WhiteboardWindowGroupMinimized();
-		RECT editorBounds{};
-		const bool cursorInside = editorVisible && GetCursorPos(&point) && GetWindowRect(hwnd, &editorBounds) && PtInRect(&editorBounds, point);
-		if (key == VK_ESCAPE)
-		{
-			// 外部放映、最小化时不能仅凭残留的编辑快照截获Esc。
-			if (process != GetCurrentProcessId() && !cursorInside) return false;
-			if (Window::GetService().WhiteboardWindowGroupMinimized()) return false;
-			const auto snapshot = Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
-			if (!snapshot || (!snapshot->object && !snapshot->construction.active)) return false;
-			if (snapshot->object && editorVisible)
-			{
-				Bar::SurfaceInputEvent e;
-				e.window = hwnd; e.message = WM_KEYDOWN; e.wParam = key; e.generation = lifecycle.load();
-				if (!Bar::SubmitSurfaceInput(e)) return false;
-			}
-			else
-			{
-				Inkeys::Drawing::Draw3::ShapeUiAction action;
-				action.identity = snapshot->identity;
-				action.kind = snapshot->construction.active ? Inkeys::Drawing::Draw3::ShapeUiActionKind::ConstructionCancel : Inkeys::Drawing::Draw3::ShapeUiActionKind::CloseEditor;
-				if (!Bar::SubmitShapeUiIntent(action)) return false;
-			}
-			return true;
-		}
-		if (key != VK_TAB && key != VK_LEFT && key != VK_RIGHT && key != VK_UP && key != VK_DOWN && key != VK_RETURN && key != VK_SPACE) return false;
-		// NOACTIVATE窗口的键盘焦点来自明确激活过的浮条内容，鼠标停在对象附近不算焦点。
-		if (!editorVisible || !target->HasKeyboardFocus() || foreground != keyboardForeground.load()) return false;
-		Bar::SurfaceInputEvent e;
-		e.window = hwnd; e.message = WM_KEYDOWN; e.wParam = key; e.generation = lifecycle.load();
-		return Bar::SubmitSurfaceInput(e);
-	}
-	bool TryQueueKeyboard(BYTE key,bool down)
-	{
-		return keyboardOwnership.Route(key, down, [&] { return QueueKeyboardDown(key); }, [&]
-		{
-			if (key == VK_ESCAPE || !running.load()) return;
-			Bar::SurfaceInputEvent e;
-			e.window = Window::GetService().Handle(WindowRole::SelectionOverlay);
-			e.message = down ? WM_KEYDOWN : WM_KEYUP; e.wParam = key; e.generation = lifecycle.load();
-			// 已接管的按压即使焦点改变或队列拒绝续包，仍消费到真实Up。
-			(void)Bar::SubmitSurfaceInput(e);
-		});
-	}
 }

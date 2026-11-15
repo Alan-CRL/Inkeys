@@ -152,7 +152,6 @@ constexpr double BarThicknessFineDialSettleVelocityDipPerSecond = 4.0;
 constexpr double BarThicknessHoldStillnessPx = 5.0;
 constexpr ULONGLONG BarThicknessHoldHintDelayMs = 500;
 constexpr ULONGLONG BarThicknessHoldLockDelayMs = 1500;
-constexpr double BarColorPickerKeyboardStepDip = 2.0;
 constexpr double BarColorPickerHoldStillnessPx = 5.0;
 constexpr ULONGLONG BarColorPickerHoldHintDelayMs = 500;
 constexpr ULONGLONG BarColorPickerHoldLockDelayMs = 1500;
@@ -1096,7 +1095,6 @@ namespace
 	{
 		SurfaceInputEvent surface{};
 		ExMessage main{};
-		BarConstructionPrompt::KeyboardMessage keyboard;
 		std::optional<BarQueuedPointerSample> pointer;
 		bool sourceObserved = false;
 		std::shared_ptr<BarButtonClass> mainButtonHit;
@@ -1140,7 +1138,6 @@ namespace
 		bool cancelled = false;
 		std::shared_ptr<BarButtonClass> currentButtonHit;
 		bool currentHitFrozen = false;
-		BarConstructionPrompt::KeyboardMessage currentKeyboard;
 		std::uint64_t currentCaptureTicket = 0, gestureCaptureTicket = 0;
 		Pointer::Touch::Identity currentTouchRoute, gestureTouchRoute;
 	};
@@ -1231,14 +1228,9 @@ namespace
 	{
 		message.hwnd = window;
 		if (message.category == 0)
-			message.category = (message.message == WM_KEYDOWN || message.message == WM_KEYUP
-				|| message.message == WM_SYSKEYDOWN || message.message == WM_SYSKEYUP) ? EM_KEY : EM_MOUSE;
+			message.category = EM_MOUSE;
 		SharedInputEnvelope event;
 		event.forMain = true; event.main = message;
-		// ExMessage 的鼠标 shift 与 vkcode 共用 union，修饰键须独立冻结并随 FIFO 传递。
-		if (message.category == EM_KEY)
-			event.keyboard = { message.vkcode, message.message == WM_KEYDOWN || message.message == WM_SYSKEYDOWN,
-				(GetKeyState(VK_SHIFT) & 0x8000) != 0 };
 		if (pointer) event.pointer = *pointer;
 		event.fixtureSource = Inkeys::UI::Bar::AuthorizedUi3FixtureSourceInstalled();
 		event.surface.window = window;
@@ -1305,7 +1297,6 @@ namespace
 			}
 			auto& context = *mainInteractionAwaitContext;
 			context.currentButtonHit = event.mainButtonHit; context.currentHitFrozen = event.mainHitFrozen;
-			context.currentKeyboard = event.keyboard;
 			context.currentCaptureTicket = event.surface.captureTicket;
 			context.currentTouchRoute={event.surface.window,event.surface.touchRegistration,event.surface.touchRouteGeneration};
 			return true;
@@ -2322,8 +2313,7 @@ namespace Inkeys::UI::Bar
 
 	bool RunConstructionPromptTouchRouteTest(POINT screen)
 	{
-		if (interactionWorkerRunning.load(std::memory_order_acquire)
-			|| barUISet.ProbeTouchScreen(screen).hit != Pointer::Touch::Hit::Accept) return false;
+		if (interactionWorkerRunning.load(std::memory_order_acquire)) return false;
 		// 使用普通 Bar 按钮的真实邮箱、来源会话和屏幕→Rigid 映射，不创建 HWND。
 		MainInteractionAwaitContext context;
 		auto* previous = mainInteractionAwaitContext;
@@ -2366,27 +2356,11 @@ namespace Inkeys::UI::Bar
 	int RunSharedInteractionWorkerTests() noexcept
 	{
 		if (interactionWorkerRunning.load(std::memory_order_acquire)) return 2;
-		if (RunBarTouchProbeProductionTest() != 0) return 1;
 		int failures = 0;
 		const auto check = [&](bool value, const char* name)
 		{
 			if (!value) { ++failures; std::fprintf(stderr, "[UI3Input] FAIL %s\n", name); }
 		};
-		// 模拟 Shift 改变前后捕获的两条键盘消息，验证真实 FIFO/出队上下文不重采样。
-		for (const bool shift : {true, false})
-		{
-			SharedInputEnvelope queued; queued.forMain = true;
-			queued.main.category = EM_KEY; queued.main.message = WM_KEYDOWN; queued.main.vkcode = VK_TAB;
-			queued.keyboard = {VK_TAB, true, shift};
-			check(sharedInputMailbox.Push(std::move(queued), CanCoalesceMainInput), "captured keyboard enters the actual mailbox");
-			MainInteractionAwaitContext frozen; auto* previous = mainInteractionAwaitContext;
-			mainInteractionAwaitContext = &frozen; (void)PumpSharedInteraction(frozen, InteractionClock::now());
-			SharedInputEnvelope consumed; const bool received = TryReadQueuedMainInput(EM_KEY, consumed);
-			mainInteractionAwaitContext = previous;
-			check(received && consumed.main.vkcode == VK_TAB && frozen.currentKeyboard.key == VK_TAB
-				&& frozen.currentKeyboard.down && frozen.currentKeyboard.shift == shift,
-				"keyboard FIFO preserves virtual key and capture-time Shift independently");
-		}
 		{
 			const auto savedInput=SnapshotPptIdleInput();const auto savedDeadline=pptIdleDeadline.ticks.load();
 			// 真正冻结→mailbox→成功几何变化→消费：同一次 Down 的恢复命中必须与业务冻结来源一致。
@@ -2522,7 +2496,7 @@ namespace Inkeys::UI::Bar
 			auto waitForMain = [&]() -> InteractionTask<bool>
 			{
 				ExMessage message{};
-				receivedMain = co_await NextBarInteractionMessage(message, EM_KEY, nullptr);
+				receivedMain = co_await NextBarInteractionMessage(message, EM_MOUSE, nullptr);
 				co_return receivedMain;
 			};
 			auto mainTask = waitForMain(); mainTask.Start();
@@ -2568,8 +2542,8 @@ namespace Inkeys::UI::Bar
 			(void)SubmitSurfaceInput(stale);
 			(void)PumpSharedInteraction(context, InteractionClock::now());
 			check(probes[0].up == 0, "old-surface-generation-rejected");
-			ExMessage key{}; key.category = EM_KEY; key.message = WM_KEYDOWN; key.vkcode = VK_ESCAPE;
-			check(EnqueueMainInteractionMessage(nullptr, key), "enqueue-main-same-mailbox");
+			ExMessage pointer{}; pointer.category = EM_MOUSE; pointer.message = WM_LBUTTONUP;
+			check(EnqueueMainInteractionMessage(nullptr, pointer), "enqueue-main-same-mailbox");
 			(void)PumpSharedInteraction(context, InteractionClock::now());
 			check(mainTask.Done() && receivedMain, "main-resumes-after-other-targets");
 			mainTask.Rethrow();
@@ -3254,13 +3228,12 @@ namespace
 		UiDiag::Log("bar",window,"capture_release","released",WM_LBUTTONUP,nullptr,"ticket=%llu",static_cast<unsigned long long>(ticket));
 		voluntaryBarCaptureRelease = false;
 	}
-	Pointer::Touch::Probe ProbeBarTouch(void*,const Pointer::Touch::Packet& packet)
+	Pointer::Touch::Probe ProbeBarTouch(void*,const Pointer::Touch::Packet&)
 	{
 		if(!IsWindowVisible(barTouchContext.window)||!IsWindowEnabled(barTouchContext.window)
 			||Inkeys::UI::Bar::CommittedPresentationAlpha()==0)return {};
-		auto probe=barUISet.ProbeTouchScreen(packet.screen);
-		if(probe.hit==Pointer::Touch::Hit::Accept&&(offSignal||Inkeys::UI::MessageBox::IsShowing()))probe.hit=Pointer::Touch::Hit::Blocked;
-		return probe;
+		// 触摸与鼠标同准入：系统已按分层窗口像素把这一指投给主栏，具体命中交给 worker 的同一套鼠标逻辑。
+		return {offSignal||Inkeys::UI::MessageBox::IsShowing()?Pointer::Touch::Hit::Blocked:Pointer::Touch::Hit::Accept,1};
 	}
 	void RetireBarTouchProducer(Pointer::Touch::Identity route)
 	{
@@ -3652,7 +3625,6 @@ void BarUISetClass::CloseColorPicker(bool cancelCapture)
 	picker.colorPickerHoldProgress = 0.0f;
 	picker.colorPickerTonePress = false;
 	picker.colorPickerClosePress = false;
-	picker.colorPickerKeyboardDownMask = 0;
 	if (floating_window && IsWindow(floating_window))
 	{
 		if (picker.colorPickerPointerCapture || (cancelCapture && gestureActive))
@@ -5084,21 +5056,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		return menu && IsPresentedBarVisualHit(barUISet, menu, clientX, clientY);
 	}
 
-	static unsigned int ColorPickerKeyMask(BYTE vkCode)
-		{
-			switch (vkCode)
-			{
-			case VK_LEFT: case 'A': return 1u << 0;
-			case VK_RIGHT: case 'D': return 1u << 1;
-			case VK_UP: case 'W': return 1u << 2;
-			case VK_DOWN: case 'S': return 1u << 3;
-			default: return 0;
-			}
-		}
-
-	std::uint64_t colorPickerKeyboardRevision = 0;
 	void ApplyColorPickerPoint(double markerX, double markerY,
-		bool setMemory, std::uint64_t revision = 0)
+		bool setMemory)
 		{
 			if (markerX < 0.0 || markerX > 1.0)
 				markerX = markerX - floor(markerX);
@@ -5112,7 +5071,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			barState.drawAttributeBar.colorPickerMarkerY =
 				static_cast<float>(markerY);
 			barState.drawAttributeBar.colorPickerMarkerVisible = true;
-			SetInteractionPenColor(Inkeys::Color::SetAlphaR(color, 255), setMemory, revision);
+			SetInteractionPenColor(Inkeys::Color::SetAlphaR(color, 255), setMemory);
 		}
 
 	void ProjectCurrentColorPickerPoint()
@@ -5131,62 +5090,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			// 主栏预设色不是自定义选点；只有非预设当前色或后续色板输入才显示圆环。
 			barState.drawAttributeBar.colorPickerMarkerVisible =
 				exact && !IsBarPresetColor(currentColor);
-		}
-
-	void HandleColorPickerKeyboard(const ExMessage& keyMessage)
-		{
-			unsigned int keyMask = ColorPickerKeyMask(keyMessage.vkcode);
-			if (!keyMask || !ColorPickerAvailable()
-				|| !barState.drawAttributeBar.colorPickerOpen)
-				return;
-
-			bool keyDown = keyMessage.message == WM_KEYDOWN
-				|| keyMessage.message == WM_SYSKEYDOWN;
-			unsigned int downMask =
-				barState.drawAttributeBar.colorPickerKeyboardDownMask;
-			if (!keyDown)
-			{
-				unsigned int nextMask = downMask & ~keyMask;
-				barState.drawAttributeBar.colorPickerKeyboardDownMask = nextMask;
-				if ((downMask & keyMask) != 0 && nextMask == 0)
-				{
-					// 最后一个移动键抬起才持久化，系统重复按下不会写配置。
-					if (colorPickerKeyboardRevision == StateModeTransitionRevision()) RequestInteractionMemorySave();
-					UpdateRendering();
-				}
-				return;
-			}
-
-			if (!downMask) colorPickerKeyboardRevision = StateModeTransitionRevision();
-			if (colorPickerKeyboardRevision != StateModeTransitionRevision()) return;
-			auto palette = shapeMap[
-				BarUISetShapeEnum::DrawAttributeBar_ColorPickerPalette];
-			if (!palette || palette->w.val <= 0.0 || palette->h.val <= 0.0)
-				return;
-			double markerX = barState.drawAttributeBar.colorPickerMarkerX;
-			double markerY = barState.drawAttributeBar.colorPickerMarkerY;
-			if (!barState.drawAttributeBar.colorPickerMarkerVisible)
-			{
-				bool exact = false;
-				ProjectBarColorPickerColor(GetPenColor() & 0x00FFFFFF,
-					barState.drawAttributeBar.colorPickerDarkTone,
-					barState.widgetPosition.primaryBar,
-					markerX, markerY, exact);
-			}
-			double horizontalStep = BarColorPickerKeyboardStepDip / palette->w.val;
-			double verticalStep = BarColorPickerKeyboardStepDip / palette->h.val;
-			switch (keyMessage.vkcode)
-			{
-			case VK_LEFT: case 'A': markerX -= horizontalStep; break;
-			case VK_RIGHT: case 'D': markerX += horizontalStep; break;
-			case VK_UP: case 'W': markerY -= verticalStep; break;
-			case VK_DOWN: case 'S': markerY += verticalStep; break;
-			default: break;
-			}
-			ApplyColorPickerPoint(markerX, markerY, false, colorPickerKeyboardRevision);
-			barState.drawAttributeBar.colorPickerKeyboardDownMask =
-				downMask | keyMask;
-			UpdateRendering();
 		}
 
 	InteractionTask<bool> RunColorPickerPointerGesture(ExMessage& gestureMessage)
@@ -5263,7 +5166,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 			auto& picker = barState.drawAttributeBar;
 		picker.colorPickerPointerPressed = true;
-		picker.colorPickerKeyboardDownMask = 0;
 		picker.colorPickerHoldHintActive = false;
 		picker.colorPickerHoldLocked = false;
 		picker.colorPickerHoldProgress = 0.0f;
@@ -5376,7 +5278,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				|| thicknessFineDialPhase == ThicknessFineDialPhase::Settling);
 		const auto deadline = physics ? InteractionClock::now() + BarThicknessFineDialPhysicsPollInterval
 			: InteractionClock::time_point::max();
-		const bool received = co_await NextBarInteractionMessage(msg, EM_MOUSE | EM_KEY,
+		const bool received = co_await NextBarInteractionMessage(msg, EM_MOUSE,
 			floating_window, false, &currentTouchScreenSample, deadline);
 		if (offSignal || InteractionCancelled()) co_return BarInteractionStageResult::Shutdown;
 		if (!received)
@@ -5388,28 +5290,6 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		if (physics) thicknessFineDialPhysicsClockNeedsReset = true;
 		co_return BarInteractionStageResult::PassThrough;
 	}
-
-	BarInteractionStageResult HandleKeyboardMessage()
-		{
-		if (msg.message == WM_KEYDOWN || msg.message == WM_KEYUP
-			|| msg.message == WM_SYSKEYDOWN || msg.message == WM_SYSKEYUP)
-		{
-			if (barUISet.constructionPrompt.Keyboard(barUISet, mainInteractionAwaitContext->currentKeyboard))
-				return BarInteractionStageResult::Consumed;
-			if (barUISet.geometryAttribute.Keyboard(barUISet, msg.vkcode,
-				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
-				return BarInteractionStageResult::Consumed;
-			if (barUISet.eraserAttribute.Keyboard(barUISet, msg.vkcode,
-				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
-				return BarInteractionStageResult::Consumed;
-			if (barUISet.recallAttribute.Keyboard(barUISet, msg.vkcode,
-				msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN))
-				return BarInteractionStageResult::Consumed;
-			HandleColorPickerKeyboard(msg);
-			return BarInteractionStageResult::Consumed;
-		}
-		return BarInteractionStageResult::PassThrough;
-		}
 
 	BarInteractionStageResult HandleBottomDockIndicatorOcclusion()
 	{
@@ -8533,9 +8413,6 @@ public:
 					barUISet.ReadFiniteSignature(GetStateModeVersionedSnapshot()))) break;
 			}
 
-			const auto keyboardResult = HandleKeyboardMessage();
-			if (keyboardResult == BarInteractionStageResult::Shutdown) break;
-			if (keyboardResult == BarInteractionStageResult::Consumed) continue;
 
 			const auto dockIndicatorResult =
 				HandleBottomDockIndicatorOcclusion();
@@ -10302,12 +10179,7 @@ namespace Inkeys::UI::Bar
 			message, extraInfo))
 		{ UiDiag::Log("bar_queue",hwnd,"filter","pointer_promoted_mouse",message,nullptr,"extra=0x%llx",static_cast<unsigned long long>(extraInfo)); return { Inkeys::Message::Action::Discard, 0 }; }
 		if (message == WM_KEYDOWN || message == WM_KEYUP || message == WM_SYSKEYDOWN || message == WM_SYSKEYUP)
-		{
-			ExMessage queued{}; queued.message = static_cast<USHORT>(message);
-			queued.category = EM_KEY; queued.vkcode = static_cast<BYTE>(wParam);
-			(void)EnqueueMainInteractionMessage(hwnd, queued);
-			return { Inkeys::Message::Action::Discard, 0 };
-		}
+			return {}; // Bar 不接管键盘，交由窗口默认处理。
 		if (!IsBarCoordinateMessage(message)) return {};
 		// 原生 Down/Move/Up 按值进入唯一交互 worker；Raw 只补充当前连续手势。
 
@@ -10363,38 +10235,6 @@ namespace Inkeys::UI::Bar
 		else accepted = EnqueueMainInteractionMessage(hwnd, queued, ticket);
 		if (message == WM_LBUTTONUP || (down && !accepted)) ReleaseBarNativeCapture(hwnd, ticket);
 		return { accepted ? Inkeys::Message::Action::Discard : Inkeys::Message::Action::Handled, 0 };
-	}
-
-	bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown)
-	{
-		const auto stateMode = GetStateModeSnapshot();
-		// 键盘只在指针仍位于本Bar窗口或Bar拥有焦点时路由，避免拦截其他应用。
-		POINT pointer{};
-		const bool eraserKey = vkCode == VK_ESCAPE || vkCode == VK_TAB || vkCode == VK_LEFT
-			|| vkCode == VK_RIGHT || vkCode == VK_RETURN || vkCode == VK_SPACE;
-		// 撤回属性复用同一组键盘路由键（Escape/Tab/方向/回车/空格）。
-		const bool auxPanelWantsKeyboard = barUISet.constructionPrompt.WantsKeyboard() || barUISet.geometryAttribute.WantsKeyboard() || barUISet.eraserAttribute.WantsKeyboard() || barUISet.recallAttribute.WantsKeyboard();
-		if (eraserKey && !offSignal && floating_window && auxPanelWantsKeyboard
-			&& (GetForegroundWindow() == floating_window || (GetCursorPos(&pointer) && WindowFromPoint(pointer) == floating_window)))
-		{
-			ExMessage message{}; message.message = keyDown ? WM_KEYDOWN : WM_KEYUP; message.vkcode = vkCode;
-			return EnqueueMainInteractionMessage(floating_window, message);
-		}
-		bool movementKey = vkCode == VK_LEFT || vkCode == VK_RIGHT
-			|| vkCode == VK_UP || vkCode == VK_DOWN
-			|| vkCode == 'A' || vkCode == 'D'
-			|| vkCode == 'W' || vkCode == 'S';
-		if (!movementKey || offSignal || !floating_window
-			|| !IsWindow(floating_window)
-			|| stateMode.StateModeSelect != StateModeSelectEnum::IdtPen
-			|| barUISet.barState.fold || !barUISet.barState.drawAttribute
-			|| !barUISet.barState.drawAttributeBar.colorPickerOpen)
-			return false;
-
-		ExMessage message{};
-		message.message = keyDown ? WM_KEYDOWN : WM_KEYUP;
-		message.vkcode = vkCode;
-		return EnqueueMainInteractionMessage(floating_window, message);
 	}
 
 	void NotifyCanvasStrokeAccepted(const AcceptedStrokeBegin& notice) noexcept

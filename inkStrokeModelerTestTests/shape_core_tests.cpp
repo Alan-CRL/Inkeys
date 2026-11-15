@@ -559,6 +559,12 @@ int RunShapeCoreTests()
 		SHAPE_CHECK(legacy && BuildGeometry(*legacy, geometry));
 		SHAPE_CHECK(legacy && (legacy->style.fill == (kind == LegacyKind::FilledRectangle)));
 		if (legacy && legacy->kind == Kind::Rectangle) SHAPE_CHECK(legacy->geometry.radius == 4);
+		if (legacy) for (Auxiliary auxiliary : {Auxiliary::Center,Auxiliary::Foci,Auxiliary::Diagonals})
+		{
+			auto withAuxiliary = *legacy; withAuxiliary.style.auxiliary = auxiliary;
+			SHAPE_CHECK(!Validate(withAuxiliary));
+			SHAPE_CHECK(!BuildGeometry(withAuxiliary, geometry));
+		}
 	}
 	const auto narrowLegacy = MakeLegacyShape(LegacyKind::FilledRectangle, { 10,10 }, { 6,30 }, 4, 0, 1, Id(4));
 	SHAPE_CHECK(narrowLegacy && narrowLegacy->geometry.radius == 4);

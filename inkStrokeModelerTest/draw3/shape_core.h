@@ -207,7 +207,7 @@ namespace draw3::shapes
 	Bounds UnionBounds(Bounds, Bounds) noexcept;
 	std::optional<ShapeObject> MakeConstructedShape(const Construction&, const ShapeStyle&,
 		const ObjectId&, uint64_t revision = 1, std::string* error = nullptr);
-	// v3/v4棱柱/棱锥先严格匹配旧parts，再恢复为当前面朝向派生。
+	// 工具能力由当前预设定义；私有元数据仅解 v7，不迁移 v3/v4 棱柱/棱锥。
 	struct ToolCapabilities
 	{
 		bool enabled = false, multiStage = false, points = false, fill = false, regularSides = false;

@@ -51,6 +51,9 @@ namespace Inkeys::UI::Bar
 		constexpr unsigned SidesEntry = Rotate+1, Aux = SidesEntry+1, Custom = Aux+3, PickerClose = Custom+1;
 		constexpr unsigned TriangleMode = PickerClose+1, TrapezoidMode = TriangleMode+3, Finish = TrapezoidMode+1, FlipHorizontal = Finish+1, FlipVertical = FlipHorizontal+1, Rotate45 = FlipVertical+1, Rotate90 = Rotate45+1, Count = Rotate90+1;
 		constexpr unsigned PaletteHit = 100, OutsideLayerHit = 101;
+		// 样式栏操作后保持不动的时长（同主栏撤回 chrome 空闲期）；停指后预测外推的最长存活。
+		constexpr auto ToolbarIdleHold = std::chrono::seconds(3);
+		constexpr auto PredictionLinger = std::chrono::milliseconds(30);
 		constexpr std::array<Auxiliary, 3> AuxiliaryBits{Auxiliary::Center, Auxiliary::Foci, Auxiliary::Diagonals};
 		constexpr std::array<unsigned, 23> ToolbarItems{Color, Style, Style+1, Pattern, Pattern+1, Pattern+2, Pattern+3,
 			Thickness, Thickness+1, Thickness+2, SidesEntry, TriangleMode, TriangleMode+1, TriangleMode+2, TrapezoidMode, Aux, Aux+1, Aux+2, FlipHorizontal, FlipVertical, Rotate45, Rotate90, Finish};
@@ -652,8 +655,8 @@ namespace Inkeys::UI::Bar
 				&& a.displayGeneration == b.displayGeneration && a.workspace == b.workspace && a.pageId == b.pageId && a.pageIndex == b.pageIndex;
 		}
 		ButtonPointerState pointer;
+		ShapeUiIdentity buttonIdentity; // 按钮按下时冻结场景，后续纯视觉呈现不能取消本次点击。
 		unsigned hover = 0, pressed = 0, appliedHover = 0, appliedPressed = 0;
-		std::atomic_uint focused = 0;
 		bool constructionGesture = false;
 		bool gesture = false, paletteGesture = false, dismissGesture = false;
 		ShapeStyle pickerBaseStyle;
@@ -810,8 +813,21 @@ namespace Inkeys::UI::Bar
 				toolbarHoldFrozen = true; toolbarHoldResume = false;
 			}
 			toolbarOperationActive = inProgress;
-			toolbarHoldUntil = toolbarNow()+std::chrono::seconds(3);
+			toolbarHoldUntil = toolbarNow()+ToolbarIdleHold;
 		}
+		// 调用方持有 inputMutex：按钮/取色手势结束后才开始 3s 空闲倒计时。
+		void ReleaseToolbarOperationLocked()
+		{
+			if (toolbarOperationActive) { toolbarOperationActive = false; toolbarHoldUntil = toolbarNow()+ToolbarIdleHold; }
+		}
+		// 编辑手势只在同一会话、文档与显示代次内有效。
+		bool GestureSceneMatches(const Frame& frame) const
+		{
+			return frame.snapshot && frame.snapshot->identity.session == gestureIdentity.session
+				&& frame.snapshot->identity.documentGeneration == gestureIdentity.documentGeneration
+				&& frame.snapshot->identity.displayGeneration == gestureIdentity.displayGeneration;
+		}
+		void EndEditGesture() { gesture = false; pressedHandle = UINT32_MAX; }
 		void ClearToolbarHold(bool animate)
 		{
 			std::scoped_lock lock(inputMutex);
@@ -943,7 +959,7 @@ namespace Inkeys::UI::Bar
 				const int rank = (h.kind == EditHandleKind::Rotate || h.kind == EditHandleKind::Move) ? 0 : h.kind == EditHandleKind::Scale ? 2 : 1;
 				// 旋转钮优先；其余控制点取最近者，仅在等距时让专属点优先。
 				const bool closer = rank == 0 ? priority != 0 || d < nearest
-					: priority != 0 && (d < nearest || (d == nearest && (rank < priority || (h.kind == EditHandleKind::Focus && hit.handle == 100))));
+					: priority != 0 && (d < nearest || (d == nearest && (rank < priority || (h.kind == EditHandleKind::Focus && hit.handle == EditHandleId::Center))));
 				if (d <= 22*22*frame.scale*frame.scale && closer)
 				{
 					priority = rank;
@@ -1053,7 +1069,6 @@ namespace Inkeys::UI::Bar
 			{
 				std::scoped_lock lock(inputMutex);
 				colorOpen = sidesOpen = pickerOpen = false;
-				focused = 0;
 			}
 			requestedVisible = next && next->object.has_value();
 			if (requestedVisible) snapshot = std::move(next);
@@ -1075,7 +1090,7 @@ namespace Inkeys::UI::Bar
 				toolbarMotion = {}; paletteMotion = {}; sidesMotion = {}; pickerMotion = {};
 				toolbarMotion.Retarget(!snapshot->construction.active && !snapshot->drawingPreview, .4);
 				colorOpen = sidesOpen = pickerOpen = false;
-				{ std::scoped_lock lock(inputMutex); pickerDragging = pickerLocked = false; focused = 0; }
+				{ std::scoped_lock lock(inputMutex); pickerDragging = pickerLocked = false; }
 				holdOpacity.SetDirect(0); holdRingOpacity.SetDirect(0); holdTextMix.SetDirect(0); holdWasVisible = false;
 				editOpacity.SetDirect(0);
 			}
@@ -2107,7 +2122,6 @@ namespace Inkeys::UI::Bar
 		{
 			if (pickerOpen.exchange(false) || colorOpen.exchange(false) || sidesOpen.exchange(false))
 			{
-				focused = 0; // 层已关闭就立即释放内容焦点，不等待下一次成功呈现。
 				return true;
 			}
 			return false;
@@ -2340,16 +2354,22 @@ namespace Inkeys::UI::Bar
 		auto& p = *impl_;
 		Impl::Frame frame;
 		ShapeEditorHit hit;
+		bool buttonPressed = false, buttonSceneMatches = false;
 		// 拖动中只需最新帧做坐标换算，跳过逐move的控制点/本体命中。
 		{
 			std::scoped_lock lock(p.inputMutex);
 			frame = p.presented;
 			if (!p.gesture) hit = p.Hit(frame, point);
+			buttonPressed = p.pressed > 0 && p.pressed < Count;
+			buttonSceneMatches = buttonPressed && frame.snapshot && Impl::SameToolbarScene(p.buttonIdentity,frame.snapshot->identity)
+				&& Impl::SameToolbarScene(p.buttonIdentity,p.toolbarScene);
 		}
-		// Down/悬停按已成功呈现的最新帧命中；只要事件对应的帧确实呈现过，就不因之后又呈现了新帧而吞掉按下。
-		const bool presentedEarlier = (message == WM_LBUTTONDOWN || message == WM_MOUSEMOVE) && expectedPresentation<frame.presentationGeneration;
+		// 同场景按钮的 Up 沿用 Down 捕获；按压动画呈现的新帧不应吞掉释放。
+		const bool presentedEarlier = (message == WM_LBUTTONDOWN || message == WM_MOUSEMOVE ||
+			(message == WM_LBUTTONUP && captureOwned && buttonSceneMatches)) && expectedPresentation<frame.presentationGeneration;
 		if ((expectedPresentation && expectedPresentation != frame.presentationGeneration && !presentedEarlier && !p.gesture
-			&& !p.paletteGesture) || message == WM_CANCELMODE || message == WM_CAPTURECHANGED || (!captureOwned && (p.gesture || p.paletteGesture)))
+			&& !p.paletteGesture) || (message == WM_LBUTTONUP && buttonPressed && !buttonSceneMatches)
+			|| message == WM_CANCELMODE || message == WM_CAPTURECHANGED || (!captureOwned && (p.gesture || p.paletteGesture)))
 		{
 			CancelPointer();
 			return true;
@@ -2364,15 +2384,13 @@ namespace Inkeys::UI::Bar
 		if (message == WM_LBUTTONDOWN && hit.button == OutsideLayerHit)
 		{
 			p.HoldToolbar(frame,true);
-			p.CloseTopLayer(); p.dismissGesture = true; p.focused = 0;
+			p.CloseTopLayer(); p.dismissGesture = true;
 			return true;
 		}
 
 		if (p.gesture)
 		{
-			if (!frame.snapshot || frame.snapshot->identity.session != p.gestureIdentity.session
-				|| frame.snapshot->identity.documentGeneration != p.gestureIdentity.documentGeneration
-				|| frame.snapshot->identity.displayGeneration != p.gestureIdentity.displayGeneration)
+			if (!p.GestureSceneMatches(frame))
 			{
 				CancelPointer();
 				return true;
@@ -2396,12 +2414,8 @@ namespace Inkeys::UI::Bar
 				if (!p.constructionGesture) { p.TrackLocal(frame, a.point, up, upGeneration,a.predictedPoint); a.angleDelta = p.localEdit.AngleDelta(); }
 				p.Emit(a);
 				p.predictionAction = a.predictedPoint ? std::optional<ShapeUiAction>(a) : std::nullopt;
-				p.predictionDeadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(30);
-				if (up)
-				{
-					p.gesture = false;
-					p.pressedHandle = UINT32_MAX;
-				}
+				p.predictionDeadline=std::chrono::steady_clock::now()+PredictionLinger;
+				if (up) p.EndEditGesture();
 			}
 			return true;
 		}
@@ -2429,10 +2443,9 @@ namespace Inkeys::UI::Bar
 		if (message == WM_LBUTTONDOWN && hit.occupied && !hit.button && (hit.body || hit.handle))
 		{
 			p.ClearToolbarHold(true);
-			p.focused = 0;
 			p.gesture = true; p.constructionGesture = frame.snapshot->construction.active;
 			p.gestureIdentity = hit.identity;
-			p.handle = hit.body ? 0 : hit.handle;
+			p.handle = hit.body ? EditHandleId::Body : hit.handle;
 			p.down = p.CanvasPoint(frame, point); p.pointerOffset = {};
 			if (p.handle) {
 				const auto real = std::find_if(frame.snapshot->handles.begin(),frame.snapshot->handles.end(),[&](const auto& h){return h.id == p.handle;});
@@ -2447,8 +2460,7 @@ namespace Inkeys::UI::Bar
 			a.down = a.point = p.down;
 			if (!p.Emit(a))
 			{
-				p.gesture = false;
-				p.pressedHandle = UINT32_MAX;
+				p.EndEditGesture();
 				return true;
 			}
 			p.localEditActive = !p.constructionGesture && p.localEdit.Begin(*frame.snapshot->object, p.handle, p.down, {frame.snapshot->displayScale, .25f});
@@ -2470,12 +2482,11 @@ namespace Inkeys::UI::Bar
 			return true;
 		}
 
-		if (message == WM_LBUTTONDOWN && !hit.button) p.focused = 0;
 		if (message == WM_LBUTTONDOWN && hit.button) p.HoldToolbar(frame,true);
 		if (message == WM_LBUTTONUP)
 		{
 			std::scoped_lock lock(p.inputMutex);
-			if (p.toolbarOperationActive) { p.toolbarOperationActive=false; p.toolbarHoldUntil=p.toolbarNow()+std::chrono::seconds(3); }
+			p.ReleaseToolbarOperationLocked();
 		}
 		ButtonPointerEvent event = message == WM_LBUTTONDOWN ? ButtonPointerEvent::Down : message == WM_LBUTTONUP ? ButtonPointerEvent::Up : message == WM_MOUSELEAVE ? ButtonPointerEvent::Leave : ButtonPointerEvent::Move;
 		unsigned activate = 0;
@@ -2485,8 +2496,9 @@ namespace Inkeys::UI::Bar
 			activate = static_cast<unsigned>(r.activate);
 			p.hover = static_cast<unsigned>(r.hover);
 			p.pressed = static_cast<unsigned>(r.pressed);
+			if (event == ButtonPointerEvent::Down && p.pressed) p.buttonIdentity = hit.identity;
+			if (!p.pressed) p.buttonIdentity = {};
 			p.hoveredHandle = hit.occupied && !hit.button ? hit.handle : UINT32_MAX;
-			if (r.activate) p.focused = static_cast<unsigned>(r.activate);
 		}
 
 		if (activate) p.Activate(activate, frame, point);
@@ -2505,9 +2517,7 @@ namespace Inkeys::UI::Bar
 		Impl::Frame frame;
 		{ std::scoped_lock lock(p.inputMutex); frame=p.presented; }
 		if (!frame.snapshot || !frame.snapshot->object) { CancelPointer(); return false; }
-		if (p.gesture && (frame.snapshot->identity.session!=p.gestureIdentity.session
-			|| frame.snapshot->identity.documentGeneration!=p.gestureIdentity.documentGeneration
-			|| frame.snapshot->identity.displayGeneration!=p.gestureIdentity.displayGeneration)) { CancelPointer(); return true; }
+		if (p.gesture && !p.GestureSceneMatches(frame)) { CancelPointer(); return true; }
 		const auto rawPoint=p.CanvasPoint(frame,screen);
 		const auto addPredictor=[&](Vec2 point)
 		{
@@ -2521,7 +2531,7 @@ namespace Inkeys::UI::Bar
 				// 控件/按钮仍由首指独占；只有中心区域的同源触摸可组成多指变换。
 				if (!touch || pen || !p.contactTouch || p.contactPen || !p.gesture || !p.contacts.Count()) return true;
 				const auto hit=Hit(screen);
-				if (!hit.occupied || hit.button || (!hit.body && hit.handle!=100)) return true;
+				if (!hit.occupied || hit.button || (!hit.body && hit.handle!=EditHandleId::Center)) return true;
 				// 新指加入前先收回旧预测，静止的新接触也不能让外推位置滞留。
 				TickPrediction(std::chrono::steady_clock::time_point::max());
 				if (p.contacts.Add(key,rawPoint,true)) addPredictor(rawPoint);
@@ -2533,7 +2543,7 @@ namespace Inkeys::UI::Bar
 			p.contactOwner=key; p.contactTouch=touch; p.contactPen=pen;
 			if (p.gesture)
 			{
-				if (!p.constructionGesture && (p.handle==0 || p.handle==100))
+				if (!p.constructionGesture && (p.handle==EditHandleId::Body || p.handle==EditHandleId::Center))
 				{
 					const auto preset=EditorPreset(*frame.snapshot->object);
 					p.contacts.Add(key,rawPoint,preset<PresetKind::Cuboid || preset>PresetKind::Pyramid);
@@ -2565,8 +2575,8 @@ namespace Inkeys::UI::Bar
 				{},&transform,predicted?&*predicted:nullptr);
 			p.Emit(action);
 			p.predictionAction=predicted?std::optional<ShapeUiAction>(action):std::nullopt;
-			p.predictionDeadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(30);
-			if (final) { p.gesture=false; p.pressedHandle=UINT32_MAX; p.contactOwner.reset(); p.contacts.Reset(); p.predictors.clear(); }
+			p.predictionDeadline=std::chrono::steady_clock::now()+PredictionLinger;
+			if (final) { p.EndEditGesture(); p.contactOwner.reset(); p.contacts.Reset(); p.predictors.clear(); }
 			return true;
 		}
 		if (key!=*p.contactOwner) return true;
@@ -2610,11 +2620,12 @@ namespace Inkeys::UI::Bar
 		}
 
 		std::scoped_lock lock(p.inputMutex);
-		if (p.toolbarOperationActive) { p.toolbarOperationActive=false; p.toolbarHoldUntil=p.toolbarNow()+std::chrono::seconds(3); }
+		p.ReleaseToolbarOperationLocked();
 		p.gesture = p.paletteGesture = p.dismissGesture = false;
 		p.pickerDragging = p.pickerLocked = false;
 		p.pointer.Reset();
 		p.hover = p.pressed = 0;
+		p.buttonIdentity = {};
 		p.hoveredHandle = UINT32_MAX;
 		p.pressedHandle = UINT32_MAX;
 		// 取消拖动立即退回权威快照；已抬手等待提交的本地候选不受普通取消影响。
@@ -2631,64 +2642,6 @@ namespace Inkeys::UI::Bar
 	bool ShapeEditorSurface::NeedsPresent() const noexcept
 	{
 		return impl_->presentPending;
-	}
-
-	bool ShapeEditorSurface::HasKeyboardFocus() const
-	{
-		std::scoped_lock lock(impl_->inputMutex);
-		const auto id = impl_->focused.load();
-		return id>0 && id<Count && impl_->presented.input && impl_->presented.buttons[id].visible && impl_->presented.buttons[id].enabled;
-	}
-
-	bool ShapeEditorSurface::Keyboard(BYTE key, bool down)
-	{
-		auto& p = *impl_;
-		Impl::Frame frame;
-		{
-			std::scoped_lock lock(p.inputMutex);
-			frame = p.presented;
-		}
-
-		if (!frame.snapshot || !frame.visible) return false;
-		if (key == VK_ESCAPE)
-		{
-			if (down)
-			{
-				if (p.CloseTopLayer()) { p.HoldToolbar(frame); CancelPointer(); return true; }
-				CancelPointer();
-				p.ClearToolbarHold(false);
-				ShapeUiAction a;
-				a.kind = ShapeUiActionKind::CloseEditor;
-				a.identity = frame.snapshot->identity;
-				p.Emit(a);
-			}
-			return true;
-		}
-
-		// 弹层收回、成员隐藏或布局运动后，旧focus id不能继续占用前台应用的按键。
-		const auto focusId = p.focused.load();
-		if (!frame.input || !focusId || focusId >= Count || !frame.buttons[focusId].visible || !frame.buttons[focusId].enabled) return false;
-		if (key == VK_TAB || key == VK_RIGHT || key == VK_LEFT || key == VK_UP || key == VK_DOWN)
-		{
-			if (down)
-			{
-				const int step = ((key == VK_LEFT || key == VK_UP) || (key == VK_TAB && (GetKeyState(VK_SHIFT)&0x8000))) ? -1 : 1;
-				for (unsigned k = 0; k<Count; ++k)
-				{
-					p.focused = (p.focused.load()+Count+step)%Count;
-					if (frame.buttons[p.focused.load()].visible && frame.buttons[p.focused.load()].enabled) break;
-				}
-			}
-			return true;
-		}
-
-		if (key == VK_RETURN || key == VK_SPACE)
-		{
-			if (down && p.focused && frame.buttons[p.focused.load()].enabled) p.Activate(p.focused.load(), frame, {});
-			return true;
-		}
-
-		return false;
 	}
 
 	int RunShapeEditorOffscreenTest()
@@ -3305,41 +3258,6 @@ namespace Inkeys::UI::Bar
 				if (!normalPixels.empty()) expect(normalPixels[(static_cast<size_t>(py)*receipt.cx+px)*4+3]>100,
 					"Rectangle hides only the rounded frame and retains the actual rotation connector");
 			}
-			// 无焦点场景必须在点击辅助按钮之前验证；真实按钮激活应当取得内容焦点。
-			for (BYTE key : std::array<BYTE, 7>{VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_SPACE, VK_RETURN, VK_TAB})
-				expect(!scene.HasKeyboardFocus() && !scene.Keyboard(key, true) && !scene.Keyboard(key, false),
-					"object-only editor leaves navigation keys to the foreground application");
-			if (preset == PresetKind::Rectangle && scale == 1 && std::wstring(language) == L"zh-CN")
-			{
-				ShapeEditorKeyboardOwnership ownership;
-				unsigned acquisitions = 0, continuations = 0;
-				const auto key = [&](BYTE vk, bool down)
-				{
-					return ownership.Route(vk, down, [&]
-					{
-						++acquisitions;
-						return scene.HasKeyboardFocus() && scene.Keyboard(vk, true);
-					}, [&] { ++continuations; (void)scene.Keyboard(vk, down); });
-				};
-				scene.impl_->focused = Color;
-				expect(key(VK_SPACE, true) && scene.impl_->colorOpen.load(), "owned Space Down opens the real palette layer");
-				for (int f = 0; f<70; ++f) { now += std::chrono::milliseconds(17); scene.Advance(now); }
-				expect(SUCCEEDED(present()), "Space-opened palette presents"); scene.CommitPresented();
-				expect(!scene.HasKeyboardFocus(), "opening a layer disables the previously focused toolbar entry");
-				expect(key(VK_SPACE, true) && key(VK_SPACE, false) && acquisitions == 1 && continuations == 2,
-					"owned Space repeat and Up stay owned after layer focus changes");
-				scene.Keyboard(VK_ESCAPE, true);
-				for (int f = 0; f<70; ++f) { now += std::chrono::milliseconds(17); scene.Advance(now); }
-				expect(SUCCEEDED(present()), "keyboard layer close presents"); scene.CommitPresented();
-				expect(!key(VK_SPACE, true), "external Space Down remains forwarded");
-				scene.impl_->focused = Color;
-				expect(scene.HasKeyboardFocus() && !key(VK_SPACE, true) && !key(VK_SPACE, false)
-					&& acquisitions == 2 && continuations == 2 && !scene.impl_->colorOpen.load(),
-					"external Space repeat and Up never acquire ownership after editor focus changes");
-				expect(key(VK_LEFT, true) && key(VK_LEFT, false) && acquisitions == 3 && continuations == 3,
-					"a fresh virtual-key press independently acquires and releases editor ownership");
-				scene.impl_->focused = 0;
-			}
 			if (preset == PresetKind::Rectangle || preset == PresetKind::Circle || preset == PresetKind::Ellipse)
 			{
 				const auto defaults = GetShapeStyle(GetStateModeSnapshot());
@@ -3363,7 +3281,6 @@ namespace Inkeys::UI::Bar
 						}
 					}
 					expect(GetShapeStyle(GetStateModeSnapshot()) == defaults, "object auxiliary changes preserve next-stroke tool defaults");
-					expect(scene.HasKeyboardFocus() && scene.Keyboard(VK_SPACE, false), "activated bar content owns navigation focus");
 				}
 				actions.clear();
 			}
@@ -3696,8 +3613,26 @@ namespace Inkeys::UI::Bar
 			const auto color = row.buttons[Color].boundsDip;
 			const POINT colorPoint{row.bounds.left+static_cast<LONG>((color.left+color.right)*row.scale/2),
 				row.bounds.top+static_cast<LONG>((color.top+color.bottom)*row.scale/2)};
-			scene.Pointer(WM_LBUTTONDOWN, colorPoint);
-			scene.Pointer(WM_LBUTTONUP, colorPoint);
+			if (preset == PresetKind::Rectangle && scale == 1 && dark && std::wstring(language) == L"zh-CN")
+			{
+				const auto saved = scene.impl_->presented;
+				scene.Pointer(WM_LBUTTONDOWN, colorPoint, true, saved.presentationGeneration);
+				auto changedScene = std::make_shared<ShapeUiSnapshot>(*saved.snapshot); ++changedScene->identity.session;
+				scene.impl_->presented.snapshot = changedScene; ++scene.impl_->presented.presentationGeneration;
+				scene.Pointer(WM_LBUTTONUP, colorPoint, true, saved.presentationGeneration);
+				expect(!scene.impl_->colorOpen.load() && !scene.impl_->pressed, "older button Up is cancelled after a scene change");
+				scene.impl_->presented = saved; scene.CancelPointer();
+			}
+			const auto downPresentation = scene.PresentedGeneration();
+			scene.Pointer(WM_LBUTTONDOWN, colorPoint, true, downPresentation);
+			// 按下本身未必请求新帧；这里强制插入一次成功呈现，模拟其他动画在 Down/Up 之间推进代次。
+			now += std::chrono::milliseconds(17); scene.Advance(now);
+			expect(SUCCEEDED(present()), "intervening frame presents before queued Up"); scene.CommitPresented();
+			expect(scene.PresentedGeneration() > downPresentation, "pressed frame advances presentation generation");
+			scene.Pointer(WM_LBUTTONUP, colorPoint, true, downPresentation);
+			expect(scene.impl_->colorOpen.load(), "older queued Up activates its captured toolbar button");
+			scene.Pointer(WM_LBUTTONUP, colorPoint, true, downPresentation);
+			expect(scene.impl_->colorOpen.load(), "duplicate older Up cannot activate the button twice");
 			for (int frame = 0; frame<70; ++frame)
 			{
 				now += std::chrono::milliseconds(17);
@@ -3740,8 +3675,7 @@ namespace Inkeys::UI::Bar
 			actions.clear();
 			scene.Pointer(WM_LBUTTONDOWN, pick); scene.Pointer(WM_MOUSEMOVE, {pick.x+8, pick.y+4}); scene.CancelPointer();
 			expect(actions.empty() && !scene.impl_->pickerDragging, "cancelled picker drag emits no object transaction");
-			scene.Keyboard(VK_ESCAPE, true);
-			expect(actions.empty() && !scene.impl_->pickerOpen.load() && scene.impl_->colorOpen.load(), "Escape closes picker and preserves palette");
+			scene.impl_->CloseTopLayer();
 			for (int f = 0; f<70; ++f) { now += std::chrono::milliseconds(17); scene.Advance(now); }
 			expect(SUCCEEDED(present()), "palette remains after picker exit"); scene.CommitPresented();
 			actions.clear();
@@ -3770,10 +3704,7 @@ namespace Inkeys::UI::Bar
 					"selected swatch uses shared colorSelect SVG state");
 			}
 			actions.clear();
-			scene.Keyboard(VK_ESCAPE, true);
-			expect(actions.empty() && !scene.impl_->colorOpen.load(), "first Escape only closes the existing palette layer");
-			scene.Keyboard(VK_ESCAPE, true);
-			expect(!actions.empty() && actions.back().kind == ShapeUiActionKind::CloseEditor, "next Escape closes the editor after the palette");
+			scene.impl_->CloseTopLayer();
 			actions.clear(); scene.impl_->Activate(Finish,scene.impl_->presented,{});
 			expect(actions.size()==1 && actions.back().kind==ShapeUiActionKind::CloseEditor && scene.impl_->memberWanted[Finish],"finish check is available and closes the current editor through the terminal action");
 			for (unsigned id : {FlipHorizontal,FlipVertical}) {
@@ -3941,7 +3872,7 @@ namespace Inkeys::UI::Bar
 			click(Sides+11);
 			expect(actions.size() == 1 && actions.back().kind == ShapeUiActionKind::SetSides && actions.back().sides == 14 && scene.impl_->sidesOpen.load(), "5x3 sides layer applies fourteen and stays open");
 			if (!actions.empty()) { const auto changed = BuildShapePropertyCandidate(*shape, actions.back(), 2); expect(changed && changed->construction->tool.sides == 14, "sides action uses existing SetRegularSides candidate path"); }
-			scene.Keyboard(VK_ESCAPE, true); settle(); actions.clear();
+			scene.impl_->CloseTopLayer(); settle(); actions.clear();
 			click(Color); settle();
 			expect(contained(scene.impl_->candidate.toolbar) && contained(scene.impl_->candidate.colors), "bar and palette fit four corners and small work area");
 			click(Custom); settle();
@@ -3955,11 +3886,7 @@ namespace Inkeys::UI::Bar
 			expect(!scene.impl_->pickerOpen.load() && scene.impl_->colorOpen.load() && actions.empty(), "outside click closes only picker and emits no lower-layer action"); settle();
 			scene.Pointer(WM_LBUTTONDOWN, outside); scene.Pointer(WM_LBUTTONUP, outside);
 			expect(!scene.impl_->colorOpen.load() && actions.empty(), "second outside click closes only palette");
-			expect(!scene.HasKeyboardFocus() && !scene.Keyboard(VK_RIGHT, true) && !scene.Keyboard(VK_SPACE, true),
-				"closed layers release navigation keys immediately"); settle();
-			scene.impl_->focused = Custom;
-			expect(!scene.HasKeyboardFocus() && !scene.Keyboard(VK_TAB, true) && !scene.Keyboard(VK_RETURN, true),
-				"stale hidden layer focus cannot claim navigation or activate a button");
+			settle();
 			// 同一surface切换对象，旧会话所有位置与透明度必须丢弃。
 			auto switched = std::make_shared<ShapeUiSnapshot>(*snapshot); ++switched->identity.session; switched->identity.objectId[1] = 1;
 			const auto other = MakePresetShape({PresetKind::Rectangle, CreationMode::Drag}, {0, 0}, {60, 40}, objectStyle, switched->identity.objectId);

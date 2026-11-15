@@ -228,6 +228,9 @@
   <ItemGroup>
 	<ClInclude Include="shape_uink_tests.inl" />
 	<ClInclude Include="..\inkStrokeModelerTest\draw3\shape_core.h" />
+	<ClInclude Include="..\inkStrokeModelerTest\draw3\shape_interaction.h" />
+	<ClInclude Include="..\inkStrokeModelerTest\draw3\shape_interaction.inl" />
+	<ClInclude Include="..\inkStrokeModelerTest\draw3\shape_presets.inl" />
 	<ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_metadata.inl" />
 	<ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_standard.inl" />
 	<ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_import.inl" />

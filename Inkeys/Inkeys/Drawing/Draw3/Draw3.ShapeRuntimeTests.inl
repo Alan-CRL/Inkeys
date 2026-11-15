@@ -16,11 +16,11 @@ int RunShapeInteractionProductionTest()
 	const auto configuration = CreateStrokeModelConfiguration(144);
 	Inkeys::Business::PenWidth::Context context; context.effectiveDpi = 144;
 	ShapeStyle style; style.width = 3; style.strokeOpacity = .5f; style.strokeRgb = style.fillRgb = 0x123456;
-	const auto begin = [&](ToolSpec tool,Vec2 point,std::shared_ptr<ShapeConstructionRuntime> state = {})
+	const auto begin = [&](ToolSpec tool,Vec2 point,std::shared_ptr<ShapeConstructionRuntime> state = {}, InputDeviceType deviceType = InputDeviceType::Pen)
 	{
 		window.SetActiveTool(DrawingTool::Shape); window.SetProductVisualStyle(0x12345680,3,context,tool,style);
 		ContactSnapshot down; down.position = {point.x,point.y}; down.qpc = 100000 + 1000 * ++contactId;
-		if (!input.PublishDown(0x5A91,contactId,InputDeviceType::Pen,down)) throw std::runtime_error("shape interaction Down");
+		if (!input.PublishDown(0x5A91,contactId,deviceType,down)) throw std::runtime_error("shape interaction Down");
 		ContactRecord* record = nullptr; while (input.TryDequeue(record)) if (record) break;
 		if (!record) throw std::runtime_error("shape interaction ingress");
 		auto runtime = std::make_unique<RuntimeStroke>(configuration.expectedSpeed);
@@ -66,6 +66,106 @@ int RunShapeInteractionProductionTest()
 		const auto result = CommitRuntimeStoredStrokeCpu(runtime,document,pages,0,0,StoredStrokeCommitMode::NormalUp,allocate);
 		input.Recycle(runtime.handle); return result;
 	};
+	// 空闲多步工具的首触可转手掌；Run 的取消钩子与本测试共用失焦路径的 CPU 清理。
+	for (PresetKind preset : {PresetKind::Polyline,PresetKind::Cuboid}) for (ContactPhase phase : {ContactPhase::Down,ContactPhase::Move})
+	{
+		PalmEraser::Settings preferences; preferences.enabled = true;
+		const PalmEraser::Scale scale{1,1,true,false}; ShapeUiRuntime ui;
+		const auto category = ShapePalmToolCategory(DrawingTool::Shape,ui); // 必须在该 Down 创建构造前锁存。
+		const auto count = canvas->Strokes().size(), operations = pages[0].operationCursor, historyCount = pages[0].history.Items().size();
+		auto contact = begin({preset,DefaultCreationMode(preset)},{80,70},{},InputDeviceType::Touch);
+		const auto state = contact->shape.construction; ui.construction = state;
+		contact->qpcOrigin = contact->lastInputSnapshot.qpc;
+		contact->palm.Begin(preferences,scale,category,contact->qpcOrigin,1000);
+		if (phase == ContactPhase::Move) move(*contact,{150,110},{180,135});
+		auto area = contact->lastInputSnapshot; area.phase = phase;
+		area.contactSize = {100,100}; area.contactAreaUnits = SpeedEraser::ContactAreaUnits::CanvasPixels;
+		auto candidate = contact->palm;
+		check(GetToolCapabilities(preset).multiStage && state->session.Status().active && state->contactActive && candidate.eligible &&
+			candidate.Observe(ContactAreaFromSnapshot(area),area.qpc) && candidate.active,
+			"idle multi-stage Touch Down creates a construction without losing palm eligibility");
+		int abandoned = 0;
+		const std::function<void(RuntimeStroke&)> abandon = [&](RuntimeStroke& runtime)
+		{
+			++abandoned;
+			check(runtime.shape.construction == state && runtime.shape.active,"abandon hook runs before runtime shape reset");
+			CancelShapeConstruction(runtime.shape.construction,ui);
+		};
+		check(!PromotePalmRuntime(*contact,candidate,area,configuration,1000) && abandoned == 0 && ui.construction == state,
+			"construction promotion requires an owner cancellation hook");
+		auto invalidModel = configuration; invalidModel.modelParams.sampling_params.min_output_rate = 0;
+		check(!PromotePalmRuntime(*contact,candidate,area,invalidModel,1000,abandon) && abandoned == 0 &&
+			ui.construction == state && state->session.Status().active && state->contactActive && !contact->palm.active,
+			"failed palm preparation preserves the original construction and contact");
+		ui.completedConstruction.finished = true; // 取消也必须撤掉旧完成提示。
+		check(PromotePalmRuntime(*contact,candidate,area,configuration,1000,abandon) && abandoned == 1 &&
+			contact->tool == DrawingTool::Eraser && contact->palm.active && !contact->shape.active && !contact->shape.construction && !contact->shape.object,
+			"idle multi-stage Down or Move promotes through the production cancellation hook");
+		check(!ui.construction && !ui.completedConstruction.finished && ui.constructionVisualDirty && state->cancelled &&
+			!state->session.Status().active && !state->contactActive && !state->preview && !state->renderData.bounds.valid && state->visualPoints.empty(),
+			"promotion cancels the session, releases contactActive and removes construction previews");
+		check(canvas->Strokes().size() == count && pages[0].operationCursor == operations && pages[0].history.Items().size() == historyCount,
+			"abandoned construction adds neither a stored shape nor a history item");
+		auto terminal = area; terminal.qpc += 20;
+		check(input.PublishCancelled(0x5A91,contact->handle.record->ContactId(),terminal),"promoted test contact terminates");
+		input.Recycle(contact->handle);
+	}
+	// 大面积触摸不能抢走构造/编辑触点；资格在 Down 锁存，释放仍走原构造确认。
+	{
+		PalmEraser::Settings preferences; preferences.enabled = true; preferences.parallelWriting = false;
+		const PalmEraser::Scale scale{1,1,true,false};
+		auto first = begin({PresetKind::Polyline,CreationMode::Points},{80,70});
+		const auto state = first->shape.construction;
+		check(!up(*first,{80,70}) && state->session.Status().active && !state->contactActive,"pre-existing construction waits for its next contact");
+		ShapeUiRuntime ui; ui.construction = state;
+		const auto category = ShapePalmToolCategory(DrawingTool::Shape,ui);
+		auto contact = begin({PresetKind::Polyline,CreationMode::Points},{100,90},state,InputDeviceType::Touch);
+		auto area = contact->lastInputSnapshot; area.qpc += 20; area.phase = ContactPhase::Move;
+		area.contactSize = {100,100}; area.contactAreaUnits = SpeedEraser::ContactAreaUnits::CanvasPixels;
+		contact->palm.Begin(preferences,scale,category,contact->lastInputSnapshot.qpc,1000);
+		check(!contact->palm.eligible && !contact->palm.Observe(ContactAreaFromSnapshot(area),area.qpc) && !contact->palm.active,
+			"shape touch during construction is not palm eligible");
+		const std::vector<RuntimeStroke*> contacts{contact.get()};
+		check(!PalmBlocksDrawing(*contact) && !PalmNeighborBlocked(contacts,area.position,area.qpc),
+			"suppressed construction touch neither blocks writing nor reserves a palm neighborhood");
+		PalmEraser::State candidate; candidate.Begin(preferences,scale,PalmToolCategory(contact->tool),contact->lastInputSnapshot.qpc,1000);
+		check(candidate.Observe(ContactAreaFromSnapshot(area),area.qpc) && candidate.active,
+			"same area would activate an ordinary shape palm");
+		int abandoned = 0;
+		const std::function<void(RuntimeStroke&)> abandon = [&](RuntimeStroke& runtime)
+		{ ++abandoned; CancelShapeConstruction(runtime.shape.construction,ui); };
+		check(!PromotePalmRuntime(*contact,candidate,area,configuration,1000,abandon) && abandoned == 0 &&
+			contact->shape.construction == state && state->contactActive,
+			"Down eligibility guard preserves a pre-existing construction even with a cancellation hook");
+		check(!up(*contact,{150,110}) && !state->contactActive && state->session.Status().active,
+			"suppressed construction touch Up releases contactActive and keeps the next stage usable");
+		ui.construction.reset();
+		for (bool focusOnly : {false,true})
+		{
+			if (focusOnly) ui.focus.pending.push_back({}); else ui.editor.object = ShapeObject{};
+			PalmEraser::State editing; editing.Begin(preferences,scale,ShapePalmToolCategory(DrawingTool::Shape,ui),area.qpc,1000);
+			check(!editing.eligible,"shape touch during object edit or focus mode is not palm eligible");
+			ui.editor.object.reset(); ui.focus.pending.clear(); // 模拟 beginShapeContact 结束编辑，本触点仍沿用 Down 决定。
+			check(!editing.Observe(ContactAreaFromSnapshot(area),area.qpc) && !editing.active,
+				"ending edit mode cannot enable palm promotion on the swallowed touch");
+			RuntimeStroke swallowed(configuration.expectedSpeed); swallowed.tool = DrawingTool::Shape; swallowed.palm = editing;
+			check(!PromotePalmRuntime(swallowed,candidate,area,configuration,1000,abandon) && abandoned == 0 && swallowed.tool == DrawingTool::Shape,
+				"promotion cannot override the edit-mode Down decision with an eligible candidate");
+		}
+		PalmEraser::State outside; outside.Begin(preferences,scale,ShapePalmToolCategory(DrawingTool::Shape,ui),area.qpc,1000);
+		check(outside.eligible && outside.Observe(ContactAreaFromSnapshot(area),area.qpc) && outside.active,
+			"shape touch outside construction and editing remains palm eligible");
+		ui.construction = state;
+		for (DrawingTool tool : {DrawingTool::Pen,DrawingTool::Eraser})
+		{
+			PalmEraser::State ordinary; ordinary.Begin(preferences,scale,ShapePalmToolCategory(tool,ui),area.qpc,1000);
+			check(ordinary.eligible,"shape UI state leaves ordinary pen and eraser palm eligibility unchanged");
+		}
+		const auto replacement = std::make_shared<ShapeConstructionRuntime>(); ui.construction = replacement; ui.completedConstruction.finished = true;
+		CancelShapeConstruction(state,ui);
+		check(ui.construction == replacement && ui.completedConstruction.finished && state->cancelled && !state->session.Status().active,
+			"cancelling a stale contact construction preserves the newer construction and completion state");
+	}
 	for (uint32_t value = uint32_t(PresetKind::Arc); value <= uint32_t(PresetKind::Pyramid); ++value)
 	{
 		const auto preset = static_cast<PresetKind>(value); const ToolSpec tool{preset,CreationMode::MultiStage,5};
@@ -118,7 +218,7 @@ int RunShapeInteractionProductionTest()
 			check(queued->contactActive,"ended contact stays active until end-of-frame confirmation");
 			RuntimeStroke* pending = FindPendingConstructionContact(batch,probe,queued);
 			check(pending == first.get(),"same-batch Down finds the ended unconfirmed contact");
-			if (pending) { pending->shape.constructionFinished = true; ConfirmRuntimeConstructionContact(*pending); }
+			if (pending) ConfirmRuntimeConstructionContact(*pending);
 			const auto confirmedPoints = queued->session.Points().size();
 			check(!queued->contactActive && confirmedPoints >= 1,"early confirmation records the previous point and frees the session");
 			check(!FindPendingConstructionContact(batch,probe,queued),"confirmed contact is not confirmed twice");

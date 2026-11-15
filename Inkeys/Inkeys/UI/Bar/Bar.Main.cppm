@@ -164,7 +164,6 @@ public:
 	void CommitPresented();
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool ResetPointerFeedback();
-	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
 	void Close(BarUISetClass& owner);
 	RECT Bounds() const;
 	std::array<RECT,3> PresentedRegions() const;
@@ -172,7 +171,6 @@ public:
 	bool Changed() const noexcept { return changed_; }
 	bool Active() const noexcept { return active_; }
 	bool IdleFadeProtected() const noexcept { return panelMotion_.Visible() || menuMotion_.Visible(); }
-	bool WantsKeyboard() const noexcept { return visible_.load(); }
 	void RememberEntryFromSelection(bool value) noexcept { returnToSelectionOnClear_ = value; }
 private:
 	void Initialize();
@@ -191,8 +189,7 @@ private:
 	bool previousBelow_ = false, previousReversed_ = false;
 	int menuSide_ = -1;
 	int appliedHover_ = -1; // 仅渲染线程消费输入反馈并操作按钮动画。
-	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
-	IdtAtomic<bool> visible_ = false;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1;
 	bool returnToSelectionOnClear_ = false;
 	Inkeys::UI::Bar::EraserSurfaceMotion panelMotion_, menuMotion_;
 	std::array<BarButtonClass,11> buttons_;
@@ -203,8 +200,6 @@ private:
 	std::array<BarUiValueClass,3> circleSelection_, circleHover_, circlePress_;
 	BarUiShapeClass surface_, menu_;
 	BarUiWordClass title_;
-	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
-	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
 	std::array<Microsoft::WRL::ComPtr<ID2D1Bitmap1>,3> previewBitmaps_;
 	std::array<bool,3> previewBitmapAttempted_{};
 	std::array<float,3> previewDiametersPx_{}, previewRasterHalfWidths_{};
@@ -233,7 +228,6 @@ public:
 	void CommitPresented();
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool ResetPointerFeedback();
-	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
 	void Close(BarUISetClass& owner);
 	RECT Bounds() const;
 	std::array<RECT,3> PresentedRegions() const;
@@ -241,7 +235,6 @@ public:
 	bool Changed() const noexcept { return changed_; }
 	bool Active() const noexcept { return active_; }
 	bool IdleFadeProtected() const noexcept { return panelMotion_.Visible(); }
-	bool WantsKeyboard() const noexcept { return visible_.load(); }
 private:
 	void Initialize();
 	bool Execute(BarUISetClass& owner, int item);
@@ -257,13 +250,10 @@ private:
 	double sideSwitchExpandDuration_ = 0;
 	bool previousBelow_ = false;
 	int appliedHover_ = -1; // 仅渲染线程消费输入反馈并操作按钮动画。
-	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
-	IdtAtomic<bool> visible_ = false;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1;
 	Inkeys::UI::Bar::RecallSurfaceMotion panelMotion_;
 	BarButtonClass redoButton_;
 	BarUiShapeClass surface_;
-	Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
-	Microsoft::WRL::ComPtr<ID2D1StrokeStyle> focusStroke_;
 	unsigned long long deviceGeneration_ = 0;
 };
 
@@ -484,16 +474,12 @@ namespace Inkeys::UI::Bar
 class BarConstructionPrompt
 {
 	friend class BarGeometryAttributeTestAccess;
-	friend class BarUISetClass; // 触摸准入只读取同帧候选，随成功呈现事务发布。
 public:
 	bool Advance(BarUISetClass&, std::shared_ptr<const Inkeys::Drawing::Draw3::ShapeUiSnapshot>, double dt, double speed,
 		double zoom, RECT workArea, POINT origin, double rigidX, double rigidY, const BarUiTimelineClass* parentTimeline = nullptr);
 	void Draw(BarUIRendering&, ID2D1DeviceContext*);
 	void CommitPresented();
 	bool Pointer(BarUISetClass&, const ExMessage&, bool cancelled = false, bool* accepted = nullptr);
-	struct KeyboardMessage { BYTE key = 0; bool down = false, shift = false; };
-	bool Keyboard(BarUISetClass&, const KeyboardMessage&);
-	bool WantsKeyboard() const;
 	bool Visible() const noexcept { return visible_.load(); }
 	bool Changed() const noexcept { return changed_; }
 	RECT Bounds() const;
@@ -513,6 +499,8 @@ private:
 	Frame frame_, presented_;
 	// 离屏 fixture 可替换意图出口，以核对一次触摸只提交一次；产品走 SubmitShapeUiIntent。
 	std::function<bool(const Inkeys::Drawing::Draw3::ShapeUiAction&)> submit_;
+	// 指针意图出口，测试替换 submit_ 时可截获。
+	bool Submit(const Inkeys::Drawing::Draw3::ShapeUiAction& action) const;
 	mutable std::mutex mutex_;
 	BarButtonListClass list_;
 	std::array<std::shared_ptr<BarButtonClass>,4> buttons_;
@@ -527,7 +515,7 @@ private:
 	std::wstring desiredLabel_, desiredRingLabel_;
 	unsigned buttonState_ = ~0u;
 	Inkeys::Drawing::Draw3::ShapeUiIdentity pressedIdentity_;
-	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1;
 	int appliedHover_ = -1;
 	IdtAtomic<bool> visible_ = false;
 	draw3::shapes::ConstructionStatus status_;
@@ -545,7 +533,6 @@ public:
 	void Draw(BarUIRendering& renderer, ID2D1DeviceContext* context);
 	void CommitPresented();
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
-	bool Keyboard(BarUISetClass& owner, BYTE key, bool down);
 	bool ResetPointerFeedback();
 	void Close(BarUISetClass& owner);
 	void StopCarousel() noexcept;
@@ -560,7 +547,6 @@ public:
 	bool IdleFadeProtected() const noexcept { return motion_.Visible(); }
 	bool Changed() const noexcept { return changed_; }
 	bool Active() const noexcept { return active_; }
-	bool WantsKeyboard() const noexcept { return visible_.load(); }
 private:
 	friend class BarUISetClass;
 	friend class BarGeometryAttributeTestAccess;
@@ -597,6 +583,8 @@ private:
 	bool holdRingWake_ = false, holdCommitted_ = false;
 	// 提交是否被工具状态接受；被拒（旧 revision 等）时进度环不定格满格。
 	bool holdAccepted_ = false;
+	// 调用方持有 holdMutex_：结束本次长按的全部状态。
+	void ResetHoldLocked() noexcept { holdItem_ = -1; holdRingWake_ = holdCommitted_ = holdAccepted_ = false; }
 	// 进度环由 render owner 推进与绘制；绘制失败后本次长按内不再尝试，下一次长按开始时重试。
 	int ringItem_ = -1;
 	double ringProgress_ = 0;
@@ -615,8 +603,7 @@ private:
 	bool sideSwitch_ = false, hadOpen_ = false, requestedOpen_ = false;
 	int appliedHover_ = -1;
 	double parameterOpacity_ = 0;
-	IdtAtomic<int> hovered_ = -1, pressed_ = -1, focused_ = -1;
-	IdtAtomic<bool> visible_ = false;
+	IdtAtomic<int> hovered_ = -1, pressed_ = -1;
 	std::uint64_t pressRevision_ = 0;
 	IdtAtomic<bool> pressCancelled_ = false;
 	std::chrono::steady_clock::time_point carouselDeadline_{};
@@ -912,7 +899,6 @@ public:
 		double layoutXDip, double layoutYDip) const;
 	bool HitTestPresentedShape(const BarUiSuperellipseClass& shape,
 		double layoutXDip, double layoutYDip) const;
-	Inkeys::Input::UiPointer::Touch::Probe ProbeTouchScreen(POINT screen) const;
 
 	bool InitializeStartupPlacement(Inkeys::UI::StartupPlacement placement) noexcept;
 	// 启动前写入后只读，渲染线程仅在首次完整布局时应用一次。
@@ -1307,21 +1293,6 @@ protected:
 	mutable std::mutex presentedButtonHitsMutex_;
 	std::unordered_map<const BarButtonClass*, Inkeys::UI::Bar::BarButtonHitSnapshot> presentedButtonHits_, candidateButtonHits_;
 	std::unordered_map<const void*, Inkeys::UI::Bar::BarButtonHitSnapshot> presentedVisualHits_, candidateVisualHits_;
-	enum class TouchRegionSpace { Rigid, Body, Grip };
-	struct PresentedTouchRegion
-	{
-		Inkeys::UI::Bar::BarButtonHitSnapshot geometry;
-		TouchRegionSpace space = TouchRegionSpace::Rigid;
-		Inkeys::Input::UiPointer::Touch::Hit disposition = Inkeys::Input::UiPointer::Touch::Hit::Miss;
-	};
-	struct PresentedTouchRegions
-	{
-		std::vector<PresentedTouchRegion> regions;
-		std::uint64_t semantic = 0;
-	};
-	// 只在成功 commit 时交换不可变小值快照；native probe 不读动画或控件对象。
-	std::shared_ptr<const PresentedTouchRegions> presentedTouchRegions_, candidateTouchRegions_;
-	double presentedTouchRebaseXDip_ = 0.0, presentedTouchRebaseYDip_ = 0.0;
 	void BeginBottomDockTransition() noexcept
 	{
 		Inkeys::UI::Bar::BeginBarBottomDockTransition(bottomDockTransitionSerial);
@@ -1400,7 +1371,6 @@ protected:
 				}
 			};
 			shiftHits(presentedButtonHits_); shiftHits(presentedVisualHits_);
-			presentedTouchRebaseXDip_ += dx; presentedTouchRebaseYDip_ += dy;
 		}
 		bottomDockPresentedMappingSerial.fetch_add(1, memory_order_release);
 	}
@@ -1614,7 +1584,6 @@ namespace Inkeys::UI::Bar
 	export int RunEraserAttributeOffscreenTest();
 	export int RunThicknessFineDialProductionTest() noexcept;
 	export int RunConstructionAutoCollapseProductionTest() noexcept;
-	export int RunBarTouchProbeProductionTest() noexcept;
 	export int RunKeyboardShortcutBusinessProductionTest() noexcept;
 	export int RunKeyboardShortcutWhiteboardProductionTest() noexcept;
 	export Inkeys::Message::Reply QueueWindowMessageInLayoutSpace(
@@ -1692,7 +1661,6 @@ namespace Inkeys::UI::Bar
 	export void NotifyCanvasStrokeAccepted(
 		const Inkeys::Drawing::Draw3::Bridge::AcceptedStrokeBegin& notice) noexcept;
 	export std::uint64_t AutoCollapseSceneRevision() noexcept;
-	export bool TryQueueColorPickerKeyboardInput(BYTE vkCode, bool keyDown);
 
 	bool InitializeWindow(BarUISetClass& barUISet);
 	void InitializeUI(BarUISetClass& barUISet);

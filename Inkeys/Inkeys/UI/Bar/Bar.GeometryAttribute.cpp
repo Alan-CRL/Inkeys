@@ -368,7 +368,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	const bool shouldClose = owner.barState.fold || state.StateModeSelect != StateModeSelectEnum::IdtShape
 		|| owner.barState.drawAttribute || owner.barState.eraserAttribute || owner.barState.recallAttribute || owner.barState.moreExpanded;
 	if (shouldClose) Close(owner);
-	const bool open = owner.barState.geometryAttribute && !shouldClose; visible_ = open;
+	const bool open = owner.barState.geometryAttribute && !shouldClose;
 	const bool opening = open && !requestedOpen_; requestedOpen_ = open;
 	// 完全隐藏后不再推进子按钮、测字或安排轮播；其它Bar动画无需为此面板付出遍历成本。
 	if (!open && !motion_.Visible() && !motion_.Active())
@@ -726,7 +726,6 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 			changed_ |= b.TransitionContent(resource, label, opening || initializeLayout || !b.name.pct.val);
 			resourceTargets_[i] = resource; labelTargets_[i] = label;
 		}
-		if (!wanted && focused_ == i) focused_ = -1;
 		b.state->state = !available ? BarWidgetState::Disable : selected ? BarWidgetState::Selected : BarWidgetState::None;
 		SetBarButtonPressedVisual(b, available && wanted && pressed_ == i && !pressCancelled_);
 		if (segment && layoutChanged)
@@ -923,12 +922,6 @@ void BarGeometryAttributePanel::Draw(BarUIRendering& renderer, ID2D1DeviceContex
 			};
 		}
 		DrawBarButtonVisual(renderer, context, b, BarUiInheritClass(b.button.inhX, b.button.inhY), options);
-		if (focused_ == static_cast<int>(i))
-		{
-			auto* brush = renderer.ContentSolidBrush(GetThemeColor(BarThemeColorEnum::TextPrimary), 0.8f);
-			auto rect = PixelRect(frame_.items[i], frame_.zoom); rect.left += 2; rect.right -= 2; rect.top += 2; rect.bottom -= 2;
-			if (brush) context->DrawRoundedRectangle(D2D1::RoundedRect(rect, 3, 3), brush, 1);
-		}
 	};
 	context->PushAxisAlignedClip(PixelRect(frame_.categoryClip, frame_.zoom), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 	for (size_t i = 0; i < CircleCenter; ++i)
@@ -981,7 +974,7 @@ std::array<RECT,1> BarGeometryAttributePanel::PresentedRegions() const
 }
 void BarGeometryAttributePanel::Close(BarUISetClass& owner)
 {
-	owner.barState.geometryAttribute = false; visible_ = false; ResetPointerFeedback(); scrollRequest_ = 0; focused_ = -1; StopCarousel();
+	owner.barState.geometryAttribute = false; ResetPointerFeedback(); scrollRequest_ = 0; StopCarousel();
 }
 bool BarGeometryAttributePanel::ResetPointerFeedback()
 {
@@ -989,7 +982,7 @@ bool BarGeometryAttributePanel::ResetPointerFeedback()
 	{
 		// 取消或捕获丢失即中止长按，包括已提交后的续包；不选中也不固定。
 		std::lock_guard lock(holdMutex_);
-		holding = holdItem_ >= 0; holdItem_ = -1; holdRingWake_ = holdCommitted_ = holdAccepted_ = false;
+		holding = holdItem_ >= 0; ResetHoldLocked();
 	}
 	const bool changed = hovered_ >= 0 || pressed_ >= 0 || scrollDragging_ || holding;
 	hovered_ = -1; pressed_ = -1; scrollDragging_ = false; pressCancelled_ = true; return changed;
@@ -1063,7 +1056,7 @@ bool BarGeometryAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& m
 		if (ownsTool && f.acceptsInput && f.scrollMaximum > 0 && (Contains(f.categoryClip,x,y) || Contains(f.scrollTrack,x,y)))
 		{
 			// 同一worker连续滚轮累积目标，不依赖尚未呈现的动画位置；先撤销可能的按钮按下。
-			ResetPointerFeedback(); focused_ = -1; StopCarousel();
+			ResetPointerFeedback(); StopCarousel();
 			scrollRequest_ = (std::clamp)((std::clamp)(scrollRequest_.load(),0.0,f.scrollMaximum)
 				- static_cast<double>(message.wheel)/WHEEL_DELTA*(BarButtonTwoSideDip+BarButtonGapDip),0.0,f.scrollMaximum);
 			owner.UpdateRendering(false);
@@ -1073,7 +1066,7 @@ bool BarGeometryAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& m
 	if ((message.message == WM_LBUTTONDOWN || message.message == WM_LBUTTONDBLCLK)
 		&& ownsTool && f.acceptsInput && Contains(f.scrollTrack,x,y))
 	{
-		ResetPointerFeedback(); focused_ = -1; StopCarousel(); scrollDragging_ = true;
+		ResetPointerFeedback(); StopCarousel(); scrollDragging_ = true;
 		scrollGesture_ = f; scrollRevision_ = currentState.revision; scrollDragY_ = y; scrollDragOffset_ = f.scrollOffset;
 		if (!Contains(f.scrollThumb,x,y))
 		{
@@ -1108,80 +1101,43 @@ bool BarGeometryAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& m
 		}
 		if (cancelHold && CancelHold()) owner.UpdateRendering(false);
 		const int hover = pressed_ >= 0 ? -1 : hit;
-		if (hovered_ != hover || pressed_ >= 0) { hovered_ = hover; focused_ = -1; owner.UpdateRendering(false); }
+		if (hovered_ != hover || pressed_ >= 0) { hovered_ = hover; owner.UpdateRendering(false); }
 		return inside || pressed_ >= 0;
 	}
 	if (message.message == WM_LBUTTONDOWN || message.message == WM_LBUTTONDBLCLK)
 	{
 		const auto state = GetStateModeVersionedSnapshot();
 		pressed_ = owner.barState.geometryAttribute && state.state.StateModeSelect == StateModeSelectEnum::IdtShape ? hit : -1;
-		pressRevision_ = state.revision; pressCancelled_ = false; hovered_ = -1; focused_ = -1;
+		pressRevision_ = state.revision; pressCancelled_ = false; hovered_ = -1;
 		{
 			// 只有可选择的图形类别参与长按固定，期限由交互 owner 的 ConsumeHoldWake 推进。
 			std::lock_guard lock(holdMutex_);
 			const int item = pressed_;
+			ResetHoldLocked();
 			holdItem_ = item >= 0 && item < CategoryCount && ShapeCategoryCatalog()[item].preset ? item : -1;
 			holdStart_ = std::chrono::steady_clock::now(); holdOrigin_ = {message.x, message.y};
-			holdRingWake_ = holdCommitted_ = holdAccepted_ = false;
 		}
-		if (pressed_ >= 0) StopCarousel(); owner.UpdateRendering(false); return inside;
+		if (pressed_ >= 0) StopCarousel();
+		owner.UpdateRendering(false);
+		return inside;
 	}
 	if (message.message == WM_LBUTTONUP)
 	{
 		const int pressed = pressed_; pressed_ = -1;
 		bool holdConsumed = false;
-		// Up 可能先于到期唤醒被处理：已满 2 秒则先按长按提交，避免环满却无效果。
+		// Up 可能先于到期唤醒被处理：已到提交期限则先按长按提交，避免环满却无效果。
 		(void)ConsumeHoldWake(owner, std::chrono::steady_clock::now());
 		{
 			// 完成后的抬起不再触发短按；进度环出现后未满即抬起视为中止，不选中也不固定。
 			std::lock_guard lock(holdMutex_);
 			holdConsumed = holdCommitted_ || (holdItem_ >= 0 && std::chrono::steady_clock::now() >= holdStart_ + HoldRingDelay);
-			holdItem_ = -1; holdRingWake_ = holdCommitted_ = holdAccepted_ = false;
+			ResetHoldLocked();
 		}
 		if (!holdConsumed && pressed >= 0 && hit == pressed && !pressCancelled_ && owner.barState.geometryAttribute) Execute(owner, pressed, pressRevision_, accepted);
 		// 接触输入和鼠标都等待新的 Move 恢复悬停，释放回弹不被 hover 抢占。
-		hovered_ = -1; if (contactPointer) focused_ = -1;
-		if (pressed >= 0) owner.UpdateRendering(false); return inside || pressed >= 0;
+		hovered_ = -1;
+		if (pressed >= 0) owner.UpdateRendering(false);
+		return inside || pressed >= 0;
 	}
 	return inside;
-}
-bool BarGeometryAttributePanel::Keyboard(BarUISetClass& owner, BYTE key, bool down)
-{
-	if (!owner.barState.geometryAttribute) return false;
-	if (key == VK_ESCAPE) { if (down) { Close(owner); owner.UpdateRendering(false); } return true; }
-	if (key != VK_TAB && key != VK_LEFT && key != VK_RIGHT && key != VK_RETURN && key != VK_SPACE) return false;
-	if (!down) return true;
-	const auto f = PresentationSnapshot(); if (!f.acceptsInput || categoryRequest_ != static_cast<int>(f.category)) return true;
-	if (key == VK_RETURN || key == VK_SPACE)
-	{
-		const bool scrollPending = scrollDragging_ || abs((std::clamp)(scrollRequest_.load(),0.0,f.scrollMaximum)-f.scrollOffset) > 0.000001;
-		if (focused_ >= 0 && focused_ < static_cast<int>(f.hits.size()) && !(focused_ < CategoryCount && scrollPending) && f.hits[focused_].visible && f.hits[focused_].enabled)
-			Execute(owner, focused_, GetStateModeVersionedSnapshot().revision); return true;
-	}
-	const bool arrow = key != VK_TAB;
-	const int delta = key == VK_LEFT || (key == VK_TAB && (GetKeyState(VK_SHIFT) & 0x8000)) ? -1 : 1;
-	const int originalFocus = focused_.load();
-	const bool gridNavigation = arrow && originalFocus >= 0 && originalFocus < CategoryCount;
-	const bool segmentNavigation = arrow && originalFocus >= SegmentBegin;
-	const int begin = segmentNavigation ? SegmentBegin : 0;
-	const int count = segmentNavigation ? GeometrySegmentCount : gridNavigation ? CategoryCount : GeometryControlCount;
-	int candidate = originalFocus, focus = -1;
-	for (int attempts = 0; attempts < count; ++attempts)
-	{
-		candidate = begin + (candidate-begin+delta+count) % count;
-		const bool enabled = candidate < CategoryCount ? ShapeCategoryCatalog()[candidate].category == f.category && ShapeCategoryCatalog()[candidate].preset.has_value()
-			: f.hits[candidate].visible && f.hits[candidate].enabled;
-		if (enabled) { focus = candidate; break; }
-	}
-	focused_ = focus; hovered_ = -1;
-	if (focus >= 0 && focus < CategoryCount && f.pose.scale > 0)
-	{
-		const double itemTop = (f.items[focus].top-f.categoryClip.top)/f.pose.scale+f.scrollOffset;
-		const double itemBottom = itemTop+f.items[focus].Height()/f.pose.scale;
-		double requested = (std::clamp)(scrollRequest_.load(),0.0,f.scrollMaximum);
-		if (itemTop < requested) requested = itemTop;
-		else if (itemBottom > requested+f.categoryViewportHeight) requested = itemBottom-f.categoryViewportHeight;
-		scrollRequest_ = (std::clamp)(requested,0.0,f.scrollMaximum);
-	}
-	owner.UpdateRendering(false); return true;
 }

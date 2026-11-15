@@ -9,5 +9,4 @@ export namespace Inkeys::UI::SelectionOverlay
 	bool Acquire();
 	void Release() noexcept;
 	void NotifyStateChanged() noexcept;
-	bool TryQueueKeyboard(BYTE key, bool down);
 }

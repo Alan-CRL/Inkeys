@@ -361,6 +361,9 @@
     <ClInclude Include="laserParticleResource.h" />
     <ClInclude Include="resource.h" />
 	<ClInclude Include="draw3\shape_core.h" />
+	<ClInclude Include="draw3\shape_interaction.h" />
+	<ClInclude Include="draw3\shape_interaction.inl" />
+	<ClInclude Include="draw3\shape_presets.inl" />
 	<ClInclude Include="draw3\shape_uink_metadata.inl" />
 	<ClInclude Include="draw3\shape_uink_standard.inl" />
 	<ClInclude Include="draw3\shape_uink_import.inl" />

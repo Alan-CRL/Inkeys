@@ -14,6 +14,13 @@ namespace draw3::shapes
 	};
 	// 0=整体移动，1=旋转；10/12/14/16=立体外框左上/右上/右下/左下。
 	// 100=中心，101=半径，102/103=轴或角，104=深度，105=高度，106/107=F1/F2；1000+=端点/顶点。
+	// 编辑器与核心共用的控制点 ID；数值写入测试与诊断，不能改动。
+	namespace EditHandleId
+	{
+		constexpr uint32_t Body = 0, Rotate = 1, ScaleBase = 10, Center = 100, Radius = 101,
+			Axis1 = 102, Axis2 = 103, Height = 105, Focus1 = 106, Focus2 = 107, VertexBase = 1000,
+			SolidBase = 1001; // 立体底面控制点
+	}
 	std::vector<EditHandle> BuildEditHandles(const ShapeObject&, const BuildOptions& = {}, Bounds* frameRect = nullptr);
 	std::optional<ShapeObject> EditShape(const ShapeObject& before, uint32_t handleId,
 		Vec2 down, Vec2 current, uint64_t newRevision, const BuildOptions& = {}, std::string* error = nullptr,

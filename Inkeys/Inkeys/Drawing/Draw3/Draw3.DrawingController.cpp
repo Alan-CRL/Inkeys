@@ -2761,6 +2761,24 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		PalmEraser::ToolCategory ShapePalmToolCategory(DrawingTool tool, const ShapeUiRuntime& shapeUi) noexcept
+		{
+			// Down 时先锁存禁用：结束编辑后，本触点仍不能转为手掌橡皮。
+			if (IsShapeDrawingTool(tool) && (shapeUi.construction || shapeUi.editor.object || shapeUi.focus.Active()))
+				return static_cast<PalmEraser::ToolCategory>(-1);
+			return PalmToolCategory(tool);
+		}
+
+		void CancelShapeConstruction(std::shared_ptr<ShapeConstructionRuntime> construction, ShapeUiRuntime& shapeUi)
+		{
+			construction->session.Cancel(); construction->cancelled = true; construction->contactActive = false;
+			construction->pointGesture.reset(); construction->preview.reset(); construction->renderData = {}; construction->visualPoints.clear();
+			// 旧接触迟到时只取消自己的会话，不能移除后来建立的构造或完成提示。
+			if (shapeUi.construction != construction) return;
+			shapeUi.construction.reset(); shapeUi.completedConstruction = {};
+			shapeUi.constructionVisualDirty = true;
+		}
+
 		bool PalmBlocksDrawing(const RuntimeStroke& runtime) noexcept
 		{
 			return runtime.palm.active && !runtime.palm.settings.parallelWriting &&
@@ -2844,8 +2862,11 @@ namespace Inkeys::Drawing::Draw3
 
 		bool PromotePalmRuntime(RuntimeStroke& runtime, PalmEraser::State candidate,
 			const ContactSnapshot& sample, const StrokeModelConfiguration& configuration,
-			int64_t qpcFrequency)
+			int64_t qpcFrequency, const std::function<void(RuntimeStroke&)>& abandonShapeContact = {})
 		{
+			// 资格在 Down 锁存；本触点新建的构造可取消，既有构造/编辑接触不可晋升。
+			if ((IsShapeDrawingTool(runtime.tool) || runtime.shape.construction) && !runtime.palm.eligible) return false;
+			if (runtime.shape.construction && !abandonShapeContact) return false;
 			// 活动橡皮保留 Down 形状，避免固化/重放时改写旧擦除；定尺也使用同一形状。
 			if (runtime.tool == DrawingTool::Eraser && !runtime.palmObservationOnly && candidate.shape != runtime.stroke.eraserShape)
 			{
@@ -2899,6 +2920,8 @@ namespace Inkeys::Drawing::Draw3
 				prepared.inputStartPoint = { sample.position.x, sample.position.y, diameter * 0.5f, static_cast<float>(time) };
 				prepared.hasInputStartPoint = true;
 				AppendNewModeledPoints(prepared, -1.0f);
+				// Reset/Update 均已成功，之后无失败返回；现在才放弃原构造，避免半转换。
+				if (runtime.shape.construction) abandonShapeContact(runtime);
 				runtime.stroke = std::move(prepared);
 				runtime.shape.Reset();
 				runtime.rebuildPoints.clear();
@@ -4064,7 +4087,9 @@ namespace Inkeys::Drawing::Draw3
 		// Run和无窗口生产测试共用：真实Up只确认当前阶段，最后一步才允许普通创建提交。
 		bool ConfirmRuntimeConstructionContact(RuntimeStroke& runtime)
 		{
-			if (!runtime.shape.construction) return false;
+			// 幂等：同批新 Down 提前确认过的接触，帧末不能再确认一次。
+			if (!runtime.shape.construction || runtime.shape.constructionFinished) return false;
+			runtime.shape.constructionFinished = true;
 			auto& state = *runtime.shape.construction; state.contactActive = false;
 			if (runtime.shape.constructionStepDiscarded)
 			{ runtime.shape.constructionStepOnly = true; RefreshConstructionRuntimePreview(state,runtime.shape.nextRevision); return false; }
@@ -5344,10 +5369,10 @@ namespace Inkeys::Drawing::Draw3
 			// 同 key 可能已属于下一次 Down；只交出失败旧笔的精确代次，等物理终态回收。
 			input.DiscardUntilTerminal(handle);
 		}
-		// 图形建笔被拒（构造会话占用/初始化失败）：TryRegister 已登记的 Touch 身份必须随拒收释放。
+		// 建笔被拒（取笔/模型初始化失败、构造会话占用等）：TryRegister 已登记的 Touch 身份必须随拒收释放。
 		// 与 Laser 资源失败同序：Discard 后 producer 可复用 record，先保存 key 再释放；
 		// 否则 ContactId 循环复用时同 key 被判为重复接触，只跟踪手势、不再建笔（单指加点“偶发无响应”）。
-		void RejectShapeStrokeInitialization(ContactInputCoordinator& input, TouchContactRegistry& touchContacts,
+		void RejectRegisteredStrokeInitialization(ContactInputCoordinator& input, TouchContactRegistry& touchContacts,
 			ContactHandle handle, const ContactSnapshot& down, InputDeviceType deviceType) noexcept
 		{
 			const uint64_t registeredKey = deviceType == InputDeviceType::Touch ? CanvasTouchKey(handle) : 0;
@@ -7136,7 +7161,7 @@ namespace Inkeys::Drawing::Draw3
 				const ContactHandle handle{ record, record->Generation() };
 				const uint64_t key = CanvasTouchKey(handle);
 				check(touchContacts.TryRegister(key), "rejected shape touch registers before construction admission");
-				RejectShapeStrokeInitialization(input, touchContacts, handle, snapshot, InputDeviceType::Touch);
+				RejectRegisteredStrokeInitialization(input, touchContacts, handle, snapshot, InputDeviceType::Touch);
 				check(!touchContacts.Contains(key) && touchContacts.Count() == 0, "shape rejection releases the registered touch identity");
 				snapshot.qpc = 150;
 				check(input.PublishUp(0xF536, 12, snapshot), "rejected shape touch still reaches its physical terminal");
@@ -15518,8 +15543,10 @@ namespace Inkeys::Drawing::Draw3
 				document_->Pages().size());
 		ShapeUiRuntime shapeUi;
 		struct ShapePublicationExit { ~ShapePublicationExit() { PublishShapeUiSnapshot({}); } } shapePublicationExit;
+		std::function<PalmEraser::ToolCategory(DrawingTool)> shapePalmCategory;
 		std::function<bool(RuntimeStroke&)> beginShapeContact;
 		std::function<void(RuntimeStroke&)> finishShapeContact;
+		std::function<void(RuntimeStroke&)> abandonShapeContact;
 		std::function<void(RECT&,bool)> closeShapeSessions;
 		// 画布焦点唯一失焦入口（编辑框 + L1 待落定项）；在 ShapeRuntimeActions.inl 中赋值。
 		std::function<void(CanvasFocusEndReason,RECT&)> endCanvasFocus;
@@ -16863,7 +16890,8 @@ namespace Inkeys::Drawing::Draw3
 		};
 		auto observePalm = [&](RuntimeStroke& runtime, const ContactSnapshot& sample)
 		{
-			if (runtime.metricDeviceType != InputDeviceType::Touch || runtime.ended) return false;
+			if (runtime.metricDeviceType != InputDeviceType::Touch || runtime.ended ||
+				(runtime.shape.construction && !runtime.palm.eligible)) return false;
 			if (sample.phase == ContactPhase::Up || sample.phase == ContactPhase::Cancelled)
 			{
 				runtime.palm.End();
@@ -16885,7 +16913,7 @@ namespace Inkeys::Drawing::Draw3
 			RECT oldDirty = runtime.visibleDirty;
 			UnionRectInPlace(oldDirty, runtime.stroke.currentL0Rect);
 			UnionRectInPlace(oldDirty, runtime.stroke.lastL0Rect);
-			if (!PromotePalmRuntime(runtime, candidate, sample, configuration_, qpcFrequency)) return false;
+			if (!PromotePalmRuntime(runtime, candidate, sample, configuration_, qpcFrequency, abandonShapeContact)) return false;
 			RecordPalmActivation(palmActivations, runtime, sample, wasActive);
 			if (!wasActive && !candidate.settings.parallelWriting)
 				palmInterruptQpc = std::max(palmInterruptQpc, sample.qpc);
@@ -17420,7 +17448,8 @@ namespace Inkeys::Drawing::Draw3
 				PalmEraser::State newPalm;
 				if (deviceType == InputDeviceType::Touch)
 					newPalm.Begin(palmEraserOptions_, PalmEraser::ResolveScale(observedSpeedEraserDisplayScale, down.source),
-						PalmToolCategory(tool), down.qpc, qpcFrequency, PalmNeighborBlocked(active, down.position, down.qpc), downEraserShape);
+						shapePalmCategory ? shapePalmCategory(tool) : PalmToolCategory(tool), down.qpc, qpcFrequency,
+						PalmNeighborBlocked(active, down.position, down.qpc), downEraserShape);
 				const bool palmObservationOnly = hasBlockingPalm();
 				if (palmObservationOnly && !newPalm.eligible)
 				{
@@ -17433,9 +17462,19 @@ namespace Inkeys::Drawing::Draw3
 				if (!runtime)
 				{
 					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
-					RejectStrokeInitialization(input_, handle, down);
+					RejectRegisteredStrokeInitialization(input_, touchContacts, handle, down, deviceType);
 					return false;
 				}
+				// 取笔后的初始化失败统一回收：释放触摸身份、交还速度橡皮并归还 runtime。
+				auto abandonRuntime = [&]
+				{
+					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
+					RejectRegisteredStrokeInitialization(input_, touchContacts, handle, down, deviceType);
+					runtime->cancelled = true;
+					handBackSpeedEraserController(*runtime);
+					runtime->handle = {};
+					runtime->inUse = false;
+				};
 				runtime->handle = handle;
 				runtime->ownerWorkspaceGuid = {};
 				runtime->ownerPageGuid = {};
@@ -17552,12 +17591,7 @@ namespace Inkeys::Drawing::Draw3
 					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Reset(modelParams); }); !status.ok())
 				{
 					DiagnosticOutput::Line() << "Error: " << status.message() << std::endl;
-					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
-					RejectStrokeInitialization(input_, handle, down);
-					runtime->cancelled = true;
-					handBackSpeedEraserController(*runtime);
-					runtime->handle = {};
-					runtime->inUse = false;
+					abandonRuntime();
 					return false;
 				}
 
@@ -17585,20 +17619,11 @@ namespace Inkeys::Drawing::Draw3
 				stroke.inputStartPoint = {
 					down.position.x, down.position.y, initialDiameter * 0.5f, 0.0f };
 				stroke.hasInputStartPoint = true;
-				if (IsShapeDrawingTool(runtime->tool) && !InitializeRuntimeShape(*runtime))
+				if ((IsShapeDrawingTool(runtime->tool) && !InitializeRuntimeShape(*runtime))
+					|| (beginShapeContact && !beginShapeContact(*runtime)))
 				{
-					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
-					RejectShapeStrokeInitialization(input_, touchContacts, handle, down, deviceType);
-					runtime->cancelled = true;
-					handBackSpeedEraserController(*runtime);
-					runtime->handle = {};
-					runtime->inUse = false;
+					abandonRuntime();
 					return false;
-				}
-				if (beginShapeContact && !beginShapeContact(*runtime))
-				{
-					RejectShapeStrokeInitialization(input_,touchContacts,handle,down,deviceType); runtime->cancelled = true;
-					runtime->handle = {}; runtime->inUse = false; return false;
 				}
 				const Input downInput{
 					.event_type = Input::EventType::kDown,
@@ -17616,12 +17641,7 @@ namespace Inkeys::Drawing::Draw3
 					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Update(downInput, stroke.modeledResults); }); !status.ok())
 				{
 					DiagnosticOutput::Line() << "Error: " << status.message() << std::endl;
-					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
-					RejectStrokeInitialization(input_, handle, down);
-					runtime->cancelled = true;
-					handBackSpeedEraserController(*runtime);
-					runtime->handle = {};
-					runtime->inUse = false;
+					abandonRuntime();
 					return false;
 				}
 				if (runtime->shape.active)

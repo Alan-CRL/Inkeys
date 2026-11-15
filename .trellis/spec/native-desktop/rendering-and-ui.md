@@ -120,7 +120,7 @@ RecallChromeView ResolveRecallChrome(RecallChromeState state, bool compactSelect
 | 展开的主栏/弹窗连续交替点击 | 单步命令，位置身份保持，计时从最后点击开始 |
 | 灰色按钮继续连点 | 不发布禁用命令，仅延期已有保护，不新开弹窗 |
 | 无 hold 的历史可用性变化 | 即时变色，保存待调整目标并等待 3 秒 |
-| Escape/其他属性/绘制/工作区切换 | 可立即收面板，不能立即更换受保护几何 |
+| 其他属性/绘制/工作区切换 | 可立即收面板，不能立即更换受保护几何；键盘操作已移除（2026-11-15 第十一轮，仅保留全局快捷键与 PPT 转发） |
 | 相同透明度目标逐帧重复设置 | 动画正常收敛，反向从当前显示透明度开始 |
 | 空页Selection且主栏收窄，历史仍有hold/pending | Undo/Redo隐藏且不可命中；计时器到期不重新显示，退出精简态仍沿原历史布局 |
 
@@ -1753,7 +1753,7 @@ Window::Service::RestoreWhiteboardWindowGroup() -> bool;
 - `totalPage` 至少为 1，`currentPage` 限制到 `[1, totalPage]`。首次发布若直接为 `switching=true`，稳定基线必须来自该次真实输入。
 - 进入翻页事务时锁存上一稳定帧的 Previous enabled 与 Add/Arrow；事务中锁定分页和菜单交互，未变化的 SVG 和文字不得重启动画。普通 Arrow 跨工作区保留同一 `barMore` 对象并只缩放；追加页事务全程保持 Add，只有稳定语义真实发生 Arrow/Add 变化时才运行一次同批 SVG/文字转换。Host 接受白板 Next/Previous 后立即关闭新输入并复用 PPT contact 封口，不等待物理 Up；一次只运行一个页面事务，暖页/冷页真实 Present 后才重开。第一页 Previous 与失败回原页也必须补真实 ready，不能遗留分页或画布输入锁。
 - `Inactive / Entering / Active / Exiting` 的每次 workspace 转换都先调用 `CollapseAuxiliaryPanels(true)` 并撤销 Whiteboard capture。进入稳定白板时绘制属性、几何属性、更多、笔菜单和粗细预览均保持关闭。
-- More 在左下同一 HWND 向上展开关闭白板、最小化白板、主题样式；主题内联展开六色与空白/点阵/网格预览。左/底主体锚点固定，窗口大小、命中、阴影及 damage 使用同帧几何；不得新增 popup HWND。菜单外点击、Escape、翻页、最小化和工作区切换关闭菜单。Hook 只异步投递收起请求，排除左侧控件本身，原画布点击继续正常处理。
+- More 在左下同一 HWND 向上展开关闭白板、最小化白板、主题样式；主题内联展开六色与空白/点阵/网格预览。左/底主体锚点固定，窗口大小、命中、阴影及 damage 使用同帧几何；不得新增 popup HWND。菜单外点击、翻页、最小化和工作区切换关闭菜单。键盘操作已移除（2026-11-15 第十一轮，仅保留全局快捷键与 PPT 转发）。Hook 只异步投递收起请求，排除左侧控件本身，原画布点击继续正常处理。
 - 白板主栏 A2 按钮恢复；有效放映存在时为“返回放映”，否则为“关闭白板”，后台 PPT 结束会同步文案；白板组最小化时主栏优先显示 `barWhiteboard` 和“返回白板”/`Resume`，点击仅恢复原窗口组，最小化/恢复边沿立即刷新图标和文字；主栏非最小化关闭与菜单关闭共用 `RequestWhiteboardActive(false)`。
 - 每页主题及笔迹/历史自动保存到进程会话下的多页 `.uink`，不受桌面自动保存开关影响。新页继承当前主题，主题修改不进墨迹撤销栈。色板、纹理、冷页加载和页级内存合同见 [whiteboard.md](whiteboard.md) 与 [draw3-integration.md](draw3-integration.md#whiteboard-页级-uink-与编辑历史合同)。本次替代此前无保存、固定墨绿的初始范围；2026-11-06 起白板"移动（Selection）"模式支持画布平移与每页视角（会话内，不改页 revision、不使页变脏，合同见 [whiteboard.md](whiteboard.md#移动模式的画布平移与每页视角2026-11-06) 与 [runtime-and-rendering.md](../native/runtime-and-rendering.md#scenario-free-canvas-navigation-and-predictive-recovery)），仍不支持缩放、旋转和历史浏览。白板点阵/网格默认由 Freeze 窗口按画布视口重画相位（仅场景脏区的更新，不是内容失效），合同见 [whiteboard.md](whiteboard.md#场景白板点阵网格背景的归属与视口跟随2026-11-06)。
 - Freeze 是 Whiteboard mode 的唯一 `WS_EX_APPWINDOW`、任务栏和 activation anchor；Drawpad 可激活但保留 `WS_EX_TOOLWINDOW`，其余辅助窗口不进入任务栏。整个 owner group 保持 `HWND_NOTOPMOST`，最小化/恢复只恢复此前可见成员。白板仍等待 Draw3 对应输出/内容版本的真实首帧、背景提交及必要窗口事务完成，随后先发布 Active，再异步尝试一次激活。Freeze 的窗口操作由 owner 读回目标 RECT、真实可见且非最小化，并发布固定快照；UI 只消费匹配回执，minimized 时被抑制的请求返回未提交，不得确认背景 Active，恢复通知驱动一次新的真实提交。前台分配失败不阻止后台进入，不周期抢焦点。异步请求仅在同 epoch 且仍为 Entering/Active 的白板意图下执行，退出、新 epoch、隐藏、最小化和停机均拒绝过期激活。
@@ -2916,13 +2916,13 @@ list->AddImage(image.GetTexRef(), topLeft, bottomRight);
 
 - 浮条是单行 `BarButtonListClass`（SingleRow）：[颜色入口] | [样式] | [线型] | [粗细] | [边数入口] | [辅助开关]，全部走主栏 Configure/Retarget/Advance/Draw，分隔线参数与 GeometryAttribute 单行分隔项相同（`Divider` 色）；整组隐藏时其前导分隔线一起隐藏。选中内容色走公共 helper（Selected→Accent），不得强制 TextPrimary。宽度不足时整体等比缩小，0.75 仍不够才分两行（从粗细组起），两行仍不够继续缩小，永不越出工作区。
 - 新会话先整体重置布局（成员与分隔线 SetDirect 到目标），再用 `BarAttributePanelMotion` 从 frameRect 底边中点紧凑态 0.4s EaseOutBack 展开；关闭 0.24s EaseInBack 后清空快照与布局。会话内显隐走 0.4s 批次 + CanJoin，隐藏成员锚定到前一个可见成员；禁止用随宽度动画的裁剪逐步露出内容（“从左往右加载”）。回弹过冲帧也必须钳在工作区内。浮条逐 Move 直接跟随变换后 frameRect 当前顶/底边中心，不在抬手后追赶。新会话默认底部；仅当前侧空间不足且对侧完整可用时换边并锁存，两侧不足时保持侧并稳定 fit。
-- 同一窗口三层：浮条 < 第 1 层（色板层 / 边数层）< 第 2 层（取色器层）。输入从最上层命中；点击外部只关闭最上一层且该次点击被消费；Esc 逐层关闭后才结束编辑。取色器层按“色板外侧 → 色板右侧 → 色板左侧 → 浮条对象侧 → fit”选位，不得与浮条或色板层重叠。颜色只写当前对象（`SetStyle`，松手一条历史），不改画笔色；取色器拖动只做本地反馈。
-- 键盘：Esc 只在 Inkeys 前台或浮条可见时处理；方向键/Space/Enter/Tab 只在浮条内容拥有焦点时截获，且每个虚拟键在首次 Down 时锁存归属直到 Up，避免吞掉 PPT 放映按键。绘制提示的键盘捕获只以成功呈现的可见状态为准，Shift 随键盘消息冻结。
+- 同一窗口三层：浮条 < 第 1 层（色板层 / 边数层）< 第 2 层（取色器层）。输入从最上层命中；点击外部只关闭最上一层且该次点击被消费。键盘操作已移除（2026-11-15 第十一轮，仅保留全局快捷键与 PPT 转发）。取色器层按“色板外侧 → 色板右侧 → 色板左侧 → 浮条对象侧 → fit”选位，不得与浮条或色板层重叠。颜色只写当前对象（`SetStyle`，松手一条历史），不改画笔色；取色器拖动只做本地反馈。
+- 键盘操作已移除（2026-11-15 第十一轮，仅保留全局快捷键与 PPT 转发）。
 - 绘制步骤提示：外观与底栏模式提示逐项一致（圆角 6、常驻材质、13 DIP Bold、0.4s Back 缩放出现/消失、扩框→换字→缩框三阶段 helper 与底栏共用）。固定步数显示环形进度与 n/N；折线/多边形显示已确定点数。按钮为上一步/下一步/结束（仅折线、多边形）/取消的 OneOne 图标按钮。多步构造期间暂停绘制自动收起：接纳通知自带构造资格（不依赖稍后发布的快照），快照 active 时同样暂停；橡皮策略不受影响。
 
 ### 6. Tests Required
 
-`--ui3-shape-editor-test`（首帧位置、出现/消失、分隔线参数与颜色、层级开关与 Esc/外部点击、四角与小工作区钳制、深浅 × 1.0/1.5/2.0 截图）、`--ui3-geometry-attribute-test`（提示截图、按钮语义、键盘）、`--state-mode-production-test`（自动收起暂停）、`--draw3-shape-core-test`（Back/Forward/Complete）。
+`--ui3-shape-editor-test`（首帧位置、出现/消失、分隔线参数与颜色、层级开关与外部点击、四角与小工作区钳制、深浅 × 1.0/1.5/2.0 截图）、`--ui3-geometry-attribute-test`（提示截图、按钮语义；键盘操作已移除（2026-11-15 第十一轮，仅保留全局快捷键与 PPT 转发））、`--state-mode-production-test`（自动收起暂停）、`--draw3-shape-core-test`（Back/Forward/Complete）。
 
 ## 图形续轮 UI 与完成沿（2026-11-13）
 
@@ -2994,11 +2994,11 @@ Wrong：只有sideChanged时推进位置动画，下一帧SetDirect。Correct：
 ### Scope / Trigger
 修改图形外框、停靠控制点、构造提示或控件裁切时适用，替代第三轮整主栏矩形排除与固定水平胶囊条款。
 ### Signatures
-ShapeEditorSurface通过SelectionOverlay透明HWND绘制；BarConstructionPrompt通过Bar绘制。两者均使用成功呈现快照命中。PromptOrder改变视觉/键盘顺序，原动作索引保持。
+ShapeEditorSurface通过SelectionOverlay透明HWND绘制；BarConstructionPrompt通过Bar绘制。两者均使用成功呈现快照命中。PromptOrder改变视觉顺序，原动作索引保持。键盘操作已移除（2026-11-15 第十一轮，仅保留全局快捷键与 PPT 转发）。
 ### Contracts
 - 可见外框统一四角粗标；装饰角标不产生新Scale操作。胶囊/Move与普通圆点同为20DIP，配色和图标遵循thumb，胶囊无额外青框/分隔线。
 - 胶囊沿所停靠边切线旋转；空闲当前边超屏才粘性换边，手势锁定边及屏内修正。Rotate使用实际显示指针求角度，不能将其平移到原顶部柄；辅助几何柄仍用pointerOffset避免跳动。
-- 焦点优先成对短轴镜像避让；等腰双杠采用同外框accent并保持轴对称。构造提示叉左勾右，窄屏按双列保持终结按钮同排，键盘沿视觉顺序遍历。
+- 焦点优先成对短轴镜像避让；等腰双杠采用同外框accent并保持轴对称。构造提示叉左勾右，窄屏按双列保持终结按钮同排。键盘操作已移除（2026-11-15 第十一轮，仅保留全局快捷键与 PPT 转发）。
 - Bar HWND包含透明留白，禁止以GetWindowRect整矩形清空SelectionOverlay或排除命中。实际主栏由既有Z序覆盖，透明区域透出编辑控件。
 - 窗口范围须覆盖新快照、仍可见的退场HandleVisual、旋转后控件及粗角标半线宽与AA余量。Present全窗ULW，不能把此类范围缺失误判为局部脏矩形上传失败。
 ### Validation & Error Matrix
@@ -3006,6 +3006,6 @@ ShapeEditorSurface通过SelectionOverlay透明HWND绘制；BarConstructionPrompt
 ### Good / Base / Bad Cases
 Good：撤回远端顶点时完整圆点淡出。Base：真实主栏在编辑层上方接收点击。Bad：把整个主栏透明窗口当作不可穿透遮罩。
 ### Tests Required
-四侧停靠/锁边/粘性、实际旋转轨迹、焦点镜像、退场圆点像素、粗角标边缘、叉勾顺序与键盘、真实产品撤回准入，深浅主题及不同DPI离屏。
+四侧停靠/锁边/粘性、实际旋转轨迹、焦点镜像、退场圆点像素、粗角标边缘、叉勾顺序、真实产品撤回准入（键盘操作已移除（2026-11-15 第十一轮，仅保留全局快捷键与 PPT 转发）），深浅主题及不同DPI离屏。
 ### Wrong vs Correct
 Wrong：仅扩大固定控制点padding。Correct：按实际仍绘制的对象及其姿态计算呈现包络，再核验ULW像素与命中使用同一成功帧。

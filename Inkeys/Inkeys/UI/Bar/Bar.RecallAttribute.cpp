@@ -57,12 +57,6 @@ namespace
 		shape.x.SetDirect(r.left); shape.y.SetDirect(r.top); shape.w.SetDirect(r.Width()); shape.h.SetDirect(r.Height());
 		shape.UpInh(BarUiInheritClass(r.left, r.top));
 	}
-	D2D1_COLOR_F ThemeBrushColor(BarThemeColorEnum role, float opacity = 1)
-	{
-		const auto c = GetThemeColor(role);
-		return D2D1::ColorF(GetRValue(c) / 255.0f, GetGValue(c) / 255.0f, GetBValue(c) / 255.0f, opacity);
-	}
-
 	wstring RedoButtonLabel()
 	{
 		return I18n::getWOr(I18nKey.UI.Bar.MainButtons.RedoLabel, L"重做");
@@ -131,7 +125,7 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, const RecallChromeVi
 		owner.barState.drawAttribute || owner.barState.geometryAttribute || owner.barState.moreExpanded ||
 		owner.barState.eraserAttribute || !anchorVisible;
 	if (shouldClose) Close(owner);
-	const bool open = chrome.popupOpen && !shouldClose; visible_ = open;
+	const bool open = chrome.popupOpen && !shouldClose;
 	const BarUiAnimationAdvanceContextClass context{ dt, speed, static_cast<bool>(BarUiAnimationEnabled), false };
 	auto advance = [&](auto& value) { const auto result = BarUiAdvanceAnimation(value, context); changed_ |= result.changed; active_ |= result.active; };
 	auto root = owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
@@ -274,21 +268,13 @@ void BarRecallAttributePanel::Draw(BarUIRendering& renderer, ID2D1DeviceContext*
 	if (!initialized_ || !frame_.panelVisible) return;
 	if (deviceGeneration_ != renderer.GetDeviceGeneration())
 	{
-		brush_.Reset(); focusStroke_.Reset(); redoButton_.icon.ResetCache(); deviceGeneration_ = renderer.GetDeviceGeneration();
+		redoButton_.icon.ResetCache(); deviceGeneration_ = renderer.GetDeviceGeneration();
 	}
-	if (!brush_ && FAILED(context->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &brush_))) return;
-	if (!focusStroke_) { ComPtr<ID2D1Factory> factory; context->GetFactory(&factory); auto props = D2D1::StrokeStyleProperties(); props.dashStyle = D2D1_DASH_STYLE_DOT; factory->CreateStrokeStyle(props, nullptr, 0, &focusStroke_); }
 	const auto& g = frame_.geometry;
 	renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.panel,zoom_),frame_.panelOpacity); renderer.SetFrameDiffuseMaskGeometryScale(1 / frame_.panelPose.scale);
 	DrawBarBackgroundVisual(renderer, context, surface_, BarUiInheritClass(surface_.inhX, surface_.inhY));
 	context->PushAxisAlignedClip(PixelRect(g.panel, zoom_), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 	DrawBarButtonVisual(renderer, context, redoButton_, BarUiInheritClass(redoButton_.button.inhX, redoButton_.button.inhY));
-	if (focused_ == 0)
-	{
-		brush_->SetColor(ThemeBrushColor(BarThemeColorEnum::TextPrimary));
-		auto rect = PixelRect(g.items[0], zoom_); rect.left += 2; rect.right -= 2; rect.top += 2; rect.bottom -= 2;
-		context->DrawRoundedRectangle(D2D1::RoundedRect(rect, 4, 4), brush_.Get(), 1, focusStroke_.Get());
-	}
 	context->PopAxisAlignedClip(); context->PopLayer(); renderer.SetFrameDiffuseMaskGeometryScale(1);
 }
 
@@ -314,7 +300,7 @@ std::array<RECT, 3> BarRecallAttributePanel::PresentedRegions() const
 void BarRecallAttributePanel::Close(BarUISetClass& owner)
 {
 	const bool wasOpen = owner.barState.recallAttribute.exchange(false);
-	pressed_ = -1; hovered_ = -1; focused_ = -1; visible_ = false;
+	pressed_ = -1; hovered_ = -1;
 	// 面板可立即关闭，但主栏尺寸与命令身份仍遵守 3 秒保护。
 	if (wasOpen) owner.NoteRecallPopupDismissed();
 }
@@ -349,7 +335,7 @@ bool BarRecallAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& mes
 		if (hovered_ != hit)
 		{
 			// 输入只发布目标，悬停/按压动画统一由 Advance 在渲染线程消费。
-			hovered_ = hit; focused_ = -1;
+			hovered_ = hit;
 			owner.UpdateRendering(false);
 		}
 		if (pressed_ >= 0 && cancelled) { pressed_ = -1; owner.UpdateRendering(false); } return inside;
@@ -359,7 +345,7 @@ bool BarRecallAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& mes
 	{
 		// 必须是面板收到的新Down才能建立动作票据；主栏开栏的那次Up不能落到 Redo。
 		pressed_ = inside && owner.barState.recallAttribute && !cancelled ? hit : -1;
-		focused_ = -1; owner.UpdateRendering(false); return inside;
+		owner.UpdateRendering(false); return inside;
 	}
 	if (message.message == WM_LBUTTONUP)
 	{
@@ -371,17 +357,4 @@ bool BarRecallAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& mes
 		if (pressed >= 0 || contactPointer) owner.UpdateRendering(false); return inside || pressed >= 0;
 	}
 	return inside;
-}
-bool BarRecallAttributePanel::Keyboard(BarUISetClass& owner, BYTE key, bool down)
-{
-	if (!owner.barState.recallAttribute) return false;
-	if (key == VK_ESCAPE)
-	{
-		if (down) { Close(owner); owner.UpdateRendering(false); } return true;
-	}
-	if (key != VK_TAB && key != VK_LEFT && key != VK_RIGHT && key != VK_RETURN && key != VK_SPACE) return false;
-	if (!down) return true;
-	if (key == VK_RETURN || key == VK_SPACE) { Execute(owner, 0); return true; }
-	// 单按钮面板：Tab/方向键只聚焦 Redo。
-	focused_ = 0; hovered_ = -1; owner.UpdateRendering(false); return true;
 }

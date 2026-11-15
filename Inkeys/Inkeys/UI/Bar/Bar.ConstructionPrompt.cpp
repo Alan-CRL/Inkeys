@@ -22,9 +22,10 @@ extern const double BarUiDividerRadius;
 extern const double BarUiDividerCursorLightIntensity;
 namespace
 {
-	// 只调整视觉/键盘顺序，动作索引继续保持稳定。
-	constexpr std::array<int,4> PromptOrder{0,1,3,2};
-	constexpr std::array<ShapeUiActionKind,4> PromptActions{ShapeUiActionKind::ConstructionBack,
+	// 只调整视觉顺序，动作索引继续保持稳定。
+	constexpr int PromptCount=4; // 按钮数量
+	constexpr std::array<int,PromptCount> PromptOrder{0,1,3,2};
+	constexpr std::array<ShapeUiActionKind,PromptCount> PromptActions{ShapeUiActionKind::ConstructionBack,
 		ShapeUiActionKind::ConstructionForward,ShapeUiActionKind::ConstructionComplete,ShapeUiActionKind::ConstructionCancel};
 	std::wstring PromptStepDescription(const ConstructionStatus& status)
 	{
@@ -99,14 +100,14 @@ bool BarConstructionPrompt::Advance(BarUISetClass& owner,std::shared_ptr<const S
 	bool active=false;const auto advance=[&](auto& v){const auto r=BarUiAdvanceAnimation(v,anim);changed_|=r.changed;active|=r.active;};
 	if(!open&&hidden&&opacity_.IsSame())
 	{
-		changed_|=frame_.visible;frame_.visible=frame_.input=false;visible_=false;hovered_=pressed_=focused_=-1;return changed_;
+		changed_|=frame_.visible;frame_.visible=frame_.input=false;visible_=false;hovered_=pressed_=-1;return changed_;
 	}
 	const auto root=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];const auto main=owner.shapeMap[BarUISetShapeEnum::MainBar];
 	if(!root||!main)return false;
 	root->UpInh({root->x.val-root->w.val/2,root->y.val-root->h.val/2});main->Inherit(BarUiInheritEnum::Center,*root);
 	if(open)
 	{
-		if(frame_.identity.session!=snapshot->identity.session){hovered_=pressed_=focused_=-1;}
+		if(frame_.identity.session!=snapshot->identity.session){hovered_=pressed_=-1;}
 		status_=snapshot->construction;
 	}
 	// 完成后快照会切到编辑会话；先按原构造身份接收完成沿，再锁存到退场结束。
@@ -205,7 +206,7 @@ bool BarConstructionPrompt::Advance(BarUISetClass& owner,std::shared_ptr<const S
 	const auto& keys=I18nKey.UI.Bar.ShapeConstruction;
 	next.accessibleNames={IW(keys.BackName),IW(keys.ForwardName),IW(keys.CompleteName),IW(keys.CancelName)};
 	next.tooltips={IW(keys.BackTooltip),IW(keys.ForwardTooltip),IW(keys.CompleteTooltip),IW(keys.CancelTooltip)};
-	int visibleIndex=0;const int hoverTarget=hovered_>=0?static_cast<int>(hovered_):static_cast<int>(focused_);
+	int visibleIndex=0;const int hoverTarget=static_cast<int>(hovered_);
 	for(int order=0;order<4;++order)
 	{
 		const int i=PromptOrder[order];
@@ -285,8 +286,8 @@ bool BarConstructionPrompt::Pointer(BarUISetClass& owner,const ExMessage& messag
 	if(cancelled){hovered_=pressed_=-1;if(previousHover>=0||previousPress>=0)owner.UpdateRendering(false);return previousHover>=0||previousPress>=0;}
 	const double px=message.x/f.zoom,py=message.y/f.zoom;
 	const bool inside=px>=f.visualPanel.left&&px<f.visualPanel.right&&py>=f.visualPanel.top&&py<f.visualPanel.bottom;
-	int hit=-1;for(int i=0;i<4;++i)if(f.input&&HitTestBarButton(f.buttons[i],px,py)){hit=i;break;}
-	if(message.message==WM_LBUTTONDOWN){if(!inside)return false;pressed_=hit;pressedIdentity_=f.identity;hovered_=focused_=-1;}
+	int hit=-1;for(int i=0;i<PromptCount;++i)if(f.input&&HitTestBarButton(f.buttons[i],px,py)){hit=i;break;}
+	if(message.message==WM_LBUTTONDOWN){if(!inside)return false;pressed_=hit;pressedIdentity_=f.identity;hovered_=-1;}
 	else if(message.message==WM_MOUSEMOVE){if(pressed_>=0&&pressed_!=hit)pressed_=-1;hovered_=hit;}
 	else if(message.message==WM_LBUTTONUP)
 	{
@@ -294,7 +295,7 @@ bool BarConstructionPrompt::Pointer(BarUISetClass& owner,const ExMessage& messag
 		if(pressed>=0&&pressed==hit&&pressedIdentity_==f.identity)
 		{
 			ShapeUiAction action;action.identity=pressedIdentity_;action.kind=PromptActions[hit];
-			const bool submitted=submit_?submit_(action):SubmitShapeUiIntent(action);
+			const bool submitted=Submit(action);
 			// 消费留白、禁用或取消与真正接受动作分开，只有接受成功才触发公共反馈。
 			if(accepted)*accepted=submitted;
 		}
@@ -302,29 +303,4 @@ bool BarConstructionPrompt::Pointer(BarUISetClass& owner,const ExMessage& messag
 	if(inside||previousHover!=hovered_||previousPress!=pressed_)owner.UpdateRendering(false);
 	return inside||previousPress>=0;
 }
-bool BarConstructionPrompt::WantsKeyboard()const
-{
-	// 键盘准入与实际处理共同读取成功呈现状态，候选帧不能提前截获 PPT 按键。
-	std::scoped_lock lock(mutex_);return presented_.visible;
-}
-bool BarConstructionPrompt::Keyboard(BarUISetClass& owner,const KeyboardMessage& message)
-{
-	const BYTE key=message.key;const bool down=message.down;
-	Frame f;{std::scoped_lock lock(mutex_);f=presented_;}if(!f.visible)return false;
-	if(key==VK_ESCAPE){if(down&&f.buttons[3].enabled){ShapeUiAction a;a.identity=f.identity;a.kind=ShapeUiActionKind::ConstructionCancel;(void)SubmitShapeUiIntent(a);}return true;}
-	if(key==VK_TAB||key==VK_RIGHT||key==VK_LEFT)
-	{
-		if(down)
-		{
-			const int delta=key==VK_LEFT||(key==VK_TAB&&message.shift)?-1:1;
-			int candidate=focused_<0?(delta>0?3:0):static_cast<int>(std::find(PromptOrder.begin(),PromptOrder.end(),focused_)-PromptOrder.begin());focused_=-1;
-			for(int k=0;k<4;++k){candidate=(candidate+4+delta)%4;const int item=PromptOrder[candidate];if(f.buttons[item].visible&&f.buttons[item].enabled){focused_=item;break;}}
-			owner.UpdateRendering(false);
-		}return true;
-	}
-	if(key==VK_RETURN||key==VK_SPACE)
-	{
-		const int focused=focused_;
-		if(down&&focused>=0&&f.buttons[focused].visible&&f.buttons[focused].enabled){ShapeUiAction a;a.identity=f.identity;a.kind=PromptActions[focused];(void)SubmitShapeUiIntent(a);}return true;
-	}return false;
-}
+bool BarConstructionPrompt::Submit(const ShapeUiAction& action)const{return submit_?submit_(action):SubmitShapeUiIntent(action);}

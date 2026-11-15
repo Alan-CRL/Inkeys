@@ -53,13 +53,9 @@ public:
 	static const BarUiWordClass& PromptRingLabel(const BarConstructionPrompt& p) { return p.ringLabel_; }
 	static double PromptRingProgress(const BarConstructionPrompt& p) { return p.ringProgress_.val; }
 	static auto PromptContentPhase(const BarConstructionPrompt& p) { return p.contentPhase_; }
-	static int PromptFocused(const BarConstructionPrompt& p) { return p.focused_; }
-	static void PromptFocus(BarConstructionPrompt& p,int item) { p.focused_=item; }
 	static const BarUiShapeClass& PromptSurface(const BarConstructionPrompt& p) { return p.surface_; }
 	static const BarButtonClass& PromptButton(const BarConstructionPrompt& p,int i) { return *p.buttons_[i]; }
 	static bool DockIndicatorVisible(const BarUISetClass& p) { return p.bottomDockIndicatorPresentedVisible.load(); }
-	static int Focused(const BarGeometryAttributePanel& p) { return p.focused_; }
-	static void Focus(BarGeometryAttributePanel& p, int item) { p.focused_ = item; }
 	static void Execute(BarGeometryAttributePanel& p, BarUISetClass& owner, int item, std::uint64_t revision) { p.Execute(owner, item, revision); }
 	static double ScrollRequest(const BarGeometryAttributePanel& p) { return p.scrollRequest_; }
 	static BarButtonClass& MutableButton(BarGeometryAttributePanel& p, int item) { return *p.buttons_[item]; }
@@ -360,12 +356,10 @@ namespace Inkeys::UI::Bar
 		expect(BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,0).icon.pct.val == 0,"new category starts transparent at its target");
 		tick(1); const auto switchMoving = owner.geometryAttribute.PresentationSnapshot();
 		expect(switchMoving.panel.Height() > oldCategory.panel.Height() && switchMoving.panel.Height() < 354.5,"category height traverses continuous batch samples");
-		// 分类重排中的新旧目录、固定行和分段都不能借助强制焦点或新按压执行。
+		// 分类重排中的新旧目录、固定行和分段都不能借助新按压执行。
 		for (int item = 0; item < GeometryControlCount; ++item) if (switchMoving.hits[item].visible)
 		{
 			expect(!switchMoving.hits[item].enabled, "moving category layout disables every presented control");
-			BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute,item);
-			owner.geometryAttribute.Keyboard(owner,VK_RETURN,true); owner.geometryAttribute.Keyboard(owner,VK_SPACE,true);
 			for (bool contact : {false,true})
 			{
 				pointer(WM_LBUTTONDOWN,item,true,contact); pointer(WM_LBUTTONUP,item,false,contact);
@@ -375,11 +369,6 @@ namespace Inkeys::UI::Bar
 		}
 		tick(90);
 		expect(owner.geometryAttribute.PresentationSnapshot().category == ShapeToolbarCategory::Regular, "moving segment activation cannot redirect category");
-		// 分段可Tab聚焦、方向键在分段内移动，再以Enter切换；不改当前工具。
-		BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute,GeometryCloseButton); owner.geometryAttribute.Keyboard(owner,VK_TAB,true);
-		expect(BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute) == GeometrySegmentBegin,"segments participate in Tab navigation");
-		owner.geometryAttribute.Keyboard(owner,VK_RIGHT,true); owner.geometryAttribute.Keyboard(owner,VK_RETURN,true); tick(90);
-		expect(owner.geometryAttribute.PresentationSnapshot().category == ShapeToolbarCategory::Solid && SameBusinessSnapshot(beforeCategory,GetStateModeVersionedSnapshot()),"keyboard activates segment without changing tool");
 		// 少于六项且只有辅助项时，面板宽度由真实辅助文字槽决定。
 		for (int i = 20; i < 23; ++i) BarGeometryAttributeTestAccess::CategoryVisible(owner.geometryAttribute,i,false);
 		selectCategory(ShapeToolbarCategory::Regular); selectCategory(ShapeToolbarCategory::Solid);
@@ -438,21 +427,12 @@ namespace Inkeys::UI::Bar
 				expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()), "disabled mouse and contact actions preserve all business fields and revision");
 			}
 			BarGeometryAttributeTestAccess::Execute(owner.geometryAttribute, owner, item, before.revision);
-			BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute, item);
-			owner.geometryAttribute.Keyboard(owner, VK_RETURN, true); owner.geometryAttribute.Keyboard(owner, VK_SPACE, true);
-			expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()), "direct Execute and stale forced keyboard focus cannot activate future tool");
+			expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()), "direct Execute cannot activate future tool");
 			const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, item);
 			expect(button.state->state == BarWidgetState::Disable && std::abs(button.icon.pct.val - disabledOpacity()) < 0.000001 && std::abs(button.name.pct.val - disabledOpacity()) < 0.000001,
 				"future tools use shared theme disabled opacity");
 			expect(button.pressScale.val == 1 && !f.hits[item].enabled, "future tools do not acquire successful press feedback or action hit");
 		}
-		for (BYTE key : {static_cast<BYTE>(VK_TAB), static_cast<BYTE>(VK_LEFT), static_cast<BYTE>(VK_RIGHT)})
-			for (int i = 0; i < GeometryControlCount * 2; ++i)
-			{
-				owner.geometryAttribute.Keyboard(owner, key, true);
-				const int focus = BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute);
-				expect(focus < 0 || focus >= GeometryCategoryCount || catalog[focus].preset.has_value(), "keyboard navigation skips all fifteen disabled categories");
-			}
 		owner.geometryAttribute.ResetPointerFeedback(); caseContext.clear(); selectCategory(ShapeToolbarCategory::Regular); tick(90);
 
 		// 真实共享按钮按压/回弹，命中几何不跟随 draw-only pressScale 收缩。
@@ -1059,25 +1039,6 @@ namespace Inkeys::UI::Bar
 			return Intersect(crop,{double(mapping.workArea.left-receipt.destination.x),double(mapping.workArea.top-receipt.destination.y),double(mapping.workArea.right-receipt.destination.x),double(mapping.workArea.bottom-receipt.destination.y)});
 		};
 		auto fullyOnScreen = [&](EraserAttributeRect crop) { const auto visible=onScreen(crop); return std::abs(visible.Width()-crop.Width())<.01 && std::abs(visible.Height()-crop.Height())<.01; };
-		// 业务 Pointer 测试无法覆盖原生准入漏接；直接经过实际场景提交后的 Touch 探针。
-		auto checkTouchAdmission = [&](const GeometryAttributePresentation& presented)
-		{
-			using Inkeys::Input::UiPointer::Touch::Hit;
-			unsigned checked = 0;
-			for (const auto& button : presented.hits)
-			{
-				if (!button.visible || !button.enabled) continue;
-				const auto& r = button.boundsDip;
-				const auto rect = clientRect({r.left,r.top,r.right,r.bottom},presented);
-				if (!fullyOnScreen(rect)) continue;
-				const POINT screen{static_cast<LONG>(std::lround(EraserRectCenterX(rect)+receipt.destination.x)),
-					static_cast<LONG>(std::lround(EraserRectCenterY(rect)+receipt.destination.y))};
-				expect(owner.ProbeTouchScreen(screen).hit == Hit::Accept,"committed geometry controls pass native touch admission");
-				++checked;
-			}
-			expect(checked > 0,"touch admission covers visible geometry buttons");
-		};
-		checkTouchAdmission(owner.geometryAttribute.PresentationSnapshot());
 		auto pixel = [&](double x, double y)
 		{
 			const LONG px = static_cast<LONG>(std::floor(x)), py = static_cast<LONG>(std::floor(y));
@@ -1117,7 +1078,6 @@ namespace Inkeys::UI::Bar
 		std::array<unsigned,GeometryCategoryCount> futurePixelCases{};
 		auto checkFuturePixels = [&](const GeometryAttributePresentation& presented)
 		{
-			checkTouchAdmission(presented);
 			for (int i = 0; i < GeometryCategoryCount; ++i)
 			{
 				if (catalog[i].preset || catalog[i].category != presented.category) continue;
@@ -1439,9 +1399,6 @@ namespace Inkeys::UI::Bar
 			for (int i = 0; i < 10; ++i) startOpacity[i] = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, GeometryStyleBegin + i).name.pct.val;
 			const double firstContrast = previewContrast(GeometryThicknessBegin + 1, start);
 			const bool thicknessOnScreen = fullyOnScreen(clientRect(start.items[GeometryThicknessBegin + 1],start));
-			if (start.hits[GeometryPatternBegin].enabled)
-				for (int attempt = 0; attempt < GeometryControlCount && BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute) != GeometryPatternBegin; ++attempt)
-					owner.geometryAttribute.Keyboard(owner, VK_TAB, true);
 			std::array<std::vector<double>,10> positions, opacities;
 			std::vector<double> partialThicknessContrast;
 			BarUiAnimationEnabled = true; selectScene(nextShape, nextFill);
@@ -1452,23 +1409,12 @@ namespace Inkeys::UI::Bar
 				{
 					const int item = current.items[GeometryPatternBegin].Width() > 0 ? GeometryPatternBegin : GeometryStyleBegin;
 					const auto rect = current.items[item]; const auto before = GetStateModeVersionedSnapshot();
-					const int focusedAttribute = BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute);
-					if (focusedAttribute < 0 || (focusedAttribute >= GeometryStyleBegin && focusedAttribute < GeometryCloseButton))
-					{
-						owner.geometryAttribute.Keyboard(owner, VK_RETURN, true);
-						expect(StateModeTransitionRevision() == before.revision, "keyboard Enter cannot commit an attribute while its group reflows or retires");
-					}
 					ExMessage down{}; down.message = WM_LBUTTONDOWN; down.lbutton = true;
 					down.x = static_cast<short>(std::lround(EraserRectCenterX(rect) * current.zoom));
 					down.y = static_cast<short>(std::lround(EraserRectCenterY(rect) * current.zoom));
 					owner.geometryAttribute.Pointer(owner, down);
 					ExMessage up = down; up.message = WM_LBUTTONUP; up.lbutton = false; owner.geometryAttribute.Pointer(owner, up);
 					expect(StateModeTransitionRevision() == before.revision, "intermediate attribute reflow Down Up cannot mutate tool or style");
-					for (int attempt = 0; attempt < GeometryControlCount; ++attempt)
-					{
-						owner.geometryAttribute.Keyboard(owner, VK_TAB, true); const int focused = BarGeometryAttributeTestAccess::Focused(owner.geometryAttribute);
-						expect(focused < 0 || (focused < GeometryCategoryCount && catalog[focused].preset.has_value()) || (current.hits[focused].visible && current.hits[focused].enabled), "keyboard traversal skips disabled future retiring or reflowing controls");
-					}
 				}
 				for (int item = GeometryStyleBegin; item < GeometryCloseButton; ++item)
 				{
@@ -1523,15 +1469,13 @@ namespace Inkeys::UI::Bar
 		for (int item = GeometryCircleCenter; item < GeometryCloseButton; ++item) if (fadingParameters.hits[item].visible)
 		{
 			expect(!fadingParameters.hits[item].enabled, "parameter fade gates both parameter and attribute rows despite unchanged geometry");
-			BarGeometryAttributeTestAccess::Focus(owner.geometryAttribute,item);
-			owner.geometryAttribute.Keyboard(owner,VK_RETURN,true); owner.geometryAttribute.Keyboard(owner,VK_SPACE,true);
 			for (bool contact : {false,true})
 			{
 				const auto rect = fadingParameters.items[item];
 				panelPoint(WM_LBUTTONDOWN,EraserRectCenterX(rect),EraserRectCenterY(rect),true,contact);
 				panelPoint(WM_LBUTTONUP,EraserRectCenterX(rect),EraserRectCenterY(rect),false,contact);
 			}
-			expect(SameBusinessSnapshot(beforeParameterInput,GetStateModeVersionedSnapshot()), "same height parameter fade rejects Enter Space mouse and contact without any business mutation");
+			expect(SameBusinessSnapshot(beforeParameterInput,GetStateModeVersionedSnapshot()), "same height parameter fade rejects mouse and contact without any business mutation");
 		}
 		expect(fadingParameters.categoriesAcceptInput && fadingParameters.hits[0].enabled, "stationary categories retain row animation redirection eligibility");
 		sceneTick(90); checkStableScene(PresetKind::Circle,draw3::shapes::FillMode::Outline);
@@ -1679,9 +1623,8 @@ namespace Inkeys::UI::Bar
 			return POINT{static_cast<LONG>(std::lround(EraserRectCenterX(client)+receipt.destination.x)),
 				static_cast<LONG>(std::lround(EraserRectCenterY(client)+receipt.destination.y))};
 		};
-		const auto checkPromptTouch=[&](bool outsideBody=true)
+		const auto checkPromptTouch=[&]()
 		{
-			using Inkeys::Input::UiPointer::Touch::Hit;
 			using Inkeys::Drawing::Draw3::ShapeUiAction;
 			using Inkeys::Drawing::Draw3::ShapeUiActionKind;
 			const auto frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
@@ -1696,32 +1639,17 @@ namespace Inkeys::UI::Bar
 				const auto& button=frame.buttons[i];if(!button.visible)continue;
 				const auto& r=button.boundsDip;
 				const auto screen=promptScreenCenter(r,frame.zoom);
-				if(outsideBody)
-				{
-					// 选主栏本体之外的中心，防止漏登提示时借下层 Accept 让回归误通过。
-					const auto body=owner.shapeMap[BarUISetShapeEnum::MainBar];
-					const double x=(r.left+r.right)/2,y=(r.top+r.bottom)/2;
-					expect(x<body->inhX||x>=body->inhX+body->w.val||y<body->inhY||y>=body->inhY+body->h.val,
-						"prompt touch samples are outside the main bar body");
-				}
 				const bool enabled=frame.input&&button.enabled;
-				expect(owner.ProbeTouchScreen(screen).hit==(enabled?Hit::Accept:Hit::Blocked),
-					"successful prompt frame admits enabled buttons and blocks disabled buttons");
+				const auto count=intents.size();
+				// 触摸与鼠标同准入；禁用按钮由提示自身的命中逻辑忽略，不再依赖原生名单阻挡。
+				const bool routed=RunConstructionPromptTouchRouteTest(screen);
 				if(enabled)
-				{
-					const auto count=intents.size();
-					expect(RunConstructionPromptTouchRouteTest(screen),"prompt touch Down/Up uses the ordinary Bar mailbox and rejects a late Up");
-					expect(intents.size()==count+1&&intents.back().kind==actions[i]&&intents.back().identity==frame.identity,
-						"each prompt touch emits exactly one intent with the presented action and identity");
-				}
+					expect(routed&&intents.size()==count+1&&intents.back().kind==actions[i]&&intents.back().identity==frame.identity,
+						"each enabled prompt touch emits exactly one intent with the presented action and identity");
+				else expect(!routed&&intents.size()==count,"disabled prompt button ignores touch like mouse");
 				++checked;
 			}
 			expect(checked>0,"touch admission checks visible construction prompt buttons");
-		};
-		const auto promptKey=[&](BYTE key,bool down,bool shift=false)
-		{
-			const BarConstructionPrompt::KeyboardMessage message{key,down,shift};
-			return owner.constructionPrompt.Keyboard(owner,message);
 		};
 		const auto screenshot=[&](const std::wstring& filename)
 		{
@@ -1730,22 +1658,15 @@ namespace Inkeys::UI::Bar
 			expect(SavePng(path,scenePixels,receipt.size.cx,receipt.size.cy),"prompt motion screenshot writes actual committed pixels");
 			std::cout<<"Construction screenshot: "<<std::filesystem::absolute(path).string()<<'\n';
 		};
-		// 首次呈现延迟/失败时，候选提示虽已可见也不能截获 PPT 方向键和空格。
+		// 首次呈现失败后重试，继续验证成功呈现提示的触摸行为。
 		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});sceneTick(90);BarUiAnimationEnabled=false;
 		{
 			auto construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>();
 			construction->identity.session=++promptSession;construction->construction.active=true;construction->construction.preset=PresetKind::Arc;
 			construction->construction.step=1;construction->construction.totalSteps=2;publishPrompt(construction);
-			expect(!owner.constructionPrompt.WantsKeyboard(),"unpresented first prompt does not capture keyboard");
 			rejectedPresent=false;rejectNextPresent=true;sceneTick(1);
-			expect(rejectedPresent&&owner.constructionPrompt.Visible()&&!owner.constructionPrompt.WantsKeyboard(),"failed first presentation keeps keyboard gate on the hidden successful frame");
-			const auto unpresented=BarGeometryAttributeTestAccess::PromptCandidate(owner.constructionPrompt);
-			expect(owner.ProbeTouchScreen(promptScreenCenter(unpresented.buttons[3].boundsDip,unpresented.zoom)).hit!=Inkeys::Input::UiPointer::Touch::Hit::Accept,
-				"failed first presentation does not publish candidate prompt touch admission");
-			for(const BYTE key:{BYTE(VK_LEFT),BYTE(VK_RIGHT),BYTE(VK_SPACE),BYTE(VK_TAB)})
-				expect(!promptKey(key,true)&&!promptKey(key,false),"unpresented prompt leaves PPT arrows, Space and Tab unconsumed");
+			expect(rejectedPresent&&owner.constructionPrompt.Visible(),"failed first presentation keeps the candidate prompt visible");
 			previousPixels.clear();sceneTick(90);
-			expect(owner.constructionPrompt.WantsKeyboard()&&promptKey(VK_RIGHT,false)&&promptKey(VK_SPACE,false),"successful retry enables the same presented keyboard state");
 			checkPromptTouch();
 		}
 		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});sceneTick(2);BarUiAnimationEnabled=true;
@@ -1834,18 +1755,6 @@ namespace Inkeys::UI::Bar
 			const auto anchorRoot=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
 			const double visibleTop=(std::min)(static_cast<double>(anchorRoot->inhY),static_cast<double>(mainRect.top));
 			expect(frame.panel.bottom>mainRect.top&&std::abs(frame.panel.bottom-(visibleTop+BarBottomDockIndicatorHeightDip/2))<.01,"prompt embeds into visible main bar by the bottom dock indicator depth");
-			const auto before=GetStateModeVersionedSnapshot();BarGeometryAttributeTestAccess::PromptFocus(owner.constructionPrompt,-1);
-			promptKey(VK_TAB,true,false);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==0,"Tab starts at first enabled action");
-			promptKey(VK_TAB,true,false);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==3,"Tab skips disabled Forward and reaches Cancel before Complete");
-			promptKey(VK_TAB,true,true);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==0,"Shift+Tab reverses action traversal");
-			promptKey(VK_TAB,true,true);expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==2,"Shift+Tab wraps to rightmost Complete");
-			// 先捕获相反的 Shift 状态再消费：处理阶段必须逐条使用消息中的修饰键。
-			const BarConstructionPrompt::KeyboardMessage backward{VK_TAB,true,true},forward{VK_TAB,true,false};
-			BarGeometryAttributeTestAccess::PromptFocus(owner.constructionPrompt,2);owner.constructionPrompt.Keyboard(owner,backward);
-			expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==3,"queued Shift+Tab retains capture-time reverse traversal after Shift changes");
-			BarGeometryAttributeTestAccess::PromptFocus(owner.constructionPrompt,2);owner.constructionPrompt.Keyboard(owner,forward);
-			expect(BarGeometryAttributeTestAccess::PromptFocused(owner.constructionPrompt)==0,"queued Tab retains capture-time forward traversal after Shift changes");
-			expect(SameBusinessSnapshot(before,GetStateModeVersionedSnapshot()),"prompt keyboard traversal never changes next-tool style");
 			construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>(*construction);++construction->identity.generation;construction->constructionContactActive=true;publishPrompt(construction);sceneTick(90);
 			frame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);for(const auto& action:frame.buttons)expect(!action.enabled,"all actions disable during physical contact");
 			checkPromptTouch();
@@ -1856,22 +1765,14 @@ namespace Inkeys::UI::Bar
 			expect(frame.visible&&frame.input&&std::abs((frame.panel.left+frame.panel.right)/2-(currentRoot->inhX+currentRoot->w.val/2))<.1,"manual collapse retains prompt anchored to main button");
 			checkPromptTouch();
 			screenshot(L"construction-folded-"+suffix);
-			Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});bool retiring=false,retiringTouchChecked=false;
+			Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});bool retiring=false;
 			for(int sample=0;sample<50;++sample)
 			{
 				sceneTick(1);const auto retiringFrame=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);retiring|=retiringFrame.scale>.01&&retiringFrame.scale<.99;
-				// 缩到亚像素后中心会被屏幕整数舍入挤出；在仍有实际面积时验证退场阻挡。
-				if(retiringFrame.visible&&retiringFrame.scale>.1)
-				{
-					retiringTouchChecked=true;
-					expect(!retiringFrame.input&&owner.ProbeTouchScreen(promptScreenCenter(retiringFrame.visualPanel,retiringFrame.zoom)).hit==Inkeys::Input::UiPointer::Touch::Hit::Blocked,
-						"visible retiring prompt blocks touch before exposing lower layers");
-				}
 				if(sample==12)screenshot(L"construction-disappear-"+suffix);
 			}
 			expect(retiring&&!owner.constructionPrompt.Visible(),"disappearance traverses intermediate scale and retires fully");
-			expect(retiringTouchChecked,"retiring prompt has a committed blocked touch sample");
-			expect(!promptKey(VK_TAB,true,false)&&!promptKey(VK_ESCAPE,true),"hidden prompt does not consume keyboard");owner.barState.fold=false;sceneTick(90);
+			owner.barState.fold=false;sceneTick(90);
 		}
 		// 窄屏提示改成双列换行，叉勾仍必须同排；动作索引不随视觉顺序变动。
 		for(const auto preset:{draw3::shapes::PresetKind::Polygon,draw3::shapes::PresetKind::Polyline})for(const LONG width:{90L,140L,200L})
@@ -1903,7 +1804,7 @@ namespace Inkeys::UI::Bar
 		BarGeometryAttributeTestAccess::Display(owner,460,420,192);owner.barStyle.configZoom=1;sceneTick(120);
 		const auto compact=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
 		expect(compact.visible&&compact.input,"restricted workspace prompt settles and accepts input");
-		checkPromptTouch(false);
+		checkPromptTouch();
 		for(const auto& action:compact.buttons)if(action.visible)expect(action.boundsDip.left>=compact.panel.left&&action.boundsDip.right<=compact.panel.right&&action.boundsDip.top>=compact.panel.top&&action.boundsDip.bottom<=compact.panel.bottom,"wrapped prompt preserves full standard button bounds");
 		checkPromptPixels(L"construction-compact-200.png");
 		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});owner.UpdateRendering(false);sceneTick(90);

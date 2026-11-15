@@ -462,6 +462,8 @@ ValidationResult Validate(const ShapeObject& object, const Registry& registry)
 	}
 	if (object.legacyKind != LegacyKind::None)
 	{
+		// 旧四形导出不携带辅助部件，拒绝无法对称恢复的附加位。
+		if (object.style.auxiliary != Auxiliary::None) return { "legacy shape cannot carry auxiliary geometry" };
 		const bool line = object.legacyKind == LegacyKind::SolidLine || object.legacyKind == LegacyKind::DashedLine;
 		const bool fill = object.legacyKind == LegacyKind::FilledRectangle;
 		if (object.kind != (line ? Kind::Line : Kind::Rectangle) || object.style.fill != fill ||

@@ -63,6 +63,8 @@ auto recordShapePreviewPresented = [&]()
 auto logShapeGestureSummary = [&](const char* result)
 {
 	if (!shapeGestureStats.previews) return;
+	// 仅在诊断输出已开启时格式化；统计无论是否输出都随手势结束清零。
+	if (!DiagnosticOutput::Available()) { shapeGestureStats = {}; return; }
 	const auto now = SnapshotShapePreviewMetrics(); const auto& base = shapeGestureStats.base;
 	DiagnosticOutput::Printf(DiagnosticOutput::Stream::Output,
 		"[Draw3.ShapeEdit] action=gesture_end result=%s previews=%llu focus=%llu legacy=%llu tile_replays=%llu coalesced_bridge=%llu coalesced_draw=%llu latency_avg_us=%llu latency_max_us=%llu\n",
@@ -305,8 +307,7 @@ auto closeShapeEditor = [&](RECT& dirty,std::optional<CanvasFocusEndAction> focu
 		if (shapeUi.construction)
 		{
 			UnionRectInPlace(dirty,shapeBoundsRect(shapeUi.construction->renderData.bounds));
-			shapeUi.construction->session.Cancel(); shapeUi.construction->cancelled = true; shapeUi.construction.reset();
-			shapeUi.constructionVisualDirty = true;
+			CancelShapeConstruction(shapeUi.construction,shapeUi);
 		}
 		UnionRectInPlace(dirty,betweenShapeBounds); betweenShapeBounds = {};
 		renderer_.ClearOperatorLayer(renderer_.layerL0);
@@ -494,6 +495,16 @@ auto commitShapeConstruction = [&](draw3::shapes::ShapeObject object,RECT& dirty
 	if (metricsState_) { metricsState_->PruneStored(*canvas,runtime); metricsState_->InvalidateLiveRasters(); metricsState_->InvalidateL2(); }
 	return true;
 };
+shapePalmCategory = [&](DrawingTool tool) { return ShapePalmToolCategory(tool,shapeUi); };
+abandonShapeContact = [&](RuntimeStroke& runtime)
+{
+	if (shapeUi.construction == runtime.shape.construction)
+	{
+		RECT ignored{}; endCanvasFocus(CanvasFocusEndReason::Escape,ignored);
+		publishShapeUi(); window_.RequestFullPresent();
+	}
+	else CancelShapeConstruction(runtime.shape.construction,shapeUi);
+};
 beginShapeContact = [&](RuntimeStroke& runtime)
 {
 	// 已成形的非直线/箭头：框外首个接触只结束编辑并吞到终态；直线/箭头继续起笔。
@@ -543,8 +554,7 @@ beginShapeContact = [&](RuntimeStroke& runtime)
 finishShapeContact = [&](RuntimeStroke& runtime)
 {
 	if (!runtime.shape.construction || runtime.shape.constructionFinished) return;
-	runtime.shape.constructionFinished = true;
-	ConfirmRuntimeConstructionContact(runtime);
+	ConfirmRuntimeConstructionContact(runtime); // 自身幂等并置位 constructionFinished。
 	if (runtime.shape.construction->cancelled || runtime.shape.construction->completed)
 		if (shapeUi.construction == runtime.shape.construction)
 		{
@@ -603,6 +613,7 @@ auto processShapeUiAction = [&](const ShapeUiAction& action,RECT& dirty)
 			{
 				if (commitShapeConstruction(std::move(*object),dirty))
 				{
+					shapeUi.completedConstructionSession = shapeUi.construction->identity.session;
 					shapeUi.completedConstruction = shapeUi.construction->session.Status();
 					shapeUi.completedConstruction.active = false; shapeUi.completedConstruction.finished = true;
 					shapeUi.construction.reset(); shapeUi.constructionVisualDirty = true;

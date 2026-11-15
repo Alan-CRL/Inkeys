@@ -120,7 +120,7 @@
 		auto normalized = *source.shape;
 		if (normalized.construction && normalized.construction->tool.preset == shapes::PresetKind::Cone)
 		{
-			// 旧四部件圆锥可读；写出时元数据与标准部件必须来自同一个切线版本。
+			// Validate 已拒绝旧四部件；当前圆锥仍从构造重建，统一允许浮点尾差的派生部件。
 			auto rebuilt = shapes::MakeConstructedShape(*normalized.construction,normalized.style,normalized.id,normalized.revision);
 			if (!rebuilt) return false;
 			rebuilt->transform = normalized.transform; normalized = std::move(*rebuilt);

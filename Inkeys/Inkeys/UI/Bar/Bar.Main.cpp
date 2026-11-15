@@ -232,8 +232,7 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 		&& !attribute.thicknessAnnotationPinned && !attribute.thicknessOverflowHover
 		&& !attribute.thicknessOverflowHoverGrace && !attribute.thicknessOverflowPinned
 		&& !attribute.colorPickerPointerPressed && !attribute.colorPickerPointerCapture
-		&& !attribute.colorPickerHoldHintActive && !attribute.colorPickerHoldLocked
-		&& attribute.colorPickerKeyboardDownMask == 0;
+		&& !attribute.colorPickerHoldHintActive && !attribute.colorPickerHoldLocked;
 	signature.flags = (barState.fold ? 1u : 0u) | (barState.drawAttribute ? 2u : 0u)
 		| (barState.geometryAttribute ? 4u : 0u) | (barState.moreExpanded ? 8u : 0u)
 		| (barState.eraserAttribute ? 16u : 0u) | (barState.eraserSensitivityOpen ? 32u : 0u)
