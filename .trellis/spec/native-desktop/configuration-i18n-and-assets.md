@@ -120,7 +120,7 @@ value = static_cast<int>(NormalizeStartupPreviewEffect(candidate));
 - `main.json`：`Experimental.Inkeys3.UI3.StatusIndicator.{Enable,PptSlideshow,SuperTop,NewVersion}`，均为 bool，默认 true。
 - `Inkeys::Config::ReadAllHasValue(dottedPath)`：最近一次 `ReadAll` 读到的原文件是否含该键（区分缺失与默认值）。
 - 运行时发布：`Inkeys::UI::Bar::SetStatusIndicatorOptions(enable, ppt, superTop, newVersion)`。
-- 设置：`GeneralSection::StatusIndicator`（常规导航子页，排在最后）；`GeneralDraft::{statusIndicator,statusIndicatorTypes}` / `GeneralEvents::{statusIndicatorChanged,statusIndicatorTypesChanged}`。
+- 设置：`Section::StatusIndicator`（通用页子页，见 [settings-navigation.md](settings-navigation.md)）；`GeneralDraft::{statusIndicator,statusIndicatorTypes}` / `GeneralEvents::{statusIndicatorChanged,statusIndicatorTypesChanged}`。
 
 ### 3. Contracts
 - 启动：`ReadAll` 后、`config.Write()` 补齐缺失键之前记录 `StatusIndicator.SuperTop` 是否已存在；`ReadSetting()` 读完 deploy.json 后，若原先缺失，用旧 `PlugIn.SuperTop.Indicator` 初始化一次并写回 main.json，此后旧键只为文件兼容保留，不再读取或展示。随后调用 `SetStatusIndicatorOptions`。

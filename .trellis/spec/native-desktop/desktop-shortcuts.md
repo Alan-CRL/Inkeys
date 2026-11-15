@@ -10,7 +10,7 @@
 - `Config::GetShortcutNamePreference() const -> std::pair<int, std::wstring>`、`SetShortcutNamePreference(int, std::wstring) -> bool`：名称对在 Config 私有 rwMutex 下读取/提交；返回 false 包含无效输入或没有变化。
 - `CaptureDesktopShortcutNames()` 冻结同一 I18n::TextSnapshot 的语言与用途名称；`GetDesktopShortcutDirectory()` 取得当前用户桌面目录。
 - `ShortcutAssistantClass::SetShortcut()` 是启动入口；重载 `(const std::wstring& name, bool correct, bool create, const std::wstring& desktopDirectory)` 消费已解析请求。
-- `GeneralSection::DesktopShortcuts` 在键盘 `Shortcuts` 后；设置 worker 区分 `SettingBusinessKind::CreateShortcut` 和 `EnsureShortcut`。
+- `Section::DesktopShortcuts` 是通用页最后一个子页（键盘快捷键已迁到顶层“按键与快捷键”页）；设置 worker 区分 `SettingBusinessKind::CreateShortcut` 和 `EnsureShortcut`。
 
 ## 3. Contracts
 
