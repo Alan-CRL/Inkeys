@@ -550,3 +550,30 @@ User final device test accepted. Touch release decisions, bounded fallback, curs
 ### Next Steps
 
 - 由用户开启 feature/shape -> dev PR
+
+
+## Session 188: 设置项分类树重构
+<!-- trellis-session: v=2 fp=602f713557f79d38 -->
+
+**Date**: 2026-11-16
+**Task**: 设置项分类树重构
+**Branch**: `chore/setting-item`
+
+### Summary
+
+将设置页重构为表驱动导航树：新增窗口与显示器、按键与快捷键、日志与配置页，绘制拆为绘制效果与交互与手势，通用页聚焦基本/外观，设置项迁移不改配置键；20 语言 i18n、Headless 测试与规范同步，人工验证通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6206e499` | refactor(setting): restructure settings pages into a table-driven navigation tree |
+| `0fea77e4` | docs(spec): document settings navigation tree and refresh stale notes |
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64 构建 0 错误；InkeysHeadlessTests --no-window 全量及 --setting-general-only/--setting-home-only/--setting-attention-only 通过；i18n.ps1 check 通过；人工验证通过
+
+### Status
+
+[OK] **Completed**

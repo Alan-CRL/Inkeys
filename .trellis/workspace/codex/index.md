@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 187
-- **Last Active**: 2026-11-15
+- **Total Sessions**: 188
+- **Last Active**: 2026-11-16
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~552 | Active |
+| `journal-3.md` | ~579 | Active |
 | `journal-2.md` | ~2054 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 188 | 2026-11-16 | 设置项分类树重构 | `6206e499`, `0fea77e4` | `chore/setting-item` |
 | 187 | 2026-11-15 | 形状第十一轮收尾与合并 dev 前审阅 | `b0f96e29`, `3375f115` | `feature/shape` |
 | 186 | 2026-11-14 | Close whiteboard input inertia task | `b861d464` | `feature/whiteboard3` |
 | 185 | 2026-11-14 | PptCOM联动阻塞调查、回退与归档 | `10c8be73`, `533c95fc` | `bugfix/pptcom` |
