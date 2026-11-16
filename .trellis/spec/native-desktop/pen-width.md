@@ -9,10 +9,10 @@
 - `Inkeys::Business::PenWidth::{Selection,Context,Metrics,Resolve,CanvasWidthPx,RoundPositiveCanvasPx}` 位于 `Business/PenWidthPolicy.hpp`。
 - `Selection = Preset(Thin/Medium/Thick) | ExplicitDip(double)`；`Context = revision/paintDevice/effectiveDpi/full pixelWidth/pixelHeight`。
 - `GetPenWidthMetrics(snapshot)`、`SetPenWidthPresetIfRevision(index,revision,save)`、`SetPenWidthIfRevision(double,revision,save)`、`ApplyPenWidthContext(context)`。
-- `InitializePenWidthPreferences(context)` 在ReadSetting后、RTS准入前只初始化目标Context及一次Medium；启动Decode/flags/GetMemory已注释停用。Host callback同步发布真实绘制目标。
+- `InitializePenWidthPreferences(context)` 在启动配置读取与迁移后、RTS准入前只初始化目标Context及一次Medium；启动Decode/flags/GetMemory已注释停用。Host callback同步发布真实绘制目标。
 - `IsBarThicknessPresetSelected(mode,index,dpiZoom,snapshot)`：Preset有效身份优先；ExplicitDip对同snapshot的Family/Context预设DIP做严格数值匹配，容差`8*double epsilon*max(abs(value),abs(target))`，无绝对下限；不写Selection/配置，不比较显示整数或canvas量化值。若异常尺寸安全回退使多个档位DIP相同，ExplicitDip只选Thin→Medium→Thick的首个匹配；Preset仍保留其身份。画笔/形状布局与hover共用此函数。
 - `GetBarThicknessPreviewMetrics(snapshot,candidateActive,candidateDip)`、`UpdateBarThicknessPreviewWidth(value,canvasPx,candidateActive,duration)`：实际Touch候选发布与RenderLoop共用，候选直接更新动画val；AdvanceAnimationsAndDeriveLayout必须将thicknessPreviewDragging计入属性组MarkChanged。
-- `PenWidthPreferences.hpp` codec：`PenWidth.Version=1, Unit="DIP"`；deploy的`Startup`与memory的`Selections`分别保存来源身份。
+- `PenWidthPreferences.hpp` codec：`PenWidth.Version=1, Unit="DIP"`；memory的`Selections`保存来源身份；旧 deploy.json 的 `PenWidth`/`Preset` 退役数据已随一次性迁移丢弃（2026-11-16 用户决定），`GetMemory` 启动偏好保持默认。
 
 ## 3. Contracts
 

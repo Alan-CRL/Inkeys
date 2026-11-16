@@ -1642,7 +1642,7 @@ bool Window::UsesSettingOutsideResize() noexcept;
 - 边框窗口的 `WM_NCHITTEST` 使用最近一次同步的几何调用 `HitTestWindowResizeBorder`：四边返回对应边命中，角区沿边延伸一个 sizing frame 宽度（不小于圆角半径）；Setting 最大化、最小化或被模态禁用时返回 `HTNOWHERE`。`WM_NCLBUTTONDOWN` 再次确认 Setting 未被模态禁用（`HT*` 与 `WMSZ_*` 同序，由 `static_assert` 锁定偏移映射），先把 Setting 设为前台，再向 Setting 同步发送 `WM_SYSCOMMAND(SC_SIZE | WMSZ_*)`，系统 size loop 与 `InteractiveWindowOperation::Size`/轻量模糊切换仍在 Setting 上执行；`WM_SETCURSOR` 按方向设置缩放光标。Setting 的 `WM_WINDOWPOSCHANGED`、`WM_DPICHANGED` 与系统度量消息同步位置、尺寸和区域（仅尺寸/DPI/圆角变化重建区域）；隐藏、最小化、最大化时隐藏它，并忽略 Setting 还原时系统发来的 `SW_PARENTOPENING`，显隐只由同步函数决定；`WM_DESTROY` 销毁它。圆角挖空用 `CreateRoundRectRgn` 时右/下各补 1 px（该 API 比 `CreateRectRgn` 少一列一行），否则边框窗口会盖住 Setting 最右列与最下行并吞掉点击。Win7/8/8.1 与早期 Win10 从不创建。
 - Setting 新壳层由 `Setting.Design.h` 统一计算 pane/content 几何，`Setting.Shell.cpp` 组合 ImGui child 与 ImFluent `NavItemEx`；页面和底部动作共用同一图标/文字轴。自有壳层用于准确的宽窗/覆盖语义，不代表另建控件库或渲染后端；所有设置入口保留同一 PageId 路由。旧 NavigationView/SplitView 组合是此前迁移方案，不再作为新壳层的强制调用合同。
 - 业务输入控件继续使用 ImFluent。全部实际设置页使用 `Setting.Controls` 的显式测量/排列/行框和 ImFluent 输入控件；Home/General 使用 `Setting.Pages` 的事件接口，其余页面在原 `Setting.cpp` coroutine/FIFO 宏域接业务。`Setting.Widgets` 仅余原chrome/颜色/DIP/样式辅助，不再提供页面或固定比例设置行。标题栏复用同一主题并提供实时切换按钮；更新状态和检查操作仍只在版本页呈现。
-- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；普通 I/O worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`；绘图状态同步命令在执行时读取最新运行时状态。停止时禁止新命令，并按 FIFO 排空已接收命令。
+- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；普通 I/O worker 不读取实时 `Inkeys::config`；绘图状态同步命令在执行时读取最新运行时状态。停止时禁止新命令，并按 FIFO 排空已接收命令。
 - 自动更新是既有长期网络服务；FIFO 只串行化其启动命令，不把长期下载循环占用为业务 worker 本体。
 - 退出顺序固定为：停止显隐/输入生产者，隐藏并请求 Settings，渲染线程 drain session，`Unregister(Settings)`，排空业务 FIFO，join Bar/PPT，停止 Window Service，最后 `RenderPipeline::Shutdown()`。
 
@@ -2224,14 +2224,14 @@ const Design::Palette& Design::PaletteForTheme(bool darkMode) noexcept;
 const Design::Palette& Design::GetPalette() noexcept;
 bool Design::IsDarkMode() noexcept;
 void Design::ApplyPalette(bool darkMode);
-// SetListStruct / opt/deploy.json
-bool settingDarkMode = false; // JSON: SettingDarkMode
+// main.json：UI.Setting.DarkMode（旧 deploy.json SettingDarkMode 已一次性迁入）
+IdtAtomic<bool> Inkeys::config.UI.Setting.DarkMode{ false };
 ```
 
 #### 3. Contracts
 
-- `SettingDarkMode` 与原 SettingGlobalScale 同属 `SetListStruct` / `opt/deploy.json`。ReadSetting 严格接收 JSON bool，缺项或非 bool 置 false；CaptureSettingJson 写 JSON bool，不另建配置文件或隐式迁移系统。
-- 标题栏主题按钮占独立 32 DIP client 区；实际点击时切换偏好、按原 WriteSetting 宏冻结配置并入 FIFO、递增 theme serial 请求 Settings 帧。空闲绘制不写盘；主题变更不递增字体重建 serial。
+- 设置主题保存在 `main.json` 的 `UI.Setting.DarkMode`，严格接收 JSON bool，缺项或非 bool 回退 false。
+- 标题栏主题按钮占独立 32 DIP client 区；实际点击时切换偏好、经 `QueueConfigWrite()` 冻结配置并入 FIFO、递增 theme serial 请求 Settings 帧。空闲绘制不写盘；主题变更不递增字体重建 serial。
 - 渲染线程在帧边界、PushFluentStyle 前应用 palette：先 ImFluent preset、再 SetAccentColor、最后项目颜色和滚动条。字体绑定、DPI/main 倍率、atlas/纹理/设备保持不变；不调用 ScaleAllSizes 累乘。
 - AppBase/Card/Text 等旧具名 token 引用稳定的 activePalette 成员，控件默认参数在调用时读当前颜色。Notice 四种状态、弹层、选区、表格、滚动条和主页插画均用共享 palette；原教程/赞助图片不重着色。
 - 渲染线程以 PostMessage 发送不可变明暗/颜色值；HWND 线程设置 DWM caption/text/border/dark 属性和可选 backdrop。材质能力变化只发布 backdrop 状态并请求样式帧；不得在持有 ImGui IO mutex 时同步跨线程调用窗口样式消息。
@@ -2251,7 +2251,7 @@ bool settingDarkMode = false; // JSON: SettingDarkMode
 #### 5. Good / Base / Bad Cases
 
 - Good：同一常驻 ImGui session 浅→深→浅，按钮、说明、弹层、标题栏和首页同步换色，文本度量不变。
-- Base：旧 deploy.json 初次打开仍浅色，窄窗口保留标题栏主题入口。
+- Base：新安装或无该键时初次打开仍浅色，窄窗口保留标题栏主题入口。
 - Bad：只换页面底色，或从 Windows 主题消息覆盖用户偏好；用重建 atlas/device 实现换色。
 
 #### 6. Tests Required
@@ -2265,7 +2265,7 @@ RunSettingDesignTests 在六倍率中执行浅→深→浅，检查真实 Header
 style.Colors[ImFluentCol_CardBgDefault] = card;
 ImFluent::SetAccentColor(accent);
 // Correct：统一入口按 preset -> accent -> 项目 token -> scrollbar 应用。
-Design::ApplyPalette(setlist.settingDarkMode);
+Design::ApplyPalette(Inkeys::config.UI.Setting.DarkMode);
 ```
 
 ### Setting 首页品牌、版权与开源动效合同
@@ -2406,7 +2406,7 @@ Wrong：`SolidBgQuarternary = GetPalette().pageSurface`，浮层随正文变透�
 
 ### 2. Signatures
 - `Setting::DeferDraw3SyncIfRendering() -> bool`。
-- `SetListStruct.paintDevice: IdtAtomic<int>`，`CaptureSettingJson`显式load并保持PaintDevice整数；每次Sync只load一次用于比较和赋值。
+- `Inkeys::config.Drawing.PaintDevice: IdtAtomic<int>`，保存为整数；每次Sync只load一次用于比较和赋值。
 - `SettingRenderScope` 标记当前线程正在设置会话 Resume；`settingRenderingOnCurrentThread` 为 thread_local。
 - `SyncDraw3State()` 入口先调用 defer guard；业务 FIFO 增加 `SettingBusinessKind::SyncDraw3State`，worker 调用全局生产 Sync。
 

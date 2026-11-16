@@ -29,7 +29,7 @@
 | 未决边界 | 强制动作 | 详细依据 |
 | --- | --- | --- |
 | UI 工作无法判断应修改 `IdtFloating`、`Inkeys.UI.Bar` 还是两者 | 先询问当前发布路线和要求覆盖的 UI；不得因文件新旧自行选边 | [native-desktop/index.md](native-desktop/index.md)、[rendering-and-ui.md](native-desktop/rendering-and-ui.md) |
-| 新配置字段无法判断属于 `SetListStruct` 还是 `Inkeys.Other.Config` | 先询问字段归属、持久化兼容和迁移要求；不得按“新/旧”名称自行决定 | [configuration-i18n-and-assets.md](native-desktop/configuration-i18n-and-assets.md) |
+| 新配置需要独立 JSON 文件、改变既有键名或迁移旧数据 | 先询问持久化兼容和迁移要求；普通新字段直接进入 `Inkeys.Other.Config` schema | [configuration-i18n-and-assets.md](native-desktop/configuration-i18n-and-assets.md) |
 | 任务依赖 Windows/Win32/x64/ARM64 支持结论，但只有工程配置或 README 声明 | 不得写成“已经验证支持”；先取得开发者确认或任务明确授权的运行证据 | [build-and-compatibility.md](native-desktop/build-and-compatibility.md) |
 | PPT/WPS 支持版本、位数、安装方式或兼容分支范围不明确 | 先询问正式支持范围；不得自行扩大或缩小，也不得据此删除兼容分支 | [ppt-interop/index.md](ppt-interop/index.md) |
 

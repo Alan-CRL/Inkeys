@@ -23,7 +23,7 @@
 - 页面路由键 `(page<<32)|subpage`：普通页 `subpage=section`；绘制页 `subpage=(section<<4)|DrawingSubpage`（详情层：Overview/SpeedEraser/PalmEraser/Cursor），详情页仍属于“交互与手势”，侧栏高亮不变。
 - 通用类页面的事件接线集中在 `Setting.cpp` 的同一分支，用 `destination.section`/`page` 守卫仅作用于当前页的“从草稿回写”语句；事件驱动语句不需要守卫。配置页（日志与配置·配置）仍走独立业务分支。
 - 墨迹预测、抬笔笔锋修正、多指绘图共用一次 `SetGeneralDrawingOptions` 下发：每帧都先读取三项配置，只有当前页渲染的控件会改变值，因此绘制效果与交互与手势两页可各自提交而互不覆盖；拆页时不得改为只下发其中一项。
-- 交互模式（大屏触控/桌面交互）在通用·基本页，`GeneralDraft::paintDevice` 每帧从 `setlist.paintDevice` 读取，写回时同步 Draw3 并刷新标尺。
+- 交互模式（大屏触控/桌面交互）在通用·基本页，`GeneralDraft::paintDevice` 每帧从 `Inkeys::config.Drawing.PaintDevice` 读取，写回时同步 Draw3 并刷新标尺。
 - 新页面/子页名称为 i18n 键 `SettingsUI/Design/{NavWindowDisplay,WindowLayout,WindowBehavior,WindowDisplay,NavKeysShortcuts,NavLogsConfig,LogsLog,LogsConfiguration,DrawEffects,DrawInteraction}`；页标题与侧栏项使用同一键。
 
 ## 4. Validation & Error Matrix
