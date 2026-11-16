@@ -32,7 +32,7 @@
 - 设置 Create/Ensure 请求冻结名称、exe、桌面目录与开关，worker 才进行 COM/文件操作；不能执行时重新读取活动语言或自定义草稿。UI 渲染线程不得扫描桌面或执行 ShellLink I/O。
 - CustomName 是字符串，不能使用 IdtAtomic（只支持无锁平凡类型）。必须和全 Config 快照复制共用 rwMutex；QueueConfigWrite 的入队锁不代替字段同步。
 - 文件路径身份使用 `CompareStringOrdinal(..., TRUE)` 按 Windows 不区分大小写的规则比较，不能用默认 C locale 的 `_wcsicmp` 代替；所选名称仅改变大小写时，修正不能把同一目标文件当旧名删除。
-- 不读取传统 PlugIn.ShortcutAssistant 迁移，不双写；该旧键随 deploy.json 一次性迁移后删除。
+- 不读取 Inkeys2 的 PlugIn.ShortcutAssistant，不双写。
 
 ## 4. Validation & Error Matrix
 

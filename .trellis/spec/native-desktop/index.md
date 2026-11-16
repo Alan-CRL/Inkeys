@@ -48,7 +48,7 @@ PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../p
 1. 确认目标属于传统 Idt*、Inkeys.* module、设置窗口、UI3 Bar、IdtFloating、PPT 联动还是独立 Timeout。
 2. 确认项目文件是否需要登记新源码、module、资源、shader 或 manifest。
 3. 对渲染和输入修改，先画清窗口线程、渲染线程与共享状态的所有权。
-4. 对配置修改，所有用户配置都在 `Inkeys/Config/main.json` 的 `Inkeys::Config` / `Inkeys::config`；旧 `opt/deploy.json`、`opt/pptcom_configuration.json` 只由一次性迁移读取（见 [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)）。
+4. 对配置修改，所有用户配置都在 `Inkeys/Config/main.json` 的 `Inkeys::Config` / `Inkeys::config`；Inkeys2 的 `opt/deploy.json`、`opt/pptcom_configuration.json` 完全不兼容，不读取、不迁移、不创建 `opt`（见 [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)）。
 5. 构建主程序时遵守仓库根 AGENTS.md 的完整 Solution 与 `Debug | 当前设备原生架构` 要求；跨平台风险按任务额外补充。
 
 ## 实施前决策门（阻塞）

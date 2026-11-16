@@ -87,3 +87,8 @@ IdtMain 里与 deploy/ppt 读写相关的生产自检（`IdtMain.cpp:690-780` �
 - 迁移只向 main.json 写入「缺失的键」，不覆盖已有值；旧文件删除前必须确认 main.json 写盘成功。
 - 回滚：旧版本程序找不到 deploy.json 时会按默认值重建，因此迁移后回退版本会丢失这些设置。该风险已由用户接受（选择了「直接删除」）。
 - 整个任务分阶段完成（见 implement.md），每阶段都能独立编译。
+
+## 后续决策变更（2026-11-16，PR #274 审阅后）
+
+- 用户决定 **完全不兼容 Inkeys2 旧配置**：删除 `MigrateLegacyConfigFiles()` / `ReadStartupSuperTopEnabled()`，不读取、不迁移、不清理 `opt\deploy.json` 与 `opt\pptcom_configuration.json`，也不创建 `opt` 目录；Inkeys2 升级用户所有设置为缺省值。本文中关于“一次性迁移 / 迁移后删除旧文件”的描述因此作废，以 spec“不兼容旧配置合同”为准。
+- 保存入口统一为 `Inkeys::config.Write()`（写出最新完整配置），设置页 FIFO 不再复制 Config 快照；PPT 位置保存与设置页共用该入口。

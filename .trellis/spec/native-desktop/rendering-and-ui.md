@@ -1642,7 +1642,7 @@ bool Window::UsesSettingOutsideResize() noexcept;
 - 边框窗口的 `WM_NCHITTEST` 使用最近一次同步的几何调用 `HitTestWindowResizeBorder`：四边返回对应边命中，角区沿边延伸一个 sizing frame 宽度（不小于圆角半径）；Setting 最大化、最小化或被模态禁用时返回 `HTNOWHERE`。`WM_NCLBUTTONDOWN` 再次确认 Setting 未被模态禁用（`HT*` 与 `WMSZ_*` 同序，由 `static_assert` 锁定偏移映射），先把 Setting 设为前台，再向 Setting 同步发送 `WM_SYSCOMMAND(SC_SIZE | WMSZ_*)`，系统 size loop 与 `InteractiveWindowOperation::Size`/轻量模糊切换仍在 Setting 上执行；`WM_SETCURSOR` 按方向设置缩放光标。Setting 的 `WM_WINDOWPOSCHANGED`、`WM_DPICHANGED` 与系统度量消息同步位置、尺寸和区域（仅尺寸/DPI/圆角变化重建区域）；隐藏、最小化、最大化时隐藏它，并忽略 Setting 还原时系统发来的 `SW_PARENTOPENING`，显隐只由同步函数决定；`WM_DESTROY` 销毁它。圆角挖空用 `CreateRoundRectRgn` 时右/下各补 1 px（该 API 比 `CreateRectRgn` 少一列一行），否则边框窗口会盖住 Setting 最右列与最下行并吞掉点击。Win7/8/8.1 与早期 Win10 从不创建。
 - Setting 新壳层由 `Setting.Design.h` 统一计算 pane/content 几何，`Setting.Shell.cpp` 组合 ImGui child 与 ImFluent `NavItemEx`；页面和底部动作共用同一图标/文字轴。自有壳层用于准确的宽窗/覆盖语义，不代表另建控件库或渲染后端；所有设置入口保留同一 PageId 路由。旧 NavigationView/SplitView 组合是此前迁移方案，不再作为新壳层的强制调用合同。
 - 业务输入控件继续使用 ImFluent。全部实际设置页使用 `Setting.Controls` 的显式测量/排列/行框和 ImFluent 输入控件；Home/General 使用 `Setting.Pages` 的事件接口，其余页面在原 `Setting.cpp` coroutine/FIFO 宏域接业务。`Setting.Widgets` 仅余原chrome/颜色/DIP/样式辅助，不再提供页面或固定比例设置行。标题栏复用同一主题并提供实时切换按钮；更新状态和检查操作仍只在版本页呈现。
-- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；普通 I/O worker 不读取实时 `Inkeys::config`；绘图状态同步命令在执行时读取最新运行时状态。停止时禁止新命令，并按 FIFO 排空已接收命令。
+- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程先改 `Inkeys::config`，worker 执行时统一调用 `Inkeys::config.Write()` 写出最新完整配置（唯一保存入口，不复制快照）；DDB 交换文件内容仍在入队时冻结；绘图状态同步命令在执行时读取最新运行时状态。停止时禁止新命令，并按 FIFO 排空已接收命令。
 - 自动更新是既有长期网络服务；FIFO 只串行化其启动命令，不把长期下载循环占用为业务 worker 本体。
 - 退出顺序固定为：停止显隐/输入生产者，隐藏并请求 Settings，渲染线程 drain session，`Unregister(Settings)`，排空业务 FIFO，join Bar/PPT，停止 Window Service，最后 `RenderPipeline::Shutdown()`。
 
@@ -1690,13 +1690,13 @@ bool Window::UsesSettingOutsideResize() noexcept;
 #### 7. Wrong vs Correct
 
 ~~~cpp
-// Wrong：渲染线程同步写盘并从 worker 延迟读取可变全局配置。
+// Wrong：渲染线程同步写盘；或入队时复制 Config 快照，稍后写盘把其他入口的新值回退。
 Inkeys::config.Write();
-queue.push({ .kind = WriteConfig });
-
-// Correct：入队前冻结值，worker 只消费 owned payload。
 command.configSnapshot = std::make_shared<Inkeys::Config>(Inkeys::config);
-queue.push(std::move(command));
+
+// Correct：渲染线程只改值并入队，worker 执行时写出最新完整配置。
+Inkeys::config.UI.TopSleepTime = value;
+QueueConfigWrite(); // worker: Inkeys::config.Write()
 
 // Wrong：普通 Hide 销毁常驻资源，下一次 Show 再读盘和建图集。
 DestroyImguiContextAndDeviceResources();
@@ -2224,7 +2224,7 @@ const Design::Palette& Design::PaletteForTheme(bool darkMode) noexcept;
 const Design::Palette& Design::GetPalette() noexcept;
 bool Design::IsDarkMode() noexcept;
 void Design::ApplyPalette(bool darkMode);
-// main.json：UI.Setting.DarkMode（旧 deploy.json SettingDarkMode 已一次性迁入）
+// main.json：UI.Setting.DarkMode
 IdtAtomic<bool> Inkeys::config.UI.Setting.DarkMode{ false };
 ```
 

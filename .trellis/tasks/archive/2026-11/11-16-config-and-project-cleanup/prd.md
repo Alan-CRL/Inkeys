@@ -56,3 +56,8 @@
 - [x] 被删除的文件不再出现在磁盘与 vcxproj / filters 中；Solution 分类满足上述规范。
 - [x] `InkeysRepo.sln` `Debug|ARM64` 构建成功；`InkeysHeadlessTests.exe --no-window` 中配置相关用例通过。
 - [x] spec 已更新。
+
+## 后续决策变更（2026-11-16，PR #274 审阅后）
+
+- 用户决定 **完全不兼容 Inkeys2 旧配置**：删除 `MigrateLegacyConfigFiles()` / `ReadStartupSuperTopEnabled()`，不读取、不迁移、不清理 `opt\deploy.json` 与 `opt\pptcom_configuration.json`，也不创建 `opt` 目录；Inkeys2 升级用户所有设置为缺省值。本文中关于“一次性迁移 / 迁移后删除旧文件”的描述因此作废，以 spec“不兼容旧配置合同”为准。
+- 保存入口统一为 `Inkeys::config.Write()`（写出最新完整配置），设置页 FIFO 不再复制 Config 快照；PPT 位置保存与设置页共用该入口。

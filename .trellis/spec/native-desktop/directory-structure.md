@@ -14,13 +14,14 @@
 
 **【直接确认】** Inkeys.vcxproj 显式列出 ClCompile、ClInclude、ResourceCompile、Manifest、Font 等项目项。新增或移动源码时应同步检查项目文件；这是对当前显式项目清单的保守维护要求。
 
-**【直接确认】** Solution Explorer 分类只由 Inkeys.vcxproj.filters 决定（2026-11-16 规范化）：
+**【直接确认】** Solution Explorer 分类由 Inkeys.vcxproj.filters 决定（2026-11-16 规范化）；审核与重建 filters 时必须同时展开 vcxproj 导入的 props 源清单（`additional\ink_stroke_modeler\ink_stroke_modeler.props` / `.sources.props` 导入 14 个 `.cc` 与 `terminal_tail_reconstructor.h`），只比较 vcxproj 主 XML 会把这些项误判为过期而散落到项目根：
 
-- 第三方库：`additional\<库>\...` 下的所有项目项（含 .cpp、文档）放在 `头文件\Additional\<库>\...`，filter 层级与名称（含大小写）和磁盘 `Inkeys\additional\` 完全一致，例如 `头文件\Additional\imgui\misc\freetype`、`头文件\Additional\ink_stroke_modeler\internal\prediction`。
+- 第三方库：`additional\<库>\...` 下的所有项目项（含 .cpp/.cc、.h/.hpp、文档，混放即可）放在 `头文件\Additional\<库>\...`，filter 层级与名称（含大小写）和磁盘 `Inkeys\additional\` 完全一致，例如 `头文件\Additional\imgui\misc\freetype`、`头文件\Additional\ink_stroke_modeler\internal\prediction`。
 - Inkeys3 代码：`Inkeys\Inkeys\<Category>\...` 下的项目项放在 `Modules\Inkeys\<Category>\...`，与磁盘目录一一对应；外部保留的 `..\inkStrokeModelerTest\draw3\*` 与 `$(IntDir)fxc_utf8\draw3\*` 放在 `Modules\Inkeys\Drawing\Draw3`。
 - 传统根目录 `Idt*.cpp/.h` 分别放在 `源文件` / `头文件`（`Launch`、`SuperTop` 子目录同名子 filter），资源放在 `资源文件`。
 - 模块私有头文件（被 `#include` 的 `.h/.hpp`）也必须作为 `ClInclude` 登记，保证 VS 目录完整；vcxproj 中每一项都要有已定义且非空的 filter，不留空 filter 或指向不存在文件的条目。
 - 此分类不改变物理路径、编译类型或排除条件。不参与编译的历史源码不得以 `None` 项留在工程中，应直接删除。
+- `InkeysRepo.sln` 头部保持 VS2022（`# Visual Studio Version 17`、`VisualStudioVersion = 17.7.33808.371`），CI 使用 windows-2022 与 v143。VS2026 打开并保存后可能改写为 18，提交前须还原该两行。
 
 ## 仓库一级目录
 
