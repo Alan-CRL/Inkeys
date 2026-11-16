@@ -289,6 +289,12 @@ namespace
 			if (!pending || revision != expected || failed) return;
 			failureClocks[static_cast<std::size_t>(kind)] = {};
 		}
+		// 只读：该类别是否已连续无进展失败满 15 秒（供不再重复调用 Fail 的等待分支判死）。
+		bool Exhausted(WorkspaceFailureKind kind, Clock::time_point now) const noexcept
+		{
+			const auto& clock = failureClocks[static_cast<std::size_t>(kind)];
+			return clock.failingSince && now >= *clock.failingSince + WorkspaceNoProgressBudget;
+		}
 		bool Ready(Clock::time_point now) const noexcept { return pending && !failed && now >= retryAt; }
 		bool Retry(std::uint64_t expected) noexcept
 		{
@@ -3304,6 +3310,18 @@ int RunStateModeProductionTest() noexcept
 					require(splitFailed == (second >= 15), "prepare-progress-does-not-reset-complete-budget");
 				}
 				require(splitFailed && split.failed, "complete-category-fails-at-15s-despite-prepare-progress");
+
+				// 超时只登记一次后卡在 Executing：Exhausted 在 15 秒到期，此时 Fail 直接判死且不推迟 retryAt。
+				WorkspaceHandoff stuck; stuck.Request(Workspace::Whiteboard); const auto stuckTicket = stuck.revision;
+				require(!stuck.Exhausted(WorkspaceFailureKind::NativePrepare, t0) &&
+					!stuck.Fail(stuckTicket, WorkspaceFailureKind::NativePrepare, t0), "executing-timeout-records-once");
+				const auto stuckRetryAt = stuck.retryAt;
+				require(!stuck.Exhausted(WorkspaceFailureKind::NativePrepare, t0 + std::chrono::milliseconds(14999)) &&
+					!stuck.Exhausted(WorkspaceFailureKind::NativeComplete, t0 + std::chrono::seconds(20)),
+					"stuck-executing-not-exhausted-before-15s-or-in-other-category");
+				require(stuck.Exhausted(WorkspaceFailureKind::NativePrepare, t0 + std::chrono::seconds(15)) &&
+					stuck.Fail(stuckTicket, WorkspaceFailureKind::NativePrepare, t0 + std::chrono::seconds(15)) &&
+					stuck.failed && stuck.retryAt == stuckRetryAt, "stuck-executing-fails-at-15s");
 			}
 			WorkspaceHandoff ink; ink.Request(Workspace::Whiteboard); ink.hostGeneration = 7;
 			ProductState inkDesired; inkDesired.workspace = Workspace::Whiteboard; inkDesired.revision = 12;
@@ -4489,6 +4507,16 @@ void StateMonitoring()
 		}
 		if (nativeOperation && nativeOperation->NoteExecutingTimeout())
 		{
+			FailWorkspaceRequest(request.revision, nativeOperation->completing
+				? WorkspaceFailureKind::NativeComplete : WorkspaceFailureKind::NativePrepare);
+			request = ReadWorkspaceHandoff();
+		}
+		else if (nativeOperation && nativeOperation->timeoutNoted && !request.failed &&
+			nativeOperation->receipt.Phase() == CommandPhase::Executing &&
+			request.Exhausted(nativeOperation->completing ? WorkspaceFailureKind::NativeComplete
+				: WorkspaceFailureKind::NativePrepare, WorkspaceHandoff::Clock::now()))
+		{
+			// 超时后仍卡在 Executing 时等待分支不再调用 Fail；到期在此判死并发通知，在途操作仍由上方等其退休后清理。
 			FailWorkspaceRequest(request.revision, nativeOperation->completing
 				? WorkspaceFailureKind::NativeComplete : WorkspaceFailureKind::NativePrepare);
 			request = ReadWorkspaceHandoff();
