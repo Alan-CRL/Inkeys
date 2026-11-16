@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "核对失败预算改动与白板切换合同一致并需同步更新"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "headless 用例与验证要求"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "代码风格、中文注释与并发约束检查"}
