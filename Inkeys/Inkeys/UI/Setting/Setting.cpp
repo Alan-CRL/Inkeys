@@ -1217,6 +1217,8 @@ namespace
 				if (executable != pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe" ||
 					command.directory != pluginPath + L"DesktopDrawpadBlocker" ||
 					command.digest != ddbInteractionSetList.DdbSHA256) return false;
+				// 写盘的是执行时最新配置，提权也以该时刻的管理员偏好为准，避免用户已关闭后仍以管理员启动。
+				const bool savedRunAsAdmin = Inkeys::config.PlugIn.DesktopDrawpadBlocker.RunAsAdmin;
 				const bool configWritten = Inkeys::config.Write();
 				if (token.stop_requested()) return configWritten;
 				if (command.flag)
@@ -1252,7 +1254,7 @@ namespace
 					if (!isProcessRunning(executable.c_str()))
 					{
 						WriteDdbInteractionJson(command.ddbOpenJsonPayload);
-						return LaunchVerifiedDesktopDrawpadBlocker(command.secondaryFlag);
+						return LaunchVerifiedDesktopDrawpadBlocker(command.secondaryFlag && savedRunAsAdmin);
 					}
 					return true;
 				}
@@ -1267,10 +1269,12 @@ namespace
 			{
 				if (command.text != pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe")
 					return false;
+				const bool savedRunAsAdmin = Inkeys::config.PlugIn.DesktopDrawpadBlocker.RunAsAdmin;
 				const bool configWritten = Inkeys::config.Write();
 				if (token.stop_requested()) return configWritten;
-				// 提升必须先持久化；降权即使写盘失败仍优先降低本次权限。
-				if (!configWritten && command.flag) return false;
+				// 提升必须先持久化，且以本次写盘时的偏好为准；降权即使写盘失败仍优先降低本次权限。
+				const bool elevate = command.flag && savedRunAsAdmin;
+				if (!configWritten && elevate) return false;
 				if (!isProcessRunning(command.text.c_str())) return configWritten;
 				WriteDdbInteractionJson(command.ddbCloseJsonPayload);
 				for (int i = 0; i < 25 && !token.stop_requested() && isProcessRunning(command.text.c_str()); ++i)
@@ -1278,7 +1282,7 @@ namespace
 				if (token.stop_requested()) return configWritten;
 				if (isProcessRunning(command.text.c_str())) return false;
 				WriteDdbInteractionJson(command.ddbOpenJsonPayload);
-				return LaunchVerifiedDesktopDrawpadBlocker(command.flag) && configWritten;
+				return LaunchVerifiedDesktopDrawpadBlocker(elevate) && configWritten;
 			}
 			case SettingBusinessKind::WriteDdb:
 				(void)Inkeys::config.Write();

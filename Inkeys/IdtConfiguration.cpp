@@ -231,12 +231,8 @@ string CapturePptComPositionSettingJson(Inkeys::PptSettings::Positions positions
 	std::scoped_lock lock(pptSettingsMutex);
 	EnsurePptSettingsJournal();
 	// 内存配置立即更新，实际写盘由持久化回调串行完成。
-	auto& ppt = Inkeys::config.PlugIn.PPTHelper;
-	ppt.BottomBothWidth = positions.bottomX;
-	ppt.BottomBothHeight = positions.bottomY;
-	ppt.MiddleBothWidth = positions.middleX;
-	ppt.MiddleBothHeight = positions.middleY;
-	ppt.MemoryWidgetPosition = remember;
+	Inkeys::config.SetPptHelperPositions(positions.bottomX, positions.bottomY,
+		positions.middleX, positions.middleY, remember);
 	return pptSettingsJournal.CapturePositions(positions, remember);
 }
 

@@ -310,7 +310,7 @@ namespace Inkeys::UI::Setting::Design
 					if (parentFocused && ImGui::IsKeyPressed(ImGuiKey_RightArrow, false))
 					{
 						ImGui::NavMoveRequestCancel(); state.activeGroup = groupIndex;
-						if (state.Expanded()) { group.expanded = true; state.scrollSelectedGroup = true; }
+						if (state.Expanded()) { group.expanded = true; if (groupSelected) state.scrollSelectedGroup = true; }
 						else state.flyoutOpen = true;
 					}
 					if (parentFocused && ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false))

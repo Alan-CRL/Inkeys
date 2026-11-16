@@ -714,6 +714,8 @@ namespace Inkeys
 		UpdateTarget GetUpdateTarget() const;
 		void SetUpdateChannel(std::string channel);
 		void SetUpdateArchitecture(std::string architecture);
+		// PPT 控件四个坐标与记忆开关整组更新，与 Write() 共用锁，避免写出半新半旧的组合。
+		void SetPptHelperPositions(double bottomX, double bottomY, double middleX, double middleY, bool remember);
 		std::string GetUploadInfo();
 		std::wstring GetFilePath() const;
 		void ResetToDefaults();
