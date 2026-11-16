@@ -346,7 +346,8 @@ namespace Inkeys::UI::Setting::Design
 							state.activeGroup = groupIndex;
 							group.expanded = !group.expanded;
 							if (!group.expanded) FocusParent(parentWindow, group);
-							if (group.expanded) state.scrollSelectedGroup = true;
+							// 只有展开当前选中分组才滚入选中子项；展开其他分组不能把侧栏拉回选中项。
+							if (group.expanded && groupSelected) state.scrollSelectedGroup = true;
 						}
 					}
 					ImGui::SetCursorScreenPos({ origin.x, origin.y + Pixels(NavigationRowHeight + RowGap) });
