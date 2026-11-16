@@ -271,7 +271,7 @@ bool WritePptComSettingJson(const string& jsonContent)
 		std::scoped_lock lock(pptSettingsMutex);
 		pptSettingsJournal.Complete(prepared, succeeded);
 	}
-	if (!succeeded) OutputDebugStringW(L"[Ppt] settings commit failed; frozen request retained for retry\n");
+	if (!succeeded) Inkeys::Log::Warn(Inkeys::Log::Module::Config, "PPT settings commit failed; frozen request retained for retry");
 	return succeeded;
 }
 

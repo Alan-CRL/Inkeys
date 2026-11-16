@@ -252,8 +252,8 @@ namespace
 		SetOffSignal(1);
 		if (!LaunchState::warnTry)
 		{
-			if (IDTLogger) IDTLogger->warn(
-				"[主线程][IdtMain] 人工测试阶段首次失败，淡出后以 -WarnTry 重试");
+			Inkeys::Log::Warn(Inkeys::Log::Module::Launch,
+				"人工测试阶段首次失败，淡出后以 -WarnTry 重试");
 			// 首次重试保持普通颜色，等 Preview 淡出再启动继承两项环境开关的子进程。
 			Inkeys::UI::StartupPreview::RequestFadeOutForExit();
 			(void)Inkeys::UI::StartupPreview::WaitForFadeOut(
@@ -264,8 +264,8 @@ namespace
 				L"-WarnTry", nullptr, SW_SHOWNORMAL));
 			if (launchResult <= 32)
 			{
-				if (IDTLogger) IDTLogger->critical(
-					"[主线程][IdtMain] 人工测试重试进程启动失败, shellResult={}",
+				Inkeys::Log::Critical(Inkeys::Log::Module::Launch,
+					"人工测试重试进程启动失败, shellResult={}",
 					launchResult);
 				PublishFatalStartupFailure(0xD0FEu,
 					L"人工测试：无法启动模拟重试进程，测试已停止。");
@@ -273,8 +273,8 @@ namespace
 			return false;
 		}
 
-		if (IDTLogger) IDTLogger->critical(
-			"[主线程][IdtMain] 人工测试阶段重试后仍失败");
+		Inkeys::Log::Critical(Inkeys::Log::Module::Launch,
+			"人工测试阶段重试后仍失败");
 		PublishFatalStartupFailure(0xD0FEu,
 			L"人工测试：模拟初始化阶段重试后仍失败。");
 		return false;
@@ -317,44 +317,6 @@ namespace
 		{
 			return false;
 		}
-	}
-
-	// 正式构建也按实验开关创建控制台；全部关闭时不会调用此入口。
-	void InitializeDebugConsole()
-	{
-		static std::once_flag consoleOnce;
-		std::call_once(consoleOnce, []
-			{
-				const HANDLE outputHandle = GetStdHandle(STD_OUTPUT_HANDLE);
-				const HANDLE errorHandle = GetStdHandle(STD_ERROR_HANDLE);
-				const auto isRedirected = [](HANDLE handle)
-					{
-						if (!handle || handle == INVALID_HANDLE_VALUE) return false;
-						const DWORD type = GetFileType(handle);
-						return type == FILE_TYPE_DISK || type == FILE_TYPE_PIPE;
-					};
-				const bool outputRedirected = isRedirected(outputHandle);
-				const bool errorRedirected = isRedirected(errorHandle);
-				// 保留采集脚本的文件/管道；两路均重定向时不创建交互控制台。
-				if (!outputRedirected || !errorRedirected)
-				{
-					AllocConsole();
-					FILE* fp;
-					if (outputRedirected) SetStdHandle(STD_OUTPUT_HANDLE, outputHandle);
-					else freopen_s(&fp, "CONOUT$", "w", stdout);
-					if (errorRedirected) SetStdHandle(STD_ERROR_HANDLE, errorHandle);
-					else freopen_s(&fp, "CONOUT$", "w", stderr);
-					freopen_s(&fp, "CONIN$", "r", stdin);
-				}
-				std::ios::sync_with_stdio(true);
-				std::wcout.clear();
-				std::wcin.clear();
-				std::wcerr.clear();
-				std::cout.clear();
-				std::cin.clear();
-				std::cerr.clear();
-				std::wcout.imbue(std::locale("chs"));
-			});
 	}
 }
 
@@ -415,11 +377,11 @@ void SetOffSignal(int signal)
 		ShutdownTrace::Scope trace("set-off-wake");
 		Inkeys::UI::RenderPipeline::WakeForStop();
 	}
-	if (supervisor == Inkeys::Shutdown::ArmResult::FallbackArmed && IDTLogger)
-		IDTLogger->warn("[退出监督] 外部监督未建立；自身15秒退场已启动，不能保证重启，错误码={}",
+	if (supervisor == Inkeys::Shutdown::ArmResult::FallbackArmed)
+		Inkeys::Log::Warn(Inkeys::Log::Module::Shutdown, "外部监督未建立；自身15秒退场已启动，不能保证重启，错误码={}",
 			supervisorError);
-	else if (supervisor != Inkeys::Shutdown::ArmResult::Armed && IDTLogger)
-		IDTLogger->error("[退出监督] 15 秒保护未建立，错误码={}", supervisorError);
+	else if (supervisor != Inkeys::Shutdown::ArmResult::Armed)
+		Inkeys::Log::Error(Inkeys::Log::Module::Shutdown, "15 秒保护未建立，错误码={}", supervisorError);
 	// 受控退出清理期异常不应再由未处理异常过滤器误判为普通崩溃。
 	{
 		ShutdownTrace::Scope trace("set-off-crash-handler");
@@ -455,7 +417,6 @@ LONG* GetOffSignalInteropPointer()
 	return &offSignalInterop;
 }
 
-shared_ptr<spdlog::logger> IDTLogger;
 IdtAtomic<bool> useMouseInput;
 
 using namespace Inkeys;
@@ -1418,10 +1379,11 @@ namespace
 			static_cast<unsigned long long>(styles[2]), styleErrors[2],
 			static_cast<void*>(windows[3]), static_cast<void*>(owners[3]), valid[3],
 			static_cast<unsigned long long>(styles[3]), styleErrors[3]);
-		if (IDTLogger)
+		// 日志服务未启动（私有测试 child）时保留原 stderr 回退。
+		if (Inkeys::Log::Started())
 		{
-			if (failure) IDTLogger->error("{}", message);
-			else IDTLogger->info("{}", message);
+			if (failure) Inkeys::Log::Error(Inkeys::Log::Module::Window, "{}", message);
+			else Inkeys::Log::Info(Inkeys::Log::Module::Window, "{}", message);
 		}
 		else std::fprintf(stderr, "%s\n", message);
 		return failure == nullptr;
@@ -1457,7 +1419,7 @@ namespace
 				observation->trace.graceDeadline = firstGrace;
 			}
 			// NOREDIRECTIONBITMAP 在绑定 DComp 后不可清除；显示前顺序重建唯一 HWND 链再走 legacy fallback。
-			if (!observation) IDTLogger->warn("[主线程][IdtMain] Draw3 Host 启动失败，重建隐藏窗口链并以 ULW 重试");
+			if (!observation) Inkeys::Log::Warn(Inkeys::Log::Module::Draw3, "Draw3 Host 启动失败，重建隐藏窗口链并以 ULW 重试");
 			const HWND oldDrawpad = observation ? drawpad_window : nullptr;
 			const HWND oldPresentation = observation ? windowService.Handle(
 				Inkeys::Window::WindowRole::DrawpadPresentation) : nullptr;
@@ -1746,8 +1708,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (redirected != -1 && redirected != -2)
 				(void)SetStdHandle(STD_ERROR_HANDLE, reinterpret_cast<HANDLE>(redirected));
 		}
+		// 自检协议依赖标准流：显式选择 StdStream 模式，产品诊断行在自检期间仍写 stdout/stderr。
 		Inkeys::Drawing::Draw3::DiagnosticOutput::Session diagnostics;
-		(void)diagnostics.Start();
+		(void)diagnostics.Start(Inkeys::Drawing::Draw3::DiagnosticOutput::Mode::StdStream);
 		const int result = test();
 		(void)diagnostics.Stop();
 		return result;
@@ -3153,131 +3116,47 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	}
 	// 日志服务初始化
 	{
-		wstring Timestamp = getTimestamp();
+		// 唯一写线程与 Inkeys\Logs 会话文件；旧 log\ 目录不再读取、创建或清理。
+		Inkeys::Log::SessionInfo logSession;
+		logSession.rootPath = globalPath;
+		logSession.editionDate = editionDate;
+		logSession.editionVersion = editionVersion;
+		logSession.buildTime = buildTime;
+		// 项目 Debug 配置不定义 _DEBUG，构建类型以项目自己的 IDT_RELEASE 宏为准。
+#ifdef IDT_RELEASE
+		logSession.buildConfiguration = L"Release";
+#else
+		logSession.buildConfiguration = L"Dev";
+#endif
+		logSession.architecture = programArchitecture;
+		logSession.targetArchitecture = targetArchitecture;
+		logSession.osVersion = windowsEdition;
+		logSession.userId = userId;
+		logSession.launch = L"restart=" + to_wstring(LaunchState::restart) + L" warnTry=" + to_wstring(LaunchState::warnTry)
+			+ L" crashTry=" + to_wstring(LaunchState::crashTry) + L" whiteboard=" + to_wstring(LaunchState::openWhiteboard)
+			+ L" superTop=" + to_wstring(LaunchState::superTop);
+		// 读取配置前暂用信息档；正式等级、通道与启动清理在配置读取后由 ApplyConfig 一次设置。
+		logSession.threshold = Inkeys::Log::Threshold::Info;
+		(void)Inkeys::Log::Start(logSession);
 
-		error_code ec;
-		if (_waccess((globalPath + L"log").c_str(), 0) == -1) filesystem::create_directory(globalPath + L"log", ec);
-		else
-		{
-			// 历史日志清理
-
-			auto getCurrentTimeStamp = []()
-				{
-					auto now = chrono::system_clock::now();
-					auto duration = now.time_since_epoch();
-					return chrono::duration_cast<chrono::milliseconds>(duration).count();
-				};
-
-			auto isLogFile = [](const string& filename)
-				{
-					regex pattern("idt\\d+\\.log");
-					return regex_match(filename, pattern);
-				};
-
-			auto getTimeStampFromFilename = [](const string& filename)
-				{
-					regex pattern("idt(\\d+)\\.log");
-
-					smatch match;
-					if (regex_search(filename, match, pattern))
-					{
-						string timestampStr = match[1];
-						return stoll(timestampStr);
-					}
-					return -1LL;
-				};
-
-			auto isOldLogFile = [&getCurrentTimeStamp, &getTimeStampFromFilename](const filesystem::path& filepath)
-				{
-					time_t currentTimeStamp = getCurrentTimeStamp();
-					time_t fileTimeStamp = getTimeStampFromFilename(filepath.filename().string());
-
-					if (fileTimeStamp == -1) return false;
-					return (currentTimeStamp - fileTimeStamp) >= (7LL * 24LL * 60LL * 60LL * 1000LL) || (currentTimeStamp - fileTimeStamp) < 0; // 7天的毫秒数
-				};
-
-			auto calculateDirectorySize = [](const filesystem::path& directoryPath)
-				{
-					uintmax_t totalSize = 0;
-					for (const auto& entry : filesystem::directory_iterator(directoryPath))
-					{
-						if (entry.is_regular_file()) {
-							totalSize += entry.file_size();
-						}
-					}
-					return totalSize;
-				};
-
-			auto deleteOldLogFiles = [&isLogFile, &isOldLogFile, &calculateDirectorySize](const filesystem::path& directory)
-				{
-					uintmax_t totalSize = calculateDirectorySize(directory);
-
-					for (const auto& entry : filesystem::directory_iterator(directory))
-					{
-						if (entry.is_regular_file())
-						{
-							if (isLogFile(entry.path().filename().string()) && (totalSize > 10485760LL || isOldLogFile(entry.path())))
-							{
-								uintmax_t entrySize = entry.file_size();
-
-								error_code ec;
-								filesystem::remove(entry.path(), ec);
-
-								if (!ec) totalSize -= entrySize;
-							}
-						}
-					}
-				};
-
-			wstring directoryPath = globalPath + L"log";
-			filesystem::path directory(directoryPath);
-			if (filesystem::exists(directory) && filesystem::is_directory(directory))
-			{
-				deleteOldLogFiles(directory);
-			}
-		}
-
-		if (_waccess((globalPath + L"log\\idt" + Timestamp + L".log").c_str(), 0) == 0) filesystem::remove(globalPath + L"log\\idt" + Timestamp + L".log", ec);
-
-		auto IDTLoggerFileSink = std::make_shared<spdlog::sinks::basic_file_sink<std::mutex>>(globalPath + L"log\\idt" + Timestamp + L".log", true);
-
-		spdlog::init_thread_pool(8192, 64);
-		IDTLogger = std::make_shared<spdlog::async_logger>("IDTLogger", IDTLoggerFileSink, spdlog::thread_pool(), spdlog::async_overflow_policy::block);
-
-		IDTLogger->set_level(spdlog::level::info);
-		IDTLogger->set_pattern("[%l][%H:%M:%S.%e]%v");
-
-		IDTLogger->flush_on(spdlog::level::info);
-
-		// 共用现有文件和线程池，诊断满队列时保留聚合，不能反过来阻塞渲染线程。
-		const auto diagnosticsPool = spdlog::thread_pool();
-		auto diagnosticsLogger = std::make_shared<spdlog::async_logger>(
-			"UI3Diagnostics", IDTLoggerFileSink, diagnosticsPool, spdlog::async_overflow_policy::discard_new);
-		diagnosticsLogger->set_level(spdlog::level::warn);
-		diagnosticsLogger->flush_on(spdlog::level::warn);
+		// 诊断满缓冲时保留聚合，不能反过来阻塞渲染线程；被等级过滤属于有意不写，不视为丢弃。
 		(void)Inkeys::UI::RenderPipeline::SetDiagnosticsSink(
-			[diagnosticsLogger, diagnosticsPool](std::string_view message)
+			[](std::string_view message)
 			{
-				const auto discarded = diagnosticsPool->discard_counter();
-				diagnosticsLogger->warn("{}", message);
-				return diagnosticsPool->discard_counter() == discarded;
+				if (!Inkeys::Log::Enabled(Inkeys::Log::Level::Warn)) return true;
+				return Inkeys::Log::TryWrite(Inkeys::Log::Level::Warn, Inkeys::Log::Module::UI3, std::nullopt, message);
 			});
-		IDTLogger->info("[主线程][IdtMain] 日志开始记录 " + utf16ToUtf8(editionDate) + " " + utf16ToUtf8(userId));
+		Inkeys::Log::Info(Inkeys::Log::Module::Main, "日志开始记录 {} {}", utf16ToUtf8(editionDate), utf16ToUtf8(userId));
 
-		if (LaunchState::crashTry) IDTLogger->warn("[主线程][IdtMain] 发现程序先前发生过崩溃错误");
+		if (LaunchState::crashTry) Inkeys::Log::Warn(Inkeys::Log::Module::Main, "发现程序先前发生过崩溃错误");
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::LoggingReady);
-
-		//logger->info("");
-		//logger->warn("");
-		//logger->error("");
-		//logger->critical("");
 	}
 	// DPI初始化
 	{
 		// 进程 awareness 已在 T0 后、任何 HWND/Display 前确定；此处保留原启动进度槽。
 
-		IDTLogger->info("[主线程][IdtMain] DPI初始化完成");
+		Inkeys::Log::Info(Inkeys::Log::Module::Main, "DPI初始化完成");
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::LegacySurfaceReady);
 	}
@@ -3306,11 +3185,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		if (!(displayInitializedBeforeMini ? earlyDisplayInitializeSucceeded
 			: Inkeys::Display::Initialize()))
-			IDTLogger->warn("[主线程][IdtMain] 显示器枚举失败，使用兼容回退信息");
+			Inkeys::Log::Warn(Inkeys::Log::Module::Main, "显示器枚举失败，使用兼容回退信息");
 		const auto displaySnapshot = Inkeys::Display::GetSnapshot();
 		if (displaySnapshot && displaySnapshot->monitors.size() > 1)
-			IDTLogger->warn("[主线程][IdtMain] 拥有多个显示器");
-		IDTLogger->info("[主线程][IdtMain] 显示器信息初始化完成");
+			Inkeys::Log::Info(Inkeys::Log::Module::Main, "拥有多个显示器");
+		Inkeys::Log::Info(Inkeys::Log::Module::Main, "显示器信息初始化完成");
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::DisplayReady);
 	}
@@ -3389,17 +3268,29 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			canvasPanConsoleOutputEnabled = config.Experimental.Inkeys3.ConsoleOutput.CanvasPan;
 			Inkeys::Drawing::Draw3::HapticDiagnostics::SetEnabled(
 				config.Experimental.Inkeys3.ConsoleOutput.Haptics);
-			if (draw3ConsoleOutputEnabled || touchAreaConsoleOutputEnabled ||
-				cursorConsoleOutputEnabled || canvasPanConsoleOutputEnabled || Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled())
 			{
-				// 设备初始化前绑定共用控制台，避免遗漏显示/EDID 与 TouchAreaDevice 启动信息。
-				InitializeDebugConsole();
+				// 6 个调试开关不再分配控制台，改为日志调试通道；须在设备初始化前设置，避免遗漏显示/EDID 与 TouchAreaDevice 启动信息。
+				using Inkeys::Log::Channel;
+				std::uint32_t channelMask = 0;
+				const auto addChannel = [&channelMask](bool enabled, Channel channel)
+					{
+						if (enabled) channelMask |= 1u << static_cast<std::uint32_t>(channel);
+					};
+				addChannel(touchAreaConsoleOutputEnabled, Channel::TouchArea);
+				addChannel(pptComConsoleOutputEnabled, Channel::PptCOM);
+				addChannel(draw3ConsoleOutputEnabled, Channel::Draw3);
+				addChannel(Inkeys::Drawing::Draw3::HapticDiagnostics::Enabled(), Channel::Haptics);
+				addChannel(cursorConsoleOutputEnabled, Channel::Cursor);
+				addChannel(canvasPanConsoleOutputEnabled, Channel::CanvasPan);
+				// 等级与清理参数来自配置（读取失败时为 schema 默认：信息 / 7 天 / 无限制）；启动清理在此之后才执行。
+				const auto& logging = config.Application.Logging;
+				Inkeys::Log::ApplyConfig(static_cast<Inkeys::Log::Threshold>((std::clamp)(logging.Threshold.load(), 0, 4)),
+					logging.RetentionDays.load(), logging.MaxSizeMB.load(), channelMask);
 			}
-			(void)draw3DiagnosticOutput.Start();
+			(void)draw3DiagnosticOutput.Start(Inkeys::Drawing::Draw3::DiagnosticOutput::Mode::Log);
 			if (win7DiagnosticsEnabled)
-				Inkeys::Drawing::Draw3::DiagnosticOutput::Printf(
-					Inkeys::Drawing::Draw3::DiagnosticOutput::Stream::Error,
-					"[Draw3Win7Diagnostics] enabled=1 draw3=1 cursor=1\n");
+				Inkeys::Log::Trace(Inkeys::Log::Channel::Draw3, Inkeys::Log::Module::Draw3, Inkeys::Log::Level::Info,
+					"[Draw3Win7Diagnostics] enabled=1 draw3=1 cursor=1");
 			Inkeys::Drawing::Draw3::SetCursorDiagnosticsEnabled(
 				cursorConsoleOutputEnabled);
 			Inkeys::Drawing::Draw3::SetCanvasPanDiagnosticsEnabled(canvasPanConsoleOutputEnabled);
@@ -3426,8 +3317,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Experimental.Inkeys3.UI3.ContentOpacity);
 			config.Experimental.Inkeys3.UI3.BackgroundOpacity = backgroundOpacity;
 			config.Experimental.Inkeys3.UI3.ContentOpacity = contentOpacity;
-			if (!config.Write() && IDTLogger)
-				IDTLogger->warn("[主线程][IdtMain] main.json 写回失败，保留现存配置文件");
+			if (!config.Write())
+				Inkeys::Log::Warn(Inkeys::Log::Module::Config, "main.json 写回失败，保留现存配置文件");
 			Inkeys::UI::Bar::SetThemeMode(themeMode);
 			Inkeys::UI::Bar::SetResidentOpacity(backgroundOpacity, contentOpacity);
 			Inkeys::UI::Bar::SetAnimationOptions(
@@ -3496,7 +3387,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (!Inkeys::Localization::IsValidIndex(config.Application.Language))
 			config.Application.Language = 0;
 
-		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
+		// 更新通道在完整配置读取后才确定，因此不进入会话头而记在此处。
+		Inkeys::Log::Info(Inkeys::Log::Module::Config, "配置信息初始化完成 channel={}", config.GetUpdateTarget().channel);
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::FullConfigReady);
 	}
@@ -3525,7 +3417,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		// 默认以 zh-CN 作为完整兜底语言，再叠加配置指定的语言
 		I18n::load(1, L"JSON", Inkeys::Localization::LocaleForIndex(config.Application.Language).code);
 
-		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
+		Inkeys::Log::Info(Inkeys::Log::Module::Main, "I18N初始化完成");
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::I18nReady);
 	}
@@ -3561,7 +3453,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			{
 				// 资源助手不承诺保留LastError；用通用失败码，避免记录陈旧的系统错误。
 				RecordPptComFailure(ERROR_GEN_FAILURE);
-				IDTLogger->error("[主线程][IdtMain] PptCOM.dll 验证或原子发布失败，拒绝加载");
+				Inkeys::Log::Error(Inkeys::Log::Module::PptCOM, "PptCOM.dll 验证或原子发布失败，拒绝加载");
 			}
 
 			ACTCTX actCtx = { 0 };
@@ -3604,7 +3496,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					Inkeys::Shutdown::StartupFailureSite::PptCom, 0xD005u, actualPptComResult);
 				Inkeys::Shutdown::HoldAuthorizedStartupBoundary(0xD005u, 2);
 			}
-			IDTLogger->critical("[主线程][IdtMain] PptCOM activation 初始化失败, error={}",
+			Inkeys::Log::Critical(Inkeys::Log::Module::PptCOM, "PptCOM activation 初始化失败, error={}",
 				static_cast<unsigned long>(originalError));
 			PublishFatalStartupFailure(0xD005u,
 				L"PptCOM 组件初始化失败，程序无法继续启动。");
@@ -3616,7 +3508,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			return 1;
 		}
 
-		IDTLogger->info("[主线程][IdtMain] COM初始化完成");
+		Inkeys::Log::Info(Inkeys::Log::Module::Main, "COM初始化完成");
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::PptComReady);
 	}
@@ -3645,7 +3537,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (FAILED(hr))
 		{
 			SetOffSignal(1);
-			if (IDTLogger) IDTLogger->error("[主线程][IdtMain] 界面绘图库初始化失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
+			Inkeys::Log::Critical(Inkeys::Log::Module::Main, "界面绘图库初始化失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
 			PublishFatalStartupFailure(0xD002u,
 				L"共享渲染管线初始化失败，程序无法继续启动。");
 			return 0;
@@ -3660,7 +3552,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				Inkeys::Startup::Milestone::RenderSchedulerReady);
 		}
 
-		IDTLogger->info("[主线程][IdtMain] 界面绘图库初始化完成");
+		Inkeys::Log::Info(Inkeys::Log::Module::Main, "界面绘图库初始化完成");
 	}
 	// 字体初始化
 	{
@@ -3692,8 +3584,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 						Inkeys::Shutdown::StartupFailureSite::Font, 0xD003u, fontHr);
 					Inkeys::Shutdown::HoldAuthorizedStartupBoundary(0xD003u, 2);
 				}
-				if (IDTLogger) IDTLogger->error(
-					"[主线程][IdtMain] UI 字体集合初始化失败, hr=0x{:08X}",
+				Inkeys::Log::Critical(Inkeys::Log::Module::Main,
+					"UI 字体集合初始化失败, hr=0x{:08X}",
 					static_cast<unsigned int>(fontHr));
 				PublishFatalStartupFailure(0xD003u,
 					L"UI 字体资源初始化失败，程序无法继续启动。");
@@ -3756,7 +3648,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}*/
 		}
 
-		IDTLogger->info("[主线程][IdtMain] 字体初始化完成");
+		Inkeys::Log::Info(Inkeys::Log::Module::Main, "字体初始化完成");
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::FontsReady);
 	}
@@ -3993,7 +3885,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		{
 			// 启动失败也必须先建立退场监督，错误提示或窗口 join 不能阻塞 15 秒保护。
 			SetOffSignal(1);
-			IDTLogger->critical("[主线程][IdtMain] Win32 窗口服务启动失败");
+			Inkeys::Log::Critical(Inkeys::Log::Module::Main, "Win32 窗口服务启动失败");
 			PublishFatalStartupFailure(0xD101u,
 				L"窗口服务初始化失败，程序无法继续启动。");
 			windowService.StopAndJoin();
@@ -4088,7 +3980,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		{
 			// Host 初始化失败后的提示和窗口清理可能依赖已停止的绘制线程，先建立监督。
 			SetOffSignal(1);
-			IDTLogger->critical("[主线程][IdtMain] Draw3 Host 初始化失败");
+			Inkeys::Log::Critical(Inkeys::Log::Module::Main, "Draw3 Host 初始化失败");
 			PublishFatalStartupFailure(0xD201u,
 				L"Draw3 绘图服务初始化失败，程序无法继续启动。");
 			windowService.StopAndJoin();
@@ -4098,7 +3990,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (!setting_window || !Inkeys::UI::Setting::Initialize())
 		{
 			SetOffSignal(1);
-			IDTLogger->critical("[主线程][IdtMain] Setting 渲染客户端初始化失败");
+			Inkeys::Log::Critical(Inkeys::Log::Module::Main, "Setting 渲染客户端初始化失败");
 			PublishFatalStartupFailure(0xD301u,
 				L"设置界面初始化失败，程序无法继续启动。");
 			Inkeys::Drawing::Draw3::StopProduct();
@@ -4116,7 +4008,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}))
 		{
 			SetOffSignal(1);
-			IDTLogger->critical("[主线程][IdtMain] Whiteboard 渲染客户端初始化失败");
+			Inkeys::Log::Critical(Inkeys::Log::Module::Main, "Whiteboard 渲染客户端初始化失败");
 			PublishFatalStartupFailure(0xD401u,
 				L"白板界面初始化失败，程序无法继续启动。");
 			Inkeys::UI::Setting::Shutdown();
@@ -4134,7 +4026,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (!Inkeys::Drawing::Draw3::ProductFirstFrameReady())
 		{
 			SetOffSignal(1);
-			IDTLogger->critical("[主线程][IdtMain] Draw3 首帧准备失败");
+			Inkeys::Log::Critical(Inkeys::Log::Module::Main, "Draw3 首帧准备失败");
 			PublishFatalStartupFailure(0xD202u,
 				L"Draw3 首帧提交失败，程序无法继续启动。");
 			if (whiteboardFeatureEnabled) Inkeys::UI::Whiteboard::Shutdown();
@@ -4183,7 +4075,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::UI::RenderPipeline::Shutdown();
 			return 1;
 		}
-		IDTLogger->info("[主线程][IdtMain] 窗口初始化完成");
+		Inkeys::Log::Info(Inkeys::Log::Module::Main, "窗口初始化完成");
 	}
 	// Draw3 Host 已初始化唯一 RTS producer；不再启动 Draw2 RTS/速度线程。
 	rtsWait = false;
@@ -4217,22 +4109,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	if (!isolatedStartupFailure) magnifierThread = jthread(MagnifierThread);
 
 	// 启动 PPT 联动插件
-	if (pptComConsoleOutputEnabled && !draw3ConsoleOutputEnabled &&
-		!touchAreaConsoleOutputEnabled && !cursorConsoleOutputEnabled && !canvasPanConsoleOutputEnabled)
-	{
-		// 仅开启 PptCOM 时延后分配，避免带出 Draw3 的启动诊断。
-		InitializeDebugConsole();
-		// 若此前没有输出端，延后控制台建立后保留普通 Draw3 错误输出。
-		(void)draw3DiagnosticOutput.Start();
-	}
 	jthread pptLinkageThread;
 	if (!isolatedStartupFailure) pptLinkageThread = jthread(PPTLinkageMain);
 
-	IDTLogger->info("[主线程][IdtMain] 线程初始化完成");
+	Inkeys::Log::Info(Inkeys::Log::Module::Main, "线程初始化完成");
 
 #pragma endregion
 
-	IDTLogger->info("[主线程][IdtMain] 开始等待关闭程序信号发出");
+	Inkeys::Log::Info(Inkeys::Log::Module::Main, "开始等待关闭程序信号发出");
 
 	int developerModeExitCode = 0;
 	while (!offSignal)
@@ -4261,8 +4145,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			const bool captureReleased = pairedHidden ||
 				(ownerThread && GetGUIThreadInfo(ownerThread, &ownerInfo) &&
 					ownerInfo.hwndCapture != primary);
-			if (IDTLogger) IDTLogger->critical(
-				"[主线程][IdtMain] Draw3 Host 意外停止，受控退出；成对切换={}，全窗口命令={}，双画布读回={}，捕获释放={}",
+			Inkeys::Log::Critical(Inkeys::Log::Module::Main,
+				"Draw3 Host 意外停止，受控退出；成对切换={}，全窗口命令={}，双画布读回={}，捕获释放={}",
 				pairedHidden, allHidden, surfacesHidden, captureReleased);
 			developerModeExitCode = 6;
 			break;
@@ -4285,9 +4169,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		{
 			config.Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip =
 				committedStartupWidthDip;
-			if (!config.Write() && IDTLogger)
-				IDTLogger->warn(
-					"[主线程][IdtMain] 启动占位总宽度写回失败，本次启动继续运行");
+			if (!config.Write())
+				Inkeys::Log::Warn(Inkeys::Log::Module::Config,
+					"启动占位总宽度写回失败，本次启动继续运行");
 		}
 		if (startupPreviewSmokeRequested)
 		{
@@ -4306,8 +4190,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				if (timedOut && !completed)
 				{
 					developerModeExitCode = 5;
-					if (IDTLogger) IDTLogger->error(
-						"[主线程][IdtMain] StartupPreview smoke 超时");
+					Inkeys::Log::Error(Inkeys::Log::Module::Main,
+						"StartupPreview smoke 超时");
 				}
 				(void)WriteStartupPreviewSmokeReport(
 					startupPreviewSmokePath, completed, preview, alpha);
@@ -4358,7 +4242,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	Inkeys::Drawing::Draw3::SetCanvasPanDiagnosticsEnabled(false);
 	{ ShutdownTrace::Scope trace("main-diagnostic-output"); (void)draw3DiagnosticOutput.Stop(); }
 
-	{ ShutdownTrace::Scope trace("main-status-log"); IDTLogger->info("[主线程][IdtMain] 等待各函数线程结束"); }
+	{ ShutdownTrace::Scope trace("main-status-log"); Inkeys::Log::Info(Inkeys::Log::Module::Main, "等待各函数线程结束"); }
 
 	{
 		ShutdownTrace::Scope trace("main-thread-status-wait");
@@ -4370,7 +4254,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (!GetStatus("FreezeFrameWindow") && !GetStatus("NetUpdate") && !GetStatus("PPTLinkageMain")) break;
 			this_thread::sleep_for(chrono::milliseconds(500));
 		}
-		if (WaitingCount >= 20) IDTLogger->warn("[主线程][IdtMain] 结束函数线程超时并强制结束线程");
+		if (WaitingCount >= 20) Inkeys::Log::Warn(Inkeys::Log::Module::Main, "结束函数线程超时并强制结束线程");
 	}
 
 	// 反初始化 COM 环境
@@ -4381,7 +4265,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (hActCtx != INVALID_HANDLE_VALUE) { ShutdownTrace::Scope step("main-release-context"); ReleaseActCtx(hActCtx); }
 		if (SUCCEEDED(comInitializeResult)) { ShutdownTrace::Scope step("main-com-uninitialize"); CoUninitialize(); }
 
-		{ ShutdownTrace::Scope step("main-com-log"); IDTLogger->info("[主线程][IdtMain] 反初始化 COM 环境完成"); }
+		{ ShutdownTrace::Scope step("main-com-log"); Inkeys::Log::Info(Inkeys::Log::Module::Main, "反初始化 COM 环境完成"); }
 	}
 	// 释放互斥体
 	if (launchMutex)
@@ -4392,7 +4276,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		launchMutex = NULL;
 	}
 
-	{ ShutdownTrace::Scope trace("main-finished-log"); IDTLogger->info("[主线程][IdtMain] 已结束智绘教所有线程并关闭程序"); }
+	{ ShutdownTrace::Scope trace("main-finished-log"); Inkeys::Log::Info(Inkeys::Log::Module::Main, "已结束智绘教所有线程并关闭程序"); }
+	// 所有业务线程已 join、窗口/渲染/COM 已排空；仍可能残留的 detached 线程此后写入会被丢弃。
+	{ ShutdownTrace::Scope trace("main-log-flush"); Inkeys::Log::FlushAndStop(); }
 
 	return developerModeExitCode;
 }

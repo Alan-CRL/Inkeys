@@ -707,10 +707,10 @@ namespace PptCOM.Tests
             using (Scope scope = new Scope(api, Profile.WithTypeInfo, "lifetime diagnostics"))
             using (StringWriter output = new StringWriter())
             {
-                TextWriter previous = Console.Out;
+                TextWriter previous = ManagedLog.TestOutput;
                 try
                 {
-                    Console.SetOut(output);
+                    ManagedLog.TestOutput = output;
                     PptComDiagnostics.SetEnabled(true);
                     var accessor = new MarshalLateBoundComAccessor();
                     object first = null, second = null, view = null, slide = null;
@@ -743,7 +743,7 @@ namespace PptCOM.Tests
                     Check(!text.Contains("Deck.ppt") && !text.Contains("C:\\"), "lifetime log does not read or print document identity");
                     scope.CheckTemporaryBaseline("lifetime diagnostics");
                 }
-                finally { PptComDiagnostics.SetEnabled(false); Console.SetOut(previous); }
+                finally { PptComDiagnostics.SetEnabled(false); ManagedLog.TestOutput = previous; }
             }
         }
 
@@ -752,17 +752,17 @@ namespace PptCOM.Tests
             using (Scope scope = new Scope(api, Profile.WithTypeInfo, "lifetime output isolation"))
             using (StringWriter output = new StringWriter())
             {
-                TextWriter previous = Console.Out;
+                TextWriter previous = ManagedLog.TestOutput;
                 try
                 {
                     var accessor = new MarshalLateBoundComAccessor();
-                    Console.SetOut(output);
+                    ManagedLog.TestOutput = output;
                     PptComDiagnostics.SetEnabled(false);
                     object view = accessor.GetProperty(scope.Window, "View");
                     accessor.Release(view);
                     Check(output.ToString().Length == 0, "disabled lifetime diagnostics emit nothing");
                     PptComDiagnostics.SetEnabled(true);
-                    Console.SetOut(new ThrowingLifetimeWriter());
+                    ManagedLog.TestOutput = new ThrowingLifetimeWriter();
                     view = accessor.GetProperty(scope.Window, "View");
                     accessor.Release(view);
                     scope.CheckTemporaryBaseline("throwing lifetime output");
@@ -770,7 +770,7 @@ namespace PptCOM.Tests
                     GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
                     Check(!weak.IsAlive, "diagnostic identity table never strongly retains its object key");
                 }
-                finally { PptComDiagnostics.SetEnabled(false); Console.SetOut(previous); }
+                finally { PptComDiagnostics.SetEnabled(false); ManagedLog.TestOutput = previous; }
             }
         }
 
@@ -779,11 +779,11 @@ namespace PptCOM.Tests
             using (Scope scope = new Scope(api, Profile.WithEvents, "lifetime event diagnostics"))
             using (StringWriter output = new StringWriter())
             {
-                TextWriter previous = Console.Out;
+                TextWriter previous = ManagedLog.TestOutput;
                 ComEventConnection connection = null;
                 try
                 {
-                    Console.SetOut(output);
+                    ManagedLog.TestOutput = output;
                     PptComDiagnostics.SetEnabled(true);
                     connection = ComEventConnection.Connect(scope.Application, delegate { });
                     Require(api.SetEventFault(scope.Id, 2, unchecked((int)0x8001010A), 1));
@@ -800,7 +800,7 @@ namespace PptCOM.Tests
                 finally
                 {
                     if (connection != null) connection.TryDisconnect();
-                    PptComDiagnostics.SetEnabled(false); Console.SetOut(previous);
+                    PptComDiagnostics.SetEnabled(false); ManagedLog.TestOutput = previous;
                 }
             }
         }
@@ -824,12 +824,12 @@ namespace PptCOM.Tests
             {
                 var accessor = new MarshalLateBoundComAccessor();
                 object slides = accessor.GetProperty(scope.Presentation, "Slides");
-                TextWriter previous = Console.Out;
+                TextWriter previous = ManagedLog.TestOutput;
                 try
                 {
                     // 先预热分派；测试验证实际区间，不用固定 COM 延时阈值。
                     accessor.GetProperty(slides, "Count");
-                    Console.SetOut(output); PptComDiagnostics.SetEnabled(true);
+                    ManagedLog.TestOutput = output; PptComDiagnostics.SetEnabled(true);
                     long start = Stopwatch.GetTimestamp();
                     accessor.GetProperty(slides, "Count");
                     long wall = Stopwatch.GetTimestamp() - start;
@@ -846,7 +846,7 @@ namespace PptCOM.Tests
                 }
                 finally
                 {
-                    PptComDiagnostics.SetEnabled(false); Console.SetOut(previous);
+                    PptComDiagnostics.SetEnabled(false); ManagedLog.TestOutput = previous;
                     accessor.Release(slides);
                 }
             }

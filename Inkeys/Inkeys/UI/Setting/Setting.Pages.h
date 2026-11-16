@@ -307,6 +307,15 @@ namespace Inkeys::UI::Setting::Design
 	bool DesktopShortcutDraftNamesCollide(const DesktopShortcutDraft& draft, const DesktopShortcutDraft& other);
 	bool IsDesktopShortcutDraftValid(const DesktopShortcutDraft& draft, const DesktopShortcutDraft& other);
 
+	// 日志清理时长/大小上限：value 是已保存值（0=永不清理/无限制）。custom 与 text 由调用方跨帧保留，
+	// 使“选中自定义但尚未提交”的状态不会被仍匹配预设的已保存值覆盖。
+	struct LogLimitDraft
+	{
+		int value = 0;
+		bool custom = false;
+		std::string text;
+	};
+
 	struct GeneralDraft
 	{
 		bool startup;
@@ -344,6 +353,9 @@ namespace Inkeys::UI::Setting::Design
 		// 场景进入策略：掩码 bit0 底栏、bit1 底栏折叠、bit2 悬浮窗、bit3 悬浮窗折叠；方向 0 不改变、1 向右、2 向左。
 		int pptDockMask = 1, pptDockDirection = 0;
 		int whiteboardDockMask = 1, whiteboardDockDirection = 0;
+		// 日志与配置·日志：输出等级 0 调试..4 关闭；清理时长单位天，大小上限单位 MB。
+		int logThreshold = 1;
+		LogLimitDraft logRetention, logMaxSize;
 	};
 
 	struct GeneralEvents
@@ -381,6 +393,8 @@ namespace Inkeys::UI::Setting::Design
 		std::array<bool, 6> shortcutsChanged{};
 		bool statusIndicatorChanged = false;
 		std::array<bool, 3> statusIndicatorTypesChanged{};
+		bool logThresholdChanged = false, logRetentionChanged = false, logMaxSizeChanged = false;
+		bool openLogFolder = false;
 	};
 
 	struct CicdContent

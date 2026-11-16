@@ -705,6 +705,16 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					value = candidate >= 0 && candidate <= maximum ? candidate : defaultValue.load();
 					return;
 				}
+				if (path == "Application.Logging.RetentionDays" || path == "Application.Logging.MaxSizeMB"
+					|| path == "Application.Logging.Threshold")
+				{
+					// 0 表示永不清理/无限制；其余只接受窄整数且在各自上限内，非法类型或越界回默认值。
+					const int candidate = ReadNarrowInt(*jsonValue);
+					const int maximum = path == "Application.Logging.RetentionDays" ? 3650
+						: path == "Application.Logging.MaxSizeMB" ? 102400 : 4;
+					value = candidate >= 0 && candidate <= maximum ? candidate : defaultValue.load();
+					return;
+				}
 				if (path == "PlugIn.PPTHelper.IdleFadeSeconds")
 				{
 					// 仅接受设置下拉提供的 0/5/10/15/30；其他类型或数值回退默认 10，避免界面与实际时长不一致。

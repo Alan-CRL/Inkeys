@@ -32,11 +32,11 @@ DWORD ReadEnvironment(const wchar_t* name, wchar_t* output, DWORD size) {
  ++environmentReads;
  return ::GetEnvironmentVariableW(name, output, size);
 }
-struct Logger {
- template<class... T> void warn(T&&...) { events.push_back("warn"); }
- template<class... T> void critical(T&&...) { events.push_back("critical"); }
-} logger;
-Logger* IDTLogger = &logger;
+namespace Inkeys::Log {
+ enum class Module { Launch };
+ template<class... T> void Warn(T&&...) { events.push_back("warn"); }
+ template<class... T> void Critical(T&&...) { events.push_back("critical"); }
+}
 struct LaunchState { inline static bool warnTry = false; };
 std::wstring GetCurrentExePath() { return L"fixture.exe"; }
 void SetOffSignal(int value) {

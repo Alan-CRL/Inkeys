@@ -396,10 +396,10 @@ namespace PptCOM.Tests
             using (var h = new ServerHarness())
             using (var output = new System.IO.StringWriter())
             {
-                System.IO.TextWriter previous = Console.Out;
+                System.IO.TextWriter previous = ManagedLog.TestOutput;
                 try
                 {
-                    Console.SetOut(output); PptComDiagnostics.SetEnabled(true);
+                    ManagedLog.TestOutput = output; PptComDiagnostics.SetEnabled(true);
                     h.Call("DispatchBoundEvent", 1L, 2004);
                     Check(output.ToString().Length == 0, "raw close callback cannot write to the console");
                     PptComDiagnostics.FlushOfficeEvents();
@@ -408,13 +408,13 @@ namespace PptCOM.Tests
                         "owner output preserves the callback's original timestamp and thread");
                     using (var refilling = new RefillingOfficeEventWriter())
                     {
-                        Console.SetOut(refilling);
+                        ManagedLog.TestOutput = refilling;
                         PptComDiagnostics.QueueOfficeEvent(1, 1, 2013);
                         PptComDiagnostics.FlushOfficeEvents();
                         Check(refilling.Writes == 64, "continuously arriving event logs cannot starve the owner in an unbounded flush");
                     }
                 }
-                finally { PptComDiagnostics.SetEnabled(false); Console.SetOut(previous); PptComDiagnostics.FlushOfficeEvents(); }
+                finally { PptComDiagnostics.SetEnabled(false); ManagedLog.TestOutput = previous; PptComDiagnostics.FlushOfficeEvents(); }
             }
         }
 
@@ -456,10 +456,10 @@ namespace PptCOM.Tests
                     cookie => allow ? 0 : unchecked((int)0x8001010A),
                     () => h.Accessor.Release(acquiredPoint), delegate { });
                 h.Set("eventConnection", connection);
-                System.IO.TextWriter previous = Console.Out;
+                System.IO.TextWriter previous = ManagedLog.TestOutput;
                 try
                 {
-                    Console.SetOut(new ThrowingCleanupWriter());
+                    ManagedLog.TestOutput = new ThrowingCleanupWriter();
                     try { h.Call("FullCleanup", false); }
                     catch { Check(false, "closed diagnostics cannot interrupt production root cleanup"); }
                     Check(h.Outstanding("application") == 0 && h.Outstanding("presentation") == 0 &&
@@ -473,7 +473,7 @@ namespace PptCOM.Tests
                 }
                 finally
                 {
-                    Console.SetOut(previous);
+                    ManagedLog.TestOutput = previous;
                     allow = true;
                     h.Call("RetryRetiredEventConnections");
                     Check(connection.TryDisconnect(), "diagnostic failure lease remains explicitly releasable");
@@ -504,17 +504,17 @@ namespace PptCOM.Tests
                     "pure diagnostic preserves external HRESULT and explicitly reports unknown managed code");
                 using (PptPerfTrace.UseTestOutput(true, new System.IO.StringWriter()))
                 using (PptPerfTrace.Begin("error-info-test")) { }
-                System.IO.TextWriter lifetimePrevious = Console.Out;
+                System.IO.TextWriter lifetimePrevious = ManagedLog.TestOutput;
                 try
                 {
-                    Console.SetOut(new System.IO.StringWriter());
+                    ManagedLog.TestOutput = new System.IO.StringWriter();
                     PptComDiagnostics.SetEnabled(true);
                     PptComDiagnostics.Event("error-info-test", "value=1");
                     PptComDiagnostics.QueueOfficeEvent(1, 1, 2004);
                     PptComDiagnostics.FlushOfficeEvents();
                     PptComDiagnostics.Summary("error-info-test");
                 }
-                finally { PptComDiagnostics.SetEnabled(false); Console.SetOut(lifetimePrevious); }
+                finally { PptComDiagnostics.SetEnabled(false); ManagedLog.TestOutput = lifetimePrevious; }
                 Check(GetErrorInfo(0, out observed) == 0 && observed == marker,
                     "diagnostic neither replaces nor clears existing thread IErrorInfo");
                 if (observed != IntPtr.Zero) { Marshal.Release(observed); observed = IntPtr.Zero; }
@@ -1606,10 +1606,10 @@ namespace PptCOM.Tests
             WithRotFixture((h, f) =>
             {
                 f.Rows.Add(h.Graph.Presentation); bool pending = false, deferred;
-                var saved = Console.Out;
+                var saved = ManagedLog.TestOutput;
                 var writer = new TriggerRotWriter { Written = line => { if (line.Contains("Deduplication")) pending = true; } };
-                try { Console.SetOut(writer); ScanRot(h, () => pending, out deferred); }
-                finally { Console.SetOut(saved); }
+                try { ManagedLog.TestOutput = writer; PptComDiagnostics.SetEnabled(true); ScanRot(h, () => pending, out deferred); }
+                finally { PptComDiagnostics.SetEnabled(false); ManagedLog.TestOutput = saved; }
                 Check(deferred && f.ObjectCalls == 2, "same-identity duplicate and selected list receipt are each released once on defer");
                 CheckRotRoots(h);
             });
@@ -1658,9 +1658,9 @@ namespace PptCOM.Tests
             });
             WithRotFixture((h, f) =>
             {
-                var saved = Console.Out; bool deferred; object winner;
-                try { Console.SetOut(new ThrowingCleanupWriter()); winner = ScanRot(h, () => false, out deferred); }
-                finally { Console.SetOut(saved); }
+                var saved = ManagedLog.TestOutput; bool deferred; object winner;
+                try { ManagedLog.TestOutput = new ThrowingCleanupWriter(); PptComDiagnostics.SetEnabled(true); winner = ScanRot(h, () => false, out deferred); }
+                finally { PptComDiagnostics.SetEnabled(false); ManagedLog.TestOutput = saved; }
                 Check(winner != null && !deferred, "throwing scan diagnostics cannot orphan a selected winner");
                 h.Accessor.Release(winner); CheckRotRoots(h);
             });

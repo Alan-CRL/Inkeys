@@ -12,7 +12,9 @@ if ($PrepareOnly -and $SelfTest) { throw '-PrepareOnly and -SelfTest cannot be c
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $exePath = Join-Path $repoRoot 'Build/ARM64/Debug/Inkeys.exe'
 $dllPath = Join-Path $repoRoot 'Inkeys/PptCOM.dll'
-$nativeLogRoot = Join-Path (Split-Path -Parent $exePath) 'log'
+# 统一日志目录：托管 [PptPerf] source=managed 现位于会话日志文件；[ShutdownTrace] 仍从 stderr 读取。
+$nativeLogRoot = Join-Path (Split-Path -Parent $exePath) 'Inkeys/Logs'
+$nativeLogPattern = '^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(_\d+)?\.log$'
 $utf8 = [Text.UTF8Encoding]::new($false)
 $clockFrequency = [Diagnostics.Stopwatch]::Frequency
 
@@ -334,17 +336,20 @@ function Invoke-CaptureRound([int]$Number, [string]$LaunchImage, [string]$Launch
             $path = Join-Path $roundRoot $name
             if ([IO.File]::Exists($path)) { $lines += [IO.File]::ReadAllLines($path, $utf8) }
         }
-        $round.analysis = Get-TraceAnalysis $lines ([long]$round.pid) $round.observed_death_qpc $clockFrequency
+        # 先复制本轮会话日志并并入分析输入：托管 shutdown-/cleanup- [PptPerf] 只写入日志文件。
         if (-not $Mock -and $null -ne $round.started_utc -and [IO.Directory]::Exists($nativeLogRoot)) {
             try {
                 $destination = Join-Path $roundRoot 'native'; [void][IO.Directory]::CreateDirectory($destination)
                 $since = [DateTimeOffset]::Parse($round.started_utc).UtcDateTime
-                foreach ($log in @(Get-ChildItem -LiteralPath $nativeLogRoot -File -Filter 'idt*.log' | Where-Object { $_.LastWriteTimeUtc -ge $since })) {
-                    Copy-Item -LiteralPath $log.FullName -Destination (Join-Path $destination $log.Name)
+                foreach ($log in @(Get-ChildItem -LiteralPath $nativeLogRoot -File -Filter '*.log' | Where-Object { $_.Name -match $nativeLogPattern -and $_.LastWriteTimeUtc -ge $since })) {
+                    $copied = Join-Path $destination $log.Name
+                    Copy-Item -LiteralPath $log.FullName -Destination $copied
                     $round.copied_native_logs += $log.Name
+                    $lines += [IO.File]::ReadAllLines($copied, $utf8)
                 }
             } catch { $round.capture_errors += $_.Exception.Message }
         }
+        $round.analysis = Get-TraceAnalysis $lines ([long]$round.pid) $round.observed_death_qpc $clockFrequency
         $round.capture_ended_utc = [DateTimeOffset]::UtcNow.ToString('o')
         Save-Round $round
     }

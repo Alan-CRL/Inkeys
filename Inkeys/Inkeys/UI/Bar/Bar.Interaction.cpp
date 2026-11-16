@@ -1606,7 +1606,7 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 			++registration->inFlight;
 		}
 		try { callback(); }
-		catch (...) { if (IDTLogger) IDTLogger->error("[UI3] 分页输入回调失败，保留取消屏障"); }
+		catch (...) { Inkeys::Log::Error(Inkeys::Log::Module::UI3, "分页输入回调失败，保留取消屏障"); }
 		{
 			std::lock_guard lock(registration->callbackMutex);
 			--registration->inFlight;
@@ -2101,7 +2101,7 @@ namespace Inkeys::UI::Bar
 						if (!stop.stop_requested()) sharedInputMailbox.WaitUntil(deadline, observed);
 					}
 				}
-				catch (...) { if (IDTLogger) IDTLogger->error("[UI3] 无窗口输入 owner 退出"); }
+				catch (...) { Inkeys::Log::Error(Inkeys::Log::Module::UI3, "无窗口输入 owner 退出"); }
 				// scope 结束时关闭所有未注销目标，等待中的 drain 得到确定完成通知。
 				for (const auto& registration : SnapshotInteractionRegistrations())
 				{
@@ -8636,7 +8636,7 @@ void BarUISetClass::Interact()
 			if (routine.Done())
 			{
 				try { routine.Rethrow(); }
-				catch (...) { if (IDTLogger) IDTLogger->error("[UI3] 交互续接失败，取消当前手势"); }
+				catch (...) { Inkeys::Log::Error(Inkeys::Log::Module::UI3, "交互续接失败，取消当前手势"); }
 				// Cancel 已清理旧接触；保留边界后已入队的新接触，交给新协程。
 				context = {};
 				session = std::make_unique<BarInteractionSession>(*this, mainButtonClickPulseSerial, memberAccess);
@@ -8924,8 +8924,8 @@ bool BarUISetClass::ScheduleBorderCursorGraceTimer(HWND hWnd, UINT delayMs)
 			needLog = true;
 		}
 	}
-	if (needLog && IDTLogger) IDTLogger->error(
-		"[BarUISetClass::ScheduleBorderCursorGraceTimer] 创建第三光源休眠定时器失败, error={}",
+	if (needLog) Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+		"创建第三光源休眠定时器失败, error={}",
 		timerError);
 	return false;
 }
@@ -9689,7 +9689,7 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 			const auto now = GetTickCount64();
 			if (!force && now - diagnosticLastTick < 500) return;
 			diagnosticLastTick = now;
-			if (!IDTLogger) return;
+			if (!Inkeys::Log::Enabled(Inkeys::Log::Level::Info)) return;
 			const auto presented = BottomDockPresentedSnapshot();
 			const auto pending = PendingDisplaySnapshot();
 			POINT cursor{};
@@ -9699,7 +9699,7 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 				GetWindowThreadProcessId(floating_window, nullptr), &ownerInfo) != FALSE;
 			const auto& trace = barPointerDragDiagnostics;
 			// 光标只用于对比样本/呈现，不生成移动，也不据此推断按键状态。
-			IDTLogger->info(
+			Inkeys::Log::TryFormat(Inkeys::Log::Level::Info, Inkeys::Log::Module::Input,
 				"[UiPointerDrag] event={} tick={} session={} source={} active={} dragging={} "
 				"native={}/{} last=({},{},t{},k{},g{}) raw={}/{} last=({},{},t{},k{},g{},c{}) "
 				"armed={} bound={} disabled={} rawActivity={} accepted=({},{},t{},k{}) "

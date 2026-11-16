@@ -4301,6 +4301,7 @@ namespace
 			Design::GeneralEvents events; LayoutRect lastItem; float height = 0; int vertices = 0, blueVertices = 0;
 			bool operation = false, layout = false, collapse = false, shortcuts = false, startupPreview = false, desktopShortcuts = false, startupEffect = false;
 			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false, allowMultipleInstances = false, animationRate = false, paintDevice = false;
+			bool logs = false;
 		};
 		ImGuiWindow* host = nullptr;
 		int modeChanges = 0, entryAnimationChanges = 0, multipleInstanceChanges = 0, startupEffectChanges = 0; std::array<int, 6> shortcutChanges{};
@@ -4331,6 +4332,7 @@ namespace
 			frame.entryAnimation = rowSeen("setting-entry-animation"); frame.animationRate = rowSeen("animation-rate");
 			frame.allowMultipleInstances = rowSeen("allow-multiple-instances"); frame.paintDevice = rowSeen("##draw-device");
 			frame.obsoleteSettingZoom = rowSeen("setting-zoom"); frame.barZoom = rowSeen("bar-zoom");
+			frame.logs = rowSeen("log-threshold") && rowSeen("log-folder") && rowSeen("log-retention") && rowSeen("log-max-size");
 			ImGui::PushID(5); frame.shortcuts = rowSeen("##启用固定快捷键"); ImGui::PopID();
 			for (const auto& vertex : host->DrawList->VtxBuffer)
 				if (vertex.col == Design::GetPalette().notice[0]) ++frame.blueVertices;
@@ -4358,10 +4360,11 @@ namespace
 				&& std::none_of(events.autoCollapseChanged.begin(), events.autoCollapseChanged.end(), [](bool value) { return value; })
 				&& std::none_of(events.shortcutsChanged.begin(), events.shortcutsChanged.end(), [](bool value) { return value; })
 				&& !events.statusIndicatorChanged
-				&& std::none_of(events.statusIndicatorTypesChanged.begin(), events.statusIndicatorTypesChanged.end(), [](bool value) { return value; });
+				&& std::none_of(events.statusIndicatorTypesChanged.begin(), events.statusIndicatorTypesChanged.end(), [](bool value) { return value; })
+				&& !events.logThresholdChanged && !events.logRetentionChanged && !events.logMaxSizeChanged && !events.openLogFolder;
 		};
 		const ImVec2 outside(-100, -100);
-		// 每个带子页的页面的各子页，加上无子页的按键页；显示器、日志两个空页只渲染标题。
+		// 每个带子页的页面的各子页，加上无子页的按键页；显示器空页只渲染标题。
 		for (const auto page : { Dest(Design::Section::Basic), Dest(Design::Section::Appearance), Dest(Design::Section::StatusIndicator),
 			Dest(Design::Section::DesktopShortcuts), Dest(Design::Section::WindowLayout), Dest(Design::Section::WindowBehavior),
 			Dest(Design::Section::WindowDisplay), Dest(Design::Section::LogsLog), keysPage })
@@ -4378,7 +4381,8 @@ namespace
 				&& frame.startupPreview == (section == Design::Section::Appearance) && !frame.startupEffect
 				&& frame.entryAnimation == (section == Design::Section::Appearance)
 				&& frame.barZoom == (section == Design::Section::WindowLayout) && !frame.obsoleteSettingZoom
-				&& frame.allowMultipleInstances == (section == Design::Section::Basic),
+				&& frame.allowMultipleInstances == (section == Design::Section::Basic)
+				&& frame.logs == (section == Design::Section::LogsLog),
 				"settings rows stay in their pages with the new entry-animation mode and no separate Settings zoom");
 			if (section == Design::Section::Basic)
 				checks.Expect(frame.blueVertices > 0, "actual operation-mode explanation draws the themed blue informational card");

@@ -465,6 +465,47 @@ inline constexpr struct I18nKeyRoot
                 } SaveTime{};
             } CanvasSave{};
         } Configuration{};
+        struct Node__SettingsUI__Logs
+        {
+            const char* OutputSection = "SettingsUI/Logs/OutputSection";
+            struct Node__SettingsUI__Logs__Level
+            {
+                const char* N = "SettingsUI/Logs/Level/N";
+                const char* E = "SettingsUI/Logs/Level/E";
+                const char* Debug = "SettingsUI/Logs/Level/Debug";
+                const char* Info = "SettingsUI/Logs/Level/Info";
+                const char* Warn = "SettingsUI/Logs/Level/Warn";
+                const char* Error = "SettingsUI/Logs/Level/Error";
+                const char* Off = "SettingsUI/Logs/Level/Off";
+            } Level{};
+            struct Node__SettingsUI__Logs__Folder
+            {
+                const char* N = "SettingsUI/Logs/Folder/N";
+                const char* E = "SettingsUI/Logs/Folder/E";
+                const char* Button = "SettingsUI/Logs/Folder/Button";
+            } Folder{};
+            const char* CleanSection = "SettingsUI/Logs/CleanSection";
+            struct Node__SettingsUI__Logs__Retention
+            {
+                const char* N = "SettingsUI/Logs/Retention/N";
+                const char* E = "SettingsUI/Logs/Retention/E";
+                const char* K_1d = "SettingsUI/Logs/Retention/1d";
+                const char* K_3d = "SettingsUI/Logs/Retention/3d";
+                const char* K_7d = "SettingsUI/Logs/Retention/7d";
+                const char* K_14d = "SettingsUI/Logs/Retention/14d";
+                const char* K_30d = "SettingsUI/Logs/Retention/30d";
+                const char* Never = "SettingsUI/Logs/Retention/Never";
+                const char* CustomLabel = "SettingsUI/Logs/Retention/CustomLabel";
+            } Retention{};
+            struct Node__SettingsUI__Logs__MaxSize
+            {
+                const char* N = "SettingsUI/Logs/MaxSize/N";
+                const char* E = "SettingsUI/Logs/MaxSize/E";
+                const char* Unlimited = "SettingsUI/Logs/MaxSize/Unlimited";
+                const char* CustomLabel = "SettingsUI/Logs/MaxSize/CustomLabel";
+            } MaxSize{};
+            const char* Custom = "SettingsUI/Logs/Custom";
+        } Logs{};
         struct Node__SettingsUI__Version
         {
             const char* N = "SettingsUI/Version/N";

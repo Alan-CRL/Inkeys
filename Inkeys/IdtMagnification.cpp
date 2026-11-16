@@ -227,8 +227,8 @@ namespace
 	{
 		if (continuousFailure && *continuousFailure == stage) return;
 		continuousFailure = stage;
-		if (IDTLogger) IDTLogger->error(
-			"[放大API线程][MagnifierThread] 定格更新失败 stage={} request={} host=0x{:X} child=0x{:X}",
+		Inkeys::Log::Error(Inkeys::Log::Module::Magnifier,
+			"定格更新失败 stage={} request={} host=0x{:X} child=0x{:X}",
 			StageName(stage), request.revision,
 			reinterpret_cast<std::uintptr_t>(operations.Host()),
 			reinterpret_cast<std::uintptr_t>(operations.Child()));
@@ -237,8 +237,8 @@ namespace
 	void LogRecovery(Request request, std::optional<Stage>& continuousFailure)
 	{
 		if (!continuousFailure) return;
-		if (IDTLogger) IDTLogger->info(
-			"[放大API线程][MagnifierThread] 定格更新已恢复并提交 request={}",
+		Inkeys::Log::Info(Inkeys::Log::Module::Magnifier,
+			"定格更新已恢复并提交 request={}",
 			request.revision);
 		continuousFailure.reset();
 	}
@@ -257,7 +257,7 @@ bool PrepareMagnifierWindow()
 	HMODULE hMagDll = LoadLibrary(TEXT("Magnification.dll"));
 	if (hMagDll == NULL)
 	{
-		IDTLogger->warn("[放大API线程][MagnifierThread] 本机缺少 Magnification.dll，定格等相关功能将被禁用。");
+		Inkeys::Log::Warn(Inkeys::Log::Module::Magnifier, "本机缺少 Magnification.dll，定格等相关功能将被禁用。");
 		return false;
 	}
 	FreeLibrary(hMagDll);
@@ -265,13 +265,13 @@ bool PrepareMagnifierWindow()
 	HMODULE hNtdll = ::GetModuleHandleW(L"ntdll.dll");
 	if (hNtdll && GetProcAddress(hNtdll, "wine_get_version") != nullptr)
 	{
-		IDTLogger->warn("[放大API线程][MagnifierThread] 本机为 Wine 环境，不支持 Magnification.dll 相关功能，定格等相关功能将被禁用。");
+		Inkeys::Log::Warn(Inkeys::Log::Module::Magnifier, "本机为 Wine 环境，不支持 Magnification.dll 相关功能，定格等相关功能将被禁用。");
 		return false;
 	}
 
 	if (!MagInitialize())
 	{
-		IDTLogger->error("[放大API线程][MagnifierThread] 初始化 MagInitialize 失败");
+		Inkeys::Log::Error(Inkeys::Log::Module::Magnifier, "初始化 MagInitialize 失败");
 		return false;
 	}
 	return true;
@@ -280,8 +280,8 @@ bool PrepareMagnifierWindow()
 void MagnifierHostCreated(HWND hwnd)
 {
 	magnifierWindow = hwnd;
-	if (!SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA) && IDTLogger)
-		IDTLogger->error("[放大API线程][SetupMagnifier] 初始化 Host 透明度失败");
+	if (!SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA))
+		Inkeys::Log::Error(Inkeys::Log::Module::Magnifier, "初始化 Host 透明度失败");
 }
 
 void MagnifierChildCreated(HWND hwnd)
@@ -293,7 +293,7 @@ void MagnifierChildCreated(HWND hwnd)
 	matrix.v[2][2] = 1.0f;
 	if (!MagSetWindowTransform(hwnd, &matrix))
 	{
-		IDTLogger->error("[放大API线程][SetupMagnifier] 设置放大倍数矩阵失败");
+		Inkeys::Log::Error(Inkeys::Log::Module::Magnifier, "设置放大倍数矩阵失败");
 		return;
 	}
 
@@ -306,11 +306,11 @@ void MagnifierChildCreated(HWND hwnd)
 	} };
 	if (!MagSetColorEffect(hwnd, &effect))
 	{
-		IDTLogger->error("[放大API线程][SetupMagnifier] 设置颜色矩阵失败");
+		Inkeys::Log::Error(Inkeys::Log::Module::Magnifier, "设置颜色矩阵失败");
 		return;
 	}
 	magnificationCreateReady = true;
-	IDTLogger->info("[放大API线程][SetupMagnifier] Magnifier 资源准备完成");
+	Inkeys::Log::Info(Inkeys::Log::Module::Magnifier, "Magnifier 资源准备完成");
 }
 
 void StopMagnifierCoordinator() noexcept
@@ -329,7 +329,7 @@ void ShutdownMagnifierWindow()
 
 void MagnifierThread()
 {
-	IDTLogger->info("[放大API线程][MagnifierThread] 定格请求协调器启动");
+	Inkeys::Log::Info(Inkeys::Log::Module::Magnifier, "定格请求协调器启动");
 	Inkeys::UI::Freeze::SetStateObserver(&PublishFreezeState);
 	std::optional<Stage> continuousFailure;
 
@@ -352,8 +352,8 @@ void MagnifierThread()
 			if (magnifierCoordinator.CommitApplied(request))
 			{
 				LogRecovery(request, continuousFailure);
-				if (IDTLogger) IDTLogger->info(
-					"[放大API线程][MagnifierThread] 定格更新与显示已提交 request={}",
+				Inkeys::Log::Info(Inkeys::Log::Module::Magnifier,
+					"定格更新与显示已提交 request={}",
 					request.revision);
 				continue;
 			}
@@ -377,5 +377,5 @@ void MagnifierThread()
 	Inkeys::UI::Freeze::SetStateObserver(nullptr);
 	Win32MagnifierOperations operations(CurrentTargets());
 	(void)operations.Conceal();
-	IDTLogger->info("[放大API线程][MagnifierThread] 定格请求协调器停止");
+	Inkeys::Log::Info(Inkeys::Log::Module::Magnifier, "定格请求协调器停止");
 }

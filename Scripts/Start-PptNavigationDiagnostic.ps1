@@ -6,7 +6,9 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $exePath = Join-Path $repoRoot 'Build/ARM64/Debug/Inkeys.exe'
 $dllPath = Join-Path $repoRoot 'Inkeys/PptCOM.dll'
-$nativeLogRoot = Join-Path (Split-Path -Parent $exePath) 'log'
+# 统一日志目录：C++ 与 PptCOM（含 [PptPerf] source=managed）写入同一会话文件。
+$nativeLogRoot = Join-Path (Split-Path -Parent $exePath) 'Inkeys/Logs'
+$nativeLogPattern = '^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(_\d+)?\.log$'
 $utf8 = [Text.UTF8Encoding]::new($false)
 
 function Write-RunMetadata {
@@ -176,13 +178,13 @@ try {
     $metadata.status = 'capture-failed'
     throw
 } finally {
-    # 复制本轮创建/更新的原生日志作为快照；不移动原文件，不清理历史记录。
+    # 复制本轮创建/更新的会话日志作为快照（分析脚本递归扫描 runRoot\*.log）；不移动原文件，不清理历史记录。
     if ($null -ne $metadata.started_utc -and (Test-Path -LiteralPath $nativeLogRoot)) {
         try {
             $startUtc = [DateTimeOffset]::Parse($metadata.started_utc).UtcDateTime
             $nativeOutput = Join-Path $runRoot 'native'
             [void][IO.Directory]::CreateDirectory($nativeOutput)
-            foreach ($log in @(Get-ChildItem -LiteralPath $nativeLogRoot -File -Filter 'idt*.log' | Where-Object { $_.LastWriteTimeUtc -ge $startUtc })) {
+            foreach ($log in @(Get-ChildItem -LiteralPath $nativeLogRoot -File -Filter '*.log' | Where-Object { $_.Name -match $nativeLogPattern -and $_.LastWriteTimeUtc -ge $startUtc })) {
                 Copy-Item -LiteralPath $log.FullName -Destination (Join-Path $nativeOutput $log.Name)
                 $metadata.copied_native_logs += $log.Name
             }

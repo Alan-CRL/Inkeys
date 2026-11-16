@@ -59,6 +59,9 @@
     <VcpkgEnabled>false</VcpkgEnabled>
     <SettingFreeTypeLibrary>freetype.lib</SettingFreeTypeLibrary>
     <SettingFreeTypeLibrary Condition="'$(Configuration)'=='Debug'">freetyped.lib</SettingFreeTypeLibrary>
+    <!-- 日志服务使用 vcpkg 的编译版 fmt；spdlog 按 header-only 使用。 -->
+    <LogFmtLibrary>fmt.lib</LogFmtLibrary>
+    <LogFmtLibrary Condition="'$(Configuration)'=='Debug'">fmtd.lib</LogFmtLibrary>
     <OutDir>$(SolutionDir)Build\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)Cache\$(Platform)\$(Configuration)\</IntDir>
     <TargetName>InkeysHeadlessTests</TargetName>
@@ -87,7 +90,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories Condition="'$(Configuration)'=='Debug'">$(VcpkgInstalledDir)$(VcpkgTriplet)\debug\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalLibraryDirectories Condition="'$(Configuration)'=='Release'">$(VcpkgInstalledDir)$(VcpkgTriplet)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(SettingFreeTypeLibrary);jsoncpp.lib;setupapi.lib;d3d11.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SettingFreeTypeLibrary);$(LogFmtLibrary);jsoncpp.lib;setupapi.lib;d3d11.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -133,6 +136,7 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Log\Log.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cpp" />
@@ -256,6 +260,7 @@
 	</ItemGroup>
   <ItemGroup>
 	<ClInclude Include="..\Inkeys\Inkeys\Input\UiPointerInput.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\Log\Log.h" />
     <ClInclude Include="..\Inkeys\Inkeys\Window\Window.MessageDispatch.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\UI\Setting\Setting.SessionState.h" />

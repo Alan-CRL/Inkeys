@@ -492,7 +492,7 @@ namespace
 			FailWorkspaceRequestImpl(revision, kind, [](auto token, bool whiteboard, bool involved)
 			{ Inkeys::UI::Setting::QueueWorkspaceTransitionFailureNotice(token, whiteboard, involved); });
 		}
-		catch (...) { if (IDTLogger) IDTLogger->warn("[Workspace] failure notice queue rejected"); }
+		catch (...) { Inkeys::Log::Warn(Inkeys::Log::Module::State, "workspace failure notice queue rejected"); }
 	}
 	// 仅持协调锁清零对应类别，不进入 UI。
 	void NoteWorkspaceProgress(std::uint64_t revision, WorkspaceFailureKind kind) noexcept
@@ -854,9 +854,8 @@ namespace
 	{
 		if (draw3PresentationGateWaitReason == reason) return;
 		draw3PresentationGateWaitReason = reason;
-		if (!IDTLogger) return;
-		IDTLogger->info(
-			"[状态线程][Draw3Gate] state=wait reason={} bridgeRevision={} modeRevision={} "
+		Inkeys::Log::Info(Inkeys::Log::Module::Draw3,
+			"[Draw3Gate] state=wait reason={} bridgeRevision={} modeRevision={} "
 			"workspace={} selection={} pageContent={} firstFrame={} output={}@{} ready={}@{} "
 			"content={}/{} auxiliaryClean={} commandPending={} uiReady={} inputReady={}",
 			Draw3PresentationGateWaitReasonName(reason), bridgeRevision, modeRevision,
@@ -878,9 +877,8 @@ namespace
 		const auto previous = draw3PresentationGateWaitReason;
 		draw3PresentationGateWaitReason =
 			Draw3PresentationGateWaitReason::None;
-		if (!IDTLogger) return;
-		IDTLogger->info(
-			"[状态线程][Draw3Gate] state=ready wake=state-reconcile previousReason={} "
+		Inkeys::Log::Info(Inkeys::Log::Module::Draw3,
+			"[Draw3Gate] state=ready wake=state-reconcile previousReason={} "
 			"bridgeRevision={} modeRevision={} firstFrame={} output={}@{} ready={}@{} "
 			"content={}/{}",
 			Draw3PresentationGateWaitReasonName(previous), bridgeRevision, modeRevision,
@@ -894,7 +892,7 @@ namespace
 		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
 		Inkeys::Window::DrawpadSurfaceVisibility visibility) noexcept
 	{
-		if (!IDTLogger) return;
+		if (!Inkeys::Log::Enabled(Inkeys::Log::Level::Warn)) return;
 		auto& service = Inkeys::Window::GetService();
 		const HWND primary = service.Handle(Inkeys::Window::WindowRole::Drawpad);
 		const HWND presentation = service.Handle(
@@ -910,8 +908,8 @@ namespace
 			? GetWindowLongPtrW(primary, GWL_EXSTYLE) : 0;
 		const LONG_PTR presentationExStyle = presentation
 			? GetWindowLongPtrW(presentation, GWL_EXSTYLE) : 0;
-		IDTLogger->warn(
-			"[状态线程][ReconcileDraw3Presentation] surface 切换失败, "
+		Inkeys::Log::Warn(Inkeys::Log::Module::Draw3,
+			"presentation surface 切换失败, "
 			"surface={}, requested={}@{}, ready={}@{}, content={}/{}, "
 			"firstFrame={}, clean={}, primary={{hwnd=0x{:X},owner=0x{:X},visible={},topmost={},rect=({},{},{},{})}}, "
 			"presentation={{hwnd=0x{:X},owner=0x{:X},visible={},topmost={},rect=({},{},{},{})}}",
@@ -947,7 +945,7 @@ namespace
 			return GetEnvironmentVariableW(L"INKEYS_PPT_EXIT_TRACE", value, 8) > 0 &&
 				value[0] == L'1';
 		}();
-		if (!enabled || !IDTLogger) return;
+		if (!enabled || !Inkeys::Log::Enabled(Inkeys::Log::Level::Info)) return;
 		// 等待期最多每两秒采一组真实 HWND，避免 250ms 重试刷屏。
 		static auto last = std::chrono::steady_clock::time_point{};
 		const auto now = std::chrono::steady_clock::now();
@@ -960,7 +958,7 @@ namespace
 			Inkeys::Window::WindowRole::Drawpad);
 		const bool captureKnown = ownerThread &&
 			GetGUIThreadInfo(ownerThread, &threadInfo) != FALSE;
-		IDTLogger->info(
+		Inkeys::Log::Info(Inkeys::Log::Module::Ppt,
 			"[PptExitSurface] reason={} hidden={} desired={} selection={} bridgeRev={} "
 			"runtime={} selection={} runtimeRev={} first={} presentOk={} inputReady={} "
 			"session={} target={} output={}@{}/{}@{} content={}/{} "
@@ -978,7 +976,7 @@ namespace
 			runtime.contentRevision, runtime.auxiliaryFullFrameClean, captureKnown,
 			static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(
 				captureKnown ? threadInfo.hwndCapture : nullptr)));
-		IDTLogger->info(
+		Inkeys::Log::Info(Inkeys::Log::Module::Ppt,
 			"[PptExitSurface] ready={}@{} uiReady={}@{} suspended={}@{} commandPending={}",
 			runtime.presentationReady ? runtime.presentationReady->sessionRevision : 0,
 			runtime.presentationReady ? runtime.presentationReady->targetRevision : 0,
@@ -999,7 +997,7 @@ namespace
 			const HWND hwnd = service.Handle(role);
 			const HWND owner = hwnd ? GetWindow(hwnd, GW_OWNER) : nullptr;
 			const LONG_PTR exStyle = hwnd ? GetWindowLongPtrW(hwnd, GWL_EXSTYLE) : 0;
-			IDTLogger->info(
+			Inkeys::Log::Info(Inkeys::Log::Module::Ppt,
 				"[PptExitSurface] role={} hwnd=0x{:X} owner=0x{:X} valid={} "
 				"visible={} enabled={} exStyle=0x{:X}",
 				static_cast<int>(role),
@@ -1260,9 +1258,9 @@ namespace
 				visibility == Inkeys::Window::DrawpadSurfaceVisibility::Hidden, true);
 			draw3SelectionWaitActive = false;
 		}
-		if (draw3PresentationFailureActive && IDTLogger)
-			IDTLogger->info(
-				"[状态线程][ReconcileDraw3Presentation] surface 切换已恢复, surface={}",
+		if (draw3PresentationFailureActive)
+			Inkeys::Log::Info(Inkeys::Log::Module::Draw3,
+				"presentation surface 切换已恢复, surface={}",
 				SurfaceVisibilityName(visibility));
 		draw3PresentationFailureActive = false;
 		const HWND drawpad = service.Handle(WindowRole::Drawpad);

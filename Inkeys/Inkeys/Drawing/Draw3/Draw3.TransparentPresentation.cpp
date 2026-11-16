@@ -286,7 +286,9 @@ namespace Inkeys::Drawing::Draw3
 				const BOOL rectOk = window && GetWindowRect(window, &windowRect);
 				const BOOL valid = window && IsWindow(window);
 				const BOOL visible = valid && IsWindowVisible(window);
-				DiagnosticOutput::Line() << "[Draw3Diag][ulw] event=" << eventName
+				// 失败/恢复事件带错误码时记 Warn，首次成功等常规事件为 Debug。
+				DiagnosticOutput::Line(error != ERROR_SUCCESS || FAILED(hresult)
+					? DiagnosticOutput::OutWarn : DiagnosticOutput::Target{}) << "[Draw3Diag][ulw] event=" << eventName
 					<< " role=" << diagnosticRole
 					<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
 					<< " valid=" << std::dec << (valid ? 1 : 0)
@@ -322,7 +324,8 @@ namespace Inkeys::Drawing::Draw3
 				RECT dirty, bool presentFull, BOOL updated, DWORD error,
 				ULONGLONG copyMapMs, ULONGLONG rowsMs, ULONGLONG ulwMs)
 			{
-				DiagnosticOutput::Line line;
+				// 仅 Draw3 调试开关开启时采样：写入日志 Draw3 通道。
+				DiagnosticOutput::Line line(DiagnosticOutput::Target{ DiagnosticOutput::Stream::Output, Inkeys::Log::Channel::Draw3 });
 				line << "[Draw3Diag][ulw-pixels] role=" << diagnosticRole
 					<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window) << std::dec
 					<< " tick=" << tick << " dirty=(" << dirty.left << "," << dirty.top << ","
@@ -422,7 +425,7 @@ namespace Inkeys::Drawing::Draw3
 					stagingTexture.ReleaseAndGetAddressOf());
 				if (FAILED(createResult))
 				{
-					DiagnosticOutput::Line() << "[Draw3Diag][ulw-init] role=" << diagnosticRole
+					DiagnosticOutput::Line(DiagnosticOutput::OutError) << "[Draw3Diag][ulw-init] role=" << diagnosticRole
 						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(window)
 						<< std::dec << " stage=CreateTexture2D size=" << width << "x" << height
 						<< " hresult=0x" << std::hex
@@ -508,7 +511,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					if (!presentFailureLogged)
 					{
-						DiagnosticOutput::Line() << "[Draw3Diag][ulw] stage=" << stage
+						DiagnosticOutput::Line(DiagnosticOutput::OutError) << "[Draw3Diag][ulw] stage=" << stage
 							<< " result=failed hresult=0x" << std::hex
 							<< static_cast<unsigned long>(hresult) << std::dec << std::endl;
 						LogPresentEvent("failure", dirty, presentFull, error, hresult);
@@ -975,7 +978,7 @@ namespace Inkeys::Drawing::Draw3
 			if (FAILED(result) || !swapChain)
 			{
 				LogHResult(SwapChainCreationStepName(mode, true), result);
-				DiagnosticOutput::Line() << "Waitable swapchain creation failed; fallback to ordinary swapchain." << std::endl;
+				DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "Waitable swapchain creation failed; fallback to ordinary swapchain." << std::endl;
 				swapChain.Reset();
 				return false;
 			}
@@ -986,7 +989,7 @@ namespace Inkeys::Drawing::Draw3
 			if (FAILED(result) || !swapChain2)
 			{
 				LogHResult("IDXGISwapChain1::QueryInterface(IDXGISwapChain2)", result);
-				DiagnosticOutput::Line() << "Waitable swapchain is not usable; fallback to ordinary swapchain." << std::endl;
+				DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "Waitable swapchain is not usable; fallback to ordinary swapchain." << std::endl;
 				swapChain.Reset();
 				return false;
 			}
@@ -995,13 +998,13 @@ namespace Inkeys::Drawing::Draw3
 			if (FAILED(result))
 			{
 				LogHResult("IDXGISwapChain2::SetMaximumFrameLatency(1)", result);
-				DiagnosticOutput::Line() << "Waitable frame latency setup failed; fallback to ordinary swapchain." << std::endl;
+				DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "Waitable frame latency setup failed; fallback to ordinary swapchain." << std::endl;
 				swapChain.Reset();
 				return false;
 			}
 
 			waitableSwapChain = true;
-			DiagnosticOutput::Line() << "Waitable swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
+			DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "Waitable swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
 			if (IsDwmGlassMode(mode))
 			{
 				LogSwapChainRuntimeDescription(TransparentPresentModeName(mode), swapChain.Get(), "Waitable created");
@@ -1031,7 +1034,7 @@ namespace Inkeys::Drawing::Draw3
 				LogHResult(SwapChainCreationStepName(mode, false), result);
 				return false;
 			}
-			DiagnosticOutput::Line() << "Ordinary swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
+			DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "Ordinary swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
 			if (IsDwmGlassMode(mode))
 			{
 				LogSwapChainRuntimeDescription(TransparentPresentModeName(mode), swapChain.Get(), "Created");
@@ -1085,7 +1088,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!IsDirectCompositionMode(mode) && !IsUlwMode(mode))
 			{
 				beginFailure();
-				DiagnosticOutput::Line() << "Transparent present mode " << TransparentPresentModeName(mode)
+				DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "Transparent present mode " << TransparentPresentModeName(mode)
 					<< " is disabled." << std::endl;
 				return false;
 			}
@@ -1101,7 +1104,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const DWORD initializeError = GetLastError();
 				beginFailure();
-				DiagnosticOutput::Line() << "ConfigureWindow failed in mode " << TransparentPresentModeName(mode)
+				DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "ConfigureWindow failed in mode " << TransparentPresentModeName(mode)
 					<< " exStyle=0x" << std::hex
 					<< static_cast<unsigned long>(GetWindowLongPtrW(primaryWindow, GWL_EXSTYLE))
 					<< std::dec << " lastError=" << initializeError << std::endl;
@@ -1111,7 +1114,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const DWORD initializeError = GetLastError();
 				beginFailure();
-				DiagnosticOutput::Line() << "CreateSwapChain failed in mode " << TransparentPresentModeName(mode)
+				DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "CreateSwapChain failed in mode " << TransparentPresentModeName(mode)
 					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
@@ -1125,7 +1128,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const DWORD initializeError = GetLastError();
 				beginFailure();
-				DiagnosticOutput::Line() << "Renderer initialization failed in mode " << TransparentPresentModeName(mode)
+				DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "Renderer initialization failed in mode " << TransparentPresentModeName(mode)
 					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
@@ -1133,11 +1136,11 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const DWORD initializeError = GetLastError();
 				beginFailure();
-				DiagnosticOutput::Line() << "Presenter initialization failed in mode " << TransparentPresentModeName(mode)
+				DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "Presenter initialization failed in mode " << TransparentPresentModeName(mode)
 					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
-			DiagnosticOutput::Line() << "Active transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
+			DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "Active transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
 			return true;
 		}
 
@@ -1236,7 +1239,7 @@ namespace Inkeys::Drawing::Draw3
 					if (!terminal)
 					{
 						const size_t nextIndex = TransparentPresentModeIndex(mode) + 1;
-						DiagnosticOutput::Line() << "Transparent present mode " << TransparentPresentModeName(mode)
+						DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "Transparent present mode " << TransparentPresentModeName(mode)
 							<< " failed; fallback to " << TransparentPresentModeName(kTransparentPresentModes[nextIndex]) << "." << std::endl;
 					}
 				}
@@ -1263,7 +1266,7 @@ namespace Inkeys::Drawing::Draw3
 				return true; // 按优先级选第一个可用透明呈现路径。
 		}
 		options.failedCleanup.BeginKnownFailure();
-		DiagnosticOutput::Line() << "All transparent present modes failed." << std::endl;
+		DiagnosticOutput::Line(DiagnosticOutput::OutError) << "All transparent present modes failed." << std::endl;
 		return false;
 	}
 
@@ -1281,7 +1284,7 @@ namespace Inkeys::Drawing::Draw3
 			impl_->dcompHandoffBarrier.Cancel();
 		if (StartupEnvironmentDiagnosticsEnabled())
 		{
-			DiagnosticOutput::Line() << "[Draw3Diag][target] requested="
+			DiagnosticOutput::Line(DiagnosticOutput::Target{ DiagnosticOutput::Stream::Output, Inkeys::Log::Channel::Draw3 }) << "[Draw3Diag][target] requested="
 				<< (target == TransparentOutputTarget::SelectionUlw
 					? "DrawpadPresentation" : "Drawpad")
 				<< " revision=" << impl_->requestedOutputRevision << std::endl;
@@ -1431,7 +1434,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					// 恢复后的同 revision 全帧仍须建立屏障，不能把失败帧当作已上屏。
 					impl_->dcompHandoffBarrier.Arm(impl_->requestedOutputRevision);
-					DiagnosticOutput::Line() << "[Draw3Diag][handoff] DwmFlush failed"
+					DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "[Draw3Diag][handoff] DwmFlush failed"
 						<< " target=Drawpad"
 						<< " revision=" << impl_->requestedOutputRevision
 						<< " contentRevision=" << contentRevision
@@ -1446,7 +1449,9 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (!succeeded || StartupEnvironmentDiagnosticsEnabled())
 				{
-					DiagnosticOutput::Line() << "[Draw3Diag][present] mode="
+					// 失败始终记录（Error）；成功只在 Draw3 调试开关开启时写入 Draw3 通道。
+					DiagnosticOutput::Line(succeeded ? DiagnosticOutput::Target{ DiagnosticOutput::Stream::Output, Inkeys::Log::Channel::Draw3 }
+						: DiagnosticOutput::OutError) << "[Draw3Diag][present] mode="
 						<< TransparentPresentModeName(impl_->activeMode)
 						<< " target="
 						<< (target == TransparentOutputTarget::SelectionUlw
@@ -1468,7 +1473,7 @@ namespace Inkeys::Drawing::Draw3
 		impl_->lastObservation.presentedContentRevision = contentRevision;
 		if (!succeeded && !impl_->presentFailureLogged)
 		{
-			DiagnosticOutput::Line() << "Present failed in mode " << TransparentPresentModeName(impl_->activeMode) << std::endl;
+			DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Present failed in mode " << TransparentPresentModeName(impl_->activeMode) << std::endl;
 			impl_->presentFailureLogged = true;
 		}
 		if (succeeded)

@@ -37,6 +37,13 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> canvasPanDiagnosticsEnabled = false;
 		std::atomic<uint64_t> canvasPanDiagnosticSequence = 0;
 		std::atomic<uint64_t> cursorDiagnosticSequence = 0;
+		// 受设置页调试开关控制的诊断写入对应日志通道（标准流模式仍按原 stream 输出）。
+		constexpr DiagnosticOutput::Target kCursorTarget{ DiagnosticOutput::Stream::Output,
+			Inkeys::Log::Channel::Cursor, Inkeys::Log::Module::Input };
+		constexpr DiagnosticOutput::Target kCanvasPanTarget{ DiagnosticOutput::Stream::Output,
+			Inkeys::Log::Channel::CanvasPan, Inkeys::Log::Module::Input };
+		constexpr DiagnosticOutput::Target kDraw3ChannelTarget{ DiagnosticOutput::Stream::Output,
+			Inkeys::Log::Channel::Draw3, Inkeys::Log::Module::Draw3, Inkeys::Log::Level::Info };
 
 		void WriteFastConsoleLine(const char* text, DWORD length)
 		{
@@ -718,7 +725,7 @@ namespace Inkeys::Drawing::Draw3
 
 	void RecordCursorDiagnostic(const char* format, ...) noexcept
 	{
-		if (!CursorDiagnosticsEnabled() || !format || !DiagnosticOutput::Available()) return;
+		if (!CursorDiagnosticsEnabled() || !format || !DiagnosticOutput::Available(kCursorTarget)) return;
 		const DWORD previousError = GetLastError();
 		const uint64_t tick = GetTickCount64();
 		const DWORD thread = GetCurrentThreadId();
@@ -735,7 +742,7 @@ namespace Inkeys::Drawing::Draw3
 				std::memcpy(message + sizeof(message) - sizeof(suffix), suffix, sizeof(suffix));
 			}
 			// 保留生产者的时间、线程与序号；唯一输出 worker 承担所有 sink 等待。
-			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Output,
+			DiagnosticOutput::Printf(kCursorTarget,
 				"[CURSOR_TRACE] seq=%llu tick=%llu thread=%lu %s\r\n",
 				static_cast<unsigned long long>(cursorDiagnosticSequence.fetch_add(1, std::memory_order_relaxed) + 1),
 				static_cast<unsigned long long>(tick), static_cast<unsigned long>(thread), message);
@@ -824,14 +831,14 @@ namespace Inkeys::Drawing::Draw3
 			LogCanvasPan("enabled schema=1 qpc-frequency=%lld capacity=%zu timestamp=callback-arrival unit=DIP build=%s-%s",
 				frequency.QuadPart, DiagnosticOutput::RecordCapacity, __DATE__, __TIME__);
 		}
-		else DiagnosticOutput::Text(DiagnosticOutput::Stream::Output, "[CanvasPan] disabled\r\n", true);
+		else DiagnosticOutput::Text(kCanvasPanTarget, "[CanvasPan] disabled\r\n", true);
 		SetLastError(previousError);
 	}
 
 	bool CanvasPanDiagnosticsEnabled() noexcept
 	{
 		return canvasPanDiagnosticsEnabled.load(std::memory_order_acquire) &&
-			DiagnosticOutput::Available(DiagnosticOutput::Stream::Output, true);
+			DiagnosticOutput::Available(kCanvasPanTarget, true);
 	}
 
 	void LogCanvasPan(const char* format, ...) noexcept
@@ -858,20 +865,20 @@ namespace Inkeys::Drawing::Draw3
 		const size_t used = prefixLength + (std::min)(bodyCapacity, static_cast<size_t>(bodyLength));
 		buffer[used] = '\r'; buffer[used + 1] = '\n'; buffer[used + 2] = '\0';
 		// 保留真实截断信号，复用输出器的[truncated]与丢弃统计，不静默截短记录。
-		DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, buffer,
+		DiagnosticOutput::Write(kCanvasPanTarget, buffer,
 			static_cast<size_t>(bodyLength) > bodyCapacity ? sizeof(buffer) : used + 2, true);
 		SetLastError(previousError);
 	}
 
 	void LogHResult(const char* step, HRESULT result)
 	{
-		DiagnosticOutput::Line() << step << " failed. HRESULT=0x" << std::hex
+		DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << step << " failed. HRESULT=0x" << std::hex
 			<< static_cast<unsigned long>(result) << std::dec << std::endl;
 	}
 
 	void LogWin32Error(const char* step, DWORD error)
 	{
-		DiagnosticOutput::Line() << step << " failed. GetLastError=" << error << std::endl;
+		DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << step << " failed. GetLastError=" << error << std::endl;
 	}
 
 	const char* BoolText(BOOL value)
@@ -899,7 +906,7 @@ namespace Inkeys::Drawing::Draw3
 		const HRESULT result = DwmGetColorizationColor(&colorizationColor, &opaqueBlend);
 		if (FAILED(result))
 		{
-			DiagnosticOutput::Line() << "[" << modeName << "] " << stage
+			DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "[" << modeName << "] " << stage
 				<< " DwmGetColorizationColor failed. HRESULT=0x" << std::hex
 				<< static_cast<unsigned long>(result) << std::dec << std::endl;
 			return false;
@@ -971,7 +978,7 @@ namespace Inkeys::Drawing::Draw3
 		HRESULT result = adapter->GetDesc(&description);
 		if (SUCCEEDED(result))
 		{
-			DiagnosticOutput::Line() << "DXGI adapter: " << WideToUtf8(description.Description)
+			DiagnosticOutput::Line(kDraw3ChannelTarget) << "DXGI adapter: " << WideToUtf8(description.Description)
 				<< " VendorId=0x" << std::hex << description.VendorId
 				<< " DeviceId=0x" << description.DeviceId
 				<< " SubSysId=0x" << description.SubSysId
@@ -989,7 +996,7 @@ namespace Inkeys::Drawing::Draw3
 		result = adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &driverVersion);
 		if (SUCCEEDED(result))
 		{
-			DiagnosticOutput::Line() << "DXGI adapter UMD driver version raw: high=0x" << std::hex
+			DiagnosticOutput::Line(kDraw3ChannelTarget) << "DXGI adapter UMD driver version raw: high=0x" << std::hex
 				<< static_cast<unsigned long>(driverVersion.HighPart) << " low=0x"
 				<< static_cast<unsigned long>(driverVersion.LowPart) << std::dec << std::endl;
 		}

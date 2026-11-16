@@ -551,8 +551,8 @@ void BarUIRendering::HandleFrameEndDrawResult(HRESULT endDrawResult)
 	if (!frameDiffuseMaskFailureLogged)
 	{
 		frameDiffuseMaskFailureLogged = true;
-		if (IDTLogger) IDTLogger->error(
-			"[BarUIRendering::HandleFrameEndDrawResult] A8 预模糊遮罩提交失败，本设备停用柔光遮罩, hr=0x{:08X}",
+		Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+			"A8 预模糊遮罩提交失败，本设备停用柔光遮罩, hr=0x{:08X}",
 			static_cast<unsigned int>(endDrawResult));
 	}
 }
@@ -1250,8 +1250,8 @@ ComPtr<ID2D1RadialGradientBrush> BarUIRendering::GetFrameGradientBrush(
 	if (!frameGradientFailureLogged)
 	{
 		frameGradientFailureLogged = true;
-		if (IDTLogger) IDTLogger->error(
-			"[BarUIRendering::GetFrameGradientBrush] 创建边框点光渐变失败, hr=0x{:08X}",
+		Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+			"创建边框点光渐变失败, hr=0x{:08X}",
 			static_cast<unsigned int>(hr));
 	}
 	return nullptr;
@@ -1325,8 +1325,8 @@ ID2D1LinearGradientBrush* BarUIRendering::GetThicknessPreviewGradientBrush(
 		if (!thicknessPreviewGradientFailureLogged)
 		{
 			thicknessPreviewGradientFailureLogged = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::GetThicknessPreviewGradientBrush] 创建粗细预览渐变失败, hr=0x{:08X}",
+			Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+				"创建粗细预览渐变失败, hr=0x{:08X}",
 				static_cast<unsigned int>(hr));
 		}
 		return nullptr;
@@ -1385,8 +1385,8 @@ ID2D1LinearGradientBrush* BarUIRendering::GetColorPickerHueGradientBrush(
 			if (!colorPickerGradientFailureLogged)
 			{
 				colorPickerGradientFailureLogged = true;
-				if (IDTLogger) IDTLogger->error(
-					"[BarUIRendering::GetColorPickerHueGradientBrush] 创建颜色选择器渐变失败, hr=0x{:08X}",
+				Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+					"创建颜色选择器渐变失败, hr=0x{:08X}",
 					static_cast<unsigned int>(hr));
 			}
 			return nullptr;
@@ -1432,8 +1432,8 @@ ID2D1LinearGradientBrush* BarUIRendering::GetColorPickerToneGradientBrush(
 			if (!colorPickerGradientFailureLogged)
 			{
 				colorPickerGradientFailureLogged = true;
-				if (IDTLogger) IDTLogger->error(
-					"[BarUIRendering::GetColorPickerToneGradientBrush] 创建颜色选择器明暗覆盖失败, hr=0x{:08X}",
+				Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+					"创建颜色选择器明暗覆盖失败, hr=0x{:08X}",
 					static_cast<unsigned int>(hr));
 			}
 			return nullptr;
@@ -1532,8 +1532,8 @@ ID2D1PathGeometry* BarUIRendering::GetThicknessPreviewPath()
 		if (!thicknessPreviewPathFailureLogged)
 		{
 			thicknessPreviewPathFailureLogged = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::GetThicknessPreviewPath] 创建粗细预览路径失败, hr=0x{:08X}",
+			Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+				"创建粗细预览路径失败, hr=0x{:08X}",
 				static_cast<unsigned int>(hr));
 		}
 		return nullptr;
@@ -1562,8 +1562,8 @@ ID2D1StrokeStyle1* BarUIRendering::GetThicknessPreviewStrokeStyle()
 		if (!thicknessPreviewPathFailureLogged)
 		{
 			thicknessPreviewPathFailureLogged = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::GetThicknessPreviewStrokeStyle] 创建圆头描边样式失败, hr=0x{:08X}",
+			Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+				"创建圆头描边样式失败, hr=0x{:08X}",
 				static_cast<unsigned int>(hr));
 		}
 		return nullptr;
@@ -1588,8 +1588,8 @@ ID2D1StrokeStyle* BarUIRendering::GetRoundStrokeStyle()
 		if (!roundStrokeStyleFailureLogged)
 		{
 			roundStrokeStyleFailureLogged = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::GetRoundStrokeStyle] 创建圆头描边样式失败, hr=0x{:08X}",
+			Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+				"创建圆头描边样式失败, hr=0x{:08X}",
 				static_cast<unsigned int>(hr));
 		}
 		return nullptr;
@@ -1627,8 +1627,8 @@ ID2D1PathGeometry* BarUIRendering::GetThicknessFineDialSelectorGeometry()
 		if (!thicknessFineDialSelectorFailureLogged)
 		{
 			thicknessFineDialSelectorFailureLogged = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::GetThicknessFineDialSelectorGeometry] 创建 FineDial selector 失败, hr=0x{:08X}",
+			Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+				"创建 FineDial selector 失败, hr=0x{:08X}",
 				static_cast<unsigned int>(hr));
 		}
 		return nullptr;
@@ -1755,8 +1755,8 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 		{
 			frameDiffuseEffectFailureLogged = true;
 			frameDiffuseMaskUnavailable = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::GetRoundedRectDiffuseMask] 创建遮罩缓存 DeviceContext 失败, hr=0x{:08X}",
+			Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+				"创建遮罩缓存 DeviceContext 失败, hr=0x{:08X}",
 				static_cast<unsigned int>(hr));
 		}
 	}
@@ -1777,8 +1777,8 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 			frameGaussianBlurEffect.Reset();
 			frameDiffuseEffectFailureLogged = true;
 			frameDiffuseMaskUnavailable = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::GetRoundedRectDiffuseMask] 创建 Gaussian Blur Effect 失败, hr=0x{:08X}",
+			Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+				"创建 Gaussian Blur Effect 失败, hr=0x{:08X}",
 				static_cast<unsigned int>(hr));
 		}
 	}
@@ -1870,8 +1870,8 @@ BarUIRendering::FrameDiffuseMaskCacheClass* BarUIRendering::GetRoundedRectDiffus
 		if (!frameDiffuseMaskFailureLogged)
 		{
 			frameDiffuseMaskFailureLogged = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::GetRoundedRectDiffuseMask] 创建预模糊遮罩失败，本设备停用柔光遮罩, hr=0x{:08X}",
+			Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+				"创建预模糊遮罩失败，本设备停用柔光遮罩, hr=0x{:08X}",
 				static_cast<unsigned int>(hr));
 		}
 		return nullptr;
@@ -2156,8 +2156,8 @@ BarUIRendering::ResolveRoundedRectExactMask(
 	{
 		// 可选整图失败仅关闭整图路径，父级预模糊九宫格继续承担本会话渲染。
 		frameDiffuseExactMaskUnavailable = true;
-		if (IDTLogger) IDTLogger->warn(
-			"[BarUIRendering::ResolveRoundedRectExactMask] 创建精确 A8 遮罩失败，回退预模糊九宫格, hr=0x{:08X}",
+		Inkeys::Log::Warn(Inkeys::Log::Module::Bar,
+			"创建精确 A8 遮罩失败，回退预模糊九宫格, hr=0x{:08X}",
 			static_cast<unsigned int>(hr));
 		return Fallback(ExactFallback::CreateFailure);
 	}
@@ -2360,8 +2360,8 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 		{
 			frameDiffuseEffectFailureLogged = true;
 			frameDiffuseMaskUnavailable = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::GetGeometryDiffuseMask] 创建遮罩缓存 DeviceContext 失败, hr=0x{:08X}",
+			Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+				"创建遮罩缓存 DeviceContext 失败, hr=0x{:08X}",
 				static_cast<unsigned int>(hr));
 		}
 	}
@@ -2382,8 +2382,8 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 			frameGaussianBlurEffect.Reset();
 			frameDiffuseEffectFailureLogged = true;
 			frameDiffuseMaskUnavailable = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::GetGeometryDiffuseMask] 创建 Gaussian Blur Effect 失败, hr=0x{:08X}",
+			Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+				"创建 Gaussian Blur Effect 失败, hr=0x{:08X}",
 				static_cast<unsigned int>(hr));
 		}
 	}
@@ -2469,8 +2469,8 @@ BarUIRendering::FrameGeometryDiffuseMaskCacheClass* BarUIRendering::GetGeometryD
 		if (!frameDiffuseMaskFailureLogged)
 		{
 			frameDiffuseMaskFailureLogged = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::GetGeometryDiffuseMask] 创建几何预模糊遮罩失败，本设备停用柔光遮罩, hr=0x{:08X}",
+			Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+				"创建几何预模糊遮罩失败，本设备停用柔光遮罩, hr=0x{:08X}",
 				static_cast<unsigned int>(hr));
 		}
 		return nullptr;
@@ -2795,8 +2795,8 @@ void BarUIRendering::DrawSurfaceMaterialHighlight(ID2D1DeviceContext* deviceCont
 		if (FAILED(hr))
 		{
 			surfaceHighlightUnavailable = true;
-			if (IDTLogger) IDTLogger->error(
-				"[BarUIRendering::DrawSurfaceMaterialHighlight] 创建顶部高光失败，本设备停用高光, hr=0x{:08X}",
+			Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+				"创建顶部高光失败，本设备停用高光, hr=0x{:08X}",
 				static_cast<unsigned int>(hr));
 			return;
 		}

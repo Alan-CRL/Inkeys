@@ -462,6 +462,47 @@
         }
       }
     },
+    "Logs":
+    {
+      "OutputSection": "Keluaran log",
+      "Level":
+      {
+        "N": "Tingkat log",
+        "E": "Log di bawah tingkat yang dipilih tidak lagi ditulis ke file. Berlaku segera; keluaran diagnostik yang diaktifkan tidak terpengaruh.",
+        "Debug": "Debug",
+        "Info": "Info",
+        "Warn": "Peringatan",
+        "Error": "Galat",
+        "Off": "Mati"
+      },
+      "Folder":
+      {
+        "N": "Buka folder log",
+        "E": "Membuka folder Inkeys\\Logs tempat log disimpan di File Explorer.",
+        "Button": "Buka"
+      },
+      "CleanSection": "Pembersihan log",
+      "Retention":
+      {
+        "N": "Periode pembersihan otomatis",
+        "E": "Saat memulai dan setelah mengubah pengaturan pembersihan, hapus file log yang lebih lama dari periode yang dipilih.",
+        "1d": "1 hari",
+        "3d": "3 hari",
+        "7d": "7 hari",
+        "14d": "14 hari",
+        "30d": "30 hari",
+        "Never": "Tidak pernah",
+        "CustomLabel": "Jumlah hari khusus (1-3650)"
+      },
+      "MaxSize":
+      {
+        "N": "Batas ukuran log",
+        "E": "Jika folder log melebihi batas, log tertua dihapus lebih dulu. Log saat ini tidak pernah dihapus.",
+        "Unlimited": "Tanpa batas",
+        "CustomLabel": "Ukuran khusus dalam MB (1-102400)"
+      },
+      "Custom": "Khusus"
+    },
     "Version":
     {
       "N": "Versi perangkat lunak",
@@ -1043,32 +1084,32 @@
         "Haptics":
         {
           "N": "Diagnostik haptik pena",
-          "E": "Catat masukan pena, permintaan tombol, dan hasil pengiriman ke perangkat haptik untuk mendiagnosis getaran yang tidak muncul."
+          "E": "Menulis input pena, permintaan tombol, dan hasil pengiriman ke perangkat haptik ke file log untuk membantu mendiagnosis getaran yang tidak muncul."
         },
         "TouchArea":
         {
           "N": "Keluaran konsol diagnostik masukan dan penghapus",
-          "E": "Keluarkan cuplikan berkala terbatas tentang EDID, resolusi dan DPI layar, luas sentuhan, koordinat masukan, jenis perangkat, dan ukuran penghapus."
+          "E": "Menulis cuplikan terbatas EDID, resolusi dan DPI layar, area sentuh, koordinat input, jenis perangkat, dan ukuran penghapus ke file log."
         },
         "PptCOM":
         {
           "N": "Keluaran konsol PptCOM",
-          "E": "Keluarkan diagnostik PptCOM ke konsol."
+          "E": "Menulis diagnostik PptCOM ke file log."
         },
         "Draw3":
         {
           "N": "Keluaran konsol Draw3",
-          "E": "Keluarkan informasi perangkat dan driver Draw3 ke konsol."
+          "E": "Menulis informasi perangkat dan driver Draw3 ke file log."
         },
         "Cursor":
         {
           "N": "Diagnostik kursor",
-          "E": "Keluarkan pemilik masukan kursor dan hasil perenderannya ke konsol."
+          "E": "Menulis kepemilikan input kursor dan hasil gambarnya ke file log."
         },
         "CanvasPan":
         {
           "N": "Diagnostik geser dan inersia papan tulis",
-          "E": "Catat input geser mouse dan sentuh, kecepatan, inersia, serta alasan berhenti untuk menyelidiki masalah gerakan."
+          "E": "Menulis input geser mouse dan sentuh, kecepatan, inersia, dan alasan berhenti ke file log untuk menyelidiki masalah gerakan."
         }
       }
     },
@@ -1353,7 +1394,7 @@
         "Add": "Tambah status acak",
         "Remove": "Hapus satu status"
       },
-      "ConsoleSection": "Keluaran konsol",
+      "ConsoleSection": "Keluaran log diagnostik",
       "CanvasInformation": "Info inisialisasi kanvas",
       "DisplayInformation": "Layar dan EDID"
     },

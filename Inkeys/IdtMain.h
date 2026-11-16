@@ -80,6 +80,7 @@
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/async.h>
+#include "Inkeys/Log/Log.h"
 
 // I18N类
 #include <locale>
@@ -128,7 +129,6 @@ LONG* GetOffSignalInteropPointer();
 
 extern IdtAtomic<int> offSignal; //关闭指令
 
-extern shared_ptr<spdlog::logger> IDTLogger;
 extern IdtAtomic<bool> useMouseInput;
 
 // 调测专用

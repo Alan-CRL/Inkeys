@@ -212,7 +212,7 @@ namespace
 		if (result != settingLastResourceFailure || removedReason != settingLastRemovedReason
 			|| stage != settingLastFailureStage || settingFrameContext.epoch.generation != settingLastFailureEpoch)
 		{
-			if (IDTLogger) IDTLogger->error("[Setting] {} 失败 HRESULT=0x{:08X}, deviceReason=0x{:08X}, epoch={}",
+			Inkeys::Log::TryFormat(Inkeys::Log::Level::Error, Inkeys::Log::Module::Setting, "{} 失败 HRESULT=0x{:08X}, deviceReason=0x{:08X}, epoch={}",
 				stage, static_cast<unsigned long>(result), static_cast<unsigned long>(removedReason),
 				settingFrameContext.epoch.generation);
 			settingLastResourceFailure = result; settingLastRemovedReason = removedReason;
@@ -288,12 +288,12 @@ namespace
 		{
 			if (!active) return;
 			active=false;
-			if (!IDTLogger || !count) return;
+			if (!count || !Inkeys::Log::Enabled(Inkeys::Log::Level::Info)) return;
 			const auto gap=Measure(&Sample::frameGap), presented=Measure(&Sample::presentGap);
 			size_t fast=0,rootsSuppressed=0; int maximumVertices=0,maximumIndices=0,maximumBatches=0;
 			for (size_t i=0;i<count;++i) { fast+=samples[i].fast; rootsSuppressed+=samples[i].rootSuppressed; maximumVertices=(std::max)(maximumVertices,samples[i].vertices);
 				maximumIndices=(std::max)(maximumIndices,samples[i].indices); maximumBatches=(std::max)(maximumBatches,samples[i].batches); }
-			IDTLogger->info("[SettingEntryPerf] show={} outcome={} submitted-frames={} skipped-frames={} snapshot-bytes={} backend-failures={} clear-frames={} page-copy-frames={} dropped={} fast={} solid-root-suppressed={} wall-ms={:.3f} frame-gap-us median={:.3f} p95={:.3f} max={:.3f} present-return-gap-us median={:.3f} p95={:.3f} max={:.3f} max-vtx={} max-idx={} max-batches={} sample-bytes={}",
+			Inkeys::Log::Info(Inkeys::Log::Module::Setting, "[SettingEntryPerf] show={} outcome={} submitted-frames={} skipped-frames={} snapshot-bytes={} backend-failures={} clear-frames={} page-copy-frames={} dropped={} fast={} solid-root-suppressed={} wall-ms={:.3f} frame-gap-us median={:.3f} p95={:.3f} max={:.3f} present-return-gap-us median={:.3f} p95={:.3f} max={:.3f} max-vtx={} max-idx={} max-batches={} sample-bytes={}",
 				serial,outcome,count,skipped,snapshotBytes,backendFailures,cleared,copied,dropped,fast,rootsSuppressed,Micros(started,previousPresent)/1000,gap.median,gap.p95,gap.maximum,
 				presented.median,presented.p95,presented.maximum,maximumVertices,maximumIndices,maximumBatches,sizeof(samples));
 			static constexpr const char* names[]{"prepare","wait","writing","hold","dock","settle"};
@@ -303,7 +303,7 @@ namespace
 				{ ++frames; rootFrames+=samples[i].rootSuppressed; }
 				if (!frames) continue;
 				const auto cpu=Measure(&Sample::cpu,phase), backend=Measure(&Sample::backend,phase), present=Measure(&Sample::present,phase);
-				IDTLogger->info("[SettingEntryPerf] show={} phase={} frames={} solid-root-suppressed={} cpu-us median={:.3f} p95={:.3f} max={:.3f} backend-us median={:.3f} p95={:.3f} max={:.3f} Present-us median={:.3f} p95={:.3f} max={:.3f}",
+				Inkeys::Log::Info(Inkeys::Log::Module::Setting, "[SettingEntryPerf] show={} phase={} frames={} solid-root-suppressed={} cpu-us median={:.3f} p95={:.3f} max={:.3f} backend-us median={:.3f} p95={:.3f} max={:.3f} Present-us median={:.3f} p95={:.3f} max={:.3f}",
 					serial,names[phase],frames,rootFrames,cpu.median,cpu.p95,cpu.maximum,backend.median,backend.p95,backend.maximum,present.median,present.p95,present.maximum);
 			}
 		}
@@ -2395,6 +2395,8 @@ SettingSessionCoroutine RunSettingSession()
 		bool resetHomeScroll=false;
 		const auto desktopShortcutDirectory = GetDesktopShortcutDirectory();
 		Design::DesktopShortcutDraft desktopShortcutDraft, whiteboardShortcutDraft{ Inkeys::Business::DesktopShortcut::Kind::Whiteboard };
+		// 日志清理两行的“自定义”模式与输入文本跨帧保留；已保存值每帧从配置刷新。
+		Design::LogLimitDraft logRetentionDraft, logMaxSizeDraft;
 		auto initializeShortcut = [&](Design::DesktopShortcutDraft& draft)
 		{
 			using namespace Inkeys::Business::DesktopShortcut;
@@ -3399,6 +3401,11 @@ SettingSessionCoroutine RunSettingSession()
 					whiteboardShortcutDraft.create = Inkeys::config.Application.WhiteboardShortcut.CreateLnk;
 					draft.desktopShortcut = desktopShortcutDraft;
 					draft.whiteboardShortcut = whiteboardShortcutDraft;
+					draft.logThreshold = std::clamp(Inkeys::config.Application.Logging.Threshold.load(), 0, 4);
+					logRetentionDraft.value = (std::max)(0, Inkeys::config.Application.Logging.RetentionDays.load());
+					logMaxSizeDraft.value = (std::max)(0, Inkeys::config.Application.Logging.MaxSizeMB.load());
+					draft.logRetention = logRetentionDraft;
+					draft.logMaxSize = logMaxSizeDraft;
 					const auto events = Inkeys::UI::Setting::Design::RenderGeneral(draft, destination);
 					if (destination.section == Design::Section::DesktopShortcuts)
 					{
@@ -3594,6 +3601,37 @@ SettingSessionCoroutine RunSettingSession()
 						{
 							Inkeys::config.UI.Bar.RightClickClose = draft.rightClickClose;
 							QueueConfigWrite();
+						}
+					}
+					if (destination.section == Design::Section::LogsLog)
+					{
+						logRetentionDraft = std::move(draft.logRetention);
+						logMaxSizeDraft = std::move(draft.logMaxSize);
+						auto& logging = Inkeys::config.Application.Logging;
+						if (events.logThresholdChanged && logging.Threshold != draft.logThreshold)
+						{
+							// 等级立即生效，无需重启。
+							logging.Threshold = draft.logThreshold;
+							Inkeys::Log::SetThreshold(static_cast<Inkeys::Log::Threshold>(draft.logThreshold));
+							QueueConfigWrite();
+						}
+						if (events.logRetentionChanged || events.logMaxSizeChanged)
+						{
+							// 页面只在值合法且确有变化时发事件；清理投递到日志写线程，不在渲染线程遍历文件。
+							logging.RetentionDays = logRetentionDraft.value;
+							logging.MaxSizeMB = logMaxSizeDraft.value;
+							QueueConfigWrite();
+							Inkeys::Log::ApplyRetention(logRetentionDraft.value, logMaxSizeDraft.value);
+						}
+						if (events.openLogFolder)
+						{
+							// 目录可能被用户删除；先补建再交给业务线程打开。
+							const std::wstring logDirectory = Inkeys::Log::Directory();
+							if (!logDirectory.empty())
+							{
+								(void)CreateDirectoryW(logDirectory.c_str(), nullptr);
+								QueueShellExecute(logDirectory);
+							}
 						}
 					}
 					if (events.statusIndicatorChanged || std::ranges::any_of(events.statusIndicatorTypesChanged, std::identity{}))
@@ -5578,10 +5616,10 @@ namespace Inkeys::UI::Setting
 			unique_lock drainLock(settingDrainMutex);
 			settingDrainCondition.wait(drainLock, [] { return settingSessionDrained; });
 		}
-		else if (IDTLogger)
+		else
 		{
-			IDTLogger->error(
-				"[Setting] 渲染管线已停止，无法在线程内排空设置会话");
+			Inkeys::Log::Error(Inkeys::Log::Module::Setting,
+				"渲染管线已停止，无法在线程内排空设置会话");
 		}
 		settingBusinessQueue.Stop();
 	}

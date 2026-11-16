@@ -3,19 +3,16 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 
 namespace PptCOM
 {
-    // 只持有纯值与标准错误流；诊断不得触碰 Office，也不能依赖 ConsoleOutput.PptCOM 开关。
+    // 只持有纯值；经 ManagedLog 写入统一日志（Info，非调试通道）。诊断不得触碰 Office，也不能依赖 ConsoleOutput.PptCOM 开关。
     internal static class PptPerfTrace
     {
         private static readonly bool configured = ReadEnabled();
         private static readonly object outputGate = new object();
         private static readonly uint processId = GetCurrentProcessId();
-        private static TextWriter output;
-        private static bool outputOpened;
         private static long sequence;
         private static int testEnabled = -1;
         private static TextWriter testOutput;
@@ -123,22 +120,14 @@ namespace PptCOM
                     result, executing, completed, cancelled);
                 lock (outputGate)
                 {
-                    TextWriter writer = testEnabled >= 0 ? testOutput : GetOutput();
-                    if (writer != null) writer.WriteLine(line);
+                    if (testEnabled >= 0)
+                    {
+                        if (testOutput != null) testOutput.WriteLine(line);
+                    }
+                    else ManagedLog.Write(ManagedLog.LevelInfo, line);
                 }
             }
             catch { } // 输出故障不能覆盖业务异常、IErrorInfo 或中断 finally 释放。
-        }
-
-        private static TextWriter GetOutput()
-        {
-            if (!outputOpened)
-            {
-                outputOpened = true;
-                try { output = new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false)) { AutoFlush = true }; }
-                catch { output = null; }
-            }
-            return output;
         }
 
         // 测试只替换诊断出口，不替换真实 COM 访问或调度。

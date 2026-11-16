@@ -233,14 +233,14 @@ namespace Inkeys::UI::Bar
 			(keys.Clear.load() ? Keyboard::Flag(Keyboard::Command::Clear) : 0U) |
 			(keys.Freeze.load() ? Keyboard::Flag(Keyboard::Command::Freeze) : 0U));
 		const auto keyboardStatus = Keyboard::Start();
-		if (IDTLogger && (!keyboardStatus.hookInstalled ||
+		if ((!keyboardStatus.hookInstalled ||
 			((keyboardStatus.enabledMask & Keyboard::Flag(Keyboard::Command::ToggleAnnotation)) &&
 				!keyboardStatus.hotkeyRegistered)))
-			IDTLogger->warn("[KeyboardShortcuts] 输入服务状态: hook={}, hotkey={}, hookError={}, hotkeyError={}",
+			Inkeys::Log::Warn(Inkeys::Log::Module::Input, "快捷键输入服务状态: hook={}, hotkey={}, hookError={}, hotkeyError={}",
 				keyboardStatus.hookInstalled, keyboardStatus.hotkeyRegistered,
 				keyboardStatus.hookError, keyboardStatus.hotkeyError);
-		if (!Inkeys::Input::MouseHook::Start() && IDTLogger)
-			IDTLogger->warn("[MouseHook] 安装失败，全局滚轮和栏外点击暂不可用");
+		if (!Inkeys::Input::MouseHook::Start())
+			Inkeys::Log::Warn(Inkeys::Log::Module::Input, "鼠标钩子安装失败，全局滚轮和栏外点击暂不可用");
 		// Bar 只注册单帧回调，唯一渲染线程由 RenderPipeline 持有。
 		if (!barUISet.Rendering())
 		{

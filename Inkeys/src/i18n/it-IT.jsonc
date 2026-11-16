@@ -462,6 +462,47 @@
         }
       }
     },
+    "Logs":
+    {
+      "OutputSection": "Output dei registri",
+      "Level":
+      {
+        "N": "Livello di registrazione",
+        "E": "I registri sotto il livello scelto non vengono più scritti nel file. Effetto immediato; gli output diagnostici attivati non sono interessati.",
+        "Debug": "Debug",
+        "Info": "Info",
+        "Warn": "Avviso",
+        "Error": "Errore",
+        "Off": "Disattivato"
+      },
+      "Folder":
+      {
+        "N": "Apri cartella dei registri",
+        "E": "Apre in Esplora file la cartella Inkeys\\Logs che contiene i registri.",
+        "Button": "Apri"
+      },
+      "CleanSection": "Pulizia dei registri",
+      "Retention":
+      {
+        "N": "Periodo di pulizia automatica",
+        "E": "All’avvio e dopo aver modificato le impostazioni di pulizia, elimina i file di registro più vecchi del periodo scelto.",
+        "1d": "1 giorno",
+        "3d": "3 giorni",
+        "7d": "7 giorni",
+        "14d": "14 giorni",
+        "30d": "30 giorni",
+        "Never": "Mai",
+        "CustomLabel": "Giorni personalizzati (1-3650)"
+      },
+      "MaxSize":
+      {
+        "N": "Limite di dimensione dei registri",
+        "E": "Quando la cartella dei registri supera il limite, vengono eliminati prima i registri più vecchi. Il registro corrente non viene mai eliminato.",
+        "Unlimited": "Illimitato",
+        "CustomLabel": "Dimensione personalizzata in MB (1-102400)"
+      },
+      "Custom": "Personalizzato"
+    },
     "Version":
     {
       "N": "Versione software",
@@ -1043,32 +1084,32 @@
         "Haptics":
         {
           "N": "Diagnostica feedback aptico della penna",
-          "E": "Registra input della penna, richieste dei pulsanti ed esiti di invio al dispositivo aptico per diagnosticare l'assenza di vibrazione."
+          "E": "Scrive nel file di registro input della penna, richieste dei pulsanti e risultati di invio al dispositivo aptico per diagnosticare l’assenza di vibrazione."
         },
         "TouchArea":
         {
           "N": "Diagnostica input e gomma nella console",
-          "E": "Mostra nella console, a frequenza limitata, istantanee di EDID, risoluzione e DPI dello schermo, area di contatto, coordinate, tipo di dispositivo e dimensione della gomma."
+          "E": "Scrive nel file di registro istantanee limitate di EDID, risoluzione e DPI dello schermo, area di tocco, coordinate di input, tipo di dispositivo e dimensione della gomma."
         },
         "PptCOM":
         {
           "N": "Output console PptCOM",
-          "E": "Mostra la diagnostica PptCOM nella console."
+          "E": "Scrive la diagnostica di PptCOM nel file di registro."
         },
         "Draw3":
         {
           "N": "Output console Draw3",
-          "E": "Mostra informazioni sul dispositivo e sui driver Draw3 nella console."
+          "E": "Scrive le informazioni su dispositivo e driver di Draw3 nel file di registro."
         },
         "Cursor":
         {
           "N": "Diagnostica puntatore",
-          "E": "Mostra nella console la provenienza dell'input del puntatore e il risultato del rendering."
+          "E": "Scrive l’attribuzione dell’input del cursore e la sua resa nel file di registro."
         },
         "CanvasPan":
         {
           "N": "Diagnostica di spostamento e inerzia della lavagna",
-          "E": "Registra gli input di spostamento con mouse e tocco, la velocità, l’inerzia e i motivi di arresto per analizzare i problemi di movimento."
+          "E": "Scrive input di trascinamento con mouse e tocco, velocità, inerzia e motivi di arresto nel file di registro per analizzare problemi di movimento."
         }
       }
     },
@@ -1353,7 +1394,7 @@
         "Add": "Aggiungi stato casuale",
         "Remove": "Rimuovi uno stato"
       },
-      "ConsoleSection": "Output console",
+      "ConsoleSection": "Output del registro diagnostico",
       "CanvasInformation": "Informazioni di inizializzazione della tela",
       "DisplayInformation": "Schermi ed EDID"
     },

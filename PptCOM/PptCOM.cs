@@ -109,10 +109,21 @@ namespace PptCOM
         int EndSlideShowIfSession(long expectedShowSessionRevision);
     }
 
+    // 独立查询扩展：PptCOM 日志经原生回调写入 Inkeys 统一日志；不改动 IPptCOMServer / IPptCOMSessionState 的 vtable。
+    // 回调地址用 64 位整数传递：TlbExp 将 IntPtr 导出为 32 位 long，会截断 64 位进程的函数地址。
+    [ComVisible(true)]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("3B50033A-18B9-4A77-9FF0-962E4AD63521")]
+    public interface IPptCOMLogging
+    {
+        // 0 = 撤销注册
+        void SetLogCallback(long callback);
+    }
+
     [ComVisible(true)]
     [ClassInterface(ClassInterfaceType.None)]
     [Guid("C44270BE-9A52-400F-AD7C-ED42050A77D8")]
-    public class PptCOMServer : IPptCOMServer, IPptCOMSessionState
+    public class PptCOMServer : IPptCOMServer, IPptCOMSessionState, IPptCOMLogging
     {
         private dynamic pptApplication;
         private dynamic pptActivePresentation;
@@ -192,8 +203,7 @@ namespace PptCOM
         private static void TracePptOwnerDiagnostic(string message)
         {
             if (!pptOwnerDiagnosticsEnabled) return;
-            try { Console.WriteLine("[PptOwner] " + message); }
-            catch { }
+            ManagedLog.Channel(ManagedLog.LevelDebug, "[PptOwner] " + message);
         }
 
         private static double DiagnosticMilliseconds(long started)
@@ -237,27 +247,21 @@ namespace PptCOM
 
         public void SetConsoleOutputEnabled(bool enabled)
         {
-            // 托管 Console 独立开关，避免 Draw3 分配控制台后带出 PptCOM 日志。
+            // 仅设置 PptCOM 调试通道开关；输出经 IPptCOMLogging 注册的原生回调写入统一日志，不再重定向 Console。
             PptComDiagnostics.SetEnabled(enabled);
-            if (!enabled)
-            {
-                Console.SetOut(TextWriter.Null);
-                Console.SetError(TextWriter.Null);
-                return;
-            }
+        }
 
+        public void SetLogCallback(long callback)
+        {
+            ManagedLog.SetCallback(callback);
+            if (callback == 0 || !PptComDiagnostics.Enabled) return;
+            // 原生侧在 SetConsoleOutputEnabled 之后才注册回调；“已启用”事件在回调可用时补发。
             try
             {
-                Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
-                Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
                 var module = typeof(PptCOMServer).Module;
                 PptComDiagnostics.Event("enabled", "module=" + module.ModuleVersionId);
             }
-            catch
-            {
-                Console.SetOut(TextWriter.Null);
-                Console.SetError(TextWriter.Null);
-            }
+            catch { }
         }
 
         public string GetPresentationDescriptor()
@@ -542,7 +546,7 @@ namespace PptCOM
 
                 // 诊断输出失败也不能中断 COM 根引用的确定性清理。
                 using (PptPerfTrace.Begin("cleanup-message-before"))
-                    try { Console.WriteLine("try CLEAN"); } catch { }
+                    ManagedLog.Channel(ManagedLog.LevelDebug, "try CLEAN");
 
                 // owner 已停止旧请求；每个 root 只配平本模块持有的一次取得，不清空共享 RCW 计数。
                 using (PptPerfTrace.Begin("cleanup-release-window")) SafeRelease((object)pptSlideShowWindow);
@@ -574,7 +578,7 @@ namespace PptCOM
                 PptComDiagnostics.Summary(final ? "cleanup-final" : "cleanup-rebind");
 
                 using (PptPerfTrace.Begin("cleanup-message-after"))
-                    try { Console.WriteLine("CLEAN!"); } catch { }
+                    ManagedLog.Channel(ManagedLog.LevelDebug, "CLEAN!");
             }
         }
         private static bool IsBusyComErrorCode(int errorCode)
@@ -792,7 +796,7 @@ namespace PptCOM
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"  Process Name Check Failed: {ex.Message}");
+                    ManagedLog.Channel(ManagedLog.LevelWarn, $"  Process Name Check Failed: {ex.Message}");
                 }
 
                 return false;
@@ -934,11 +938,11 @@ namespace PptCOM
             }
             catch (Exception error)
             {
-                Console.WriteLine("[PptCOM] events=0 polling=1 hr=0x" + ComFailure.ErrorCode(error).ToString("X8"));
+                ManagedLog.Channel(ManagedLog.LevelWarn, "[PptCOM] events=0 polling=1 hr=0x" + ComFailure.ErrorCode(error).ToString("X8"));
             }
             finally
             {
-                Console.WriteLine("[PptCOM] events=" + (bindingEvents ? 1 : 0) +
+                ManagedLog.Channel(ManagedLog.LevelInfo, "[PptCOM] events=" + (bindingEvents ? 1 : 0) +
                     " polling=" + (forcePolling ? 1 : 0));
             }
         }
@@ -946,7 +950,7 @@ namespace PptCOM
         // 获取函数
         private static void TraceRotScan(string message)
         {
-            try { Console.WriteLine(message); } catch { } // 诊断失败不能让未转移的 best 失去释放路径。
+            ManagedLog.Channel(ManagedLog.LevelDebug, message); // 诊断失败不能让未转移的 best 失去释放路径。
         }
 
         private object GetAnyActivePowerPoint(object targetApp, out int bestPriority, out int targetPriority)
@@ -1479,7 +1483,7 @@ namespace PptCOM
                 bool busy = TryGetBusyComErrorCode(error, out code);
                 ObserveUnknown(stamp);
                 if (busy) presentationDescriptorRetryUtc = DateTime.UtcNow.AddMilliseconds(100);
-                Console.WriteLine("[PptCOM] show-observation=0 busy=" + (busy ? 1 : 0) +
+                ManagedLog.Channel(ManagedLog.LevelWarn, "[PptCOM] show-observation=0 busy=" + (busy ? 1 : 0) +
                     " hr=0x" + (busy ? code : unchecked((uint)ComFailure.ErrorCode(error))).ToString("X8"));
                 return true; // 失败只表明 Unknown，不能据此断言用户结束或丢弃可恢复 binding。
             }
@@ -1498,7 +1502,7 @@ namespace PptCOM
 
         public unsafe int PptComService()
         {
-            Console.WriteLine("PPT Monitor ReStarted");
+            ManagedLog.Channel(ManagedLog.LevelInfo, "PPT Monitor ReStarted");
             TraceComState("service.begin", "start");
             slideShowOwner.Start();
             forcePolling = true;
@@ -1553,7 +1557,7 @@ namespace PptCOM
             catch (Exception error)
             {
                 PptComDiagnostics.CallFailed(0, (object)pptApplication, "service", error);
-                Console.WriteLine("[PptCOM] owner-failed hr=0x" + ComFailure.ErrorCode(error).ToString("X8"));
+                ManagedLog.Channel(ManagedLog.LevelError, "[PptCOM] owner-failed hr=0x" + ComFailure.ErrorCode(error).ToString("X8"));
             }
             finally
             {
@@ -2007,25 +2011,25 @@ namespace PptCOM
         // Test
         private void DiagnoseComStatus()
         {
-            Console.WriteLine("============== COM 对象存活诊断开始 ==============");
+            ManagedLog.Channel(ManagedLog.LevelDebug, "============== COM 对象存活诊断开始 ==============");
 
             // 1. 检查 Application
             try
             {
                 if (pptApplication == null)
                 {
-                    Console.WriteLine("❌ pptApplication: NULL (空引用)");
+                    ManagedLog.Channel(ManagedLog.LevelDebug, "❌ pptApplication: NULL (空引用)");
                 }
                 else
                 {
                     // 尝试访问一个简单属性，如 Caption 或 Version
                     string temp = pptApplication.Caption;
-                    Console.WriteLine("✅ pptApplication: ALIVE (存活)");
+                    ManagedLog.Channel(ManagedLog.LevelDebug, "✅ pptApplication: ALIVE (存活)");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ pptApplication: DEAD (已失效) -> {ex.GetType().Name}");
+                ManagedLog.Channel(ManagedLog.LevelDebug, $"❌ pptApplication: DEAD (已失效) -> {ex.GetType().Name}");
             }
 
             // 2. 检查 ActivePresentation
@@ -2033,18 +2037,18 @@ namespace PptCOM
             {
                 if (pptActivePresentation == null)
                 {
-                    Console.WriteLine("❌ pptActivePresentation: NULL (空引用)");
+                    ManagedLog.Channel(ManagedLog.LevelDebug, "❌ pptActivePresentation: NULL (空引用)");
                 }
                 else
                 {
                     // 尝试访问 Name
                     string temp = pptActivePresentation.Name;
-                    Console.WriteLine("✅ pptActivePresentation: ALIVE (存活)");
+                    ManagedLog.Channel(ManagedLog.LevelDebug, "✅ pptActivePresentation: ALIVE (存活)");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ pptActivePresentation: DEAD (已失效) -> {ex.GetType().Name}");
+                ManagedLog.Channel(ManagedLog.LevelDebug, $"❌ pptActivePresentation: DEAD (已失效) -> {ex.GetType().Name}");
             }
 
             // 3. 检查 SlideShowWindow
@@ -2052,21 +2056,21 @@ namespace PptCOM
             {
                 if (pptSlideShowWindow == null)
                 {
-                    Console.WriteLine("⚠️ pptSlideShowWindow: NULL (当前无窗口)");
+                    ManagedLog.Channel(ManagedLog.LevelDebug, "⚠️ pptSlideShowWindow: NULL (当前无窗口)");
                 }
                 else
                 {
                     // 尝试访问 Height
                     int temp = pptSlideShowWindow.Active;
-                    Console.WriteLine("✅ pptSlideShowWindow: ALIVE (存活)");
+                    ManagedLog.Channel(ManagedLog.LevelDebug, "✅ pptSlideShowWindow: ALIVE (存活)");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ pptSlideShowWindow: DEAD (已失效) -> {ex.GetType().Name}");
+                ManagedLog.Channel(ManagedLog.LevelDebug, $"❌ pptSlideShowWindow: DEAD (已失效) -> {ex.GetType().Name}");
             }
 
-            Console.WriteLine("==================================================");
+            ManagedLog.Channel(ManagedLog.LevelDebug, "==================================================");
         }
     }
 }

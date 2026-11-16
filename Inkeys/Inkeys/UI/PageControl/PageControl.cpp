@@ -191,6 +191,8 @@ namespace Inkeys::UI::PageControl
 
 		void TraceDrag(const char* format, ...) noexcept
 		{
+			// 指针处理路径：Debug 档未开启时不格式化；只做非阻塞日志投递，不再同步写 stdout/调试器。
+			if (!Inkeys::Log::Enabled(Inkeys::Log::Level::Debug)) return;
 			char detail[768]{};
 			va_list arguments;
 			va_start(arguments, format);
@@ -198,10 +200,10 @@ namespace Inkeys::UI::PageControl
 				format, arguments);
 			va_end(arguments);
 			char line[896]{};
-			(void)sprintf_s(line, "[PageControlDrag][tid=%lu] %s\n",
-				static_cast<unsigned long>(GetCurrentThreadId()), detail);
-			(void)std::fputs(line, stdout);
-			OutputDebugStringA(line);
+			const int length = sprintf_s(line, "[PageControlDrag] %s", detail);
+			if (length > 0)
+				(void)Inkeys::Log::TryWrite(Inkeys::Log::Level::Debug, Inkeys::Log::Module::PageControl,
+					std::nullopt, std::string_view(line, static_cast<std::size_t>(length)));
 		}
 
 		constexpr std::array<Client, 4> Clients{
@@ -2205,7 +2207,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				"session=%llu publication=%llu direct=%llu device=%llu "
 				"monitor=(%ld,%ld,%ld,%ld) dpi=%.2f outset=%.2f limit=%u "
 				"target=(%ld,%ld,%ld,%ld) presentation=(%ld,%ld,%ld,%ld) "
-				"backing=(%ld,%ld) targetVisible=%d animated=%d hr=0x%08lX error=%lu\n",
+				"backing=(%ld,%ld) targetVisible=%d animated=%d hr=0x%08lX error=%lu",
 				recovered ? "recovered" : "retry", SurfaceName(index),
 				stage ? stage : "none",
 				static_cast<unsigned long long>(snapshot.ppt.layout.session),
@@ -2221,19 +2223,24 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				state.bounds.active ? 1 : 0,
 				static_cast<unsigned long>(hr),
 				static_cast<unsigned long>(error));
-			(void)std::fputs(line, stdout);
-			OutputDebugStringA(line);
+			// INKEYS_PAGECONTROL_PRESENT_TRACE 门控保留；渲染回调内只做非阻塞日志投递（Debug）。
+			const auto traceLine = [&line]() noexcept
+				{
+					(void)Inkeys::Log::TryWrite(Inkeys::Log::Level::Debug, Inkeys::Log::Module::PageControl,
+						std::nullopt, std::string_view(line, strnlen_s(line, sizeof(line))));
+				};
+			traceLine();
 			// 诊断也消费 owner 快照，不能在 render 回调中重新同步查询其它 HWND。
 			for (std::size_t item = 0; item < Roles.size(); ++item)
 			{
 				const auto native = Inkeys::Window::GetService().SurfaceSnapshot(Roles[item]);
 				if (!native) continue;
-				(void)sprintf_s(line, "[PageControlPresent] peer=%s hwnd=0x%llX generation=%llu known=%d visible=%d iconic=%d rect=(%ld,%ld,%ld,%ld) committed=%d\n",
+				(void)sprintf_s(line, "[PageControlPresent] peer=%s hwnd=0x%llX generation=%llu known=%d visible=%d iconic=%d rect=(%ld,%ld,%ld,%ld) committed=%d",
 					SurfaceName(item), static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(native->hwnd)),
 					static_cast<unsigned long long>(native->generation), native->known ? 1 : 0, native->visible ? 1 : 0, native->iconic ? 1 : 0,
 					native->bounds.left, native->bounds.top, native->bounds.right, native->bounds.bottom,
 					surfaces[item].committedPresentationReady ? 1 : 0);
-				(void)std::fputs(line, stdout); OutputDebugStringA(line);
+				traceLine();
 			}
 		}
 

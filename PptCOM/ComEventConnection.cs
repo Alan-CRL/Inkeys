@@ -215,10 +215,10 @@ namespace PptCOM
                     --inFlight;
                     if (!cleared) connections.Add(connection);
                 }
-                // 先归还失败 lease 的所有权；控制台不可写也不能让 CP/cookie 失主。
+                // 先归还失败 lease 的所有权；日志不可写也不能让 CP/cookie 失主。
                 if (!cleared)
                 {
-                    try { Console.WriteLine("[PptCOM] event-cleanup-pending=1 hr=0x" + connection.LastError.ToString("X8")); }
+                    try { ManagedLog.Channel(ManagedLog.LevelWarn, "[PptCOM] event-cleanup-pending=1 hr=0x" + connection.LastError.ToString("X8")); }
                     catch { }
                 }
             }

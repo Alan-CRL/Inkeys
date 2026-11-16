@@ -109,7 +109,7 @@ void FreezeFrameWindow()
 	const int freezeHeight = monitorHeight - 1;
 	if (!freeze_background.resize(monitor->pixelWidth, freezeHeight))
 	{
-		if (IDTLogger) IDTLogger->error("[定格线程][FreezeFrameWindow] 创建 DIB Surface 失败");
+		Inkeys::Log::Error(Inkeys::Log::Module::Freeze, "创建 DIB Surface 失败");
 		(void)Inkeys::Startup::ReportFailure(0xF003u);
 		return;
 	}

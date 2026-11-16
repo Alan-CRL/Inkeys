@@ -8,12 +8,41 @@
 #include <string_view>
 #include <type_traits>
 
+#include "../../Log/Log.h"
+
 namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 {
 	inline constexpr std::size_t RecordCapacity = 1024;
 	inline constexpr std::size_t TextCapacity = 4096;
 	enum class Stream : unsigned char { Output, Error };
 	enum class StopResult { Disabled, Stopped, IsolatedPending };
+	// 产品默认写入统一日志（Log）；只有测试入口显式以 StdStream 启动 Session 时才走原队列写标准流。
+	enum class Mode : unsigned char { Log, StdStream };
+	inline constexpr std::uint8_t NoChannel = 0xFF;
+	// 一条诊断的去向：标准流模式只使用 stream（测试协议字节不变）；日志模式使用等级、模块与调试通道。
+	// 只给 Stream 时：Error 映射 Warn、Output 映射 Debug；调试通道记录不受日志等级过滤。
+	struct Target
+	{
+		Stream stream = Stream::Output;
+		::Inkeys::Log::Level level = ::Inkeys::Log::Level::Debug;
+		::Inkeys::Log::Module module = ::Inkeys::Log::Module::Draw3;
+		std::uint8_t channel = NoChannel;
+		constexpr Target(Stream value = Stream::Output) noexcept
+			: stream(value), level(value == Stream::Error ? ::Inkeys::Log::Level::Warn : ::Inkeys::Log::Level::Debug) {}
+		constexpr Target(Stream value, ::Inkeys::Log::Level levelValue,
+			::Inkeys::Log::Module moduleValue = ::Inkeys::Log::Module::Draw3) noexcept
+			: stream(value), level(levelValue), module(moduleValue) {}
+		constexpr Target(Stream value, ::Inkeys::Log::Channel channelValue,
+			::Inkeys::Log::Module moduleValue = ::Inkeys::Log::Module::Draw3,
+			::Inkeys::Log::Level levelValue = ::Inkeys::Log::Level::Debug) noexcept
+			: stream(value), level(levelValue), module(moduleValue), channel(static_cast<std::uint8_t>(channelValue)) {}
+	};
+	// 常用的语义等级覆盖（Out*/Err* 表示标准流模式下仍写的原 stream）。
+	inline constexpr Target OutInfo{ Stream::Output, ::Inkeys::Log::Level::Info };
+	inline constexpr Target OutWarn{ Stream::Output, ::Inkeys::Log::Level::Warn };
+	inline constexpr Target OutError{ Stream::Output, ::Inkeys::Log::Level::Error };
+	inline constexpr Target ErrInfo{ Stream::Error, ::Inkeys::Log::Level::Info };
+	inline constexpr Target ErrError{ Stream::Error, ::Inkeys::Log::Level::Error };
 	// 诊断计数按无符号 64 位模数累计；不参与业务准入或持久化判断。
 	struct Statistics
 	{
@@ -26,10 +55,10 @@ namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 		bool writing = false;
 	};
 
-	bool Available(Stream stream = Stream::Output, bool mirror = false) noexcept;
-	void Write(Stream stream, const char* text, std::size_t length, bool mirror = false) noexcept;
-	void Text(Stream stream, const char* text, bool mirror = false) noexcept;
-	void Printf(Stream stream, const char* format, ...) noexcept;
+	bool Available(Target target = Stream::Output, bool mirror = false) noexcept;
+	void Write(Target target, const char* text, std::size_t length, bool mirror = false) noexcept;
+	void Text(Target target, const char* text, bool mirror = false) noexcept;
+	void Printf(Target target, const char* format, ...) noexcept;
 	void Wake() noexcept;
 
 	class Session final
@@ -39,7 +68,8 @@ namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 		~Session();
 		Session(const Session&) = delete;
 		Session& operator=(const Session&) = delete;
-		bool Start() noexcept;
+		// Log：不建队列，按日志服务是否在写文件返回；StdStream：仅测试入口使用，复制当前 stdout/stderr。
+		bool Start(Mode mode) noexcept;
 		StopResult Stop() noexcept;
 		Statistics Snapshot() const noexcept;
 	private:
@@ -54,7 +84,7 @@ namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 	class Line final
 	{
 	public:
-		explicit Line(Stream stream = Stream::Output, bool mirror = false) noexcept;
+		explicit Line(Target target = Stream::Output, bool mirror = false) noexcept;
 		~Line();
 		Line(const Line&) = delete;
 		Line& operator=(const Line&) = delete;
@@ -100,7 +130,7 @@ namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 		char text_[TextCapacity];
 		std::size_t length_ = 0;
 		unsigned long previousError_ = 0;
-		Stream stream_;
+		Target target_;
 		int base_ = 10;
 		bool mirror_ = false, enabled_ = false, truncated_ = false;
 	};

@@ -326,7 +326,7 @@ namespace
 				now - lastDropReportTick >= 1000)
 			{
 				// 饱和诊断仅在普通 owner 限频汇总，回调内不格式化或写日志。
-				if (IDTLogger) IDTLogger->warn("[KeyboardShortcuts] 快捷键队列饱和: inputDropped={}, ownerDropped={}",
+				Inkeys::Log::Warn(Inkeys::Log::Module::Input, "快捷键队列饱和: inputDropped={}, ownerDropped={}",
 					status.dropped, queueDropped);
 				reportedInputDrops = status.dropped;
 				reportedOwnerDrops = queueDropped;

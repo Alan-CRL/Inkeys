@@ -56,10 +56,12 @@ namespace PptCOM
             long id = Interlocked.Increment(ref sequence);
             try
             {
+                // PptCOM 调试通道（Debug）：经原生回调写入统一日志；出口异常只计数。
                 lock (outputGate)
-                    Console.WriteLine("[PptComLife] v=1 seq=" + id + " pid=" + processId +
+                    if (!ManagedLog.Channel(ManagedLog.LevelDebug, "[PptComLife] v=1 seq=" + id + " pid=" + processId +
                         " tid=" + GetCurrentThreadId() + " qpc=" + Stopwatch.GetTimestamp() +
-                        " event=" + kind + " " + detail);
+                        " event=" + kind + " " + detail))
+                        Interlocked.Increment(ref outputFailures);
             }
             catch { Interlocked.Increment(ref outputFailures); }
             return id;

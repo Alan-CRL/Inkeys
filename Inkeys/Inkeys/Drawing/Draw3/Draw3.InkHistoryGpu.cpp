@@ -22,6 +22,7 @@
 #include <dxgiformat.h>
 #include <windows.h>
 #include <wrl/client.h>
+#include "../../Log/Log.h"
 
 module Inkeys.Drawing.Draw3.ink_history_gpu;
 
@@ -160,7 +161,14 @@ namespace Inkeys::Drawing::Draw3
 			static bool reported = false;
 			if (reported) return;
 			reported = true;
-			::OutputDebugStringW(message);
+			// 只报一次的缓存失败：定长转 UTF-8 后非阻塞投递统一日志，不在绘制线程分配或等待。
+			char text[512]{};
+			const int length = message ? WideCharToMultiByte(CP_UTF8, 0, message, -1,
+				text, static_cast<int>(sizeof(text)), nullptr, nullptr) : 0;
+			std::size_t size = length > 1 ? static_cast<std::size_t>(length - 1) : 0;
+			while (size && (text[size - 1] == '\n' || text[size - 1] == '\r')) --size;
+			if (size) (void)Inkeys::Log::TryWrite(Inkeys::Log::Level::Warn, Inkeys::Log::Module::Draw3,
+				std::nullopt, std::string_view(text, size));
 		}
 	}
 

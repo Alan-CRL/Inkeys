@@ -399,7 +399,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!IsAvailable())
 				LogUnavailableOnce("no supported pen haptics API was found");
 			else if (HapticDiagnostics::Enabled())
-				DiagnosticOutput::Line() << "[PenHaptics] event=backend pen_device_api=" <<
+				DiagnosticOutput::Line(HapticDiagnostics::BackendTarget) << "[PenHaptics] event=backend pen_device_api=" <<
 					(penDeviceStatics ? "true" : "false") <<
 					" input_manager_api=" <<
 					(inputHapticsSupported ? "true" : "false") << std::endl;
@@ -485,7 +485,7 @@ namespace Inkeys::Drawing::Draw3
 			CachePointerController(controller.Get());
 			attachedPointerId = pointerId;
 			if (HapticDiagnostics::Enabled())
-				DiagnosticOutput::Line() << "[PenHaptics] event=backend attached pointer_id=" << pointerId << std::endl;
+				DiagnosticOutput::Line(HapticDiagnostics::BackendTarget) << "[PenHaptics] event=backend attached pointer_id=" << pointerId << std::endl;
 			return pointerController != nullptr;
 		}
 
@@ -507,7 +507,7 @@ namespace Inkeys::Drawing::Draw3
 			const bool pointerSent = SendPointerDiscrete(waveform, fallback, intensity);
 			const bool sent = pointerSent || SendInputManagerDiscrete(waveform, fallback, intensity);
 			if (HapticDiagnostics::Enabled())
-				DiagnosticOutput::Line() << "[PenHaptics] event=backend discrete waveform=0x" << std::hex << waveform
+				DiagnosticOutput::Line(HapticDiagnostics::BackendTarget) << "[PenHaptics] event=backend discrete waveform=0x" << std::hex << waveform
 					<< " fallback=0x" << fallback << std::dec
 					<< " sent=" << (sent ? "true" : "false")
 					<< " pointer_controller=" << (pointerController ? "true" : "false")
@@ -548,7 +548,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				hasPointerContinuousDebugState = false;
 				if (lastContinuousTickMs != 0)
-					DiagnosticOutput::Line() << "[PenHaptics] event=backend stop continuous elapsed_ms="
+					DiagnosticOutput::Line(HapticDiagnostics::BackendTarget) << "[PenHaptics] event=backend stop continuous elapsed_ms="
 						<< NowMilliseconds() - lastContinuousTickMs << std::endl;
 			}
 			lastContinuousTickMs = 0;
@@ -578,7 +578,7 @@ namespace Inkeys::Drawing::Draw3
 				now - lastDebugLogMs < kHapticDebugLogIntervalMs)
 				return;
 			lastDebugLogMs = now;
-			DiagnosticOutput::Line line;
+			DiagnosticOutput::Line line(HapticDiagnostics::BackendTarget);
 			line << "[PenHaptics] event=backend " << reason << " waveform=0x" << std::hex
 				<< waveform << " fallback=0x" << fallback;
 			if (result != S_OK)
@@ -600,7 +600,7 @@ namespace Inkeys::Drawing::Draw3
 			lastContinuousWaveform = waveform;
 			lastContinuousFallback = fallback;
 			lastContinuousDebugLogMs = now;
-			DiagnosticOutput::Line line;
+			DiagnosticOutput::Line line(HapticDiagnostics::BackendTarget);
 			line << "[PenHaptics] event=backend continuous waveform=0x" << std::hex << waveform
 				<< " fallback=0x" << fallback << std::dec
 				<< " sent=" << (sent ? "true" : "false")
@@ -652,7 +652,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			if (unavailableLogged || !HapticDiagnostics::Enabled()) return;
 			unavailableLogged = true;
-			DiagnosticOutput::Line() << "[PenHaptics] event=backend unavailable: " << reason << std::endl;
+			DiagnosticOutput::Line(HapticDiagnostics::BackendTarget) << "[PenHaptics] event=backend unavailable: " << reason << std::endl;
 		}
 
 		void CachePointerController(ISimpleHapticsController* controller) noexcept
@@ -696,7 +696,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const auto feedbackCount = std::count_if(pointerFeedback.begin(), pointerFeedback.end(),
 					[](const FeedbackEntry& entry) { return entry.feedback != nullptr; });
-				DiagnosticOutput::Line line;
+				DiagnosticOutput::Line line(HapticDiagnostics::BackendTarget);
 				line << "[PenHaptics] event=backend pointer controller feedback_count="
 					<< feedbackCount
 					<< " intensity=" << (pointerIntensitySupported ? "true" : "false")

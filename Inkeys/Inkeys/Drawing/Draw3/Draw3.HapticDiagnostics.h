@@ -10,6 +10,11 @@ namespace Inkeys::Drawing::Draw3::HapticDiagnostics
 {
 	inline std::atomic_bool enabled = false;
 	inline std::atomic<std::uint64_t> generation = 0;
+	// 笔触觉诊断受 Haptics 调试开关控制，写入日志 Haptics 通道；标准流模式仍分别写 stderr / stdout。
+	inline constexpr DiagnosticOutput::Target LogTarget{ DiagnosticOutput::Stream::Error,
+		::Inkeys::Log::Channel::Haptics, ::Inkeys::Log::Module::Haptics };
+	inline constexpr DiagnosticOutput::Target BackendTarget{ DiagnosticOutput::Stream::Output,
+		::Inkeys::Log::Channel::Haptics, ::Inkeys::Log::Module::Haptics };
 	inline bool Enabled() noexcept { return enabled.load(std::memory_order_relaxed); }
 	inline void SetEnabled(bool value) noexcept
 	{
@@ -35,13 +40,13 @@ namespace Inkeys::Drawing::Draw3::HapticDiagnostics
 			if (!active) return;
 			productMessageOutput = nullptr;
 			for (unsigned i = 0; i < count; ++i)
-				DiagnosticOutput::Write(DiagnosticOutput::Stream::Error, lines[i], lengths[i]);
+				DiagnosticOutput::Write(LogTarget, lines[i], lengths[i]);
 			if (dropped)
 			{
 				char line[128];
 				const int length = std::snprintf(line, sizeof(line),
 					"[PenHaptics] event=log_drop scope=product_message count=%u\n", dropped);
-				if (length > 0) DiagnosticOutput::Write(DiagnosticOutput::Stream::Error, line, static_cast<std::size_t>(length));
+				if (length > 0) DiagnosticOutput::Write(LogTarget, line, static_cast<std::size_t>(length));
 			}
 		}
 		void Append(const char* line, std::size_t length) noexcept
@@ -68,6 +73,6 @@ namespace Inkeys::Drawing::Draw3::HapticDiagnostics
 		if (count <= 0) return;
 		const auto length = static_cast<std::size_t>(count) < sizeof(line) ? count : sizeof(line) - 1;
 		if (productMessageOutput) productMessageOutput->Append(line, length);
-		else DiagnosticOutput::Write(DiagnosticOutput::Stream::Error, line, length);
+		else DiagnosticOutput::Write(LogTarget, line, length);
 	}
 }

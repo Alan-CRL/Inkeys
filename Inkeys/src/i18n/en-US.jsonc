@@ -462,6 +462,47 @@
         }
       }
     },
+    "Logs":
+    {
+      "OutputSection": "Log output",
+      "Level":
+      {
+        "N": "Log level",
+        "E": "Logs below the selected level are no longer written to the file. Takes effect immediately; enabled diagnostic outputs are not affected.",
+        "Debug": "Debug",
+        "Info": "Info",
+        "Warn": "Warning",
+        "Error": "Error",
+        "Off": "Off"
+      },
+      "Folder":
+      {
+        "N": "Open log folder",
+        "E": "Open the Inkeys\\Logs folder that stores the logs in File Explorer.",
+        "Button": "Open"
+      },
+      "CleanSection": "Log cleanup",
+      "Retention":
+      {
+        "N": "Automatic cleanup period",
+        "E": "At startup and after changing cleanup settings, delete log files older than the selected period.",
+        "1d": "1 day",
+        "3d": "3 days",
+        "7d": "7 days",
+        "14d": "14 days",
+        "30d": "30 days",
+        "Never": "Never",
+        "CustomLabel": "Custom days (1-3650)"
+      },
+      "MaxSize":
+      {
+        "N": "Log size limit",
+        "E": "When the log folder exceeds the limit, the oldest logs are deleted first. The current log is never deleted.",
+        "Unlimited": "Unlimited",
+        "CustomLabel": "Custom size in MB (1-102400)"
+      },
+      "Custom": "Custom"
+    },
     "Version":
     {
       "N": "Software Version",
@@ -1043,32 +1084,32 @@
         "Haptics":
         {
           "N": "Pen haptic feedback diagnostics",
-          "E": "Log pen input, button requests, and haptic device send results to help diagnose missing vibration."
+          "E": "Write pen input, button requests, and haptic device send results to the log file to help diagnose missing vibration."
         },
         "TouchArea":
         {
           "N": "Input and eraser diagnostics console output",
-          "E": "Output rate-limited snapshots of display EDID, resolution and DPI, touch area, input coordinates, device type, and eraser size."
+          "E": "Write rate-limited snapshots of display EDID, resolution and DPI, touch area, input coordinates, device type, and eraser size to the log file."
         },
         "PptCOM":
         {
           "N": "PptCOM console output",
-          "E": "Output PptCOM diagnostics to the console."
+          "E": "Write PptCOM diagnostics to the log file."
         },
         "Draw3":
         {
           "N": "Draw3 console output",
-          "E": "Output Draw3 device and driver information to the console."
+          "E": "Write Draw3 device and driver information to the log file."
         },
         "Cursor":
         {
           "N": "Cursor diagnostics",
-          "E": "Output cursor input ownership and rendered visuals to the console."
+          "E": "Write cursor input ownership and rendered visuals to the log file."
         },
         "CanvasPan":
         {
           "N": "Whiteboard pan and inertia diagnostics",
-          "E": "Log mouse and touch panning input, velocity, inertia, and stop reasons to investigate motion issues."
+          "E": "Write mouse and touch panning input, velocity, inertia, and stop reasons to the log file to investigate motion issues."
         }
       }
     },
@@ -1353,7 +1394,7 @@
         "Add": "Add random state",
         "Remove": "Remove one state"
       },
-      "ConsoleSection": "Console output",
+      "ConsoleSection": "Diagnostic log output",
       "CanvasInformation": "Canvas initialization information",
       "DisplayInformation": "Displays and EDID"
     },

@@ -9,6 +9,7 @@
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <windows.h>
+#include "../../Log/Log.h"
 
 module Inkeys.Drawing.Draw3.renderer;
 
@@ -26,8 +27,9 @@ namespace Inkeys::Drawing::Draw3
 			static bool reported = false;
 			if (reported) return;
 			reported = true;
-			::OutputDebugStringW(
-				L"[Draw3] 可信 L2 快照资源不可用，已回退到权威 tile 恢复。\n");
+			// 绘制线程只做非阻塞日志投递（源文件按 /utf-8 编译，窄字面量即 UTF-8）。
+			(void)Inkeys::Log::TryWrite(Inkeys::Log::Level::Warn, Inkeys::Log::Module::Draw3, std::nullopt,
+				"可信 L2 快照资源不可用，已回退到权威 tile 恢复。");
 		}
 
 		bool IsFinite(float value) noexcept

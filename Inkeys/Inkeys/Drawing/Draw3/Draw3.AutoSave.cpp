@@ -807,7 +807,7 @@ namespace Inkeys::Drawing::Draw3
 					if (index == relativeFileName.size()) fileName[index] = '\0';
 					else strcpy_s(fileName, sizeof(fileName), "<non-ascii>");
 				}
-				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+				DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
 					"[Draw3.AutoSave] action=commit request=%s result=failed "
 					"stage=%s path=desktop/%s/%s\n",
 					request.saveRequestId.c_str(), stage,
@@ -1190,7 +1190,7 @@ namespace Inkeys::Drawing::Draw3
 					continue;
 				}
 				if (!rootReady)
-					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+					DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
 						"[Draw3.AutoSave] action=commit request=%s result=failed "
 						"stage=root-copy\n", record->request.saveRequestId.c_str());
 				std::wstring committedPath;
@@ -1217,7 +1217,7 @@ namespace Inkeys::Drawing::Draw3
 					completedSnapshot = std::move(record->request.snapshot);
 					record->request.estimatedSnapshotBytes = 0;
 				}
-				DiagnosticOutput::Printf(committed ? DiagnosticOutput::Stream::Output : DiagnosticOutput::Stream::Error,
+				DiagnosticOutput::Printf(committed ? DiagnosticOutput::Target{ DiagnosticOutput::Stream::Output } : DiagnosticOutput::ErrError,
 					"[Draw3.AutoSave] action=commit request=%s trigger=%s result=%s\n",
 					record->request.saveRequestId.c_str(), TriggerName(record->request.trigger),
 					committed ? "committed" : "failed");

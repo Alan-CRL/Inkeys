@@ -462,6 +462,47 @@
         }
       }
     },
+    "Logs":
+    {
+      "OutputSection": "Günlük çıktısı",
+      "Level":
+      {
+        "N": "Günlük düzeyi",
+        "E": "Seçilen düzeyin altındaki günlükler artık dosyaya yazılmaz. Hemen etkili olur; etkinleştirilen tanılama çıktıları etkilenmez.",
+        "Debug": "Hata ayıklama",
+        "Info": "Bilgi",
+        "Warn": "Uyarı",
+        "Error": "Hata",
+        "Off": "Kapalı"
+      },
+      "Folder":
+      {
+        "N": "Günlük klasörünü aç",
+        "E": "Günlüklerin saklandığı Inkeys\\Logs klasörünü Dosya Gezgini'nde açar.",
+        "Button": "Aç"
+      },
+      "CleanSection": "Günlük temizliği",
+      "Retention":
+      {
+        "N": "Otomatik temizleme süresi",
+        "E": "Başlangıçta ve temizleme ayarları değiştirildikten sonra seçilen süreden eski günlük dosyalarını siler.",
+        "1d": "1 gün",
+        "3d": "3 gün",
+        "7d": "7 gün",
+        "14d": "14 gün",
+        "30d": "30 gün",
+        "Never": "Asla",
+        "CustomLabel": "Özel gün sayısı (1-3650)"
+      },
+      "MaxSize":
+      {
+        "N": "Günlük boyutu sınırı",
+        "E": "Günlük klasörü sınırı aştığında önce en eski günlükler silinir. Geçerli günlük asla silinmez.",
+        "Unlimited": "Sınırsız",
+        "CustomLabel": "Özel boyut, MB (1-102400)"
+      },
+      "Custom": "Özel"
+    },
     "Version":
     {
       "N": "Yazılım sürümü",
@@ -1043,32 +1084,32 @@
         "Haptics":
         {
           "N": "Kalem dokunsal geri bildirim tanılaması",
-          "E": "Titreşim eksikliğini tanılamak için kalem girdisini, düğme isteklerini ve dokunsal cihaza gönderim sonuçlarını kaydedin."
+          "E": "Kalem girişini, düğme isteklerini ve dokunsal cihaza gönderme sonuçlarını günlük dosyasına yazarak titreşim olmamasının nedenini bulmaya yardımcı olur."
         },
         "TouchArea":
         {
           "N": "Girdi ve silgi tanılama konsol çıktısı",
-          "E": "Ekran EDID, çözünürlük ve DPI, dokunma alanı, girdi koordinatları, cihaz türü ve silgi boyutunun hız sınırlamalı anlık görüntülerini yazdırın."
+          "E": "Ekran EDID'i, çözünürlük ve DPI, dokunma alanı, giriş koordinatları, cihaz türü ve silgi boyutunun sıklığı sınırlı anlık görüntülerini günlük dosyasına yazar."
         },
         "PptCOM":
         {
           "N": "PptCOM konsol çıktısı",
-          "E": "PptCOM tanılamasını konsola yazdırın."
+          "E": "PptCOM tanılamalarını günlük dosyasına yazar."
         },
         "Draw3":
         {
           "N": "Draw3 konsol çıktısı",
-          "E": "Draw3 cihaz ve sürücü bilgilerini konsola yazdırın."
+          "E": "Draw3 cihaz ve sürücü bilgilerini günlük dosyasına yazar."
         },
         "Cursor":
         {
           "N": "İmleç tanılaması",
-          "E": "İmleç girdisi sahipliğini ve çizilen görüntüyü konsola yazdırın."
+          "E": "İmleç girişinin sahipliğini ve çizim sonucunu günlük dosyasına yazar."
         },
         "CanvasPan":
         {
           "N": "Beyaz tahta kaydırma ve atalet tanılaması",
-          "E": "Hareket sorunlarını araştırmak için fare ve dokunma kaydırma girdilerini, hızı, ataleti ve durma nedenlerini kaydeder."
+          "E": "Fare ve dokunmatik kaydırma girişini, hızı, eylemsizliği ve durma nedenlerini günlük dosyasına yazarak hareket sorunlarını incelemeye yardımcı olur."
         }
       }
     },
@@ -1353,7 +1394,7 @@
         "Add": "Rastgele durum ekle",
         "Remove": "Bir durumu kaldır"
       },
-      "ConsoleSection": "Konsol çıktısı",
+      "ConsoleSection": "Tanılama günlüğü çıktısı",
       "CanvasInformation": "Tuval başlatma bilgisi",
       "DisplayInformation": "Ekranlar ve EDID"
     },

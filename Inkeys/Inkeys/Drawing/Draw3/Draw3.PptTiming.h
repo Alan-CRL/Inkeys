@@ -29,6 +29,8 @@ namespace Inkeys::Drawing::Draw3
 			static_cast<unsigned long long>(target),
 			static_cast<long long>(now.QuadPart),
 			static_cast<long long>(frequency.QuadPart));
-		DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, message, true);
+		// INKEYS_PPT_TIMING 门控的专项诊断：日志模式记 Debug（模块 Ppt），标准流模式仍写 stderr。
+		DiagnosticOutput::Text(DiagnosticOutput::Target{ DiagnosticOutput::Stream::Error,
+			::Inkeys::Log::Level::Debug, ::Inkeys::Log::Module::Ppt }, message, true);
 	}
 }

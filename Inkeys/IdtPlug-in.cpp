@@ -79,10 +79,11 @@ namespace
 	namespace PptPerf = Inkeys::Business::PptPerf;
 	void WritePptPerfEvent(const PptPerf::Event& value)
 	{
-		if (!IDTLogger) return;
+		// 等级未开启时不格式化。
+		if (!Inkeys::Log::Enabled(Inkeys::Log::Level::Info)) return;
 		char line[512]{};
 		const int count = PptPerf::Format(line, sizeof(line), value);
-		if (count) IDTLogger->info("{}", std::string_view(line, static_cast<std::size_t>(count)));
+		if (count) Inkeys::Log::Info(Inkeys::Log::Module::Ppt, "{}", std::string_view(line, static_cast<std::size_t>(count)));
 	}
 	PptPerf::Recorder& PptPerfRecorder() noexcept
 	{
@@ -159,8 +160,8 @@ namespace
 			wchar_t value[8]{};
 			return GetEnvironmentVariableW(L"INKEYS_PPT_TIMING", value, 8) > 0 && value[0] == L'1';
 		}();
-		if (enabled && IDTLogger)
-			IDTLogger->info("[PptNav] stage={} session={} epoch={} direction={}",
+		if (enabled)
+			Inkeys::Log::Info(Inkeys::Log::Module::Ppt, "[PptNav] stage={} session={} epoch={} direction={}",
 				stage, session, epoch, direction);
 	}
 
@@ -337,6 +338,75 @@ void ResetPptComSnapshot()
 	pptComGeneration.fetch_add(1, std::memory_order_release);
 }
 
+// C# PptCOM 日志回调：托管 ManagedLog 经 IPptCOMLogging 注册本函数，记录进入统一日志。
+// 与 PptCOM/ManagedLog.cs 共享的常量（两侧必须保持一致）：
+//   level ：0=Debug 1=Info 2=Warn 3=Error 4=Critical
+//   module：低 8 位为托管模块号（0=PptCOM）；0x100 位表示 PptCOM 调试通道记录（不受日志等级过滤）
+namespace
+{
+	constexpr int kManagedLogChannelFlag = 0x100;
+	// 2700 个 UTF-16 单元转 UTF-8 最多 8100 字节，可放入固定栈缓冲；更长的托管日志截断。
+	constexpr int kManagedLogMaxChars = 2700;
+}
+
+extern "C" void __stdcall PptComLogCallback(int level, int module, const wchar_t* text, int length) noexcept
+{
+	// 可能在任意托管线程（含 Office 回调线程）调用：只做转码与非阻塞投递，不重入 COM、不等待。
+	if (!text || length <= 0) return;
+	Inkeys::Log::Level mapped = Inkeys::Log::Level::Debug;
+	switch (level)
+	{
+	case 0: mapped = Inkeys::Log::Level::Debug; break;
+	case 1: mapped = Inkeys::Log::Level::Info; break;
+	case 2: mapped = Inkeys::Log::Level::Warn; break;
+	case 3: mapped = Inkeys::Log::Level::Error; break;
+	case 4: mapped = Inkeys::Log::Level::Critical; break;
+	default: return;
+	}
+	// 托管模块号（module 低 8 位）目前只有 0=PptCOM；未知模块号同样归入 PptCOM，不丢弃诊断。
+	const Inkeys::Log::Module mappedModule = Inkeys::Log::Module::PptCOM;
+	const std::optional<Inkeys::Log::Channel> channel = (module & kManagedLogChannelFlag) != 0
+		? std::optional<Inkeys::Log::Channel>(Inkeys::Log::Channel::PptCOM) : std::nullopt;
+	char utf8[8192];
+	const int bytes = WideCharToMultiByte(CP_UTF8, 0, text, (std::min)(length, kManagedLogMaxChars),
+		utf8, static_cast<int>(sizeof(utf8)), nullptr, nullptr);
+	if (bytes <= 0) return;
+	std::size_t size = static_cast<std::size_t>(bytes);
+	while (size && (utf8[size - 1] == '\n' || utf8[size - 1] == '\r')) --size;
+	if (size) (void)Inkeys::Log::TryWrite(mapped, mappedModule, channel, std::string_view(utf8, size));
+}
+
+namespace
+{
+	// 注册/撤销托管日志回调；查询扩展接口失败只记一条 Warn，不影响 PPT 联动。
+	void SetPptComLogCallback(const IPptCOMServerPtr& server, bool enable) noexcept
+	{
+		static std::atomic<bool> queryFailureLogged{ false };
+		if (!server) return;
+		try
+		{
+			IPptCOMLoggingPtr logging;
+			const HRESULT result = server->QueryInterface(__uuidof(IPptCOMLogging),
+				reinterpret_cast<void**>(&logging));
+			if (FAILED(result) || !logging)
+			{
+				if (enable && !queryFailureLogged.exchange(true))
+					Inkeys::Log::Warn(Inkeys::Log::Module::Ppt, "PptCOM logging interface unavailable hr=0x{:08X}",
+						static_cast<unsigned int>(result));
+				return;
+			}
+			// 回调地址按 64 位整数传递（托管侧 long），避免 IntPtr 在 TLB 中被导出为 32 位而截断。
+			(void)logging->SetLogCallback(enable
+				? static_cast<__int64>(reinterpret_cast<std::uintptr_t>(&PptComLogCallback)) : 0);
+		}
+		catch (...)
+		{
+			if (enable && !queryFailureLogged.exchange(true))
+				Inkeys::Log::Warn(Inkeys::Log::Module::Ppt, "PptCOM logging callback registration failed");
+		}
+	}
+}
+
 // -------------------------
 // UI 对象
 
@@ -354,6 +424,14 @@ map<wstring, bool> ppt_title_recond;
 
 wstring pptComVersion;
 wstring pptComExtraWarning;
+
+// _com_error 的 HRESULT 以真实 8 位十六进制显示（原写法只是在十进制数前拼接 0x）。
+static wstring FormatHresultHex(HRESULT hr)
+{
+	wchar_t text[16]{};
+	swprintf_s(text, L"%08X", static_cast<unsigned int>(hr));
+	return text;
+}
 
 // -------------------------
 // Ppt 状态
@@ -380,11 +458,19 @@ bool CheckPptCom()
 	catch (_com_error err)
 	{
 		pptComVersion = L"Error: 初始化异常1(C++) " + std::wstring(err.ErrorMessage()) +
-			L" (0x" + std::to_wstring(err.Error()) + L") " +
+			L" (0x" + FormatHresultHex(err.Error()) + L") " +
 			std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
 
 		return false;
 	}
+	// 开关之后立即注册托管日志回调；本函数失败返回前撤销，成功时由 GetPptState 在释放对象前撤销。
+	SetPptComLogCallback(pptCom, true);
+	struct LogCallbackScope
+	{
+		const IPptCOMServerPtr& server;
+		bool keep = false;
+		~LogCallbackScope() { if (!keep) SetPptComLogCallback(server, false); }
+	} logCallbackScope{ pptCom };
 
 	try
 	{
@@ -393,7 +479,7 @@ bool CheckPptCom()
 	catch (_com_error err)
 	{
 		pptComVersion = L"Error: 初始化异常2(C++) " + std::wstring(err.ErrorMessage()) +
-			L" (0x" + std::to_wstring(err.Error()) + L") " +
+			L" (0x" + FormatHresultHex(err.Error()) + L") " +
 			std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
 
 		return false;
@@ -419,7 +505,7 @@ bool CheckPptCom()
 	catch (_com_error err)
 	{
 		pptComVersion = L"Error: 初始化异常3(C++) " + std::wstring(err.ErrorMessage()) +
-			L" (0x" + std::to_wstring(err.Error()) + L") " +
+			L" (0x" + FormatHresultHex(err.Error()) + L") " +
 			std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
 
 		return false;
@@ -433,6 +519,7 @@ bool CheckPptCom()
 
 	pptComVersion = version;
 	pptComExtraWarning = extraWarning;
+	logCallbackScope.keep = true;
 	SetPptComSnapshot(pptCom);
 
 	return true;
@@ -539,11 +626,13 @@ void GetPptState()
 		catch (_com_error err)
 		{
 			pptComVersion = L"Error: 监测异常(C++) " + std::wstring(err.ErrorMessage()) +
-				L" (0x" + std::to_wstring(err.Error()) + L") " +
+				L" (0x" + FormatHresultHex(err.Error()) + L") " +
 				std::wstring((wchar_t*)err.Description() ? (wchar_t*)err.Description() : L"");
 		}
 
 		PptInfoState.TotalPage = PptInfoState.CurrentPage = -1;
+		// 释放本轮 PptCOM 对象前撤销托管日志回调（日志服务 FlushAndStop 在本线程 join 之后）。
+		SetPptComLogCallback(pptCom, false);
 		{
 			ShutdownTrace::Scope trace("ppt-service-snapshot-reset");
 			ResetPptComSnapshot();
@@ -714,7 +803,7 @@ namespace
 		const HWND target = reinterpret_cast<HWND>(request.session.showWindow);
 		(void)SetForegroundWindow(target);
 		const bool focused = GetForegroundWindow() == target;
-		if (!focused && IDTLogger) IDTLogger->debug("[PPT] foreground handoff denied session={}", request.session.localSession);
+		if (!focused) Inkeys::Log::Debug(Inkeys::Log::Module::Ppt, "foreground handoff denied session={}", request.session.localSession);
 		focusTrace.Result(focused ? "focused" : "denied");
 		return focused;
 	}
@@ -973,8 +1062,8 @@ void PptInfo()
 	{
 		if (lastIssue == issue) return;
 		lastIssue = std::move(issue);
-		if (!lastIssue.empty() && IDTLogger)
-			IDTLogger->warn("[PPT] session state unavailable: {}", lastIssue);
+		if (!lastIssue.empty())
+			Inkeys::Log::Warn(Inkeys::Log::Module::Ppt, "session state unavailable: {}", lastIssue);
 	};
 	auto TraceTrueExit = [](const char* reason, const PptSessionToken& session)
 	{
@@ -984,8 +1073,8 @@ void PptInfo()
 			return GetEnvironmentVariableW(L"INKEYS_PPT_EXIT_TRACE", value, 8) > 0 &&
 				value[0] == L'1';
 		}();
-		if (enabled && IDTLogger)
-			IDTLogger->info("[PptExitSurface] edge={} session={} service={} show={} binding={}",
+		if (enabled)
+			Inkeys::Log::Info(Inkeys::Log::Module::Ppt, "[PptExitSurface] edge={} session={} service={} show={} binding={}",
 				reason, session.localSession, session.serviceGeneration,
 				session.showSessionRevision, session.bindingRevision);
 	};
@@ -1285,14 +1374,14 @@ void PptInfo()
 			return GetEnvironmentVariableW(L"INKEYS_PPT_TIMING", value, ARRAYSIZE(value)) > 0
 				&& value[0] == L'1';
 		}();
-		if (tracePptGate && IDTLogger && (descriptorChanged || rawChanged))
+		if (tracePptGate && (descriptorChanged || rawChanged))
 		{
 			// 仅记录数值身份门，不把演示文稿路径或标题写入诊断。
 			DWORD showOwner = 0;
 			if (descriptor && descriptor->slideShowHwnd)
 				GetWindowThreadProcessId(reinterpret_cast<HWND>(
 					static_cast<std::uintptr_t>(descriptor->slideShowHwnd)), &showOwner);
-			IDTLogger->info(
+			Inkeys::Log::Info(Inkeys::Log::Module::Ppt,
 				"[PptGate] lifecycle={} pageStatus={} raw={}/{} descStatus={} desc={}/{} ids={} showOwner={} descPid={} sessionActive={} sessionId={} trustedTarget={} trustedPage={} trustedEnd={} control={} windowControl={} basic={} whiteboard={} hostRunning={}",
 				static_cast<int>(lifecycle), static_cast<int>(pageStatus), rawPage, rawTotal,
 				descriptor ? static_cast<int>(descriptor->status) : -1,
@@ -1342,10 +1431,10 @@ void PptInfo()
 		else if (sceneWorkspaceEpoch != 0 && session.active && trustedTarget)
 		{
 			const auto accepted = PublishPrimaryPresentationTarget(&*cachedTarget, sceneWorkspaceEpoch);
-			if (!accepted && tracePptGate && IDTLogger && (descriptorChanged || rawChanged))
+			if (!accepted && tracePptGate && (descriptorChanged || rawChanged))
 			{
 				const auto observedBridge = D3::ProductHost().ProductBridge().Snapshot();
-				IDTLogger->warn("[PptGate] publish_rejected host={} bridgeWorkspace={} valid={} keyZero={} sourceEmpty={}",
+				Inkeys::Log::Warn(Inkeys::Log::Module::Ppt, "[PptGate] publish_rejected host={} bridgeWorkspace={} valid={} keyZero={} sourceEmpty={}",
 					D3::ProductHost().Running(), static_cast<int>(observedBridge.workspace),
 					D3::Bridge::ValidPresentationPage(*cachedTarget),
 					cachedTarget->key.IsZero(), cachedTarget->sourceIdentity.empty());
@@ -1358,8 +1447,8 @@ void PptInfo()
 					D3::TracePptTiming("native_observed", session.localSession, *accepted, firstObservationQpc);
 					D3::TracePptTiming("descriptor_accepted", session.localSession, *accepted, descriptorAcceptanceQpc);
 					D3::TracePptTiming("target_published", session.localSession, *accepted);
-					if (tracePptGate && IDTLogger)
-						IDTLogger->info("[PptGate] publish_accepted session={} revision={} pageKind={} pageIndex={} slideId={}",
+					if (tracePptGate)
+						Inkeys::Log::Info(Inkeys::Log::Module::Ppt, "[PptGate] publish_accepted session={} revision={} pageKind={} pageIndex={} slideId={}",
 							session.localSession, *accepted,
 							static_cast<int>(cachedTarget->pageKind), cachedTarget->pageIndex,
 							cachedTarget->slideId.value_or(0));
@@ -1373,21 +1462,21 @@ void PptInfo()
 				}
 				(void)D3::SetProductPresentationInputSuspended(D3::Bridge::ReadyIdentityFor(*cachedTarget), false);
 				const auto ready = D3::ProductRuntimeSnapshot();
-				if (tracePptGate && IDTLogger)
+				if (tracePptGate)
 				{
 					const auto expected = D3::Bridge::ReadyIdentityFor(*cachedTarget);
 					if (ready.presentationReady && *ready.presentationReady == expected &&
 						loggedDocumentReadyRevision != *accepted)
 					{
 						loggedDocumentReadyRevision = *accepted;
-						IDTLogger->info("[PptGate] document_ready session={} revision={} presents={}",
+						Inkeys::Log::Info(Inkeys::Log::Module::Ppt, "[PptGate] document_ready session={} revision={} presents={}",
 							session.localSession, *accepted, ready.successfulPresentCount);
 					}
 					if (ready.presentationUiReady && *ready.presentationUiReady == expected &&
 						loggedUiReadyRevision != *accepted)
 					{
 						loggedUiReadyRevision = *accepted;
-						IDTLogger->info("[PptGate] page_ui_ready session={} revision={}",
+						Inkeys::Log::Info(Inkeys::Log::Module::Ppt, "[PptGate] page_ui_ready session={} revision={}",
 							session.localSession, *accepted);
 					}
 				}
@@ -1526,8 +1615,7 @@ void PPTLinkageMain()
 	else
 	{
 		(void)Inkeys::Startup::ReportFailure(0xF101u);
-		if (IDTLogger)
-			IDTLogger->error("[PPT 线程][PPTLinkageMain] UI3 四窗口客户端注册失败");
+		Inkeys::Log::Error(Inkeys::Log::Module::Ppt, "UI3 四窗口客户端注册失败");
 	}
 
 	thread(GetPptState).detach();
@@ -1619,7 +1707,7 @@ void PPTLinkageMain()
 		{
 			if (!request.session.guardedExitAvailable || !sessionApi)
 			{
-				if (IDTLogger) IDTLogger->warn("[PPT] confirmed exit unavailable: session capability missing");
+				Inkeys::Log::Warn(Inkeys::Log::Module::Ppt, "confirmed exit unavailable: session capability missing");
 				continue;
 			}
 			I18n::TextSnapshot localized;
@@ -1659,10 +1747,10 @@ void PPTLinkageMain()
 		}
 		catch (const _com_error& error)
 		{
-			if (IDTLogger) IDTLogger->warn("[PPT] exit failed: {}", static_cast<long>(error.Error()));
+			Inkeys::Log::Warn(Inkeys::Log::Module::Ppt, "exit failed: hr=0x{:08X}", static_cast<unsigned long>(error.Error()));
 		}
 		// 业务请求只发起退出；Selection 和窗口穿透由可信 EndSession 边沿统一收尾。
-		if (!exited && IDTLogger) IDTLogger->warn("[PPT] exit request was not accepted");
+		if (!exited) Inkeys::Log::Warn(Inkeys::Log::Module::Ppt, "exit request was not accepted");
 
 	}
 	ShutdownTrace::Scope shutdownTrace("ppt-linkage-shutdown");
@@ -1882,9 +1970,8 @@ void StartDesktopDrawpadBlocker()
 		if (!isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 		{
 			DdbWriteInteraction(true, false);
-			if (!LaunchVerifiedDesktopDrawpadBlocker(Inkeys::config.PlugIn.DesktopDrawpadBlocker.RunAsAdmin)
-				&& IDTLogger)
-				IDTLogger->error("[DesktopDrawpadBlocker] 最终 EXE 校验或启动失败");
+			if (!LaunchVerifiedDesktopDrawpadBlocker(Inkeys::config.PlugIn.DesktopDrawpadBlocker.RunAsAdmin))
+				Inkeys::Log::Error(Inkeys::Log::Module::Plugin, "DesktopDrawpadBlocker 最终 EXE 校验或启动失败");
 		}
 	}
 }
@@ -2026,7 +2113,7 @@ bool ShortcutAssistantClass::SetShortcut()
 	if (NamesCollide(appName, boardName))
 	{
 		boardPreset = Default; boardName = ResolveName(Default, boardCustom, whiteboardNames);
-		if (IDTLogger) IDTLogger->warn("[DesktopShortcut] 白板名称与应用程序名称冲突，回退缺省白板名称");
+		Inkeys::Log::Warn(Inkeys::Log::Module::Plugin, "桌面快捷方式：白板名称与应用程序名称冲突，回退缺省白板名称");
 	}
 	const bool appChanged = Inkeys::config.SetShortcutNamePreference(appPreset, appCustom);
 	const bool boardChanged = Inkeys::config.SetWhiteboardShortcutNamePreference(boardPreset, boardCustom);
@@ -2037,7 +2124,7 @@ bool ShortcutAssistantClass::SetShortcut()
 	if (!NamesCollide(appName, boardName))
 		succeeded = EnsureDesktopShortcut(*this, boardName, Inkeys::config.Application.WhiteboardShortcut.CorrectLnk,
 			Inkeys::config.Application.WhiteboardShortcut.CreateLnk, desktopDirectory, Kind::Whiteboard, target, files) && succeeded;
-	else if (IDTLogger) IDTLogger->warn("[DesktopShortcut] 缺省名称仍冲突，已跳过白板保障");
+	else Inkeys::Log::Warn(Inkeys::Log::Module::Plugin, "桌面快捷方式：缺省名称仍冲突，已跳过白板保障");
 	SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
 	return succeeded;
 }

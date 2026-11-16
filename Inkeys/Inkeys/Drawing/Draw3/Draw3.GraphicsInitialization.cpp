@@ -72,7 +72,11 @@ namespace Inkeys::Drawing::Draw3
 			const bool compatibilityRetry = std::strcmp(attempt, "fallback") == 0;
 			if (SUCCEEDED(result) && !StartupEnvironmentDiagnosticsEnabled() &&
 				driverType == D3D_DRIVER_TYPE_HARDWARE && !compatibilityRetry) return;
-			DiagnosticOutput::Line() << "[Draw3Diag][device] driver=" << DriverTypeName(driverType)
+			// 失败记 Warn；Draw3 调试开关开启时成功写入 Draw3 通道，否则（WARP/兼容重试成功）记 Info。
+			const DiagnosticOutput::Target target = FAILED(result) ? DiagnosticOutput::OutWarn
+				: StartupEnvironmentDiagnosticsEnabled() ? DiagnosticOutput::Target{ DiagnosticOutput::Stream::Output, Inkeys::Log::Channel::Draw3 }
+				: DiagnosticOutput::OutInfo;
+			DiagnosticOutput::Line(target) << "[Draw3Diag][device] driver=" << DriverTypeName(driverType)
 				<< " levels=" << levelSet << " attempt=" << attempt
 				<< " hresult=0x" << std::hex
 				<< static_cast<unsigned long>(result) << std::dec << std::endl;
@@ -118,7 +122,7 @@ namespace Inkeys::Drawing::Draw3
 			[&](D3D_DRIVER_TYPE driverType)
 			{
 				if (driverType == D3D_DRIVER_TYPE_WARP && enableHardwareAcceleration)
-					DiagnosticOutput::Line() << "Hardware device initialization failed. Falling back to WARP." << std::endl;
+					DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "Hardware device initialization failed. Falling back to WARP." << std::endl;
 				const HRESULT attemptResult = CreateCompatibleDevice(driverType, creationFlags,
 					resources.device, resources.featureLevel, resources.context);
 				if (driverType == D3D_DRIVER_TYPE_HARDWARE) hardwareResult = attemptResult;
@@ -127,7 +131,7 @@ namespace Inkeys::Drawing::Draw3
 		if (FAILED(result))
 		{
 			// 跳过硬件时不输出虚构的硬件尝试结果。
-			DiagnosticOutput::Line line;
+			DiagnosticOutput::Line line(DiagnosticOutput::OutError);
 			line << "[Draw3Diag][device] final=failed hardware_attempted=" << enableHardwareAcceleration;
 			if (enableHardwareAcceleration)
 				line << " hardware_hresult=0x" << std::hex << static_cast<unsigned long>(hardwareResult) << std::dec;
@@ -138,8 +142,8 @@ namespace Inkeys::Drawing::Draw3
 		if (StartupEnvironmentDiagnosticsEnabled())
 		{
 			// 恢复启动时的设备环境输出，但不影响始终保留的错误诊断。
-			DiagnosticOutput::Line() << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
-			DiagnosticOutput::Line() << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
+			DiagnosticOutput::Line(DiagnosticOutput::Target{ DiagnosticOutput::Stream::Output, Inkeys::Log::Channel::Draw3 }) << "Current D3D device: " << DriverTypeName(resources.driverType) << std::endl;
+			DiagnosticOutput::Line(DiagnosticOutput::Target{ DiagnosticOutput::Stream::Output, Inkeys::Log::Channel::Draw3 }) << "D3D feature level: " << FeatureLevelName(resources.featureLevel) << std::endl;
 		}
 
 		resources.dxgiDevice.Reset();

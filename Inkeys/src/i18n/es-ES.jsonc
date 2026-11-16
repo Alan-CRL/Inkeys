@@ -462,6 +462,47 @@
         }
       }
     },
+    "Logs":
+    {
+      "OutputSection": "Salida de registros",
+      "Level":
+      {
+        "N": "Nivel de registro",
+        "E": "Los registros por debajo del nivel elegido ya no se escriben en el archivo. Se aplica de inmediato; las salidas de diagnóstico activadas no se ven afectadas.",
+        "Debug": "Depuración",
+        "Info": "Información",
+        "Warn": "Advertencia",
+        "Error": "Error",
+        "Off": "Desactivado"
+      },
+      "Folder":
+      {
+        "N": "Abrir carpeta de registros",
+        "E": "Abre en el Explorador de archivos la carpeta Inkeys\\Logs donde se guardan los registros.",
+        "Button": "Abrir"
+      },
+      "CleanSection": "Limpieza de registros",
+      "Retention":
+      {
+        "N": "Periodo de limpieza automática",
+        "E": "Al iniciar y tras cambiar la configuración de limpieza, elimina los archivos de registro más antiguos que el periodo elegido.",
+        "1d": "1 día",
+        "3d": "3 días",
+        "7d": "7 días",
+        "14d": "14 días",
+        "30d": "30 días",
+        "Never": "Nunca",
+        "CustomLabel": "Días personalizados (1-3650)"
+      },
+      "MaxSize":
+      {
+        "N": "Límite de tamaño de registros",
+        "E": "Cuando la carpeta de registros supera el límite, se eliminan primero los registros más antiguos. El registro actual nunca se elimina.",
+        "Unlimited": "Sin límite",
+        "CustomLabel": "Tamaño personalizado en MB (1-102400)"
+      },
+      "Custom": "Personalizado"
+    },
     "Version":
     {
       "N": "Versión del software",
@@ -1043,32 +1084,32 @@
         "Haptics":
         {
           "N": "Diagnóstico háptico del lápiz",
-          "E": "Registrar la entrada del lápiz, las solicitudes de botones y los resultados de envío al dispositivo háptico para diagnosticar la falta de vibración."
+          "E": "Escribe en el archivo de registro la entrada del lápiz, las solicitudes de botón y los resultados de envío al dispositivo háptico para diagnosticar la falta de vibración."
         },
         "TouchArea":
         {
           "N": "Diagnóstico de entrada y borrador en consola",
-          "E": "Mostrar instantáneas con frecuencia limitada del EDID, la resolución y los DPI de la pantalla, el área de contacto, las coordenadas de entrada, el tipo de dispositivo y el tamaño del borrador."
+          "E": "Escribe en el archivo de registro instantáneas limitadas de EDID, resolución y DPI de la pantalla, área táctil, coordenadas de entrada, tipo de dispositivo y tamaño del borrador."
         },
         "PptCOM":
         {
           "N": "Salida de PptCOM en consola",
-          "E": "Mostrar el diagnóstico de PptCOM en la consola."
+          "E": "Escribe los diagnósticos de PptCOM en el archivo de registro."
         },
         "Draw3":
         {
           "N": "Salida de Draw3 en consola",
-          "E": "Mostrar información del dispositivo y controlador de Draw3 en la consola."
+          "E": "Escribe la información del dispositivo y del controlador de Draw3 en el archivo de registro."
         },
         "Cursor":
         {
           "N": "Diagnóstico del cursor",
-          "E": "Mostrar en la consola la propiedad de las entradas del cursor y su representación visual."
+          "E": "Escribe la asignación de entrada del cursor y su representación en el archivo de registro."
         },
         "CanvasPan":
         {
           "N": "Diagnóstico de desplazamiento e inercia de la pizarra",
-          "E": "Registra la entrada del ratón y táctil, la velocidad, la inercia y los motivos de detención para investigar problemas de movimiento."
+          "E": "Escribe la entrada de desplazamiento con ratón y táctil, la velocidad, la inercia y los motivos de parada en el archivo de registro para investigar problemas de movimiento."
         }
       }
     },
@@ -1353,7 +1394,7 @@
         "Add": "Añadir estado aleatorio",
         "Remove": "Eliminar un estado"
       },
-      "ConsoleSection": "Salida de consola",
+      "ConsoleSection": "Salida del registro de diagnóstico",
       "CanvasInformation": "Información de inicialización del lienzo",
       "DisplayInformation": "Pantallas y EDID"
     },

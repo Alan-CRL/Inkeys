@@ -1814,14 +1814,14 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (completion.operation == PresentationPersistenceOperation::Save &&
 					completion.status != PresentationPersistenceStatus::Committed)
-					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+					DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
 						"[Draw3.Presentation] action=save result=failed status=%s revision=%llu\n",
 						PersistenceStatusName(completion.status),
 						static_cast<unsigned long long>(completion.mutationRevision));
 				else if (completion.operation == PresentationPersistenceOperation::Load &&
 					completion.status != PresentationPersistenceStatus::Loaded &&
 					completion.status != PresentationPersistenceStatus::NotFound)
-					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+					DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
 						"[Draw3.Presentation] action=load result=failed status=%s\n",
 						PersistenceStatusName(completion.status));
 				PushCompletion(working);

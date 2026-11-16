@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 #include <windows.h>
+#include "../../Log/Log.h"
 
 #include "Draw3.SpeedEraser.h"
 #include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
@@ -138,7 +139,14 @@ namespace Inkeys::Drawing::Draw3
 				trace.decision,trace.status,trace.reason,trace.reason >= 0 && trace.reason < 12 ? reasons[trace.reason] : "not_called",completed.size(),stroke.tailRawCount,
 				trace.windowStart,trace.changedStart,d.output_points ? "computed" : "not_computed",d.max_displacement,d.reference_terminal_turn,d.candidate_terminal_turn,
 				d.window_attempts,d.repair_length,d.raw_hint_length,d.output_points,d.sampling_error,d.max_curve_turn,trace.visibility,trace.sampling);
-			OutputDebugStringA(line); write(line);
+			{
+				// INKEYS_DRAW3_TAIL_TRACE 门控保留：调试器镜像改为非阻塞 Debug 日志，独立 tail 文件不变。
+				std::size_t size = strnlen_s(line, sizeof(line));
+				while (size && (line[size - 1] == '\n' || line[size - 1] == '\r')) --size;
+				(void)Inkeys::Log::TryWrite(Inkeys::Log::Level::Debug, Inkeys::Log::Module::Draw3,
+					std::nullopt, std::string_view(line, size));
+			}
+			write(line);
 			std::snprintf(line, sizeof(line), "endpoint=%.9g,%.9g terminal=%d time=%.17g committed=%zu terminalFirst=%zu limits=model512,raw64,completed512,stored512,output2048\n",
 				stroke.terminalRawUp.x, stroke.terminalRawUp.y, stroke.terminalDisplayTime.has_value(), stroke.terminalDisplayTime.value_or(-1), stroke.committedIndex, stroke.terminalFirstPoint);
 			write(line);

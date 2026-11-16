@@ -462,6 +462,47 @@
         }
       }
     },
+    "Logs":
+    {
+      "OutputSection": "Sortie des journaux",
+      "Level":
+      {
+        "N": "Niveau de journalisation",
+        "E": "Les journaux inférieurs au niveau choisi ne sont plus écrits dans le fichier. Effet immédiat ; les sorties de diagnostic activées ne sont pas concernées.",
+        "Debug": "Débogage",
+        "Info": "Info",
+        "Warn": "Avertissement",
+        "Error": "Erreur",
+        "Off": "Désactivé"
+      },
+      "Folder":
+      {
+        "N": "Ouvrir le dossier des journaux",
+        "E": "Ouvre dans l’Explorateur de fichiers le dossier Inkeys\\Logs qui contient les journaux.",
+        "Button": "Ouvrir"
+      },
+      "CleanSection": "Nettoyage des journaux",
+      "Retention":
+      {
+        "N": "Durée de conservation",
+        "E": "Au démarrage et après modification des paramètres de nettoyage, supprime les fichiers journaux plus anciens que la durée choisie.",
+        "1d": "1 jour",
+        "3d": "3 jours",
+        "7d": "7 jours",
+        "14d": "14 jours",
+        "30d": "30 jours",
+        "Never": "Jamais",
+        "CustomLabel": "Nombre de jours personnalisé (1-3650)"
+      },
+      "MaxSize":
+      {
+        "N": "Taille maximale des journaux",
+        "E": "Lorsque le dossier des journaux dépasse la limite, les journaux les plus anciens sont supprimés en premier. Le journal actuel n’est jamais supprimé.",
+        "Unlimited": "Illimitée",
+        "CustomLabel": "Taille personnalisée en Mo (1-102400)"
+      },
+      "Custom": "Personnalisé"
+    },
     "Version":
     {
       "N": "Version du logiciel",
@@ -1043,32 +1084,32 @@
         "Haptics":
         {
           "N": "Diagnostic du retour haptique du stylo",
-          "E": "Journaliser les entrées du stylo, les demandes des boutons et les résultats d’envoi au périphérique haptique pour diagnostiquer l’absence de vibration."
+          "E": "Écrit les saisies du stylet, les demandes de bouton et les résultats d’envoi au périphérique haptique dans le fichier journal pour diagnostiquer l’absence de vibration."
         },
         "TouchArea":
         {
           "N": "Diagnostic des entrées et de la gomme dans la console",
-          "E": "Afficher à fréquence limitée des instantanés de l’EDID, de la résolution et du DPI de l’écran, de la surface tactile, des coordonnées d’entrée, du type d’appareil et de la taille de gomme."
+          "E": "Écrit dans le fichier journal des instantanés limités de l’EDID, de la résolution et du DPI de l’écran, de la surface tactile, des coordonnées d’entrée, du type de périphérique et de la taille de la gomme."
         },
         "PptCOM":
         {
           "N": "Sortie console PptCOM",
-          "E": "Afficher les diagnostics PptCOM dans la console."
+          "E": "Écrit les diagnostics PptCOM dans le fichier journal."
         },
         "Draw3":
         {
           "N": "Sortie console Draw3",
-          "E": "Afficher les informations de périphérique et de pilote Draw3 dans la console."
+          "E": "Écrit les informations sur le périphérique et le pilote Draw3 dans le fichier journal."
         },
         "Cursor":
         {
           "N": "Diagnostic du curseur",
-          "E": "Afficher la source des entrées du curseur et son rendu dans la console."
+          "E": "Écrit l’attribution des entrées du curseur et son rendu dans le fichier journal."
         },
         "CanvasPan":
         {
           "N": "Diagnostic du déplacement et de l’inertie du tableau",
-          "E": "Consigne les entrées de déplacement à la souris et au toucher, la vitesse, l’inertie et les motifs d’arrêt pour analyser les problèmes de mouvement."
+          "E": "Écrit les entrées de défilement à la souris et au toucher, la vitesse, l’inertie et les causes d’arrêt dans le fichier journal pour analyser les problèmes de mouvement."
         }
       }
     },
@@ -1353,7 +1394,7 @@
         "Add": "Ajouter un état aléatoire",
         "Remove": "Supprimer un état"
       },
-      "ConsoleSection": "Sortie console",
+      "ConsoleSection": "Sortie du journal de diagnostic",
       "CanvasInformation": "Informations d’initialisation du canevas",
       "DisplayInformation": "Écrans et EDID"
     },

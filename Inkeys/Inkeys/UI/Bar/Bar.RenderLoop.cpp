@@ -9358,8 +9358,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			if (state.barDeviceResourceFailureGeneration != epoch.generation)
 			{
 				state.barDeviceResourceFailureGeneration = epoch.generation;
-				if (IDTLogger) IDTLogger->error(
-					"[BarUISetClass::Rendering] 切换 UI3 epoch 后重建 Bar 资源失败, hr=0x{:08X}",
+				Inkeys::Log::TryFormat(Inkeys::Log::Level::Error, Inkeys::Log::Module::Bar,
+					"切换 UI3 epoch 后重建 Bar 资源失败, hr=0x{:08X}",
 					static_cast<unsigned int>(ensureDeviceResourcesHr));
 			}
 			if (Inkeys::UI::Bar::IsBarSharedDeviceLost(ensureDeviceResourcesHr))
@@ -12621,9 +12621,9 @@ bool presetButton = button.presetIndex >= 0;
 			if (state.finiteObserver)
 				(void)state.finiteObserver->CompleteAttempt(state.finiteCandidate, false, false, 0);
 			state.dirtyRegionTracker.RetainForRetry(true);
-			if (!state.barPresentFailureLogged && IDTLogger)
-				IDTLogger->error(
-					"[BarUISetClass::Rendering] 提交事务失败，将全脏重试: GetDC=0x{:08X}, ULW={}, ULWError={}, ReleaseDC=0x{:08X}, EndDraw=0x{:08X}",
+			if (!state.barPresentFailureLogged)
+				Inkeys::Log::Error(Inkeys::Log::Module::Bar,
+					"提交事务失败，将全脏重试: GetDC=0x{:08X}, ULW={}, ULWError={}, ReleaseDC=0x{:08X}, EndDraw=0x{:08X}",
 					static_cast<unsigned int>(getDcHr),
 					updateLayeredWindowSucceeded != FALSE,
 					static_cast<unsigned long>(updateLayeredWindowError),

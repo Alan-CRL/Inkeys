@@ -681,8 +681,8 @@ namespace Inkeys::UI::Bar
 			config.Experimental.Inkeys3.UI3.EdgeLighting.Enable = true;
 			config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic = true;
 			if (!config.Write()) return false;
-			// 需要日志调用者时使用无 sink 的本 child logger，不创建额外线程或外部文件。
-			IDTLogger = std::make_shared<spdlog::logger>("ui3_fixture");
+			// 夹具 child 的日志只接受调用、不缓存不写文件，不创建额外线程或外部文件。
+			Inkeys::Log::EnterDiscardMode();
 			SetAnimationOptions(config.Experimental.Inkeys3.UI3.Animation.Enable, config.Experimental.Inkeys3.UI3.Animation.SpeedRate);
 			SetEdgeLightingOptions(true, true);
 			SetDebugOptions(config.Experimental.Inkeys3.UI3.Debug.Enable, config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate);

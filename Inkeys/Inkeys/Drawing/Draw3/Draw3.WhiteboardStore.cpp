@@ -21,6 +21,9 @@ module Inkeys.Drawing.Draw3.whiteboard_store;
 import draw3.uink_page_file;
 namespace Inkeys::Drawing::Draw3
 {
+ // 白板存储的保留/失败诊断：日志模式记 Warn（模块 Whiteboard），标准流模式仍写 stderr。
+ constexpr DiagnosticOutput::Target kStoreDiagnostic{ DiagnosticOutput::Stream::Error,
+  ::Inkeys::Log::Level::Warn, ::Inkeys::Log::Module::Whiteboard };
  struct WhiteboardStore::Impl
  {
   std::mutex mutex;
@@ -58,7 +61,7 @@ namespace Inkeys::Drawing::Draw3
     {
      FILE_DISPOSITION_INFO disposition{}; disposition.DeleteFile = TRUE;
      if (!SetFileInformationByHandle(handle, FileDispositionInfo, &disposition, sizeof(disposition)))
-      DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Whiteboard.Store] temporary index cleanup failed; retaining owned file\n");
+      DiagnosticOutput::Text(kStoreDiagnostic, "[Whiteboard.Store] temporary index cleanup failed; retaining owned file\n");
     }
     CloseHandle(handle);
     return published;
@@ -110,12 +113,12 @@ namespace Inkeys::Drawing::Draw3
        }
        else if (saved.directory && !draw3::uink::TryRemoveOwnedUInkPageFile(*saved.directory))
         // 索引未发布的版本没有进入 current/backup；仅凭强 revision 清理本次孤儿版本。
-        DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Whiteboard.Store] uncommitted version cleanup failed; retaining owned file\n");
+        DiagnosticOutput::Text(kStoreDiagnostic, "[Whiteboard.Store] uncommitted version cleanup failed; retaining owned file\n");
       }
      }
     }
     catch (...) { result.success = false; }
-    if (!result.success) DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Whiteboard.Store] operation failed; retaining warm page\n");
+    if (!result.success) DiagnosticOutput::Text(kStoreDiagnostic, "[Whiteboard.Store] operation failed; retaining warm page\n");
     {
      std::scoped_lock lock(mutex);
      completed.push_back(std::move(result));

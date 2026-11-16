@@ -5,6 +5,7 @@ module;
 #include "../../../PptWaitingDiagnostics.h"
 
 #include <atomic>
+#include <cstdio>
 #include <cwchar>
 #include <mutex>
 #include <utility>
@@ -84,17 +85,21 @@ namespace Inkeys::UI::Ppt
 			const HWND owner = root ? GetWindow(root, GW_OWNER) : nullptr;
 			const LONG_PTR exStyle = root
 				? GetWindowLongPtrW(root, GWL_EXSTYLE) : 0;
-			wchar_t message[512]{};
-			swprintf_s(message,
-				L"[Ppt] topmost refresh %s: hwnd=0x%llX owner=0x%llX "
-				L"visible=%d topmost=%d bounds=(%ld,%ld,%ld,%ld)\n",
-				recovered ? L"recovered" : L"failed",
+			char message[512]{};
+			const int length = std::snprintf(message, sizeof(message),
+				"topmost refresh %s: hwnd=0x%llX owner=0x%llX "
+				"visible=%d topmost=%d bounds=(%ld,%ld,%ld,%ld)",
+				recovered ? "recovered" : "failed",
 				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(root)),
 				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(owner)),
 				root && IsWindowVisible(root) ? 1 : 0,
 				(exStyle & WS_EX_TOPMOST) != 0 ? 1 : 0,
 				bounds.left, bounds.top, bounds.right, bounds.bottom);
-			OutputDebugStringW(message);
+			// 失败/恢复边沿诊断：非阻塞投递统一日志，不在窗口/渲染路径等待。
+			if (length > 0)
+				(void)Inkeys::Log::TryWrite(recovered ? Inkeys::Log::Level::Info : Inkeys::Log::Level::Warn,
+					Inkeys::Log::Module::Ppt, std::nullopt,
+					std::string_view(message, (std::min)(static_cast<std::size_t>(length), sizeof(message) - 1)));
 		}
 
 		[[nodiscard]] LayoutConfiguration SnapshotLegacyConfiguration()

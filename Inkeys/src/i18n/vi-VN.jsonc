@@ -462,6 +462,47 @@
         }
       }
     },
+    "Logs":
+    {
+      "OutputSection": "Đầu ra nhật ký",
+      "Level":
+      {
+        "N": "Mức nhật ký",
+        "E": "Nhật ký dưới mức đã chọn sẽ không được ghi vào tệp. Có hiệu lực ngay; các đầu ra chẩn đoán đã bật không bị ảnh hưởng.",
+        "Debug": "Gỡ lỗi",
+        "Info": "Thông tin",
+        "Warn": "Cảnh báo",
+        "Error": "Lỗi",
+        "Off": "Tắt"
+      },
+      "Folder":
+      {
+        "N": "Mở thư mục nhật ký",
+        "E": "Mở thư mục Inkeys\\Logs chứa nhật ký trong File Explorer.",
+        "Button": "Mở"
+      },
+      "CleanSection": "Dọn dẹp nhật ký",
+      "Retention":
+      {
+        "N": "Thời hạn tự động dọn dẹp",
+        "E": "Khi khởi động và sau khi thay đổi cài đặt dọn dẹp, xóa các tệp nhật ký cũ hơn thời hạn đã chọn.",
+        "1d": "1 ngày",
+        "3d": "3 ngày",
+        "7d": "7 ngày",
+        "14d": "14 ngày",
+        "30d": "30 ngày",
+        "Never": "Không bao giờ",
+        "CustomLabel": "Số ngày tùy chỉnh (1-3650)"
+      },
+      "MaxSize":
+      {
+        "N": "Giới hạn dung lượng nhật ký",
+        "E": "Khi thư mục nhật ký vượt quá giới hạn, nhật ký cũ nhất sẽ bị xóa trước. Nhật ký hiện tại không bao giờ bị xóa.",
+        "Unlimited": "Không giới hạn",
+        "CustomLabel": "Dung lượng tùy chỉnh theo MB (1-102400)"
+      },
+      "Custom": "Tùy chỉnh"
+    },
     "Version":
     {
       "N": "Phiên bản phần mềm",
@@ -1043,32 +1084,32 @@
         "Haptics":
         {
           "N": "Chẩn đoán phản hồi xúc giác bút",
-          "E": "Ghi đầu vào bút, yêu cầu nút và kết quả gửi đến thiết bị xúc giác để tìm nguyên nhân không rung."
+          "E": "Ghi dữ liệu nhập của bút, yêu cầu nút và kết quả gửi tới thiết bị xúc giác vào tệp nhật ký để giúp tìm nguyên nhân không rung."
         },
         "TouchArea":
         {
           "N": "Đầu ra bảng điều khiển chẩn đoán đầu vào và tẩy",
-          "E": "Xuất ảnh chụp trạng thái có giới hạn tần suất về EDID, độ phân giải và DPI màn hình, diện tích chạm, tọa độ đầu vào, loại thiết bị và cỡ tẩy."
+          "E": "Ghi vào tệp nhật ký các ảnh chụp giới hạn tần suất về EDID, độ phân giải và DPI của màn hình, diện tích chạm, tọa độ nhập, loại thiết bị và kích thước tẩy."
         },
         "PptCOM":
         {
           "N": "Đầu ra bảng điều khiển PptCOM",
-          "E": "Xuất thông tin chẩn đoán PptCOM ra bảng điều khiển."
+          "E": "Ghi chẩn đoán PptCOM vào tệp nhật ký."
         },
         "Draw3":
         {
           "N": "Đầu ra bảng điều khiển Draw3",
-          "E": "Xuất thông tin thiết bị và trình điều khiển Draw3 ra bảng điều khiển."
+          "E": "Ghi thông tin thiết bị và trình điều khiển Draw3 vào tệp nhật ký."
         },
         "Cursor":
         {
           "N": "Chẩn đoán con trỏ",
-          "E": "Xuất nguồn sở hữu đầu vào con trỏ và hình ảnh đã vẽ ra bảng điều khiển."
+          "E": "Ghi quyền sở hữu đầu vào của con trỏ và kết quả vẽ thực tế vào tệp nhật ký."
         },
         "CanvasPan":
         {
           "N": "Chẩn đoán kéo và quán tính bảng trắng",
-          "E": "Ghi lại thao tác kéo bằng chuột và cảm ứng, vận tốc, quán tính và lý do dừng để tìm nguyên nhân của vấn đề chuyển động."
+          "E": "Ghi dữ liệu kéo bằng chuột và cảm ứng, tốc độ, quán tính và lý do dừng vào tệp nhật ký để điều tra vấn đề chuyển động."
         }
       }
     },
@@ -1353,7 +1394,7 @@
         "Add": "Thêm trạng thái ngẫu nhiên",
         "Remove": "Xóa một trạng thái"
       },
-      "ConsoleSection": "Đầu ra bảng điều khiển",
+      "ConsoleSection": "Đầu ra nhật ký chẩn đoán",
       "CanvasInformation": "Thông tin khởi tạo trang vẽ",
       "DisplayInformation": "Màn hình và EDID"
     },

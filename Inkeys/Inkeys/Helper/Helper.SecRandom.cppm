@@ -75,7 +75,7 @@ namespace
 
 	void LogFailure(const std::wstring& message)
 	{
-		if (IDTLogger) IDTLogger->warn("[SecRandom] {}", utf16ToUtf8(message));
+		Inkeys::Log::Warn(Inkeys::Log::Module::Main, "安全随机数: {}", utf16ToUtf8(message));
 	}
 
 	void AssignError(std::wstring* errorMessage, const std::wstring& message, bool log = true)

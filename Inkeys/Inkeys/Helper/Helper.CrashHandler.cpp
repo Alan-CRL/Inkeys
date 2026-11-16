@@ -612,6 +612,8 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 	}
 
 	OutputDebugStringW(L"--- CrashHandler: 处理结束 ---\n");
+	// dump/report 已写完；在报告截止保护内有界排空日志缓冲（最多约 500ms，失败即放弃）。
+	Inkeys::Log::EmergencyFlush();
 	}
 	else OutputDebugStringW(L"CrashHandler: 报告截止保护未建立，跳过可能无界的 dump/report。\n");
 	// 用户确认框可以等待用户选择；报告阶段的自杀时钟必须先撤销。

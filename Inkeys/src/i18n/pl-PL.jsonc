@@ -462,6 +462,47 @@
         }
       }
     },
+    "Logs":
+    {
+      "OutputSection": "Zapis dzienników",
+      "Level":
+      {
+        "N": "Poziom dziennika",
+        "E": "Wpisy poniżej wybranego poziomu nie są już zapisywane do pliku. Działa natychmiast; włączone dane diagnostyczne nie są objęte tym ustawieniem.",
+        "Debug": "Debugowanie",
+        "Info": "Informacje",
+        "Warn": "Ostrzeżenie",
+        "Error": "Błąd",
+        "Off": "Wyłączone"
+      },
+      "Folder":
+      {
+        "N": "Otwórz folder dzienników",
+        "E": "Otwiera w Eksploratorze plików folder Inkeys\\Logs, w którym przechowywane są dzienniki.",
+        "Button": "Otwórz"
+      },
+      "CleanSection": "Czyszczenie dzienników",
+      "Retention":
+      {
+        "N": "Okres automatycznego czyszczenia",
+        "E": "Przy uruchomieniu i po zmianie ustawień czyszczenia usuwa pliki dzienników starsze niż wybrany okres.",
+        "1d": "1 dzień",
+        "3d": "3 dni",
+        "7d": "7 dni",
+        "14d": "14 dni",
+        "30d": "30 dni",
+        "Never": "Nigdy",
+        "CustomLabel": "Własna liczba dni (1-3650)"
+      },
+      "MaxSize":
+      {
+        "N": "Limit rozmiaru dzienników",
+        "E": "Gdy folder dzienników przekroczy limit, najpierw usuwane są najstarsze dzienniki. Bieżący dziennik nigdy nie jest usuwany.",
+        "Unlimited": "Bez limitu",
+        "CustomLabel": "Własny rozmiar w MB (1-102400)"
+      },
+      "Custom": "Własne"
+    },
     "Version":
     {
       "N": "Wersja programu",
@@ -1043,32 +1084,32 @@
         "Haptics":
         {
           "N": "Diagnostyka wibracji pióra",
-          "E": "Rejestruj wejście pióra, żądania przycisków i wyniki wysyłania do urządzenia haptycznego, aby ustalić przyczynę braku wibracji."
+          "E": "Zapisuje do pliku dziennika dane wejściowe pióra, żądania przycisków i wyniki wysyłania do urządzenia haptycznego, aby pomóc ustalić brak wibracji."
         },
         "TouchArea":
         {
           "N": "Diagnostyka wejścia i gumki w konsoli",
-          "E": "Wyświetlaj w konsoli migawki z ograniczoną częstotliwością: EDID ekranu, rozdzielczość i DPI, powierzchnię dotyku, współrzędne, typ urządzenia i rozmiar gumki."
+          "E": "Zapisuje do pliku dziennika ograniczone migawki EDID, rozdzielczości i DPI ekranu, obszaru dotyku, współrzędnych wejścia, typu urządzenia i rozmiaru gumki."
         },
         "PptCOM":
         {
           "N": "Wyjście konsoli PptCOM",
-          "E": "Wyświetlaj diagnostykę PptCOM w konsoli."
+          "E": "Zapisuje diagnostykę PptCOM do pliku dziennika."
         },
         "Draw3":
         {
           "N": "Wyjście konsoli Draw3",
-          "E": "Wyświetlaj informacje o urządzeniu i sterownikach Draw3 w konsoli."
+          "E": "Zapisuje informacje o urządzeniu i sterowniku Draw3 do pliku dziennika."
         },
         "Cursor":
         {
           "N": "Diagnostyka kursora",
-          "E": "Wyświetlaj w konsoli źródło wejścia kursora i rzeczywisty wynik renderowania."
+          "E": "Zapisuje przypisanie wejścia kursora i jego renderowanie do pliku dziennika."
         },
         "CanvasPan":
         {
           "N": "Diagnostyka przesuwania i bezwładności tablicy",
-          "E": "Rejestruje przesuwanie myszą i dotykiem, prędkość, bezwładność oraz przyczyny zatrzymania, aby zbadać problemy z ruchem."
+          "E": "Zapisuje do pliku dziennika dane przesuwania myszą i dotykiem, prędkość, bezwładność i przyczyny zatrzymania, aby badać problemy z ruchem."
         }
       }
     },
@@ -1353,7 +1394,7 @@
         "Add": "Dodaj losowy stan",
         "Remove": "Usuń jeden stan"
       },
-      "ConsoleSection": "Wyjście konsoli",
+      "ConsoleSection": "Dziennik diagnostyczny",
       "CanvasInformation": "Informacje o inicjalizacji płótna",
       "DisplayInformation": "Ekrany i EDID"
     },

@@ -488,7 +488,7 @@ namespace Inkeys::Drawing::Draw3
 			InkGuid created(bytes);
 			if (created.IsZero())
 			{
-				DiagnosticOutput::Line() << "CoCreateGuid returned a nil ink document GUID." << std::endl;
+				DiagnosticOutput::Line(DiagnosticOutput::OutError) << "CoCreateGuid returned a nil ink document GUID." << std::endl;
 				return false;
 			}
 			output = created;
@@ -502,13 +502,13 @@ namespace Inkeys::Drawing::Draw3
 			InkPage page(pageGuid);
 			if (!page.GetOrCreateCanvas(kDefaultDeviceKey))
 			{
-				DiagnosticOutput::Line() << "Failed to create the default ink canvas for a new page." << std::endl;
+				DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Failed to create the default ink canvas for a new page." << std::endl;
 				return std::nullopt;
 			}
 			const std::optional<size_t> pageIndex = document.AppendPage(std::move(page));
 			if (!pageIndex)
 			{
-				DiagnosticOutput::Line() << "Failed to append a unique ink document page." << std::endl;
+				DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Failed to append a unique ink document page." << std::endl;
 				return std::nullopt;
 			}
 			return pageIndex;
@@ -695,7 +695,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			catch (const std::exception&)
 			{
-				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.ClearRedo] result=failed reason=cpu_snapshot\n");
+				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.ClearRedo] result=failed reason=cpu_snapshot\n");
 				return {};
 			}
 		}
@@ -1664,7 +1664,7 @@ namespace Inkeys::Drawing::Draw3
 			try { capture(); }
 			catch (...)
 			{
-				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=exit_snapshot result=failed reason=exception\n");
+				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=exit_snapshot result=failed reason=exception\n");
 			}
 			acknowledge();
 		}
@@ -1908,7 +1908,7 @@ namespace Inkeys::Drawing::Draw3
 					if (!item.visible) continue;
 					if (item.strokeIndex >= strokes.size())
 					{
-						DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=capture result=failed reason=history_mismatch\n");
+						DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=capture result=failed reason=history_mismatch\n");
 						return false;
 					}
 					const InkStroke& stroke = strokes[item.strokeIndex];
@@ -1944,7 +1944,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			catch (...)
 			{
-				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=capture result=failed reason=exception\n");
+				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=capture result=failed reason=exception\n");
 				return false;
 			}
 		}
@@ -2068,7 +2068,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			catch (...)
 			{
-				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=capture result=failed\n");
+				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.Presentation] action=capture result=failed\n");
 				return std::nullopt;
 			}
 		}
@@ -2331,7 +2331,7 @@ namespace Inkeys::Drawing::Draw3
 			catch (...)
 			{
 				if (targetCopyFailed) *targetCopyFailed = true;
-				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=load_install result=failed reason=target_copy\n");
+				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.Presentation] action=load_install result=failed reason=target_copy\n");
 				return false;
 			}
 			// 目标深拷贝可能分配；先准备成功，以下同槽转移均保证不抛异常。
@@ -15482,7 +15482,7 @@ namespace Inkeys::Drawing::Draw3
 		if (!renderer_.Resize(presentation_.SwapChain(), requestedSize.width, requestedSize.height)) // 先重建所有尺寸相关 D3D 资源。
 		{
 			if (metricsState_) metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
-			DiagnosticOutput::Line() << "Failed to resize D3D resources to " << requestedSize.width << "x" << requestedSize.height << std::endl;
+			DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Failed to resize D3D resources to " << requestedSize.width << "x" << requestedSize.height << std::endl;
 			presentation_.MarkRuntimeFailure();
 			graphicsRecoveryPending_ = true;
 			return false;
@@ -15490,7 +15490,7 @@ namespace Inkeys::Drawing::Draw3
 		if (!presentation_.Resize(requestedSize.width, requestedSize.height)) // 再通知当前透明呈现器更新外部资源。
 		{
 			if (metricsState_) metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
-			DiagnosticOutput::Line() << "Failed to resize transparent presenter to " << requestedSize.width << "x" << requestedSize.height << std::endl;
+			DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Failed to resize transparent presenter to " << requestedSize.width << "x" << requestedSize.height << std::endl;
 			graphicsRecoveryPending_ = presentation_.RecoveryPending();
 			return false;
 		}
@@ -16075,7 +16075,7 @@ namespace Inkeys::Drawing::Draw3
 		if (!historyGpuCache.Initialize(
 			renderer_, appliedUndoPolicy, appliedCompositionPolicy))
 		{
-			DiagnosticOutput::Line() << "[InkHistory] GPU cache unavailable; history restore may fail."
+			DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "[InkHistory] GPU cache unavailable; history restore may fail."
 				<< std::endl;
 		}
 		std::deque<CompositionMaintenanceItem> compositionMaintenance;
@@ -16093,7 +16093,7 @@ namespace Inkeys::Drawing::Draw3
 		if constexpr (!kInterruptedStrokeReconnectManualTestModeEnabled)
 			effectiveInvertedPenEraserEnabled =
 				invertedPenEraserEnabled_.load(std::memory_order_acquire);
-		DiagnosticOutput::Line() << "[StrokeReconnect] enabled=" <<
+		DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "[StrokeReconnect] enabled=" <<
 			(GetInterruptedStrokeReconnectEnabled() ? "true" : "false") <<
 			" window_ms=" << kInterruptedStrokeReconnectWindowSeconds * 1000.0 <<
 			" prediction_endpoint_base_px=" <<
@@ -16146,7 +16146,7 @@ namespace Inkeys::Drawing::Draw3
 			if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
 				metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Reset(strokeModelParams); }); !status.ok())
 			{
-				DiagnosticOutput::Line() << "Failed to preheat stroke model: " << status.message() << std::endl;
+				DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Failed to preheat stroke model: " << status.message() << std::endl;
 				return;
 			}
 			strokePool.push_back(std::move(runtime)); // 首批模型和 predictor 在接收 Down 前完成分配。
@@ -16301,7 +16301,7 @@ namespace Inkeys::Drawing::Draw3
 				const WindowSize size = window_.Size();
 				laserResourcesReady = renderer_.EnsureLaserResources(size.width, size.height);
 				if (laserResourcesReady) renderer_.EnsureLaserIncrementalCoverageResources();
-				else DiagnosticOutput::Line() << "[Laser] resources unavailable until tool re-entry or graphics reset." << std::endl;
+				else DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "[Laser] resources unavailable until tool re-entry or graphics reset." << std::endl;
 			}
 			return laserResourcesReady;
 		};
@@ -16859,7 +16859,7 @@ namespace Inkeys::Drawing::Draw3
 				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
 					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Reset(strokeModelParams); }); !status.ok())
 				{
-					DiagnosticOutput::Line() << "Failed to initialize expanded stroke model: " << status.message() << std::endl;
+					DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Failed to initialize expanded stroke model: " << status.message() << std::endl;
 					return nullptr;
 				}
 				runtime->inUse = true;
@@ -17421,7 +17421,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 						if (reconnectRuntime->stroke.widthMode == StrokeWidthMode::SpeedEraser)
 							reconnectRuntime->speedEraserOc = reconnectOcBefore;
-						DiagnosticOutput::Line() << "Failed to continue interrupted stroke: " << status.message() << std::endl;
+						DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Failed to continue interrupted stroke: " << status.message() << std::endl;
 					}
 				}
 
@@ -17590,7 +17590,7 @@ namespace Inkeys::Drawing::Draw3
 				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 0,
 					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return runtime->stroke.modeler.Reset(modelParams); }); !status.ok())
 				{
-					DiagnosticOutput::Line() << "Error: " << status.message() << std::endl;
+					DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Error: " << status.message() << std::endl;
 					abandonRuntime();
 					return false;
 				}
@@ -17640,7 +17640,7 @@ namespace Inkeys::Drawing::Draw3
 				if (absl::Status status = MetricsModelCall(metricsState_ ? metricsState_->CurrentCosts() : nullptr, 1,
 					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return stroke.modeler.Update(downInput, stroke.modeledResults); }); !status.ok())
 				{
-					DiagnosticOutput::Line() << "Error: " << status.message() << std::endl;
+					DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Error: " << status.message() << std::endl;
 					abandonRuntime();
 					return false;
 				}
@@ -17859,7 +17859,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 				else
 				{
-					DiagnosticOutput::Line() << "Error: " << status.message() << std::endl;
+					DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Error: " << status.message() << std::endl;
 					if (traceUp)
 					{
 						runtime.stroke.tailInputDiagnostic.upStatus = static_cast<int32_t>(status.code());
@@ -18101,7 +18101,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 				else
 				{
-					DiagnosticOutput::Line() << "Error: " << status.message() << std::endl;
+					DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Error: " << status.message() << std::endl;
 					if (traceUp)
 					{
 						runtime.stroke.tailInputDiagnostic.upStatus = static_cast<int32_t>(status.code());
@@ -19194,7 +19194,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (*pageIndex + 1 != pageRuntimeStates.size())
 			{
-				DiagnosticOutput::Line() << "[InkHistory] page/runtime index mismatch." << std::endl;
+				DiagnosticOutput::Line(DiagnosticOutput::OutError) << "[InkHistory] page/runtime index mismatch." << std::endl;
 				return std::nullopt;
 			}
 			pageRuntimeStates.back().rasterState = allocateRasterStateToken();
@@ -19479,7 +19479,7 @@ namespace Inkeys::Drawing::Draw3
 						else
 						{
 							++failed;
-							DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+							DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
 								"[Draw3.AutoSave] action=fatal_cpu_seal result=failed reason=%s contact=%u generation=%llu\n",
 								commitReason, runtime->handle.record->ContactId(),
 								static_cast<unsigned long long>(runtime->handle.generation));
@@ -19488,12 +19488,12 @@ namespace Inkeys::Drawing::Draw3
 					catch (const std::bad_alloc&)
 					{
 						++failed;
-						DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=fatal_cpu_seal result=failed reason=allocation\n");
+						DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=fatal_cpu_seal result=failed reason=allocation\n");
 					}
 					catch (const std::exception& error)
 					{
 						++failed;
-						DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+						DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
 							"[Draw3.AutoSave] action=fatal_cpu_seal result=failed reason=exception detail=%s\n",
 							 error.what());
 					}
@@ -20974,7 +20974,7 @@ namespace Inkeys::Drawing::Draw3
 									? activePresentationTarget->slideId : std::nullopt);
 					if (currentPageHasContent() && !preClear)
 					{
-						DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Clear] result=failed reason=snapshot\n");
+						DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.Clear] result=failed reason=snapshot\n");
 						reportCommand(command.type);
 						continue;
 					}
@@ -21189,7 +21189,7 @@ namespace Inkeys::Drawing::Draw3
 						const std::optional<size_t> appended = appendBlankPageWithRuntime();
 						if (!appended)
 						{
-							DiagnosticOutput::Line() << "[Page] key=0 result=failed reason=create current=" <<
+							DiagnosticOutput::Line(DiagnosticOutput::OutError) << "[Page] key=0 result=failed reason=create current=" <<
 								(currentPageIndex_ + 1) << " count=" <<
 								document_->Pages().size() << std::endl;
 							reportCommand(command.type);
@@ -21218,7 +21218,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 						if (!appendBlankPageWithRuntime())
 						{
-							DiagnosticOutput::Line() << "[Page] key=page result=failed reason=create target=" <<
+							DiagnosticOutput::Line(DiagnosticOutput::OutError) << "[Page] key=page result=failed reason=create target=" <<
 								(command.pageIndex + 1) << " count=" <<
 								document_->Pages().size() << std::endl;
 							reportCommand(command.type);
@@ -21419,7 +21419,7 @@ namespace Inkeys::Drawing::Draw3
 				historyGpuCache.Release();
 				if (!presentation_.RecoverFromRuntimeFailure())
 				{
-					DiagnosticOutput::Line() << "Failed to recover Draw3 graphics after HRESULT 0x" <<
+					DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Failed to recover Draw3 graphics after HRESULT 0x" <<
 						std::hex << static_cast<unsigned long>(failure) << std::dec << std::endl;
 					// 绘制线程仍持有已完成文档；先交给原保存 worker，再退出失效设备。
 					captureGraphicsFatalExit("presenter_recovery");
@@ -21442,7 +21442,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!historyGpuCache.Initialize(
 					renderer_, appliedUndoPolicy, appliedCompositionPolicy))
 				{
-					DiagnosticOutput::Line() << "Failed to rebuild Draw3 GPU history cache after device recovery." << std::endl;
+					DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Failed to rebuild Draw3 GPU history cache after device recovery." << std::endl;
 					captureGraphicsFatalExit("history_cache_rebuild");
 					window_.RequestExit();
 					break;
@@ -21502,7 +21502,7 @@ namespace Inkeys::Drawing::Draw3
 				UnionRectInPlace(viewportRecoveryDirty, fullCanvas);
 				renderer_.WarmUpLaserShaders();
 				renderer_.WarmUpShapeShaders();
-				DiagnosticOutput::Line() << "Recovered Draw3 graphics with mode " <<
+				DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "Recovered Draw3 graphics with mode " <<
 					TransparentPresentModeName(presentation_.ActiveMode()) << "." << std::endl;
 			}
 			synchronizeLaserResources();
@@ -22330,7 +22330,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					runtime->stationaryModelAdvanceBlocked = true;
 					// 同一次停笔不再逐帧重试失败输入；下一份成功真实输入会解除锁存。
-					DiagnosticOutput::Line() << "Error: " << status.message() << std::endl;
+					DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Error: " << status.message() << std::endl;
 				}
 			}
 			const double inputLaserHold = laserHoldDurationSeconds_.load(std::memory_order_acquire);
@@ -23002,7 +23002,7 @@ namespace Inkeys::Drawing::Draw3
 											viewportVisibleClear, false);
 									viewportRefreshPending = true;
 									viewportRefreshClearsTransient = false;
-									DiagnosticOutput::Line() << "[InkHistory] stored stroke raster failed page=" <<
+									DiagnosticOutput::Line(DiagnosticOutput::OutError) << "[InkHistory] stored stroke raster failed page=" <<
 										(currentPageIndex_ + 1) << " item=" << strokeIndex <<
 										std::endl;
 								}
@@ -23011,7 +23011,7 @@ namespace Inkeys::Drawing::Draw3
 						else
 						{
 							if (metricsState_) metricsState_->Invalidate(MetricKey(runtime->handle), ContentMetricInvalidationReason::ContentSuperseded);
-							DiagnosticOutput::Line() << "Failed to append completed stroke to the current ink canvas."
+							DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Failed to append completed stroke to the current ink canvas."
 								<< std::endl;
 						}
 					}
@@ -23358,7 +23358,7 @@ namespace Inkeys::Drawing::Draw3
 				if (consecutiveRasterFailures == 1 ||
 					nowTick - lastRasterFailureLogTick >= 1000)
 				{
-					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+					DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
 						"[Draw3.Raster] submission failed; attempts=%u device=0x%08X\n",
 						consecutiveRasterFailures, static_cast<unsigned>(deviceReason));
 					lastRasterFailureLogTick = nowTick;
@@ -23573,14 +23573,14 @@ namespace Inkeys::Drawing::Draw3
 		catch (const std::bad_alloc&)
 		{
 			if (metricsState_) metricsState_->EndContacts(ContentMetricInvalidationReason::Fatal);
-			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=run_exception result=not_queued reason=allocation\n");
+			DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=run_exception result=not_queued reason=allocation\n");
 			throw;
 		}
 		catch (const std::exception& error)
 		{
 			if (metricsState_) metricsState_->EndContacts(ContentMetricInvalidationReason::Fatal);
 			// Run 的局部 history 仍存活时尽力封口；随后原异常继续交 Host 受控退出。
-			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=run_exception reason=%s\n", error.what());
+			DiagnosticOutput::Printf(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=run_exception reason=%s\n", error.what());
 			// CPU 追加中途抛错可能留下半事务；数量不齐时不导出可疑 history。
 			const bool activeHistoryConsistent = document_ &&
 				pageRuntimeStates.size() == document_->Pages().size() &&
@@ -23589,13 +23589,13 @@ namespace Inkeys::Drawing::Draw3
 					{ return page.history.Items().size() == page.beforeStates.size() &&
 						page.beforeStates.size() == page.afterStates.size(); });
 			if (!activeHistoryConsistent)
-				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=run_exception result=not_queued reason=history_state\n");
+				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=run_exception result=not_queued reason=history_state\n");
 			if (!fatalCaptureAttempted && activeHistoryConsistent)
 			{
 				try { captureGraphicsFatalExit("run_exception"); }
 				catch (const std::exception& captureError)
 				{
-					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+					DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
 						"[Draw3.AutoSave] action=run_exception result=not_queued detail=%s\n",
 						captureError.what());
 				}

@@ -462,6 +462,47 @@
         }
       }
     },
+    "Logs":
+    {
+      "OutputSection": "Ieșirea jurnalelor",
+      "Level":
+      {
+        "N": "Nivel de jurnalizare",
+        "E": "Jurnalele sub nivelul ales nu mai sunt scrise în fișier. Se aplică imediat; ieșirile de diagnosticare activate nu sunt afectate.",
+        "Debug": "Depanare",
+        "Info": "Informații",
+        "Warn": "Avertisment",
+        "Error": "Eroare",
+        "Off": "Dezactivat"
+      },
+      "Folder":
+      {
+        "N": "Deschide folderul jurnalelor",
+        "E": "Deschide în Explorer folderul Inkeys\\Logs în care sunt stocate jurnalele.",
+        "Button": "Deschide"
+      },
+      "CleanSection": "Curățarea jurnalelor",
+      "Retention":
+      {
+        "N": "Perioadă de curățare automată",
+        "E": "La pornire și după modificarea setărilor de curățare, șterge fișierele jurnal mai vechi decât perioada aleasă.",
+        "1d": "1 zi",
+        "3d": "3 zile",
+        "7d": "7 zile",
+        "14d": "14 zile",
+        "30d": "30 zile",
+        "Never": "Niciodată",
+        "CustomLabel": "Număr personalizat de zile (1-3650)"
+      },
+      "MaxSize":
+      {
+        "N": "Limită de dimensiune a jurnalelor",
+        "E": "Când folderul jurnalelor depășește limita, cele mai vechi jurnale sunt șterse primele. Jurnalul curent nu este șters niciodată.",
+        "Unlimited": "Nelimitat",
+        "CustomLabel": "Dimensiune personalizată în MB (1-102400)"
+      },
+      "Custom": "Personalizat"
+    },
     "Version":
     {
       "N": "Versiunea programului",
@@ -1043,32 +1084,32 @@
         "Haptics":
         {
           "N": "Diagnosticare feedback haptic al creionului",
-          "E": "Înregistrează intrarea creionului, solicitările butoanelor și rezultatele trimise către dispozitivul haptic pentru diagnosticarea lipsei vibrațiilor."
+          "E": "Scrie în fișierul jurnal intrarea stiloului, solicitările butoanelor și rezultatele trimiterii către dispozitivul haptic, pentru a diagnostica lipsa vibrației."
         },
         "TouchArea":
         {
           "N": "Diagnosticare intrare și radieră în consolă",
-          "E": "Afișează instantanee cu frecvență limitată despre EDID, rezoluție și DPI, suprafața de contact, coordonatele intrării, tipul dispozitivului și dimensiunea radierei."
+          "E": "Scrie în fișierul jurnal instantanee limitate ale EDID, rezoluției și DPI ale ecranului, suprafeței de atingere, coordonatelor de intrare, tipului de dispozitiv și dimensiunii radierei."
         },
         "PptCOM":
         {
           "N": "Ieșire PptCOM în consolă",
-          "E": "Afișează diagnosticarea PptCOM în consolă."
+          "E": "Scrie diagnosticarea PptCOM în fișierul jurnal."
         },
         "Draw3":
         {
           "N": "Ieșire Draw3 în consolă",
-          "E": "Afișează în consolă informații despre dispozitivele și driverele Draw3."
+          "E": "Scrie informațiile despre dispozitivul și driverul Draw3 în fișierul jurnal."
         },
         "Cursor":
         {
           "N": "Diagnosticare cursor",
-          "E": "Afișează în consolă sursa intrării cursorului și rezultatul randat efectiv."
+          "E": "Scrie atribuirea intrării cursorului și redarea acestuia în fișierul jurnal."
         },
         "CanvasPan":
         {
           "N": "Diagnosticarea deplasării și inerției tablei",
-          "E": "Înregistrează intrările de deplasare cu mouse-ul și prin atingere, viteza, inerția și motivele opririi pentru investigarea problemelor de mișcare."
+          "E": "Scrie în fișierul jurnal intrarea de deplasare cu mouse-ul și prin atingere, viteza, inerția și motivele opririi, pentru a investiga problemele de mișcare."
         }
       }
     },
@@ -1353,7 +1394,7 @@
         "Add": "Adaugă o stare aleatorie",
         "Remove": "Elimină o stare"
       },
-      "ConsoleSection": "Ieșire în consolă",
+      "ConsoleSection": "Jurnal de diagnosticare",
       "CanvasInformation": "Informații despre inițializarea pânzei",
       "DisplayInformation": "Monitoare și EDID"
     },

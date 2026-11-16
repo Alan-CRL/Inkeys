@@ -108,7 +108,8 @@ namespace
 		}
 	}
 
-	void WriteWindowDiagnostic(const wchar_t* diagnostic, bool mirror) noexcept
+	// level 只用于日志模式（模块 Window）；标准流模式仍写 stderr。
+	void WriteWindowDiagnostic(const wchar_t* diagnostic, bool mirror, Inkeys::Log::Level level) noexcept
 	{
 		const DWORD savedError = GetLastError();
 		char utf8[2048]{};
@@ -116,7 +117,8 @@ namespace
 			utf8, static_cast<int>(sizeof(utf8)), nullptr, nullptr);
 		// 窗口 owner 只做有界格式化和尝试入队；标准流/debugger 背压不可阻塞安全隐藏。
 		if (count > 1) (void)Inkeys::Drawing::Draw3::DiagnosticOutput::Write(
-			Inkeys::Drawing::Draw3::DiagnosticOutput::Stream::Error, utf8, static_cast<std::size_t>(count - 1), mirror);
+			Inkeys::Drawing::Draw3::DiagnosticOutput::Target{ Inkeys::Drawing::Draw3::DiagnosticOutput::Stream::Error,
+				level, Inkeys::Log::Module::Window }, utf8, static_cast<std::size_t>(count - 1), mirror);
 		SetLastError(savedError);
 	}
 
@@ -148,7 +150,7 @@ namespace
 				(exStyle & WS_EX_TRANSPARENT) ? 1u : 0u, error,
 				boundsValid ? 1u : 0u,
 				bounds.left, bounds.top, bounds.right, bounds.bottom);
-			WriteWindowDiagnostic(diagnostic, false);
+			WriteWindowDiagnostic(diagnostic, false, Inkeys::Log::Level::Debug);
 		};
 		logWindow(L"Drawpad", primary);
 		logWindow(L"DrawpadPresentation", presentation);
@@ -167,7 +169,7 @@ namespace
 			hwnd && IsWindowVisible(hwnd) ? 1u : 0u, hwnd && IsIconic(hwnd) ? 1u : 0u,
 			groupMinimized ? 1u : 0u, boundsValid ? 1u : 0u,
 			bounds.left, bounds.top, bounds.right, bounds.bottom);
-		WriteWindowDiagnostic(diagnostic, false);
+		WriteWindowDiagnostic(diagnostic, false, Inkeys::Log::Level::Debug);
 	}
 
 	[[nodiscard]] const wchar_t* DefaultClassName(WindowRole role) noexcept
@@ -1114,7 +1116,8 @@ namespace Inkeys::Window
 			{
 				// 穿透失败/恢复不能在窗口 owner 同步写标准流，否则会阻塞下一次样式收敛。
 				using namespace Inkeys::Drawing::Draw3;
-				DiagnosticOutput::Line(DiagnosticOutput::Stream::Error, true)
+				DiagnosticOutput::Line(DiagnosticOutput::Target{ DiagnosticOutput::Stream::Error,
+					recovered ? Inkeys::Log::Level::Info : Inkeys::Log::Level::Warn, Inkeys::Log::Module::Window }, true)
 					<< "[Window.ClickThrough] result=" << (recovered ? "recovered" : "failed")
 					<< " role=" << static_cast<unsigned>(command.role) << " error=" << error
 					<< " requested=" << command.enabled << " actual="
@@ -1140,7 +1143,8 @@ namespace Inkeys::Window
 				hwnd && IsWindowVisible(hwnd) ? 1 : 0,
 				(exStyle & WS_EX_TOPMOST) != 0 ? 1 : 0,
 				bounds.left, bounds.top, bounds.right, bounds.bottom);
-			WriteWindowDiagnostic(diagnostic, true);
+			WriteWindowDiagnostic(diagnostic, true,
+				recovered ? Inkeys::Log::Level::Info : Inkeys::Log::Level::Warn);
 		}
 
 			void ResetState()
@@ -1687,7 +1691,7 @@ namespace Inkeys::Window
 				wchar_t diagnostic[256]{};
 				swprintf_s(diagnostic, L"Inkeys.Window create failed: role=%u error=%lu class=%s\n",
 					static_cast<unsigned>(spec.role), createError, record.className.c_str());
-				WriteWindowDiagnostic(diagnostic, true);
+				WriteWindowDiagnostic(diagnostic, true, Inkeys::Log::Level::Error);
 				RollbackCreation(record, failedCleanup);
 				return false;
 			}
@@ -1718,8 +1722,8 @@ namespace Inkeys::Window
 					if (frameError == ERROR_SUCCESS) frameError = ERROR_INVALID_MENU_HANDLE;
 					wchar_t diagnostic[128]{};
 					swprintf_s(diagnostic, L"Inkeys.Window legacy setting frame failed: error=%lu\n", frameError);
-					OutputDebugStringW(diagnostic);
-					std::fwprintf(stderr, L"%s", diagnostic);
+					// 与其它创建失败一致走有界非阻塞诊断；frameError 已在此前锁存。
+					WriteWindowDiagnostic(diagnostic, true, Inkeys::Log::Level::Error);
 					RollbackCreation(record, failedCleanup);
 					return false;
 				}

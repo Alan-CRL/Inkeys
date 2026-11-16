@@ -42,6 +42,7 @@
     <Compile Include="PresentationDescriptor.cs" />
     <Compile Include="SlideShowSession.cs" />
     <Compile Include="ComEventConnection.cs" />
+    <Compile Include="ManagedLog.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Microsoft.CSharp" />

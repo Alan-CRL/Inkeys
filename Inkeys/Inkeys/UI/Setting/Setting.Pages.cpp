@@ -1755,6 +1755,117 @@ namespace Inkeys::UI::Setting::Design
 			events.whiteboardNameCommitted, events.whiteboardNamePresetChanged, events.createWhiteboardShortcut, events.whiteboardCorrectChanged, events.whiteboardCreateChanged);
 	}
 
+	// 自定义上限只接受 1..maximum 的纯数字（允许首尾空白）；符号、小数、空串与越界都视为非法。
+	static bool ParseLogLimit(const std::string& text, int maximum, int& value)
+	{
+		const size_t begin = text.find_first_not_of(" \t"), end = text.find_last_not_of(" \t");
+		if (begin == std::string::npos) return false;
+		long long parsed = 0;
+		for (size_t index = begin; index <= end; ++index)
+		{
+			if (text[index] < '0' || text[index] > '9') return false;
+			parsed = parsed * 10 + (text[index] - '0');
+			if (parsed > maximum) return false;
+		}
+		if (parsed < 1) return false;
+		value = static_cast<int>(parsed);
+		return true;
+	}
+
+	// 预设下拉 + “自定义”内联输入。选中自定义只展开输入框；回车或失焦时校验，
+	// 合法才改 value 并返回 true，非法则恢复修改前的值（原值为预设时同时退回该预设）。
+	static bool LogLimitRow(const char* id, const char* title, const char* description, const char* glyph,
+		LogLimitDraft& draft, const std::vector<int>& presets, const std::vector<std::string>& items,
+		const char* customLabel, int maximum)
+	{
+		const auto textFor = [](int value) { return value > 0 ? std::to_string(value) : std::string(); };
+		const auto presetIt = std::find(presets.begin(), presets.end(), draft.value);
+		// 已保存值不属于任何预设时恒显示自定义。
+		if (presetIt == presets.end() && !draft.custom) { draft.custom = true; draft.text = textFor(draft.value); }
+		const int customIndex = static_cast<int>(presets.size());
+		int index = draft.custom ? customIndex : static_cast<int>(presetIt - presets.begin());
+		float comboWidth = 160.0F;
+		for (const auto& item : items)
+			comboWidth = (std::max)(comboWidth, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
+		bool comboChanged = false, committed = false;
+		InlineRowContent custom;
+		custom.visibilityId = "##custom-visibility"; custom.visible = draft.custom;
+		custom.height = [](float) { return Pixels(ControlHeight); };
+		custom.render = [&](const LayoutRect& bounds)
+		{
+			const float width = (std::min)(Pixels(160.0F), (std::max)(1.0F, bounds.Width() * 0.6F));
+			const float labelWidth = (std::max)(1.0F, bounds.Width() - width - Pixels(ControlSpacing));
+			ImGui::PushID("custom");
+			// 与 SettingRow 同一提交标记，内联项也可按稳定 ID 判断本帧是否真实提交。
+			ImGui::GetStateStorage()->SetInt(ImGui::GetID("##description-frame"), ImGui::GetFrameCount());
+			TextAt(customLabel, { bounds.left, bounds.top + (Pixels(ControlHeight) - TextHeight(customLabel, labelWidth)) * 0.5F }, labelWidth);
+			ImFluent::BeginDisabled(!custom.visible); // 收起动画期间保留显示但不可交互。
+			ImGui::SetCursorScreenPos({ bounds.right - width, bounds.top });
+			ImGui::SetNextItemWidth(width);
+			const bool entered = TextBox("##value", draft.text, nullptr,
+				ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_EnterReturnsTrue);
+			committed = entered || ImGui::IsItemDeactivated();
+			ImFluent::EndDisabled();
+			ImGui::PopID();
+		};
+		SettingRow(id, title, description, glyph, (std::min)(320.0F, comboWidth), ControlHeight,
+			[&](const LayoutRect&) { comboChanged = ComboBox("##select", &index, items); },
+			Card, Stroke, 0, IM_COL32_WHITE, false, nullptr, true, &custom);
+
+		bool changed = false;
+		if (comboChanged)
+		{
+			if (index == customIndex)
+			{
+				// 进入自定义时以当前值预填，尚未提交前不改配置。
+				if (!draft.custom) { draft.custom = true; draft.text = textFor(draft.value); }
+			}
+			else if (index >= 0 && index < customIndex)
+			{
+				draft.custom = false;
+				if (presets[static_cast<size_t>(index)] != draft.value) { draft.value = presets[static_cast<size_t>(index)]; changed = true; }
+			}
+		}
+		else if (committed && draft.custom)
+		{
+			int parsed = 0;
+			if (ParseLogLimit(draft.text, maximum, parsed))
+			{
+				changed = parsed != draft.value;
+				draft.value = parsed;
+				draft.text = textFor(parsed);
+			}
+			else
+			{
+				draft.text = textFor(draft.value);
+				if (std::find(presets.begin(), presets.end(), draft.value) != presets.end()) draft.custom = false;
+			}
+		}
+		return changed;
+	}
+
+	static void RenderLogs(GeneralDraft& draft, GeneralEvents& events)
+	{
+		const auto& keys = I18nKey.SettingsUI.Logs;
+		SectionHeader(IA(keys.OutputSection).c_str());
+		events.logThresholdChanged = ComboRow("log-threshold", IA(keys.Level.N).c_str(), IA(keys.Level.E).c_str(), "\ue9d9",
+			draft.logThreshold, { IA(keys.Level.Debug), IA(keys.Level.Info), IA(keys.Level.Warn), IA(keys.Level.Error), IA(keys.Level.Off) });
+		events.openLogFolder = ButtonRow("log-folder", IA(keys.Folder.N).c_str(), IA(keys.Folder.E).c_str(), "\ue838",
+			IA(keys.Folder.Button).c_str());
+
+		SectionHeader(IA(keys.CleanSection).c_str());
+		// 0 = 永不清理 / 无限制；选项顺序与 presets 一一对应，末项为“自定义”。
+		events.logRetentionChanged = LogLimitRow("log-retention", IA(keys.Retention.N).c_str(), IA(keys.Retention.E).c_str(), "\ue81c",
+			draft.logRetention, { 1, 3, 7, 14, 30, 0 },
+			{ IA(keys.Retention.K_1d), IA(keys.Retention.K_3d), IA(keys.Retention.K_7d), IA(keys.Retention.K_14d),
+			IA(keys.Retention.K_30d), IA(keys.Retention.Never), IA(keys.Custom) },
+			IA(keys.Retention.CustomLabel).c_str(), 3650);
+		events.logMaxSizeChanged = LogLimitRow("log-max-size", IA(keys.MaxSize.N).c_str(), IA(keys.MaxSize.E).c_str(), "\ue74d",
+			draft.logMaxSize, { 50, 100, 200, 500, 1024, 0 },
+			{ "50 MB", "100 MB", "200 MB", "500 MB", "1024 MB", IA(keys.MaxSize.Unlimited), IA(keys.Custom) },
+			IA(keys.MaxSize.CustomLabel).c_str(), 102400);
+	}
+
 	GeneralEvents RenderGeneral(GeneralDraft& draft, NavigationDestination destination)
 	{
 		GeneralEvents events;
@@ -1775,8 +1886,9 @@ namespace Inkeys::UI::Setting::Design
 		case Section::DesktopShortcuts: RenderDesktopShortcuts(draft, events); break;
 		case Section::WindowLayout: RenderWindowLayout(draft, events); break;
 		case Section::WindowBehavior: RenderWindowBehavior(draft, events); break;
-		// 显示器、日志仅有页标题，后续功能接入时在此补渲染。
-		case Section::WindowDisplay: case Section::LogsLog: break;
+		case Section::LogsLog: RenderLogs(draft, events); break;
+		// 显示器仅有页标题，后续功能接入时在此补渲染。
+		case Section::WindowDisplay: break;
 		default:
 			if (destination.page == PageId::Keys) RenderKeyShortcuts(draft, events);
 			break;

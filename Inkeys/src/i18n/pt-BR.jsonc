@@ -462,6 +462,47 @@
         }
       }
     },
+    "Logs":
+    {
+      "OutputSection": "Saída de logs",
+      "Level":
+      {
+        "N": "Nível de log",
+        "E": "Logs abaixo do nível escolhido deixam de ser gravados no arquivo. Aplica-se imediatamente; as saídas de diagnóstico ativadas não são afetadas.",
+        "Debug": "Depuração",
+        "Info": "Informação",
+        "Warn": "Aviso",
+        "Error": "Erro",
+        "Off": "Desativado"
+      },
+      "Folder":
+      {
+        "N": "Abrir pasta de logs",
+        "E": "Abre no Explorador de Arquivos a pasta Inkeys\\Logs onde os logs são armazenados.",
+        "Button": "Abrir"
+      },
+      "CleanSection": "Limpeza de logs",
+      "Retention":
+      {
+        "N": "Período de limpeza automática",
+        "E": "Ao iniciar e após alterar as configurações de limpeza, exclui arquivos de log mais antigos que o período escolhido.",
+        "1d": "1 dia",
+        "3d": "3 dias",
+        "7d": "7 dias",
+        "14d": "14 dias",
+        "30d": "30 dias",
+        "Never": "Nunca",
+        "CustomLabel": "Dias personalizados (1-3650)"
+      },
+      "MaxSize":
+      {
+        "N": "Limite de tamanho dos logs",
+        "E": "Quando a pasta de logs excede o limite, os logs mais antigos são excluídos primeiro. O log atual nunca é excluído.",
+        "Unlimited": "Ilimitado",
+        "CustomLabel": "Tamanho personalizado em MB (1-102400)"
+      },
+      "Custom": "Personalizado"
+    },
     "Version":
     {
       "N": "Versão do programa",
@@ -1043,32 +1084,32 @@
         "Haptics":
         {
           "N": "Diagnóstico da resposta tátil da caneta",
-          "E": "Registra entradas da caneta, solicitações dos botões e resultados enviados ao dispositivo tátil para ajudar a identificar a ausência de vibração."
+          "E": "Grava no arquivo de log a entrada da caneta, as solicitações de botão e os resultados de envio ao dispositivo háptico para diagnosticar a falta de vibração."
         },
         "TouchArea":
         {
           "N": "Diagnóstico de entrada e borracha no console",
-          "E": "Exibe amostras com frequência limitada de EDID, resolução e DPI do monitor, área de toque, coordenadas de entrada, tipo de dispositivo e tamanho da borracha."
+          "E": "Grava no arquivo de log instantâneos limitados de EDID, resolução e DPI da tela, área de toque, coordenadas de entrada, tipo de dispositivo e tamanho da borracha."
         },
         "PptCOM":
         {
           "N": "Saída do PptCOM no console",
-          "E": "Envia informações de diagnóstico do PptCOM ao console."
+          "E": "Grava os diagnósticos do PptCOM no arquivo de log."
         },
         "Draw3":
         {
           "N": "Saída do Draw3 no console",
-          "E": "Envia informações dos dispositivos e drivers do Draw3 ao console."
+          "E": "Grava as informações de dispositivo e driver do Draw3 no arquivo de log."
         },
         "Cursor":
         {
           "N": "Depuração do ponteiro",
-          "E": "Envia ao console a origem da entrada do ponteiro e o resultado real da renderização."
+          "E": "Grava a atribuição de entrada do cursor e sua renderização no arquivo de log."
         },
         "CanvasPan":
         {
           "N": "Diagnóstico de deslocamento e inércia do quadro",
-          "E": "Registra entradas de deslocamento por mouse e toque, velocidade, inércia e motivos de parada para investigar problemas de movimento."
+          "E": "Grava a entrada de deslocamento por mouse e toque, a velocidade, a inércia e os motivos de parada no arquivo de log para investigar problemas de movimento."
         }
       }
     },
@@ -1353,7 +1394,7 @@
         "Add": "Adicionar status aleatório",
         "Remove": "Remover um status"
       },
-      "ConsoleSection": "Saída no console",
+      "ConsoleSection": "Saída do log de diagnóstico",
       "CanvasInformation": "Informações de inicialização do desenho",
       "DisplayInformation": "Monitores e EDID"
     },

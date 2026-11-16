@@ -469,6 +469,12 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CorrectLnk, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CreateLnk, false) \
 		) \
+		/* 日志：保留天数 0=永不清理（自定义 1..3650），总量上限 MB 0=无限制（自定义 1..102400），等级 0 调试..4 关闭；越界回默认。 */ \
+		GROUP(Logging, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, RetentionDays, 7) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, MaxSizeMB, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Threshold, 1) \
+		) \
 	) \
 	GROUP(Input, \
 		GROUP(Shortcuts, \

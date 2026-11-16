@@ -462,6 +462,47 @@
         }
       }
     },
+    "Logs":
+    {
+      "OutputSection": "Protokollausgabe",
+      "Level":
+      {
+        "N": "Protokollstufe",
+        "E": "Protokolle unterhalb der gewählten Stufe werden nicht mehr in die Datei geschrieben. Wirkt sofort; aktivierte Diagnoseausgaben sind nicht betroffen.",
+        "Debug": "Debug",
+        "Info": "Info",
+        "Warn": "Warnung",
+        "Error": "Fehler",
+        "Off": "Aus"
+      },
+      "Folder":
+      {
+        "N": "Protokollordner öffnen",
+        "E": "Den Ordner Inkeys\\Logs mit den Protokollen im Datei-Explorer öffnen.",
+        "Button": "Öffnen"
+      },
+      "CleanSection": "Protokollbereinigung",
+      "Retention":
+      {
+        "N": "Automatische Bereinigung nach",
+        "E": "Beim Start und nach Änderung der Bereinigungseinstellungen Protokolldateien löschen, die älter als der gewählte Zeitraum sind.",
+        "1d": "1 Tag",
+        "3d": "3 Tage",
+        "7d": "7 Tage",
+        "14d": "14 Tage",
+        "30d": "30 Tage",
+        "Never": "Nie",
+        "CustomLabel": "Eigene Anzahl Tage (1-3650)"
+      },
+      "MaxSize":
+      {
+        "N": "Größenlimit für Protokolle",
+        "E": "Überschreitet der Protokollordner das Limit, werden die ältesten Protokolle zuerst gelöscht. Das aktuelle Protokoll wird nie gelöscht.",
+        "Unlimited": "Unbegrenzt",
+        "CustomLabel": "Eigene Größe in MB (1-102400)"
+      },
+      "Custom": "Benutzerdefiniert"
+    },
     "Version":
     {
       "N": "Softwareversion",
@@ -1043,32 +1084,32 @@
         "Haptics":
         {
           "N": "Diagnose des haptischen Stiftfeedbacks",
-          "E": "Stifteingaben, Schaltflächenanfragen und Sendeergebnisse des Haptikgeräts protokollieren, um fehlende Vibration zu untersuchen."
+          "E": "Stifteingaben, Schaltflächenanfragen und Sendeergebnisse des Haptikgeräts in die Protokolldatei schreiben, um fehlende Vibration zu untersuchen."
         },
         "TouchArea":
         {
           "N": "Konsolendiagnose für Eingaben und Radierer",
-          "E": "Begrenzte Momentaufnahmen von Bildschirm-EDID, Auflösung und DPI, Berührungsfläche, Eingabekoordinaten, Gerätetyp und Radierergröße ausgeben."
+          "E": "Begrenzte Momentaufnahmen von Bildschirm-EDID, Auflösung und DPI, Berührungsfläche, Eingabekoordinaten, Gerätetyp und Radierergröße in die Protokolldatei schreiben."
         },
         "PptCOM":
         {
           "N": "PptCOM-Konsolenausgabe",
-          "E": "PptCOM-Diagnosen in der Konsole ausgeben."
+          "E": "PptCOM-Diagnosen in die Protokolldatei schreiben."
         },
         "Draw3":
         {
           "N": "Draw3-Konsolenausgabe",
-          "E": "Draw3-Geräte- und Treiberinformationen in der Konsole ausgeben."
+          "E": "Draw3-Geräte- und Treiberinformationen in die Protokolldatei schreiben."
         },
         "Cursor":
         {
           "N": "Zeigerdiagnose",
-          "E": "Eingabezuordnung des Zeigers und seine Darstellung in der Konsole ausgeben."
+          "E": "Eingabezuordnung des Zeigers und seine Darstellung in die Protokolldatei schreiben."
         },
         "CanvasPan":
         {
           "N": "Diagnose von Whiteboard-Verschiebung und Trägheit",
-          "E": "Protokolliert Maus- und Touch-Eingaben, Geschwindigkeit, Trägheit und Stoppgründe zur Untersuchung von Bewegungsproblemen."
+          "E": "Schreibt Maus- und Touch-Eingaben, Geschwindigkeit, Trägheit und Stoppgründe in die Protokolldatei, um Bewegungsprobleme zu untersuchen."
         }
       }
     },
@@ -1353,7 +1394,7 @@
         "Add": "Zufälligen Status hinzufügen",
         "Remove": "Einen Status entfernen"
       },
-      "ConsoleSection": "Konsolenausgabe",
+      "ConsoleSection": "Diagnoseprotokollausgabe",
       "CanvasInformation": "Informationen zur Zeichenflächeninitialisierung",
       "DisplayInformation": "Bildschirme und EDID"
     },

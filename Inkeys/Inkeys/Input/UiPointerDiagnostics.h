@@ -70,7 +70,10 @@ namespace Inkeys::Input::UiPointer::Diagnostics
 #if defined(DRAW3_CONTACT_TESTING)
         if(testSink) { testSink(line,size); return; }
 #endif
-        Drawing::Draw3::DiagnosticOutput::Write(Drawing::Draw3::DiagnosticOutput::Stream::Error,line,size);
+        // 受 Haptics 调试开关控制：写入日志 Haptics 通道（模块 Input），标准流模式仍写 stderr。
+        constexpr Drawing::Draw3::DiagnosticOutput::Target target{ Drawing::Draw3::DiagnosticOutput::Stream::Error,
+            ::Inkeys::Log::Channel::Haptics, ::Inkeys::Log::Module::Input };
+        Drawing::Draw3::DiagnosticOutput::Write(target,line,size);
     }
     template<class... Args> void Log(const char* role,HWND window,const char* stage,const char* reason,UINT message,const Sample* sample,const char* format,Args... args) noexcept
     {

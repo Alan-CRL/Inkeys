@@ -51,10 +51,12 @@ namespace
 	void LogTopmostRefreshSnapshot(
 		Inkeys::Window::Service& service, bool recovered) noexcept
 	{
-		if (!IDTLogger) return;
+		// 恢复只是信息；失败才是警告。等级关闭时跳过整棵窗口树采集。
+		const auto level = recovered ? Inkeys::Log::Level::Info : Inkeys::Log::Level::Warn;
+		if (!Inkeys::Log::Enabled(level)) return;
 		const char* transition = recovered ? "recovered" : "failed";
-		IDTLogger->warn(
-			"[窗口线程][TopWindow] topmost refresh {}: overlayTopmost={} whiteboardMode={}",
+		Inkeys::Log::Write(level, Inkeys::Log::Module::Window,
+			"topmost refresh {}: overlayTopmost={} whiteboardMode={}",
 			transition, service.OverlayTopmost(), service.WhiteboardWindowMode());
 		// 只在失败状态转换时抓取整棵 owner 树，避免周期刷新产生常态日志。
 		for (const auto& snapshotRole : OverlaySnapshotRoles)
@@ -65,8 +67,8 @@ namespace
 			const HWND owner = hwnd ? GetWindow(hwnd, GW_OWNER) : nullptr;
 			const LONG_PTR exStyle = hwnd
 				? GetWindowLongPtrW(hwnd, GWL_EXSTYLE) : 0;
-			IDTLogger->warn(
-				"[窗口线程][TopWindow] role={} hwnd=0x{:X} owner=0x{:X} "
+			Inkeys::Log::Write(level, Inkeys::Log::Module::Window,
+				"role={} hwnd=0x{:X} owner=0x{:X} "
 				"valid={} visible={} topmost={} bounds=({},{},{},{})",
 				snapshotRole.name,
 				static_cast<unsigned long long>(reinterpret_cast<UINT_PTR>(hwnd)),
@@ -96,7 +98,7 @@ std::wstring GetWindowTitle(HWND hwnd)
 void TopWindow()
 {
 	auto& service = Inkeys::Window::GetService();
-	if (IDTLogger) IDTLogger->info("[窗口线程][TopWindow] 等待覆盖层首帧");
+	Inkeys::Log::Info(Inkeys::Log::Module::Window, "等待覆盖层首帧");
 	for (int index = 0; index < 40 && !offSignal; ++index)
 	{
 		const auto startup = Inkeys::Startup::ActiveSnapshot();
@@ -104,8 +106,7 @@ void TopWindow()
 		if (startup.failed
 			|| Inkeys::UI::StartupPreview::IsBarStartupFailure(barState))
 		{
-			if (IDTLogger)
-				IDTLogger->warn("[窗口线程][TopWindow] 启动生产者已报告失败，停止等待覆盖层");
+			Inkeys::Log::Warn(Inkeys::Log::Module::Window, "启动生产者已报告失败，停止等待覆盖层");
 			return;
 		}
 		if (Inkeys::UI::StartupPreview::IsBarStartupReady(barState)
@@ -120,7 +121,7 @@ void TopWindow()
 
 	if (!IdtWindowsIsVisible.allCompleted)
 	{
-		if (IDTLogger) IDTLogger->warn("[窗口线程][TopWindow] 等待覆盖层首帧超时");
+		Inkeys::Log::Warn(Inkeys::Log::Module::Window, "等待覆盖层首帧超时");
 		// 统一交给主线程的 red-frame + popup 流程；只有无 tracker 时保留旧兜底。
 		if (Inkeys::Startup::ReportFailure(0xF201u)
 			|| Inkeys::Startup::ActiveSnapshot().failed) return;

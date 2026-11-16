@@ -44,6 +44,10 @@ namespace Inkeys::Drawing::Draw3
 {
 	namespace
 	{
+		// 橡皮/触摸面积诊断受 TouchArea 调试开关控制，写入日志 TouchArea 通道；标准流模式仍写 stderr。
+		constexpr DiagnosticOutput::Target kTouchAreaTarget{ DiagnosticOutput::Stream::Error,
+			Inkeys::Log::Channel::TouchArea, Inkeys::Log::Module::Input };
+
 		std::uint64_t DrainPresentationCompletions(PresentationAutoSaveService& service,
 			std::shared_ptr<const PresentationPersistenceCompletion>& pending,
 			WindowController& window) noexcept
@@ -132,7 +136,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			// 工程的 Debug/Release 配置共用 NDEBUG 定义，配置名由交付构建命令记录；
 			// 这里只输出不会被配置宏误判的编译身份。
-			DiagnosticOutput::Line() << "[Draw3Diag][build] id=draw3-" << __DATE__ << "T" << __TIME__
+			DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "[Draw3Diag][build] id=draw3-" << __DATE__ << "T" << __TIME__
 				<< " arch=" << Draw3BuildArchitectureName()
 				<< " msvc=" << _MSC_VER << std::endl;
 		}
@@ -1347,7 +1351,7 @@ namespace Inkeys::Drawing::Draw3
 				status == DesktopAutoSaveSubmitStatus::Existing) return true;
 			const char* reason = status == DesktopAutoSaveSubmitStatus::Closed
 				? "closed" : "invalid";
-			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+			DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
 				"[Draw3.AutoSave] action=submit trigger=%s result=failed reason=%s\n",
 				trigger == DesktopAutoSaveTrigger::Exit ? "exit" : "clear", reason);
 			return false;
@@ -1369,7 +1373,7 @@ namespace Inkeys::Drawing::Draw3
 			const auto status = self->presentationAutoSave.SubmitSave(std::move(request));
 			if (status == PresentationPersistenceSubmitStatus::Accepted ||
 				status == PresentationPersistenceSubmitStatus::ReplacedPending) return true;
-			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=save_submit result=failed\n");
+			DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.Presentation] action=save_submit result=failed\n");
 			return false;
 		}
 
@@ -1380,7 +1384,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!self) return false;
 			if (self->presentationAutoSave.SubmitLoad(std::move(request)) ==
 				PresentationPersistenceSubmitStatus::Accepted) return true;
-			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=load_submit result=failed\n");
+			DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.Presentation] action=load_submit result=failed\n");
 			return false;
 		}
 
@@ -1451,7 +1455,7 @@ namespace Inkeys::Drawing::Draw3
 				!d.touchUnlocked?"waiting-startup-displacement":!a.referenceFresh?"reference-expired":
 				!a.active?"waiting-accepted-movement":"area-floor-active";
 			if(d.eraserContact || d.preview)
-				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,"[EraserEntry] seq=%llu entry=%s kind=%s penResponse=%s debugOverride=%d inherited=%d reason=%s hoverTime=%.6f downTime=%.6f frameTime=%.6f previousShownPx=%.3f downPx=%.3f firstRadiusPx=%.3f cursorPx=%.3f currentRadiusPx=%.3f\n",
+				DiagnosticOutput::Printf(kTouchAreaTarget,"[EraserEntry] seq=%llu entry=%s kind=%s penResponse=%s debugOverride=%d inherited=%d reason=%s hoverTime=%.6f downTime=%.6f frameTime=%.6f previousShownPx=%.3f downPx=%.3f firstRadiusPx=%.3f cursorPx=%.3f currentRadiusPx=%.3f\n",
 					static_cast<unsigned long long>(sequence),SpeedEraser::InputEntryName(d.entry),
 					d.eraserKind==SpeedEraser::EraserKind::Speed?"Speed":"Fixed",SpeedEraser::PenResponseName(d.formalPenResponse),
 					d.developmentResponseOverride,d.sessionInherited,d.sessionReason,d.hoverSeconds,d.downSeconds,d.frameSeconds,d.previousShownDiameterPx,d.downDiameterPx,
@@ -1474,7 +1478,7 @@ namespace Inkeys::Drawing::Draw3
 				d.cursorVisible?d.cursorDiameterPx:-1.0f,d.eraserContact?d.nextRadiusPx*2:-1.0f,
 				d.speed,d.sweepSpeed,SpeedEraser::MotionUnitName(d.motionUnit),d.qualified,d.evidenceSeconds*1000,
 				a.sample.rawWidth,a.sample.rawHeight,a.widthDip,a.heightDip,a.active);
-			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, inputText, true);
+			DiagnosticOutput::Text(kTouchAreaTarget, inputText, true);
 			if(d.eraserContact && d.eraserKind==SpeedEraser::EraserKind::Speed &&
 				(d.response==SpeedEraser::ResponseModel::DirectTouch ||
 					d.response==SpeedEraser::ResponseModel::ScreenPenHybrid))
@@ -1489,7 +1493,7 @@ namespace Inkeys::Drawing::Draw3
 					f.motionGrowthPermitted,f.areaGrowthPermitted,f.holdRemainingSeconds*1000,f.holdReason,
 					f.decreaseProgressSeconds*1000,f.decreaseConfirmationSeconds*1000,f.decreasePending,f.shrinking,
 					d.sweeping,f.decreaseReason,static_cast<unsigned long long>(f.decreaseResetCount),f.lastDecreaseResetReason);
-				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, followText, true);
+				DiagnosticOutput::Text(kTouchAreaTarget, followText, true);
 			}
 			char text[3072]{};
 			if(!d.active)
@@ -1497,7 +1501,7 @@ namespace Inkeys::Drawing::Draw3
 				std::snprintf(text,sizeof(text),"[TouchArea] seq=%llu event=%s gate=%s contact=%d inputType=%u source=%s cursorPx=%.3f requested=%d\n",
 					static_cast<unsigned long long>(sequence),event,gate,contact,d.inputType,
 					SpeedEraser::SourceKindName(source.kind),d.cursorDiameterPx,requested);
-				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, text, true);return;
+				DiagnosticOutput::Text(kTouchAreaTarget, text, true);return;
 			}
 			std::snprintf(text,sizeof(text),
 				"[TouchArea] seq=%llu event=%s gate=%s contact=%d speedMode=%d inputType=%u source=%s recognition=%u tcid=%u cid=%u sourceGen=%llu\n"
@@ -1519,7 +1523,7 @@ namespace Inkeys::Drawing::Draw3
 				a.referenceFloorDip,a.activeFloorDip,a.active,a.areaFloorAboveStandard,
 				d.speed,d.evidenceSeconds*1000,d.targetDiameterDip,d.effectiveDiameterDip,d.cursorDiameterPx,d.nextRadiusPx,d.historyRadiusPx,
 				static_cast<unsigned long long>(d.realPointCount),d.idleSeconds*1000,d.needsAnimation);
-			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,"[FineBand] seq=%llu speed=%.3f unit=%s held=%d enter=%.3f release=%.3f change=%.3f direction=%d targetDIP=%.3f actualDIP=%.3f areaFloorDIP=%.3f animate=%d\n",
+			DiagnosticOutput::Printf(kTouchAreaTarget,"[FineBand] seq=%llu speed=%.3f unit=%s held=%d enter=%.3f release=%.3f change=%.3f direction=%d targetDIP=%.3f actualDIP=%.3f areaFloorDIP=%.3f animate=%d\n",
 				static_cast<unsigned long long>(sequence),d.fine.speed,SpeedEraser::MotionUnitName(d.motionUnit),
 				d.fine.held,d.fine.enterProgress,d.fine.releaseProgress,d.fine.changeProgress,d.fine.direction,
 				d.targetDiameterDip,d.effectiveDiameterDip,a.activeFloorDip,d.needsAnimation);
@@ -1539,8 +1543,8 @@ namespace Inkeys::Drawing::Draw3
 				d.maximumLogGrowthPerSecond,d.largeLogGrowthPerSecond,
 				d.targetDiameterDip,d.effectiveDiameterDip,d.cursorDiameterPx,d.nextRadiusPx*2);
 			// 只在帧级诊断入口限频输出，不在 RTS packet 热路径写日志，也不持快照锁输出。
-			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, text, true);
-			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, curveText, true);
+			DiagnosticOutput::Text(kTouchAreaTarget, text, true);
+			DiagnosticOutput::Text(kTouchAreaTarget, curveText, true);
 		}
 
 		static void ObserveDrawingActivity(void* context, bool active) noexcept
@@ -1693,7 +1697,7 @@ namespace Inkeys::Drawing::Draw3
 					edid.rawPhysicalWidthCm,edid.rawPhysicalHeightCm,physicalSize.available,
 					physicalSize.widthCm,physicalSize.heightCm,
 					edidMonitor?PhysicalReasonName(physicalSize.unavailableReason):"NoMonitor");
-				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, displayText, true);
+				DiagnosticOutput::Text(kTouchAreaTarget, displayText, true);
 			}
 			const auto previous = window.SpeedEraserDisplayScaleSnapshot();
 			scale.revision = previous.revision;
@@ -2136,10 +2140,10 @@ namespace Inkeys::Drawing::Draw3
 			presentationAutoSave.CloseAndDrain();
 			if (!options.autoSaveRoot.empty() && !autoSave.Start(
 				options.autoSaveRoot, this, &WakeForPresentationPersistence))
-				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=start result=failed\n");
+				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=start result=failed\n");
 			if (!options.autoSaveRoot.empty() && !presentationAutoSave.Start(
 				options.autoSaveRoot, this, &WakeForPresentationPersistence))
-				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.Presentation] action=start result=failed\n");
+				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.Presentation] action=start result=failed\n");
 			input.EnableDiagnostics(options.enableHiddenTestContactInjection || options.enableRuntimeMetrics);
 			if (options.enableRuntimeMetrics) runtimeMetrics.inputBaseline = input.DiagnosticsSnapshot();
 			window.canvasContactDown = [] { Inkeys::UI::PageControl::RequestWhiteboardMenuDismiss(); };
@@ -2360,13 +2364,13 @@ namespace Inkeys::Drawing::Draw3
 				{
 					failedCleanup.BeginKnownFailure();
 					// 初始化失败也必须完成握手；保留异常原因供隐藏测试和现场诊断。
-					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3] startup failed: %s\n", exception.what());
+					DiagnosticOutput::Printf(DiagnosticOutput::ErrError, "[Draw3] startup failed: %s\n", exception.what());
 					initialized = false;
 				}
 				catch (...)
 				{
 					failedCleanup.BeginKnownFailure();
-					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3] startup failed: unknown exception\n");
+					DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3] startup failed: unknown exception\n");
 					initialized = false;
 				}
 				UpdateCanvasInformation(initialized ? "就绪" : "初始化失败");
@@ -2390,14 +2394,14 @@ namespace Inkeys::Drawing::Draw3
 					{
 						runtimeMetrics.runFailed.store(true, std::memory_order_release);
 						// 绘制循环异常必须收敛到宿主停止，不能穿出 jthread 触发 terminate。
-						DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3] drawing loop stopped: %s\n",
+						DiagnosticOutput::Printf(DiagnosticOutput::ErrError, "[Draw3] drawing loop stopped: %s\n",
 							exception.what());
 						window.RequestExit();
 					}
 					catch (...)
 					{
 						runtimeMetrics.runFailed.store(true, std::memory_order_release);
-						DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3] drawing loop stopped: unknown exception\n");
+						DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3] drawing loop stopped: unknown exception\n");
 						window.RequestExit();
 					}
 				}
@@ -2504,7 +2508,7 @@ namespace Inkeys::Drawing::Draw3
 			const char* modeName = selected == HostInputMode::RtsExtended ? "RtsExtended" :
 				selected == HostInputMode::RtsBasicXY ? "RtsBasicXY" :
 				selected == HostInputMode::Win32Mouse ? "Win32Mouse" : "Disabled";
-			DiagnosticOutput::Line() << "[Draw3] Input initialization result="
+			DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "[Draw3] Input initialization result="
 				<< (inputInitialized ? "ready" : "failed") << " input_mode=" << modeName << std::endl;
 			if (!inputInitialized) failedCleanup.BeginKnownFailure();
 			if (inputInitialized && startOptions.startupMilestone)
@@ -2642,12 +2646,12 @@ namespace Inkeys::Drawing::Draw3
 							!running.load(std::memory_order_acquire);
 					});
 				if (exitAutoSavePrepared && !whiteboardExitDurable.load(std::memory_order_acquire))
-					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=exit_barrier result=failed reason=whiteboard_not_durable\n");
+					DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=exit_barrier result=failed reason=whiteboard_not_durable\n");
 				if (!exitAutoSavePrepared)
-					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=exit_barrier result=failed reason=controller_stopped\n");
+					DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=exit_barrier result=failed reason=controller_stopped\n");
 			}
 			else
-				DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3.AutoSave] action=exit_barrier result=failed reason=bridge_closed\n");
+				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=exit_barrier result=failed reason=bridge_closed\n");
 			// worker 无超时排空后才允许绘制线程销毁 Document/Controller。
 			autoSave.CloseAndDrain();
 			presentationAutoSave.CloseAndDrain();

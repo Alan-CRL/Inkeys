@@ -128,8 +128,9 @@ namespace Inkeys::Drawing::Draw3
 			static bool reported = false;
 			if (reported) return;
 			reported = true;
-			::OutputDebugStringW(
-				L"[Draw3] D3D11 Compute Shader 激光粒子不可用，已仅保留激光主体。\n");
+			// 绘制线程只做非阻塞日志投递（源文件按 /utf-8 编译，窄字面量即 UTF-8）。
+			(void)Inkeys::Log::TryWrite(Inkeys::Log::Level::Warn, Inkeys::Log::Module::Draw3, std::nullopt,
+				"D3D11 Compute Shader 激光粒子不可用，已仅保留激光主体。");
 		}
 	}
 	void InkRenderer::CopyResource(ID3D11Texture2D* dst, ID3D11Texture2D* src, RECT rect)

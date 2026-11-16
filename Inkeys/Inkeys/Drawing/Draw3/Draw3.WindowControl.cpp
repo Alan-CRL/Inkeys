@@ -1344,7 +1344,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (!IsValidDrawingCursorAppearance(appearance))
 		{
-			DiagnosticOutput::Line() << "Invalid drawing cursor appearance for tool="
+			DiagnosticOutput::Line(DiagnosticOutput::OutError) << "Invalid drawing cursor appearance for tool="
 				<< static_cast<uint32_t>(tool) << std::endl;
 			return false;
 		}

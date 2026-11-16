@@ -395,7 +395,8 @@ namespace Inkeys::Drawing::Draw3
 				boundVsCb && boundVsCb.Get() == globalCB.Get() ? 1u : 0u,
 				boundPsCb && boundPsCb.Get() == globalCB.Get() ? 1u : 0u,
 				boundSrv && boundSrv.Get() == inkDataSRV.Get() ? 1u : 0u);
-			if (length > 0) DiagnosticOutput::Write(DiagnosticOutput::Stream::Output, line, static_cast<std::streamsize>(
+			// 仅 Draw3 调试开关开启时采样：写入日志 Draw3 通道。
+			if (length > 0) DiagnosticOutput::Write(DiagnosticOutput::Target{ DiagnosticOutput::Stream::Output, Inkeys::Log::Channel::Draw3 }, line, static_cast<std::streamsize>(
 				std::min(static_cast<size_t>(length), sizeof(line) - 1)));
 		};
 		if (!IsValidDrawingCursorAppearance(visual.appearance))

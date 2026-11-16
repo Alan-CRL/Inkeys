@@ -235,6 +235,9 @@
     <Filter Include="Modules\Inkeys\Message">
       <UniqueIdentifier>{24904d13-cf18-43bd-9359-7700c5ae630e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\Inkeys\Log">
+      <UniqueIdentifier>{6d3f2a91-4c8e-4b57-9e1a-7f20c5d8b3e4}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Modules\Inkeys\Net">
       <UniqueIdentifier>{5f5718c8-20fd-405f-8e19-31c9d3625667}</UniqueIdentifier>
     </Filter>
@@ -692,6 +695,9 @@
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Log\Log.h">
+      <Filter>Modules\Inkeys\Log</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
@@ -2074,6 +2080,9 @@
     </ClCompile>
     <ClCompile Include="Inkeys\Conv\Conv.Text.cppm">
       <Filter>Modules\Inkeys\Conv</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Log\Log.cpp">
+      <Filter>Modules\Inkeys\Log</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp">
       <Filter>Modules\Inkeys\Helper</Filter>

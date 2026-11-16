@@ -545,6 +545,7 @@
     <ClInclude Include="PptSettingsPersistence.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PptTiming.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.h" />
+    <ClInclude Include="Inkeys\Log\Log.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Shortcut.h" />
@@ -1009,6 +1010,7 @@
     <ClCompile Include="IdtTime.cpp" />
     <ClCompile Include="Inkeys\Conv\Conv.Color.cppm" />
     <ClCompile Include="Inkeys\Conv\Conv.Text.cppm" />
+    <ClCompile Include="Inkeys\Log\Log.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm" />
     <ClCompile Include="Inkeys\Helper\ShutdownSupervisor.cpp" />

@@ -382,11 +382,11 @@ LRESULT CALLBACK DrawpadMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 	catch (const std::exception& exception)
 	{
 		// WndProc 不能让 C++ 异常穿过 USER32，否则 CRT 会直接 abort。
-		DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error, "[Draw3] drawpad message stopped: %s\n", exception.what());
+		DiagnosticOutput::Printf(DiagnosticOutput::ErrError, "[Draw3] drawpad message stopped: %s\n", exception.what());
 	}
 	catch (...)
 	{
-		DiagnosticOutput::Text(DiagnosticOutput::Stream::Error, "[Draw3] drawpad message stopped: unknown exception\n");
+		DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3] drawpad message stopped: unknown exception\n");
 	}
 
 	// Host 启动前仍由默认 WndProc 接管，避免向尚未附着的控制器发送消息。

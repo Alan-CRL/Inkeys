@@ -11,6 +11,8 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <optional>
+#include <string_view>
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 #include <string>
 #include <thread>
@@ -60,6 +62,7 @@ namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 		State* active = nullptr;
 		State* isolated = nullptr;
 		std::atomic<bool> lifecycleBusy = false;
+		// 仅表示标准流模式的 Session 正在接收；为 false 时所有诊断走统一日志。
 		std::atomic<bool> accepting = false;
 		std::atomic<unsigned> available = 0;
 		std::atomic<std::uint64_t> contention = 0, closed = 0;
@@ -211,6 +214,25 @@ namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 			}
 			return 0;
 		}
+		// 日志模式可用性只看日志服务与对应等级/调试通道，不再看 stdout/stderr/调试器。
+		bool LogAvailable(const Target& target) noexcept
+		{
+			if (!::Inkeys::Log::Started()) return false;
+			return target.channel != NoChannel
+				? ::Inkeys::Log::ChannelEnabled(static_cast<::Inkeys::Log::Channel>(target.channel))
+				: ::Inkeys::Log::Enabled(target.level);
+		}
+		// 日志模式：调用线程直接非阻塞投递（时间戳/线程 ID 在此采集），不经本模块队列与 worker。
+		void WriteLog(const Target& target, const char* text, std::size_t length) noexcept
+		{
+			if (!LogAvailable(target)) return;
+			// 日志行由写线程统一补换行；去掉原标准流记录自带的 CR/LF。
+			while (length && (text[length - 1] == '\n' || text[length - 1] == '\r')) --length;
+			if (!length) return;
+			std::optional<::Inkeys::Log::Channel> channel;
+			if (target.channel != NoChannel) channel = static_cast<::Inkeys::Log::Channel>(target.channel);
+			(void)::Inkeys::Log::TryWrite(target.level, target.module, channel, std::string_view(text, length));
+		}
 		HANDLE DuplicateSink(HANDLE source) noexcept
 		{
 			if (!source || source == INVALID_HANDLE_VALUE) return nullptr;
@@ -223,17 +245,24 @@ namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 		}
 	}
 
-	bool Available(Stream stream, bool mirror) noexcept
+	bool Available(Target target, bool mirror) noexcept
 	{
-		return accepting.load(std::memory_order_acquire) &&
-			(available.load(std::memory_order_relaxed) & (Mask(stream) | (mirror ? 4u : 0u))) != 0;
+		if (!accepting.load(std::memory_order_acquire)) return LogAvailable(target);
+		return (available.load(std::memory_order_relaxed) & (Mask(target.stream) | (mirror ? 4u : 0u))) != 0;
 	}
 
-	void Write(Stream stream, const char* text, std::size_t length, bool mirror) noexcept
+	void Write(Target target, const char* text, std::size_t length, bool mirror) noexcept
 	{
 		LastErrorGuard errorGuard;
 		if (!text || length == 0) return;
-		if (!Available(stream, mirror)) { closed.fetch_add(1, std::memory_order_relaxed); return; }
+		if (!accepting.load(std::memory_order_acquire))
+		{
+			// 长度达到容量表示调用方已截断（缓冲内以 NUL 结束，可能已带 [truncated] 标记），只读实际文本。
+			WriteLog(target, text, length >= TextCapacity ? strnlen_s(text, TextCapacity - 1) : length);
+			return;
+		}
+		const Stream stream = target.stream;
+		if (!Available(target, mirror)) { closed.fetch_add(1, std::memory_order_relaxed); return; }
 		if (!TryAcquireSRWLockShared(&routeLock)) { contention.fetch_add(1, std::memory_order_relaxed); return; }
 		State* state = active;
 		if (!state || !state->accepting.load(std::memory_order_acquire))
@@ -268,15 +297,15 @@ namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 		ReleaseSRWLockShared(&routeLock);
 	}
 
-	void Text(Stream stream, const char* text, bool mirror) noexcept
+	void Text(Target target, const char* text, bool mirror) noexcept
 	{
-		if (!text || !Available(stream, mirror)) return;
-		Write(stream, text, strnlen_s(text, TextCapacity), mirror);
+		if (!text || !Available(target, mirror)) return;
+		Write(target, text, strnlen_s(text, TextCapacity), mirror);
 	}
-	void Printf(Stream stream, const char* format, ...) noexcept
+	void Printf(Target target, const char* format, ...) noexcept
 	{
 		LastErrorGuard errorGuard;
-		if (!format || !Available(stream)) return;
+		if (!format || !Available(target)) return;
 		char text[TextCapacity];
 		va_list arguments;
 		va_start(arguments, format);
@@ -284,7 +313,7 @@ namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 		va_end(arguments);
 		if (result <= 0) return;
 		// Write 按原长度决定截断，但只读取定长缓冲中实际存在的前缀。
-		Write(stream, text, static_cast<std::size_t>(result));
+		Write(target, text, static_cast<std::size_t>(result));
 	}
 	void Wake() noexcept
 	{
@@ -295,9 +324,11 @@ namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 	}
 
 	Session::~Session() { (void)Stop(); }
-	bool Session::Start() noexcept
+	bool Session::Start(Mode mode) noexcept
 	{
 		LastErrorGuard errorGuard;
+		// 日志模式无队列/worker；诊断随时按日志服务状态直接投递。
+		if (mode == Mode::Log) return ::Inkeys::Log::Started();
 		return StartHandles(GetStdHandle(STD_OUTPUT_HANDLE), GetStdHandle(STD_ERROR_HANDLE));
 	}
 	bool Session::StartHandles(void* output, void* error) noexcept
@@ -434,14 +465,14 @@ namespace Inkeys::Drawing::Draw3::DiagnosticOutput
 		return state_ ? ReadStatistics(static_cast<State*>(state_)) : stopped_;
 	}
 
-	Line::Line(Stream stream, bool mirror) noexcept
-		: previousError_(GetLastError()), stream_(stream), mirror_(mirror), enabled_(Available(stream, mirror)) {}
+	Line::Line(Target target, bool mirror) noexcept
+		: previousError_(GetLastError()), target_(target), mirror_(mirror), enabled_(Available(target, mirror)) {}
 	Line::~Line()
 	{
 		if (enabled_ && length_)
 		{
-			if (truncated_) { MarkTruncated(text_, length_); Write(stream_, text_, TextCapacity, mirror_); }
-			else Write(stream_, text_, length_, mirror_);
+			if (truncated_) { MarkTruncated(text_, length_); Write(target_, text_, TextCapacity, mirror_); }
+			else Write(target_, text_, length_, mirror_);
 		}
 		SetLastError(previousError_);
 	}

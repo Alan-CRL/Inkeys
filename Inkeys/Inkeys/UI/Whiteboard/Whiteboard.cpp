@@ -125,7 +125,9 @@ namespace Inkeys::UI::Whiteboard
 			{
 				if (profile.Empty()) return;
 				const auto s = profile.Summarize();
-				Inkeys::Drawing::Draw3::DiagnosticOutput::Printf(Inkeys::Drawing::Draw3::DiagnosticOutput::Stream::Error,
+				// INKEYS_WHITEBOARD_PATTERN_PROFILE 门控的专项诊断：日志模式记 Debug（模块 Whiteboard）。
+				Inkeys::Drawing::Draw3::DiagnosticOutput::Printf(Inkeys::Drawing::Draw3::DiagnosticOutput::Target{
+					Inkeys::Drawing::Draw3::DiagnosticOutput::Stream::Error, Inkeys::Log::Level::Debug, Inkeys::Log::Module::Whiteboard },
 					"[WhiteboardPatternPerf] M1 updates=%zu dropped=%zu segment-ms=%.1f ups=%.1f gap-ms p50=%.2f p95=%.2f max=%.2f cost-ms p50=%.2f p95=%.2f max=%.2f\n"
 					"[WhiteboardPatternPerf] M2 lag-frames p50=%.1f p95=%.1f max=%.1f ack-lag-frames p50=%.1f p95=%.1f max=%.1f (n=%zu) lag-ms p50=%.2f p95=%.2f max=%.2f lag-px p50=%.1f p95=%.1f max=%.1f settle-ms=%.2f\n",
 					s.updates, s.dropped, s.segmentMs, s.updatesPerSecond, s.gapP50, s.gapP95, s.gapMax,

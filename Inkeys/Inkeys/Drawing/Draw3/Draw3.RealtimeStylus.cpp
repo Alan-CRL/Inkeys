@@ -2703,7 +2703,9 @@ namespace Inkeys::Drawing::Draw3
 						RtsStartup::StageName(outcome.stage), outcome.result);
 				}
 				catch (...) {} // 诊断分配失败不改变输入后端选择。
-				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+				// 成功尝试为 Info，失败尝试按原 stderr 语义记 Warn。
+				DiagnosticOutput::Printf(outcome.Ready() ? DiagnosticOutput::ErrInfo
+					: DiagnosticOutput::Target{ DiagnosticOutput::Stream::Error },
 					"[RTS] attempt=%u profile=%s stage=%s hr=0x%08lx initialized=%d cleanup=%s\n",
 					basic ? 2u : 1u, RtsStartup::ProfileName(profile), RtsStartup::StageName(outcome.stage),
 					static_cast<unsigned long>(outcome.result), outcome.Ready(), outcome.Ready() ? "not-needed" : "complete");
@@ -2883,7 +2885,7 @@ namespace Inkeys::Drawing::Draw3
 			traceState.multiTouchEnabled = multiTouchEnabled;
 #endif
 			if (SUCCEEDED(verifyResult))
-				DiagnosticOutput::Line() << "[RTS] MultiTouchEnabled=" << (multiTouchEnabled ? "true" : "false") << std::endl;
+				DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "[RTS] MultiTouchEnabled=" << (multiTouchEnabled ? "true" : "false") << std::endl;
 			else
 				LogHResult("Read RealTimeStylus multi-touch state", verifyResult);
 		}
@@ -3037,6 +3039,9 @@ namespace Inkeys::Drawing::Draw3
 
 	bool RealTimeStylusInput::TraceTouchAreaDiagnostics(const SpeedEraser::InputSource& requested) const noexcept
 	{
+		// 仅在 TouchArea 调试开关门内调用：写入日志 TouchArea 通道，标准流模式仍写 stderr。
+		constexpr DiagnosticOutput::Target touchAreaTarget{ DiagnosticOutput::Stream::Error,
+			Inkeys::Log::Channel::TouchArea, Inkeys::Log::Module::Input };
 		std::array<RtsContextDecoder,kContextDecoderCapacity> contexts;
 		size_t count=0;bool copied=false;
 		{
@@ -3047,7 +3052,7 @@ namespace Inkeys::Drawing::Draw3
 		// 释放生命周期/缓存锁之后才格式化和输出；不依赖 DRAW3_RTS_DIAGNOSTICS。
 		if(!copied || count==0)
 		{
-			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,"[TouchAreaDevice] cache=%s requestedTcid=%u requestedGen=%llu touchContexts=%zu (no substitute Mouse/Pen metadata)\n",
+			DiagnosticOutput::Printf(touchAreaTarget,"[TouchAreaDevice] cache=%s requestedTcid=%u requestedGen=%llu touchContexts=%zu (no substitute Mouse/Pen metadata)\n",
 				copied?"no-matching-touch":"not-ready-or-busy",requested.contextId,
 				static_cast<unsigned long long>(requested.generation),count);
 			return false;
@@ -3056,14 +3061,14 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const auto& d=contexts[i];
 			const auto source=SourceForCursor(d,requested.contextId?requested.cursorId:0);
-			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+			DiagnosticOutput::Printf(touchAreaTarget,
 				"[TouchAreaDevice] cache=snapshot tcid=%u gen=%llu cid=%u inputType=Touch source=%s recognition=%u kindKnown=%d capsKnown=%d integrated=%d modernAPI=%d mappedMonitor=%p mappedRect=(%d,%d,%d,%d) mapping=%s\n",
 				static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),source.cursorId,
 				SpeedEraser::SourceKindName(source.kind),static_cast<unsigned>(source.recognition),d.sourceDeviceKnown,d.capabilitiesKnown,
 				d.integrated,d.modernSourceApi,reinterpret_cast<void*>(source.mappedMonitor),
 				source.mappedLeft,source.mappedTop,source.mappedWidth,source.mappedHeight,
 				requested.contextId?"same-cursor-source":"awaiting-touch-cursor");
-			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+			DiagnosticOutput::Printf(touchAreaTarget,
 				"[TouchAreaDevice] tcid=%u gen=%llu contextScale=%.9gx%.9g contextMeaning=ink-to-digitizer positionScale=%.9gx%.9g positionMeaning=canvasPx=packetXY*sharedPositionScale lengthMeaning=span/resolution->digitizer-axis->divide-context-scale->ink->position-linear-part translationApplied=0 contextInverseApplied=1\n",
 				static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),
 				d.contactScaleX,d.contactScaleY,d.positionScaleX,d.positionScaleY);
@@ -3079,7 +3084,7 @@ namespace Inkeys::Drawing::Draw3
 					static_cast<unsigned>(g.Data4[2]),static_cast<unsigned>(g.Data4[3]),
 					static_cast<unsigned>(g.Data4[4]),static_cast<unsigned>(g.Data4[5]),
 					static_cast<unsigned>(g.Data4[6]),static_cast<unsigned>(g.Data4[7]));
-				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,"[TouchAreaDevice] tcid=%u gen=%llu %s present=%d guid=%s index=%ld Units=%u(%s) fResolution=%.9g nLogicalMin=%ld nLogicalMax=%ld\n",
+				DiagnosticOutput::Printf(touchAreaTarget,"[TouchAreaDevice] tcid=%u gen=%llu %s present=%d guid=%s index=%ld Units=%u(%s) fResolution=%.9g nLogicalMin=%ld nLogicalMax=%ld\n",
 					static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),labels[j],p.present,guid,
 					p.present?static_cast<long>(p.index):-1L,static_cast<unsigned>(p.metrics.Units),
 					SpeedEraser::ContactPropertyUnitName(p.metrics.Units),p.metrics.fResolution,p.metrics.nLogicalMin,p.metrics.nLogicalMax);
@@ -3087,7 +3092,7 @@ namespace Inkeys::Drawing::Draw3
 			for(size_t j=0;j<2;++j)
 			{
 				const auto& transform=j==0?d.widthTransform:d.heightTransform;
-				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,"[TouchAreaDevice] tcid=%u gen=%llu %s status=%s unitConverted=%d resolutionAdjusted=%d spanToAxis=%.12g spanToCanvasPx=%.12g\n",
+				DiagnosticOutput::Printf(touchAreaTarget,"[TouchAreaDevice] tcid=%u gen=%llu %s status=%s unitConverted=%d resolutionAdjusted=%d spanToAxis=%.12g spanToCanvasPx=%.12g\n",
 					static_cast<unsigned>(d.tabletContextId),static_cast<unsigned long long>(d.generation),j==0?"WIDTH/X":"HEIGHT/Y",
 					SpeedEraser::ContactAreaUnitsName(transform.status),transform.unitConverted,transform.resolutionAdjusted,
 					transform.spanToAxis,transform.spanToCanvas);
