@@ -1,0 +1,7 @@
+{"file":".trellis/spec/index.md","reason":"Minimum-change and evidence rules for review."}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"Build/compat gates: full solution Debug|ARM64, Win7 API imports."}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"Thread exit contract and logging conventions to verify shutdown drain."}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"Code style, BOM/CRLF preservation."}
+{"file":".trellis/spec/ppt-interop/com-contract.md","reason":"Verify COM ABI unchanged and diagnostics constraints respected."}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"Verify no blocking logging on Draw3 hot paths."}
+{"file":".trellis/tasks/11-16-logging-system-refactor/research/console-output-inventory.md","reason":"Verify every inventoried callsite was migrated or intentionally left (test protocol / emergency)."}

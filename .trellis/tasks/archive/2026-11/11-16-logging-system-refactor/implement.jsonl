@@ -1,0 +1,14 @@
+{"file":".trellis/spec/index.md","reason":"Project evidence levels, minimum-change rules, decision boundaries."}
+{"file":".trellis/spec/native-desktop/index.md","reason":"Native product ownership, full-solution build, UI route boundaries."}
+{"file":".trellis/spec/native-desktop/errors-logging-and-resources.md","reason":"Current logging/cleanup facts and managed thread exit contract for FlushAndStop ordering."}
+{"file":".trellis/spec/native-desktop/cpp-conventions.md","reason":"C++ naming, module/header conventions, comment style, encoding."}
+{"file":".trellis/spec/native-desktop/directory-structure.md","reason":"Where to place the new Log module and vcxproj/filters rules."}
+{"file":".trellis/spec/native-desktop/build-and-compatibility.md","reason":"Win7 SP1 compatibility, InkeysRepo.sln Debug|ARM64 build rules."}
+{"file":".trellis/spec/native-desktop/configuration-i18n-and-assets.md","reason":"Config schema (Other.Config.cppm) and i18n key/generation rules for the Logging group and settings strings."}
+{"file":".trellis/spec/native-desktop/settings-navigation.md","reason":"Settings LogsLog section routing and page rendering conventions."}
+{"file":".trellis/spec/native-desktop/ui3-render-diagnostics.md","reason":"UI3 diagnostics sink semantics that must be preserved when retargeted to the log service."}
+{"file":".trellis/spec/native-desktop/draw3-integration.md","reason":"Draw3 thread/hot-path constraints for DiagnosticOutput backend replacement."}
+{"file":".trellis/spec/ppt-interop/index.md","reason":"PptCOM interop entry."}
+{"file":".trellis/spec/ppt-interop/com-contract.md","reason":"COM extension-interface rule, diagnostics constraints (no GetHRForException, no extra COM acquisition, event queue)."}
+{"file":".trellis/tasks/11-16-logging-system-refactor/research/console-output-inventory.md","reason":"Per-callsite classification of console/diagnostic outputs and IDTLogger prefix->module mapping."}
+{"file":".trellis/tasks/11-16-inkeys3-midterm-refactor/research/第0步 Inkeys3_日志系统与白板切换调查_2026-11-14.md","reason":"Original logging investigation (channels, spdlog config issues, C# plan)."}

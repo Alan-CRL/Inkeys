@@ -1,0 +1,28 @@
+{
+  "id": "inkeys3-midterm-refactor",
+  "name": "inkeys3-midterm-refactor",
+  "title": "Inkeys3 中期重构总任务",
+  "description": "统筹 Inkeys3 中期重构六步路线（日志/UI3分层/Win7 ULW/多画布窗口/输入后端/Draw3性能），持有任务地图与跨子任务验收",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-16",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-16-logging-system-refactor"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
