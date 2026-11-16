@@ -859,101 +859,101 @@ void BarButtonSetClass::RegisterBuiltInComponents()
 	registerComponent(
 		"Component.ShortcutButton.Appliance.Explorer",
 		"component.shortcutButton.appliance.explorer",
-		[] { return setlist.component.shortcutButton.appliance.explorer; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer.load(); },
 		IW(componentText.SoftwareSection).c_str(), IW(componentText.ExplorerTitle).c_str(), IW(componentLabels.ExplorerLabel).c_str(), L"compExplorer",
 		BuiltInComponentAction::Explorer);
 	registerComponent(
 		"Component.ShortcutButton.Appliance.Taskmgr",
 		"component.shortcutButton.appliance.taskmgr",
-		[] { return setlist.component.shortcutButton.appliance.taskmgr; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.Appliance.Taskmgr.load(); },
 		IW(componentText.SoftwareSection).c_str(), IW(componentText.TaskManagerTitle).c_str(), IW(componentLabels.TaskManagerLabel).c_str(), L"compTaskManager",
 		BuiltInComponentAction::TaskManager);
 	registerComponent(
 		"Component.ShortcutButton.Appliance.Control",
 		"component.shortcutButton.appliance.control",
-		[] { return setlist.component.shortcutButton.appliance.control; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.Appliance.Control.load(); },
 		IW(componentText.SoftwareSection).c_str(), IW(componentText.ControlPanelTitle).c_str(), IW(componentLabels.ControlPanelLabel).c_str(), L"compControlPanel",
 		BuiltInComponentAction::ControlPanel);
 
 	registerComponent(
 		"Component.ShortcutButton.System.Desktop",
 		"component.shortcutButton.system.desktop",
-		[] { return setlist.component.shortcutButton.system.desktop; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.System.Desktop.load(); },
 		IW(componentText.SystemSection).c_str(), IW(componentText.ShowDesktopTitle).c_str(), IW(componentLabels.ShowDesktopLabel).c_str(), L"compShowDesktop",
 		BuiltInComponentAction::ShowDesktop);
 	registerComponent(
 		"Component.ShortcutButton.System.LockWorkStation",
 		"component.shortcutButton.system.lockWorkStation",
-		[] { return setlist.component.shortcutButton.system.lockWorkStation; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.System.LockWorkStation.load(); },
 		IW(componentText.SystemSection).c_str(), IW(componentText.LockScreenTitle).c_str(), IW(componentLabels.LockScreenLabel).c_str(), L"compLockScreen",
 		BuiltInComponentAction::LockWorkStation);
 
 	registerComponent(
 		"Component.ShortcutButton.Keyboard.Keyboardesc",
 		"component.shortcutButton.keyboard.keyboardesc",
-		[] { return setlist.component.shortcutButton.keyboard.keyboardesc; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.Keyboard.Keyboardesc.load(); },
 		IW(componentText.KeyboardSection).c_str(), IW(componentText.EscapeTitle).c_str(), IW(componentLabels.EscapeLabel).c_str(), L"compEscape",
 		BuiltInComponentAction::Escape);
 	registerComponent(
 		"Component.ShortcutButton.Keyboard.KeyboardAltF4",
 		"component.shortcutButton.keyboard.keyboardAltF4",
-		[] { return setlist.component.shortcutButton.keyboard.keyboardAltF4; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.Keyboard.KeyboardAltF4.load(); },
 		IW(componentText.KeyboardSection).c_str(), IW(componentText.AltF4Title).c_str(), L"Alt+F4", L"compAltF4",
 		BuiltInComponentAction::AltF4);
 
 	registerComponent(
 		"Component.ShortcutButton.RollCall.IslandCaller1",
 		"component.shortcutButton.rollCall.IslandCaller1",
-		[] { return setlist.component.shortcutButton.rollCall.IslandCaller1; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.RollCall.IslandCaller1.load(); },
 		IW(componentText.RollCallSection).c_str(), IW(componentText.IslandCaller1Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallRandom",
 		BuiltInComponentAction::IslandCaller);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.IslandCaller2",
 		"component.shortcutButton.rollCall.IslandCaller2",
-		[] { return setlist.component.shortcutButton.rollCall.IslandCaller2; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.RollCall.IslandCaller2.load(); },
 		IW(componentText.RollCallSection).c_str(), IW(componentText.IslandCaller2Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallSingle",
 		BuiltInComponentAction::IslandCallerSimple);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom1",
 		"component.shortcutButton.rollCall.SecRandom1",
-		[] { return setlist.component.shortcutButton.rollCall.SecRandom1; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.RollCall.SecRandom1.load(); },
 		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom1Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallQuick",
 		BuiltInComponentAction::SecRandomDirect);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom2",
 		"component.shortcutButton.rollCall.SecRandom2",
-		[] { return setlist.component.shortcutButton.rollCall.SecRandom2; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.RollCall.SecRandom2.load(); },
 		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom2Title).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallQuick2",
 		BuiltInComponentAction::SecRandomQuickDraw);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.SecRandom2Compat",
 		"component.shortcutButton.rollCall.SecRandom2Compat",
-		[] { return setlist.component.shortcutButton.rollCall.SecRandom2Compat; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.RollCall.SecRandom2Compat.load(); },
 		IW(componentText.RollCallSection).c_str(), IW(componentText.SecRandom2CompatTitle).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compRollCallQuickCompat",
 		BuiltInComponentAction::SecRandomQuickDrawCompat);
 	registerComponent(
 		"Component.ShortcutButton.RollCall.NamePicker",
 		"component.shortcutButton.rollCall.NamePicker",
-		[] { return setlist.component.shortcutButton.rollCall.NamePicker; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.RollCall.NamePicker.load(); },
 		IW(componentText.RollCallSection).c_str(), IW(componentText.NamePickerTitle).c_str(), IW(componentLabels.RollCallLabel).c_str(), L"compNamePicker",
 		BuiltInComponentAction::NamePicker);
 
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandSettings",
 		"component.shortcutButton.linkage.classislandSettings",
-		[] { return setlist.component.shortcutButton.linkage.classislandSettings; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.Linkage.ClassislandSettings.load(); },
 		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandSettingsTitle).c_str(), IW(componentLabels.ClassIslandSettingsLabel).c_str(), L"compClassSettings",
 		BuiltInComponentAction::ClassIslandSettings);
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandProfile",
 		"component.shortcutButton.linkage.classislandProfile",
-		[] { return setlist.component.shortcutButton.linkage.classislandProfile; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.Linkage.ClassislandProfile.load(); },
 		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandProfileTitle).c_str(), IW(componentLabels.ClassIslandProfileLabel).c_str(), L"compClassProfile",
 		BuiltInComponentAction::ClassIslandProfile);
 	registerComponent(
 		"Component.ShortcutButton.Linkage.ClassislandClassswap",
 		"component.shortcutButton.linkage.classislandClassswap",
-		[] { return setlist.component.shortcutButton.linkage.classislandClassswap; },
+		[] { return Inkeys::config.UI.Bar.ShortcutButton.Linkage.ClassislandClassswap.load(); },
 		IW(componentText.ClassIslandSection).c_str(), IW(componentText.ClassIslandSwapTitle).c_str(), IW(componentLabels.ClassIslandSwapLabel).c_str(), L"compClassSwap",
 		BuiltInComponentAction::ClassIslandClassSwap);
 }

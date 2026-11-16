@@ -3949,7 +3949,7 @@ public:
 
 			stage = "explicit-width-matches-preset-highlight";
 			const auto originalContext = GetPenWidthContext();
-			const int originalPaintDevice = setlist.paintDevice;
+			const int originalPaintDevice = Inkeys::config.Drawing.PaintDevice;
 			const auto selectedOnly = [&](const StateModeClass& snapshot, int expected)
 			{
 				for (size_t index = 0; index < 3; ++index)
@@ -3964,7 +3964,7 @@ public:
 			};
 			for (const auto& context : highlightContexts)
 			{
-				setlist.paintDevice = context.paintDevice;
+				Inkeys::config.Drawing.PaintDevice = context.paintDevice;
 				ApplyPenWidthContext(context);
 				for (const auto tool : { PenToolSelectionEnum::SoftPen, PenToolSelectionEnum::HardPen,
 					PenToolSelectionEnum::Highlighter, PenToolSelectionEnum::Laser })
@@ -4109,7 +4109,7 @@ public:
 				"bar-invalid-preset-index-not-selected");
 
 			stage = "explicit-highlight-cancel-stale-and-display-change";
-			setlist.paintDevice = 1;
+			Inkeys::config.Drawing.PaintDevice = 1;
 			ApplyPenWidthContext(highlightContexts[0]);
 			require(SetPenWidth(7.0, false), "bar-cancel-nonpreset-seed");
 			begin(7.0);
@@ -4128,14 +4128,14 @@ public:
 			selectedOnly(GetStateModeSnapshot(), -1);
 			require(SetPenWidth(3.0, false), "bar-display-explicit-matching-seed");
 			selectedOnly(GetStateModeSnapshot(), 1);
-			setlist.paintDevice = 0;
+			Inkeys::config.Drawing.PaintDevice = 0;
 			ApplyPenWidthContext(highlightContexts[3]);
 			const auto afterDisplay = GetStateModeSnapshot();
 			require(GetPenWidthSelection(afterDisplay).source == Source::ExplicitDip
 				&& GetPenWidthMetrics(afterDisplay).resolvedWidthDip == 3.0,
 				"bar-display-change-keeps-explicit-dip");
 			selectedOnly(afterDisplay, -1);
-			setlist.paintDevice = originalPaintDevice;
+			Inkeys::config.Drawing.PaintDevice = originalPaintDevice;
 			ApplyPenWidthContext(originalContext);
 			ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
 			require(SetPenWidth(7.0, false), "bar-highlight-restore-existing-fixture");
@@ -6342,7 +6342,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 
 					ClearBarInteractionMessages(EM_MOUSE, floating_window);
 				}
-				if (msg.message == WM_RBUTTONDOWN && setlist.RightClickClose)
+				if (msg.message == WM_RBUTTONDOWN && Inkeys::config.UI.Bar.RightClickClose)
 				{
 					co_await RunInteractionBusiness([cancellation = InteractionBusinessCancellation()]() -> bool
 					{

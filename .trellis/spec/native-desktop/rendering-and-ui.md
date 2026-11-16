@@ -1642,7 +1642,7 @@ bool Window::UsesSettingOutsideResize() noexcept;
 - 边框窗口的 `WM_NCHITTEST` 使用最近一次同步的几何调用 `HitTestWindowResizeBorder`：四边返回对应边命中，角区沿边延伸一个 sizing frame 宽度（不小于圆角半径）；Setting 最大化、最小化或被模态禁用时返回 `HTNOWHERE`。`WM_NCLBUTTONDOWN` 再次确认 Setting 未被模态禁用（`HT*` 与 `WMSZ_*` 同序，由 `static_assert` 锁定偏移映射），先把 Setting 设为前台，再向 Setting 同步发送 `WM_SYSCOMMAND(SC_SIZE | WMSZ_*)`，系统 size loop 与 `InteractiveWindowOperation::Size`/轻量模糊切换仍在 Setting 上执行；`WM_SETCURSOR` 按方向设置缩放光标。Setting 的 `WM_WINDOWPOSCHANGED`、`WM_DPICHANGED` 与系统度量消息同步位置、尺寸和区域（仅尺寸/DPI/圆角变化重建区域）；隐藏、最小化、最大化时隐藏它，并忽略 Setting 还原时系统发来的 `SW_PARENTOPENING`，显隐只由同步函数决定；`WM_DESTROY` 销毁它。圆角挖空用 `CreateRoundRectRgn` 时右/下各补 1 px（该 API 比 `CreateRectRgn` 少一列一行），否则边框窗口会盖住 Setting 最右列与最下行并吞掉点击。Win7/8/8.1 与早期 Win10 从不创建。
 - Setting 新壳层由 `Setting.Design.h` 统一计算 pane/content 几何，`Setting.Shell.cpp` 组合 ImGui child 与 ImFluent `NavItemEx`；页面和底部动作共用同一图标/文字轴。自有壳层用于准确的宽窗/覆盖语义，不代表另建控件库或渲染后端；所有设置入口保留同一 PageId 路由。旧 NavigationView/SplitView 组合是此前迁移方案，不再作为新壳层的强制调用合同。
 - 业务输入控件继续使用 ImFluent。全部实际设置页使用 `Setting.Controls` 的显式测量/排列/行框和 ImFluent 输入控件；Home/General 使用 `Setting.Pages` 的事件接口，其余页面在原 `Setting.cpp` coroutine/FIFO 宏域接业务。`Setting.Widgets` 仅余原chrome/颜色/DIP/样式辅助，不再提供页面或固定比例设置行。标题栏复用同一主题并提供实时切换按钮；更新状态和检查操作仍只在版本页呈现。
-- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程冻结 JSON 或 `Inkeys::Config` 副本；普通 I/O worker 不读取实时 `setlist`、`pptComSetlist` 或 `Inkeys::config`；绘图状态同步命令在执行时读取最新运行时状态。停止时禁止新命令，并按 FIFO 排空已接收命令。
+- 文件写盘、Shell、模态确认、重启和 DDB 操作进入单一 FIFO。配置命令在生产者线程先改 `Inkeys::config`，worker 执行时统一调用 `Inkeys::config.Write()` 写出最新完整配置（唯一保存入口，不复制快照）；DDB 交换文件内容仍在入队时冻结；绘图状态同步命令在执行时读取最新运行时状态。停止时禁止新命令，并按 FIFO 排空已接收命令。
 - 自动更新是既有长期网络服务；FIFO 只串行化其启动命令，不把长期下载循环占用为业务 worker 本体。
 - 退出顺序固定为：停止显隐/输入生产者，隐藏并请求 Settings，渲染线程 drain session，`Unregister(Settings)`，排空业务 FIFO，join Bar/PPT，停止 Window Service，最后 `RenderPipeline::Shutdown()`。
 
@@ -1690,13 +1690,13 @@ bool Window::UsesSettingOutsideResize() noexcept;
 #### 7. Wrong vs Correct
 
 ~~~cpp
-// Wrong：渲染线程同步写盘并从 worker 延迟读取可变全局配置。
+// Wrong：渲染线程同步写盘；或入队时复制 Config 快照，稍后写盘把其他入口的新值回退。
 Inkeys::config.Write();
-queue.push({ .kind = WriteConfig });
-
-// Correct：入队前冻结值，worker 只消费 owned payload。
 command.configSnapshot = std::make_shared<Inkeys::Config>(Inkeys::config);
-queue.push(std::move(command));
+
+// Correct：渲染线程只改值并入队，worker 执行时写出最新完整配置。
+Inkeys::config.UI.TopSleepTime = value;
+QueueConfigWrite(); // worker: Inkeys::config.Write()
 
 // Wrong：普通 Hide 销毁常驻资源，下一次 Show 再读盘和建图集。
 DestroyImguiContextAndDeviceResources();
@@ -2142,7 +2142,7 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 
 #### 3. Contracts
 
-- NavigationState 的宽窗偏好与窄窗 overlay 分开；Resize 不覆盖 desktopCompact，窄窗展开不改 content rectangle。248/48 DIP pane、900 DIP 阈值和 x=24 图标轴保持；普通行36 DIP、图标16 DIP、menu/footer inset 4。顶部汉堡/主页/语言固定；汉堡默认透明无边框，局部将Fluent Button hover/held填充映射为当前palette的subtleHover/subtlePressed，保留真实按钮颜色动画、ID、键盘焦点与开合逻辑，不改全局普通按钮色。中段六个根入口按通用/绘制/插件/组件/实验/版本独立child滚动；通用包含基本/外观与动画/行为与安全/存储与配置/快捷键五个子页；展开树与紧凑浮层的数量、完整高度、命中和滚动均取同一 GeneralSectionCount，子项缩进24 DIP，底部社区/普通蓝字赞助/重启/红色关闭固定。三处1 DIP细线替代分组标题；Debug使用标题栏Bug图标入口，Feedback使用其左侧反馈图标；二者均不在侧栏绘制/预留行，进入时立即清除旧侧栏选中条。ResolveNavigationPaneGeometry先测固定行/分割带，再分配中段；超短pane不得顶部/底部重叠，fits=false时超出区域受窗口裁剪，实际可达性边界另记。
+- 【2026-11-15 已由 [settings-navigation.md](settings-navigation.md) 取代：侧栏改为十一个根入口，通用只保留基本/外观与动画/状态指示器/桌面快捷方式，其余子页迁至窗口与显示器、按键与快捷键、日志与配置；以下为历史描述】NavigationState 的宽窗偏好与窄窗 overlay 分开；Resize 不覆盖 desktopCompact，窄窗展开不改 content rectangle。248/48 DIP pane、900 DIP 阈值和 x=24 图标轴保持；普通行36 DIP、图标16 DIP、menu/footer inset 4。顶部汉堡/主页/语言固定；汉堡默认透明无边框，局部将Fluent Button hover/held填充映射为当前palette的subtleHover/subtlePressed，保留真实按钮颜色动画、ID、键盘焦点与开合逻辑，不改全局普通按钮色。中段六个根入口按通用/绘制/插件/组件/实验/版本独立child滚动；通用包含基本/外观与动画/行为与安全/存储与配置/快捷键五个子页；展开树与紧凑浮层的数量、完整高度、命中和滚动均取同一 GeneralSectionCount，子项缩进24 DIP，底部社区/普通蓝字赞助/重启/红色关闭固定。三处1 DIP细线替代分组标题；Debug使用标题栏Bug图标入口，Feedback使用其左侧反馈图标；二者均不在侧栏绘制/预留行，进入时立即清除旧侧栏选中条。ResolveNavigationPaneGeometry先测固定行/分割带，再分配中段；超短pane不得顶部/底部重叠，fits=false时超出区域受窗口裁剪，实际可达性边界另记。
 - RowMeasure/RowGeometry 使用 DIP，TextHeight/TextAt 接收物理像素宽；最终绘制统一乘 FontScaleDpi。设置卡片默认标题＋完整多行说明，action 按实际宽度靠右。按当前内容宽度及 action 自然宽度动态判断文字预算：说明区不足280 DIP时采用标题/action在上、说明下方通栏，返回行内保留16 DIP余量；标题区不足160 DIP时沿用极窄控件换行。以上是项目预算，不是WinUI官方断点，不以控件数量/固定单行判断代替测量，不缩小字号、截断或默认折叠完整说明。长文行高由实际字体测量而来；测量不运行 action，一帧只在实际控件绘制时产生事件。
 - 多行说明布局的补间使用当前ImGui窗口与稳定行ID的StateStorage，随context释放；复用NavigationTween、160ms/已有动画速率和设置帧时钟。先使说明下移避开操作，再扩宽；反向先收窄再上移。首次出现按当前预算直接到位，缺席/隐藏后首帧不累计休眠时间，关闭动画即时到位。卡片及下一行的真实ItemSize包含当前换行包络；说明行数随真实宽度离散变化，不靠裁切换取高度平滑，不绘制两套可交互控件或增加配置/线程。置顶间隔完整说明常驻同一卡片，不另设“详细说明”展开块。
 - 新字面按内嵌 HarmonyOS 1213/1000 度量校准，字号与行高分别管理（12/16、14/20、28/36）。基线补偿必须通过实际 glyph/DrawData 验证；不能把 ExtraSizeScale 当行高。TextHeight/TextAt 共用相同换行与行距逻辑。
@@ -2161,7 +2161,7 @@ GeneralEvents RenderGeneral(GeneralDraft&);
 - 设置滚动宿主在 Begin 前恢复状态时，所有窗口级 storage/capture 键必须以 `ImHashStr(label, 0, window->ID)` 派生；离页闲置后 ImGui GC 会清空 IDStack，不能提前调用 `window->GetID`。无窗口回归需让真实主页/基本页经历 native memory compaction，再分别验证普通返回和 resetToTop 返回。Combo 已展开时允许点击自身入口及箭头收起，但仍按真实 HoveredWindow 隔离被浮层覆盖的控件；弹层外按下不能先被内容滚动捕获，应留给 ImGui 原生关闭及焦点流程。
 - 通用各子页仅处理可见控件事件，隐藏字段不从缓存写回。路由切换完成已有滑块待提交值，沿用实时预览/松手保存/FIFO。各子页和插件详情分别用稳定ID保留滚动。
 - GeneralDraft 是 UI 副本，事件由 Setting.cpp 原 coroutine/FIFO 宏域处理。主栏倍率实时通知并松手保存；设置倍率松手才重建字体；置顶/安全模式仍保存原索引并发原运行时通知。页文件不得直接照抄被宏重定向的 ShellExecuteW/WriteSetting/RestartProgram 名称。
-- 通用/基本按操作模式、图标排列、启动排序；选择/穿透的完整说明使用现有浅深主题蓝色信息卡，选项行独立；图标顺序和展开方向同属图标排列。外观与动画按动画、光源、缩放分区，启动加载动画保持独立并仅影响下次启动，不随一般动画开关隐藏；主栏倍率使用 `Zoom2`。行为与安全按自动收起、窗口行为、安全与恢复排序，自动收起公共规则置于分区顶部。快捷键为第五个独立子页，按全局操作、批注编辑、辅助操作分组；旧 PageId::HotKeys 必须重定向到 GeneralSection::Shortcuts。GeneralDraft/GeneralEvents 统一传递页面数据与一次交互事件，业务通知及冻结写盘仍留在 `Setting.cpp` 的 FIFO 宏域。绘制页和实验页的设置归属不变。
+- 【2026-11-15 已由 [settings-navigation.md](settings-navigation.md) 取代：侧栏改为十一个根入口，通用只保留基本/外观与动画/状态指示器/桌面快捷方式，其余子页迁至窗口与显示器、按键与快捷键、日志与配置；以下为历史描述】通用/基本按操作模式、图标排列、启动排序；选择/穿透的完整说明使用现有浅深主题蓝色信息卡，选项行独立；图标顺序和展开方向同属图标排列。外观与动画按动画、光源、缩放分区，启动加载动画保持独立并仅影响下次启动，不随一般动画开关隐藏；主栏倍率使用 `Zoom2`。行为与安全按自动收起、窗口行为、安全与恢复排序，自动收起公共规则置于分区顶部。快捷键为第五个独立子页，按全局操作、批注编辑、辅助操作分组；旧 PageId::HotKeys 必须重定向到 GeneralSection::Shortcuts。GeneralDraft/GeneralEvents 统一传递页面数据与一次交互事件，业务通知及冻结写盘仍留在 `Setting.cpp` 的 FIFO 宏域。绘制页和实验页的设置归属不变。
 - Home 所有入口连接真实路由/原外链；非简中 Community 的主页 GitHub discussions 与 footer en.inkeys.top/community.html 差异保留。教程展开使用既有图像纹理；不虚构教程 URL。
 
 #### 4. Validation & Error Matrix
@@ -2224,14 +2224,14 @@ const Design::Palette& Design::PaletteForTheme(bool darkMode) noexcept;
 const Design::Palette& Design::GetPalette() noexcept;
 bool Design::IsDarkMode() noexcept;
 void Design::ApplyPalette(bool darkMode);
-// SetListStruct / opt/deploy.json
-bool settingDarkMode = false; // JSON: SettingDarkMode
+// main.json：UI.Setting.DarkMode
+IdtAtomic<bool> Inkeys::config.UI.Setting.DarkMode{ false };
 ```
 
 #### 3. Contracts
 
-- `SettingDarkMode` 与原 SettingGlobalScale 同属 `SetListStruct` / `opt/deploy.json`。ReadSetting 严格接收 JSON bool，缺项或非 bool 置 false；CaptureSettingJson 写 JSON bool，不另建配置文件或隐式迁移系统。
-- 标题栏主题按钮占独立 32 DIP client 区；实际点击时切换偏好、按原 WriteSetting 宏冻结配置并入 FIFO、递增 theme serial 请求 Settings 帧。空闲绘制不写盘；主题变更不递增字体重建 serial。
+- 设置主题保存在 `main.json` 的 `UI.Setting.DarkMode`，严格接收 JSON bool，缺项或非 bool 回退 false。
+- 标题栏主题按钮占独立 32 DIP client 区；实际点击时切换偏好、经 `QueueConfigWrite()` 冻结配置并入 FIFO、递增 theme serial 请求 Settings 帧。空闲绘制不写盘；主题变更不递增字体重建 serial。
 - 渲染线程在帧边界、PushFluentStyle 前应用 palette：先 ImFluent preset、再 SetAccentColor、最后项目颜色和滚动条。字体绑定、DPI/main 倍率、atlas/纹理/设备保持不变；不调用 ScaleAllSizes 累乘。
 - AppBase/Card/Text 等旧具名 token 引用稳定的 activePalette 成员，控件默认参数在调用时读当前颜色。Notice 四种状态、弹层、选区、表格、滚动条和主页插画均用共享 palette；原教程/赞助图片不重着色。
 - 渲染线程以 PostMessage 发送不可变明暗/颜色值；HWND 线程设置 DWM caption/text/border/dark 属性和可选 backdrop。材质能力变化只发布 backdrop 状态并请求样式帧；不得在持有 ImGui IO mutex 时同步跨线程调用窗口样式消息。
@@ -2251,7 +2251,7 @@ bool settingDarkMode = false; // JSON: SettingDarkMode
 #### 5. Good / Base / Bad Cases
 
 - Good：同一常驻 ImGui session 浅→深→浅，按钮、说明、弹层、标题栏和首页同步换色，文本度量不变。
-- Base：旧 deploy.json 初次打开仍浅色，窄窗口保留标题栏主题入口。
+- Base：新安装或无该键时初次打开仍浅色，窄窗口保留标题栏主题入口。
 - Bad：只换页面底色，或从 Windows 主题消息覆盖用户偏好；用重建 atlas/device 实现换色。
 
 #### 6. Tests Required
@@ -2265,7 +2265,7 @@ RunSettingDesignTests 在六倍率中执行浅→深→浅，检查真实 Header
 style.Colors[ImFluentCol_CardBgDefault] = card;
 ImFluent::SetAccentColor(accent);
 // Correct：统一入口按 preset -> accent -> 项目 token -> scrollbar 应用。
-Design::ApplyPalette(setlist.settingDarkMode);
+Design::ApplyPalette(Inkeys::config.UI.Setting.DarkMode);
 ```
 
 ### Setting 首页品牌、版权与开源动效合同
@@ -2406,7 +2406,7 @@ Wrong：`SolidBgQuarternary = GetPalette().pageSurface`，浮层随正文变透�
 
 ### 2. Signatures
 - `Setting::DeferDraw3SyncIfRendering() -> bool`。
-- `SetListStruct.paintDevice: IdtAtomic<int>`，`CaptureSettingJson`显式load并保持PaintDevice整数；每次Sync只load一次用于比较和赋值。
+- `Inkeys::config.Drawing.PaintDevice: IdtAtomic<int>`，保存为整数；每次Sync只load一次用于比较和赋值。
 - `SettingRenderScope` 标记当前线程正在设置会话 Resume；`settingRenderingOnCurrentThread` 为 thread_local。
 - `SyncDraw3State()` 入口先调用 defer guard；业务 FIFO 增加 `SettingBusinessKind::SyncDraw3State`，worker 调用全局生产 Sync。
 

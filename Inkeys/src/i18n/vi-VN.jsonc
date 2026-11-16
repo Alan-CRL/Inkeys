@@ -346,8 +346,16 @@
       "CompatibilitySection": "Tương thích",
       "GeneralBasic": "Cơ bản",
       "GeneralAppearance": "Giao diện và hiệu ứng",
-      "GeneralInteraction": "Hành vi và an toàn",
-      "GeneralStorage": "Lưu trữ và cấu hình",
+      "NavWindowDisplay": "Cửa sổ và màn hình",
+      "WindowLayout": "Cửa sổ",
+      "WindowBehavior": "Hành vi",
+      "WindowDisplay": "Màn hình",
+      "NavKeysShortcuts": "Phím và phím tắt",
+      "NavLogsConfig": "Nhật ký và cấu hình",
+      "LogsLog": "Nhật ký",
+      "LogsConfiguration": "Cấu hình",
+      "DrawEffects": "Hiệu ứng vẽ",
+      "DrawInteraction": "Tương tác và cử chỉ",
       "OperationModeSection": "Chế độ thao tác",
       "IconArrangementSection": "Bố trí biểu tượng",
       "AnimationSection": "Hiệu ứng",
@@ -697,9 +705,9 @@
     "Draw":
     {
       "N": "Vẽ",
+      "WhiteboardSection": "Bảng trắng",
       "General":
       {
-        "N": "Chung",
         "MultiTouch":
         {
           "N": "Vẽ bằng nhiều ngón",
@@ -942,7 +950,6 @@
     },
     "Position":
     {
-      "N": "Vị trí",
       "DesktopSection": "Màn hình nền",
       "PptSection": "Trình chiếu",
       "WhiteboardSection": "Bảng trắng",

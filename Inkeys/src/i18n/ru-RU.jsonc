@@ -346,8 +346,16 @@
       "CompatibilitySection": "Совместимость",
       "GeneralBasic": "Основное",
       "GeneralAppearance": "Оформление и анимация",
-      "GeneralInteraction": "Поведение и безопасность",
-      "GeneralStorage": "Хранение и настройки",
+      "NavWindowDisplay": "Окна и дисплеи",
+      "WindowLayout": "Окно",
+      "WindowBehavior": "Поведение",
+      "WindowDisplay": "Дисплеи",
+      "NavKeysShortcuts": "Клавиши и сочетания",
+      "NavLogsConfig": "Журналы и конфигурация",
+      "LogsLog": "Журналы",
+      "LogsConfiguration": "Конфигурация",
+      "DrawEffects": "Эффекты рисования",
+      "DrawInteraction": "Взаимодействие и жесты",
       "OperationModeSection": "Режим работы",
       "IconArrangementSection": "Расположение значков",
       "AnimationSection": "Анимация",
@@ -697,9 +705,9 @@
     "Draw":
     {
       "N": "Рисование",
+      "WhiteboardSection": "Доска",
       "General":
       {
-        "N": "Общее",
         "MultiTouch":
         {
           "N": "Рисование несколькими пальцами",
@@ -942,7 +950,6 @@
     },
     "Position":
     {
-      "N": "Положение",
       "DesktopSection": "Рабочий стол",
       "PptSection": "Презентация",
       "WhiteboardSection": "Доска",

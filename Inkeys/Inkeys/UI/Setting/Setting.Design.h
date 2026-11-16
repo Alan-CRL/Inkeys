@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Setting.Layout.h"
+#include "Setting.Navigation.h"
 #include <array>
 #include <vector>
 #include <utility>
@@ -71,9 +72,6 @@ namespace Inkeys::UI::Setting::Design
 		return result;
 	}
 
-	enum class GeneralSection : int { Basic, Position, Appearance, Interaction, Storage, Shortcuts, DesktopShortcuts, StatusIndicator };
-	inline constexpr size_t GeneralSectionCount = static_cast<size_t>(GeneralSection::StatusIndicator) + 1;
-
 	struct NavigationTween
 	{
 		float value = 0.0F;
@@ -104,22 +102,34 @@ namespace Inkeys::UI::Setting::Design
 		[[nodiscard]] bool Active() const noexcept { return std::abs(value - target) > 0.0001F; }
 	};
 
+	// 带子页的页面（通用、绘制、窗口与显示器、日志与配置）各自一份展开状态与命中框。
+	struct NavigationGroupState
+	{
+		bool expanded = false;
+		Section lastSection = Section::None; // None 表示尚未选过，回落到首个子页
+		NavigationTween reveal;
+		// 真实控件提交后的屏幕像素框，同时供连续帧测试观测，不另写一套命中公式。
+		LayoutRect parentBounds, chevronBounds;
+		std::array<LayoutRect, NavigationMaxChildren> childBounds{}, flyoutChildBounds{};
+		std::uint32_t parentItemId = 0;
+	};
+
 	struct NavigationState
 	{
 		bool desktopCompact = false;
 		bool narrow = false;
 		bool overlayOpen = false;
-		bool generalExpanded = false;
-		GeneralSection lastGeneralSection = GeneralSection::Basic;
+		std::array<NavigationGroupState, NavigationGroupCount> groups{};
+		// 当前持有焦点/浮层的分组下标；浮层、子项焦点和父项回焦都围绕它。
+		int activeGroup = 0;
 		bool flyoutOpen = false;
 		bool restoreParentFocus = false;
 		bool mouseReleaseBarrier = false;
-		bool scrollSelectedGeneral = false;
+		bool scrollSelectedGroup = false;
 		bool animationsInitialized = false;
 		bool animationsEnabled = true;
 		float animationRate = 1.0F;
 		NavigationTween paneWidth{ OpenPaneWidth };
-		NavigationTween groupReveal;
 		NavigationTween flyoutReveal;
 		NavigationTween contentReveal{ 1.0F };
 		NavigationTween indicatorX;
@@ -129,19 +139,35 @@ namespace Inkeys::UI::Setting::Design
 		float indicatorAnchorX = 0.0F, indicatorAnchorY = 0.0F;
 		float indicatorWindowX = 0.0F, indicatorWindowY = 0.0F;
 		int contentPage = 0;
-		GeneralSection contentSection = GeneralSection::Basic;
-		// 真实控件提交后的屏幕像素框，同时供连续帧测试观测，不另写一套命中公式。
-		LayoutRect parentBounds, chevronBounds, flyoutBounds;
-		std::array<LayoutRect, GeneralSectionCount> childBounds{}, flyoutChildBounds{};
+		Section contentSection = Section::None;
+		LayoutRect flyoutBounds;
 		std::array<LayoutRect, 4> footerBounds{};
-		std::array<LayoutRect, 8> middleBounds{};
-		std::uint32_t parentItemId = 0;
+		std::array<LayoutRect, NavigationMiddleItemCount> middleBounds{};
 		std::uint32_t childFocusId = 0;
 		std::uint32_t childWindowItemId = 0;
 		bool inlineChildFocused = false;
 		// 本帧滚动/浮层宿主身份供旧拖动调用仲裁，不跨 ImGui session 保存指针。
 		std::uint32_t navigationScrollWindowId = 0, flyoutWindowId = 0;
 
+		// 页面无子页时返回 nullptr；调用方据此跳过分组逻辑。
+		[[nodiscard]] NavigationGroupState* TryGroup(PageId page) noexcept
+		{
+			const int index = NavigationGroupIndex(page);
+			return index < 0 ? nullptr : &groups[static_cast<size_t>(index)];
+		}
+		[[nodiscard]] const NavigationGroupState* TryGroup(PageId page) const noexcept
+		{
+			const int index = NavigationGroupIndex(page);
+			return index < 0 ? nullptr : &groups[static_cast<size_t>(index)];
+		}
+		// 仅用于确定拥有子页的页面（通用、绘制等）；传入无子页页面属于调用错误。
+		[[nodiscard]] NavigationGroupState& Group(PageId page) noexcept { return *TryGroup(page); }
+		[[nodiscard]] const NavigationGroupState& Group(PageId page) const noexcept { return *TryGroup(page); }
+		[[nodiscard]] Section LastSection(PageId page) const noexcept
+		{
+			const auto* group = TryGroup(page);
+			return group && NavigationChildIndex(page, group->lastSection) >= 0 ? group->lastSection : DefaultSection(page);
+		}
 		void ClearIndicator() noexcept
 		{
 			// 调试入口不属于侧栏；返回普通页时重新绑定锚点并直接归位。
@@ -158,13 +184,13 @@ namespace Inkeys::UI::Setting::Design
 		void Resize(float widthDip) noexcept
 		{
 			const bool nextNarrow = widthDip < NavigationBreakpoint;
-			if (nextNarrow != narrow) { overlayOpen = false; CloseFlyout(); scrollSelectedGeneral = true; }
+			if (nextNarrow != narrow) { overlayOpen = false; CloseFlyout(); scrollSelectedGroup = true; }
 			narrow = nextNarrow;
 		}
 		void Toggle() noexcept
 		{
 			CloseFlyout();
-			scrollSelectedGeneral = true;
+			scrollSelectedGroup = true;
 			if (narrow) overlayOpen = !overlayOpen;
 			else desktopCompact = !desktopCompact;
 		}
@@ -198,18 +224,18 @@ namespace Inkeys::UI::Setting::Design
 		state.animationsEnabled = enabled;
 		state.animationRate = std::isfinite(rate) ? std::clamp(rate, 0.1F, 5.0F) : 1.0F;
 		const float paneTarget = state.Expanded() ? OpenPaneWidth : CompactPaneWidth;
-		const float groupTarget = state.Expanded() && state.generalExpanded ? 1.0F : 0.0F;
+		const bool expandedPane = state.Expanded();
 		if (!state.animationsInitialized)
 		{
 			state.paneWidth.Reset(paneTarget);
-			state.groupReveal.Reset(groupTarget);
+			for (auto& group : state.groups) group.reveal.Reset(expandedPane && group.expanded ? 1.0F : 0.0F);
 			state.animationsInitialized = true;
 		}
 		state.paneWidth.Target(paneTarget);
-		state.groupReveal.Target(groupTarget);
+		for (auto& group : state.groups) group.reveal.Target(expandedPane && group.expanded ? 1.0F : 0.0F);
 		state.flyoutReveal.Target(state.flyoutOpen ? 1.0F : 0.0F);
 		state.paneWidth.Advance(delta, 0.200F / state.animationRate, enabled);
-		state.groupReveal.Advance(delta, 0.160F / state.animationRate, enabled);
+		for (auto& group : state.groups) group.reveal.Advance(delta, 0.160F / state.animationRate, enabled);
 		state.flyoutReveal.Advance(delta, 0.140F / state.animationRate, enabled);
 		state.contentReveal.Advance(delta, 0.120F / state.animationRate, enabled);
 		state.indicatorX.Advance(delta, 0.160F / state.animationRate, enabled);
@@ -220,7 +246,7 @@ namespace Inkeys::UI::Setting::Design
 	{
 		state.animationsEnabled = false;
 		state.paneWidth.Reset(state.Expanded() ? OpenPaneWidth : CompactPaneWidth);
-		state.groupReveal.Reset(state.Expanded() && state.generalExpanded ? 1.0F : 0.0F);
+		for (auto& group : state.groups) group.reveal.Reset(state.Expanded() && group.expanded ? 1.0F : 0.0F);
 		state.flyoutReveal.Reset(state.flyoutOpen ? 1.0F : 0.0F);
 		state.contentReveal.Reset(1.0F);
 		state.indicatorX.Reset(state.indicatorX.target);
@@ -264,8 +290,6 @@ namespace Inkeys::UI::Setting::Design
 
 	inline constexpr float NavigationRowHeight = 36.0F;
 	inline constexpr float NavigationSeparatorBand = 12.0F;
-	inline constexpr size_t NavigationMiddleItemCount = 8;
-	static_assert(std::tuple_size_v<decltype(NavigationState::middleBounds)> == NavigationMiddleItemCount);
 
 	struct NavigationPaneGeometry
 	{
@@ -332,12 +356,13 @@ namespace Inkeys::UI::Setting::Design
 
 	// 浮层优先下方，空间不足时翻到上方；极短客户区限制高度并交给真实窗口滚动。
 	[[nodiscard]] inline LayoutRect ResolveNavigationFlyoutGeometry(const LayoutRect& anchor,
-		const LayoutRect& client, float scale = 1.0F) noexcept
+		const LayoutRect& client, float scale = 1.0F, size_t childCount = NavigationMaxChildren) noexcept
 	{
 		scale = std::isfinite(scale) && scale > 0.0F ? scale : 1.0F;
 		const float margin = 8.0F * scale;
 		const float width = (std::min)(OpenPaneWidth * scale, (std::max)(1.0F, client.Width() - margin * 2.0F));
-		const float height = (std::min)((NavigationRowHeight * GeneralSectionCount + RowGap * (GeneralSectionCount - 1) + 16.0F) * scale,
+		const float count = static_cast<float>((std::max)(childCount, size_t{ 1 }));
+		const float height = (std::min)((NavigationRowHeight * count + RowGap * (count - 1.0F) + 16.0F) * scale,
 			(std::max)(1.0F, client.Height() - margin * 2.0F));
 		const float left = std::clamp(anchor.left, client.left + margin,
 			(std::max)(client.left + margin, client.right - margin - width));

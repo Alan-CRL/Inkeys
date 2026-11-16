@@ -346,8 +346,16 @@
       "CompatibilitySection": "Compatibility",
       "GeneralBasic": "Basic",
       "GeneralAppearance": "Appearance and animations",
-      "GeneralInteraction": "Behavior & safety",
-      "GeneralStorage": "Storage and configuration",
+      "NavWindowDisplay": "Windows and displays",
+      "WindowLayout": "Window",
+      "WindowBehavior": "Behavior",
+      "WindowDisplay": "Displays",
+      "NavKeysShortcuts": "Keys and shortcuts",
+      "NavLogsConfig": "Logs and configuration",
+      "LogsLog": "Logs",
+      "LogsConfiguration": "Configuration",
+      "DrawEffects": "Drawing effects",
+      "DrawInteraction": "Interaction and gestures",
       "OperationModeSection": "Operation mode",
       "IconArrangementSection": "Icon arrangement",
       "AnimationSection": "Animations",
@@ -697,9 +705,9 @@
     "Draw":
     {
       "N": "Drawing",
+      "WhiteboardSection": "Whiteboard",
       "General":
       {
-        "N": "General",
         "MultiTouch":
         {
           "N": "Multi-finger drawing",
@@ -942,7 +950,6 @@
     },
     "Position":
     {
-      "N": "Position",
       "DesktopSection": "Desktop",
       "PptSection": "Presentation",
       "WhiteboardSection": "Whiteboard",

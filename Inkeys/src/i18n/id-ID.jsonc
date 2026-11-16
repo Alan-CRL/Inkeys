@@ -346,8 +346,16 @@
       "CompatibilitySection": "Kompatibilitas",
       "GeneralBasic": "Dasar",
       "GeneralAppearance": "Tampilan dan animasi",
-      "GeneralInteraction": "Perilaku dan keamanan",
-      "GeneralStorage": "Penyimpanan dan konfigurasi",
+      "NavWindowDisplay": "Jendela dan layar",
+      "WindowLayout": "Jendela",
+      "WindowBehavior": "Perilaku",
+      "WindowDisplay": "Layar",
+      "NavKeysShortcuts": "Tombol dan pintasan",
+      "NavLogsConfig": "Log dan konfigurasi",
+      "LogsLog": "Log",
+      "LogsConfiguration": "Konfigurasi",
+      "DrawEffects": "Efek menggambar",
+      "DrawInteraction": "Interaksi dan gestur",
       "OperationModeSection": "Mode operasi",
       "IconArrangementSection": "Susunan ikon",
       "AnimationSection": "Animasi",
@@ -697,9 +705,9 @@
     "Draw":
     {
       "N": "Menggambar",
+      "WhiteboardSection": "Papan tulis",
       "General":
       {
-        "N": "Umum",
         "MultiTouch":
         {
           "N": "Menggambar dengan banyak jari",
@@ -942,7 +950,6 @@
     },
     "Position":
     {
-      "N": "Posisi",
       "DesktopSection": "Desktop",
       "PptSection": "Presentasi",
       "WhiteboardSection": "Papan tulis",

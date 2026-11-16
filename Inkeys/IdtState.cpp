@@ -688,7 +688,7 @@ namespace
 		state.whiteboardStyle = whiteboardStyleToken;
 		state.selectionMode =
 			IsComputerInteractionMode(stateMode.StateModeSelect);
-		state.autoSaveEnabled = setlist.saveSetting.enable;
+		state.autoSaveEnabled = Inkeys::config.Drawing.AutoSave.Enable;
 		Inkeys::Drawing::Draw3::PublishProductState(state);
 		// 与工具同锁发布；可视化位由修订推导，因此每次工具变化都会同步更新 Draw3。
 		Inkeys::Drawing::Draw3::ProductHost().SetCanvasDebugOptions(
@@ -1288,7 +1288,7 @@ void InitializeEraserInputPreferences()
 	const std::array fields{&saved.MouseLeft,&saved.MouseRight,&saved.Touch,&saved.PenTip,&saved.PenTail};
 	for(size_t i=0;i<fields.size();++i)
 		*fields[i]=static_cast<int>(RestoreEraserKind(fields[i]->load(),
-			setlist.eraserSetting.savedFixedChoice?2:-1,static_cast<InputEntry>(i)));
+			-1,static_cast<InputEntry>(i)));
 	saved.BaseDiameterDip=static_cast<int>(RestoreBaseSize(saved.BaseDiameterDip.load()));
 	saved.Sensitivity=static_cast<int>(RestoreSensitivity(saved.Sensitivity.load()));
 	if(saved.PenTipResponse.load()==-1)saved.PenTipResponse=AutomaticPenResponseAvailable()?0:2;
@@ -1426,7 +1426,7 @@ void SyncDraw3State()
     // 设备更新必须在同锁内只改设备字段，避免用旧显示快照覆盖新的目标 DPI。
     {
         std::scoped_lock lock(stateModeTransitionMutex);
-        const int paintDevice = setlist.paintDevice.load();
+        const int paintDevice = Inkeys::config.Drawing.PaintDevice.load();
         if (stateMode.penWidthContext.paintDevice != paintDevice)
         {
             stateMode.penWidthContext.paintDevice = paintDevice;
@@ -4806,7 +4806,7 @@ int RunPenWidthStateProductionTest() noexcept
     {
         using namespace Inkeys::Business::PenWidth;
         const auto require = [](bool ok) { if (!ok) throw 1; };
-        setlist.paintDevice = 0;
+        Inkeys::config.Drawing.PaintDevice = 0;
         Context large{ 1, 0, 264.0, 2560, 1440 };
         ApplyPenWidthContext(large);
         RestorePenWidthSelections({}, {}, {});

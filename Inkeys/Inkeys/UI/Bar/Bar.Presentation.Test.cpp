@@ -96,7 +96,7 @@ namespace Inkeys::UI::Bar
 			Ui3SvgProbe svg{ runSerial };
 			std::array<SourceEntry, Ui3FixtureMaxInputs> entries{};
 			std::array<Ui3FiniteAccepted, Ui3FixtureExpectedSteps> completedGoals{};
-		std::array<HANDLE, 4> directoryLeases{};
+		std::array<HANDLE, 3> directoryLeases{};
 			OwnerJob job;
 			Ui3FiniteTargetRecord warmEnd, measuredEnd;
 			Ui3FixtureReadyValue bootstrap;
@@ -599,7 +599,7 @@ namespace Inkeys::UI::Bar
 		bool LeasePrivateDirectories(FixtureState& state)
 		{
 			const auto& bin = state.authorization->BinaryDirectory();
-			const std::array<std::wstring, 4> paths{ bin, bin + L"\\Inkeys", bin + L"\\Inkeys\\Config", bin + L"\\opt" };
+			const std::array<std::wstring, 3> paths{ bin, bin + L"\\Inkeys", bin + L"\\Inkeys\\Config" };
 			for (std::size_t index = 0; index < paths.size(); ++index)
 			{
 				auto& lease = state.directoryLeases[index];
@@ -614,36 +614,28 @@ namespace Inkeys::UI::Bar
 		void SeedLegacyDefaults()
 		{
 			// 与 Main 的合法默认消费者一致；只在本次 private child、所有 owner 开始前赋值。
-			setlist.enableAutoUpdate = true; setlist.UpdateChannel = "LTS";
+			auto& config = Inkeys::config;
+			config.Application.Update.Enable = true; config.SetUpdateChannel("LTS");
 			#if defined(_M_ARM64) || defined(_M_ARM64EC)
-			setlist.updateArchitecture = "arm64";
+			config.SetUpdateArchitecture("arm64");
 			#elif defined(_M_X64)
-			setlist.updateArchitecture = "win64";
+			config.SetUpdateArchitecture("win64");
 			#else
-			setlist.updateArchitecture = "win32";
+			config.SetUpdateArchitecture("win32");
 			#endif
-			setlist.selectLanguage = 1; setlist.startUp = false;
-			setlist.SetSkinMode = 0; setlist.SkinMode = 1;
-			setlist.topSleepTime = 3; setlist.RightClickClose = false;
-			setlist.BrushRecover = true; setlist.RubberRecover = false;
-			setlist.regularSetting.moveRecover = false; setlist.regularSetting.clickRecover = false;
-			setlist.regularSetting.avoidFullScreen = false; setlist.regularSetting.teachingSafetyMode = 0;
-			setlist.paintDevice = 1; setlist.disableRTS = false;
-			setlist.liftStraighten = false; setlist.waitStraighten = true; setlist.pointAdsorption = true; setlist.smoothWriting = true;
-			setlist.eraserSetting.eraserMode = 1; setlist.eraserSetting.eraserSize = 60; setlist.eraserSetting.savedFixedChoice = false;
-			setlist.hideTouchPointer = false; setlist.saveSetting.enable = true; setlist.saveSetting.saveDays = 2;
-			setlist.performanceSetting.preparationQuantity = 2; setlist.performanceSetting.drawpadFps = 72; setlist.performanceSetting.superDraw = false;
-			setlist.presetSetting.memoryWidth = true; setlist.presetSetting.memoryColor = false; setlist.presetSetting.autoDefaultWidth = true;
-			setlist.presetSetting.defaultBrush1Width = 3.0f; setlist.presetSetting.defaultHighlighter1Width = 35.0f;
-			setlist.plugInSetting.superTop.enable = false; setlist.plugInSetting.superTop.indicator = true;
-			auto& shortcuts = setlist.component.shortcutButton;
-			shortcuts.appliance.explorer = false; shortcuts.appliance.taskmgr = false; shortcuts.appliance.control = false;
-			shortcuts.system.desktop = false; shortcuts.system.lockWorkStation = false;
-			shortcuts.keyboard.keyboardesc = false; shortcuts.keyboard.keyboardAltF4 = false;
-			shortcuts.rollCall.IslandCaller1 = false; shortcuts.rollCall.IslandCaller2 = false;
-			shortcuts.rollCall.SecRandom1 = false; shortcuts.rollCall.SecRandom2 = false;
-			shortcuts.rollCall.SecRandom2Compat = false; shortcuts.rollCall.NamePicker = false;
-			shortcuts.linkage.classislandSettings = false; shortcuts.linkage.classislandProfile = false; shortcuts.linkage.classislandClassswap = false;
+			config.Application.Language = 1; config.Application.StartUp = false;
+			config.UI.TopSleepTime = 3; config.UI.Bar.RightClickClose = false;
+			config.Application.TeachingSafetyMode = 0;
+			config.Drawing.PaintDevice = 1; config.Drawing.AutoSave.Enable = true;
+			config.PlugIn.SuperTop.Enable = false;
+			auto& shortcuts = config.UI.Bar.ShortcutButton;
+			shortcuts.Appliance.Explorer = false; shortcuts.Appliance.Taskmgr = false; shortcuts.Appliance.Control = false;
+			shortcuts.System.Desktop = false; shortcuts.System.LockWorkStation = false;
+			shortcuts.Keyboard.Keyboardesc = false; shortcuts.Keyboard.KeyboardAltF4 = false;
+			shortcuts.RollCall.IslandCaller1 = false; shortcuts.RollCall.IslandCaller2 = false;
+			shortcuts.RollCall.SecRandom1 = false; shortcuts.RollCall.SecRandom2 = false;
+			shortcuts.RollCall.SecRandom2Compat = false; shortcuts.RollCall.NamePicker = false;
+			shortcuts.Linkage.ClassislandSettings = false; shortcuts.Linkage.ClassislandProfile = false; shortcuts.Linkage.ClassislandClassswap = false;
 		}
 		bool PrepareStorageAndDefaults(FixtureState& state)
 		{
@@ -682,15 +674,13 @@ namespace Inkeys::UI::Bar
 			globalPath = state.authorization->BinaryDirectory() + L"\\";
 			pluginPath = globalPath;
 			const auto mainPath = state.authorization->BinaryDirectory() + L"\\Inkeys\\Config\\main.json";
-			const auto deployPath = state.authorization->BinaryDirectory() + L"\\opt\\deploy.json";
-			if (!SamePrivatePath(config.GetFilePath(), mainPath) || !OrdinaryFileOrAbsent(mainPath) || !OrdinaryFileOrAbsent(deployPath)) return false;
-			SeedLegacyDefaults();
+			if (!SamePrivatePath(config.GetFilePath(), mainPath) || !OrdinaryFileOrAbsent(mainPath)) return false;
+			// 先恢复默认，再写入夹具默认值。
 			config.ResetToDefaults();
+			SeedLegacyDefaults();
 			config.Experimental.Inkeys3.UI3.EdgeLighting.Enable = true;
 			config.Experimental.Inkeys3.UI3.EdgeLighting.Dynamic = true;
 			if (!config.Write()) return false;
-			const auto deploy = CaptureSettingJson();
-			if (deploy.size() > 64 * 1024 || !OrdinaryFileOrAbsent(deployPath) || !WriteSettingJson(deploy)) return false;
 			// 需要日志调用者时使用无 sink 的本 child logger，不创建额外线程或外部文件。
 			IDTLogger = std::make_shared<spdlog::logger>("ui3_fixture");
 			SetAnimationOptions(config.Experimental.Inkeys3.UI3.Animation.Enable, config.Experimental.Inkeys3.UI3.Animation.SpeedRate);

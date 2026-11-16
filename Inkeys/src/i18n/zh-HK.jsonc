@@ -346,8 +346,16 @@
       "CompatibilitySection": "兼容性",
       "GeneralBasic": "基本",
       "GeneralAppearance": "外觀與動畫",
-      "GeneralInteraction": "行為與安全",
-      "GeneralStorage": "儲存與設定",
+      "NavWindowDisplay": "視窗與顯示器",
+      "WindowLayout": "視窗",
+      "WindowBehavior": "行為",
+      "WindowDisplay": "顯示器",
+      "NavKeysShortcuts": "按鍵與快速鍵",
+      "NavLogsConfig": "記錄與設定",
+      "LogsLog": "記錄",
+      "LogsConfiguration": "設定",
+      "DrawEffects": "繪製效果",
+      "DrawInteraction": "互動與手勢",
       "OperationModeSection": "操作模式",
       "IconArrangementSection": "圖示排列",
       "AnimationSection": "動畫",
@@ -697,9 +705,9 @@
     "Draw":
     {
       "N": "繪圖",
+      "WhiteboardSection": "白板",
       "General":
       {
-        "N": "通用",
         "MultiTouch":
         {
           "N": "多指繪圖",
@@ -942,7 +950,6 @@
     },
     "Position":
     {
-      "N": "位置",
       "DesktopSection": "桌面場景",
       "PptSection": "PPT 場景",
       "WhiteboardSection": "白板場景",

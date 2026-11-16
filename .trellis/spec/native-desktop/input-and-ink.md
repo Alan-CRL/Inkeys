@@ -411,7 +411,7 @@ headless先在旧代码运行红灯用例，再验证平台/迟滞/单跳/双向
 
 ### 3. Contracts
 - 正式配置键：`Drawing.Eraser.MouseLeft/MouseRight/Touch/PenTip/PenTail`，以及`PenTipResponse/PenTailResponse`。-1只作缺失迁移哨兵，不是UI枚举。
-- 缺失宽度默认Speed。旧磁盘EraserSetting.EraserMode明确等于2时，仅在新键缺失时把左键/Touch/笔尖迁为Fixed；右键/笔尾的旧隐式Fixed不迁移。已有0/1选择不被重置。
+- 缺失宽度默认Speed；不读取 Inkeys2 的 `EraserSetting.EraserMode`（2026-11-16 起完全不兼容旧配置）。已有0/1选择不被重置。
 - Win8+默认Auto；Win7缺失笔响应默认Tablet，已有Auto或未知值运行时回退Tablet。UI隐藏Auto但保存1/2稳定值，不使用删除选项后的下标。能力探测复用GetProcAddress，不静态依赖GetPointerType。
 - 手选ScreenPen只改变响应，不伪造IntegratedPen、映射或EDID。调测显式强制优先，诊断报告debugOverride。
 - 面积辅助移到正式块下方，兼容键不改；Touch为Fixed时无效但保留保存值。两处可达开关共用状态，控制台开关独立。

@@ -346,8 +346,16 @@
       "CompatibilitySection": "Сумісність",
       "GeneralBasic": "Основне",
       "GeneralAppearance": "Вигляд та анімації",
-      "GeneralInteraction": "Поведінка й безпека",
-      "GeneralStorage": "Зберігання та конфігурація",
+      "NavWindowDisplay": "Вікна та дисплеї",
+      "WindowLayout": "Вікно",
+      "WindowBehavior": "Поведінка",
+      "WindowDisplay": "Дисплеї",
+      "NavKeysShortcuts": "Клавіші та скорочення",
+      "NavLogsConfig": "Журнали та конфігурація",
+      "LogsLog": "Журнали",
+      "LogsConfiguration": "Конфігурація",
+      "DrawEffects": "Ефекти малювання",
+      "DrawInteraction": "Взаємодія та жести",
       "OperationModeSection": "Режим роботи",
       "IconArrangementSection": "Порядок значків",
       "AnimationSection": "Анімації",
@@ -697,9 +705,9 @@
     "Draw":
     {
       "N": "Малювання",
+      "WhiteboardSection": "Дошка",
       "General":
       {
-        "N": "Загальне",
         "MultiTouch":
         {
           "N": "Малювання кількома пальцями",
@@ -942,7 +950,6 @@
     },
     "Position":
     {
-      "N": "Розташування",
       "DesktopSection": "Робочий стіл",
       "PptSection": "Презентація",
       "WhiteboardSection": "Дошка",

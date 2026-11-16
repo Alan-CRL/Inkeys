@@ -552,6 +552,16 @@ User final device test accepted. Touch release decisions, bounded fallback, curs
 - 由用户开启 feature/shape -> dev PR
 
 
+## Session 188: 设置项分类树重构
+<!-- trellis-session: v=2 fp=602f713557f79d38 -->
+
+**Date**: 2026-11-16
+**Task**: 设置项分类树重构
+**Branch**: `chore/setting-item`
+
+### Summary
+
+将设置页重构为表驱动导航树：新增窗口与显示器、按键与快捷键、日志与配置页，绘制拆为绘制效果与交互与手势，通用页聚焦基本/外观，设置项迁移不改配置键；20 语言 i18n、Headless 测试与规范同步，人工验证通过。
 ## Session 189: 白板工作区切换超时放宽与进展归零
 <!-- trellis-session: v=2 fp=0b0145b4488dd285 -->
 
@@ -567,7 +577,64 @@ User final device test accepted. Touch release decisions, bounded fallback, curs
 
 | Hash | Message |
 |------|---------|
+| `6206e499` | refactor(setting): restructure settings pages into a table-driven navigation tree |
+| `0fea77e4` | docs(spec): document settings navigation tree and refresh stale notes |
+
+### Testing
+
+- [OK] InkeysRepo.sln Debug|ARM64 构建 0 错误；InkeysHeadlessTests --no-window 全量及 --setting-general-only/--setting-home-only/--setting-attention-only 通过；i18n.ps1 check 通过；人工验证通过
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 190: Legacy config migration and project cleanup
+<!-- trellis-session: v=2 fp=eb7abd2a1159e83b -->
+
+**Date**: 2026-11-16
+**Task**: Legacy config migration and project cleanup
+**Branch**: `chore/setting-item`
+
+### Summary
+
+Migrated live deploy.json/pptcom_configuration.json fields into Inkeys::Config with one-time MigrateLegacyConfigFiles (delete old files after main.json write); removed SetListStruct/PptComSetListStruct, retired fields (SaveDays, pen width presets) and settings-session shadow copies; deleted uncompiled Draw2 sources and IdtDrawpadFacade stub; rebuilt vcxproj filters (Additional mirrors disk, Modules mirrors module dirs); spec updated. Full Debug|ARM64 build, config self-tests and headless tests pass; user verified settings UI.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `65c67655` | refactor(config): migrate legacy deploy/pptcom settings into main.json and prune dead legacy sources |
+| `326f6410` | docs(spec): record config ownership, legacy migration contract and project layout rules |
+| `78e95172` | chore(trellis): archive config and project cleanup task |
 | `a2af6815` | fix(workspace): widen transition failure budget to 15s with per-category progress reset |
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 191: PR #274 审阅修正：去除旧配置兼容与统一保存入口
+<!-- trellis-session: v=2 fp=2f6b1a05d7935215 -->
+
+**Date**: 2026-11-16
+**Task**: PR #274 审阅修正：去除旧配置兼容与统一保存入口
+**Branch**: `chore/setting-item`
+
+### Summary
+
+合并 dev（仅 journal 索引冲突）；按用户决定完全不兼容 Inkeys2 旧配置，删除迁移与早期 SuperTop 旧文件判定，不读不迁不建 opt；设置 FIFO 与 PPT 位置统一经 Inkeys::config.Write() 写最新配置，消除快照回退；侧栏展开仅对选中分组滚动；补回 ink_stroke_modeler props 导入项的 filters；sln 头部恢复 VS2022。构建、配置自检与无窗口测试通过；UI3 夹具授权自检的 reparse NOT_VERIFIED 为本机权限/非空目录限制。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6e6fa6ef` | Merge remote-tracking branch 'origin/dev' into chore/setting-item |
+| `a0bfb1f5` | refactor(config): drop Inkeys2 legacy config compatibility |
+| `6da5b204` | fix(config): route every save through Inkeys::config.Write() |
+| `0cedeb8a` | fix(setting): only scroll to the selection when expanding the selected group |
+| `a6c3c87e` | build: restore Ink Stroke Modeler filters and VS2022 solution header |
+| `3518132b` | docs(spec): record legacy-config incompatibility, single save entry and filters/sln rules |
 
 ### Status
 

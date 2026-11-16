@@ -44,14 +44,13 @@ namespace
 
 	UpdateTargetSnapshot GetUpdateTargetSnapshot()
 	{
-		shared_lock<shared_mutex> lock(setlistUpdateMutex);
-		return { setlist.UpdateChannel, setlist.updateArchitecture, setlist.enableAutoUpdate };
+		auto target = Inkeys::config.GetUpdateTarget();
+		return { std::move(target.channel), std::move(target.architecture), target.enable };
 	}
 
 	void SetUpdateChannelSnapshot(const string& channel)
 	{
-		unique_lock<shared_mutex> lock(setlistUpdateMutex);
-		setlist.UpdateChannel = channel;
+		Inkeys::config.SetUpdateChannel(channel);
 	}
 
 	struct StagedUpdateMetadata
@@ -638,7 +637,7 @@ updateStart:
 			else if (updateTarget.channel != editionInfo.channel)
 			{
 				SetUpdateChannelSnapshot(editionInfo.channel);
-				WriteSetting();
+				(void)Inkeys::config.Write();
 			}
 		}
 

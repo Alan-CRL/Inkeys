@@ -78,27 +78,16 @@ int RunAutoCollapseTests()
 	{
 		fs::path root;
 		std::wstring path = globalPath;
-		bool brush = setlist.BrushRecover;
-		bool eraser = setlist.RubberRecover;
-		bool drag = setlist.regularSetting.moveRecover.load();
-		bool outside = setlist.regularSetting.clickRecover.load();
 		~Restore()
 		{
 			globalPath = path;
-			setlist.BrushRecover = brush;
-			setlist.RubberRecover = eraser;
-			setlist.regularSetting.moveRecover = drag;
-			setlist.regularSetting.clickRecover = outside;
 			std::error_code ignored;
 			fs::remove_all(root, ignored);
 		}
 	} restore{ root };
 	const fs::path file = root / L"Inkeys" / L"Config" / L"main.json";
-	const fs::path legacyFile = root / L"opt" / L"deploy.json";
 	std::error_code error;
 	fs::create_directories(file.parent_path(), error);
-	if (error) return failures + 1;
-	fs::create_directories(legacyFile.parent_path(), error);
 	if (error) return failures + 1;
 	globalPath = root.wstring() + L"\\";
 
@@ -107,27 +96,17 @@ int RunAutoCollapseTests()
 		check(Policy(config, field).load() == policyDefaults[field], "new schema uses independent defaults");
 	const auto upload = config.GetUploadInfo();
 
-	// 旧内存与 deploy 的全部布尔组合均不得初始化新字段，两种样式亦不改变默认值。
-	for (int bits = 0; bits < 16; ++bits)
-		for (int style = 0; style < 2; ++style)
-		{
-			setlist.BrushRecover = (bits & 1) != 0;
-			setlist.RubberRecover = (bits & 2) != 0;
-			setlist.regularSetting.moveRecover = (bits & 4) != 0;
-			setlist.regularSetting.clickRecover = (bits & 8) != 0;
-			Json::Value legacy(Json::objectValue);
-			legacy["BrushRecover"] = setlist.BrushRecover;
-			legacy["RubberRecover"] = setlist.RubberRecover;
-			legacy["Regular"]["MoveRecover1"] = setlist.regularSetting.moveRecover.load();
-			legacy["Regular"]["ClickRecover"] = setlist.regularSetting.clickRecover.load();
-			Json::Value document(Json::objectValue);
-			document["UI"]["Bar"]["SelectAndClickThroughMode"] = style;
-			check(WriteJson(legacyFile, legacy) && WriteJson(file, document), "write private legacy/default fixture");
-			check(config.ReadAll(), "read missing new policy group");
-			for (int field = 0; field < 4; ++field)
-				check(Policy(config, field).load() == policyDefaults[field], "legacy booleans and style do not override defaults");
-			check(config.Write() && ReadJson(legacyFile) == legacy, "new config never writes or migrates legacy deploy");
-		}
+	// 两种交互样式均不改变自动收起策略的默认值。
+	for (int style = 0; style < 2; ++style)
+	{
+		Json::Value document(Json::objectValue);
+		document["UI"]["Bar"]["SelectAndClickThroughMode"] = style;
+		check(WriteJson(file, document), "write private default fixture");
+		check(config.ReadAll(), "read missing new policy group");
+		for (int field = 0; field < 4; ++field)
+			check(Policy(config, field).load() == policyDefaults[field], "style does not override defaults");
+		check(config.Write(), "write default policy group");
+	}
 
 	for (int field = 0; field < 4; ++field)
 	{

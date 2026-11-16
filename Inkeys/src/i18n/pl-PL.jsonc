@@ -346,8 +346,16 @@
       "CompatibilitySection": "Zgodność",
       "GeneralBasic": "Podstawowe",
       "GeneralAppearance": "Wygląd i animacje",
-      "GeneralInteraction": "Zachowanie i bezpieczeństwo",
-      "GeneralStorage": "Przechowywanie i konfiguracja",
+      "NavWindowDisplay": "Okna i wyświetlacze",
+      "WindowLayout": "Okno",
+      "WindowBehavior": "Zachowanie",
+      "WindowDisplay": "Wyświetlacze",
+      "NavKeysShortcuts": "Klawisze i skróty",
+      "NavLogsConfig": "Dzienniki i konfiguracja",
+      "LogsLog": "Dzienniki",
+      "LogsConfiguration": "Konfiguracja",
+      "DrawEffects": "Efekty rysowania",
+      "DrawInteraction": "Interakcja i gesty",
       "OperationModeSection": "Tryb działania",
       "IconArrangementSection": "Układ ikon",
       "AnimationSection": "Animacje",
@@ -697,9 +705,9 @@
     "Draw":
     {
       "N": "Rysowanie",
+      "WhiteboardSection": "Tablica",
       "General":
       {
-        "N": "Ogólne",
         "MultiTouch":
         {
           "N": "Rysowanie wieloma palcami",
@@ -942,7 +950,6 @@
     },
     "Position":
     {
-      "N": "Położenie",
       "DesktopSection": "Pulpit",
       "PptSection": "Prezentacja",
       "WhiteboardSection": "Tablica",

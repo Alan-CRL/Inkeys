@@ -29,6 +29,7 @@
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、二十语言映射、菜单排序与热切换、国际化生成链及字体资源归属。
 - [settings-performance-and-drawing.md](settings-performance-and-drawing.md)：性能页、两套帧率、通用绘图每笔锁存和画布初始化信息合同。
 - [settings-attention-notes.md](settings-attention-notes.md)：设置说明下的信息提示、响应式测高、文案分离与无窗口专项。
+- [settings-navigation.md](settings-navigation.md)：设置页分类树、导航表（唯一数据源）、旧入口重定向、分组状态与空页约定。
 - [pen-haptics.md](pen-haptics.md)：笔触觉 Host 注入、设备绑定、UI3 接触凭据、失败回退与无窗口验证合同。
 - [pen-width.md](pen-width.md)：画笔DIP、设备预设身份、显示上下文、连续输出与配置迁移合同。
 - [draw3-integration.md](draw3-integration.md)：Draw3 外部 HWND、独立设备、输入所有权、生命周期和产品功能边界。
@@ -47,13 +48,13 @@ PPT/WPS 的托管 COM 服务和原生边界另见 [../ppt-interop/index.md](../p
 1. 确认目标属于传统 Idt*、Inkeys.* module、设置窗口、UI3 Bar、IdtFloating、PPT 联动还是独立 Timeout。
 2. 确认项目文件是否需要登记新源码、module、资源、shader 或 manifest。
 3. 对渲染和输入修改，先画清窗口线程、渲染线程与共享状态的所有权。
-4. 对配置修改，先确认字段实际位于 `opt/deploy.json` 的 `SetListStruct` 路径，还是 `Inkeys/Config/main.json` 的 `Inkeys::Config` class / `Inkeys::config` instance；二者当前并存且用途不同。
+4. 对配置修改，所有用户配置都在 `Inkeys/Config/main.json` 的 `Inkeys::Config` / `Inkeys::config`；Inkeys2 的 `opt/deploy.json`、`opt/pptcom_configuration.json` 完全不兼容，不读取、不迁移、不创建 `opt`（见 [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)）。
 5. 构建主程序时遵守仓库根 AGENTS.md 的完整 Solution 与 `Debug | 当前设备原生架构` 要求；跨平台风险按任务额外补充。
 
 ## 实施前决策门（阻塞）
 
 - **UI 路线**：若任务没有明确目标，且从代码/发布上下文无法判断应修改 `IdtFloating`、`Inkeys.UI.Bar` 还是两者，必须在写代码前询问开发者；不得以“旧文件/新 module”为由自行选择。
-- **配置归属**：新增字段无法从现有消费者或任务要求确定应进入 `SetListStruct` 还是 `Inkeys.Other.Config` 时，必须先询问开发者；不得先实现后再决定迁移或持久化兼容。
+- **配置归属**：新增字段一律进入 `Inkeys.Other.Config` schema；若需要新的独立 JSON 文件、改变既有键名或迁移旧数据，必须先询问开发者。
 - **平台支持**：Solution、vcxproj、CI matrix 或 README 中存在 Win32/x64/ARM64/Windows 7 条目，只能证明声明或配置存在。若任务需要承诺、扩大或缩小平台支持，必须先取得开发者确认或任务明确要求的运行验证。
 
 ## 已直接确认的边界

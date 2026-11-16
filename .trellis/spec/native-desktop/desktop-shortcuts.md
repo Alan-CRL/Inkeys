@@ -10,7 +10,7 @@
 - `Config::GetShortcutNamePreference() const -> std::pair<int, std::wstring>`、`SetShortcutNamePreference(int, std::wstring) -> bool`：名称对在 Config 私有 rwMutex 下读取/提交；返回 false 包含无效输入或没有变化。
 - `CaptureDesktopShortcutNames()` 冻结同一 I18n::TextSnapshot 的语言与用途名称；`GetDesktopShortcutDirectory()` 取得当前用户桌面目录。
 - `ShortcutAssistantClass::SetShortcut()` 是启动入口；重载 `(const std::wstring& name, bool correct, bool create, const std::wstring& desktopDirectory)` 消费已解析请求。
-- `GeneralSection::DesktopShortcuts` 在键盘 `Shortcuts` 后；设置 worker 区分 `SettingBusinessKind::CreateShortcut` 和 `EnsureShortcut`。
+- `Section::DesktopShortcuts` 是通用页最后一个子页（键盘快捷键已迁到顶层“按键与快捷键”页）；设置 worker 区分 `SettingBusinessKind::CreateShortcut` 和 `EnsureShortcut`。
 
 ## 3. Contracts
 
@@ -32,7 +32,7 @@
 - 设置 Create/Ensure 请求冻结名称、exe、桌面目录与开关，worker 才进行 COM/文件操作；不能执行时重新读取活动语言或自定义草稿。UI 渲染线程不得扫描桌面或执行 ShellLink I/O。
 - CustomName 是字符串，不能使用 IdtAtomic（只支持无锁平凡类型）。必须和全 Config 快照复制共用 rwMutex；QueueConfigWrite 的入队锁不代替字段同步。
 - 文件路径身份使用 `CompareStringOrdinal(..., TRUE)` 按 Windows 不区分大小写的规则比较，不能用默认 C locale 的 `_wcsicmp` 代替；所选名称仅改变大小写时，修正不能把同一目标文件当旧名删除。
-- 停止传统 setlist.shortcutAssistant 读写/缺省；CaptureSettingJson 清理旧 PlugIn.ShortcutAssistant，即使 AutoClean=false。不读取旧值迁移，不双写。
+- 不读取 Inkeys2 的 PlugIn.ShortcutAssistant，不双写。
 
 ## 4. Validation & Error Matrix
 

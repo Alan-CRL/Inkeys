@@ -11,10 +11,6 @@
 import Inkeys.Other.Config;
 import Inkeys.Conv.Text;
 
-// 仅提供生产 schema 的来源存储，不编译传统配置写入器。
-SetListStruct setlist;
-std::shared_mutex setlistUpdateMutex;
-
 namespace
 {
 	bool Expect(bool condition, const char* name)
@@ -76,26 +72,21 @@ int RunConfigMetadataTests()
 		std::wstring architecture = programArchitecture;
 		std::wstring target = targetArchitecture;
 		std::wstring windows = windowsEdition;
-		std::string channel;
 		bool defaultLargeScreen = Inkeys::ConfigDetail::GetDefaultLargeScreenDevice();
-		int paintDevice = setlist.paintDevice.load();
 		~Restore()
 		{
 			globalPath = path;
 			Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(defaultLargeScreen);
-			setlist.paintDevice = paintDevice;
 			userId = id;
 			editionVersion = version;
 			editionDate = date;
 			programArchitecture = architecture;
 			targetArchitecture = target;
 			windowsEdition = windows;
-			{ std::unique_lock lock(setlistUpdateMutex); setlist.UpdateChannel = channel; }
 			std::error_code ignored;
 			fs::remove_all(root, ignored);
 		}
 	} restore{ root };
-	{ std::shared_lock lock(setlistUpdateMutex); restore.channel = setlist.UpdateChannel; }
 	const fs::path file = root / L"Inkeys" / L"Config" / L"main.json";
 	std::error_code error;
 	fs::create_directories(file.parent_path(), error);
@@ -124,14 +115,15 @@ int RunConfigMetadataTests()
 	targetArchitecture = L"win64";
 	windowsEdition = L"test-windows";
 	const std::string channel = "Beta ;=";
-	{ std::unique_lock lock(setlistUpdateMutex); setlist.UpdateChannel = channel; }
+	config.SetUpdateChannel(channel);
 	const std::string expected = "id=01234567-89ab-cdef-0123-456789abcdef;ed=test-date;pa=arm64;we=test-windows;ch="
 		+ StringToUrlencode(channel) + ";";
 	check(config.GetUploadInfo() == expected, "live sources, exact keys/order and GUID without braces");
 	check(config.ReadAll() && config.UI.Bar.Zoom2.load() == 1.25, "X reads normally");
 	check(userId == L"{01234567-89ab-cdef-0123-456789abcdef}"
-		&& editionVersion == L"test-version" && setlist.UpdateChannel == channel,
-		"ReadAll cannot overwrite H sources");
+		&& editionVersion == L"test-version" && config.GetUpdateTarget().channel == "LTS",
+		"ReadAll cannot overwrite H sources and resets missing X channel to default");
+	config.SetUpdateChannel(channel);
 	check(config.ReadMini({ "Info", "$Info", "UI.Bar.Zoom2" })
 		&& config.GetUploadInfo() == expected, "ReadMini leaves H live and ignores malicious H document");
 	check(config.Write(), "write initial metadata");
@@ -139,23 +131,25 @@ int RunConfigMetadataTests()
 	check(persisted["$Info"]["UserId"].asString() == "{01234567-89ab-cdef-0123-456789abcdef}"
 		&& persisted["$Info"]["EditionVersion"].asString() == "test-version"
 		&& persisted["$Info"]["TargetArchitecture"].asString() == "win64"
-		&& persisted["$Info"]["UpdateChannel"].asString() == channel
+		&& !persisted["$Info"].isMember("UpdateChannel")
+		&& persisted["Application"]["Update"]["Channel"].asString() == channel
 		&& persisted["$Info"]["Unknown"].asString() == "retain",
-		"file keeps braced id, ev, channel and unknown keys independently of Referer flags");
+		"file keeps braced id, ev and unknown keys; channel lives in Application.Update");
 
 	editionDate = L"new-date";
 	editionVersion = L"new-version";
-	{ std::unique_lock lock(setlistUpdateMutex); setlist.UpdateChannel = "Release"; }
+	config.SetUpdateChannel("Release");
 	check(config.GetUploadInfo().find("ed=new-date;") != std::string::npos
 		&& config.GetUploadInfo().ends_with("ch=Release;"), "next output sees updated sources without read");
 	check(config.Write(), "write latest channel without read");
 	persisted = ReadJson(file);
-	check(persisted["$Info"]["UpdateChannel"].asString() == "Release"
+	check(persisted["Application"]["Update"]["Channel"].asString() == "Release"
 		&& persisted["$Info"]["EditionVersion"].asString() == "new-version",
 		"file sees latest bound values");
 	config.ResetToDefaults();
 	check(config.UI.Bar.Zoom2.load() == 1.0 && editionVersion == L"new-version"
-		&& setlist.UpdateChannel == "Release", "reset restores X only");
+		&& config.GetUpdateTarget().channel == "LTS", "reset restores X only");
+	config.SetUpdateChannel("Release");
 	config.UI.Bar.Zoom2 = 1.75;
 	config.UI.Bar.ExtensionButtons.Replace({ { "test.extension", Inkeys::BarButtonSizeKind::OneOne, false } });
 	Inkeys::Config copy;
@@ -186,13 +180,10 @@ int RunConfigMetadataTests()
 	check(copy.GetUploadInfo().find("ed=fixed;") != std::string::npos
 		&& editionDate == L"external-change", "fixed descriptor copy/reset never changes external source");
 
-	std::thread writer([]
+	std::thread writer([&config]
 	{
 		for (int i = 0; i < 200; ++i)
-		{
-			std::unique_lock lock(setlistUpdateMutex);
-			setlist.UpdateChannel = i % 2 ? "Channel-A" : "Channel-B";
-		}
+			config.SetUpdateChannel(i % 2 ? "Channel-A" : "Channel-B");
 	});
 	for (int i = 0; i < 200; ++i)
 	{
@@ -201,7 +192,7 @@ int RunConfigMetadataTests()
 			|| upload.ends_with("ch=Channel-B;"), "locked channel yields a complete snapshot");
 	}
 	writer.join();
-	{ std::unique_lock lock(setlistUpdateMutex); setlist.UpdateChannel = "Final"; }
+	config.SetUpdateChannel("Final");
 	check(config.GetUploadInfo().ends_with("ch=Final;"), "final synchronized channel value");
 
 	// 在同一私有目录使用真实配置读写，覆盖模式默认值、严格校验和冻结写盘副本。
@@ -675,8 +666,6 @@ int RunConfigMetadataTests()
 	for (const bool defaultLargeScreen : { false, true })
 	{
 		const int defaultMode = defaultLargeScreen ? 1 : 0;
-		// 用户交互模式与硬件缺省相反时，也不能影响 schema 的设备条件缺省。
-		setlist.paintDevice = defaultLargeScreen ? 1 : 0;
 		Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(defaultLargeScreen);
 		// 改名刻意不导入旧倍率；走真实文件和生产 schema，避免测试复制迁移逻辑。
 		Inkeys::Config scaleConfig;

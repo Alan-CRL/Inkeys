@@ -346,8 +346,16 @@
       "CompatibilitySection": "Compatibilitate",
       "GeneralBasic": "De bază",
       "GeneralAppearance": "Aspect și animații",
-      "GeneralInteraction": "Comportament și siguranță",
-      "GeneralStorage": "Stocare și configurare",
+      "NavWindowDisplay": "Ferestre și ecrane",
+      "WindowLayout": "Fereastră",
+      "WindowBehavior": "Comportament",
+      "WindowDisplay": "Ecrane",
+      "NavKeysShortcuts": "Taste și comenzi rapide",
+      "NavLogsConfig": "Jurnale și configurare",
+      "LogsLog": "Jurnale",
+      "LogsConfiguration": "Configurare",
+      "DrawEffects": "Efecte de desen",
+      "DrawInteraction": "Interacțiune și gesturi",
       "OperationModeSection": "Mod de operare",
       "IconArrangementSection": "Aranjarea pictogramelor",
       "AnimationSection": "Animații",
@@ -697,9 +705,9 @@
     "Draw":
     {
       "N": "Desen",
+      "WhiteboardSection": "Tablă albă",
       "General":
       {
-        "N": "General",
         "MultiTouch":
         {
           "N": "Desenare cu mai multe degete",
@@ -942,7 +950,6 @@
     },
     "Position":
     {
-      "N": "Poziție",
       "DesktopSection": "Desktop",
       "PptSection": "Prezentare",
       "WhiteboardSection": "Tablă",

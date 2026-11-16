@@ -78,7 +78,6 @@ bool UnOccupyFile(HANDLE* hFile)
 namespace
 {
 	constexpr LONGLONG kMaxLegacyConfigFileBytes = 16LL * 1024 * 1024;
-	mutex g_legacySettingWriteMutex;
 
 	bool ReadBoundedConfigFileSize(HANDLE file, DWORD& size) noexcept
 	{
@@ -149,9 +148,6 @@ namespace
 	}
 }
 
-SetListStruct setlist;
-shared_mutex setlistUpdateMutex;
-Json::Value setlistVal;
 namespace
 {
     std::mutex g_penWidthPreferencesMutex;
@@ -205,633 +201,6 @@ namespace
     }
 }
 
-bool ReadSetting()
-{
-	HANDLE fileHandle = NULL;
-	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\deploy.json"))
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-
-	DWORD dwSize = 0;
-	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-	string jsonContent = string(dwSize, '\0');
-
-	DWORD bytesRead = 0;
-	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-
-	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
-	UnOccupyFile(&fileHandle);
-
-	istringstream jsonContentStream(jsonContent);
-	Json::CharReaderBuilder readerBuilder;
-	readerBuilder["stackLimit"] = 64;
-	Json::Value parsedSetting;
-	string jsonErr;
-
-	if (ParseConfigJson(readerBuilder, jsonContentStream, parsedSetting, jsonErr))
-	{
-		// 仅在根对象完整验证后更新权威配置树，坏文件不能污染后续写入。
-		setlistVal = std::move(parsedSetting);
-		{ std::scoped_lock widthLock(g_penWidthPreferencesMutex); g_penWidthStartupInitialized = false; }
-		if (setlistVal.isMember("SelectLanguage") && setlistVal["SelectLanguage"].isInt())
-			setlist.selectLanguage = setlistVal["SelectLanguage"].asInt();
-		if (setlistVal.isMember("StartUp") && setlistVal["StartUp"].isBool())
-			setlist.startUp = setlistVal["StartUp"].asBool();
-		// 缺项或非布尔值均回退浅色，不接受数字、字符串等隐式转换。
-		setlist.settingDarkMode = setlistVal.isMember("SettingDarkMode")
-			&& setlistVal["SettingDarkMode"].isBool() && setlistVal["SettingDarkMode"].asBool();
-		// 缺项、错误类型和越界值均保持“本进程首次打开”的默认策略。
-		setlist.settingEntryAnimation = 1;
-		if (setlistVal.isMember("SettingEntryAnimation") && setlistVal["SettingEntryAnimation"].isInt())
-		{
-			const int mode = setlistVal["SettingEntryAnimation"].asInt();
-			if (mode >= 0 && mode <= 2) setlist.settingEntryAnimation = mode;
-		}
-
-		if (setlistVal.isMember("SetSkinMode") && setlistVal["SetSkinMode"].isInt())
-			setlist.SetSkinMode = setlistVal["SetSkinMode"].asInt();
-
-		if (setlistVal.isMember("TopSleepTime") && setlistVal["TopSleepTime"].isInt())
-			setlist.topSleepTime = setlistVal["TopSleepTime"].asInt();
-		if (setlistVal.isMember("RightClickClose") && setlistVal["RightClickClose"].isBool())
-			setlist.RightClickClose = setlistVal["RightClickClose"].asBool();
-		{
-			if (setlistVal.isMember("BrushRecover") && setlistVal["BrushRecover"].isBool())
-				setlist.BrushRecover = setlistVal["BrushRecover"].asBool();
-			if (setlistVal.isMember("RubberRecover") && setlistVal["RubberRecover"].isBool())
-				setlist.RubberRecover = setlistVal["RubberRecover"].asBool();
-		}
-		if (setlistVal.isMember("Regular") && setlistVal["Regular"].isObject())
-		{
-			{
-				if (setlistVal["Regular"].isMember("MoveRecover") && setlistVal["Regular"]["MoveRecover1"].isBool())
-					setlist.regularSetting.moveRecover = setlistVal["Regular"]["MoveRecover1"].asBool();
-				if (setlistVal["Regular"].isMember("ClickRecover") && setlistVal["Regular"]["ClickRecover"].isBool())
-					setlist.regularSetting.clickRecover = setlistVal["Regular"]["ClickRecover"].asBool();
-			}
-
-			if (setlistVal["Regular"].isMember("TeachingSafetyMode") && setlistVal["Regular"]["TeachingSafetyMode"].isInt())
-			{
-				const int requestedMode = setlistVal["Regular"]["TeachingSafetyMode"].asInt();
-				// 设置页只有四个合法选项；损坏配置不能作为 vector 下标传播。
-				if (requestedMode >= 0 && requestedMode < 4)
-					setlist.regularSetting.teachingSafetyMode = requestedMode;
-			}
-		}
-
-		if (setlistVal.isMember("PaintDevice") && setlistVal["PaintDevice"].isInt())
-			setlist.paintDevice = setlistVal["PaintDevice"].asInt();
-		if (setlistVal.isMember("DisableRTS") && setlistVal["DisableRTS"].isBool())
-			setlist.disableRTS = setlistVal["DisableRTS"].asBool();
-		if (setlistVal.isMember("LiftStraighten") && setlistVal["LiftStraighten"].isBool())
-			setlist.liftStraighten = setlistVal["LiftStraighten"].asBool();
-		if (setlistVal.isMember("WaitStraighten") && setlistVal["WaitStraighten"].isBool())
-			setlist.waitStraighten = setlistVal["WaitStraighten"].asBool();
-		if (setlistVal.isMember("EraserSetting") && setlistVal["EraserSetting"].isObject())
-		{
-			if (setlistVal["EraserSetting"].isMember("EraserMode") && setlistVal["EraserSetting"]["EraserMode"].isInt())
-			{
-				const int saved=setlistVal["EraserSetting"]["EraserMode"].asInt();
-				setlist.eraserSetting.savedFixedChoice=saved==2;
-				setlist.eraserSetting.eraserMode=Inkeys::Drawing::Draw3::Bridge::NormalizeLegacyEraserMode(saved);
-			}
-			if (setlistVal["EraserSetting"].isMember("EraserSize") && setlistVal["EraserSetting"]["EraserSize"].isInt())
-				setlist.eraserSetting.eraserSize = setlistVal["EraserSetting"]["EraserSize"].asInt();
-		}
-		if (setlistVal.isMember("Save") && setlistVal["Save"].isObject())
-		{
-			if (setlistVal["Save"].isMember("Enable") && setlistVal["Save"]["Enable"].isBool())
-				setlist.saveSetting.enable = setlistVal["Save"]["Enable"].asBool();
-			if (setlistVal["Save"].isMember("SaveDays") && setlistVal["Save"]["SaveDays"].isInt())
-				setlist.saveSetting.saveDays = setlistVal["Save"]["SaveDays"].asInt();
-		}
-		if (setlistVal.isMember("UpdateSetting") && setlistVal["UpdateSetting"].isObject())
-		{
-			{
-				unique_lock<shared_mutex> lock(setlistUpdateMutex);
-				if (setlistVal["UpdateSetting"].isMember("EnableAutoUpdate") && setlistVal["UpdateSetting"]["EnableAutoUpdate"].isBool())
-					setlist.enableAutoUpdate = setlistVal["UpdateSetting"]["EnableAutoUpdate"].asBool();
-				if (setlistVal["UpdateSetting"].isMember("UpdateChannel") && setlistVal["UpdateSetting"]["UpdateChannel"].isString())
-					setlist.UpdateChannel = setlistVal["UpdateSetting"]["UpdateChannel"].asString();
-				if (setlistVal["UpdateSetting"].isMember("UpdateArchitecture") && setlistVal["UpdateSetting"]["UpdateArchitecture"].isString())
-				{
-					setlist.updateArchitecture = setlistVal["UpdateSetting"]["UpdateArchitecture"].asString();
-					if (setlist.updateArchitecture != "win32" && setlist.updateArchitecture != "win64" && setlist.updateArchitecture != "arm64")
-						setlist.updateArchitecture = "win32";
-				}
-			}
-		}
-
-		if (setlistVal.isMember("PlugIn") && setlistVal["PlugIn"].isObject())
-		{
-			if (setlistVal["PlugIn"].isMember("DesktopDrawpadBlocker") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"].isObject())
-			{
-				if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("Enable") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"].isBool())
-					ddbInteractionSetList.enable = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"].asBool();
-				if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("RunAsAdmin") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["RunAsAdmin"].isBool())
-					ddbInteractionSetList.runAsAdmin = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["RunAsAdmin"].asBool();
-				if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("SleepTime") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["SleepTime"].isInt())
-					ddbInteractionSetList.sleepTime = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["SleepTime"].asInt();
-
-				if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"].isMember("Intercept") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isObject())
-				{
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoWhiteboard3Floating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"].isBool())
-						ddbInteractionSetList.intercept.SeewoWhiteboard3Floating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoWhiteboard5Floating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"].isBool())
-						ddbInteractionSetList.intercept.SeewoWhiteboard5Floating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoWhiteboard5CFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"].isBool())
-						ddbInteractionSetList.intercept.SeewoWhiteboard5CFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoPincoSideBarFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"].isBool())
-						ddbInteractionSetList.intercept.SeewoPincoSideBarFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoPincoDrawingFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"].isBool())
-						ddbInteractionSetList.intercept.SeewoPincoDrawingFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoPPTFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"].isBool())
-						ddbInteractionSetList.intercept.SeewoPPTFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoIwbAssistantFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoIwbAssistantFloating"].isBool())
-						ddbInteractionSetList.intercept.SeewoIwbAssistantFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoIwbAssistantFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("YiouBoardFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["YiouBoardFloating"].isBool())
-						ddbInteractionSetList.intercept.YiouBoardFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["YiouBoardFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("AiClassFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"].isBool())
-						ddbInteractionSetList.intercept.AiClassFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ClassInXFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ClassInXFloating"].isBool())
-						ddbInteractionSetList.intercept.ClassInXFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ClassInXFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("IntelligentClassFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"].isBool())
-						ddbInteractionSetList.intercept.IntelligentClassFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ChangYanFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"].isBool())
-						ddbInteractionSetList.intercept.ChangYanFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("ChangYan5Floating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYan5Floating"].isBool())
-						ddbInteractionSetList.intercept.ChangYan5Floating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYan5Floating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("Iclass30SidebarFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["Iclass30SidebarFloating"].isBool())
-						ddbInteractionSetList.intercept.Iclass30SidebarFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["Iclass30SidebarFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("Iclass30Floating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["Iclass30Floating"].isBool())
-						ddbInteractionSetList.intercept.Iclass30Floating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["Iclass30Floating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoDesktopSideBarFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"].isBool())
-						ddbInteractionSetList.intercept.SeewoDesktopSideBarFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"].asBool();
-					if (setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"].isMember("SeewoDesktopDrawingFloating") && setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopDrawingFloating"].isBool())
-						ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating = setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopDrawingFloating"].asBool();
-				}
-			}
-
-			if (setlistVal["PlugIn"].isMember("SuperTop") && setlistVal["PlugIn"]["SuperTop"].isObject())
-			{
-				if (setlistVal["PlugIn"]["SuperTop"].isMember("Enable") && setlistVal["PlugIn"]["SuperTop"]["Enable"].isBool())
-					setlist.plugInSetting.superTop.enable = setlistVal["PlugIn"]["SuperTop"]["Enable"].asBool();
-				if (setlistVal["PlugIn"]["SuperTop"].isMember("Indicator") && setlistVal["PlugIn"]["SuperTop"]["Indicator"].isBool())
-					setlist.plugInSetting.superTop.indicator = setlistVal["PlugIn"]["SuperTop"]["Indicator"].asBool();
-			}
-		}
-		if (setlistVal.isMember("Component") && setlistVal["Component"].isObject())
-		{
-			// shortcutButton
-			if (setlistVal["Component"].isMember("ShortcutButton") && setlistVal["Component"]["ShortcutButton"].isObject())
-			{
-				// appliance
-				if (setlistVal["Component"]["ShortcutButton"].isMember("Appliance") && setlistVal["Component"]["ShortcutButton"]["Appliance"].isObject())
-				{
-					if (setlistVal["Component"]["ShortcutButton"]["Appliance"].isMember("Explorer") && setlistVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"].isBool())
-						setlist.component.shortcutButton.appliance.explorer = setlistVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["Appliance"].isMember("Taskmgr") && setlistVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"].isBool())
-						setlist.component.shortcutButton.appliance.taskmgr = setlistVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["Appliance"].isMember("Control") && setlistVal["Component"]["ShortcutButton"]["Appliance"]["Control"].isBool())
-						setlist.component.shortcutButton.appliance.control = setlistVal["Component"]["ShortcutButton"]["Appliance"]["Control"].asBool();
-				}
-				// system
-				if (setlistVal["Component"]["ShortcutButton"].isMember("System") && setlistVal["Component"]["ShortcutButton"]["System"].isObject())
-				{
-					if (setlistVal["Component"]["ShortcutButton"]["System"].isMember("Desktop") && setlistVal["Component"]["ShortcutButton"]["System"]["Desktop"].isBool())
-						setlist.component.shortcutButton.system.desktop = setlistVal["Component"]["ShortcutButton"]["System"]["Desktop"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["System"].isMember("LockWorkStation") && setlistVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"].isBool())
-						setlist.component.shortcutButton.system.lockWorkStation = setlistVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"].asBool();
-				}
-				// keyboard
-				if (setlistVal["Component"]["ShortcutButton"].isMember("Keyboard") && setlistVal["Component"]["ShortcutButton"]["Keyboard"].isObject())
-				{
-					if (setlistVal["Component"]["ShortcutButton"]["Keyboard"].isMember("Keyboardesc") && setlistVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"].isBool())
-						setlist.component.shortcutButton.keyboard.keyboardesc = setlistVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["Keyboard"].isMember("KeyboardAltF4") && setlistVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"].isBool())
-						setlist.component.shortcutButton.keyboard.keyboardAltF4 = setlistVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"].asBool();
-				}
-				// rollCall
-				if (setlistVal["Component"]["ShortcutButton"].isMember("RollCall") && setlistVal["Component"]["ShortcutButton"]["RollCall"].isObject())
-				{
-					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("IslandCaller1") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller1"].isBool())
-						setlist.component.shortcutButton.rollCall.IslandCaller1 = setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller1"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("IslandCaller2") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller2"].isBool())
-						setlist.component.shortcutButton.rollCall.IslandCaller2 = setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller2"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("SecRandom1") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom1"].isBool())
-						setlist.component.shortcutButton.rollCall.SecRandom1 = setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom1"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("SecRandom2") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom2"].isBool())
-						setlist.component.shortcutButton.rollCall.SecRandom2 = setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom2"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("SecRandom2Compat") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom2Compat"].isBool())
-						setlist.component.shortcutButton.rollCall.SecRandom2Compat = setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom2Compat"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["RollCall"].isMember("NamePicker") && setlistVal["Component"]["ShortcutButton"]["RollCall"]["NamePicker"].isBool())
-						setlist.component.shortcutButton.rollCall.NamePicker = setlistVal["Component"]["ShortcutButton"]["RollCall"]["NamePicker"].asBool();
-				}
-				// linkage
-				if (setlistVal["Component"]["ShortcutButton"].isMember("Linkage") && setlistVal["Component"]["ShortcutButton"]["Linkage"].isObject())
-				{
-					if (setlistVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandSettings") && setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"].isBool())
-						setlist.component.shortcutButton.linkage.classislandSettings = setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandProfile") && setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"].isBool())
-						setlist.component.shortcutButton.linkage.classislandProfile = setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"].asBool();
-					if (setlistVal["Component"]["ShortcutButton"]["Linkage"].isMember("ClassislandClassswap") && setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"].isBool())
-						setlist.component.shortcutButton.linkage.classislandClassswap = setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"].asBool();
-				}
-			}
-		}
-
-	}
-	else return false;
-
-	return true;
-}
-bool ReadSettingMini()
-{
-	HANDLE fileHandle = NULL;
-	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\deploy.json"))
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-
-	DWORD dwSize = 0;
-	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-	string jsonContent = string(dwSize, '\0');
-
-	DWORD bytesRead = 0;
-	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-
-	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
-	UnOccupyFile(&fileHandle);
-
-	istringstream jsonContentStream(jsonContent);
-	Json::CharReaderBuilder readerBuilder;
-	readerBuilder["stackLimit"] = 64;
-	Json::Value updateVal;
-	string jsonErr;
-
-	if (ParseConfigJson(readerBuilder, jsonContentStream, updateVal, jsonErr))
-	{
-		if (updateVal.isMember("PlugIn") && updateVal["PlugIn"].isObject())
-		{
-			if (updateVal["PlugIn"].isMember("SuperTop") && updateVal["PlugIn"]["SuperTop"].isObject())
-			{
-				if (updateVal["PlugIn"]["SuperTop"].isMember("Enable") && updateVal["PlugIn"]["SuperTop"]["Enable"].isBool())
-					setlist.plugInSetting.superTop.enable = updateVal["PlugIn"]["SuperTop"]["Enable"].asBool();
-			}
-		}
-	}
-	else return false;
-
-	return true;
-}
-string CaptureSettingJson()
-{
-    Json::Value widthPreferences;
-    {
-        std::scoped_lock widthLock(g_penWidthPreferencesMutex);
-        // 仅为安全保存保留退休偏好/迁移证据，不将其应用到本版启动状态。
-        // AutoClean 前冻结原对象，未来版本也不得降级覆盖。
-        g_penWidthStartup = Inkeys::Business::PenWidth::DecodePreferences(setlistVal, false, GetPenWidthContext());
-        widthPreferences = Inkeys::Business::PenWidth::EncodePreferences(g_penWidthStartup, false);
-    }
-    if (Inkeys::config.Config.AutoClean) setlistVal.clear();
-    setlistVal["PenWidth"] = std::move(widthPreferences);
-
-	bool enableAutoUpdate;
-	string updateChannel;
-	string updateArchitecture;
-	{
-		shared_lock<shared_mutex> lock(setlistUpdateMutex);
-		enableAutoUpdate = setlist.enableAutoUpdate;
-		updateChannel = setlist.UpdateChannel;
-		updateArchitecture = setlist.updateArchitecture;
-	}
-	{
-		setlistVal["SelectLanguage"] = Json::Value(setlist.selectLanguage);
-		setlistVal["StartUp"] = Json::Value(setlist.startUp);
-		setlistVal["SettingDarkMode"] = Json::Value(setlist.settingDarkMode);
-		setlistVal["SettingEntryAnimation"] = Json::Value(
-			setlist.settingEntryAnimation >= 0 && setlist.settingEntryAnimation <= 2
-			? setlist.settingEntryAnimation : 1);
-
-		setlistVal["SetSkinMode"] = Json::Value(setlist.SetSkinMode);
-		setlistVal["TopSleepTime"] = Json::Value(setlist.topSleepTime);
-		setlistVal["RightClickClose"] = Json::Value(setlist.RightClickClose);
-		{
-			setlistVal["BrushRecover"] = Json::Value(setlist.BrushRecover);
-			setlistVal["RubberRecover"] = Json::Value(setlist.RubberRecover);
-		}
-		{
-			setlistVal["Regular"]["MoveRecover1"] = Json::Value(setlist.regularSetting.moveRecover);
-			setlistVal["Regular"]["ClickRecover"] = Json::Value(setlist.regularSetting.clickRecover);
-		}
-		setlistVal["Regular"]["TeachingSafetyMode"] = Json::Value(setlist.regularSetting.teachingSafetyMode);
-
-		setlistVal["PaintDevice"] = Json::Value(setlist.paintDevice.load());
-		setlistVal["DisableRTS"] = Json::Value(setlist.disableRTS);
-		setlistVal["LiftStraighten"] = Json::Value(setlist.liftStraighten);
-		setlistVal["WaitStraighten"] = Json::Value(setlist.waitStraighten);
-		{
-			setlist.eraserSetting.eraserMode = setlist.eraserSetting.eraserMode == 1 ? 1 : 2;
-			setlistVal["EraserSetting"]["EraserMode"] = Json::Value(setlist.eraserSetting.eraserMode);
-			setlistVal["EraserSetting"]["EraserSize"] = Json::Value(setlist.eraserSetting.eraserSize);
-		}
-		{
-			setlistVal["Save"]["Enable"] = Json::Value(setlist.saveSetting.enable);
-			setlistVal["Save"]["SaveDays"] = Json::Value(setlist.saveSetting.saveDays);
-		}
-		// 已删除的旧设置不依赖 AutoClean；每次保存都清除历史 JSON 键。
-		setlistVal.removeMember("SettingGlobalScale");
-		setlistVal["Regular"].removeMember("AvoidFullScreen");
-		setlistVal.removeMember("PointAdsorption");
-		setlistVal.removeMember("SmoothWriting");
-		setlistVal.removeMember("HideTouchPointerBeta");
-		setlistVal.removeMember("Performance");
-		setlistVal.removeMember("Preset");
-
-		{
-			setlistVal["UpdateSetting"]["EnableAutoUpdate"] = Json::Value(enableAutoUpdate);
-			setlistVal["UpdateSetting"]["UpdateChannel"] = Json::Value(updateChannel);
-			setlistVal["UpdateSetting"]["UpdateArchitecture"] = Json::Value(updateArchitecture);
-		}
-		{
-			setlistVal["BasicInfo"]["UserID"] = Json::Value(utf16ToUtf8(userId));
-			setlistVal["BasicInfo"]["Edition"] = Json::Value(utf16ToUtf8(editionDate));
-		}
-
-		{
-			{
-				setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Enable"] = Json::Value(ddbInteractionSetList.enable);
-				setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["RunAsAdmin"] = Json::Value(ddbInteractionSetList.runAsAdmin);
-				setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["SleepTime"] = Json::Value(ddbInteractionSetList.sleepTime);
-
-				{
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbInteractionSetList.intercept.SeewoWhiteboard3Floating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbInteractionSetList.intercept.SeewoWhiteboard5Floating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoWhiteboard5CFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoPincoSideBarFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPincoDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoPincoDrawingFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoPPTFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoIwbAssistantFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoIwbAssistantFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["YiouBoardFloating"] = Json::Value(ddbInteractionSetList.intercept.YiouBoardFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["AiClassFloating"] = Json::Value(ddbInteractionSetList.intercept.AiClassFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ClassInXFloating"] = Json::Value(ddbInteractionSetList.intercept.ClassInXFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["IntelligentClassFloating"] = Json::Value(ddbInteractionSetList.intercept.IntelligentClassFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYanFloating"] = Json::Value(ddbInteractionSetList.intercept.ChangYanFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["ChangYan5Floating"] = Json::Value(ddbInteractionSetList.intercept.ChangYan5Floating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["Iclass30SidebarFloating"] = Json::Value(ddbInteractionSetList.intercept.Iclass30SidebarFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["Iclass30Floating"] = Json::Value(ddbInteractionSetList.intercept.Iclass30Floating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoDesktopSideBarFloating);
-					setlistVal["PlugIn"]["DesktopDrawpadBlocker"]["Intercept"]["SeewoDesktopDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating);
-				}
-			}
-			// 快捷方式配置已归 main.json；即使关闭 AutoClean 也不保留旧的活动字段。
-			setlistVal["PlugIn"].removeMember("ShortcutAssistant");
-
-			{
-				setlistVal["PlugIn"]["SuperTop"]["Enable"] = Json::Value(setlist.plugInSetting.superTop.enable);
-				setlistVal["PlugIn"]["SuperTop"]["Indicator"] = Json::Value(setlist.plugInSetting.superTop.indicator);
-			}
-		}
-		{
-			// shortcutButton
-			{
-				// appliance
-				{
-					setlistVal["Component"]["ShortcutButton"]["Appliance"]["Explorer"] = Json::Value(setlist.component.shortcutButton.appliance.explorer);
-					setlistVal["Component"]["ShortcutButton"]["Appliance"]["Taskmgr"] = Json::Value(setlist.component.shortcutButton.appliance.taskmgr);
-					setlistVal["Component"]["ShortcutButton"]["Appliance"]["Control"] = Json::Value(setlist.component.shortcutButton.appliance.control);
-				}
-				// system
-				{
-					setlistVal["Component"]["ShortcutButton"]["System"]["Desktop"] = Json::Value(setlist.component.shortcutButton.system.desktop);
-					setlistVal["Component"]["ShortcutButton"]["System"]["LockWorkStation"] = Json::Value(setlist.component.shortcutButton.system.lockWorkStation);
-				}
-				// keyboard
-				{
-					setlistVal["Component"]["ShortcutButton"]["Keyboard"]["Keyboardesc"] = Json::Value(setlist.component.shortcutButton.keyboard.keyboardesc);
-					setlistVal["Component"]["ShortcutButton"]["Keyboard"]["KeyboardAltF4"] = Json::Value(setlist.component.shortcutButton.keyboard.keyboardAltF4);
-				}
-				// rollCall
-				{
-					setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller1"] = Json::Value(setlist.component.shortcutButton.rollCall.IslandCaller1);
-					setlistVal["Component"]["ShortcutButton"]["RollCall"]["IslandCaller2"] = Json::Value(setlist.component.shortcutButton.rollCall.IslandCaller2);
-					setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom1"] = Json::Value(setlist.component.shortcutButton.rollCall.SecRandom1);
-					setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom2"] = Json::Value(setlist.component.shortcutButton.rollCall.SecRandom2);
-					setlistVal["Component"]["ShortcutButton"]["RollCall"]["SecRandom2Compat"] = Json::Value(setlist.component.shortcutButton.rollCall.SecRandom2Compat);
-					setlistVal["Component"]["ShortcutButton"]["RollCall"]["NamePicker"] = Json::Value(setlist.component.shortcutButton.rollCall.NamePicker);
-				}
-				// linkage
-				{
-					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandSettings"] = Json::Value(setlist.component.shortcutButton.linkage.classislandSettings);
-					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandProfile"] = Json::Value(setlist.component.shortcutButton.linkage.classislandProfile);
-					setlistVal["Component"]["ShortcutButton"]["Linkage"]["ClassislandClassswap"] = Json::Value(setlist.component.shortcutButton.linkage.classislandClassswap);
-				}
-			}
-		}
-
-		// UI3 已成为唯一入口，升级写回时移除旧实验开关。
-		if (setlistVal.isMember("Experimental") && setlistVal["Experimental"].isObject()
-			&& setlistVal["Experimental"].isMember("Inkeys3")
-			&& setlistVal["Experimental"]["Inkeys3"].isObject())
-		{
-			setlistVal["Experimental"]["Inkeys3"].removeMember("UI3");
-			if (setlistVal["Experimental"]["Inkeys3"].empty())
-				setlistVal["Experimental"].removeMember("Inkeys3");
-			if (setlistVal["Experimental"].empty())
-				setlistVal.removeMember("Experimental");
-		}
-	}
-
-	Json::StreamWriterBuilder writerBuilder;
-	return "\xEF\xBB\xBF" + Json::writeString(writerBuilder, setlistVal);
-}
-
-bool WriteSettingJson(const string& jsonContent)
-{
-	scoped_lock writeLock(g_legacySettingWriteMutex);
-	if (jsonContent.empty() || jsonContent.size() >
-		static_cast<size_t>(kMaxLegacyConfigFileBytes))
-		return false;
-	const filesystem::path path = filesystem::path(globalPath) / L"opt" / L"deploy.json";
-	// 已存在但不可读/不可解析时保留原件；首次缺文件才允许写默认值。
-	if (!ExistingConfigValidOrAbsent(path.wstring())) return false;
-	return Inkeys::PptSettings::WriteAtomically(path, jsonContent);
-}
-
-bool WriteSetting()
-{
-	return WriteSettingJson(CaptureSettingJson());
-}
-
-PptComSetListStruct pptComSetlist;
-bool PptComReadSetting()
-{
-	// 加载页暂不开放；缺失/损坏的配置以及旧 true 都不能重新启用。
-	pptComSetlist.showLoadingScreen = false;
-	HANDLE fileHandle = NULL;
-	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\pptcom_configuration.json"))
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-
-	DWORD dwSize = 0;
-	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-	string jsonContent = string(dwSize, '\0');
-
-	DWORD bytesRead = 0;
-	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-
-	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
-	UnOccupyFile(&fileHandle);
-
-	istringstream jsonContentStream(jsonContent);
-	Json::CharReaderBuilder readerBuilder;
-	readerBuilder["stackLimit"] = 64;
-	Json::Value updateVal;
-	string jsonErr;
-
-	if (ParseConfigJson(readerBuilder, jsonContentStream, updateVal, jsonErr))
-	{
-		if (updateVal.isMember("MemoryWidgetPosition") && updateVal["MemoryWidgetPosition"].isBool())
-			pptComSetlist.memoryWidgetPosition = updateVal["MemoryWidgetPosition"].asBool();
-
-		if (updateVal.isMember("ShowBottomBoth") && updateVal["ShowBottomBoth"].isBool())
-			pptComSetlist.showBottomBoth = updateVal["ShowBottomBoth"].asBool();
-		if (updateVal.isMember("ShowMiddleBoth") && updateVal["ShowMiddleBoth"].isBool())
-			pptComSetlist.showMiddleBoth = updateVal["ShowMiddleBoth"].asBool();
-		if (updateVal.isMember("ShowBottomMiddle") && updateVal["ShowBottomMiddle"].isBool())
-			pptComSetlist.showBottomMiddle = updateVal["ShowBottomMiddle"].asBool();
-
-		{
-			if (updateVal.isMember("BottomBothWidth") && updateVal["BottomBothWidth"].isDouble())
-				pptComSetlist.bottomBothWidth = (float)updateVal["BottomBothWidth"].asDouble();
-			if (updateVal.isMember("BottomBothHeight") && updateVal["BottomBothHeight"].isDouble())
-				pptComSetlist.bottomBothHeight = (float)updateVal["BottomBothHeight"].asDouble();
-			if (updateVal.isMember("MiddleBothWidth") && updateVal["MiddleBothWidth"].isDouble())
-				pptComSetlist.middleBothWidth = (float)updateVal["MiddleBothWidth"].asDouble();
-			if (updateVal.isMember("MiddleBothHeight") && updateVal["MiddleBothHeight"].isDouble())
-				pptComSetlist.middleBothHeight = (float)updateVal["MiddleBothHeight"].asDouble();
-			if (updateVal.isMember("BottomMiddleWidth") && updateVal["BottomMiddleWidth"].isDouble())
-				pptComSetlist.bottomMiddleWidth = (float)updateVal["BottomMiddleWidth"].asDouble();
-			if (updateVal.isMember("BottomMiddleHeight") && updateVal["BottomMiddleHeight"].isDouble())
-				pptComSetlist.bottomMiddleHeight = (float)updateVal["BottomMiddleHeight"].asDouble();
-		}
-
-		if (updateVal.isMember("BottomSideBothWidgetScale") && updateVal["BottomSideBothWidgetScale"].isDouble())
-			pptComSetlist.bottomSideBothWidgetScale = (float)updateVal["BottomSideBothWidgetScale"].asDouble();
-		if (updateVal.isMember("BottomSideMiddleWidgetScale") && updateVal["BottomSideMiddleWidgetScale"].isDouble())
-			pptComSetlist.bottomSideMiddleWidgetScale = (float)updateVal["BottomSideMiddleWidgetScale"].asDouble();
-		if (updateVal.isMember("MiddleSideBothWidgetScale") && updateVal["MiddleSideBothWidgetScale"].isDouble())
-			pptComSetlist.middleSideBothWidgetScale = (float)updateVal["MiddleSideBothWidgetScale"].asDouble();
-
-		// if (updateVal.isMember("AutoKillWpsProcess") && updateVal["AutoKillWpsProcess"].isBool())
-		// 	pptComSetlist.autoKillWpsProcess = updateVal["AutoKillWpsProcess"].asBool();
-	}
-	else return false;
-
-	return true;
-}
-bool PptComReadSettingPositionOnly()
-{
-	HANDLE fileHandle = NULL;
-	if (!OccupyFileForRead(&fileHandle, globalPath + L"opt\\pptcom_configuration.json"))
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-
-	DWORD dwSize = 0;
-	if (!ReadBoundedConfigFileSize(fileHandle, dwSize))
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-	string jsonContent = string(dwSize, '\0');
-
-	DWORD bytesRead = 0;
-	if (SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER)
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-	if (!ReadFile(fileHandle, &jsonContent[0], dwSize, &bytesRead, NULL) || bytesRead != dwSize)
-	{
-		UnOccupyFile(&fileHandle);
-		return false;
-	}
-
-	if (jsonContent.compare(0, 3, "\xEF\xBB\xBF") == 0) jsonContent = jsonContent.substr(3);
-	UnOccupyFile(&fileHandle);
-
-	istringstream jsonContentStream(jsonContent);
-	Json::CharReaderBuilder readerBuilder;
-	readerBuilder["stackLimit"] = 64;
-	Json::Value updateVal;
-	string jsonErr;
-
-	if (ParseConfigJson(readerBuilder, jsonContentStream, updateVal, jsonErr))
-	{
-		if (updateVal.isMember("BottomBothWidth") && updateVal["BottomBothWidth"].isDouble())
-			pptComSetlist.bottomBothWidth = (float)updateVal["BottomBothWidth"].asDouble();
-		if (updateVal.isMember("BottomBothHeight") && updateVal["BottomBothHeight"].isDouble())
-			pptComSetlist.bottomBothHeight = (float)updateVal["BottomBothHeight"].asDouble();
-		if (updateVal.isMember("MiddleBothWidth") && updateVal["MiddleBothWidth"].isDouble())
-			pptComSetlist.middleBothWidth = (float)updateVal["MiddleBothWidth"].asDouble();
-		if (updateVal.isMember("MiddleBothHeight") && updateVal["MiddleBothHeight"].isDouble())
-			pptComSetlist.middleBothHeight = (float)updateVal["MiddleBothHeight"].asDouble();
-		if (updateVal.isMember("BottomMiddleWidth") && updateVal["BottomMiddleWidth"].isDouble())
-			pptComSetlist.bottomMiddleWidth = (float)updateVal["BottomMiddleWidth"].asDouble();
-		if (updateVal.isMember("BottomMiddleHeight") && updateVal["BottomMiddleHeight"].isDouble())
-			pptComSetlist.bottomMiddleHeight = (float)updateVal["BottomMiddleHeight"].asDouble();
-	}
-	else return false;
-
-	return true;
-}
 namespace
 {
 	std::mutex pptSettingsMutex;
@@ -839,51 +208,31 @@ namespace
 	Inkeys::PptSettings::WriteJournal pptSettingsJournal;
 }
 
-static Json::Value CapturePptComSettingValue()
+// PPT 控件位置与设置页共用唯一保存入口 Inkeys::config.Write()；
+// 写入日志只记录版本、已保存基线与失败重试，不再携带独立的配置内容。
+static Inkeys::PptSettings::Positions ConfiguredPptPositions()
 {
-	Json::Value updateVal;
-	{
-		updateVal["ShowLoadingScreen"] = Json::Value(false);
-		updateVal["MemoryWidgetPosition"] = Json::Value(pptComSetlist.memoryWidgetPosition);
-
-		updateVal["ShowBottomBoth"] = Json::Value(pptComSetlist.showBottomBoth);
-		updateVal["ShowMiddleBoth"] = Json::Value(pptComSetlist.showMiddleBoth);
-		updateVal["ShowBottomMiddle"] = Json::Value(pptComSetlist.showBottomMiddle);
-
-		updateVal["BottomBothWidth"] = Json::Value(pptComSetlist.bottomBothWidth);
-		updateVal["BottomBothHeight"] = Json::Value(pptComSetlist.bottomBothHeight);
-		updateVal["MiddleBothWidth"] = Json::Value(pptComSetlist.middleBothWidth);
-		updateVal["MiddleBothHeight"] = Json::Value(pptComSetlist.middleBothHeight);
-		updateVal["BottomMiddleWidth"] = Json::Value(pptComSetlist.bottomMiddleWidth);
-		updateVal["BottomMiddleHeight"] = Json::Value(pptComSetlist.bottomMiddleHeight);
-
-		updateVal["BottomSideBothWidgetScale"] = Json::Value(pptComSetlist.bottomSideBothWidgetScale);
-		updateVal["BottomSideMiddleWidgetScale"] = Json::Value(pptComSetlist.bottomSideMiddleWidgetScale);
-		updateVal["MiddleSideBothWidgetScale"] = Json::Value(pptComSetlist.middleSideBothWidgetScale);
-
-		// updateVal["AutoKillWpsProcess"] = Json::Value(pptComSetlist.autoKillWpsProcess);
-	}
-
-	return updateVal;
+	const auto& ppt = Inkeys::config.PlugIn.PPTHelper;
+	return { static_cast<float>(ppt.BottomBothWidth.load()), static_cast<float>(ppt.BottomBothHeight.load()),
+		static_cast<float>(ppt.MiddleBothWidth.load()), static_cast<float>(ppt.MiddleBothHeight.load()) };
 }
 
 static void EnsurePptSettingsJournal()
 {
-	if (!pptSettingsJournal.Initialized())
-		pptSettingsJournal.Initialize(CapturePptComSettingValue());
-}
-
-string CapturePptComSettingJson()
-{
-	std::scoped_lock lock(pptSettingsMutex);
-	EnsurePptSettingsJournal();
-	return pptSettingsJournal.CaptureSettings(CapturePptComSettingValue());
+	if (pptSettingsJournal.Initialized()) return;
+	Json::Value settings(Json::objectValue);
+	Inkeys::PptSettings::SetPositions(settings, ConfiguredPptPositions());
+	settings["MemoryWidgetPosition"] = Inkeys::config.PlugIn.PPTHelper.MemoryWidgetPosition.load();
+	pptSettingsJournal.Initialize(std::move(settings));
 }
 
 string CapturePptComPositionSettingJson(Inkeys::PptSettings::Positions positions, bool remember)
 {
 	std::scoped_lock lock(pptSettingsMutex);
 	EnsurePptSettingsJournal();
+	// 内存配置立即更新，实际写盘由持久化回调串行完成。
+	Inkeys::config.SetPptHelperPositions(positions.bottomX, positions.bottomY,
+		positions.middleX, positions.middleY, remember);
 	return pptSettingsJournal.CapturePositions(positions, remember);
 }
 
@@ -911,18 +260,13 @@ bool WritePptComSettingJson(const string& jsonContent)
 {
 	// 文件提交串行，但 UI 捕获和读取保存基线不等待磁盘 I/O。
 	std::scoped_lock writeLock(pptSettingsWriteMutex);
-	const filesystem::path path = filesystem::path(globalPath) /
-		L"opt" / L"pptcom_configuration.json";
-	if (!ExistingConfigValidOrAbsent(path.wstring())) return false;
 	Inkeys::PptSettings::WriteJournal::PreparedWrite prepared;
 	{
 		std::scoped_lock lock(pptSettingsMutex);
 		if (!pptSettingsJournal.Prepare(jsonContent, prepared)) return false;
 	}
 	if (prepared.revision == 0) return true;
-	const bool succeeded = !prepared.content.empty() &&
-		prepared.content.size() <= static_cast<size_t>(kMaxLegacyConfigFileBytes) &&
-		Inkeys::PptSettings::WriteAtomically(path, prepared.content);
+	const bool succeeded = Inkeys::config.Write();
 	{
 		std::scoped_lock lock(pptSettingsMutex);
 		pptSettingsJournal.Complete(prepared, succeeded);
@@ -931,10 +275,6 @@ bool WritePptComSettingJson(const string& jsonContent)
 	return succeeded;
 }
 
-bool PptComWriteSetting()
-{
-	return WritePptComSettingJson(CapturePptComSettingJson());
-}
 
 DdbInteractionSetListStruct ddbInteractionSetList;
 //bool DdbReadInteraction()
@@ -1055,30 +395,30 @@ string CaptureDdbInteractionJson(bool change, bool close)
 {
 	Json::Value updateVal;
 	{
-		updateVal["SleepTime"] = Json::Value(ddbInteractionSetList.sleepTime);
+		updateVal["SleepTime"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.SleepTime.load());
 
 		updateVal["Mode"]["Mode"] = Json::Value(ddbInteractionSetList.mode);
 		updateVal["Mode"]["HostPath"] = Json::Value(utf16ToUtf8(ddbInteractionSetList.hostPath));
 		updateVal["Mode"]["RestartHost"] = Json::Value(ddbInteractionSetList.restartHost);
 
 		{
-			updateVal["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(ddbInteractionSetList.intercept.SeewoWhiteboard3Floating);
-			updateVal["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(ddbInteractionSetList.intercept.SeewoWhiteboard5Floating);
-			updateVal["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoWhiteboard5CFloating);
-			updateVal["Intercept"]["SeewoPincoSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoPincoSideBarFloating);
-			updateVal["Intercept"]["SeewoPincoDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoPincoDrawingFloating);
-			updateVal["Intercept"]["SeewoPPTFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoPPTFloating);
-			updateVal["Intercept"]["SeewoIwbAssistantFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoIwbAssistantFloating);
-			updateVal["Intercept"]["YiouBoardFloating"] = Json::Value(ddbInteractionSetList.intercept.YiouBoardFloating);
-			updateVal["Intercept"]["AiClassFloating"] = Json::Value(ddbInteractionSetList.intercept.AiClassFloating);
-			updateVal["Intercept"]["ClassInXFloating"] = Json::Value(ddbInteractionSetList.intercept.ClassInXFloating);
-			updateVal["Intercept"]["IntelligentClassFloating"] = Json::Value(ddbInteractionSetList.intercept.IntelligentClassFloating);
-			updateVal["Intercept"]["ChangYanFloating"] = Json::Value(ddbInteractionSetList.intercept.ChangYanFloating);
-			updateVal["Intercept"]["ChangYan5Floating"] = Json::Value(ddbInteractionSetList.intercept.ChangYan5Floating);
-			updateVal["Intercept"]["Iclass30SidebarFloating"] = Json::Value(ddbInteractionSetList.intercept.Iclass30SidebarFloating);
-			updateVal["Intercept"]["Iclass30Floating"] = Json::Value(ddbInteractionSetList.intercept.Iclass30Floating);
-			updateVal["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoDesktopSideBarFloating);
-			updateVal["Intercept"]["SeewoDesktopDrawingFloating"] = Json::Value(ddbInteractionSetList.intercept.SeewoDesktopDrawingFloating);
+			updateVal["Intercept"]["SeewoWhiteboard3Floating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.SeewoWhiteboard3Floating.load());
+			updateVal["Intercept"]["SeewoWhiteboard5Floating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.SeewoWhiteboard5Floating.load());
+			updateVal["Intercept"]["SeewoWhiteboard5CFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.SeewoWhiteboard5CFloating.load());
+			updateVal["Intercept"]["SeewoPincoSideBarFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.SeewoPincoSideBarFloating.load());
+			updateVal["Intercept"]["SeewoPincoDrawingFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.SeewoPincoDrawingFloating.load());
+			updateVal["Intercept"]["SeewoPPTFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.SeewoPPTFloating.load());
+			updateVal["Intercept"]["SeewoIwbAssistantFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.SeewoIwbAssistantFloating.load());
+			updateVal["Intercept"]["YiouBoardFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.YiouBoardFloating.load());
+			updateVal["Intercept"]["AiClassFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.AiClassFloating.load());
+			updateVal["Intercept"]["ClassInXFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.ClassInXFloating.load());
+			updateVal["Intercept"]["IntelligentClassFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.IntelligentClassFloating.load());
+			updateVal["Intercept"]["ChangYanFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.ChangYanFloating.load());
+			updateVal["Intercept"]["ChangYan5Floating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.ChangYan5Floating.load());
+			updateVal["Intercept"]["Iclass30SidebarFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.Iclass30SidebarFloating.load());
+			updateVal["Intercept"]["Iclass30Floating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.Iclass30Floating.load());
+			updateVal["Intercept"]["SeewoDesktopSideBarFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.SeewoDesktopSideBarFloating.load());
+			updateVal["Intercept"]["SeewoDesktopDrawingFloating"] = Json::Value(Inkeys::config.PlugIn.DesktopDrawpadBlocker.Intercept.SeewoDesktopDrawingFloating.load());
 		}
 
 		updateVal["~ConfigurationChange"] = Json::Value(change);
@@ -1133,11 +473,7 @@ void InitializePenWidthPreferences(Inkeys::Business::PenWidth::Context context)
         std::scoped_lock lock(g_penWidthPreferencesMutex);
         // 默认仅初始化一次；后续换屏只重解析身份，不能覆盖手动粗细。
         if (g_penWidthStartupInitialized) return;
-        // 本版隐藏且暂不支持启动记忆/启动预设；保留兼容代码但不读取应用残留配置。
-        // g_penWidthStartup = DecodePreferences(setlistVal, false, context);
-        // setlist.presetSetting.memoryWidth = g_penWidthStartup.memoryWidth;
-        // setlist.presetSetting.memoryColor = g_penWidthStartup.memoryColor;
-        // setlist.presetSetting.autoDefaultWidth = g_penWidthStartup.autoDefaultWidth;
+        // 本版隐藏且暂不支持启动记忆/启动预设；启动偏好没有持久化来源。
         g_penWidthStartupInitialized = true;
     }
     RestorePenWidthSelections({}, {}, {});
@@ -1149,11 +485,8 @@ bool GetMemory()
     using namespace Inkeys::Business::PenWidth;
     std::scoped_lock lock(g_penWidthPreferencesMutex);
     const auto context = GetPenWidthContext();
-    if (!g_penWidthStartupInitialized)
-    {
-        g_penWidthStartup = DecodePreferences(setlistVal, false, context);
-        g_penWidthStartupInitialized = true;
-    }
+    // 启动偏好不再有持久化来源，保持默认（不记忆）。
+    g_penWidthStartupInitialized = true;
     Json::Value root;
     const bool loaded = ReadMemoryRoot(MemoryPath(), root);
     const Preferences memory = loaded ? DecodePreferences(root, true, context) : Preferences{};
@@ -1209,7 +542,7 @@ int RunPenWidthPreferencesProductionTest() noexcept
 {
     using namespace Inkeys::Business::PenWidth;
     const auto savedPath = globalPath;
-    const auto savedRoot = setlistVal;
+    const auto savedPaintDevice = Inkeys::config.Drawing.PaintDevice.load();
     const auto savedAutoClean = Inkeys::config.Config.AutoClean.load();
     Preferences savedStartup;
     bool savedInitialized = false;
@@ -1242,12 +575,14 @@ int RunPenWidthPreferencesProductionTest() noexcept
         };
         const auto resetStartup = [&](Json::Value root)
         {
-            setlistVal = std::move(root);
+            (void)root;
             std::scoped_lock lock(g_penWidthPreferencesMutex);
             g_penWidthStartupInitialized = false;
         };
+        // 旧 ReadSetting 会重置启动偏好初始化标记；迁移后仅保留该重置语义。
+        const auto ResetStartup = [&]() { resetStartup(Json::Value(Json::objectValue)); return true; };
         Context context{ 1, 1, 144.0, 1920, 1080 };
-        setlist.paintDevice = 1;
+        Inkeys::config.Drawing.PaintDevice = 1;
         stage = "fresh-default-and-first-medium";
         resetStartup(Json::Value(Json::objectValue));
         InitializePenWidthPreferences(context);
@@ -1264,14 +599,6 @@ int RunPenWidthPreferencesProductionTest() noexcept
         ChangeStateModeToPenTool(PenToolSelectionEnum::Highlighter);
         require(SetPenColor(RGB(65, 43, 21), false));
         ChangeStateModeToPenTool(PenToolSelectionEnum::SoftPen);
-        Json::Value deploy(Json::objectValue);
-        deploy["Preset"]["MemoryWidth"] = true;
-        deploy["Preset"]["MemoryColor"] = true;
-        deploy["Preset"]["AutoDefaultWidth"] = false;
-        deploy["Preset"]["DefaultBrush1Width"] = 3.0;
-        deploy["Preset"]["DefaultHighlighter1Width"] = 35.0;
-        deploy["Unrelated"] = "keep";
-        require(writeRoot(directory / L"opt" / L"deploy.json", deploy));
         Json::Value memory(Json::objectValue);
         memory["Draw"]["Brush1"]["Width"] = 12.0;
         memory["Draw"]["Highlighter1"]["Width"] = 70.0;
@@ -1282,7 +609,7 @@ int RunPenWidthPreferencesProductionTest() noexcept
         memory["Draw"]["Brush1"]["Color"]["A"] = 0;
         memory["Draw"]["Highlighter1"]["Color"] = memory["Draw"]["Brush1"]["Color"];
         memory["Unrelated"] = "keep-memory";
-        require(writeRoot(MemoryPath(), memory) && ReadSetting());
+        require(writeRoot(MemoryPath(), memory) && ResetStartup());
         const auto brushColor = GetStateModeSnapshot().Pen.Brush1.color;
         const auto requireMedium = [&]()
         {
@@ -1300,11 +627,7 @@ int RunPenWidthPreferencesProductionTest() noexcept
         requireMedium();
         Json::Value migrated;
         require(ReadMemoryRoot(MemoryPath(), migrated) && memory == migrated);
-        // 兼容解码仅用于保全保存证据，不代表当前产品支持恢复启动偏好。
-        require(WriteSetting() && ReadMemoryRoot(directory / L"opt" / L"deploy.json", migrated)
-            && migrated["PenWidth"]["Migration"]["Legacy"] == deploy["Preset"]
-            && migrated["Unrelated"].asString() == "keep");
-        require(ReadSetting());
+        require(ResetStartup());
         context.effectiveDpi = 264.0;
         InitializePenWidthPreferences(context);
         requireMedium();
@@ -1316,26 +639,21 @@ int RunPenWidthPreferencesProductionTest() noexcept
         startup.valid = { true, true, true };
         startup.selections = { Selection{ Source::ExplicitDip, Preset::Medium, 2.5 },
             Selection{ Source::Preset, Preset::Thick, 3.0 }, Selection{ Source::ExplicitDip, Preset::Medium, 7.0 } };
-        deploy["PenWidth"] = EncodePreferences(startup, false);
         Preferences remembered = startup;
         remembered.selections[0] = { Source::ExplicitDip, Preset::Medium, 17.0 };
         memory["PenWidth"] = EncodePreferences(remembered, true);
-        require(writeRoot(directory / L"opt" / L"deploy.json", deploy)
-            && writeRoot(MemoryPath(), memory) && ReadSetting());
+        require(writeRoot(MemoryPath(), memory) && ResetStartup());
         InitializePenWidthPreferences(context);
         requireMedium();
-        require(WriteSetting() && ReadMemoryRoot(directory / L"opt" / L"deploy.json", migrated)
-            && migrated["PenWidth"] == deploy["PenWidth"]);
         startup.memoryWidth = false;
-        deploy["PenWidth"] = EncodePreferences(startup, false);
-        require(writeRoot(directory / L"opt" / L"deploy.json", deploy) && ReadSetting());
+        require(ResetStartup());
         InitializePenWidthPreferences(context);
         requireMedium();
 
         stage = "classroom-default-and-followup-context-preserves-manual";
         context.paintDevice = 0; context.pixelWidth = 2560; context.pixelHeight = 1440;
-        setlist.paintDevice = 0;
-        require(ReadSetting());
+        Inkeys::config.Drawing.PaintDevice = 0;
+        require(ResetStartup());
         InitializePenWidthPreferences(context);
         requireMedium();
         require(std::abs(GetPenWidthMetrics(GetStateModeSnapshot()).idealCanvasWidthPx - 16.0 / 3.0) < 1e-9);
@@ -1364,14 +682,9 @@ int RunPenWidthPreferencesProductionTest() noexcept
         require(ReadMemoryRoot(MemoryPath(), migrated) && memory == migrated);
 
         stage = "future-schema-autoclean-preservation";
-        deploy["PenWidth"]["Version"] = 99;
-        deploy["PenWidth"]["FuturePayload"] = "opaque";
-        require(writeRoot(directory / L"opt" / L"deploy.json", deploy) && ReadSetting());
+        require(ResetStartup());
         InitializePenWidthPreferences(context);
         Inkeys::config.Config.AutoClean = true;
-        const auto expectedFuture = deploy["PenWidth"];
-        require(WriteSetting() && ReadMemoryRoot(directory / L"opt" / L"deploy.json", migrated)
-            && migrated["PenWidth"] == expectedFuture);
         memory["PenWidth"]["Version"] = 99;
         memory["PenWidth"]["FuturePayload"] = "opaque memory";
         require(writeRoot(MemoryPath(), memory) && SetMemory() && ReadMemoryRoot(MemoryPath(), migrated)
@@ -1386,7 +699,7 @@ int RunPenWidthPreferencesProductionTest() noexcept
     catch (...) { std::fprintf(stderr, "pen-width-preferences-production-test: FAIL %s\n", stage); }
     if (blockReplacement != INVALID_HANDLE_VALUE) CloseHandle(blockReplacement);
     globalPath = savedPath;
-    setlistVal = savedRoot;
+    Inkeys::config.Drawing.PaintDevice = savedPaintDevice;
     Inkeys::config.Config.AutoClean = savedAutoClean;
     {
         std::scoped_lock lock(g_penWidthPreferencesMutex);

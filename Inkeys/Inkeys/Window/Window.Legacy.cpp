@@ -3,6 +3,7 @@ import Inkeys.Window;
 import Inkeys.UI.MessageBox;
 import Inkeys.UI.StartupPreview;
 import Inkeys.Startup.Progress;
+import Inkeys.Other.Config;
 
 #include "Window.Legacy.hpp"
 
@@ -168,7 +169,7 @@ void TopWindow()
 			LogTopmostRefreshSnapshot(service, true);
 		}
 		int ticks = 300;
-		switch (setlist.topSleepTime)
+		switch (Inkeys::config.UI.TopSleepTime.load())
 		{
 		case 0: ticks = 10; break;
 		case 1: ticks = 50; break;

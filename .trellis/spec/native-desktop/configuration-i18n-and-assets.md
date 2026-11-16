@@ -1,45 +1,27 @@
 # Configuration, I18n, and Assets
 
-本文使用 `【直接确认】`、`【合理推断】`、`【待确认】` 和 `【历史/兼容】`。尤其注意：“新配置 module”是代码年代/结构描述，不表示维护者已宣布它取代传统配置。
+本文使用 `【直接确认】`、`【合理推断】`、`【待确认】` 和 `【历史/兼容】`。2026-11-16 起 `Inkeys::Config`（main.json）是唯一用户配置系统；Inkeys2 的 `opt\deploy.json` / `opt\pptcom_configuration.json` **完全不兼容**；下文较早条目若仍提到 `setlist` / `deploy.json`，以“配置归属”与“不兼容旧配置合同”两节为准。
 
-## 两套配置系统分别服务哪些代码
+## 配置归属（2026-11-16 起）
 
-| 配置系统 | 文件与磁盘位置 | `【直接确认】`的使用范围 |
+| 配置 | 文件与磁盘位置 | 说明 |
 | --- | --- | --- |
-| 传统 `SetListStruct` | `IdtConfiguration.h`；`IdtConfiguration.cpp::ReadSetting/WriteSetting`；`globalPath + L"opt\\deploy.json"` | `IdtMain`、`IdtDraw`/`IdtDrawpad`、`IdtFloating`、`IdtFreezeFrame`、`IdtHistoricalDrawpad`、`IdtMagnification`、`IdtPlug-in`、`IdtRts`、`IdtWindow`、`Net.Update`、`Bar.Main`、`Setting` 等仍有读写 |
-| `Inkeys.Other.Config` | `Inkeys/Inkeys/Other/Other.Config.cppm/.cpp`；`Inkeys::Config` class、全局实例 `Inkeys::config/configOnce`；`Config::ReadAll/ReadMini/Write`；`globalPath + L"Inkeys\\Config\\main.json"` | schema 中可见 `Config.AutoClean`、`Info`、`UI.Bar.Zoom2`、`UI.Bar.UseTaskbarHeightAsScaleBase`、`Experimental.Inkeys3.UI3.Animation/EdgeLighting`、`PlugIn.PPTHelper` 等；消费者包括 `IdtConfiguration.cpp`、`IdtMain.cpp`、`IdtPlug-in.cpp`、`Net.Update*`、`Bar.Zoom*`、`Bar.Main*` 和 `Setting*` |
+| `Inkeys.Other.Config` | `Inkeys/Inkeys/Other/Other.Config.cppm/.cpp`；全局 `Inkeys::config` / `configOnce`；`globalPath + L"Inkeys\\Config\\main.json"` | **唯一**用户配置。所有新字段只能加入 `INKEYS_CONFIG_SCHEMA` |
+| Inkeys2 的 `opt\deploy.json`、`opt\pptcom_configuration.json` | 已删除 | 不读取、不迁移、不清理，也不创建 `opt` 目录 |
+| `Inkeys\Memory\memory.json` | `IdtConfiguration.cpp::GetMemory/SetMemory` | 已弃用，暂未处理，不得新增用途 |
+| `DesktopDrawpadBlocker\interaction_configuration.json` | `CaptureDdbInteractionJson` | 外部 DDB 进程读取的交换文件，内容由 `config.PlugIn.DesktopDrawpadBlocker` 与运行时 `ddbInteractionSetList`（版本、哈希、模式、宿主路径）生成；未来另行迁移 |
 
-`【直接确认】` `INKEYS_CONFIG_SCHEMA` 集中声明新 module 已支持的字段；源码中还把启动读取区标注为“新配置 Test”。这说明新系统正在实际使用，但不足以证明迁移已完成或所有新字段必须进入它。
-
-### 容易混淆的真实边界
-
-- `【直接确认】` `Inkeys.UI.Bar` 是唯一产品悬浮栏入口；传统 `setlist.Experimental.Inkeys3.UI3` 路由字段和 `useInkeys3UI` 已删除，写旧配置时清理遗留 key。
-- `【直接确认】` 新配置中的 `Experimental.Inkeys3.UI3.Animation` 控制 UI3 动画；`Experimental.Inkeys3.UI3.EdgeLighting` 控制 UI3 边缘点光及第三鼠标光。它们都不是选择新旧悬浮栏的总开关。
-- `【直接确认】` Bar 的 zoom 配置走 `Inkeys.Other.Config`；Bar 的其他行为仍可读取传统 `setlist`，因此不能把 Bar 简化成“只用新配置”。
-- `【直接确认】` PPT helper 新字段由 `IdtPlug-in.cpp` 等读取，但 `IdtPlug-in.cpp` 同时仍使用传统 PPT/交互设置。
-- `【直接确认】` 两套系统写入不同 JSON 文件；全仓未见通用的双向同步或完整迁移器。
-- `【直接确认】` `Config.AutoClean` 会影响传统 `WriteSetting`，使其清空旧 `setlistVal`；这是一个明确交点，不代表两个 schema 普遍同步。
-
-`【历史/兼容】` `SetListStruct` 仍是当前大量主路径的真实接口，不能仅因其文件名较旧而标记废弃。
-
-`【待确认】` 维护者需要决定：未来字段按什么标准选择系统、是否计划迁移 `deploy.json`、发布包是否预置这些文件，以及向后兼容周期多长。Codex 在答案明确前不应自行把字段迁到“看起来较新”的 module。
-
-## 配置修改的证据型审查清单
-
-以下是从并存状态推导的 `【合理推断】`，不是声称项目已有统一迁移政策：
-
-1. 搜索字段、JSON key、默认值和 UI 写回的全部读写点，先确定真实所有者。
-2. 已在 `INKEYS_CONFIG_SCHEMA` 中的字段继续通过该 module 读写，除非任务明确更改 schema/持久化格式。
-3. 仍由 `SetListStruct` 管理的字段保持当前文件兼容；迁移需同时设计旧值读取、默认值、写回和回滚。
-4. JSON key 改名属于持久化格式变化；没有迁移代码时不能假设旧 key 会自动升级。
-5. 记录设置窗口写的是哪套配置，避免 UI 显示值、运行时缓存与磁盘文件分叉。
+- `【直接确认】` 新字段规则：在 schema 中声明默认值；需要范围校验的整数在 `Other.Config.cpp` 的读取钩子里按路径校验，越界回默认值；依赖运行环境的缺省（系统语言、程序架构）用哨兵值（`-1` / 空串）表示未确定，在 `IdtMain` 启动迁移后补齐。
+- `【直接确认】` 字符串字段与 Config 快照复制共用 `rwMutex`，只能经加锁访问器读写（如 `GetUpdateTarget/SetUpdateChannel/SetUpdateArchitecture`、快捷方式名称访问器），不得直接跨线程读写成员。
+- `【直接确认】` **唯一保存入口**是 `Inkeys::config.Write()`：每次写出调用时最新的完整配置（持 `rwMutex`），后写者不会把别人的新值回退。设置页先改 `Inkeys::config` 再 `QueueConfigWrite()`，由 FIFO worker 在执行时调用 `Inkeys::config.Write()`（DDB / 更新安装器命令同理）；PPT 控件位置先写入 `Inkeys::config`，持久化回调也调用 `Inkeys::config.Write()`。不得再在入队时复制 Config 快照稍后写盘。
+- `【直接确认】` 不得再新建独立 JSON 配置文件或恢复 `SetListStruct` 式的全局结构。
 
 ## UI3 Bar 深浅主题配置合同
 
 持久化路径为 `Experimental.Inkeys3.UI3.ThemeMode`，类型为整数，默认值 `1`。`ThemeModeDark=1`、`ThemeModeLight=2`；`NormalizeThemeMode()` 仅保留 `2`，其余值一律归一到 `1`，`ThemeModeUsesDarkStyle()` 是配置值到 renderer `darkStyle` 的唯一映射。
 
 - `config.ReadAll()` 后先归一并写回内存，再调用 `Inkeys::UI::Bar::SetThemeMode()`；旧配置缺字段、类型不符或非法整数均得到深色。
-- “常规 > 外观 > 主题”分区依次为“主栏主题”与“设置主题”两个下拉框，均只显示深色与浅色（同一选项顺序）。主栏主题选择后依次更新 `Inkeys::config`、发布 Bar 主题目标、调用 `QueueConfigWrite()` 异步保存；设置主题写 `setlist.settingDarkMode`，与标题栏切换按钮同一路径（`WriteSetting()` + `settingThemeSerial` 递增 + 请求 Settings 帧），两处始终显示同一值。
+- “常规 > 外观 > 主题”分区依次为“主栏主题”与“设置主题”两个下拉框，均只显示深色与浅色（同一选项顺序）。主栏主题选择后依次更新 `Inkeys::config`、发布 Bar 主题目标、调用 `QueueConfigWrite()` 异步保存；设置主题写 `Inkeys::config.UI.Setting.DarkMode`，与标题栏切换按钮同一路径（`QueueConfigWrite()` + `settingThemeSerial` 递增 + 请求 Settings 帧），两处始终显示同一值。
 - `SetThemeMode()` 只交换 `requestedDarkStyle` 并唤醒 Bar；D2D 资源和连续材质动画仍由串行渲染线程处理。
 - Windows `WM_THEMECHANGED` 不读取注册表或改写配置；`WM_SETTINGCHANGE` 继续承担显示器/系统设置刷新。
 - 该字段不复用传统 `SetSkinMode`，也不改变设置窗口自身主题。
@@ -114,100 +96,50 @@ value = static_cast<int>(NormalizeStartupPreviewEffect(candidate));
 ## UI3 状态指示器配置合同（2026-11-05）
 
 ### 1. Scope / Trigger
-修改主栏状态指示器总开关、类型勾选、旧超级置顶提示迁移或设置“常规 → 状态指示器”子页时适用。
+修改主栏状态指示器总开关、类型勾选或设置“常规 → 状态指示器”子页时适用。
 
 ### 2. Signatures
 - `main.json`：`Experimental.Inkeys3.UI3.StatusIndicator.{Enable,PptSlideshow,SuperTop,NewVersion}`，均为 bool，默认 true。
-- `Inkeys::Config::ReadAllHasValue(dottedPath)`：最近一次 `ReadAll` 读到的原文件是否含该键（区分缺失与默认值）。
 - 运行时发布：`Inkeys::UI::Bar::SetStatusIndicatorOptions(enable, ppt, superTop, newVersion)`。
-- 设置：`GeneralSection::StatusIndicator`（常规导航子页，排在最后）；`GeneralDraft::{statusIndicator,statusIndicatorTypes}` / `GeneralEvents::{statusIndicatorChanged,statusIndicatorTypesChanged}`。
+- 设置：`Section::StatusIndicator`（通用页子页，见 [settings-navigation.md](settings-navigation.md)）；`GeneralDraft::{statusIndicator,statusIndicatorTypes}` / `GeneralEvents::{statusIndicatorChanged,statusIndicatorTypesChanged}`。
 
 ### 3. Contracts
-- 启动：`ReadAll` 后、`config.Write()` 补齐缺失键之前记录 `StatusIndicator.SuperTop` 是否已存在；`ReadSetting()` 读完 deploy.json 后，若原先缺失，用旧 `PlugIn.SuperTop.Indicator` 初始化一次并写回 main.json，此后旧键只为文件兼容保留，不再读取或展示。随后调用 `SetStatusIndicatorOptions`。
+- 启动：`ReadAll` 与规范化后调用 `SetStatusIndicatorOptions`；不读取 Inkeys2 的 `PlugIn.SuperTop.Indicator`。
 - 设置页先改 `Inkeys::config`，再发布到主栏 owner，最后 `QueueConfigWrite()`；总开关关闭只隐藏勾选行，不改写各类型值。插件页不再显示超级置顶指示器行（相关 i18n 键已删除）。
 - 过滤不注销状态：关闭类型/总开关时条目保留注册并淡出，重新开启直接以收起方块恢复，不重放胶囊。
 
 ### 4. Validation & Error Matrix
 | 条件 | 结果 |
 | --- | --- |
-| main.json 无 `StatusIndicator.SuperTop`，deploy.json `Indicator=false` | 迁移为 false 并写回 |
-| main.json 已有新键 | 不读旧键，用户新值优先 |
-| main.json 与 deploy.json 均缺失 | 默认 true |
-| 迁移写回失败 | 只记日志，本次运行仍按内存值生效 |
+| main.json 缺少某项 | 默认 true |
+| main.json 已有值 | 使用用户值 |
+| 写回失败 | 只记日志，本次运行仍按内存值生效 |
 
 ### 5. Good / Base / Bad Cases
-- Good：在写回前记录键存在性，再在读取旧文件后迁移。
-- Base：新用户全部默认开启，不触发迁移写盘之外的副作用。
-- Bad：在 `config.Write()` 之后判断键缺失（写回已补齐默认值，迁移永远不发生）。
+- Good：设置页改值后立即发布到主栏并经唯一入口保存。
+- Base：新用户全部默认开启。
+- Bad：再从 Inkeys2 旧文件读取指示器偏好。
 
 ### 6. Tests Required
 - `setting_design_tests` 常规子页循环包含 `StatusIndicator` 且空闲不产生编辑；完整构建与 20 语言 `i18n.ps1 check`。
-- 迁移三种组合在真实启动中人工确认（无旧键 / 旧键 false / 已有新键）。
 
 ### 7. Wrong vs Correct
 ```cpp
-// Wrong：写回后再判断，缺失键已被默认值补齐。
-config.Write(); if (!config.ReadAllHasValue(path)) Migrate();
-// Correct：先记录，读完旧文件后迁移。
-const bool stored = config.ReadAllHasValue(path); /* ... ReadSetting() ... */ if (!stored) Migrate();
+// Wrong：发布前就写盘，或从旧 deploy.json 回读。
+config.Write(); SetStatusIndicatorOptions(legacyIndicator, ...);
+// Correct：先改 Inkeys::config，再发布，最后经唯一入口保存。
+status.SuperTop = value; SetStatusIndicatorOptions(...); QueueConfigWrite();
 ```
 
-## 设置页废弃配置清理合同
+## 不兼容旧配置合同（2026-11-16）
 
-### 1. Scope / Trigger
-
-删除传统 Setting 条目或停止兼容旧 `deploy.json` / PPT 配置字段时适用；被工程标记为 `None` 的 Draw2 源文件不因此重新进入活动实现范围。
-
-### 2. Signatures
-
-- `ReadSetting()`：不再读取已废弃键。
-- `CaptureSettingJson()`：不再输出已废弃键，并在返回 JSON 前显式 `removeMember`。
-- `PptComReadSetting()` / `CapturePptComSettingJson()`：PPT 配置只读写仍有活动消费者的字段。
-
-### 3. Contracts
-
-- `SettingGlobalScale`、`Regular.AvoidFullScreen`、`PointAdsorption`、`SmoothWriting`、`HideTouchPointerBeta`、`Performance`、`Preset` 已退出活动配置合同；保存时必须清除，即使 `Config.AutoClean=false`。退休 `Preset` 的宽度/记忆字段可按 [pen-width.md](pen-width.md) 仅为保存兼容数据解码、保留迁移证据；当前发布启动读取/恢复已注释禁用，残留旧default/Startup/memory不能覆盖Medium，不得恢复旧设置页或重复按px解释新DIP。
-- PPT `FixedHandWriting` 已退出活动配置合同；PPT 捕获函数构造新对象，省略该字段即完成下一次写回清理。
-- `Save.Enable` 不是废弃键：它继续控制 Draw3 桌面画布在清空和退出时保存非空画布，设置文案必须说明该真实语义。
-- Setting UI 只使用当前窗口 `DpiScale(dpi)`，不叠加用户倍率；主栏 `UI.Bar.Zoom2`、任务栏基础量及 PPT 缩放不随此项改变。
-- `SettingEntryAnimation` 沿用传统 `deploy.json`，整数 0=关闭、1=首次启动时、2=始终，缺项/类型错误/越界回退1；只控制设置开屏，与应用启动预览开关独立，也不关闭主页悬停/视差。
-- 首开按全进程 `SessionState.ShowSerial()==1` 判定，在首次真实隐藏→显示即消耗；不依赖实际播放成功，尺寸不足、总动画关闭、取消和 resident 重建不能让后续 Show 补播。激活已显示窗口不递增序号；系统 DPI 改变仍走既有字体/纹理重建。
-- 删除 UI 不等于删除当前结构体中的所有历史成员；只要成员仍被未编译兼容源码引用，可以保留为非持久化占位，但活动代码不得再读取或写入对应配置。
-
-### 4. Validation & Error Matrix
-
-| 条件 | 必须行为 |
-| --- | --- |
-| 旧 `deploy.json` 含任一废弃键且 `AutoClean=false` | 读取忽略；下一次保存从输出中删除该键，其他未知键仍按原策略保留 |
-| 旧 PPT 配置含 `FixedHandWriting` | 读取忽略；下一次 PPT 配置写回不再输出 |
-| 配置缺少 `Save.Enable` | 使用现有默认值；不得因清理旧键关闭 Draw3 自动保存 |
-| 未编译 Draw2 文件仍引用兼容成员 | 不为清理活动配置而重写或重新编译该历史路径 |
-
-### 5. Good / Base / Bad Cases
-
-- Good：旧配置关闭 `AutoClean`，保存后只移除明确废弃键，`Save.Enable` 与其他设置保持原值。
-- Base：新安装没有废弃键，捕获结果稳定且不会创建空的 `Performance` / `Preset` 对象。
-- Bad：只删除 Setting 卡片但继续读取/写回旧键，或把 `Save.Enable` 与 Draw2 遗留项一起删除。
-
-### 6. Tests Required
-
-- 静态搜索确认活动 Setting、配置读取和 i18n 不再引用删除项，且没有用 `#if 0` 代替删除。
-- 以包含全部旧键、`AutoClean=false` 的配置检查捕获结果：废弃键缺失、未知键保留、`Save.Enable` 保留。
-- 运行 i18n `sync/check`、完整 `InkeysRepo.sln` `Debug|ARM64` 构建和 `InkeysHeadlessTests.exe --no-window`。
-
-### 7. Wrong vs Correct
-
-```cpp
-// Wrong：AutoClean 关闭时旧键被原样带回磁盘。
-if (configAutoClean)
-	setlistVal.clear();
-
-// Correct：全量清理由用户开关控制，明确退役的键始终清除。
-if (configAutoClean)
-	setlistVal.clear();
-setlistVal.removeMember("Performance");
-setlistVal.removeMember("Preset");
-```
+- Inkeys2 的 `opt\deploy.json`、`opt\pptcom_configuration.json` 不读取、不迁移、不删除；从 Inkeys2 升级的用户所有设置均为 schema 缺省值。
+- 产品代码不得出现 `opt` 目录的路径拼接、存在性判断或创建；Inkeys3 新用户启动后不会生成 `opt`。
+- 主配置加载前需要的偏好（如超级置顶 `PlugIn.SuperTop.Enable`、多实例 `Config.AllowMultipleInstances`）用独立 `Inkeys::Config` 实例 `ReadMini(paths, true)` 只读探测 main.json。
+- 原 deploy/pptcom 中仍在使用的设置已作为新键进入 schema（`Application.{Language,StartUp,TeachingSafetyMode,Update.*}`、`UI.TopSleepTime`、`UI.Setting.*`、`UI.Bar.{RightClickClose,ShortcutButton.*}`、`Drawing.{PaintDevice,AutoSave.Enable}`、`PlugIn.SuperTop.Enable`、`PlugIn.DesktopDrawpadBlocker.*`、`PlugIn.PPTHelper.<PPT 键>`）；退役字段（`SaveDays`、恢复类开关、笔宽预设等）没有新键。
+- `Application.Update.Channel` 以 `ConfigUploadMode::Upload`、上报键 `ch` 取代原 `Info.ch` 绑定；写盘时删除旧 `$Info.UpdateChannel`（这是 main.json 自身旧键清理，与 Inkeys2 无关）。
+- `pptRunAsAdminDetected`（`IdtPlug-in.h`）是运行时探测结果，不进入配置。
+- 验证：`--config-boundary-test` 不得创建 `opt`；全仓静态搜索 `deploy.json` / `pptcom_configuration` 只允许出现在说明性注释中。
 
 ## UI2/旧设置资源退役边界
 
@@ -305,9 +237,9 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
   - `UI.Bar.ExtensionButtons`：`{ "Id": string, "Size": ..., "Visible": bool }[]`，`Visible` 缺省 `true`
   - `UI.Bar.FixedButtonsA2`：同 A1 元素形态
 - 运行时渲染顺序恒为 `normalize(A1) + normalize(B) + normalize(A2)`。
-- **UI2/UI3 并行期覆盖规则**：启用 UI3 时，`Load()` 的运行时 B 不读取 `UI.Bar.ExtensionButtons`，而是按设置页固定顺序读取 16 个 `setlist.component.shortcutButton.*` 开关。该投影只存在于当前进程，不调用 `ExtensionButtons.Replace()`、新版 `Config::Write()` 或其他 B 区持久化入口；持久化 B 的排序与编辑能力留到移除 UI2 后恢复。
+- **UI2/UI3 并行期覆盖规则**：启用 UI3 时，`Load()` 的运行时 B 不读取 `UI.Bar.ExtensionButtons`，而是按设置页固定顺序读取 16 个 `Inkeys::config.UI.Bar.ShortcutButton.*` 开关。该投影只存在于当前进程，不调用 `ExtensionButtons.Replace()`、新版 `Config::Write()` 或其他 B 区持久化入口；持久化 B 的排序与编辑能力留到移除 UI2 后恢复。
 - 内置组件注册 ID 使用非 `Inkeys.` 的稳定点分形式，例如 `Component.ShortcutButton.Appliance.Explorer`。注册项同时保存旧字段字符串、无参数开关读取器、设置页分类/名称、`UI` 类型 SVG 资源名（`comp*`，见 [bar-icons.md](bar-icons.md)）、栏内短文字和点击动作；注册顺序单独保存，不依赖 `unordered_map` 遍历顺序。
-- 设置页修改旧组件开关时，先更新 `setlist` 并执行 `WriteSetting()`，再在 UI3 下调用 `SyncLegacyExtensionButtons()` 和 Bar 渲染唤醒入口。打开开关按固定列表位置加入 B，关闭开关立即移除，其余组件相对顺序不变；UI2 的首个有效组件规则保持不变。
+- 设置页修改组件开关时，先更新 `Inkeys::config.UI.Bar.ShortcutButton.*` 并执行 `QueueConfigWrite()`，再在 UI3 下调用 `SyncLegacyExtensionButtons()` 和 Bar 渲染唤醒入口。打开开关按固定列表位置加入 B，关闭开关立即移除，其余组件相对顺序不变；UI2 的首个有效组件规则保持不变。
 - 运行时按钮列表整体替换为注册表持有的 `shared_ptr` 序列；两条交界 Divider 使用长期持有的独立对象。组件按钮各自使用本地状态，避免多个扩展按钮共享按压/选中状态。
 - 按钮图标载荷可为 SVG 或 PNG；内置组件自 2026-11 起全部为主题占位色 SVG，PNG 路径当前无内置使用者但保留。SVG 继续走主题着色和内容切换；PNG 复用 SVG 的布局/透明度动画状态并由 `BarUiPNGClass` 绘制。两者的 D2D 位图都属于当前 device generation；设备 epoch 切换或 `D2DERR_RECREATE_TARGET` 时，必须通过 `BarUIRendering::DiscardDeviceResources()` 重置 `svgMap`、`pngMap` 及注册按钮的 SVG/PNG 缓存，再由下一帧按原始 SVG 文本或 PNG 解码像素重新上传。
 - **按钮 ID 命名**：
@@ -394,7 +326,7 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 ## Setting 主题偏好
 
-`【直接确认】` `SetListStruct::settingDarkMode` 与 SettingGlobalScale 位于同一旧配置路径，映射 `opt/deploy.json` 的 `SettingDarkMode`。默认 false；ReadSetting 对缺项和非 bool 回退 false，CaptureSettingJson 写 bool。设置标题栏切换先更新运行时，再按原 FIFO 冻结快照保存，不改变 Windows/Bar 主题；配置失败沿用原错误处理。完整主题/窗口线程与测试合同见 [rendering-and-ui.md](rendering-and-ui.md) 的“Setting 实时浅深主题合同”。
+`【直接确认】` 设置窗口主题保存在 `main.json` 的 `UI.Setting.DarkMode`。默认 false，非 bool 回退默认。设置标题栏切换先更新运行时，再按原 FIFO 冻结快照保存，不改变 Windows/Bar 主题；配置失败沿用原错误处理。完整主题/窗口线程与测试合同见 [rendering-and-ui.md](rendering-and-ui.md) 的“Setting 实时浅深主题合同”。
 
 ## 国际化源与生成物
 
@@ -431,9 +363,9 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 #### 3. Contracts
 
-- 传统 `deploy.json/SelectLanguage` 保持 `0=en-US,1=zh-CN,2=zh-TW`；追加 `3=zh-HK,4=ja-JP,5=ko-KR,6=fr-FR,7=de-DE,8=es-ES,9=pt-BR,10=ru-RU`。后续追加 `11=id-ID,12=vi-VN,13=tr-TR,14=it-IT,15=pl-PL,16=uk-UA,17=es-MX,18=ro-RO,19=en-GB`。不能为下拉排序重排保存索引或迁移到main.json。
+- `main.json` 的 `Application.Language`（`-1` 表示未确定、启动时按系统语言补齐；不读取 Inkeys2 的 `SelectLanguage`）保持 `0=en-US,1=zh-CN,2=zh-TW`；追加 `3=zh-HK,4=ja-JP,5=ko-KR,6=fr-FR,7=de-DE,8=es-ES,9=pt-BR,10=ru-RU`。后续追加 `11=id-ID,12=vi-VN,13=tr-TR,14=it-IT,15=pl-PL,16=uk-UA,17=es-MX,18=ro-RO,19=en-GB`。不能为下拉排序重排保存索引。
 - 全部二十项菜单按语言码ordinal字典序显示，`DisplayOrder`由同一Locales表生成保存索引视图；Combo选中显示行须经`LocaleIndexForDisplay`再请求/保存，恢复时经`DisplayIndexForLocale`反查。非法保存值仍选英语，不能误用排序第一项de-DE；准备失败恢复原选中语言。
-- 未保存选择时精确匹配新增地区，已有ReadSetting偏好优先；新加坡/澳门中文及未覆盖地区保持旧回退。非法值仅本次回退英语；未知嵌入代码加载失败，不能拿中文资源却记录为另一个语言。
+- 未保存选择时精确匹配新增地区，已有保存偏好优先；新加坡/澳门中文及未覆盖地区保持旧回退。非法值仅本次回退英语；未知嵌入代码加载失败，不能拿中文资源却记录为另一个语言。
 - 列表显示母语名称、语言码及Beta，只有zh-CN不含Beta；通用品牌/新快捷方式zh-CN使用智绘教Inkeys，其余Inkeys，主页既定地区化标题/标语/版权例外保留。社区沿zh-CN→QQ、其余→GitHub分流。
 - 新语言须同时进入JSONC、RC/resource、Locales及必要工程/Solution展示项；消息框默认按钮另按PRIMARYLANGID分派，须同步补齐且与JSONC术语一致，地区英/西复用既有按钮规则；脚本自动枚举其他JSONC，无需另加语言白名单。所有叶子完整翻译，不能把品牌/母语菜单/原生软件专名等有意同值误判为漏译。
 - Noto Sans JP/KR采用固定官方来源的静态TrueType Regular/Bold，保留OFL与来源哈希；DWrite资源集合、ImGui普通/粗体/Design脸及MessageBox独立GDI+路径分别验证。主语言字形优先，SC/TC/JP/KR同字重合并仅补缺，保证任何当前语言下的母语列表可读；Noto不套Harmony光学校正。
@@ -621,8 +553,8 @@ ConfigDetail::BindConfigSource(const T*, std::shared_mutex*)
 - H 接受固定值、const T* 或带锁地址。构造不解引用；地址/锁须覆盖使用期，空地址抛 invalid_argument。构造 explicit，普通 T 赋值不能替换绑定。
 - ReadAll/ReadMini/Reset/ApplyDocument 不覆盖 H。Config 复制 X 状态和 H 描述符/固定值，不读写外部来源；configOnce 的 H 仍实时取值。
 - 两开关独立。关闭文件输出须移除已知键，未知键策略不变。Snapshot 仅持共享锁复制；锁序 Config rwMutex -> 来源锁，调用 Config 前须释放来源锁，编码/I/O 不持来源锁。
-- `$Info` 保存原六项及 UpdateChannel。Referer 为 id/ed/pa/we/ch，不含 ev；仅发送副本去 UserId 花括号，再 URL 编码，文件保留原值。
-- ch 绑定 setlist.UpdateChannel/setlistUpdateMutex，main.json 保存副本，deploy.json 沿用原入口；两个更新 GET UA 均为 Inkeys-Updater/3.0。
+- `$Info` 保存原六项（`UpdateChannel` 已移出，写盘时删除旧键）。Referer 为 id/ed/pa/we/ch，不含 ev；其中 ch 来自 X 字段 `Application.Update.Channel`（Upload 键 ch）；仅发送副本去 UserId 花括号，再 URL 编码，文件保留原值。
+- 两个更新 GET UA 均为 Inkeys-Updater/3.0。
 
 ### 4. Validation & Error Matrix
 
@@ -644,18 +576,17 @@ Good：改通道后下次输出即更新。Base：固定 H、普通 X 各自状�
 ### 7. Wrong vs Correct
 
 ```cpp
-// Wrong：启动缓存
-H(true, true, "ch", std::string, UpdateChannel, ::setlist.UpdateChannel)
-// Correct：输出时加锁复制
-H(true, true, "ch", std::string, UpdateChannel,
-    ConfigDetail::BindConfigSource(&::setlist.UpdateChannel, &::setlistUpdateMutex))
+// Wrong：H 绑定到外部全局字符串并自行维护另一把锁
+H(true, true, "ch", std::string, UpdateChannel, ConfigDetail::BindConfigSource(&someGlobal, &someMutex))
+// Correct：频道是 Config 自身的 X 字段，经加锁访问器读写
+X(ConfigUploadMode::Upload, "ch", std::string, Channel, "LTS")  // Application.Update
 ```
 
 ## 交互模式设置合同
 
 - 设置标题为「选择交互模式／選擇互動模式／Choose an interaction mode」；用户可见名称为「大屏触控模式／大螢幕觸控模式／Large-Screen Touch Mode」与「桌面交互模式／桌面互動模式／Desktop Mode」。
-- 持久化继续使用传统 `opt/deploy.json` 的整数 `PaintDevice`：0 大屏触控，1 桌面交互；不迁移键或数值。内存字段使用已有可复制的 `IdtAtomic<int>`，避免设置线程写入与延后同步worker读取竞争；Sync按单次load快照更新上下文。
-- Setting 使用原有 `Widgets::combo` 下拉样式，每帧读取 `setlist.paintDevice`；变化后发起 `SyncDraw3State()`、设置 FIFO `WriteSetting()` 和绘制参数更新，重复选择不保存。绘制期间的 Sync 必须按设置渲染同步合同转交业务 worker，禁止持 ImGui 锁同步等 HWND。
+- 持久化使用 `main.json` 的整数 `Drawing.PaintDevice`：0 大屏触控，1 桌面交互，缺省按启动冻结的大屏判定。内存字段为 `IdtAtomic<int>`，避免设置线程写入与延后同步worker读取竞争；Sync按单次load快照更新上下文。
+- Setting 使用原有 `Widgets::combo` 下拉样式，每帧读取 `Inkeys::config.Drawing.PaintDevice`；变化后发起 `SyncDraw3State()`、`QueueConfigWrite()` 和绘制参数更新，重复选择不保存。绘制期间的 Sync 必须按设置渲染同步合同转交业务 worker，禁止持 ImGui 锁同步等 HWND。
 - 两条场景说明位于模式选择块上方的独立信息卡片，使用蓝色信息图标、现有圆角边框/内边距，通过 `Device.TouchE/MousePenE` 国际化，并按实际换行高度布局；不得裁切长英文。
 - Surface（含手指触摸）、平板、鼠标操控的大屏及普通投影属于桌面交互的文案场景。2026-10-13 用户明确要求保留现有全部自动启动判定，含“系统有触摸但主屏尺寸未知时默认大屏”；此自动识别与场景定义的差异是后续产品决策，不得借文案修改自动调整启动策略。
 - 验证：无 HWND ImGui 回放覆盖下拉双向选择、三语/缩放卡片布局；另以生产调度边界的线程回归覆盖锁内提交与 FIFO 顺序。只把 Sync 替换为计数器的控件回放不能验证卡死修复。

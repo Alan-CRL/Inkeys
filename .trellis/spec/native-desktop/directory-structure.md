@@ -14,7 +14,14 @@
 
 **【直接确认】** Inkeys.vcxproj 显式列出 ClCompile、ClInclude、ResourceCompile、Manifest、Font 等项目项。新增或移动源码时应同步检查项目文件；这是对当前显式项目清单的保守维护要求。
 
-**【直接确认】** Solution Explorer 分类由 Inkeys.vcxproj.filters 与导入的 ink_stroke_modeler.filters.props 共同决定。第一方 Inkeys\ 下文件进入 Modules\Inkeys\ 对应目录；外部保留的 draw3 存储源码进入同一 Drawing\Draw3 分类。第三方实现、头文件和随附文档统一放在“头文件\Additional\独立库”中（保持已有 ImGui/ImFluent 等标签），Ink Stroke Modeler 的导入项也遵守此规则，不在项目根创建独立顶层分类。新增项目项时同时登记非空且已定义的 Filter；审核需展开 props 中的源清单，不能只比较主 XML。此分类不改变物理路径、编译类型或排除条件。
+**【直接确认】** Solution Explorer 分类由 Inkeys.vcxproj.filters 决定（2026-11-16 规范化）；审核与重建 filters 时必须同时展开 vcxproj 导入的 props 源清单（`additional\ink_stroke_modeler\ink_stroke_modeler.props` / `.sources.props` 导入 14 个 `.cc` 与 `terminal_tail_reconstructor.h`），只比较 vcxproj 主 XML 会把这些项误判为过期而散落到项目根：
+
+- 第三方库：`additional\<库>\...` 下的所有项目项（含 .cpp/.cc、.h/.hpp、文档，混放即可）放在 `头文件\Additional\<库>\...`，filter 层级与名称（含大小写）和磁盘 `Inkeys\additional\` 完全一致，例如 `头文件\Additional\imgui\misc\freetype`、`头文件\Additional\ink_stroke_modeler\internal\prediction`。
+- Inkeys3 代码：`Inkeys\Inkeys\<Category>\...` 下的项目项放在 `Modules\Inkeys\<Category>\...`，与磁盘目录一一对应；外部保留的 `..\inkStrokeModelerTest\draw3\*` 与 `$(IntDir)fxc_utf8\draw3\*` 放在 `Modules\Inkeys\Drawing\Draw3`。
+- 传统根目录 `Idt*.cpp/.h` 分别放在 `源文件` / `头文件`（`Launch`、`SuperTop` 子目录同名子 filter），资源放在 `资源文件`。
+- 模块私有头文件（被 `#include` 的 `.h/.hpp`）也必须作为 `ClInclude` 登记，保证 VS 目录完整；vcxproj 中每一项都要有已定义且非空的 filter，不留空 filter 或指向不存在文件的条目。
+- 此分类不改变物理路径、编译类型或排除条件。不参与编译的历史源码不得以 `None` 项留在工程中，应直接删除。
+- `InkeysRepo.sln` 头部保持 VS2022（`# Visual Studio Version 17`、`VisualStudioVersion = 17.7.33808.371`），CI 使用 windows-2022 与 v143。VS2026 打开并保存后可能改写为 18，提交前须还原该两行。
 
 ## 仓库一级目录
 
@@ -40,9 +47,9 @@
 
 | 路径 | 当前职责与放置规则 |
 | --- | --- |
-| Inkeys/Idt*.cpp、Inkeys/Idt*.h | 传统主程序子系统。修改现有 Idt 功能时优先留在其现有文件对中，不为风格统一做无关迁移 |
+| Inkeys/Idt*.cpp、Inkeys/Idt*.h | 传统主程序子系统。修改现有 Idt 功能时优先留在其现有文件对中，不为风格统一做无关迁移；**不得新增 Idt\* 文件**，Draw2 时代的 IdtDrawpad/IdtFloating/IdtRts/IdtWindow/IdtHistoricalDrawpad 等已删除 |
 | Inkeys/IdtMain.cpp、IdtMain.h | wWinMain、启动编排、共享声明和大量传统依赖的中心 |
-| Inkeys/Inkeys/ | C++20 module 根目录，按 Conv、Helper、Load、Net、Other、Text、UI 分区 |
+| Inkeys/Inkeys/ | C++20 module 根目录，按领域分区（Business、Conv、Display、Drawing、Graphics、Helper、Input、Load、Message、Net、Other、Startup、Text、UI、Window）。**新增功能采用 `.cppm`（接口）+ `.cpp`（实现单元）结构**放入对应领域目录，同步登记主工程与直接编译它的测试工程及两者 filters |
 | Inkeys/Inkeys/UI/Bar/ | Inkeys3 悬浮栏的状态、主题、布局、动画、渲染属性和入口；是否为发布默认待确认 |
 | Inkeys/Inkeys/UI/Setting/ | Dear ImGui 设置界面、DX11 后端和自定义控件 |
 | Inkeys/Launch/ | 启动状态相关代码 |
