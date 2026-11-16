@@ -577,3 +577,27 @@ User final device test accepted. Touch release decisions, bounded fallback, curs
 ### Status
 
 [OK] **Completed**
+
+
+## Session 190: Legacy config migration and project cleanup
+<!-- trellis-session: v=2 fp=eb7abd2a1159e83b -->
+
+**Date**: 2026-11-16
+**Task**: Legacy config migration and project cleanup
+**Branch**: `chore/setting-item`
+
+### Summary
+
+Migrated live deploy.json/pptcom_configuration.json fields into Inkeys::Config with one-time MigrateLegacyConfigFiles (delete old files after main.json write); removed SetListStruct/PptComSetListStruct, retired fields (SaveDays, pen width presets) and settings-session shadow copies; deleted uncompiled Draw2 sources and IdtDrawpadFacade stub; rebuilt vcxproj filters (Additional mirrors disk, Modules mirrors module dirs); spec updated. Full Debug|ARM64 build, config self-tests and headless tests pass; user verified settings UI.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `65c67655` | refactor(config): migrate legacy deploy/pptcom settings into main.json and prune dead legacy sources |
+| `326f6410` | docs(spec): record config ownership, legacy migration contract and project layout rules |
+| `78e95172` | chore(trellis): archive config and project cleanup task |
+
+### Status
+
+[OK] **Completed**
