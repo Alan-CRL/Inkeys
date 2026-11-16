@@ -550,3 +550,25 @@ User final device test accepted. Touch release decisions, bounded fallback, curs
 ### Next Steps
 
 - 由用户开启 feature/shape -> dev PR
+
+
+## Session 189: 白板工作区切换超时放宽与进展归零
+<!-- trellis-session: v=2 fp=0b0145b4488dd285 -->
+
+**Date**: 2026-11-16
+**Task**: 白板工作区切换超时放宽与进展归零
+**Branch**: `fix/workspace-transition-timeout`
+
+### Summary
+
+调查偶发“白板窗口切换未完成”弹窗：原失败预算为同一 revision 内累计 4 次失败（约 2 秒无进展）。改为 Wait/NativePrepare/NativeComplete 三类独立计时，连续 15 秒无进展才判死，类别进展清零，退避 250ms 起上限 2s 并夹紧到判定时刻；更新 headless 用例与 whiteboard spec。诊断日志、白板窗口化后移除层级校验、Rejected 竞态修复延后。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a2af6815` | fix(workspace): widen transition failure budget to 15s with per-category progress reset |
+
+### Status
+
+[OK] **Completed**
