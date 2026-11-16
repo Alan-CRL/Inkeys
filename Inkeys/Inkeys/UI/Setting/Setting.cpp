@@ -1001,7 +1001,6 @@ namespace
 		string jsonPayload;
 		string ddbCloseJsonPayload;
 		string ddbOpenJsonPayload;
-		shared_ptr<Inkeys::Config> configSnapshot;
 		Inkeys::Drawing::Draw3::CanvasRecoveryState recovery;
 		std::uint64_t workspaceFailureRevision = 0;
 		bool flag = false;
@@ -1121,7 +1120,8 @@ namespace
 				::SyncDraw3State();
 				return true;
 			case SettingBusinessKind::WriteConfig:
-				return command.configSnapshot && command.configSnapshot->Write();
+				// 唯一保存入口：写出执行时最新的完整配置，后写者不会把他人的新值回退。
+				return Inkeys::config.Write();
 			case SettingBusinessKind::ShellExecute:
 				return reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr,
 					command.verb.empty() ? nullptr : command.verb.c_str(),
@@ -1192,7 +1192,7 @@ namespace
 				if (filesystem::exists(installerDir, ec)) filesystem::remove_all(installerDir, ec);
 				if (!ec) filesystem::create_directory(installerDir, ec);
 				if (ec) return false;
-				return command.configSnapshot && command.configSnapshot->Write();
+				return Inkeys::config.Write();
 			}
 			case SettingBusinessKind::CreateShortcut:
 			case SettingBusinessKind::EnsureShortcut:
@@ -1217,7 +1217,7 @@ namespace
 				if (executable != pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe" ||
 					command.directory != pluginPath + L"DesktopDrawpadBlocker" ||
 					command.digest != ddbInteractionSetList.DdbSHA256) return false;
-				const bool configWritten = command.configSnapshot && command.configSnapshot->Write();
+				const bool configWritten = Inkeys::config.Write();
 				if (token.stop_requested()) return configWritten;
 				if (command.flag)
 				{
@@ -1267,7 +1267,7 @@ namespace
 			{
 				if (command.text != pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe")
 					return false;
-				const bool configWritten = command.configSnapshot && command.configSnapshot->Write();
+				const bool configWritten = Inkeys::config.Write();
 				if (token.stop_requested()) return configWritten;
 				// 提升必须先持久化；降权即使写盘失败仍优先降低本次权限。
 				if (!configWritten && command.flag) return false;
@@ -1281,7 +1281,7 @@ namespace
 				return LaunchVerifiedDesktopDrawpadBlocker(command.flag) && configWritten;
 			}
 			case SettingBusinessKind::WriteDdb:
-				if (command.configSnapshot) (void)command.configSnapshot->Write();
+				(void)Inkeys::config.Write();
 				return WriteDdbInteractionJson(command.ddbCloseJsonPayload);
 			case SettingBusinessKind::SetStartup:
 				return SetStartupState(command.flag, command.text,
@@ -1303,7 +1303,6 @@ namespace
 	};
 
 	SettingBusinessQueue settingBusinessQueue;
-	mutex configWriteQueueMutex;
 	// 拖动透明度期间只合并保存请求；窗口隐藏或关闭时由 Hide/Shutdown 补写。
 	atomic<bool> cursorOpacitySavePending{ false };
 	thread_local bool settingRenderingOnCurrentThread = false;
@@ -1326,52 +1325,34 @@ namespace
 			(void)I18n::capture({ I18nKey.Dialogs.Common.TipsTitle, I18nKey.Dialogs.Common.OK,
 				I18nKey.Dialogs.Common.Cancel }, command.dialogText);
 		}
-		// 在生产者线程冻结配置内容，worker 只消费 owned payload 并执行 I/O。
-		// 快照捕获到入队在同一把锁内完成，避免旧快照后入队覆盖新值。
-		unique_lock snapshotLock(configWriteQueueMutex, defer_lock);
-		const auto captureConfig = [&]
-			{
-				command.configSnapshot = make_shared<Inkeys::Config>();
-				*command.configSnapshot = Inkeys::config;
-			};
+		// 配置值在生产者线程写入 Inkeys::config；worker 执行时统一经 Inkeys::config.Write() 写出最新状态。
+		// DDB 交换文件内容仍在入队时冻结，保持插件命令的 FIFO 语义。
 		switch (command.kind)
 		{
 		case SettingBusinessKind::ClearInstallerAndSetAutoUpdate:
 		case SettingBusinessKind::ClearInstallerAndSetChannel:
 		case SettingBusinessKind::ClearInstallerAndSetArchitecture:
-			snapshotLock.lock();
 			if (command.kind == SettingBusinessKind::ClearInstallerAndSetAutoUpdate)
 				Inkeys::config.Application.Update.Enable = command.flag;
 			else if (command.kind == SettingBusinessKind::ClearInstallerAndSetChannel)
 				Inkeys::config.SetUpdateChannel(command.value);
 			else
 				Inkeys::config.SetUpdateArchitecture(command.value);
-			captureConfig();
 			break;
 		case SettingBusinessKind::ConfigureDdb:
-			snapshotLock.lock();
 			Inkeys::config.PlugIn.DesktopDrawpadBlocker.Enable = command.flag;
 			Inkeys::config.PlugIn.DesktopDrawpadBlocker.RunAsAdmin = command.secondaryFlag;
 			ddbInteractionSetList.hostPath = command.parameters;
-			captureConfig();
 			command.ddbCloseJsonPayload = CaptureDdbInteractionJson(true, true);
 			command.ddbOpenJsonPayload = CaptureDdbInteractionJson(true, false);
 			break;
 		case SettingBusinessKind::RestartDdb:
-			snapshotLock.lock();
-			captureConfig();
 			command.ddbCloseJsonPayload = CaptureDdbInteractionJson(true, true);
 			command.ddbOpenJsonPayload = CaptureDdbInteractionJson(true, false);
 			break;
 		case SettingBusinessKind::WriteDdb:
-			snapshotLock.lock();
-			captureConfig();
 			command.ddbCloseJsonPayload = CaptureDdbInteractionJson(
 				command.flag, command.secondaryFlag);
-			break;
-		case SettingBusinessKind::WriteConfig:
-			snapshotLock.lock();
-			captureConfig();
 			break;
 		default:
 			break;
@@ -1381,7 +1362,7 @@ namespace
 
 	void QueueConfigWrite()
 	{
-		// 设置渲染与 Draw3 都会提交；同序保证由 QueueBusiness 内的快照锁负责。
+		// 设置渲染与 Draw3 都会提交；worker 执行时写出最新配置，无需在入队时冻结快照。
 		QueueBusiness({ SettingBusinessKind::WriteConfig });
 	}
 
