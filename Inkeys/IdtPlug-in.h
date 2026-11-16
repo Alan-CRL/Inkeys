@@ -54,6 +54,8 @@ bool PptSessionActive();
 void PPTLinkageMain();
 
 bool IsPowerPointRunAsAdminSet();
+// PowerPoint 是否被设置为以管理员身份运行；运行时探测结果，不进入配置。
+extern IdtAtomic<bool> pptRunAsAdminDetected;
 
 // --------------------------------------------------
 // 其他插件

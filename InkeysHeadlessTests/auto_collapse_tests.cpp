@@ -78,17 +78,9 @@ int RunAutoCollapseTests()
 	{
 		fs::path root;
 		std::wstring path = globalPath;
-		bool brush = setlist.BrushRecover;
-		bool eraser = setlist.RubberRecover;
-		bool drag = setlist.regularSetting.moveRecover.load();
-		bool outside = setlist.regularSetting.clickRecover.load();
 		~Restore()
 		{
 			globalPath = path;
-			setlist.BrushRecover = brush;
-			setlist.RubberRecover = eraser;
-			setlist.regularSetting.moveRecover = drag;
-			setlist.regularSetting.clickRecover = outside;
 			std::error_code ignored;
 			fs::remove_all(root, ignored);
 		}
@@ -107,19 +99,15 @@ int RunAutoCollapseTests()
 		check(Policy(config, field).load() == policyDefaults[field], "new schema uses independent defaults");
 	const auto upload = config.GetUploadInfo();
 
-	// 旧内存与 deploy 的全部布尔组合均不得初始化新字段，两种样式亦不改变默认值。
+	// 旧 deploy 的全部退役布尔组合均不得初始化新字段，两种样式亦不改变默认值。
 	for (int bits = 0; bits < 16; ++bits)
 		for (int style = 0; style < 2; ++style)
 		{
-			setlist.BrushRecover = (bits & 1) != 0;
-			setlist.RubberRecover = (bits & 2) != 0;
-			setlist.regularSetting.moveRecover = (bits & 4) != 0;
-			setlist.regularSetting.clickRecover = (bits & 8) != 0;
 			Json::Value legacy(Json::objectValue);
-			legacy["BrushRecover"] = setlist.BrushRecover;
-			legacy["RubberRecover"] = setlist.RubberRecover;
-			legacy["Regular"]["MoveRecover1"] = setlist.regularSetting.moveRecover.load();
-			legacy["Regular"]["ClickRecover"] = setlist.regularSetting.clickRecover.load();
+			legacy["BrushRecover"] = (bits & 1) != 0;
+			legacy["RubberRecover"] = (bits & 2) != 0;
+			legacy["Regular"]["MoveRecover1"] = (bits & 4) != 0;
+			legacy["Regular"]["ClickRecover"] = (bits & 8) != 0;
 			Json::Value document(Json::objectValue);
 			document["UI"]["Bar"]["SelectAndClickThroughMode"] = style;
 			check(WriteJson(legacyFile, legacy) && WriteJson(file, document), "write private legacy/default fixture");

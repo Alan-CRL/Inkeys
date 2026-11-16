@@ -67,7 +67,6 @@ int RunShapeCoreTests();
 #include "Inkeys/Drawing/Draw3/Draw3.HapticDiagnostics.h"
 #include "Inkeys/Input/UiPointerDiagnostics.h"
 #include "IdtDraw.h"
-#include "IdtDrawpad.h"
 #include "IdtFreezeFrame.h"
 #include "IdtGuid.h"
 #include "IdtI18n.h"
@@ -76,7 +75,6 @@ int RunShapeCoreTests();
 #include "IdtMagnification.h"
 #include "IdtOther.h"
 #include "IdtPlug-in.h"
-#include "IdtRts.h"
 #include "IdtStart.h"
 #include "IdtState.h"
 #include "IdtTime.h"
@@ -708,26 +706,57 @@ namespace
 					return std::string(std::istreambuf_iterator<char>(file),
 						std::istreambuf_iterator<char>());
 				};
-			if (!writeBytes(deploy, "{broken") ||
-				!writeBytes(pptConfig, "{broken") ||
-				!writeBytes(mainConfig, "{broken")) return 1;
-			stage = "legacy malformed";
-			const bool badDeployRead = ReadSetting();
-			const bool badDeployWrite = WriteSetting();
-			stage = "ppt malformed";
-			const bool badPptRead = PptComReadSetting();
-			const bool badPptWrite = PptComWriteSetting();
+			// 旧配置一次性迁移：只补 main.json 缺失键，写盘成功后删除旧文件。
+			stage = "legacy migration";
+			if (!writeBytes(deploy, "{\"SelectLanguage\":2,\"StartUp\":true,\"SettingEntryAnimation\":9,"
+					"\"PlugIn\":{\"DesktopDrawpadBlocker\":{\"SleepTime\":1234}},"
+					"\"Component\":{\"ShortcutButton\":{\"Appliance\":{\"Explorer\":true}}}}") ||
+				!writeBytes(pptConfig, "{\"ShowMiddleBoth\":true,\"BottomBothWidth\":12.5}") ||
+				!writeBytes(mainConfig, "{\"Application\":{\"StartUp\":false}}")) return 1;
+			(void)Inkeys::config.ReadAll();
+			if (!MigrateLegacyConfigFiles() || Inkeys::config.Application.Language != 2
+				|| Inkeys::config.Application.StartUp || Inkeys::config.UI.Setting.EntryAnimation != 1
+				|| Inkeys::config.PlugIn.DesktopDrawpadBlocker.SleepTime != 1234
+				|| !Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer
+				|| !Inkeys::config.PlugIn.PPTHelper.ShowMiddleBoth
+				|| Inkeys::config.PlugIn.PPTHelper.BottomBothWidth.load() != 12.5
+				|| std::filesystem::exists(deploy) || std::filesystem::exists(pptConfig))
+			{
+				std::fputs("[ConfigBoundary] FAIL: legacy migration\n", stderr);
+				return 1;
+			}
+			{
+				Inkeys::Config reread;
+				if (!reread.ReadAll() || reread.Application.Language != 2 || reread.Application.StartUp)
+				{
+					std::fputs("[ConfigBoundary] FAIL: migrated values were not persisted\n", stderr);
+					return 1;
+				}
+			}
+			stage = "legacy migration malformed";
+			if (!writeBytes(deploy, "{broken") || !writeBytes(pptConfig, "[]")) return 1;
+			(void)Inkeys::config.ReadAll();
+			if (!MigrateLegacyConfigFiles() || std::filesystem::exists(deploy) || std::filesystem::exists(pptConfig))
+			{
+				std::fputs("[ConfigBoundary] FAIL: malformed legacy files were not retired\n", stderr);
+				return 1;
+			}
+			stage = "legacy migration write failure";
+			if (!writeBytes(deploy, "{\"StartUp\":true}") || !writeBytes(mainConfig, "{broken")) return 1;
+			(void)Inkeys::config.ReadAll();
+			if (MigrateLegacyConfigFiles() || !std::filesystem::exists(deploy) || readBytes(mainConfig) != "{broken")
+			{
+				std::fputs("[ConfigBoundary] FAIL: legacy file removed although main.json was not written\n", stderr);
+				return 1;
+			}
+			std::filesystem::remove(deploy);
+			Inkeys::config.ResetToDefaults();
+
 			stage = "main malformed";
 			Inkeys::Config isolatedConfig;
 			const bool badMainRead = isolatedConfig.ReadAll();
 			const bool badMainWrite = isolatedConfig.Write();
-			const bool badPreserved = !badDeployRead && !badDeployWrite &&
-				!badPptRead && !badPptWrite &&
-				!badMainRead && !badMainWrite &&
-				readBytes(deploy) == "{broken" &&
-				readBytes(pptConfig) == "{broken" &&
-				readBytes(mainConfig) == "{broken";
-			if (!badPreserved)
+			if (badMainRead || badMainWrite || readBytes(mainConfig) != "{broken")
 			{
 				std::fputs("[ConfigBoundary] FAIL: malformed existing file was overwritten\n", stderr);
 				return 1;
@@ -735,44 +764,22 @@ namespace
 			for (const char* nonObject : { "[]", "1", "\"x\"" })
 			{
 				Inkeys::Config nonObjectConfig;
-				if (!writeBytes(deploy, nonObject)) return 1;
-				stage = "non-object deploy read";
-				const bool deployRead = ReadSetting();
-				stage = "non-object deploy write";
-				const bool deployWrite = WriteSetting();
-				if (!writeBytes(pptConfig, nonObject)) return 1;
-				stage = "non-object ppt read";
-				const bool pptRead = PptComReadSetting();
-				stage = "non-object ppt write";
-				const bool pptWrite = PptComWriteSetting();
 				if (!writeBytes(mainConfig, nonObject)) return 1;
 				stage = "non-object main read";
 				const bool mainRead = nonObjectConfig.ReadAll();
 				stage = "non-object main write";
 				const bool mainWrite = nonObjectConfig.Write();
-				if (deployRead || deployWrite || readBytes(deploy) != nonObject ||
-					pptRead || pptWrite || readBytes(pptConfig) != nonObject ||
-					mainRead || mainWrite || readBytes(mainConfig) != nonObject)
+				if (mainRead || mainWrite || readBytes(mainConfig) != nonObject)
 				{
 					std::fputs("[ConfigBoundary] FAIL: non-object JSON was accepted\n", stderr);
 					return 1;
 				}
 			}
-			std::string oversized = "{}";
-			stage = "oversized";
-			oversized.resize(16 * 1024 * 1024 + 1, ' ');
-			if (!writeBytes(deploy, oversized) || ReadSetting())
-			{
-				std::fputs("[ConfigBoundary] FAIL: oversized JSON was accepted\n", stderr);
-				return 1;
-			}
 			stage = "deeply nested";
 			const std::string deeplyNested = "{\"unknown\":" +
 				std::string(80, '[') + "0" + std::string(80, ']') + "}";
 			Inkeys::Config deepConfig;
-			if (!writeBytes(deploy, deeplyNested) || ReadSetting() ||
-				WriteSetting() || readBytes(deploy) != deeplyNested ||
-				!writeBytes(mainConfig, deeplyNested) || deepConfig.ReadAll() ||
+			if (!writeBytes(mainConfig, deeplyNested) || deepConfig.ReadAll() ||
 				deepConfig.Write() || readBytes(mainConfig) != deeplyNested)
 			{
 				std::fputs("[ConfigBoundary] FAIL: deeply nested JSON replaced the last file\n", stderr);
@@ -1223,9 +1230,9 @@ namespace
 			}
 			stage = "fresh file";
 			globalPath = (root / "fresh").wstring() + L"\\";
-			std::filesystem::create_directories(root / "fresh" / "opt");
-			const bool freshCreated = WriteSetting() &&
-				std::filesystem::exists(root / "fresh" / "opt" / "deploy.json");
+			Inkeys::Config freshConfig;
+			const bool freshCreated = freshConfig.Write() &&
+				std::filesystem::exists(root / "fresh" / "Inkeys" / "Config" / "main.json");
 			if (!freshCreated)
 			{
 				std::fputs("[ConfigBoundary] FAIL: first-run file creation was blocked\n", stderr);
@@ -1256,7 +1263,7 @@ namespace
 			file << "preserve";
 			file.close();
 			pluginPath = root.wstring() + L"\\";
-			ddbInteractionSetList.enable = false;
+			Inkeys::config.PlugIn.DesktopDrawpadBlocker.Enable = false;
 			StartDesktopDrawpadBlocker();
 			std::ifstream after(sentinel, std::ios::binary);
 			const std::string content(std::istreambuf_iterator<char>{ after },
@@ -2846,15 +2853,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// InkeysSuperTop 阶段
 	bool SuperTopFailSignal = false;
-	if (!isolatedStartupFailure && _waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == 0)
+	if (!isolatedStartupFailure)
 	{
-		ReadSettingMini();
+		const bool superTopEnabled = ReadStartupSuperTopEnabled();
 
 		HANDLE proc_self = GetCurrentProcess();
 		HANDLE tok_self = nullptr;
 		const bool tokenReady = OpenProcessToken(proc_self, TOKEN_ALL_ACCESS, &tok_self) != FALSE;
 
-		if (setlist.plugInSetting.superTop.enable && tokenReady && !hasUiAccess(tok_self))
+		if (superTopEnabled && tokenReady && !hasUiAccess(tok_self))
 		{
 			while (true)
 			{
@@ -3355,139 +3362,29 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 	// 配置信息初始化
 	{
-		// 读取配置文件前初始化操作
-		{
-			// 软件版本
-			{
-				unique_lock<shared_mutex> lock(setlistUpdateMutex);
-				setlist.enableAutoUpdate = true;
-				setlist.UpdateChannel = "LTS";
-				{
-					setlist.updateArchitecture = utf16ToUtf8(programArchitecture);
-					if (setlist.updateArchitecture == "arm64ec") setlist.updateArchitecture = "arm64";
-				}
-			}
-			// 常规
-			{
-				setlist.startUp = false;
-
-				setlist.SetSkinMode = 0;
-				setlist.SkinMode = 1;
-
-				setlist.topSleepTime = 3;
-				setlist.RightClickClose = false;
-
-				setlist.BrushRecover = true;
-				setlist.RubberRecover = false;
-				setlist.regularSetting.moveRecover = false;
-				setlist.regularSetting.clickRecover = false;
-
-				setlist.regularSetting.teachingSafetyMode = 0;
-			}
-			// 绘制
-			{
-				setlist.disableRTS = false;
-
-				setlist.liftStraighten = false, setlist.waitStraighten = true;
-				setlist.pointAdsorption = true;
-
-				setlist.smoothWriting = true;
-
-				{
-					// Draw3 不再支持压感橡皮；旧默认值归一化为速度橡皮。
-					setlist.eraserSetting.eraserMode = 1;
-
-					float drawingScale = GetDrawingScale();
-					setlist.eraserSetting.eraserSize = static_cast<int>(60 * drawingScale);
-				}
-
-				setlist.hideTouchPointer = false;
-			}
-			// 保存
-			{
-				setlist.saveSetting.enable = true;
-				setlist.saveSetting.saveDays = 2;
-			}
-			// 性能
-			{
-				setlist.performanceSetting.preparationQuantity = 2;
-				setlist.performanceSetting.drawpadFps = 72;
-				setlist.performanceSetting.superDraw = false;
-			}
-			// 预设
-			{
-				setlist.presetSetting.memoryWidth = true;
-				setlist.presetSetting.memoryColor = false;
-
-				setlist.presetSetting.autoDefaultWidth = true;
-				setlist.presetSetting.defaultBrush1Width = static_cast<float>(
-					Inkeys::Business::PenWidth::Resolve({},
-						Inkeys::Business::PenWidth::Family::Brush, {}).resolvedWidthDip);
-				setlist.presetSetting.defaultHighlighter1Width = static_cast<float>(
-					Inkeys::Business::PenWidth::Resolve({},
-						Inkeys::Business::PenWidth::Family::Highlighter, {}).resolvedWidthDip);
-			}
-
-			// 插件
-			{
-				{
-					setlist.plugInSetting.superTop.enable = false;
-					setlist.plugInSetting.superTop.indicator = true;
-				}
-			}
-			// 组件
-			{
-				{
-					{
-						{
-							setlist.component.shortcutButton.appliance.explorer = false;
-							setlist.component.shortcutButton.appliance.taskmgr = false;
-							setlist.component.shortcutButton.appliance.control = false;
-						}
-						{
-							setlist.component.shortcutButton.system.desktop = false;
-							setlist.component.shortcutButton.system.lockWorkStation = false;
-						}
-						{
-							setlist.component.shortcutButton.keyboard.keyboardesc = false;
-							setlist.component.shortcutButton.keyboard.keyboardAltF4 = false;
-						}
-						{
-							setlist.component.shortcutButton.rollCall.IslandCaller1 = false;
-							setlist.component.shortcutButton.rollCall.IslandCaller2 = false;
-							setlist.component.shortcutButton.rollCall.SecRandom1 = false;
-							setlist.component.shortcutButton.rollCall.SecRandom2 = false;
-							setlist.component.shortcutButton.rollCall.SecRandom2Compat = false;
-							setlist.component.shortcutButton.rollCall.NamePicker = false;
-						}
-						{
-							setlist.component.shortcutButton.linkage.classislandSettings = false;
-							setlist.component.shortcutButton.linkage.classislandProfile = false;
-							setlist.component.shortcutButton.linkage.classislandClassswap = false;
-						}
-					}
-				}
-			}
-
-			{
-				// 首次启动先精确匹配支持的地区，已有配置仍由 ReadSetting 保持。
-				setlist.selectLanguage = Inkeys::Localization::IndexForSystemLanguage(GetUserDefaultUILanguage());
-			}
-			{
-				// 用户保存的 PaintDevice 稍后仍可覆盖；缩放开关只使用启动时冻结的设备缺省。
-				setlist.paintDevice = defaultLargeScreenDevice ? 0 : 1;
-				if (defaultLargeScreenDevice) setlist.liftStraighten = true;
-			}
-		}
-
 		// 读取配置
 		{
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
-			// 写回会补齐缺失键；迁移判定必须在写回前记录原文件是否已有新键。
-			const bool statusIndicatorSuperTopStored =
-				config.ReadAllHasValue("Experimental.Inkeys3.UI3.StatusIndicator.SuperTop");
+			// 旧 deploy.json / pptcom_configuration.json 一次性迁入 main.json：必须在写回补齐缺失键之前判定。
+			if (!MigrateLegacyConfigFiles() && IDTLogger)
+				IDTLogger->warn("[主线程][IdtMain] 旧配置迁移写回失败，保留旧文件待下次启动重试");
+			// 语言与更新架构的缺省依赖运行环境，仅在配置尚未确定时补齐。
+			if (config.Application.Language == -1)
+				config.Application.Language = Inkeys::Localization::IndexForSystemLanguage(GetUserDefaultUILanguage());
+			{
+				const auto updateTarget = config.GetUpdateTarget();
+				if (updateTarget.architecture.empty())
+				{
+					std::string architecture = utf16ToUtf8(programArchitecture);
+					if (architecture == "arm64ec") architecture = "arm64";
+					config.SetUpdateArchitecture(std::move(architecture));
+				}
+				else if (updateTarget.architecture != "win32" && updateTarget.architecture != "win64"
+					&& updateTarget.architecture != "arm64")
+					config.SetUpdateArchitecture("win32");
+			}
 			Inkeys::UI::RenderPipeline::SetFrameRate(config.UI.FrameRate);
 			// 偏好在 Host 创建绘制线程前发布；后续每笔锁存，启动预览不改变画布参数。
 			Inkeys::Drawing::Draw3::ProductHost().SetGeneralDrawingOptions(
@@ -3598,17 +3495,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 
 		#pragma endregion
 
-			if (_waccess((globalPath + L"opt\\deploy.json").c_str(), 4) == -1)
-			{
-				IDTLogger->warn("[主线程][IdtMain] 配置信息不存在");
-
-				// 联控测试：start 界面
-				// StartForInkeys();
-			}
-			else ReadSetting();
 			// 显示快照已就绪；恢复偏好和迁移必须先于配置清理及首笔准入。
 			Inkeys::Business::PenWidth::Context penWidthStartupContext;
-			penWidthStartupContext.paintDevice = setlist.paintDevice;
+			penWidthStartupContext.paintDevice = config.Drawing.PaintDevice;
 			if (const auto display = Inkeys::Display::GetSnapshot())
 			{
 				penWidthStartupContext.revision = display->generation;
@@ -3620,17 +3509,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				}
 			}
 			InitializePenWidthPreferences(penWidthStartupContext);
-			if (!WriteSetting() && IDTLogger)
-				IDTLogger->warn("[主线程][IdtMain] deploy.json 写回失败，保留现存配置文件");
 			{
-				// 超级置顶提示从旧 deploy.json PlugIn.SuperTop.Indicator 一次性迁到 main.json；之后旧键不再使用。
+				// 超级置顶提示的旧 PlugIn.SuperTop.Indicator 已由 MigrateLegacyConfigFiles 一次性迁入。
 				auto& status = config.Experimental.Inkeys3.UI3.StatusIndicator;
-				if (!statusIndicatorSuperTopStored)
-				{
-					status.SuperTop = static_cast<bool>(setlist.plugInSetting.superTop.indicator);
-					if (!config.Write() && IDTLogger)
-						IDTLogger->warn("[主线程][IdtMain] 状态指示器配置迁移写回失败");
-				}
 				Inkeys::UI::Bar::SetStatusIndicatorOptions(status.Enable, status.PptSlideshow,
 					status.SuperTop, status.NewVersion);
 			}
@@ -3643,30 +3524,26 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				if (!isolatedStartupFailure)
 				{
 					bool isStartUp = QueryStartupState(GetCurrentExePath(), L"$Inkeys");
-					if (isStartUp != setlist.startUp) SetStartupState(setlist.startUp, GetCurrentExePath(), L"$Inkeys");
+					const bool startUp = config.Application.StartUp;
+					if (isStartUp != startUp) SetStartupState(startUp, GetCurrentExePath(), L"$Inkeys");
 				}
-			}
-			// 皮肤设定
-			{
-				if (setlist.SetSkinMode == 0) setlist.SkinMode = 1;
-				else setlist.SkinMode = setlist.SetSkinMode;
 			}
 			// 崩溃选项设定
 			if (!isolatedStartupFailure)
-				CrashHandler::SetFlag(setlist.regularSetting.teachingSafetyMode);
+				CrashHandler::SetFlag(config.Application.TeachingSafetyMode);
 		}
 		// 配置修正
 		{
 			if (SuperTopFailSignal)
 			{
-				setlist.plugInSetting.superTop.enable = false;
-				WriteSetting();
+				config.PlugIn.SuperTop.Enable = false;
+				(void)config.Write();
 			}
 		}
 
-		// 非法语言值仅在本次运行中回退英语，避免覆盖用户磁盘配置。
-		if (!Inkeys::Localization::IsValidIndex(setlist.selectLanguage))
-			setlist.selectLanguage = 0;
+		// 非法语言值回退英语。
+		if (!Inkeys::Localization::IsValidIndex(config.Application.Language))
+			config.Application.Language = 0;
 
 		IDTLogger->info("[主线程][IdtMain] 配置信息初始化完成");
 		ReportStartupMilestoneForManualTest(
@@ -3684,7 +3561,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 			drawingScale = min(static_cast<float>(monitor->pixelWidth) / 1920.0F,
 				static_cast<float>(monitor->pixelHeight) / 1080.0F);
-			if (setlist.paintDevice == 1 || !monitor->physicalSize.available)
+			if (Inkeys::config.Drawing.PaintDevice == 1 || !monitor->physicalSize.available)
 				stopTimingError = 5;
 			else
 				stopTimingError = min(0.3F * static_cast<float>(monitor->pixelWidth) /
@@ -3695,7 +3572,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	// I18N初始化
 	{
 		// 默认以 zh-CN 作为完整兜底语言，再叠加配置指定的语言
-		I18n::load(1, L"JSON", Inkeys::Localization::LocaleForIndex(setlist.selectLanguage).code);
+		I18n::load(1, L"JSON", Inkeys::Localization::LocaleForIndex(config.Application.Language).code);
 
 		IDTLogger->info("[主线程][IdtMain] I18N初始化完成");
 		ReportStartupMilestoneForManualTest(
@@ -4234,7 +4111,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			{
 				// Host 同步发布实际绘制目标，Bar 与下一笔消费同代粗细。
 				auto targetContext = context;
-				targetContext.paintDevice = setlist.paintDevice;
+				targetContext.paintDevice = Inkeys::config.Drawing.PaintDevice;
 				// Host.Reset 后即使目标未变，也重新发布已恢复的启动偏好。
 				if (!ApplyPenWidthContext(targetContext)) SyncDraw3State();
 			},

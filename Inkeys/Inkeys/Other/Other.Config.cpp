@@ -689,6 +689,15 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					value = integerType && jsonValue->isInt() && jsonValue->asInt() == 1 ? 1 : 0;
 					return;
 				}
+				if (path == "Application.TeachingSafetyMode" || path == "UI.Setting.EntryAnimation")
+				{
+					// 沿用旧 deploy.json 约束：安全模式只有 0..3，设置开屏只有 0..2；其余回默认。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					const int maximum = path == "Application.TeachingSafetyMode" ? 3 : 2;
+					value = candidate >= 0 && candidate <= maximum ? candidate : defaultValue.load();
+					return;
+				}
 				if (path == "PlugIn.PPTHelper.IdleFadeSeconds")
 				{
 					// 仅接受设置下拉提供的 0/5/10/15/30；其他类型或数值回退默认 10，避免界面与实际时长不一致。
@@ -947,6 +956,24 @@ namespace Inkeys
 		return true;
 	}
 
+	Config::UpdateTarget Config::GetUpdateTarget() const
+	{
+		std::shared_lock lock(rwMutex);
+		return { Application.Update.Enable.load(), Application.Update.Channel, Application.Update.Architecture };
+	}
+
+	void Config::SetUpdateChannel(std::string channel)
+	{
+		std::unique_lock lock(rwMutex);
+		Application.Update.Channel = std::move(channel);
+	}
+
+	void Config::SetUpdateArchitecture(std::string architecture)
+	{
+		std::unique_lock lock(rwMutex);
+		Application.Update.Architecture = std::move(architecture);
+	}
+
 	bool Config::ReadAll()
 	{
 		unique_lock<shared_mutex> lock(rwMutex);
@@ -1045,6 +1072,8 @@ namespace Inkeys
 		cursorNode.removeMember("MouseHighlightEdge");
 		cursorNode.removeMember("ScreenPenHighlightEdge");
 		cursorNode.removeMember("DigitizerHighlightEdge");
+		// 更新频道已迁至 Application.Update.Channel，不再写回旧的只读镜像。
+		if (outputRoot.isMember("$Info") && outputRoot["$Info"].isObject()) outputRoot["$Info"].removeMember("UpdateChannel");
 
 		if (!WriteDocumentToFile(GetFilePath(), outputRoot)) return false;
 

@@ -1198,8 +1198,7 @@ void PptInfo()
 				getline(title, ppt_title);
 				getline(title, ppt_software);
 				ppt_software = ppt_software.find(L"WPS") != std::wstring::npos ? L"WPS" : L"PowerPoint";
-				if (kPptLoadingPageEnabled && !ppt_title_recond[ppt_title] &&
-					pptComSetlist.showLoadingScreen) FreezePPT = true;
+				if (kPptLoadingPageEnabled && !ppt_title_recond[ppt_title]) FreezePPT = true;
 				pptTakeoverConsumedInCurrentShow = false;
 				Inkeys::UI::Ppt::PublishSession(session.localSession, true, ppt_show);
 				// 只在新场次开始边沿发布；同场窗口重新锚定不算新出现。
@@ -1504,14 +1503,9 @@ void PPTLinkageMain()
 {
 	Inkeys::Thread::StatusGuard guard("PPTLinkageMain");
 
-	// 读取 ppt 配置
-	{
-		if (_waccess((globalPath + L"opt\\pptcom_configuration.json").c_str(), 4) == 0) PptComReadSetting();
-		if (!PptComWriteSetting() && IDTLogger)
-			IDTLogger->warn("[PPTLinkageMain] pptcom_configuration.json 写回失败，保留现存配置文件");
-	}
+	// PPT 配置已随 main.json 在启动时读取。
 	// 检查相关注册表项目
-	pptComSetlist.setAdmin = IsPowerPointRunAsAdminSet();
+	pptRunAsAdminDetected = IsPowerPointRunAsAdminSet();
 
 	const bool pptUiReady = Inkeys::UI::Ppt::Initialize({
 		[]() { QueuePptUiBusinessCommand(PptUiBusinessCommand::Previous); },
@@ -1713,6 +1707,7 @@ void PPTLinkageMain()
 }
 
 // 附加
+IdtAtomic<bool> pptRunAsAdminDetected = false;
 bool IsPowerPointRunAsAdminSet()
 {
 	const std::wstring subKeys[] = {
@@ -1821,8 +1816,8 @@ bool LaunchVerifiedDesktopDrawpadBlocker(bool runAsAdmin)
 void StartDesktopDrawpadBlocker()
 {
 	// 禁用时不清理命名目录：目录可能包含用户或其他组件文件。
-	if (!ddbInteractionSetList.enable) return;
-	if (ddbInteractionSetList.enable)
+	if (!Inkeys::config.PlugIn.DesktopDrawpadBlocker.Enable) return;
+	if (Inkeys::config.PlugIn.DesktopDrawpadBlocker.Enable)
 	{
 		// 配置 json
 		{
@@ -1887,7 +1882,7 @@ void StartDesktopDrawpadBlocker()
 		if (!isProcessRunning((pluginPath + L"DesktopDrawpadBlocker\\DesktopDrawpadBlocker.exe").c_str()))
 		{
 			DdbWriteInteraction(true, false);
-			if (!LaunchVerifiedDesktopDrawpadBlocker(ddbInteractionSetList.runAsAdmin)
+			if (!LaunchVerifiedDesktopDrawpadBlocker(Inkeys::config.PlugIn.DesktopDrawpadBlocker.RunAsAdmin)
 				&& IDTLogger)
 				IDTLogger->error("[DesktopDrawpadBlocker] 最终 EXE 校验或启动失败");
 		}

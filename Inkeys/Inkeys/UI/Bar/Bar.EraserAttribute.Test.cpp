@@ -679,10 +679,10 @@ namespace Inkeys::UI::Bar
 		owner.barButtonSet.RefreshLocalizedText();owner.barButtonSet.UpdateMainPresentation(GetStateModeSnapshot());
 		// 复用设置的真实组件同步链；业务 key 不变时不能覆写分离式的有效半高网格。
 		owner.barButtonSet.RegisterBuiltInComponents();
-		const bool savedExplorer=setlist.component.shortcutButton.appliance.explorer;
-		setlist.component.shortcutButton.appliance.explorer=false;
+		const bool savedExplorer=Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer.load();
+		Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer=false;
 		owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
-		setlist.component.shortcutButton.appliance.explorer=true;
+		Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer=true;
 		owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
 		std::vector<BarButtonClass*> componentButtons;
 		for(int index=0;index<owner.barButtonSet.tot;++index)
@@ -696,7 +696,7 @@ namespace Inkeys::UI::Bar
 			"component reload preserves stable Pierce/Freeze identities and adjacency");
 		expect(componentButtons.size()==stableButtons.size()+1,
 			"real Explorer component switch adds one toolbar member");
-		setlist.component.shortcutButton.appliance.explorer=savedExplorer;
+		Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer=savedExplorer;
 		owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
 		expect(SetSelectAndClickThroughMode(0) && GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
 			&& !pierceModeButton->IsVisible() && freezeModeButton->size==BarButtonSizeEnum::twoTwo,
@@ -851,16 +851,16 @@ namespace Inkeys::UI::Bar
 		}
 		// 真实旧组件0/1/2/3+增删：不执行组件动作，不启动Host或窗口。
 		{
-			const auto savedShortcuts=setlist.component.shortcutButton;
+			const auto savedShortcuts=Inkeys::config.UI.Bar.ShortcutButton;
 			const bool savedFold=owner.barState.fold;
-			setlist.component.shortcutButton={};
+			Inkeys::config.UI.Bar.ShortcutButton={};
 			owner.barState.fold=false;
 			const auto reload=[&](int count)
 			{
-				setlist.component.shortcutButton.appliance.explorer=count>0;
-				setlist.component.shortcutButton.appliance.taskmgr=count>1;
-				setlist.component.shortcutButton.appliance.control=count>2;
-				setlist.component.shortcutButton.system.desktop=count>3;
+				Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer=count>0;
+				Inkeys::config.UI.Bar.ShortcutButton.Appliance.Taskmgr=count>1;
+				Inkeys::config.UI.Bar.ShortcutButton.Appliance.Control=count>2;
+				Inkeys::config.UI.Bar.ShortcutButton.System.Desktop=count>3;
 				owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
 			};
 			const auto switchTool=[&](StateModeSelectEnum tool)
@@ -999,7 +999,7 @@ namespace Inkeys::UI::Bar
 			};
 			expect(fixedEqual(savedA1,Inkeys::config.UI.Bar.FixedButtonsA1.Snapshot())
 				&& fixedEqual(savedA2,Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot()),"effective presentation never rewrites persisted A1/A2 sizes or order");
-			setlist.component.shortcutButton=savedShortcuts;
+			Inkeys::config.UI.Bar.ShortcutButton=savedShortcuts;
 			owner.barState.fold=savedFold;owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();expectStableButtons();
 		}
 		// 用真实历史刷新和墙钟到期入口覆盖精简态，保留保护身份但不能再次显示按钮。

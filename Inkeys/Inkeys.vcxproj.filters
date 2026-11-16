@@ -5,133 +5,18 @@
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
-    <Filter Include="头文件">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
-    </Filter>
-    <Filter Include="资源文件">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
-    </Filter>
-    <Filter Include="头文件\Additional">
-      <UniqueIdentifier>{1bdd4c2e-4346-44fb-9ad6-b03fa2767a63}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\Additional\HashLib++">
-      <UniqueIdentifier>{8a4edc4b-7858-40e8-874a-a2e878e2e6e7}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\Additional\Imgui">
-      <UniqueIdentifier>{001e6116-1c4e-4fd0-9487-bb5936347151}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\Additional\ImFluent">
-      <UniqueIdentifier>{26a34aed-8d70-4e90-b560-d7e04b2049c7}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\Additional\StbImage">
-      <UniqueIdentifier>{d6e10050-a0f3-411f-ab59-e865236ce23f}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\Additional\WinToastLib">
-      <UniqueIdentifier>{e5e67105-0d69-464d-bc37-a9e684369e87}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\Additional\ZipUtils">
-      <UniqueIdentifier>{833e3b3d-58da-4d5c-a694-a98d502b5dc7}</UniqueIdentifier>
-    </Filter>
     <Filter Include="源文件\Launch">
       <UniqueIdentifier>{eb17f1ab-f1af-451b-84e3-176ee602dfdd}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="头文件\Launch">
-      <UniqueIdentifier>{706bbb49-374e-4c6f-b602-75c6a0116e5c}</UniqueIdentifier>
     </Filter>
     <Filter Include="源文件\SuperTop">
       <UniqueIdentifier>{5d0ceb29-5557-45eb-953f-72ee3cad19b8}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件\SuperTop">
-      <UniqueIdentifier>{0f3ba083-e762-42d7-aeef-aa8d13bc8b3a}</UniqueIdentifier>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="Modules">
-      <UniqueIdentifier>{cf700d31-2954-4c48-810f-647b41db223a}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys">
-      <UniqueIdentifier>{90a3e015-5496-4a2c-a21e-23e9b685747e}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\UI">
-      <UniqueIdentifier>{fb6f7af3-1399-42ca-b45f-d1f0256ecf17}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\UI\Setting">
-      <UniqueIdentifier>{1b63320d-15d7-481e-b05e-f5d09c8795bc}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\UI\Bar">
-      <UniqueIdentifier>{56be2dfa-0003-4904-8ed4-aac871d769c8}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\UI\Ppt">
-      <UniqueIdentifier>{cd7bf888-8809-4d4d-a204-bef48c6718c4}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\UI\PageControl">
-      <UniqueIdentifier>{164ef41b-2085-4bcb-8854-3f3277726105}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\UI\Whiteboard">
-      <UniqueIdentifier>{5de71bc8-ced2-45ae-bffd-b081b69eb30a}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\UI\Freeze">
-      <UniqueIdentifier>{f1b4b267-6b02-4b38-a951-7f9dfb4f30d4}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\UI\RenderPipeline">
-      <UniqueIdentifier>{52bc310d-75db-4e25-ad92-12ad741cd9c8}</UniqueIdentifier>
-    </Filter>
-	<Filter Include="Modules\Inkeys\UI\StartupPreview">
-	  <UniqueIdentifier>{9f4a2cc1-a03b-4a87-9b84-23ba06bc3cc0}</UniqueIdentifier>
-	</Filter>
-	<Filter Include="Modules\Inkeys\Startup">
-	  <UniqueIdentifier>{a34ee98c-79a7-4129-a37f-abca38605aa2}</UniqueIdentifier>
-	</Filter>
-	<Filter Include="Modules\Inkeys\UI\MessageBox">
-	  <UniqueIdentifier>{94b0fa6a-4d16-47d4-bda0-2b3688939a44}</UniqueIdentifier>
-	</Filter>
-    <Filter Include="Modules\Inkeys\Conv">
-      <UniqueIdentifier>{1522c836-7846-41b3-bbd8-93034e6b9495}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Net">
-      <UniqueIdentifier>{5f5718c8-20fd-405f-8e19-31c9d3625667}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Load">
-      <UniqueIdentifier>{f15a899f-dee4-4ebc-bff2-17c14ddb5037}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Other">
-      <UniqueIdentifier>{b1e29c86-3898-43df-93bf-62bcab0f41b4}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Text">
-      <UniqueIdentifier>{66cfc94e-72df-48b5-a59f-8860832d0012}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Helper">
-      <UniqueIdentifier>{27615d57-79cc-4874-bfe3-3d8915419a1e}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Graphics">
-      <UniqueIdentifier>{88f57eae-8544-4785-b314-55608360684f}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Message">
-      <UniqueIdentifier>{24904d13-cf18-43bd-9359-7700c5ae630e}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Window">
-      <UniqueIdentifier>{ddcf2b67-f2c9-4dcc-a8a9-1de93c20acdb}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Display">
-      <UniqueIdentifier>{96d55c57-dc3e-442b-a157-11d01f92ff45}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Input">
-      <UniqueIdentifier>{b0ff23cc-0040-4b97-9a1a-dfd6d4e1a6db}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Business">
-      <UniqueIdentifier>{804a968f-5f95-43f4-9944-38a9113715ec}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\UI\RenderPipeline\Assets\ImGui">
-      <UniqueIdentifier>{db9757aa-b695-415a-8971-7e820af31043}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Drawing">
-      <UniqueIdentifier>{b5d8b49f-6ec9-4d29-8d42-44fba8d79a21}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Drawing\Draw3">
-      <UniqueIdentifier>{9a9df82f-6a35-4e7d-9c25-2d7d15b0ab10}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Modules\Inkeys\Drawing\Draw3\Assets">
-      <UniqueIdentifier>{7f6b3f95-73e8-4a57-8b4c-cc1a4d28d6a4}</UniqueIdentifier>
+    <Filter Include="头文件\Additional">
+      <UniqueIdentifier>{1bdd4c2e-4346-44fb-9ad6-b03fa2767a63}</UniqueIdentifier>
     </Filter>
     <Filter Include="头文件\Additional\absl">
       <UniqueIdentifier>{e65baef5-4ba2-47e1-19b1-ce2bccc03345}</UniqueIdentifier>
@@ -265,6 +150,24 @@
     <Filter Include="头文件\Additional\absl\utility">
       <UniqueIdentifier>{036668b1-4716-70c5-f282-a50fc925bf21}</UniqueIdentifier>
     </Filter>
+    <Filter Include="头文件\Additional\hashlib++">
+      <UniqueIdentifier>{E63E4D76-3A27-4BFC-BC3C-BAEF7D889001}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\imfluent">
+      <UniqueIdentifier>{498D6308-CCC2-4B52-957C-72BC2B996FBD}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\imgui">
+      <UniqueIdentifier>{1B6B306F-0E9D-413B-9D8F-62A07DCD2805}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\imgui\misc">
+      <UniqueIdentifier>{845C75CA-D875-43A0-B875-96169E4A9969}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\imgui\misc\freetype">
+      <UniqueIdentifier>{FA8027B4-C197-4A65-9F2C-95D6E819F688}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\ink_stroke_modeler">
+      <UniqueIdentifier>{DA4B8C83-A524-4EFD-9923-77B54A3E2414}</UniqueIdentifier>
+    </Filter>
     <Filter Include="头文件\Additional\ink_stroke_modeler\internal">
       <UniqueIdentifier>{ff737c06-c2a3-f862-3c5e-6464d24c39f6}</UniqueIdentifier>
     </Filter>
@@ -274,67 +177,194 @@
     <Filter Include="头文件\Additional\ink_stroke_modeler\internal\prediction\kalman_filter">
       <UniqueIdentifier>{1b084974-3785-4860-fbae-9be2c27d1b04}</UniqueIdentifier>
     </Filter>
-    <Filter Include="资源文件\Draw3">
-      <UniqueIdentifier>{c55da2a9-5b3b-4a22-9f8a-9a0b450a4a42}</UniqueIdentifier>
+    <Filter Include="头文件\Additional\stbimage">
+      <UniqueIdentifier>{38A772B6-4151-45DF-AB7D-C7655B55BF56}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\wintoastlib">
+      <UniqueIdentifier>{A98D9265-8BE5-459B-9A53-A4C6FBD06A4F}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Additional\ziputils">
+      <UniqueIdentifier>{2C197AA5-4950-496A-8B5C-646777FE1618}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\Launch">
+      <UniqueIdentifier>{706bbb49-374e-4c6f-b602-75c6a0116e5c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件\SuperTop">
+      <UniqueIdentifier>{0f3ba083-e762-42d7-aeef-aa8d13bc8b3a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Modules">
+      <UniqueIdentifier>{cf700d31-2954-4c48-810f-647b41db223a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys">
+      <UniqueIdentifier>{90a3e015-5496-4a2c-a21e-23e9b685747e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Business">
+      <UniqueIdentifier>{804a968f-5f95-43f4-9944-38a9113715ec}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Conv">
+      <UniqueIdentifier>{1522c836-7846-41b3-bbd8-93034e6b9495}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Display">
+      <UniqueIdentifier>{96d55c57-dc3e-442b-a157-11d01f92ff45}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Drawing">
+      <UniqueIdentifier>{b5d8b49f-6ec9-4d29-8d42-44fba8d79a21}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Drawing\Draw3">
+      <UniqueIdentifier>{9a9df82f-6a35-4e7d-9c25-2d7d15b0ab10}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Drawing\Draw3\Assets">
+      <UniqueIdentifier>{7f6b3f95-73e8-4a57-8b4c-cc1a4d28d6a4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Graphics">
+      <UniqueIdentifier>{88f57eae-8544-4785-b314-55608360684f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Helper">
+      <UniqueIdentifier>{27615d57-79cc-4874-bfe3-3d8915419a1e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Input">
+      <UniqueIdentifier>{b0ff23cc-0040-4b97-9a1a-dfd6d4e1a6db}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Load">
+      <UniqueIdentifier>{f15a899f-dee4-4ebc-bff2-17c14ddb5037}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Message">
+      <UniqueIdentifier>{24904d13-cf18-43bd-9359-7700c5ae630e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Net">
+      <UniqueIdentifier>{5f5718c8-20fd-405f-8e19-31c9d3625667}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Other">
+      <UniqueIdentifier>{b1e29c86-3898-43df-93bf-62bcab0f41b4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Startup">
+      <UniqueIdentifier>{a34ee98c-79a7-4129-a37f-abca38605aa2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Text">
+      <UniqueIdentifier>{66cfc94e-72df-48b5-a59f-8860832d0012}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI">
+      <UniqueIdentifier>{fb6f7af3-1399-42ca-b45f-d1f0256ecf17}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\Bar">
+      <UniqueIdentifier>{56be2dfa-0003-4904-8ed4-aac871d769c8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\Freeze">
+      <UniqueIdentifier>{f1b4b267-6b02-4b38-a951-7f9dfb4f30d4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\MessageBox">
+      <UniqueIdentifier>{94b0fa6a-4d16-47d4-bda0-2b3688939a44}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\PageControl">
+      <UniqueIdentifier>{164ef41b-2085-4bcb-8854-3f3277726105}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\Ppt">
+      <UniqueIdentifier>{cd7bf888-8809-4d4d-a204-bef48c6718c4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\RenderPipeline">
+      <UniqueIdentifier>{52bc310d-75db-4e25-ad92-12ad741cd9c8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\RenderPipeline\Assets">
+      <UniqueIdentifier>{9D71985E-81B5-5A69-9C0E-78109DB9FC92}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\RenderPipeline\Assets\ImGui">
+      <UniqueIdentifier>{db9757aa-b695-415a-8971-7e820af31043}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\SelectionOverlay">
+      <UniqueIdentifier>{FE820E40-F1FE-4184-9E82-A2A786F1616B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\Setting">
+      <UniqueIdentifier>{1b63320d-15d7-481e-b05e-f5d09c8795bc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\StartupPreview">
+      <UniqueIdentifier>{9f4a2cc1-a03b-4a87-9b84-23ba06bc3cc0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\UI\Whiteboard">
+      <UniqueIdentifier>{5de71bc8-ced2-45ae-bffd-b081b69eb30a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Modules\Inkeys\Window">
+      <UniqueIdentifier>{ddcf2b67-f2c9-4dcc-a8a9-1de93c20acdb}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="resource.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="IdtMain.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Helper\ShutdownSupervisor.h">
-      <Filter>Modules\Inkeys\Helper</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Input\UiPointerInput.h">
-      <Filter>Modules\Inkeys\Input</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Window\Window.MessageDispatch.h">
-      <Filter>Modules\Inkeys\Window</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Helper\FailedCleanupDeadline.h">
-      <Filter>Modules\Inkeys\Helper</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Helper\Ui3PresentationFixtureAuth.h">
-      <Filter>Modules\Inkeys\Helper</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Helper\FailedCleanupRealCases.h">
-      <Filter>Modules\Inkeys\Helper</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentationProbe.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.Presentation.Source.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="IdtAtomic.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.LogoAppearance.h">
+    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentationAlpha.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.ThemeMaterial.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h">
-      <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h">
+    <ClInclude Include="Inkeys\UI\Bar\Bar.LogoAppearance.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
-	<ClInclude Include="Inkeys\UI\Bar\Bar.PresentationAlpha.h">
-	  <Filter>Modules\Inkeys\UI\Bar</Filter>
-	</ClInclude>
-	<ClInclude Include="Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h">
-	  <Filter>Modules\Inkeys\UI\Freeze</Filter>
-	</ClInclude>
+    <ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.Theme.h">
+      <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.PatternFollow.h">
+      <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.BackgroundState.h">
+      <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardPattern.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Freeze\Freeze.MagnifierCoordinator.h">
+      <Filter>Modules\Inkeys\UI\Freeze</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Graphics\Surface.Core.hpp">
+      <Filter>Modules\Inkeys\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Graphics\Surface.hpp">
+      <Filter>Modules\Inkeys\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Business\LegacyDrawState.hpp">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Business\PenToolState.hpp">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Business\PenWidthPolicy.hpp">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Business\PenWidthPreferences.hpp">
+      <Filter>Modules\Inkeys\Business</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Window\Window.Legacy.hpp">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtAtomic.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.A2.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapse.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapseInteraction.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Input\MouseHook.Transport.h">
+      <Filter>Modules\Inkeys\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Input\KeyboardShortcuts.h">
+      <Filter>Modules\Inkeys\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Input\KeyboardShortcuts.Transport.h">
+      <Filter>Modules\Inkeys\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Business\PptSessionToken.h">
+      <Filter>Modules\Inkeys\Business</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
@@ -345,40 +375,118 @@
     <ClInclude Include="Inkeys\UI\Bar\Bar.I18nFormat.h">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
-    <ClInclude Include="IdtRts.h">
-      <Filter>头文件</Filter>
+    <ClInclude Include="Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h">
+      <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
     </ClInclude>
-    <ClInclude Include="IdtImage.h">
-      <Filter>头文件</Filter>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
-    <ClInclude Include="IdtMagnification.h">
-      <Filter>头文件</Filter>
+    <ClInclude Include="additional\hashlib++\hashlibpp.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
     </ClInclude>
-    <ClInclude Include="IdtTime.h">
-      <Filter>头文件</Filter>
+    <ClInclude Include="additional\hashlib++\hl_exception.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
     </ClInclude>
-    <ClInclude Include="IdtPlug-in.h">
-      <Filter>头文件</Filter>
+    <ClInclude Include="additional\hashlib++\hl_hashwrapper.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
     </ClInclude>
-    <ClInclude Include="IdtOther.h">
-      <Filter>头文件</Filter>
+    <ClInclude Include="additional\hashlib++\hl_md5.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
     </ClInclude>
-    <ClInclude Include="IdtDrawpad.h">
-      <Filter>头文件</Filter>
+    <ClInclude Include="additional\hashlib++\hl_md5wrapper.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
     </ClInclude>
-    <ClInclude Include="IdtHistoricalDrawpad.h">
+    <ClInclude Include="additional\hashlib++\hl_sha1.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\hashlib++\hl_sha1wrapper.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\hashlib++\hl_sha256.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\hashlib++\hl_sha256wrapper.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\hashlib++\hl_sha2ext.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\hashlib++\hl_sha2mac.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\hashlib++\hl_sha384wrapper.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\hashlib++\hl_sha512wrapper.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\hashlib++\hl_types.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\hashlib++\hl_wrapperfactory.h">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imgui\imconfig.h">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imgui\imgui.h">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imgui\imgui_impl_dx11.h">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imgui\imgui_impl_win32.h">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imgui\imgui_internal.h">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imgui\imgui_offset_rect.h">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imgui\imstb_rectpack.h">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imgui\imstb_textedit.h">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imgui\imstb_truetype.h">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imfluent\imfluent.h">
+      <Filter>头文件\Additional\imfluent</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imfluent\imfluent_icons.h">
+      <Filter>头文件\Additional\imfluent</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\imfluent\imfluent_internal.h">
+      <Filter>头文件\Additional\imfluent</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\stbimage\stb_image.h">
+      <Filter>头文件\Additional\stbimage</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\stbimage\stb_image_resize.h">
+      <Filter>头文件\Additional\stbimage</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\stbimage\stb_image_write.h">
+      <Filter>头文件\Additional\stbimage</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\wintoastlib\wintoastlib.h">
+      <Filter>头文件\Additional\wintoastlib</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ziputils\unzip.h">
+      <Filter>头文件\Additional\ziputils</Filter>
+    </ClInclude>
+    <ClInclude Include="additional\ziputils\zip.h">
+      <Filter>头文件\Additional\ziputils</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtConfiguration.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtFreezeFrame.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="IdtSysNotifications.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="IdtGuid.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="IdtState.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="IdtI18n.h">
@@ -387,122 +495,86 @@
     <ClInclude Include="IdtI18nLocales.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="IdtImage.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtMagnification.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtMain.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.InteractionWorker.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Input\UiPointerInput.h">
+      <Filter>Modules\Inkeys\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Input\UiPointerDiagnostics.h">
+      <Filter>Modules\Inkeys\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Input\UiTouchRouting.h">
+      <Filter>Modules\Inkeys\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Window\Window.MessageDispatch.h">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Window\Window.CandidateMailbox.h">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Window\Window.CanvasPolicy.h">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Window\Window.CommandCompletion.h">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Window\Window.NativeEventMailbox.h">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Window\Window.PresentationLease.h">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Window\Window.SafetyOverride.h">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Window\Window.ShellFullscreen.h">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Window\Window.ZOrderPolicy.h">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Helper\ShutdownSupervisor.h">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Helper\FailedCleanupDeadline.h">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Helper\Ui3PresentationFixtureAuth.h">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Helper\FailedCleanupRealCases.h">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Helper\SecRandom.PipeIo.h">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentationProbe.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.Presentation.Source.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtOther.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtPlug-in.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="IdtStart.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="additional\hashlib++\hashlibpp.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_exception.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_hashwrapper.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_md5.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_md5wrapper.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha1.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha1wrapper.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha2ext.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha2mac.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha256.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha256wrapper.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha384wrapper.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_sha512wrapper.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_types.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\hashlib++\hl_wrapperfactory.h">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\stbimage\stb_image.h">
-      <Filter>头文件\Additional\StbImage</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\stbimage\stb_image_resize.h">
-      <Filter>头文件\Additional\StbImage</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\stbimage\stb_image_write.h">
-      <Filter>头文件\Additional\StbImage</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\wintoastlib\wintoastlib.h">
-      <Filter>头文件\Additional\WinToastLib</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\ziputils\unzip.h">
-      <Filter>头文件\Additional\ZipUtils</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\ziputils\zip.h">
-      <Filter>头文件\Additional\ZipUtils</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imconfig.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imgui.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imgui_impl_dx11.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imgui_impl_win32.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imgui_internal.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imgui_offset_rect.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imstb_rectpack.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imstb_textedit.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imgui\imstb_truetype.h">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imfluent\imfluent.h">
-      <Filter>头文件\Additional\ImFluent</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imfluent\imfluent_icons.h">
-      <Filter>头文件\Additional\ImFluent</Filter>
-    </ClInclude>
-    <ClInclude Include="additional\imfluent\imfluent_internal.h">
-      <Filter>头文件\Additional\ImFluent</Filter>
-    </ClInclude>
-    <ClInclude Include="IdtConfiguration.h">
+    <ClInclude Include="IdtState.h">
       <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="Launch\IdtCommandPipe.h">
-      <Filter>头文件\Launch</Filter>
-    </ClInclude>
-    <ClInclude Include="Launch\IdtLaunchState.h">
-      <Filter>头文件\Launch</Filter>
-    </ClInclude>
-    <ClInclude Include="SuperTop\IdtSuperTop.h">
-      <Filter>头文件\SuperTop</Filter>
-    </ClInclude>
-    <ClInclude Include="SuperTop\IdtToken.h">
-      <Filter>头文件\SuperTop</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.SessionState.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
@@ -546,21 +618,40 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Theme.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.EraserCursor.h">
+    <ClInclude Include="Inkeys\UI\Setting\Setting.FrameSubmission.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.HomeEntryCache.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Navigation.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CursorSettings.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.EraserCursor.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PalmEraser.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h">
+    <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ShapeRendererTests.h"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClInclude>
-    <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_core.h"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClInclude>
-    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h">
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ShapeRendererTests.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_core.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PerformanceProbe.h">
@@ -572,10 +663,19 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Host.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HapticRequest.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.Haptics.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.RtsStartup.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.MouseInput.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Business\PptSession.h">
@@ -593,14 +693,38 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Presentation.h">
-      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
-    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Shortcut.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.KeyboardShortcuts.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.ButtonFrameRing.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.FontSize.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.MainLayoutPolicy.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.PageLoadingIndicator.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.ShapeGesture.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.StatusIndicator.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Bar\Bar.WindowGeometry.h">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Net\UpdatePathSafety.h">
       <Filter>Modules\Inkeys\Net</Filter>
@@ -608,26 +732,56 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\Graphics\Surface.Core.hpp">
-      <Filter>Modules\Inkeys\Graphics</Filter>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CanvasPanSettings.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\Graphics\Surface.hpp">
-      <Filter>Modules\Inkeys\Graphics</Filter>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HapticDiagnostics.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\Business\LegacyDrawState.hpp">
-      <Filter>Modules\Inkeys\Business</Filter>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PenDiagnostics.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\Business\PenToolState.hpp">
-      <Filter>Modules\Inkeys\Business</Filter>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PixelDiagnosticShaders.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\Business\PenWidthPolicy.hpp">
-      <Filter>Modules\Inkeys\Business</Filter>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Recovery.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\Business\PenWidthPreferences.hpp">
-      <Filter>Modules\Inkeys\Business</Filter>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ShaderCompatibility.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\Window\Window.Legacy.hpp">
-      <Filter>Modules\Inkeys\Window</Filter>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ShapeInteraction.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TouchpadInput.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.TouchpadNavigation.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Win7GuardedShader.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Launch\IdtCommandPipe.h">
+      <Filter>头文件\Launch</Filter>
+    </ClInclude>
+    <ClInclude Include="Launch\IdtLaunchState.h">
+      <Filter>头文件\Launch</Filter>
+    </ClInclude>
+    <ClInclude Include="Launch\IdtSingleInstance.h">
+      <Filter>头文件\Launch</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="IdtTime.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperTop\IdtSuperTop.h">
+      <Filter>头文件\SuperTop</Filter>
+    </ClInclude>
+    <ClInclude Include="SuperTop\IdtToken.h">
+      <Filter>头文件\SuperTop</Filter>
     </ClInclude>
     <ClInclude Include="additional\absl\algorithm\algorithm.h">
       <Filter>头文件\Additional\absl\algorithm</Filter>
@@ -1667,391 +1821,44 @@
     <ClInclude Include="additional\ink_stroke_modeler\types.h">
       <Filter>头文件\Additional\ink_stroke_modeler</Filter>
     </ClInclude>
+    <ClInclude Include="IdtDraw.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="PptNavigationDiagnostics.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="PptWaitingDiagnostics.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ShutdownProgressTrace.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Message\Message.Legacy.hpp">
+      <Filter>Modules\Inkeys\Message</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Ppt\Ppt.Recovery.h">
+      <Filter>Modules\Inkeys\UI\Ppt</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\StartupPlacement.h">
+      <Filter>Modules\Inkeys\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\StartupPreview.Effect.h">
+      <Filter>Modules\Inkeys\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\Superellipse.Geometry.h">
+      <Filter>Modules\Inkeys\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\StartupPreview\StartupPreview.Drawing.h">
+      <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\StartupPreview\StartupPreview.Effects.Drawing.h">
+      <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\UI\StartupPreview\StartupPreview.Effects.Policy.h">
+      <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="IdtMagnification.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtDraw.h">
-      <Filter>头文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtDraw.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtTime.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtPlug-in.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtOther.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtMain.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <None Include="IdtDrawpad.cpp">
-      <Filter>源文件</Filter>
-    </None>
-    <None Include="IdtRts.cpp">
-      <Filter>源文件</Filter>
-    </None>
-    <ClCompile Include="IdtImage.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <None Include="IdtHistoricalDrawpad.cpp">
-      <Filter>源文件</Filter>
-    </None>
-    <ClCompile Include="IdtFreezeFrame.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtConfiguration.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtSysNotifications.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtGuid.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtState.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtDrawpadFacade.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtI18n.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="IdtStart.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_md5.cpp">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_md5wrapper.cpp">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha1.cpp">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha1wrapper.cpp">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha2ext.cpp">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha256.cpp">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha256wrapper.cpp">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha384wrapper.cpp">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_sha512wrapper.cpp">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\hashlib++\hl_wrapperfactory.cpp">
-      <Filter>头文件\Additional\HashLib++</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\wintoastlib\wintoastlib.cpp">
-      <Filter>头文件\Additional\WinToastLib</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ziputils\unzip.cpp">
-      <Filter>头文件\Additional\ZipUtils</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ziputils\zip.cpp">
-      <Filter>头文件\Additional\ZipUtils</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\imgui\imgui.cpp">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\imgui\misc\freetype\imgui_freetype.cpp">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\imgui\imgui_draw.cpp">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\imgui\imgui_impl_win32.cpp">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\imgui\imgui_tables.cpp">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\imgui\imgui_widgets.cpp">
-      <Filter>头文件\Additional\Imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\imfluent\imfluent.cpp">
-      <Filter>头文件\Additional\ImFluent</Filter>
-    </ClCompile>
-    <ClCompile Include="ExtraInclude.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <None Include="IdtDrawpadList.cpp">
-      <Filter>源文件</Filter>
-    </None>
-    <ClCompile Include="Launch\IdtLaunchState.cpp">
-      <Filter>源文件\Launch</Filter>
-    </ClCompile>
-    <ClCompile Include="SuperTop\IdtSuperTop.cpp">
-      <Filter>源文件\SuperTop</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cppm">
-      <Filter>Modules\Inkeys\UI\Setting</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\Setting.Base.cppm">
-      <Filter>Modules\Inkeys\UI\Setting</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\Setting.cppm">
-      <Filter>Modules\Inkeys\UI\Setting</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.RenderingAttribute.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.State.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Initialization.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Interaction.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.SurfaceLayout.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Animation.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Animation.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.FramePacing.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-	<ClCompile Include="Inkeys\UI\Bar\Bar.ToggleClickCoalescer.cppm">
-	  <Filter>Modules\Inkeys\UI\Bar</Filter>
-	</ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeLayout.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallChrome.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeMotion.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.GeometryAttribute.cpp"><Filter>Modules\Inkeys\UI\Bar</Filter></ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.GeometryAttribute.Test.cpp"><Filter>Modules\Inkeys\UI\Bar</Filter></ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttribute.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Theme.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.State.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.PresentationProbe.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Presentation.Source.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Presentation.Test.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.RenderLoop.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\Setting.Controls.cpp">
-      <Filter>Modules\Inkeys\UI\Setting</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp">
-      <Filter>Modules\Inkeys\UI\Setting</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.cpp">
-      <Filter>Modules\Inkeys\UI\Setting</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\Setting.Shell.cpp">
-      <Filter>Modules\Inkeys\UI\Setting</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\Setting.cpp">
-      <Filter>Modules\Inkeys\UI\Setting</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cpp">
-      <Filter>Modules\Inkeys\UI\Setting</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Conv\Conv.Color.cppm">
-      <Filter>Modules\Inkeys\Conv</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Net\Net.Update.cpp">
-      <Filter>Modules\Inkeys\Net</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Net\Net.Update.cppm">
-      <Filter>Modules\Inkeys\Net</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Net\Net.Update.Download.cppm">
-      <Filter>Modules\Inkeys\Net</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Net\Net.Update.Download.cpp">
-      <Filter>Modules\Inkeys\Net</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm">
-      <Filter>Modules\Inkeys\UI\Ppt</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\PageControl\PageControl.cppm">
-      <Filter>Modules\Inkeys\UI\PageControl</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\PageControl\PageControl.cpp">
-      <Filter>Modules\Inkeys\UI\PageControl</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp">
-      <Filter>Modules\Inkeys\UI\Ppt</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cppm">
-      <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cpp">
-      <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Freeze\Freeze.cppm">
-      <Filter>Modules\Inkeys\UI\Freeze</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cppm">
-      <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cpp">
-      <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
-    </ClCompile>
-	<ClCompile Include="Inkeys\Startup\Startup.Progress.cppm">
-	  <Filter>Modules\Inkeys\Startup</Filter>
-	</ClCompile>
-	<ClCompile Include="Inkeys\Startup\Startup.Progress.cpp">
-	  <Filter>Modules\Inkeys\Startup</Filter>
-	</ClCompile>
-	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cppm">
-	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
-	</ClCompile>
-	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cpp">
-	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
-	</ClCompile>
-	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cppm">
-	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
-	</ClCompile>
-	<ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cpp">
-	  <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
-	</ClCompile>
-    <ClCompile Include="Inkeys\Load\Load.cppm">
-      <Filter>Modules\Inkeys\Load</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Other\Other.Json.cppm">
-      <Filter>Modules\Inkeys\Other</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Other\Other.Inputs.cppm">
-      <Filter>Modules\Inkeys\Other</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Other\Other.Gesture.cppm">
-      <Filter>Modules\Inkeys\Other</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Conv\Conv.Text.cppm">
-      <Filter>Modules\Inkeys\Conv</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Text\Text.Split.cppm">
-      <Filter>Modules\Inkeys\Text</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Text\Text.Font.cpp">
-      <Filter>Modules\Inkeys\Text</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Text\Text.Font.cppm">
-      <Filter>Modules\Inkeys\Text</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm">
-      <Filter>Modules\Inkeys\Helper</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp">
-      <Filter>Modules\Inkeys\Helper</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Helper\ShutdownSupervisor.cpp">
-      <Filter>Modules\Inkeys\Helper</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Helper\FailedCleanupDeadline.cpp">
-      <Filter>Modules\Inkeys\Helper</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Helper\Ui3PresentationFixtureAuth.cpp">
-      <Filter>Modules\Inkeys\Helper</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm">
-      <Filter>Modules\Inkeys\Helper</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm">
-      <Filter>Modules\Inkeys\Helper</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Helper\Helper.SecRandom.cppm">
-      <Filter>Modules\Inkeys\Helper</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Atomic.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.WakeSignal.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Other\Other.Config.cppm">
-      <Filter>Modules\Inkeys\Other</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Other\Other.Config.cpp">
-      <Filter>Modules\Inkeys\Other</Filter>
-    </ClCompile>
     <ClCompile Include="Inkeys\Graphics\Surface.cpp">
       <Filter>Modules\Inkeys\Graphics</Filter>
     </ClCompile>
@@ -2073,6 +1880,9 @@
     <ClCompile Include="Inkeys\Input\MouseHook.cpp">
       <Filter>Modules\Inkeys\Input</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Input\KeyboardShortcuts.cpp">
+      <Filter>Modules\Inkeys\Input</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\Input\MouseHook.cppm">
       <Filter>Modules\Inkeys\Input</Filter>
     </ClCompile>
@@ -2082,37 +1892,490 @@
     <ClCompile Include="Inkeys\Message\Message.cppm">
       <Filter>Modules\Inkeys\Message</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\Window\Window.cpp">
-      <Filter>Modules\Inkeys\Window</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Window\Window.cppm">
-      <Filter>Modules\Inkeys\Window</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Window\Window.Legacy.cpp">
-      <Filter>Modules\Inkeys\Window</Filter>
-    </ClCompile>
-	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cppm">
-	  <Filter>Modules\Inkeys\UI\MessageBox</Filter>
-	</ClCompile>
-	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cpp">
-	  <Filter>Modules\Inkeys\UI\MessageBox</Filter>
-	</ClCompile>
-	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Layout.cpp">
-	  <Filter>Modules\Inkeys\UI\MessageBox</Filter>
-	</ClCompile>
-	<ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Window.cpp">
-	  <Filter>Modules\Inkeys\UI\MessageBox</Filter>
-	</ClCompile>
     <ClCompile Include="Inkeys\Display\Display.cppm">
       <Filter>Modules\Inkeys\Display</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Display\Display.cpp">
       <Filter>Modules\Inkeys\Display</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Window\Window.cpp">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Window\Window.cppm">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cppm">
+      <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\RenderPipeline\RenderPipeline.cpp">
+      <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Startup\Startup.Progress.cppm">
+      <Filter>Modules\Inkeys\Startup</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Startup\Startup.Progress.cpp">
+      <Filter>Modules\Inkeys\Startup</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cppm">
+      <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.State.cpp">
+      <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cppm">
+      <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\StartupPreview\StartupPreview.cpp">
+      <Filter>Modules\Inkeys\UI\StartupPreview</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\SelectionOverlay\SelectionOverlay.cppm">
+      <Filter>Modules\Inkeys\UI\SelectionOverlay</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\SelectionOverlay\SelectionOverlay.cpp">
+      <Filter>Modules\Inkeys\UI\SelectionOverlay</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\PageControl\PageControl.cppm">
+      <Filter>Modules\Inkeys\UI\PageControl</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\PageControl\PageControl.cpp">
+      <Filter>Modules\Inkeys\UI\PageControl</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Ppt\Ppt.cppm">
+      <Filter>Modules\Inkeys\UI\Ppt</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Ppt\Ppt.cpp">
+      <Filter>Modules\Inkeys\UI\Ppt</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cppm">
+      <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Whiteboard\Whiteboard.cpp">
+      <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cppm">
+      <Filter>Modules\Inkeys\UI\MessageBox</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\MessageBox\MessageBox.cpp">
+      <Filter>Modules\Inkeys\UI\MessageBox</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Layout.cpp">
+      <Filter>Modules\Inkeys\UI\MessageBox</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\MessageBox\MessageBox.Window.cpp">
+      <Filter>Modules\Inkeys\UI\MessageBox</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Window\Window.Legacy.cpp">
+      <Filter>Modules\Inkeys\Window</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_md5.cpp">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_md5wrapper.cpp">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_sha1.cpp">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_sha1wrapper.cpp">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_sha256.cpp">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_sha256wrapper.cpp">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_sha2ext.cpp">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_sha384wrapper.cpp">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_sha512wrapper.cpp">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\hashlib++\hl_wrapperfactory.cpp">
+      <Filter>头文件\Additional\hashlib++</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\imgui\imgui.cpp">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\imgui\imgui_draw.cpp">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\imgui\misc\freetype\imgui_freetype.cpp">
+      <Filter>头文件\Additional\imgui\misc\freetype</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\imgui\imgui_impl_dx11.cpp">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\imgui\imgui_impl_win32.cpp">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\imgui\imgui_tables.cpp">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\imgui\imgui_widgets.cpp">
+      <Filter>头文件\Additional\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\imfluent\imfluent.cpp">
+      <Filter>头文件\Additional\imfluent</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\wintoastlib\wintoastlib.cpp">
+      <Filter>头文件\Additional\wintoastlib</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ziputils\unzip.cpp">
+      <Filter>头文件\Additional\ziputils</Filter>
+    </ClCompile>
+    <ClCompile Include="additional\ziputils\zip.cpp">
+      <Filter>头文件\Additional\ziputils</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtConfiguration.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtDraw.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtFreezeFrame.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtGuid.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtI18n.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtImage.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtStart.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtState.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtMagnification.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtMain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtOther.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtPlug-in.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="IdtTime.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Conv\Conv.Color.cppm">
+      <Filter>Modules\Inkeys\Conv</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Conv\Conv.Text.cppm">
+      <Filter>Modules\Inkeys\Conv</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cpp">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\ShutdownSupervisor.cpp">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\FailedCleanupDeadline.cpp">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Ui3PresentationFixtureAuth.cpp">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.SecRandom.cppm">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Load\Load.cppm">
+      <Filter>Modules\Inkeys\Load</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Net\Net.Update.cpp">
+      <Filter>Modules\Inkeys\Net</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Net\Net.Update.cppm">
+      <Filter>Modules\Inkeys\Net</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Net\Net.Update.Download.cpp">
+      <Filter>Modules\Inkeys\Net</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Net\Net.Update.Download.cppm">
+      <Filter>Modules\Inkeys\Net</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Other\Other.Config.cpp">
+      <Filter>Modules\Inkeys\Other</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Other\Other.Config.cppm">
+      <Filter>Modules\Inkeys\Other</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Other\Other.Gesture.cppm">
+      <Filter>Modules\Inkeys\Other</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Other\Other.Inputs.cppm">
+      <Filter>Modules\Inkeys\Other</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Other\Other.Json.cppm">
+      <Filter>Modules\Inkeys\Other</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Text\Text.Font.cpp">
+      <Filter>Modules\Inkeys\Text</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Text\Text.Font.cppm">
+      <Filter>Modules\Inkeys\Text</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Text\Text.Split.cppm">
+      <Filter>Modules\Inkeys\Text</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Atomic.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Animation.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Animation.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.FramePacing.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.ToggleClickCoalescer.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.WakeSignal.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.SurfaceLayout.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.ShapeEditor.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.ConstructionPrompt.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Initialization.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Interaction.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.MultiTarget.Test.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Layout.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.GeometryAttribute.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.GeometryAttribute.Test.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.StatusIndicator.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.Test.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeLayout.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallChrome.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttributeMotion.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RecallAttribute.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Metrics.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.PresentationProbe.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Presentation.Source.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Presentation.Test.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RenderLoop.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.RenderingAttribute.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.State.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.State.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Theme.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Freeze\Freeze.cppm">
+      <Filter>Modules\Inkeys\UI\Freeze</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Base.cppm">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Controls.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Shell.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.cppm">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cppm">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Launch\IdtLaunchState.cpp">
+      <Filter>源文件\Launch</Filter>
+    </ClCompile>
+    <ClCompile Include="SuperTop\IdtSuperTop.cpp">
+      <Filter>源文件\SuperTop</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec_encode.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_page_file.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_page_file.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardStore.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardStore.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cpp">
@@ -2124,21 +2387,6 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_model.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec_encode.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cppm">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
@@ -2223,11 +2471,19 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererLaser.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererShapes.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ShapeRendererTests.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-    <ClCompile Include="..\inkStrokeModelerTest\draw3\shape_core.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
-    <ClCompile Include="..\inkStrokeModelerTestTests\shape_core_tests.cpp"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererPrimitives.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererShapes.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ShapeRendererTests.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTest\draw3\shape_core.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="..\inkStrokeModelerTestTests\shape_core_tests.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RendererDebugOverlay.cpp">
@@ -2287,11 +2543,11 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Host.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\Business\PptSession.cpp">
-      <Filter>Modules\Inkeys\Business</Filter>
-    </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Presentation.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Business\PptSession.cpp">
+      <Filter>Modules\Inkeys\Business</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Product.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
@@ -2303,22 +2559,25 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-	<Image Include="src\message_box\error.png">
-	  <Filter>资源文件</Filter>
-	</Image>
+    <Image Include="src\message_box\error.png">
+      <Filter>资源文件</Filter>
+    </Image>
     <Image Include="src\icon.ico">
       <Filter>资源文件</Filter>
     </Image>
     <Image Include="src\whiteboard.ico">
       <Filter>资源文件</Filter>
     </Image>
-    <Image Include="src\sign3.png">
-      <Filter>资源文件</Filter>
-    </Image>
     <Image Include="src\PluginFlag1.png">
       <Filter>资源文件</Filter>
     </Image>
     <Image Include="src\PluginFlag2.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\PluginFlag3.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\PluginFlag4.png">
       <Filter>资源文件</Filter>
     </Image>
     <Image Include="src\setting\Home_Feedback.png">
@@ -2336,105 +2595,27 @@
     <Image Include="src\setting\Profile_Picture.png">
       <Filter>资源文件</Filter>
     </Image>
-    <Image Include="src\PluginFlag3.png">
-      <Filter>资源文件</Filter>
-    </Image>
     <Image Include="src\setting\SettingSponsor.png">
       <Filter>资源文件</Filter>
     </Image>
-    <Image Include="src\PluginFlag4.png">
+    <Image Include="src\sign3.png">
+      <Filter>资源文件</Filter>
+    </Image>
+    <Image Include="src\UI\color\colorCustom.png">
       <Filter>资源文件</Filter>
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <None Include="PptCOM.dll">
-      <Filter>资源文件</Filter>
+    <None Include="additional\imfluent\LICENSE">
+      <Filter>头文件\Additional\imfluent</Filter>
     </None>
-    <None Include="src\UI\logo1.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\whiteboardLnk.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\Frame 94.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\color\colorSelect.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <Image Include="src\UI\color\colorCustom.png">
-      <Filter>资源文件</Filter>
-    </Image>
-    <None Include="src\UI\barSetting.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="exe\DesktopDrawpadBlocker.exe">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barSelect.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barRedo.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barRecall.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barPierce.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barCanvasDebug.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barHighlighter1.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barThicknessAdjust.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\fluentCheckmark12Filled.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barGeometry.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barFreeze.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barWhiteboard.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barEraser.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barAutoEraser.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barPalmEraser.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barClean.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barBrush2.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barPaintBrush.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barLaser.svg">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="src\UI\barBrush1.svg">
-      <Filter>资源文件</Filter>
+    <None Include="additional\imfluent\UPSTREAM.md">
+      <Filter>头文件\Additional\imfluent</Filter>
     </None>
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_common.hlsli">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </None>
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo.hlsli">
-      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
-    </None>
-    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
     </None>
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.cso">
@@ -2445,6 +2626,57 @@
     </None>
     <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.cso">
       <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </None>
+    <None Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.cso">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\ink.hlsli">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\shape.hlsli">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\shapeVertexShader.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\shapePixelShader.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\inkPixelShader.cso">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\inkVertexShader.cso">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.cso">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.cso">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="additional\ink_stroke_modeler\README.md">
+      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
+    </None>
+    <None Include="exe\DesktopDrawpadBlocker.exe">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="PptCOM.dll">
+      <Filter>资源文件</Filter>
     </None>
     <None Include="src\i18n\en-US.jsonc">
       <Filter>资源文件</Filter>
@@ -2482,285 +2714,51 @@
     <None Include="src\i18n\en-GB.jsonc">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="IdtFloating.cpp">
-      <Filter>源文件</Filter>
-    </None>
-    <None Include="IdtFloating.h">
-      <Filter>头文件</Filter>
-    </None>
-    <None Include="IdtWindow.cpp">
-      <Filter>源文件</Filter>
-    </None>
-    <None Include="IdtWindow.h">
-      <Filter>头文件</Filter>
-    </None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\shape.hlsli"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\shapeVertexShader.hlsl"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\shapePixelShader.hlsl"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></None>
-    <None Include="additional\imfluent\LICENSE">
-      <Filter>头文件\Additional\ImFluent</Filter>
-    </None>
-    <None Include="additional\imfluent\UPSTREAM.md">
-      <Filter>头文件\Additional\ImFluent</Filter>
-    </None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\ink.hlsli">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\inkPixelShader.cso">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\inkVertexShader.cso">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.cso">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </None>
-    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.cso">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </None>
-    <None Include="additional\ink_stroke_modeler\README.md">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
-    <Font Include="src\ttf\Segoe Fluent Icons.ttf">
-      <Filter>资源文件</Filter>
-    </Font>
-    <Font Include="src\ttf\icomoon.ttf">
-      <Filter>资源文件</Filter>
-    </Font>
-    <Font Include="src\ttf\HarmonyOS_SansTC_Bold.ttf">
-      <Filter>资源文件</Filter>
-    </Font>
-    <Font Include="src\ttf\HarmonyOS_SansSC_Bold.ttf">
-      <Filter>资源文件</Filter>
-    </Font>
-    <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf">
-      <Filter>资源文件</Filter>
-    </Font>
-    <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf">
-      <Filter>资源文件</Filter>
-    </Font>
-    <Font Include="src\ttf\NotoSansJP-Regular.ttf">
-      <Filter>资源文件</Filter>
-    </Font>
-    <Font Include="src\ttf\NotoSansJP-Bold.ttf">
-      <Filter>资源文件</Filter>
-    </Font>
-    <Font Include="src\ttf\NotoSansKR-Regular.ttf">
-      <Filter>资源文件</Filter>
-    </Font>
-    <Font Include="src\ttf\NotoSansKR-Bold.ttf">
-      <Filter>资源文件</Filter>
-    </Font>
-    <Font Include="src\ttf\HarmonyOS_Sans_Condensed_Regular.ttf">
-      <Filter>资源文件</Filter>
-    </Font>
-    <Font Include="src\ttf\HarmonyOS_Sans_Condensed_Bold.ttf">
-      <Filter>资源文件</Filter>
-    </Font>
-  </ItemGroup>
-  <ItemGroup>
-    <Manifest Include="..\PptCOM\PptCOM.manifest">
-      <Filter>资源文件</Filter>
-    </Manifest>
-  </ItemGroup>
-  <ItemGroup>
-    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
-      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
-    </FxCompile>
-    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_alpha_ps.hlsl">
-      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
-    </FxCompile>
-    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.hlsl">
-      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
-    </FxCompile>
-    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.hlsl">
-      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
-    </FxCompile>
-    <FxCompile Include="$(IntDir)fxc_utf8\draw3\shapePixelShader.hlsl"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></FxCompile>
-    <FxCompile Include="$(IntDir)fxc_utf8\draw3\shapeVertexShader.hlsl"><Filter>Modules\Inkeys\Drawing\Draw3</Filter></FxCompile>
-    <FxCompile Include="$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </FxCompile>
-    <FxCompile Include="$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </FxCompile>
-    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </FxCompile>
-    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </FxCompile>
-  </ItemGroup>
-  <!-- 在主 filters 中显式归类，避免 Visual Studio 将导入的源码显示在项目根目录。 -->
-  <ItemGroup>
-    <Filter Include="头文件\Additional\ink_stroke_modeler">
-      <UniqueIdentifier>{DA4B8C83-A524-4EFD-9923-77B54A3E2414}</UniqueIdentifier>
-    </Filter>
-    <ClInclude Include="additional\ink_stroke_modeler\terminal_tail_reconstructor.h">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClInclude>
-    <ClCompile Include="additional\ink_stroke_modeler\stroke_modeler.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\params.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\types.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\internal\internal_types.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\internal\loop_contraction_mitigation_modeler.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\internal\position_modeler.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\internal\stylus_state_modeler.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\internal\utils.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\internal\wobble_smoother.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_predictor.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\stroke_end_predictor.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\axis_predictor.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\internal\prediction\kalman_filter\kalman_filter.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-    <ClCompile Include="additional\ink_stroke_modeler\terminal_tail_reconstructor.cc">
-      <Filter>头文件\Additional\ink_stroke_modeler</Filter>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.Theme.h">
-      <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.PatternFollow.h">
-      <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardModel.h">
-      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardPattern.h">
-      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapse.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapseInteraction.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Input\MouseHook.Transport.h">
-      <Filter>Modules\Inkeys\Input</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Input\KeyboardShortcuts.h">
-      <Filter>Modules\Inkeys\Input</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Input\KeyboardShortcuts.Transport.h">
-      <Filter>Modules\Inkeys\Input</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Business\PptSessionToken.h">
-      <Filter>Modules\Inkeys\Business</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.InteractionWorker.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CursorSettings.h">
-      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h">
-      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HapticRequest.h">
-      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.Haptics.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Shortcut.h">
-      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.KeyboardShortcuts.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClCompile Include="Inkeys\Input\KeyboardShortcuts.cpp">
-      <Filter>Modules\Inkeys\Input</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.MultiTarget.Test.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeLayout.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttributeMotion.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.Test.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Metrics.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClCompile>
-    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_page_file.cpp">
-      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
-    </ClCompile>
-    <ClCompile Include="..\inkStrokeModelerTest\draw3\uink_page_file.cppm">
-      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardStore.cpp">
-      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
-    </ClCompile>
-    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.WhiteboardStore.cppm">
-      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
-    </ClCompile>
-    <None Include="src\UI\barMenu.svg">
+    <None Include="src\UI\barBrush1.svg">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="src\UI\barInfo.svg">
+    <None Include="src\UI\barBrush2.svg">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="src\UI\barQuestion.svg">
+    <None Include="src\UI\barPaintBrush.svg">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="src\UI\barCloseSmall.svg">
+    <None Include="src\UI\barLaser.svg">
       <Filter>资源文件</Filter>
     </None>
-    <None Include="src\UI\barCloseWhiteboard.svg">
+    <None Include="src\UI\barClean.svg">
       <Filter>资源文件</Filter>
     </None>
-  </ItemGroup>
-  <ItemGroup>
+    <None Include="src\UI\barEraser.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barAutoEraser.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barStatusSlideshow.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barStatusPin.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barStatusNewVersion.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barStatusStar.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barStatusBell.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barStatusInfo.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barStatusBolt.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barPalmEraser.svg">
+      <Filter>资源文件</Filter>
+    </None>
     <None Include="src\UI\barShapeStraightLine.svg">
       <Filter>资源文件</Filter>
     </None>
@@ -3040,10 +3038,143 @@
     <None Include="src\UI\compClassSwap.svg">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="src\UI\barFreeze.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barWhiteboard.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barMenu.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barGeometry.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barHighlighter1.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barInfo.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barQuestion.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barCloseSmall.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barCloseWhiteboard.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barThicknessAdjust.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\fluentCheckmark12Filled.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barPierce.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barCanvasDebug.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barRecall.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barRedo.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barSelect.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\barSetting.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\color\colorSelect.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\Frame 94.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\logo1.svg">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="src\UI\whiteboardLnk.svg">
+      <Filter>资源文件</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
-    <Filter Include="Modules\Inkeys\UI\RenderPipeline\Assets">
-      <UniqueIdentifier>{9D71985E-81B5-5A69-9C0E-78109DB9FC92}</UniqueIdentifier>
-    </Filter>
+    <Manifest Include="..\PptCOM\PptCOM.manifest">
+      <Filter>资源文件</Filter>
+    </Manifest>
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="src\ttf\HarmonyOS_SansSC_Bold.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\HarmonyOS_SansTC_Bold.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\HarmonyOS_Sans_Condensed_Bold.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\HarmonyOS_Sans_Condensed_Regular.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\HarmonyOS_Sans_SC_Regular.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\HarmonyOS_Sans_TC_Regular.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\NotoSansJP-Regular.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\NotoSansJP-Bold.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\NotoSansKR-Regular.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\NotoSansKR-Bold.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\icomoon.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+    <Font Include="src\ttf\Segoe Fluent Icons.ttf">
+      <Filter>资源文件</Filter>
+    </Font>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_ps.hlsl">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </FxCompile>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_alpha_ps.hlsl">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </FxCompile>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_eraser_demo_ps.hlsl">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </FxCompile>
+    <FxCompile Include="Inkeys\UI\RenderPipeline\Assets\ImGui\imgui_vs.hlsl">
+      <Filter>Modules\Inkeys\UI\RenderPipeline\Assets\ImGui</Filter>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\shapePixelShader.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\shapeVertexShader.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

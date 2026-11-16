@@ -380,11 +380,16 @@ namespace Inkeys::ConfigDetail
 		H(true, true, "pa", std::wstring, ProgramArchitecture, &::programArchitecture) \
 		H(true, false, "NaN", std::wstring, TargetArchitecture, &::targetArchitecture) \
 		H(true, true, "we", std::wstring, WindowsEdition, &::windowsEdition) \
-		H(true, true, "ch", std::string, UpdateChannel, ConfigDetail::BindConfigSource(&::setlist.UpdateChannel, &::setlistUpdateMutex)) \
 	) \
 GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, FrameRate, 60) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, TopSleepTime, 3) \
+			GROUP(Setting, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DarkMode, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, EntryAnimation, 1) \
+			) \
 			GROUP(Bar, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, RightClickClose, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom2, 1.0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, UseTaskbarHeightAsScaleBase, ConfigDetail::GetDefaultLargeScreenDevice() ? 1 : 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, StartupPlacement, 0) \
@@ -410,9 +415,48 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA1, MakeDefaultFixedButtonsA1()) \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarExtensionButtonLayoutEntry>, ExtensionButtons, MakeDefaultExtensionButtons()) \
 				X(ConfigUploadMode::NoUpload, "NaN", ConfigSequence<BarFixedButtonLayoutEntry>, FixedButtonsA2, MakeDefaultFixedButtonsA2()) \
+				GROUP(ShortcutButton, \
+					GROUP(Appliance, \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Explorer, false) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Taskmgr, false) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Control, false) \
+					) \
+					GROUP(System, \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Desktop, false) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, LockWorkStation, false) \
+					) \
+					GROUP(Keyboard, \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Keyboardesc, false) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, KeyboardAltF4, false) \
+					) \
+					GROUP(RollCall, \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IslandCaller1, false) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IslandCaller2, false) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SecRandom1, false) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SecRandom2, false) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SecRandom2Compat, false) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, NamePicker, false) \
+					) \
+					GROUP(Linkage, \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ClassislandSettings, false) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ClassislandProfile, false) \
+						X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ClassislandClassswap, false) \
+					) \
+				) \
 			) \
 		) \
 	GROUP(Application, \
+		/* Language 为 -1 表示尚未确定，启动时按系统语言补齐；保存值沿用旧地区索引。 */ \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Language, -1) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, StartUp, false) \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, TeachingSafetyMode, 0) \
+		GROUP(Update, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
+			/* 频道随上报信息发送（原 Info.ch）；字符串字段只能经 GetUpdateTarget/SetUpdate* 加锁访问。 */ \
+			X(ConfigUploadMode::Upload, "ch", std::string, Channel, "LTS") \
+			/* 空串表示尚未确定，启动时按程序架构补齐。 */ \
+			X(ConfigUploadMode::NoUpload, "NaN", std::string, Architecture, "") \
+		) \
 		GROUP(Shortcut, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, NamePreset, 0) \
 			X(ConfigUploadMode::NoUpload, "NaN", std::wstring, CustomName, L"") \
@@ -437,10 +481,15 @@ GROUP(UI, \
 		) \
 	) \
 	GROUP(Drawing, \
+		/* 0 大屏触摸 1 普通设备；缺省按启动时冻结的大屏判定。 */ \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PaintDevice, ConfigDetail::GetDefaultLargeScreenDevice() ? 0 : 1) \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, FrameRate, 120) \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MultiTouchEnabled, true) \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PenTailCorrectionEnabled, true) \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, InkPredictionMode, 2) \
+		GROUP(AutoSave, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
+		) \
 		GROUP(Laser, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MultiTouchEnabled, false) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ParticlesEnabled, false) \
@@ -569,8 +618,50 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IdleFadeBottomPair, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IdleFadeMiddlePair, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IdleFadeMainBar, false) \
+			/* 以下沿用原 pptcom_configuration.json 键名，便于一次性迁移。 */ \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MemoryWidgetPosition, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowBottomBoth, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowMiddleBoth, false) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowBottomMiddle, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, BottomBothWidth, 0.0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, BottomBothHeight, 0.0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, MiddleBothWidth, 0.0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, MiddleBothHeight, 0.0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, BottomMiddleWidth, 0.0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, BottomMiddleHeight, 0.0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, BottomSideBothWidgetScale, 1.0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, BottomSideMiddleWidgetScale, 1.0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, MiddleSideBothWidgetScale, 1.0) \
 			GROUP(Tentative, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnablePageButtonLongPress, false) \
+			) \
+		) \
+		GROUP(SuperTop, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, false) \
+		) \
+		/* DDB 的 interaction_configuration.json 仍由外部进程读取，此处只保存 Inkeys 侧偏好。 */ \
+		GROUP(DesktopDrawpadBlocker, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, false) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, RunAsAdmin, false) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SleepTime, 5000) \
+			GROUP(Intercept, \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SeewoWhiteboard3Floating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SeewoWhiteboard5Floating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SeewoWhiteboard5CFloating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SeewoPincoSideBarFloating, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SeewoPincoDrawingFloating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SeewoPPTFloating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SeewoIwbAssistantFloating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, YiouBoardFloating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AiClassFloating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ClassInXFloating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IntelligentClassFloating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ChangYanFloating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ChangYan5Floating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Iclass30SidebarFloating, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Iclass30Floating, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SeewoDesktopSideBarFloating, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, SeewoDesktopDrawingFloating, true) \
 			) \
 		) \
 	)
@@ -613,6 +704,16 @@ namespace Inkeys
 		bool SetShortcutNamePreference(int preset, std::wstring customName);
 		std::pair<int, std::wstring> GetWhiteboardShortcutNamePreference() const;
 		bool SetWhiteboardShortcutNamePreference(int preset, std::wstring customName);
+		// 更新频道/架构为字符串字段，与整个 Config 的快照复制共用锁。
+		struct UpdateTarget
+		{
+			bool enable = true;
+			std::string channel;
+			std::string architecture;
+		};
+		UpdateTarget GetUpdateTarget() const;
+		void SetUpdateChannel(std::string channel);
+		void SetUpdateArchitecture(std::string architecture);
 		std::string GetUploadInfo();
 		std::wstring GetFilePath() const;
 		void ResetToDefaults();

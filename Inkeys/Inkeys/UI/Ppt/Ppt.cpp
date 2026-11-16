@@ -100,20 +100,21 @@ namespace Inkeys::UI::Ppt
 		[[nodiscard]] LayoutConfiguration SnapshotLegacyConfiguration()
 		{
 			LayoutConfiguration snapshot;
-			snapshot.bottomPairWidth = pptComSetlist.bottomBothWidth;
-			snapshot.bottomPairHeight = pptComSetlist.bottomBothHeight;
-			snapshot.middlePairWidth = pptComSetlist.middleBothWidth;
-			snapshot.middlePairHeight = pptComSetlist.middleBothHeight;
+			const auto& ppt = Inkeys::config.PlugIn.PPTHelper;
+			snapshot.bottomPairWidth = static_cast<float>(ppt.BottomBothWidth.load());
+			snapshot.bottomPairHeight = static_cast<float>(ppt.BottomBothHeight.load());
+			snapshot.middlePairWidth = static_cast<float>(ppt.MiddleBothWidth.load());
+			snapshot.middlePairHeight = static_cast<float>(ppt.MiddleBothHeight.load());
 			// 结束放映旧字段继续读写兼容，但不再参与运行时窗口布局。
-			snapshot.exitWidth = pptComSetlist.bottomMiddleWidth;
-			snapshot.exitHeight = pptComSetlist.bottomMiddleHeight;
-			snapshot.bottomPairScale = pptComSetlist.bottomSideBothWidgetScale;
-			snapshot.middlePairScale = pptComSetlist.middleSideBothWidgetScale;
-			snapshot.exitScale = pptComSetlist.bottomSideMiddleWidgetScale;
-			snapshot.showBottomPair = pptComSetlist.showBottomBoth;
-			snapshot.showMiddlePair = pptComSetlist.showMiddleBoth;
-			snapshot.showExit = pptComSetlist.showBottomMiddle;
-			snapshot.rememberPosition = pptComSetlist.memoryWidgetPosition;
+			snapshot.exitWidth = static_cast<float>(ppt.BottomMiddleWidth.load());
+			snapshot.exitHeight = static_cast<float>(ppt.BottomMiddleHeight.load());
+			snapshot.bottomPairScale = static_cast<float>(ppt.BottomSideBothWidgetScale.load());
+			snapshot.middlePairScale = static_cast<float>(ppt.MiddleSideBothWidgetScale.load());
+			snapshot.exitScale = static_cast<float>(ppt.BottomSideMiddleWidgetScale.load());
+			snapshot.showBottomPair = ppt.ShowBottomBoth;
+			snapshot.showMiddlePair = ppt.ShowMiddleBoth;
+			snapshot.showExit = ppt.ShowBottomMiddle;
+			snapshot.rememberPosition = ppt.MemoryWidgetPosition;
 			return snapshot;
 		}
 
@@ -495,7 +496,7 @@ namespace Inkeys::UI::Ppt
 		if (!initialized.load(std::memory_order_acquire))
 		{
 			// helper 未启动时由设置 FIFO 接续写入，重置仍必须更新保存目标。
-			(void)CapturePptComPositionSettingJson({}, pptComSetlist.memoryWidgetPosition);
+			(void)CapturePptComPositionSettingJson({}, Inkeys::config.PlugIn.PPTHelper.MemoryWidgetPosition);
 			return;
 		}
 		std::string save;
