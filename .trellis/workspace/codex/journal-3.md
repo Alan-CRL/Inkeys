@@ -612,3 +612,30 @@ Migrated live deploy.json/pptcom_configuration.json fields into Inkeys::Config w
 ### Status
 
 [OK] **Completed**
+
+
+## Session 191: PR #274 审阅修正：去除旧配置兼容与统一保存入口
+<!-- trellis-session: v=2 fp=2f6b1a05d7935215 -->
+
+**Date**: 2026-11-16
+**Task**: PR #274 审阅修正：去除旧配置兼容与统一保存入口
+**Branch**: `chore/setting-item`
+
+### Summary
+
+合并 dev（仅 journal 索引冲突）；按用户决定完全不兼容 Inkeys2 旧配置，删除迁移与早期 SuperTop 旧文件判定，不读不迁不建 opt；设置 FIFO 与 PPT 位置统一经 Inkeys::config.Write() 写最新配置，消除快照回退；侧栏展开仅对选中分组滚动；补回 ink_stroke_modeler props 导入项的 filters；sln 头部恢复 VS2022。构建、配置自检与无窗口测试通过；UI3 夹具授权自检的 reparse NOT_VERIFIED 为本机权限/非空目录限制。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6e6fa6ef` | Merge remote-tracking branch 'origin/dev' into chore/setting-item |
+| `a0bfb1f5` | refactor(config): drop Inkeys2 legacy config compatibility |
+| `6da5b204` | fix(config): route every save through Inkeys::config.Write() |
+| `0cedeb8a` | fix(setting): only scroll to the selection when expanding the selected group |
+| `a6c3c87e` | build: restore Ink Stroke Modeler filters and VS2022 solution header |
+| `3518132b` | docs(spec): record legacy-config incompatibility, single save entry and filters/sln rules |
+
+### Status
+
+[OK] **Completed**
