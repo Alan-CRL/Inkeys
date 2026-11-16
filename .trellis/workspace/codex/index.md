@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~603 | Active |
+| `journal-3.md` | ~614 | Active |
 | `journal-2.md` | ~2054 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -32,6 +32,7 @@
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
 | 190 | 2026-11-16 | Legacy config migration and project cleanup | `65c67655`, `326f6410`, `78e95172` | `chore/setting-item` |
+| 189 | 2026-11-16 | 白板工作区切换超时放宽与进展归零 | `a2af6815` | `fix/workspace-transition-timeout` |
 | 188 | 2026-11-16 | 设置项分类树重构 | `6206e499`, `0fea77e4` | `chore/setting-item` |
 | 187 | 2026-11-15 | 形状第十一轮收尾与合并 dev 前审阅 | `b0f96e29`, `3375f115` | `feature/shape` |
 | 186 | 2026-11-14 | Close whiteboard input inertia task | `b861d464` | `feature/whiteboard3` |

@@ -562,6 +562,16 @@ User final device test accepted. Touch release decisions, bounded fallback, curs
 ### Summary
 
 将设置页重构为表驱动导航树：新增窗口与显示器、按键与快捷键、日志与配置页，绘制拆为绘制效果与交互与手势，通用页聚焦基本/外观，设置项迁移不改配置键；20 语言 i18n、Headless 测试与规范同步，人工验证通过。
+## Session 189: 白板工作区切换超时放宽与进展归零
+<!-- trellis-session: v=2 fp=0b0145b4488dd285 -->
+
+**Date**: 2026-11-16
+**Task**: 白板工作区切换超时放宽与进展归零
+**Branch**: `fix/workspace-transition-timeout`
+
+### Summary
+
+调查偶发“白板窗口切换未完成”弹窗：原失败预算为同一 revision 内累计 4 次失败（约 2 秒无进展）。改为 Wait/NativePrepare/NativeComplete 三类独立计时，连续 15 秒无进展才判死，类别进展清零，退避 250ms 起上限 2s 并夹紧到判定时刻；更新 headless 用例与 whiteboard spec。诊断日志、白板窗口化后移除层级校验、Rejected 竞态修复延后。
 
 ### Git Commits
 
@@ -597,6 +607,7 @@ Migrated live deploy.json/pptcom_configuration.json fields into Inkeys::Config w
 | `65c67655` | refactor(config): migrate legacy deploy/pptcom settings into main.json and prune dead legacy sources |
 | `326f6410` | docs(spec): record config ownership, legacy migration contract and project layout rules |
 | `78e95172` | chore(trellis): archive config and project cleanup task |
+| `a2af6815` | fix(workspace): widen transition failure budget to 15s with per-category progress reset |
 
 ### Status
 

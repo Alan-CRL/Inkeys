@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板工作区切换失败预算、退避与进展重置的现行合同（第32、83行）"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "工作区异步协调与 Prepare/Complete 回执合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "命名、注释与共享状态并发习惯"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "InkeysRepo.sln Debug|ARM64 构建入口"}

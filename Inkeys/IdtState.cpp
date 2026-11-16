@@ -215,6 +215,15 @@ namespace
 	std::atomic_bool whiteboardPreviousRequested = false;
 	std::atomic_bool whiteboardNextRequested = false;
 	std::atomic<WhiteboardPhase> whiteboardPhase = WhiteboardPhase::Inactive;
+	// 失败按类别独立计时：一类的进展不能清零另一类，避免 Prepare 成功/Complete 反复失败时无限重复显示/隐藏。
+	enum class WorkspaceFailureKind : std::uint8_t { Wait, NativePrepare, NativeComplete, Count };
+	inline constexpr auto WorkspaceNoProgressBudget = std::chrono::seconds(15);
+	inline constexpr auto WorkspaceRetryBackoffCap = std::chrono::seconds(2);
+	struct WorkspaceFailureClock
+	{
+		std::optional<std::chrono::steady_clock::time_point> failingSince; // 本类别自上次进展后的首次失败
+		unsigned attempts = 0;
+	};
 	// 只有本协调快照决定稳定工作区；旧 phase/desired 是对外兼容投影。
 	struct WorkspaceHandoff
 	{
@@ -227,7 +236,7 @@ namespace
 		bool minimized = false;
 		bool committedMinimized = false;
 		bool whiteboardInvolved = false;
-		unsigned failures = 0;
+		std::array<WorkspaceFailureClock, static_cast<std::size_t>(WorkspaceFailureKind::Count)> failureClocks{};
 		Clock::time_point retryAt{};
 		bool failed = false;
 		bool activate = false;
@@ -246,7 +255,7 @@ namespace
 				(target == Workspace::Whiteboard ? 1U : 0U);
 			hostGeneration = 0;
 			pending = true; // 取消回到 committed 也仍欠旧物理操作的退休。
-			failures = 0;
+			failureClocks = {};
 			retryAt = {};
 			failed = false;
 			return true;
@@ -260,12 +269,31 @@ namespace
 			pending = false;
 			return true;
 		}
-		bool Fail(std::uint64_t expected, Clock::time_point now) noexcept
+		bool Fail(std::uint64_t expected, WorkspaceFailureKind kind, Clock::time_point now) noexcept
 		{
 			if (!pending || revision != expected || failed) return false;
-			if (++failures >= 4) { failed = true; return true; }
-			retryAt = now + std::chrono::milliseconds(250U << (failures - 1));
+			auto& clock = failureClocks[static_cast<std::size_t>(kind)];
+			if (!clock.failingSince) clock.failingSince = now;
+			++clock.attempts;
+			const Clock::time_point deadline = *clock.failingSince + WorkspaceNoProgressBudget;
+			if (now >= deadline) { failed = true; return true; }
+			// 退避 250ms 起翻倍、上限 2s，并夹紧到本类别判定时刻，避免退避把判死推迟到 15 秒之后。
+			const auto backoff = std::min<Clock::duration>(
+				std::chrono::milliseconds(250U << (std::min)(clock.attempts - 1, 3U)), WorkspaceRetryBackoffCap);
+			retryAt = std::min<Clock::time_point>(now + backoff, deadline);
 			return false;
+		}
+		// 真实进展只清零对应类别；不动 retryAt，进展通知不加速已安排的退避。
+		void NoteProgress(std::uint64_t expected, WorkspaceFailureKind kind) noexcept
+		{
+			if (!pending || revision != expected || failed) return;
+			failureClocks[static_cast<std::size_t>(kind)] = {};
+		}
+		// 只读：该类别是否已连续无进展失败满 15 秒（供不再重复调用 Fail 的等待分支判死）。
+		bool Exhausted(WorkspaceFailureKind kind, Clock::time_point now) const noexcept
+		{
+			const auto& clock = failureClocks[static_cast<std::size_t>(kind)];
+			return clock.failingSince && now >= *clock.failingSince + WorkspaceNoProgressBudget;
 		}
 		bool Ready(Clock::time_point now) const noexcept { return pending && !failed && now >= retryAt; }
 		bool Retry(std::uint64_t expected) noexcept
@@ -289,6 +317,7 @@ namespace
 		BackgroundPrepared,
 		FinalBackgroundActive,
 	};
+	enum class WorkspaceWaitVerdict : std::uint8_t { Progressed, Waiting, Stalled };
 	struct WorkspaceWaitTracker
 	{
 		using Clock = std::chrono::steady_clock;
@@ -300,7 +329,7 @@ namespace
 		std::uint64_t backgroundRevision = 0;
 		bool backgroundReady = false;
 
-		[[nodiscard]] bool Stalled(WorkspaceWaitStage next,
+		[[nodiscard]] WorkspaceWaitVerdict Stalled(WorkspaceWaitStage next,
 			const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime,
 			std::uint64_t nextBackgroundRevision, bool nextBackgroundReady,
 			Clock::time_point now = Clock::now()) noexcept
@@ -317,12 +346,12 @@ namespace
 				backgroundRevision = nextBackgroundRevision;
 				backgroundReady = nextBackgroundReady;
 				checkedAt = now;
-				return false;
+				return WorkspaceWaitVerdict::Progressed;
 			}
 			// 异步完成可在一拍内多次唤醒；通知次数不能缩短原有 250ms 无进展预算。
-			if (now < checkedAt + std::chrono::milliseconds(250)) return false;
+			if (now < checkedAt + std::chrono::milliseconds(250)) return WorkspaceWaitVerdict::Waiting;
 			checkedAt = now;
-			return true;
+			return WorkspaceWaitVerdict::Stalled;
 		}
 	};
 	[[nodiscard]] bool WorkspaceNativePending(Inkeys::Window::CommandPhase phase) noexcept
@@ -442,27 +471,39 @@ namespace
 	}
 
 	template<class PublishNotice>
-	void FailWorkspaceRequestImpl(std::uint64_t revision, PublishNotice&& publish)
+	void FailWorkspaceRequestImpl(std::uint64_t revision, WorkspaceFailureKind kind, PublishNotice&& publish,
+		WorkspaceHandoff::Clock::time_point now = WorkspaceHandoff::Clock::now())
 	{
 		bool firstFailure = false;
 		bool whiteboard = false, involved = false;
 		{
 			std::scoped_lock lock(workspaceHandoffMutex);
-			firstFailure = workspaceHandoff.Fail(revision, WorkspaceHandoff::Clock::now());
+			firstFailure = workspaceHandoff.Fail(revision, kind, now);
 			whiteboard = workspaceHandoff.desired == Workspace::Whiteboard;
 			involved = workspaceHandoff.whiteboardInvolved;
 		}
 		// 通知仅当前故障边沿一次，且不能持协调锁进入既有 UI FIFO。
 		if (firstFailure) publish(revision, whiteboard, involved);
 	}
-	void FailWorkspaceRequest(std::uint64_t revision) noexcept
+	void FailWorkspaceRequest(std::uint64_t revision, WorkspaceFailureKind kind) noexcept
 	{
 		try
 		{
-			FailWorkspaceRequestImpl(revision, [](auto token, bool whiteboard, bool involved)
+			FailWorkspaceRequestImpl(revision, kind, [](auto token, bool whiteboard, bool involved)
 			{ Inkeys::UI::Setting::QueueWorkspaceTransitionFailureNotice(token, whiteboard, involved); });
 		}
 		catch (...) { if (IDTLogger) IDTLogger->warn("[Workspace] failure notice queue rejected"); }
+	}
+	// 仅持协调锁清零对应类别，不进入 UI。
+	void NoteWorkspaceProgress(std::uint64_t revision, WorkspaceFailureKind kind) noexcept
+	{
+		std::scoped_lock lock(workspaceHandoffMutex);
+		workspaceHandoff.NoteProgress(revision, kind);
+	}
+	void ObserveWorkspaceWait(WorkspaceWaitVerdict verdict, std::uint64_t revision) noexcept
+	{
+		if (verdict == WorkspaceWaitVerdict::Progressed) NoteWorkspaceProgress(revision, WorkspaceFailureKind::Wait);
+		else if (verdict == WorkspaceWaitVerdict::Stalled) FailWorkspaceRequest(revision, WorkspaceFailureKind::Wait);
 	}
 
 	std::mutex whiteboardReturnFocusMutex;
@@ -3217,18 +3258,70 @@ int RunStateModeProductionTest() noexcept
 				WorkspaceHandoff failed;
 				if (target == Workspace::Desktop) { failed.Request(Workspace::Whiteboard); failed.Commit(failed.revision, true, true, true); }
 				failed.Request(target); const auto ticket = failed.revision;
-				auto now = WorkspaceHandoff::Clock::time_point{};
-				for (unsigned attempt = 0; attempt != 4; ++attempt)
+				const auto start = WorkspaceHandoff::Clock::time_point{};
+				auto now = start;
+				for (unsigned attempt = 0; ; ++attempt)
 				{
-					require(failed.Ready(now), "entry-and-exit-have-finite-native-attempts");
-					failed.Fail(ticket, now);
-					if (attempt != 3) require(!failed.Ready(now + std::chrono::milliseconds(249)), "native-backoff-ignores-early-runtime-wake");
+					require(failed.Ready(now), "entry-and-exit-retry-until-15s-no-progress-budget");
+					const bool edge = failed.Fail(ticket, WorkspaceFailureKind::NativeComplete, now);
+					if (now - start >= WorkspaceNoProgressBudget)
+					{
+						require(edge && failed.failed, "category-fails-exactly-at-15s-without-progress");
+						break;
+					}
+					require(!edge && !failed.failed, "category-keeps-retrying-before-15s");
+					require(failed.retryAt <= start + WorkspaceNoProgressBudget, "native-backoff-never-exceeds-judgment-deadline");
+					if (attempt == 0) require(!failed.Ready(now + std::chrono::milliseconds(249)) &&
+						failed.Ready(now + std::chrono::milliseconds(250)), "first-native-backoff-remains-250ms");
+					require(!failed.Ready(now + std::chrono::milliseconds(249)), "native-backoff-ignores-early-runtime-wake");
 					now += std::chrono::seconds(2);
 				}
 				require(failed.failed && failed.pending && !failed.Ready(now) && !failed.Commit(ticket, true, true, true),
 					"budget-exhaustion-retains-responsibility-without-repeating-native-show-hide");
 				require(!failed.Retry(ticket - 2) && failed.Retry(ticket) && failed.revision != ticket && !failed.failed,
 					"only-current-failure-token-retries-as-new-request");
+			}
+			{
+				// Wait 在接近 15 秒时取得进展：需重新连续 15 秒无进展才判死。
+				WorkspaceHandoff waiting; waiting.Request(Workspace::Whiteboard); const auto ticket = waiting.revision;
+				const auto t0 = WorkspaceHandoff::Clock::time_point{};
+				require(!waiting.Fail(ticket, WorkspaceFailureKind::Wait, t0) &&
+					!waiting.Fail(ticket, WorkspaceFailureKind::Wait, t0 + std::chrono::seconds(14)), "wait-before-budget-keeps-retrying");
+				waiting.NoteProgress(ticket - 2, WorkspaceFailureKind::Wait);
+				require(waiting.Fail(ticket, WorkspaceFailureKind::Wait, t0 + std::chrono::seconds(15)) && waiting.failed,
+					"stale-progress-token-does-not-reset-wait-clock");
+				WorkspaceHandoff progressed; progressed.Request(Workspace::Whiteboard); const auto current = progressed.revision;
+				require(!progressed.Fail(current, WorkspaceFailureKind::Wait, t0) &&
+					!progressed.Fail(current, WorkspaceFailureKind::Wait, t0 + std::chrono::seconds(14)), "wait-fixture-before-progress");
+				progressed.NoteProgress(current, WorkspaceFailureKind::Wait);
+				require(!progressed.Fail(current, WorkspaceFailureKind::Wait, t0 + std::chrono::seconds(16)) &&
+					!progressed.Fail(current, WorkspaceFailureKind::Wait, t0 + std::chrono::milliseconds(30999)) && !progressed.failed,
+					"wait-progress-restarts-full-15s-budget");
+				require(progressed.Fail(current, WorkspaceFailureKind::Wait, t0 + std::chrono::seconds(31)) && progressed.failed,
+					"wait-fails-after-new-continuous-15s-without-progress");
+
+				// Prepare 进展不清零 Complete：Prepare 成功/Complete 反复失败仍在 15 秒判死，避免无限显示/隐藏。
+				WorkspaceHandoff split; split.Request(Workspace::Whiteboard); const auto splitTicket = split.revision;
+				bool splitFailed = false;
+				for (int second = 0; second <= 16 && !splitFailed; second += 2)
+				{
+					split.NoteProgress(splitTicket, WorkspaceFailureKind::NativePrepare);
+					splitFailed = split.Fail(splitTicket, WorkspaceFailureKind::NativeComplete, t0 + std::chrono::seconds(second));
+					require(splitFailed == (second >= 15), "prepare-progress-does-not-reset-complete-budget");
+				}
+				require(splitFailed && split.failed, "complete-category-fails-at-15s-despite-prepare-progress");
+
+				// 超时只登记一次后卡在 Executing：Exhausted 在 15 秒到期，此时 Fail 直接判死且不推迟 retryAt。
+				WorkspaceHandoff stuck; stuck.Request(Workspace::Whiteboard); const auto stuckTicket = stuck.revision;
+				require(!stuck.Exhausted(WorkspaceFailureKind::NativePrepare, t0) &&
+					!stuck.Fail(stuckTicket, WorkspaceFailureKind::NativePrepare, t0), "executing-timeout-records-once");
+				const auto stuckRetryAt = stuck.retryAt;
+				require(!stuck.Exhausted(WorkspaceFailureKind::NativePrepare, t0 + std::chrono::milliseconds(14999)) &&
+					!stuck.Exhausted(WorkspaceFailureKind::NativeComplete, t0 + std::chrono::seconds(20)),
+					"stuck-executing-not-exhausted-before-15s-or-in-other-category");
+				require(stuck.Exhausted(WorkspaceFailureKind::NativePrepare, t0 + std::chrono::seconds(15)) &&
+					stuck.Fail(stuckTicket, WorkspaceFailureKind::NativePrepare, t0 + std::chrono::seconds(15)) &&
+					stuck.failed && stuck.retryAt == stuckRetryAt, "stuck-executing-fails-at-15s");
 			}
 			WorkspaceHandoff ink; ink.Request(Workspace::Whiteboard); ink.hostGeneration = 7;
 			ProductState inkDesired; inkDesired.workspace = Workspace::Whiteboard; inkDesired.revision = 12;
@@ -3288,8 +3381,13 @@ int RunStateModeProductionTest() noexcept
 			const auto injected = RequestWorkspace(Workspace::Whiteboard);
 			int noticeEdges = 0;
 			const auto notice = [&](auto token, bool target, bool involved) { require(token == injected.revision && target && involved, "failure-notice-captures-exact-scene"); ++noticeEdges; };
-			for (unsigned i = 0; i != 8; ++i) FailWorkspaceRequestImpl(injected.revision, notice);
-			require(noticeEdges == 1, "failure-notice-edge-deduplicates-after-four-real-failures");
+			const auto noticeStart = WorkspaceHandoff::Clock::now();
+			for (int second = 0; second <= 16; second += 2)
+				FailWorkspaceRequestImpl(injected.revision, WorkspaceFailureKind::Wait, notice, noticeStart + std::chrono::seconds(second));
+			require(noticeEdges == 1, "failure-notice-edge-published-once-after-15s-budget");
+			for (unsigned i = 0; i != 4; ++i)
+				FailWorkspaceRequestImpl(injected.revision, WorkspaceFailureKind::NativeComplete, notice, noticeStart + std::chrono::seconds(30));
+			require(noticeEdges == 1, "failure-notice-edge-deduplicates-after-real-failure");
 			require(WorkspaceTransitionFailureRevision() == injected.revision &&
 				!RetryWorkspaceTransitionIfRevision(injected.revision - 2) && RetryWorkspaceTransitionIfRevision(injected.revision) &&
 				WorkspaceTransitionFailureRevision() == 0 && ReadWorkspaceHandoff().pending,
@@ -3359,7 +3457,14 @@ int RunStateModeProductionTest() noexcept
 			{ std::scoped_lock lock(stateModeTransitionMutex); require(CommitWorkspaceHandoffLocked(minimized.revision, true, true, true, false), "button-minimized-fixture"); }
 			const auto restoring = RequestWorkspace(Workspace::Whiteboard, false);
 			const auto silentNotice = [](auto, bool, bool) {};
-			for (int i = 0; i != 4; ++i) FailWorkspaceRequestImpl(restoring.revision, silentNotice);
+			// 注入首败与满 15 秒两次失败，直接到达判死边沿。
+			const auto exhaust = [&](std::uint64_t revision)
+			{
+				const auto failStart = WorkspaceHandoff::Clock::now();
+				FailWorkspaceRequestImpl(revision, WorkspaceFailureKind::Wait, silentNotice, failStart);
+				FailWorkspaceRequestImpl(revision, WorkspaceFailureKind::Wait, silentNotice, failStart + WorkspaceNoProgressBudget);
+			};
+			exhaust(restoring.revision);
 			int restores = 0, requests = 0, cancels = 0;
 			const auto restore = [&] { ++restores; };
 			const auto request = [&](bool) { ++requests; };
@@ -3368,7 +3473,7 @@ int RunStateModeProductionTest() noexcept
 			require(cancels == 1 && restores == 0 && requests == 0 && ReadWorkspaceHandoff().desired != Workspace::Whiteboard,
 				"failed-restore-button-cancels-exact-ticket-before-physical-min-resume");
 			const auto newer = RequestWorkspace(Workspace::Whiteboard, false);
-			for (int i = 0; i != 4; ++i) FailWorkspaceRequestImpl(newer.revision, silentNotice);
+			exhaust(newer.revision);
 			cancel(restoring.revision);
 			require(cancels == 1 && WorkspaceTransitionFailureRevision() == newer.revision, "stale-button-failure-token-cannot-cancel-new-transition");
 			const auto stableMin = RequestWorkspace(Workspace::Whiteboard, true);
@@ -4237,24 +4342,25 @@ int RunStateModeProductionTest() noexcept
 			WorkspaceWaitTracker tracker;
 			const auto start = WorkspaceWaitTracker::Clock::time_point{};
 			const auto at = [start](int ms) { return start + std::chrono::milliseconds(ms); };
-			require(!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(0)) &&
-				!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(0)) &&
-				!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(249)) &&
-				tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(250)),
+			using enum WorkspaceWaitVerdict;
+			require(tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(0)) == Progressed &&
+				tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(0)) == Waiting &&
+				tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(249)) == Waiting &&
+				tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(250)) == Stalled,
 				"extra-native-wakes-preserve-250ms-no-progress-budget");
 			++progress.presentedContentRevision;
-			require(!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(300)) &&
-				!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(549)),
+			require(tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(300)) == Progressed &&
+				tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(549)) == Waiting,
 				"new-presented-content-resets-wait-progress");
-			require(tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(550)),
+			require(tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(550)) == Stalled,
 				"same-new-content-remains-stalled-at-original-cadence");
 			progress.presentationUiReady = Bridge::PresentationReadyIdentity{};
 			progress.presentationUiReady->targetRevision = 9;
-			require(!tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(600)),
+			require(tracker.Stalled(WorkspaceWaitStage::TargetReady, progress, 12, false, at(600)) == Progressed,
 				"ppt-ui-ready-identity-is-real-progress");
-			require(!tracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, progress, 12, false, at(600)),
+			require(tracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, progress, 12, false, at(600)) == Progressed,
 				"background-stage-change-does-not-fail-in-place");
-			require(!tracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, progress, 12, true, at(600)),
+			require(tracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, progress, 12, true, at(600)) == Progressed,
 				"background-ready-change-resets-wait-progress");
 		}
 		stage = "workspace-async-native-and-progress";
@@ -4401,7 +4507,18 @@ void StateMonitoring()
 		}
 		if (nativeOperation && nativeOperation->NoteExecutingTimeout())
 		{
-			FailWorkspaceRequest(request.revision);
+			FailWorkspaceRequest(request.revision, nativeOperation->completing
+				? WorkspaceFailureKind::NativeComplete : WorkspaceFailureKind::NativePrepare);
+			request = ReadWorkspaceHandoff();
+		}
+		else if (nativeOperation && nativeOperation->timeoutNoted && !request.failed &&
+			nativeOperation->receipt.Phase() == CommandPhase::Executing &&
+			request.Exhausted(nativeOperation->completing ? WorkspaceFailureKind::NativeComplete
+				: WorkspaceFailureKind::NativePrepare, WorkspaceHandoff::Clock::now()))
+		{
+			// 超时后仍卡在 Executing 时等待分支不再调用 Fail；到期在此判死并发通知，在途操作仍由上方等其退休后清理。
+			FailWorkspaceRequest(request.revision, nativeOperation->completing
+				? WorkspaceFailureKind::NativeComplete : WorkspaceFailureKind::NativePrepare);
 			request = ReadWorkspaceHandoff();
 		}
 		if (completedNative && !completedNative->Current())
@@ -4526,12 +4643,12 @@ void StateMonitoring()
 				(safeRelease || (current.running && !current.consumerFatal)) &&
 				ProductHost().ProductBridge().Snapshot().revision == revision;
 		};
-		const auto nativeFailed = [&](CommandPhase phase)
+		const auto nativeFailed = [&](CommandPhase phase, WorkspaceFailureKind kind)
 		{
 			if (!guard()) return;
 			// 取消/真实几何变化只欠重新准备，不属于当前 Native API 故障预算。
 			if (phase != CommandPhase::Cancelled && phase != CommandPhase::Expired)
-				FailWorkspaceRequest(request.revision);
+				FailWorkspaceRequest(request.revision, kind);
 			prepared.reset(); completedNative.reset();
 			if (ShouldRestoreWhiteboardSourcePreview(request, phase))
 			{
@@ -4553,8 +4670,8 @@ void StateMonitoring()
 		{
 			Inkeys::UI::Whiteboard::PublishActive(false, request.revision);
 			const bool backgroundReady = Inkeys::UI::Whiteboard::BackgroundMatchesActive(false, request.revision);
-			if (!backgroundReady && waitTracker.Stalled(WorkspaceWaitStage::BackgroundInactive,
-				snapshot, request.revision, backgroundReady)) FailWorkspaceRequest(request.revision);
+			if (!backgroundReady) ObserveWorkspaceWait(waitTracker.Stalled(WorkspaceWaitStage::BackgroundInactive,
+				snapshot, request.revision, backgroundReady), request.revision);
 			if (!backgroundReady) continue;
 		}
 		if (prepared && (prepared->policy != policy || preparedProductRevision != desired.revision))
@@ -4570,17 +4687,19 @@ void StateMonitoring()
 					FreezePPT = false;
 				}
 				auto receipt = service.RequestPrepareWorkspaceWindowPolicy(policy, nativeGuard);
-				if (!receipt) { nativeFailed(CommandPhase::Rejected); continue; }
+				if (!receipt) { nativeFailed(CommandPhase::Rejected, WorkspaceFailureKind::NativePrepare); continue; }
 				nativeOperation = WorkspaceNativeOperation{std::move(receipt), policy, nativeGuard};
 			}
 			const auto phase = nativeOperation->receipt.Phase();
 			if (WorkspaceNativePending(phase)) continue;
 			auto operation = std::move(*nativeOperation); nativeOperation.reset();
-			if (phase != CommandPhase::Committed) { nativeFailed(phase); continue; }
+			if (phase != CommandPhase::Committed) { nativeFailed(phase, WorkspaceFailureKind::NativePrepare); continue; }
 			if (!operation.CanConsume(false)) continue;
 			prepared = operation.receipt.Prepared();
-			if (!prepared) { nativeFailed(CommandPhase::Rejected); continue; }
+			if (!prepared) { nativeFailed(CommandPhase::Rejected, WorkspaceFailureKind::NativePrepare); continue; }
 			preparedProductRevision = desired.revision;
+			// Prepare 真实提交并被消费才算本类别进展，不清零 Complete/Wait。
+			NoteWorkspaceProgress(request.revision, WorkspaceFailureKind::NativePrepare);
 			// Prepare 回执之后才读取实际目标 geometry；owner 从不等待 Host/背景/UI。
 		}
 		if (!guard()) continue;
@@ -4589,8 +4708,8 @@ void StateMonitoring()
 			? prepared->presentation.bounds : prepared->primary.bounds;
 		if (!WorkspaceTargetReady(request, desired, snapshot, basicControl, safeRelease, output))
 		{
-			if (waitTracker.Stalled(WorkspaceWaitStage::TargetReady, snapshot, request.revision, false))
-				FailWorkspaceRequest(request.revision);
+			ObserveWorkspaceWait(waitTracker.Stalled(WorkspaceWaitStage::TargetReady, snapshot, request.revision, false),
+				request.revision);
 			continue;
 		}
 
@@ -4602,8 +4721,8 @@ void StateMonitoring()
 				static_cast<int>(snapshot.whiteboardTheme.pattern), snapshot.whiteboardUnsaved, snapshot.whiteboardGeneration);
 			Inkeys::UI::Whiteboard::PublishActive(true, request.revision);
 			const bool backgroundReady = request.minimized || Inkeys::UI::Whiteboard::BackgroundPrepared(request.revision);
-			if (!backgroundReady && waitTracker.Stalled(WorkspaceWaitStage::BackgroundPrepared,
-				snapshot, request.revision, backgroundReady)) FailWorkspaceRequest(request.revision);
+			if (!backgroundReady) ObserveWorkspaceWait(waitTracker.Stalled(WorkspaceWaitStage::BackgroundPrepared,
+				snapshot, request.revision, backgroundReady), request.revision);
 			if (!backgroundReady) continue;
 		}
 		else if (!Inkeys::UI::Whiteboard::BackgroundMatchesActive(false, request.revision)) continue;
@@ -4615,23 +4734,24 @@ void StateMonitoring()
 				const bool focusMayFallBack = !policy.whiteboard && service.WhiteboardWindowMode() &&
 					(ForegroundMatchesWindowRole(focusBefore, WindowRole::Freeze) || ForegroundMatchesWindowRole(focusBefore, WindowRole::Drawpad));
 				auto receipt = service.RequestCompleteWorkspaceWindowPolicy(policy, *prepared, nativeGuard);
-				if (!receipt) { nativeFailed(CommandPhase::Rejected); continue; }
+				if (!receipt) { nativeFailed(CommandPhase::Rejected, WorkspaceFailureKind::NativeComplete); continue; }
 				nativeOperation = WorkspaceNativeOperation{std::move(receipt), policy, nativeGuard, true, focusBefore, focusMayFallBack};
 			}
 			const auto phase = nativeOperation->receipt.Phase();
 			if (WorkspaceNativePending(phase)) continue;
 			auto operation = std::move(*nativeOperation); nativeOperation.reset();
-			if (phase != CommandPhase::Committed) { nativeFailed(phase); continue; }
+			if (phase != CommandPhase::Committed) { nativeFailed(phase, WorkspaceFailureKind::NativeComplete); continue; }
 			if (!operation.CanConsume(true)) { prepared.reset(); continue; }
 			completedNative = std::move(operation.receipt);
+			NoteWorkspaceProgress(request.revision, WorkspaceFailureKind::NativeComplete);
 			// 前台基线在本次 Complete 入队前捕获，仅其真实提交回执允许一次受控 fallback。
 			if (!policy.whiteboard) RebaseWhiteboardReturnFocus(operation.focusBefore, operation.focusMayFallBack);
 		}
 		if (policy.whiteboard && !request.minimized &&
 			!Inkeys::UI::Whiteboard::BackgroundMatchesActive(true, request.revision))
 		{
-			if (waitTracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, snapshot, request.revision, false))
-				FailWorkspaceRequest(request.revision);
+			ObserveWorkspaceWait(waitTracker.Stalled(WorkspaceWaitStage::FinalBackgroundActive, snapshot, request.revision, false),
+				request.revision);
 			continue;
 		}
 		std::unique_lock finalModeLock(stateModeTransitionMutex);

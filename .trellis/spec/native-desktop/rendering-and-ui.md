@@ -2719,7 +2719,7 @@ PageControl 成对拖动、Bar 主按钮直移、显式层级提升、Whiteboard
 - StateMonitoring 沿原 request→Prepare回执→Host/background/UI ready→Complete回执→Committed 推进。回执 payload/真实窗口快照先于终态和通知发布；Current 校验原生真值版本，已取消/旧代际命令不能仅凭出队就使新回执失效。
 - 新 policy/product/Host/PPT 身份到来时取消旧请求；Executing 不是退休，继续保留恢复责任，不能提前发源补偿或绕过屏障。仅真实 Rejected 退休允许原有源预览补偿。
 - Complete 的前台基线在该请求入队前捕获一次，匹配成功后重基准一次；轮询不能重新捕获并放宽原焦点许可。
-- 原生/背景进展只唤醒，不伪造 ready。250ms 兜底及原有四次故障/退避规则保持；一拍内密集通知不能加速消耗无进展失败预算，进展仍比较真实输出/内容/UI/背景身份。
+- 原生/背景进展只唤醒，不伪造 ready。250ms 兜底保持；失败按 Wait/NativePrepare/NativeComplete 分类，各类别自上次真实进展起连续 15 秒仍失败才判死（退避 250ms 起翻倍、上限 2s 且不越过判死时刻；超时后仍卡在 Executing 的原生操作到期同样判死，但仍等其退休后才清理）；一拍内密集通知不能加速消耗无进展失败预算，进展仍比较真实输出/内容/UI/背景身份。
 - UI 工具的 SyncDraw3State 立即发布业务/bridge 状态与最新 Setting owner 期望，再轻量唤醒协调线程；原生 reconciliation 不在共享输入 worker 内执行。启动前显式生命周期 reconciliation 保持。
 
 ### 4. Validation & Error Matrix
