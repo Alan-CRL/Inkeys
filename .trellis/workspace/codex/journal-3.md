@@ -639,3 +639,26 @@ Migrated live deploy.json/pptcom_configuration.json fields into Inkeys::Config w
 ### Status
 
 [OK] **Completed**
+
+
+## Session 192: Inkeys3 中期重构第0步：统一日志系统重构
+<!-- trellis-session: v=2 fp=4c7d9659d55521e9 -->
+
+**Date**: 2026-11-16
+**Task**: Inkeys3 中期重构第0步：统一日志系统重构
+**Branch**: `refactoring/drawpad-ui`
+
+### Summary
+
+新建中期重构总任务与第0步日志子任务；重建统一日志服务（Inkeys\Logs 本地时间命名、双缓冲+SRWLock 单写线程、模块标头与分级、Warn 即时/每秒落盘）；迁移 114 处 IDTLogger，移除调试控制台，6 个调试开关改为不受等级过滤的日志通道，DiagnosticOutput 分日志/标准流模式；PptCOM 经 IPptCOMLogging(Int64) 回调写入同一文件；设置页日志等级/清理时长/大小上限/打开文件夹；Claude 独立审查与 Codex Sol High 审查共修复 8 项；构建、无头测试、诊断输出测试、PptCOM 测试与 GUI 实机（含 PPT、关闭档）验证通过；未验证 Win7 实机与人为溢出。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cfe8329d` | feat(log): rebuild unified logging and route diagnostics into log files |
+| `f8990ad6` | docs(spec): record unified log service, PptCOM logging interface and log config contracts |
+
+### Status
+
+[OK] **Completed**
