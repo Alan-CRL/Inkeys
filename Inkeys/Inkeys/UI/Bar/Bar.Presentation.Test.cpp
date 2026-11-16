@@ -96,7 +96,7 @@ namespace Inkeys::UI::Bar
 			Ui3SvgProbe svg{ runSerial };
 			std::array<SourceEntry, Ui3FixtureMaxInputs> entries{};
 			std::array<Ui3FiniteAccepted, Ui3FixtureExpectedSteps> completedGoals{};
-		std::array<HANDLE, 4> directoryLeases{};
+		std::array<HANDLE, 3> directoryLeases{};
 			OwnerJob job;
 			Ui3FiniteTargetRecord warmEnd, measuredEnd;
 			Ui3FixtureReadyValue bootstrap;
@@ -599,7 +599,7 @@ namespace Inkeys::UI::Bar
 		bool LeasePrivateDirectories(FixtureState& state)
 		{
 			const auto& bin = state.authorization->BinaryDirectory();
-			const std::array<std::wstring, 4> paths{ bin, bin + L"\\Inkeys", bin + L"\\Inkeys\\Config", bin + L"\\opt" };
+			const std::array<std::wstring, 3> paths{ bin, bin + L"\\Inkeys", bin + L"\\Inkeys\\Config" };
 			for (std::size_t index = 0; index < paths.size(); ++index)
 			{
 				auto& lease = state.directoryLeases[index];
@@ -675,7 +675,7 @@ namespace Inkeys::UI::Bar
 			pluginPath = globalPath;
 			const auto mainPath = state.authorization->BinaryDirectory() + L"\\Inkeys\\Config\\main.json";
 			if (!SamePrivatePath(config.GetFilePath(), mainPath) || !OrdinaryFileOrAbsent(mainPath)) return false;
-			// 旧 deploy.json 字段已并入 main.json：先恢复默认，再写入夹具默认值。
+			// 先恢复默认，再写入夹具默认值。
 			config.ResetToDefaults();
 			SeedLegacyDefaults();
 			config.Experimental.Inkeys3.UI3.EdgeLighting.Enable = true;

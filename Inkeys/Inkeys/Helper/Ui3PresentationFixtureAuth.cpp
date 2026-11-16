@@ -297,9 +297,9 @@ namespace Inkeys::UI::Bar
 				|| !LeasePath(bin, true, proof, &proof.binIdentity)
 				|| !LeasePath(copied, false, proof, &proof.copiedIdentity)
 				|| !LeasePath(child, false, proof) || !Process::SameImageFile(child, copied)) return false;
-			for (const wchar_t* sub : { L"\\Inkeys", L"\\Inkeys\\Config", L"\\opt", L"\\log" })
+			for (const wchar_t* sub : { L"\\Inkeys", L"\\Inkeys\\Config", L"\\log" })
 				if (!LeasePath(bin + sub, true, proof)) return false;
-			for (const wchar_t* sub : { L"\\Inkeys\\Config\\main.json", L"\\opt\\deploy.json" })
+			for (const wchar_t* sub : { L"\\Inkeys\\Config\\main.json" })
 				if (!OptionalFile(bin + sub, proof)) return false;
 			proof.repository = repo;
 			proof.leaf = leaf;
@@ -345,7 +345,7 @@ namespace Inkeys::UI::Bar
 			const std::wstring bin = run.leaf + L"\\bin";
 			if (!CreateDirectoryLeased(results, true, run.proof) || !CreateDirectoryLeased(evidence, true, run.proof)) return false;
 			for (const auto& path : { run.master, roundPath, run.leaf, bin, bin + L"\\Inkeys",
-				bin + L"\\Inkeys\\Config", bin + L"\\opt", bin + L"\\log" })
+				bin + L"\\Inkeys\\Config", bin + L"\\log" })
 				if (!CreateDirectoryLeased(path, false, run.proof)) return false;
 			run.copiedImage = bin + L"\\Inkeys.exe";
 			return CopyFileW(run.sourceImage.c_str(), run.copiedImage.c_str(), TRUE)
@@ -663,7 +663,7 @@ namespace Inkeys::UI::Bar
 			fixture.copied = bin + L"\\Inkeys.exe";
 			fixture.layers = { fixture.repository, fixture.repository + L"\\.trellis", results, evidence,
 				master, master + L"\\r1", fixture.leaf, bin, bin + L"\\Inkeys", bin + L"\\Inkeys\\Config",
-				bin + L"\\opt", bin + L"\\log", sourceDir };
+				bin + L"\\log", sourceDir };
 			if (!Within(base, owner.master) || !CreateDirectoryW(base.c_str(), nullptr)) return false;
 			for (const auto& path : fixture.layers) if (!CreateDirectoryW(path.c_str(), nullptr)) return false;
 			// 这里只测试生产filesystem validator；空ordinary文件不冒充真实进程鉴权正例。
@@ -720,7 +720,8 @@ namespace Inkeys::UI::Bar
 			const std::wstring target = owner.master + L"\\junction-target";
 			if (!CreateDirectoryW(target.c_str(), nullptr)) return false;
 			bool passed = true;
-			for (unsigned index = 0; index < 13; ++index)
+			// 层级数与 MakePathFixture 的 layers 一致（旧 opt 目录已移除）。
+			for (unsigned index = 0; index < 12; ++index)
 			{
 				PathFixture fixture;
 				if (!MakePathFixture(owner, index, fixture)) return false;

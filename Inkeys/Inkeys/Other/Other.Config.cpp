@@ -691,7 +691,7 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 				}
 				if (path == "Application.TeachingSafetyMode" || path == "UI.Setting.EntryAnimation")
 				{
-					// 沿用旧 deploy.json 约束：安全模式只有 0..3，设置开屏只有 0..2；其余回默认。
+					// 安全模式只有 0..3，设置开屏只有 0..2；类型错误或越界回默认。
 					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
 					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
 					const int maximum = path == "Application.TeachingSafetyMode" ? 3 : 2;

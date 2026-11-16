@@ -687,11 +687,8 @@ namespace
 			const auto root = std::filesystem::current_path() /
 				"TestResults" / "release-hardening" /
 				("config-boundary-" + std::to_string(GetCurrentProcessId()));
-			std::filesystem::create_directories(root / "opt");
 			std::filesystem::create_directories(root / "Inkeys" / "Config");
 			globalPath = root.wstring() + L"\\";
-			const auto deploy = root / "opt" / "deploy.json";
-			const auto pptConfig = root / "opt" / "pptcom_configuration.json";
 			const auto mainConfig = root / "Inkeys" / "Config" / "main.json";
 			const auto writeBytes = [](const std::filesystem::path& path,
 				const std::string& bytes)
@@ -706,53 +703,8 @@ namespace
 					return std::string(std::istreambuf_iterator<char>(file),
 						std::istreambuf_iterator<char>());
 				};
-			// 旧配置一次性迁移：只补 main.json 缺失键，写盘成功后删除旧文件。
-			stage = "legacy migration";
-			if (!writeBytes(deploy, "{\"SelectLanguage\":2,\"StartUp\":true,\"SettingEntryAnimation\":9,"
-					"\"PlugIn\":{\"DesktopDrawpadBlocker\":{\"SleepTime\":1234}},"
-					"\"Component\":{\"ShortcutButton\":{\"Appliance\":{\"Explorer\":true}}}}") ||
-				!writeBytes(pptConfig, "{\"ShowMiddleBoth\":true,\"BottomBothWidth\":12.5}") ||
-				!writeBytes(mainConfig, "{\"Application\":{\"StartUp\":false}}")) return 1;
-			(void)Inkeys::config.ReadAll();
-			if (!MigrateLegacyConfigFiles() || Inkeys::config.Application.Language != 2
-				|| Inkeys::config.Application.StartUp || Inkeys::config.UI.Setting.EntryAnimation != 1
-				|| Inkeys::config.PlugIn.DesktopDrawpadBlocker.SleepTime != 1234
-				|| !Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer
-				|| !Inkeys::config.PlugIn.PPTHelper.ShowMiddleBoth
-				|| Inkeys::config.PlugIn.PPTHelper.BottomBothWidth.load() != 12.5
-				|| std::filesystem::exists(deploy) || std::filesystem::exists(pptConfig))
-			{
-				std::fputs("[ConfigBoundary] FAIL: legacy migration\n", stderr);
-				return 1;
-			}
-			{
-				Inkeys::Config reread;
-				if (!reread.ReadAll() || reread.Application.Language != 2 || reread.Application.StartUp)
-				{
-					std::fputs("[ConfigBoundary] FAIL: migrated values were not persisted\n", stderr);
-					return 1;
-				}
-			}
-			stage = "legacy migration malformed";
-			if (!writeBytes(deploy, "{broken") || !writeBytes(pptConfig, "[]")) return 1;
-			(void)Inkeys::config.ReadAll();
-			if (!MigrateLegacyConfigFiles() || std::filesystem::exists(deploy) || std::filesystem::exists(pptConfig))
-			{
-				std::fputs("[ConfigBoundary] FAIL: malformed legacy files were not retired\n", stderr);
-				return 1;
-			}
-			stage = "legacy migration write failure";
-			if (!writeBytes(deploy, "{\"StartUp\":true}") || !writeBytes(mainConfig, "{broken")) return 1;
-			(void)Inkeys::config.ReadAll();
-			if (MigrateLegacyConfigFiles() || !std::filesystem::exists(deploy) || readBytes(mainConfig) != "{broken")
-			{
-				std::fputs("[ConfigBoundary] FAIL: legacy file removed although main.json was not written\n", stderr);
-				return 1;
-			}
-			std::filesystem::remove(deploy);
-			Inkeys::config.ResetToDefaults();
-
 			stage = "main malformed";
+			if (!writeBytes(mainConfig, "{broken")) return 1;
 			Inkeys::Config isolatedConfig;
 			const bool badMainRead = isolatedConfig.ReadAll();
 			const bool badMainWrite = isolatedConfig.Write();
@@ -2855,7 +2807,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	bool SuperTopFailSignal = false;
 	if (!isolatedStartupFailure)
 	{
-		const bool superTopEnabled = ReadStartupSuperTopEnabled();
+		// 主配置尚未加载，只读探测 main.json；旧版 deploy.json 不再兼容。
+		Inkeys::Config superTopProbe;
+		const bool superTopEnabled = superTopProbe.ReadMini({ "PlugIn.SuperTop.Enable" }, true)
+			&& superTopProbe.PlugIn.SuperTop.Enable;
 
 		HANDLE proc_self = GetCurrentProcess();
 		HANDLE tok_self = nullptr;
@@ -3367,9 +3322,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		#pragma region 新配置 Test
 
 			config.ReadAll(); // 是否失败不重要（失败的情况可能是首次启动软件，导致配置文件尚未创建）
-			// 旧 deploy.json / pptcom_configuration.json 一次性迁入 main.json：必须在写回补齐缺失键之前判定。
-			if (!MigrateLegacyConfigFiles() && IDTLogger)
-				IDTLogger->warn("[主线程][IdtMain] 旧配置迁移写回失败，保留旧文件待下次启动重试");
 			// 语言与更新架构的缺省依赖运行环境，仅在配置尚未确定时补齐。
 			if (config.Application.Language == -1)
 				config.Application.Language = Inkeys::Localization::IndexForSystemLanguage(GetUserDefaultUILanguage());
@@ -3510,7 +3462,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			}
 			InitializePenWidthPreferences(penWidthStartupContext);
 			{
-				// 超级置顶提示的旧 PlugIn.SuperTop.Indicator 已由 MigrateLegacyConfigFiles 一次性迁入。
 				auto& status = config.Experimental.Inkeys3.UI3.StatusIndicator;
 				Inkeys::UI::Bar::SetStatusIndicatorOptions(status.Enable, status.PptSlideshow,
 					status.SuperTop, status.NewVersion);

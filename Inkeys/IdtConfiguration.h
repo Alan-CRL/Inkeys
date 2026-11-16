@@ -7,12 +7,6 @@ bool OccupyFileForRead(HANDLE* hFile, const wstring& filePath);
 bool OccupyFileForWrite(HANDLE* hFile, const wstring& filePath);
 bool UnOccupyFile(HANDLE* hFile);
 
-// 旧 opt\deploy.json / opt\pptcom_configuration.json 一次性迁入 main.json：
-// 只补 main.json 缺失的键，写盘成功后删除旧文件；须在 config.ReadAll() 之后、首次写回之前调用。
-bool MigrateLegacyConfigFiles();
-// 主配置加载前的超级置顶判定：旧 deploy.json 尚存（未迁移）时读旧值，否则只读 main.json。
-bool ReadStartupSuperTopEnabled();
-
 // PPT 加载页实现保留且固定禁用，旧配置不能重新开启。
 inline constexpr bool kPptLoadingPageEnabled = false;
 

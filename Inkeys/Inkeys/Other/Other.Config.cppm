@@ -618,7 +618,7 @@ GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IdleFadeBottomPair, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IdleFadeMiddlePair, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, IdleFadeMainBar, false) \
-			/* 以下沿用原 pptcom_configuration.json 键名，便于一次性迁移。 */ \
+			/* PPT 控件显示、记忆位置、位置与缩放。 */ \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MemoryWidgetPosition, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowBottomBoth, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowMiddleBoth, false) \

@@ -86,11 +86,8 @@ int RunAutoCollapseTests()
 		}
 	} restore{ root };
 	const fs::path file = root / L"Inkeys" / L"Config" / L"main.json";
-	const fs::path legacyFile = root / L"opt" / L"deploy.json";
 	std::error_code error;
 	fs::create_directories(file.parent_path(), error);
-	if (error) return failures + 1;
-	fs::create_directories(legacyFile.parent_path(), error);
 	if (error) return failures + 1;
 	globalPath = root.wstring() + L"\\";
 
@@ -99,23 +96,17 @@ int RunAutoCollapseTests()
 		check(Policy(config, field).load() == policyDefaults[field], "new schema uses independent defaults");
 	const auto upload = config.GetUploadInfo();
 
-	// 旧 deploy 的全部退役布尔组合均不得初始化新字段，两种样式亦不改变默认值。
-	for (int bits = 0; bits < 16; ++bits)
-		for (int style = 0; style < 2; ++style)
-		{
-			Json::Value legacy(Json::objectValue);
-			legacy["BrushRecover"] = (bits & 1) != 0;
-			legacy["RubberRecover"] = (bits & 2) != 0;
-			legacy["Regular"]["MoveRecover1"] = (bits & 4) != 0;
-			legacy["Regular"]["ClickRecover"] = (bits & 8) != 0;
-			Json::Value document(Json::objectValue);
-			document["UI"]["Bar"]["SelectAndClickThroughMode"] = style;
-			check(WriteJson(legacyFile, legacy) && WriteJson(file, document), "write private legacy/default fixture");
-			check(config.ReadAll(), "read missing new policy group");
-			for (int field = 0; field < 4; ++field)
-				check(Policy(config, field).load() == policyDefaults[field], "legacy booleans and style do not override defaults");
-			check(config.Write() && ReadJson(legacyFile) == legacy, "new config never writes or migrates legacy deploy");
-		}
+	// 两种交互样式均不改变自动收起策略的默认值。
+	for (int style = 0; style < 2; ++style)
+	{
+		Json::Value document(Json::objectValue);
+		document["UI"]["Bar"]["SelectAndClickThroughMode"] = style;
+		check(WriteJson(file, document), "write private default fixture");
+		check(config.ReadAll(), "read missing new policy group");
+		for (int field = 0; field < 4; ++field)
+			check(Policy(config, field).load() == policyDefaults[field], "style does not override defaults");
+		check(config.Write(), "write default policy group");
+	}
 
 	for (int field = 0; field < 4; ++field)
 	{
