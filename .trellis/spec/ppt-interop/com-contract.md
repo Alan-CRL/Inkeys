@@ -21,6 +21,10 @@
 13. `SetConsoleOutputEnabled(bool enabled)`；
 14. `GetPresentationDescriptor()`。
 
+`【直接确认】`（2026-11-16）日志扩展接口 `IPptCOMLogging`（独立 GUID、`InterfaceIsIUnknown`，由 `PptCOMServer` 实现，native 以 `QueryInterface` 取得）只有一个方法 `void SetLogCallback(long callback)`：参数为原生函数指针的 Int64 值，`0` 表示撤销。C# `ManagedLog` 用非泛型 `Marshal.GetDelegateForFunctionPointer(IntPtr, Type)`（.NET 4.0 可用）包装 `Inkeys/IdtPlug-in.cpp::PptComLogCallback(int level, int module, const wchar_t* text, int length)`（`__stdcall`），记录进入 C++ 统一日志的唯一写线程。共享常量：`level` 0..4 = Debug/Info/Warn/Error/Critical；`module` 低 8 位为托管模块号（0=PptCOM），`0x100` 位表示 PptCOM 调试通道记录（不受日志等级过滤）。native 在创建 PptCOM 并 `SetConsoleOutputEnabled` 后注册，在释放 PptCOM 前撤销；QueryInterface 失败只记 Warn，不影响联动。
+
+> **Warning**：不要用 `IntPtr` 作为跨 COM 传递指针的参数类型。TlbExp 对 AnyCPU 程序集把 `IntPtr` 导出为 32 位 `long`，64 位进程的函数地址会被截断。改用 Int64，C# 侧按 `IntPtr.Size` 构造：32 位进程须 `new IntPtr(unchecked((int)pointer))`，否则 LargeAddressAware 的高地址经零扩展后 `new IntPtr(long)` 会溢出，回调被静默清空。
+
 `【历史/兼容】` `ActivateSildeShowWindow` 的拼写已进入 COM 接口和 native 调用点；它不是新命名范例，也不能在无兼容计划时直接改名。
 
 `【直接确认】` `PptCOM.csproj` 构建后调用 `TlbExp.exe` 生成 `PptCOM.tlb`；`Inkeys/IdtPlug-in.cpp` 通过 `#import "PptCOM.tlb"` 使用 `IPptCOMServerPtr`。因此接口变更会跨越 C#、TLB、native 调用和部署产物。
@@ -204,6 +208,8 @@ native 调用处可见 `_com_error` 处理。`【合理推断】` 新调用应�
 ### 1. Scope / Trigger
 
 用户设备出现 Office 关闭后残留、对象释放无法配平或事件解绑失败时，使用内部 PptComDiagnostics。入口跟随既有 ConsoleOutput.PptCOM / SetConsoleOutputEnabled，修改开关后重启。无需额外环境变量，不能修改 COM ABI。
+
+`【直接确认】`（2026-11-16）控制台已移除：`SetConsoleOutputEnabled` 签名与位置不变，只设置托管侧启用标志，不再重定向 `Console.Out/Error`；全部诊断经 `ManagedLog.Channel` 写入 Inkeys 统一日志文件（`<EXE>\Inkeys\Logs`），PptCOM 内不得再出现 `Console.*` 输出。`[PptOwner]` 仍需开关 + `INKEYS_PPTCOM_TRACE=1`；`PptPerfTrace` 经 `ManagedLog.Write(Info)` 写入，只受 `INKEYS_PPT_PERF=1` 控制、不受开关影响。测试用 `ManagedLog.TestOutput` 捕获输出，不再 `Console.SetOut`。
 
 ### 2. Signatures
 

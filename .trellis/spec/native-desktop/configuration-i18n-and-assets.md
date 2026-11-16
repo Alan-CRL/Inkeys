@@ -131,6 +131,14 @@ config.Write(); SetStatusIndicatorOptions(legacyIndicator, ...);
 status.SuperTop = value; SetStatusIndicatorOptions(...); QueueConfigWrite();
 ```
 
+## 日志配置合同（2026-11-16）
+
+- 组：`Application.Logging`（NoUpload），与 `Application.Update` 同级。键：`RetentionDays`（默认 7；0=永不清理；自定义 1..3650）、`MaxSizeMB`（默认 0=无限制；自定义 1..102400，指 `Inkeys\Logs` 目录总量）、`Threshold`（默认 1；0 Debug、1 Info、2 Warn、3 Error、4 Off）。
+- 读取校验在 `Other.Config.cpp` 读取钩子中用 `ReadNarrowInt`：非整数、超宽整数或越界（`0..3650`/`0..102400`/`0..4`）回默认值；不写迁移代码。
+- 启动：读完配置后调用一次 `Inkeys::Log::ApplyConfig(...)`（见 `errors-logging-and-resources.md` 统一日志服务合同）；不得在读配置前按默认值清理。
+- 设置页“日志与配置 → 日志”（`Section::LogsLog`）：等级下拉改后立即 `Log::SetThreshold`；清理时长（1/3/7/14/30 天/永不/自定义）与大小上限（50/100/200/500/1024 MB/无限制/自定义）选“自定义”只展开数字输入，回车或失焦时校验，合法才写配置并 `Log::ApplyRetention`，非法恢复修改前的值（原值为预设时下拉一并退回）；“打开日志文件夹”先补建目录再 `QueueShellExecute`。i18n 键位于 `SettingsUI/Logs/*`。
+- 调试开关仍是 `Experimental.Inkeys3.ConsoleOutput.*`（键名保留历史 “Console” 字样，语义已改为写入日志通道），需重启生效。
+
 ## 不兼容旧配置合同（2026-11-16）
 
 - Inkeys2 的 `opt\deploy.json`、`opt\pptcom_configuration.json` 不读取、不迁移、不删除；从 Inkeys2 升级的用户所有设置均为 schema 缺省值。

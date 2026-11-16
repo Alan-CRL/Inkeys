@@ -18,19 +18,90 @@
 
 `【合理推断】` 局部修改应在目标子系统已有边界转换错误，并保留能定位操作与错误码的上下文；更换整个异常模型属于独立架构任务。是否需要用户提示、回退或终止，必须按实际调用方决定，不能套用一条全局规则。
 
-## 日志与清理策略
+## 统一日志服务合同（2026-11-16 起）
 
-`【直接确认】` `Inkeys/IdtMain.cpp::wWinMain` 初始化 spdlog 异步文件 logger：
+### 1. Scope / Trigger
 
-- 日志目录是 `log/`，名称使用 `idt` 加时间戳；
-- logger 使用异步 thread pool，level 为 info，pattern 包含 level 和时间；
-- 启动清理会处理匹配日志：时间差达到 7 天或出现负时间差时删除；目录总大小超过 10 MiB 时还会在遍历中继续删除旧条目。
+新增或修改任何日志、诊断输出、调试开关、退出/崩溃排空路径，或在 C#（PptCOM）中输出诊断时适用。旧的 `IDTLogger`、`UI3Diagnostics` logger、`spdlog::init_thread_pool(8192, 64)`、`<EXE>\log\idt*.log` 与调试控制台（`InitializeDebugConsole`/`AllocConsole`）均已移除，不得恢复。
 
-因此，先前“仓库没有日志保留/轮转行为”的说法不准确。这里能确认的是当前启动清理算法，不代表它已形成稳定的产品政策，也不等同于 spdlog 的滚动文件 sink。
+### 2. Signatures
 
-`【直接确认】` 现有日志常使用中文“线程/函数”上下文。`【合理推断】` 新日志宜包含子系统、操作对象和 HRESULT/Win32 error，并避免在每帧/每 packet 无节制写入；是否需要统一字段、隐私脱敏、用户导出或崩溃上传规则仍为 `【待确认】`，不能在无项目依据时写成已批准规范。
+`Inkeys/Inkeys/Log/Log.h`（头文件，传统 `.cpp` 与 module 全局模块片段直接 include；`Log.cpp` 同时编入 `Inkeys` 与 `InkeysHeadlessTests`，不依赖 IdtMain 全局变量）：
 
-Draw3 输入/橡皮控制台诊断仅在显式开关启用时发布：显示/EDID 信息走显示快照发布边界，输入记录复用约250ms帧级门及同一选中 contact 的坐标、身份与尺寸。它是稀疏快照，不在 RTS packet 回调中同步写盘或控制台。
+```cpp
+namespace Inkeys::Log {
+enum class Level : std::uint8_t { Debug, Info, Warn, Error, Critical };
+enum class Threshold : std::uint8_t { Debug, Info, Warn, Error, Off };
+enum class Module : std::uint8_t { Main, Launch, Config, I18n, Window, UI3, Bar, Setting, Whiteboard,
+    PageControl, SelectionOverlay, Freeze, Magnifier, Ppt, PptCOM, Draw3, Input, Haptics, Update,
+    Plugin, State, Shutdown, Logging, Count };
+enum class Channel : std::uint8_t { TouchArea, PptCOM, Draw3, Haptics, Cursor, CanvasPan, Count };
+
+template <class... A> void Debug/Info/Warn/Error/Critical(Module, fmt::format_string<A...>, A&&...); // 取锁只等内存拷贝
+template <class... A> void TryFormat(Level, Module, fmt::format_string<A...>, A&&...);              // 热路径非阻塞
+template <class... A> void Trace(Channel, Module, Level, fmt::format_string<A...>, A&&...);         // 通道，非阻塞，绕过阈值
+bool TryWrite(Level, Module, std::optional<Channel>, std::string_view) noexcept;
+bool Start(const SessionInfo&) noexcept;          // 建目录、预留文件、写会话头、起写线程；不清理
+void ApplyConfig(Threshold, int retentionDays, int maxSizeMb, std::uint32_t channelMask) noexcept; // 读配置后调用一次
+void SetThreshold(Threshold) noexcept;            // 设置页热更新
+void ApplyRetention(int days, int maxSizeMb) noexcept;
+void FlushAndStop() noexcept;                      // 正常退出，最多等待 12 s
+void EmergencyFlush() noexcept;                    // CrashHandler，最多等待 500 ms
+std::wstring Directory();
+}
+```
+
+### 3. Contracts
+
+- 文件：`<globalPath>Inkeys\Logs\YYYY-MM-DDTHH-MM-SS.log`（本地时间，同秒以 `_1`、`_2` 后缀，`CREATE_NEW` 预留）；不读取、不创建、不删除旧 `log\`。
+- 行格式：`[YYYY-MM-DD HH:MM:SS.mmm][LEVEL][Module][T线程ID][通道] 正文`；多行正文逐行补完整标头；截断（单条 > 16 KiB，退回 UTF-8 字符边界）末行追加 ` ...[truncated]`。正文中的结构化标签（`[PptPerf]`、`[PptGate]`、`[UI3Diag]` 等 key=value）由脚本解析，不得删改；手写模块前缀（如 `[主线程][IdtMain]`）不得再出现，模块由 `Module` 表达。
+- 会话头（纯文本，文件最前）：时间与时区、edition/version、`build=Release|Dev`（按 `IDT_RELEASE`，项目 Debug 配置不定义 `_DEBUG`）、架构、系统版本、pid、userId、路径、启动状态；`ApplyConfig` 再写一行不受阈值影响的 `session.config threshold=… channels=… retention.days=… retention.maxMB=…`。
+- 同步：两块 2 MiB 静态缓冲，SRWLock 只保护容量检查与 memcpy；唯一写线程交换缓冲后在锁外经 `spdlog::sinks::basic_file_sink_st` 写文件。Debug/Info 只用前 75%，Warn+ 可用全部。Warn+ 立即落盘，其余距上次落盘 1 s 内落盘。
+- 热路径（Draw3 绘制/输入线程、RTS 回调、WndProc、窗口 owner、UI3 渲染回调）只能用 `TryWrite`/`TryFormat`/`Trace`/`DiagnosticOutput`：拿不到锁或空间不足即丢弃计数，下一批开头写 `dropped debug=… info=…` 行。
+- 阈值：Critical 永远写入；`Off` 只关闭普通分级日志，会话头、`session.config`、Critical 与已开启通道仍写入。6 个调试开关（`Experimental.Inkeys3.ConsoleOutput.*`，需重启）与非 Release 的 `INKEYS_DRAW3_WIN7_DIAGNOSTICS` 合成通道掩码，通道记录不受阈值过滤。
+- 启动顺序：`Start` 早于读配置（之前的日志进入缓冲不丢）；清理必须等 `ApplyConfig` 取得真实 `Application.Logging` 参数后由写线程执行，否则用户的“永不清理”会被默认 7 天误删。
+- 清理：只匹配本规范文件名；排除当前文件；先删超过天数（0=永不）的，再按最旧优先删到目录总量不超过上限（0=无限制）；删除失败只记 Debug。
+- 退出：`FlushAndStop` 在所有业务线程 join、COM 清理之后调用；PptCOM 回调在释放 PptCOM 前撤销。`[ShutdownTrace]`（`ShutdownProgressTrace.h`）与退出时 `[PptWait]` 发生在日志停止之后且受“Arm 之前不做诊断 I/O”约束，保持直写 stderr。
+- `Draw3::DiagnosticOutput`：`Session::Start(Mode)` 必须显式选择模式。产品为 `Mode::Log`（直接 `Log::TryWrite`，不建队列/线程）；`runDraw3SelfTest`、`--draw3-diagnostic-output-test`、`[Draw3.*.TestIo]` 使用 `Mode::StdStream`，保留原队列与字节协议。`Stream::Error`→Warn、`Stream::Output`→Debug，可用 `Target{stream, Channel, Module}` 或预设覆盖。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 目录不可建 / 文件不可写 / 线程创建失败 | 进入丢弃模式，`OutputDebugStringW` 报一次，不弹窗、不影响启动 |
+| 写线程卡在磁盘 > 12 s | `FlushAndStop` 放弃等待，由退出监督兜底；不强杀线程 |
+| 崩溃线程持有缓冲锁 | `EmergencyFlush` 500 ms 超时放弃，不死锁 |
+| 格式化/分配异常 | 入口吞掉并计入丢弃，不改变调用方结果与 `GetLastError()` |
+| 日志停止后仍有线程写入 | 静默丢弃 |
+| 致命启动失败直接 `return` | 静态析构兜底排空，最多 1 s |
+
+### 5. Good / Base / Bad Cases
+
+- Good：`Log::Warn(Module::Ppt, "exit failed: 0x{:08X}", hr)`；WndProc 中 `Log::TryFormat(Level::Info, Module::Input, "[UiPointerDrag] …")`。
+- Base：调试开关关闭时通道调用在原子掩码检查后立即返回，不格式化。
+- Bad：在 RTS 回调里调用 `Log::Info`（可能等锁）；在消息里手写 `[窗口线程][TopWindow]`；新代码用 `printf/std::cout/Console.WriteLine` 输出产品诊断。
+
+### 6. Tests Required
+
+- `Inkeys.exe --draw3-diagnostic-output-test` PASS（标准流字节与 LastError 保持）；Draw3 自检仍输出到标准流。
+- `InkeysHeadlessTests.exe --no-window`；`setting_design_tests.cpp` 覆盖日志页四行只出现在 LogsLog 子页。
+- `PptCOM.Tests.exe`（`ManagedLog.TestOutput` 捕获）。
+- 实机：启动生成新文件且会话头、`session.config` 完整；等级切换立即生效；清理只删匹配且超期文件；正常退出后末尾含退出阶段日志。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：启动即按默认 7 天清理，用户配置的“永不清理”尚未读取。
+Log::Start(info); Log::ApplyRetention(7, 0);
+
+// Correct：Start 不清理；读完配置后一次性应用并清理。
+Log::Start(info);
+/* ... config.Read() ... */
+Log::ApplyConfig(threshold, config.Application.Logging.RetentionDays,
+                 config.Application.Logging.MaxSizeMB, channelMask);
+~~~
+
+Draw3 输入/橡皮诊断仅在显式开关启用时发布：显示/EDID 信息走显示快照发布边界，输入记录复用约250ms帧级门及同一选中 contact 的坐标、身份与尺寸。它是稀疏快照，不在 RTS packet 回调中同步写盘。
 
 ## 资源所有权映射
 
