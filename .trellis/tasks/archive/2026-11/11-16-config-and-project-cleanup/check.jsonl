@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "Config schema/legacy setlist contracts"}
+{"file": ".trellis/spec/native-desktop/directory-structure.md", "reason": "vcxproj filter and directory conventions"}
+{"file": ".trellis/spec/native/modules-and-code-style.md", "reason": "module unit registration, encoding"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "build validation"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "validation gates"}
