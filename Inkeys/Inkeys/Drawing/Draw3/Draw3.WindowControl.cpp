@@ -1031,7 +1031,7 @@ namespace Inkeys::Drawing::Draw3
 		sample.x = x;
 		sample.y = y;
 		sample.valid = true;
-		sample.inContact = mouseInput_.Active();
+		sample.inContact = mouseInput_.CursorHeld(); // 准入拒收仍按住时光标按接触态跟随画布帧率。
 		sample.qpc = qpc.QuadPart;
 		PublishMouseCursorSample(sample);
 		if (message == WM_MOUSEMOVE && !trackingMouseLeave_)
@@ -1802,6 +1802,8 @@ namespace Inkeys::Drawing::Draw3
 			previous.inverted != sample.inverted;
 		// 移动模式用系统箭头，持续悬停不能逐包打断正在推进的画布惯性。
 		if (stateChanged || (!sample.inContact && !CanvasPanMode())) RequestDrawingCursorRender();
+		// 接触中只发节拍唤醒：正常书写时不改变帧节奏，拒收（无活动笔画）时光标仍按帧率跟随。
+		else if (!CanvasPanMode()) RequestDrawingCursorRenderPaced();
 		if (previous.valid != sample.valid || previous.inContact != sample.inContact ||
 			previous.inverted != sample.inverted) QueueSystemCursorRefresh();
 	}
@@ -1851,7 +1853,11 @@ namespace Inkeys::Drawing::Draw3
 		#endif
 		const bool stateChanged = previous.valid != sample.valid || previous.inContact != sample.inContact;
 		// 移动模式由系统箭头跟随位置；普通 Move 只更新 mailbox，不能作为控制命令打断画布帧节拍。
-		if (!CanvasPanMode() || stateChanged) RequestDrawingCursorRender();
+		// 按下期间的纯位置变化与笔一致按画布帧率合并；性能选项开启时恢复逐移动打断。
+		if (stateChanged || (!sample.inContact && !CanvasPanMode()) ||
+			(!CanvasPanMode() && unthrottledMouseMoveWhileDrawing_.load(std::memory_order_acquire)))
+			RequestDrawingCursorRender();
+		else if (!CanvasPanMode()) RequestDrawingCursorRenderPaced();
 		if (stateChanged) QueueSystemCursorRefresh();
 	}
 
@@ -1902,6 +1908,18 @@ namespace Inkeys::Drawing::Draw3
 	{
 		drawingCursorRenderRequested_.store(true, std::memory_order_release);
 		RequestControlWake();
+	}
+
+	void WindowController::RequestDrawingCursorRenderPaced() noexcept
+	{
+		drawingCursorRenderRequested_.store(true, std::memory_order_release);
+		if (ContactInputCoordinator* coordinator = inputCoordinator_.load(std::memory_order_acquire))
+			coordinator->PublishPacedWake();
+	}
+
+	void WindowController::SetUnthrottledMouseMoveWhileDrawing(bool enabled) noexcept
+	{
+		unthrottledMouseMoveWhileDrawing_.store(enabled, std::memory_order_release);
 	}
 
 	void WindowController::QueueSystemCursorRefresh() noexcept

@@ -254,6 +254,20 @@ namespace Inkeys::Drawing::Draw3
 				record.contactId_.Load() == contactId;
 		}
 
+		static uint64_t CursorObservedGeneration(const ContactRecord& record) noexcept
+		{
+			return record.cursorObservedGeneration_.Load(std::memory_order_acquire);
+		}
+
+		static void SetCursorObservedGeneration(ContactRecord& record, uint64_t generation) noexcept
+		{
+			// 只前进不后退：迟到的旧 handle 不能覆盖已被观察的新一代记录。
+			uint64_t current = record.cursorObservedGeneration_.Load(std::memory_order_acquire);
+			while (current < generation &&
+				!record.cursorObservedGeneration_.CompareExchangeStrong(current, generation,
+					std::memory_order_acq_rel, std::memory_order_acquire)) {}
+		}
+
 		static uint64_t Generation(const ContactRecord& record) noexcept
 		{
 			return RouteGeneration(record.producerRoute_.Load());
@@ -378,13 +392,14 @@ namespace Inkeys::Drawing::Draw3
 				counter.fetch_add(1, std::memory_order_relaxed);
 		}
 
-		bool PublishControlWake() noexcept
+		// interruptFrame=false 只唤醒空闲等待（队列标记 + wakeGeneration），不让进行中的帧尾等待提前返回。
+		bool PublishControlWake(bool interruptFrame = true) noexcept
 		{
 			bool expected = false;
 			if (!controlWakePending.compare_exchange_strong(expected, true,
 				std::memory_order_acq_rel, std::memory_order_acquire))
 			{
-				SignalWake();
+				SignalWake(interruptFrame);
 				return true;
 			}
 			LockIngressEnqueue();
@@ -395,7 +410,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				UnlockIngressEnqueue();
 				Count(controlWakes);
-				SignalWake(); // 入队完成后通知，避免空闲线程先醒后再次无限等待。
+				SignalWake(interruptFrame); // 入队完成后通知，避免空闲线程先醒后再次无限等待。
 				return true;
 			}
 			// 失败时用已成功入队的 Down 水位做逻辑 marker，不能让后续新笔迹抢在 Clear 前。
@@ -404,7 +419,7 @@ namespace Inkeys::Drawing::Draw3
 			controlWakeFallbackPending.store(true, std::memory_order_release);
 			UnlockIngressEnqueue();
 			controlWakeEnqueueFailures.fetch_add(1, std::memory_order_relaxed);
-			SignalWake();
+			SignalWake(interruptFrame);
 			return false;
 		}
 
@@ -852,8 +867,13 @@ namespace Inkeys::Drawing::Draw3
 			}
 			return false;
 		}
-		if (!ContactRecordAccess::HasRoute(
-			*located.record, located.generation, ProducerState::Producing) ||
+		const bool producing = ContactRecordAccess::HasRoute(
+			*located.record, located.generation, ProducerState::Producing);
+		// 拒收光标观察：Quarantined 且被同一 generation 标记时只更新位置，不进入导航历史和墨迹。
+		const bool observedQuarantine = !producing &&
+			ContactRecordAccess::HasRoute(*located.record, located.generation, ProducerState::Quarantined) &&
+			ContactRecordAccess::CursorObservedGeneration(*located.record) == located.generation;
+		if ((!producing && !observedQuarantine) ||
 			!ContactRecordAccess::Matches(*located.record, tabletContextId, contactId))
 		{
 			ContactRecordAccess::UnlockWriter(*located.record);
@@ -863,6 +883,12 @@ namespace Inkeys::Drawing::Draw3
 		ContactSnapshot moveSnapshot = snapshot;
 		moveSnapshot.phase = ContactPhase::Move;
 		ContactRecordAccess::PublishSnapshot(*located.record, moveSnapshot);
+		if (observedQuarantine)
+		{
+			ContactRecordAccess::UnlockWriter(*located.record);
+			(void)impl_->PublishControlWake(false); // 合并的节拍唤醒：空闲时刷新光标，不打断帧节拍。
+			return false; // 对墨迹而言仍是被拒收的 Move。
+		}
 		if (IsNavigationDevice(located.record->DeviceType()))
 		{
 			std::scoped_lock lock(impl_->navigationMutex);
@@ -990,6 +1016,28 @@ namespace Inkeys::Drawing::Draw3
 			if (state == ProducerState::ConsumerOwned) Recycle(handle);
 			if (state != ProducerState::Producing) return;
 		}
+	}
+
+	void ContactInputCoordinator::ObserveDiscardedContactCursor(ContactHandle handle) noexcept
+	{
+		if (!handle.record) return;
+		// 只写入 handle 自身的 generation：记录若已终态并被新 Down 复用，代次不匹配，不影响新接触。
+		ContactRecordAccess::SetCursorObservedGeneration(*handle.record, handle.generation);
+	}
+
+	ObservedContactRead ContactInputCoordinator::TryReadObservedContact(
+		ContactHandle handle, ContactSnapshot& snapshot) const noexcept
+	{
+		if (!handle.record) return ObservedContactRead::Ended;
+		const uint64_t route = ContactRecordAccess::Route(*handle.record);
+		// 只有仍处于 Quarantined 的同代记录才是存活的拒收接触；Closing/Free/复用均视为结束。
+		if (route != MakeProducerRoute(handle.generation, ProducerState::Quarantined))
+			return ObservedContactRead::Ended;
+		ContactSnapshot candidate;
+		if (!ContactRecordAccess::ReadSnapshot(*handle.record, candidate) ||
+			ContactRecordAccess::Route(*handle.record) != route) return ObservedContactRead::Retry;
+		snapshot = candidate;
+		return ObservedContactRead::Live;
 	}
 
 	void ContactInputCoordinator::SetAdmissionBlocked(bool blocked) noexcept
@@ -1176,6 +1224,11 @@ namespace Inkeys::Drawing::Draw3
 	bool ContactInputCoordinator::PublishControlWake() noexcept
 	{
 		return impl_->PublishControlWake();
+	}
+
+	bool ContactInputCoordinator::PublishPacedWake() noexcept
+	{
+		return impl_->PublishControlWake(false);
 	}
 
 	bool ContactInputCoordinator::TryReserveCommandWake() noexcept

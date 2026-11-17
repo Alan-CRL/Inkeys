@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <atomic>
 #include <cstdint>
@@ -44,11 +44,15 @@ namespace Inkeys::Drawing::Draw3::Detail
 		{
 			physicalButtons_ = 0;
 			quarantinedButtons_ = heldButtons;
+			admissionHeldButtons_ = 0;
 			activeButton_ = 0;
 			closed_.store(false, std::memory_order_release);
 		}
 		void CloseAdmission() noexcept { closed_.store(true, std::memory_order_release); }
 		bool Active() const noexcept { return activeButton_ != 0; }
+		// 光标接触态：被准入拒收但仍按住的键也算接触，光标按画布帧率跟随（不出墨）；选择隔离不算。
+		bool CursorHeld() const noexcept
+		{ return Active() || (admissionHeldButtons_ & physicalButtons_) != 0; }
 		bool Open() const noexcept { return !closed_.load(std::memory_order_acquire); }
 
 		bool Down(Coordinator& input, std::uint32_t button, float x, float y,
@@ -62,6 +66,7 @@ namespace Inkeys::Drawing::Draw3::Detail
 			if (selectionMode || input.AdmissionBlocked())
 			{
 				quarantinedButtons_ |= button;
+				if (!selectionMode) admissionHeldButtons_ |= button;
 				return false;
 			}
 			Snapshot snapshot = MakeSnapshot(x, y, qpc, Phase::Down);
@@ -78,17 +83,25 @@ namespace Inkeys::Drawing::Draw3::Detail
 		{
 			physicalButtons_ &= ~button;
 			quarantinedButtons_ &= ~button;
+			admissionHeldButtons_ &= ~button;
 			if (activeButton_ == button) End(input, x, y, qpc, !Open());
 		}
 		void Move(Coordinator& input, std::uint32_t heldButtons, float x, float y,
 			std::int64_t qpc, bool selectionMode) noexcept
 		{
-			if (!Active()) return;
+			if (!Active())
+			{
+				// 缺少可靠 Up 时以消息里的按键状态收回准入拒收的光标接触态。
+				admissionHeldButtons_ &= heldButtons;
+				return;
+			}
 			// 缺按键、页边界或选择切换不是可靠 Up，收为 Cancelled。
 			if (!Open() || selectionMode || input.AdmissionBlocked() ||
 				(heldButtons & activeButton_) == 0)
 			{
 				if (selectionMode || input.AdmissionBlocked()) quarantinedButtons_ |= activeButton_;
+				if (!selectionMode && input.AdmissionBlocked() && (heldButtons & activeButton_) != 0)
+					admissionHeldButtons_ |= activeButton_;
 				Cancel(input, qpc);
 				return;
 			}
@@ -137,6 +150,7 @@ namespace Inkeys::Drawing::Draw3::Detail
 		}
 		std::atomic_bool closed_ = true;
 		std::uint32_t physicalButtons_ = 0, quarantinedButtons_ = 0, activeButton_ = 0, contactId_ = 0;
+		std::uint32_t admissionHeldButtons_ = 0;
 		Snapshot last_{};
 	};
 }

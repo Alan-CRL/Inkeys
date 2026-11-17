@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
@@ -402,6 +402,46 @@ namespace
 		mouse.Up(input, Mouse::Left, 10, 20, 6);
 		input.Recycle(next);
 	}
+
+	// A2：准入拒收但仍按住的键使光标保持接触态（按画布帧率跟随、不出墨）；选择隔离不算接触。
+	void TestAdmissionRejectedCursorHeld(int& failures)
+	{
+		ContactInputCoordinator input;
+		input.EnableDiagnostics(true);
+		Mouse mouse;
+		mouse.Start();
+		input.SetAdmissionBlocked(true);
+		Expect(!mouse.Down(input, Mouse::Left, 1, 2, 1, false) && !mouse.Active() && mouse.CursorHeld(),
+			"admission-rejected held button keeps the cursor in contact", failures);
+		mouse.Move(input, Mouse::Left, 3, 4, 2, false);
+		Expect(mouse.CursorHeld() && input.DiagnosticsSnapshot().downPublished == 0,
+			"held rejected button moves without producing ink", failures);
+		mouse.Up(input, Mouse::Left, 3, 4, 3);
+		Expect(!mouse.CursorHeld(), "Up ends the rejected cursor contact", failures);
+		Expect(!mouse.Down(input, Mouse::Left, 1, 2, 4, false) && mouse.CursorHeld(), "second rejected Down", failures);
+		mouse.Move(input, 0, 3, 4, 5, false);
+		Expect(!mouse.CursorHeld(), "missing button state ends the rejected cursor contact", failures);
+		mouse.Up(input, Mouse::Left, 3, 4, 6);
+		Expect(!mouse.Down(input, Mouse::Left, 1, 2, 7, false) && mouse.CursorHeld(), "third rejected Down", failures);
+		mouse.CaptureLost(input, 8);
+		Expect(!mouse.CursorHeld(), "capture loss ends the rejected cursor contact", failures);
+		mouse.Up(input, Mouse::Left, 1, 2, 9);
+		input.SetAdmissionBlocked(false);
+		Expect(!mouse.Down(input, Mouse::Left, 1, 2, 10, true) && !mouse.CursorHeld(),
+			"selection isolation is not a cursor contact", failures);
+		mouse.Up(input, Mouse::Left, 1, 2, 11);
+		// 绘制中途遇到页边界：取消笔迹，但按住的键仍保持光标接触态。
+		Expect(mouse.Down(input, Mouse::Left, 1, 2, 12, false) && mouse.CursorHeld(), "admitted Down", failures);
+		const auto stroke = Take(input, failures);
+		input.SetAdmissionBlocked(true);
+		mouse.Move(input, Mouse::Left, 5, 6, 13, false);
+		ExpectPhase(input, stroke, ContactPhase::Cancelled, "boundary cancels the stroke", failures);
+		Expect(!mouse.Active() && mouse.CursorHeld(), "boundary-cancelled held button keeps the cursor contact", failures);
+		input.Recycle(stroke);
+		mouse.Up(input, Mouse::Left, 5, 6, 14);
+		Expect(!mouse.CursorHeld(), "Up after boundary cancel ends the cursor contact", failures);
+		input.SetAdmissionBlocked(false);
+	}
 }
 
 int RunDraw3MouseInputTests()
@@ -409,6 +449,7 @@ int RunDraw3MouseInputTests()
 	int failures = 0;
 	TestLifecycleAndHandover(failures);
 	TestAdmissionAndCancel(failures);
+	TestAdmissionRejectedCursorHeld(failures);
 	TestCaptureLossResynchronization(failures);
 	TestStopOwnerInterleaving(failures);
 	TestCanvasPanModeIsolation(failures);

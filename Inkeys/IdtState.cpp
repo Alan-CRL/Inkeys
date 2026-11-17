@@ -1,4 +1,4 @@
-#include "Inkeys/Drawing/Draw3/Draw3.ShapeInteraction.h"
+﻿#include "Inkeys/Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "IdtState.h"
 
 #include "IdtConfiguration.h"
@@ -672,6 +672,9 @@ namespace
 		state.cursorSettings.tablet = CursorModel::RestoreDeviceCursorStyle(
 			CursorModel::CursorDevice::Tablet, cursor.Tablet.load(), legacyMouseStyle, legacyPenStyle);
 		state.cursorSettings.injectedMouseAsTablet = cursor.InjectedMouseAsTablet.load();
+		// 性能选项随光标设置即时下发：绘制时鼠标移动不受画布帧率限制。
+		state.cursorSettings.unthrottledMouseMoveWhileDrawing =
+			Inkeys::config.Experimental.Inkeys3.Draw3.UnthrottledMouseMoveWhileDrawing.load();
 		state.cursorSettings.dotHideOnContact = CursorModel::RestoreDotCursorHideMode(cursor.DotHideOnContact.load());
 		state.cursorSettings.penOpacity = CursorModel::NormalizeCursorOpacityPercent(
 			CursorModel::CursorStyle::Pen, cursor.PenOpacity.load());

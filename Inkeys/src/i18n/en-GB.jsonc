@@ -1051,6 +1051,11 @@
       {
         "N": "Enable waiting in waitable mode",
         "E": "On Windows 8.1 and later, prevents latency caused by queued frames."
+      },
+      "UnthrottledMouseMove":
+      {
+        "N": "Don't limit mouse movement to the canvas frame rate while drawing",
+        "E": "When on, every mouse movement while drawing with the button held refreshes the canvas immediately. Mouse strokes are sampled more densely, but CPU and GPU load rises noticeably. When off, the canvas refreshes at the canvas frame rate."
       }
     },
     "Linkage":

@@ -1051,6 +1051,11 @@
       {
         "N": "Activar la espera en modo waitable",
         "E": "En Windows 8.1 y versiones posteriores, evita la latencia causada por la acumulación de cuadros."
+      },
+      "UnthrottledMouseMove":
+      {
+        "N": "No limitar el movimiento del mouse a la frecuencia del lienzo al dibujar",
+        "E": "Si se activa, cada movimiento del mouse al dibujar con el botón presionado actualiza el lienzo de inmediato. Los trazos del mouse se muestrean con más densidad, pero la carga de CPU y GPU aumenta notablemente. Si se desactiva, el lienzo se actualiza según su frecuencia."
       }
     },
     "Linkage":

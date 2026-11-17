@@ -1051,6 +1051,11 @@
       {
         "N": "Activează așteptarea în modul waitable",
         "E": "Pe Windows 8.1 și versiunile ulterioare, previne latența cauzată de acumularea cadrelor."
+      },
+      "UnthrottledMouseMove":
+      {
+        "N": "Nu limita mișcarea mouse-ului la rata de cadre a pânzei în timpul desenării",
+        "E": "Când este activată, fiecare mișcare a mouse-ului în timp ce desenezi cu butonul apăsat reîmprospătează imediat pânza. Traseele mouse-ului sunt eșantionate mai des, dar sarcina procesorului și a GPU-ului crește vizibil. Când este dezactivată, pânza se reîmprospătează la rata de cadre a pânzei."
       }
     },
     "Linkage":

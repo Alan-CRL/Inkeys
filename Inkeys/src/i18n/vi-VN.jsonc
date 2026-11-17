@@ -1051,6 +1051,11 @@
       {
         "N": "Bật chờ trong chế độ waitable",
         "E": "Trên Windows 8.1 trở lên, ngăn độ trễ do dồn khung hình."
+      },
+      "UnthrottledMouseMove":
+      {
+        "N": "Không giới hạn chuyển động chuột theo tốc độ khung hình trang vẽ khi vẽ",
+        "E": "Khi bật, mỗi lần di chuyển chuột trong lúc giữ nút để vẽ sẽ làm mới trang vẽ ngay lập tức. Nét chuột được lấy mẫu dày hơn nhưng tải CPU và GPU tăng rõ rệt. Khi tắt, trang vẽ làm mới theo tốc độ khung hình trang vẽ."
       }
     },
     "Linkage":

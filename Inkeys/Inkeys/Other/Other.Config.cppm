@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../IdtMain.h"
 #include "../../IdtConfiguration.h"
@@ -577,6 +577,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableHardwareAcceleration, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableZhaoxinCompatibility, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableWaitableWait, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, UnthrottledMouseMoveWhileDrawing, false) \
 			) \
 			GROUP(ConsoleOutput, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptCOM, false) \

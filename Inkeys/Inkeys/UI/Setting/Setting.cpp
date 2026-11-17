@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "Setting.Wrap.h"
 
@@ -4666,6 +4666,16 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						Inkeys::config.Experimental.Inkeys3.Draw3.EnableWaitableWait = Experimental.Inkeys3.EnableWaitableWait;
 						QueueConfigWrite();
+					}
+					{
+						bool unthrottledMouseMove = Inkeys::config.Experimental.Inkeys3.Draw3.UnthrottledMouseMoveWhileDrawing;
+						if (Design::ToggleRow("##draw3-unthrottled-mouse-move", IA(I18nKey.SettingsUI.Performance.UnthrottledMouseMove.N).c_str(),
+							IA(I18nKey.SettingsUI.Performance.UnthrottledMouseMove.E).c_str(), "\ue7f4", unthrottledMouseMove))
+						{
+							Inkeys::config.Experimental.Inkeys3.Draw3.UnthrottledMouseMoveWhileDrawing = unthrottledMouseMove;
+							SyncDraw3State(); // 即时生效：随光标设置下发到窗口线程。
+							QueueConfigWrite();
+						}
 					}
 					if (Design::ToggleRow("##draw3-zhaoxin", IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.N).c_str(),
 						IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableZhaoxinCompatibility, IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))

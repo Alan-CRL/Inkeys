@@ -145,6 +145,8 @@ export namespace Inkeys::Drawing::Draw3
 		IdtAtomic<uint32_t> phase_;
 		IdtAtomic<uint64_t> sequence_;
 		IdtAtomic<uint64_t> producerRoute_;
+		// 被拒收但需显示光标的接触：记录观察的 generation，带代次避免旧 handle 误标复用后的记录。
+		IdtAtomic<uint64_t> cursorObservedGeneration_;
 		std::atomic_flag writerLatch_ = ATOMIC_FLAG_INIT;
 		void* ownerBlock_ = nullptr;
 		uint32_t ownerBit_ = 0;
@@ -211,6 +213,14 @@ export namespace Inkeys::Drawing::Draw3
 		Command,
 	};
 
+	// 读取被拒收接触的光标位置：Live 已读到最新位置；Retry 本次写入争用；Ended 已终态或记录已复用。
+	enum class ObservedContactRead : uint8_t
+	{
+		Live,
+		Retry,
+		Ended,
+	};
+
 	// 协调 RTS 生产者与唯一绘制消费者，并在完全空闲时提供内核等待。
 	class ContactInputCoordinator
 	{
@@ -246,6 +256,10 @@ export namespace Inkeys::Drawing::Draw3
 		void Recycle(ContactHandle handle) noexcept;
 		// 被拒收或收尾的 contact 保留物理 route 到终态；Closing 竞态由 producer 延后回收。
 		void DiscardUntilTerminal(ContactHandle handle) noexcept;
+		// 在 DiscardUntilTerminal 之后调用：该接触的后续 Move 仍更新位置（不进入墨迹）并发节拍唤醒，
+		// 供绘制线程按画布帧率显示拒收光标。旧 handle 调用是安全的空操作。
+		void ObserveDiscardedContactCursor(ContactHandle handle) noexcept;
+		ObservedContactRead TryReadObservedContact(ContactHandle handle, ContactSnapshot& snapshot) const noexcept;
 		void SetAdmissionBlocked(bool blocked) noexcept;
 		// 快捷键租约独立拥有一位门禁，释放不能打开 PPT/load/fatal 的基础门禁。
 		void SetShortcutAdmissionBlocked(bool blocked) noexcept;
@@ -268,6 +282,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool HasPendingWork() const noexcept;
 		// 窗口请求已经原子发布后，合并投递一次控制唤醒。
 		bool PublishControlWake() noexcept;
+		// 同 PublishControlWake，但不打断帧尾 WaitForFrameDeadline；接触中只需跟随帧率的光标刷新使用。
+		bool PublishPacedWake() noexcept;
 		// Bridge 业务命令须先预约，再接受命令，最后发布独立的输入顺序屏障。
 		bool TryReserveCommandWake() noexcept;
 		void CancelReservedCommandWake() noexcept;

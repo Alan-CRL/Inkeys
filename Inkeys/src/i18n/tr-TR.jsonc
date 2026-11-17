@@ -1051,6 +1051,11 @@
       {
         "N": "Waitable modunda beklemeyi etkinleştir",
         "E": "Windows 8.1 ve sonraki sürümlerde, biriken karelerin neden olduğu gecikmeyi önler."
+      },
+      "UnthrottledMouseMove":
+      {
+        "N": "Çizim sırasında fare hareketini tuval kare hızıyla sınırlama",
+        "E": "Açık olduğunda, fare düğmesi basılıyken çizim yaparken her hareket tuvali hemen yeniler. Fare çizgileri daha sık örneklenir, ancak CPU ve GPU yükü belirgin şekilde artar. Kapalıyken tuval, tuval kare hızında yenilenir."
       }
     },
     "Linkage":

@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/draw3-cursors.md", "reason": "光标请求/信箱/主光标解析合同"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "输入 producer、唤醒与橡皮 F3 idle 合同"}
+{"file": ".trellis/spec/native-desktop/canvas-freeze-boundaries.md", "reason": "F3 橡皮 idle 交接"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 集成约定"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "配置项与 i18n 同步"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "性能页设置约定"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 约定"}
+{"file": ".trellis/tasks/11-17-win7-ulw-presentation/research/hover-cursor-layer-20261117.md", "reason": "悬停/光标层调查与用户决策（§1.4–§1.7）"}

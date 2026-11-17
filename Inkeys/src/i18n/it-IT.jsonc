@@ -1051,6 +1051,11 @@
       {
         "N": "Abilita l'attesa in modalità waitable",
         "E": "In Windows 8.1 e versioni successive, evita la latenza causata dall'accumulo di fotogrammi."
+      },
+      "UnthrottledMouseMove":
+      {
+        "N": "Non limitare il movimento del mouse alla frequenza della tela durante il disegno",
+        "E": "Se attivo, ogni movimento del mouse durante il disegno con il pulsante premuto aggiorna subito la tela. I tratti del mouse vengono campionati più fittamente, ma il carico di CPU e GPU aumenta sensibilmente. Se disattivo, la tela si aggiorna alla sua frequenza."
       }
     },
     "Linkage":

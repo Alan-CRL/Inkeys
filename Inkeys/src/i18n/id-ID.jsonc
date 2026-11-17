@@ -1051,6 +1051,11 @@
       {
         "N": "Aktifkan penantian dalam mode waitable",
         "E": "Pada Windows 8.1 dan yang lebih baru, mencegah latensi akibat penumpukan frame."
+      },
+      "UnthrottledMouseMove":
+      {
+        "N": "Jangan batasi gerakan mouse ke laju bingkai kanvas saat menggambar",
+        "E": "Jika aktif, setiap gerakan mouse saat menggambar dengan tombol ditekan langsung menyegarkan kanvas. Goresan mouse diambil sampelnya lebih rapat, tetapi beban CPU dan GPU meningkat signifikan. Jika nonaktif, kanvas disegarkan sesuai laju bingkai kanvas."
       }
     },
     "Linkage":

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/draw3-cursors.md", "reason": "光标合同"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "唤醒与 F3 合同"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "性能页设置约定"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 约定"}

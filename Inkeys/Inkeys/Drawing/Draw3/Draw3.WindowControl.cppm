@@ -208,6 +208,10 @@ export namespace Inkeys::Drawing::Draw3
 		bool ConsumeDrawingCursorRenderRequest();
 		// 供产品光标偏好变更发布一次重绘请求，不直接访问 HWND 或 GPU。
 		void RequestDrawingCursorRender() noexcept;
+		// 同上，但只发不打断帧节拍的唤醒；接触中光标位置变化由帧循环按画布帧率合并。
+		void RequestDrawingCursorRenderPaced() noexcept;
+		// 性能选项：开启后鼠标按下期间的移动恢复为逐移动打断帧节拍（窗口线程即时读取）。
+		void SetUnthrottledMouseMoveWhileDrawing(bool enabled) noexcept;
 		// 请求下一帧执行全画布呈现。
 		void RequestFullPresent();
 		// 关联非拥有的输入协调器，使窗口控制请求能唤醒空闲绘制线程。
@@ -390,6 +394,7 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> fullPresentRequested_ = false;
 		std::atomic<bool> compositionChangedRequested_ = false;
 		std::atomic<bool> drawingCursorRenderRequested_ = false;
+		std::atomic<bool> unthrottledMouseMoveWhileDrawing_ = false;
 		std::atomic<bool> exitRequested_ = false;
 		std::atomic<bool> gpuTransparentComposition_ = false;
 		std::atomic<int> pendingResizeWidth_ = 0;

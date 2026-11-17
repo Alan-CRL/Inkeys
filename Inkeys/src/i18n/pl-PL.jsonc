@@ -1051,6 +1051,11 @@
       {
         "N": "Włącz oczekiwanie w trybie waitable",
         "E": "W systemie Windows 8.1 i nowszych zapobiega opóźnieniom spowodowanym kolejkowaniem klatek."
+      },
+      "UnthrottledMouseMove":
+      {
+        "N": "Nie ograniczaj ruchu myszy do liczby klatek płótna podczas rysowania",
+        "E": "Po włączeniu każdy ruch myszy podczas rysowania z wciśniętym przyciskiem natychmiast odświeża płótno. Pociągnięcia myszą są próbkowane gęściej, ale obciążenie procesora i GPU wyraźnie rośnie. Po wyłączeniu płótno odświeża się zgodnie z liczbą klatek płótna."
       }
     },
     "Linkage":

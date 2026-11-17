@@ -1,4 +1,4 @@
-module;
+﻿module;
 #include "Draw3.DiagnosticOutput.h"
 #include "Assets/EraserGripVisual.h"
 
@@ -9355,6 +9355,51 @@ namespace Inkeys::Drawing::Draw3
 				before = rig.input.CaptureWakeGeneration(); penSample.x += 1; rig.window.PublishPenCursorSample(penSample);
 				checkUrgent(before, "non-Pan Pen hover retains application cursor rendering");
 
+				// A2：绘制（非移动模式）时接触中的纯位置变化只发节拍唤醒——唤醒空闲等待，但不打断帧尾等待。
+				const auto checkPaced = [&](uint64_t before, const char* name)
+				{
+					check(rig.input.CaptureWakeGeneration() != before && rig.input.HasPendingWork() &&
+						rig.window.ConsumeDrawingCursorRenderRequest(), name);
+					const double started = GetQpcTimeMilliseconds();
+					rig.input.WaitForFrameDeadline(60.0);
+					check(GetQpcTimeMilliseconds() - started >= 45.0, "paced cursor wake preserves the frame deadline");
+					settle();
+				};
+				before = rig.input.CaptureWakeGeneration(); penSample.inContact = true; rig.window.PublishPenCursorSample(penSample);
+				checkUrgent(before, "drawing Pen Down remains urgent");
+				before = rig.input.CaptureWakeGeneration(); penSample.x += 5; rig.window.PublishPenCursorSample(penSample);
+				checkPaced(before, "drawing Pen contact position requests a paced cursor render");
+				before = rig.input.CaptureWakeGeneration(); penSample.inContact = false; rig.window.PublishPenCursorSample(penSample);
+				checkUrgent(before, "drawing Pen Up remains urgent");
+				sample.inContact = false; sample.valid = true; rig.window.PublishHiddenTestMouseCursor(sample); settle();
+				before = rig.input.CaptureWakeGeneration(); sample.inContact = true; rig.window.PublishHiddenTestMouseCursor(sample);
+				checkUrgent(before, "drawing Mouse Down remains urgent");
+				before = rig.input.CaptureWakeGeneration(); sample.x += 3.0f; rig.window.PublishHiddenTestMouseCursor(sample);
+				checkPaced(before, "drawing Mouse contact position requests a paced cursor render");
+				{
+					// 未确认的标记合并：高频按下移动只入队一个控制标记，且不打断帧尾等待。
+					const uint64_t pacedWakes = rig.input.DiagnosticsSnapshot().controlWakes;
+					for (int i = 1; i <= 1000; ++i)
+					{
+						sample.x += 1.0f; sample.qpc = Rig::Qpc(3000.0 + i);
+						rig.window.PublishHiddenTestMouseCursor(sample);
+					}
+					check(rig.input.DiagnosticsSnapshot().controlWakes - pacedWakes == 1,
+						"1000 drawing Mouse contact positions coalesce into one paced control wake");
+					const double started = GetQpcTimeMilliseconds();
+					rig.input.WaitForFrameDeadline(60.0);
+					check(GetQpcTimeMilliseconds() - started >= 45.0, "drawing Mouse contact burst preserves the frame deadline");
+					settle();
+				}
+				rig.window.SetUnthrottledMouseMoveWhileDrawing(true);
+				before = rig.input.CaptureWakeGeneration(); sample.x += 3.0f; rig.window.PublishHiddenTestMouseCursor(sample);
+				checkUrgent(before, "unthrottled option restores per-move interrupting Mouse wake while drawing");
+				rig.window.SetUnthrottledMouseMoveWhileDrawing(false);
+				before = rig.input.CaptureWakeGeneration(); sample.inContact = false; rig.window.PublishHiddenTestMouseCursor(sample);
+				checkUrgent(before, "drawing Mouse Up remains urgent");
+				before = rig.input.CaptureWakeGeneration(); sample.x += 3.0f; rig.window.PublishHiddenTestMouseCursor(sample);
+				checkUrgent(before, "drawing Mouse hover keeps its event-driven cursor wake");
+
 			}
 			const auto closeTo = [](double a, double b, double tolerance) { return std::fabs(a - b) <= tolerance; };
 			struct Finger { uint32_t tablet; uint32_t id; double x0; double y0; };
@@ -15148,6 +15193,7 @@ namespace Inkeys::Drawing::Draw3
 		// 即使默认 packed 值相同也同步 Window，避免首个产品快照仍残留旧系统箭头。
 		window_.SetMouseUsesSystemCursor(system);
 		window_.SetInjectedMouseAsTablet(settings.injectedMouseAsTablet);
+		window_.SetUnthrottledMouseMoveWhileDrawing(settings.unthrottledMouseMoveWhileDrawing);
 		const uint64_t packed = PackCursorSettings(settings);
 		if (cursorSettings_.exchange(packed, std::memory_order_acq_rel) != packed &&
 			!systemChanged) window_.RequestDrawingCursorRender();
@@ -16948,6 +16994,66 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		};
 
+		// 被拒收但仍需显示光标的触摸（准入阻塞、关闭多指时的额外手指）：不出墨，只按画布帧率显示光标。
+		// 手掌邻近、触摸平移、选择模式等有意拒收的接触不登记。
+		struct RejectedTouchCursor
+		{
+			ContactHandle handle;
+			DrawingTool tool = DrawingTool::Pen;
+			ProductVisualStyle visualStyle{};
+			PointF position{};
+			Bridge::Workspace workspace = Bridge::Workspace::Desktop;
+		};
+		std::vector<RejectedTouchCursor> rejectedTouchCursors;
+		rejectedTouchCursors.reserve(16);
+		auto registerRejectedTouchCursor = [&](ContactHandle handle, DrawingTool tool, const ContactSnapshot& down)
+		{
+			// 只有触摸软/硬笔与橡皮有触摸光标；荧光笔、形状、激光等保持无光标。
+			if (tool != DrawingTool::Pen && tool != DrawingTool::HardPen && tool != DrawingTool::Eraser) return;
+			input_.ObserveDiscardedContactCursor(handle);
+			rejectedTouchCursors.push_back(
+				{ handle, tool, window_.ProductVisualStyleSnapshot(), down.position, activeWorkspace });
+			window_.RequestDrawingCursorRender(); // 本帧可能已越过请求检查，确保首个光标帧出现。
+		};
+		// 帧开头读取一次全部拒收光标的最新位置；位置变化或接触结束返回 true 以触发光标帧。
+		// 场景边界（进入选择模式、切换工作区）直接退休登记，物理路由仍保留到真实终态；回到绘制也不复活。
+		auto refreshRejectedTouchCursors = [&]() noexcept -> bool
+		{
+			bool changed = false;
+			if (window_.SelectionMode())
+			{
+				changed = !rejectedTouchCursors.empty();
+				rejectedTouchCursors.clear();
+				return changed;
+			}
+			for (size_t index = 0; index < rejectedTouchCursors.size();)
+			{
+				RejectedTouchCursor& rejected = rejectedTouchCursors[index];
+				ContactSnapshot snapshot;
+				const ObservedContactRead read = rejected.workspace == activeWorkspace
+					? input_.TryReadObservedContact(rejected.handle, snapshot) : ObservedContactRead::Ended;
+				switch (read)
+				{
+				case ObservedContactRead::Live:
+					if (snapshot.position.x != rejected.position.x || snapshot.position.y != rejected.position.y)
+					{
+						rejected.position = snapshot.position;
+						changed = true;
+					}
+					++index;
+					break;
+				case ObservedContactRead::Retry:
+					++index; // 写入争用时保留上次位置，下一帧再读。
+					break;
+				case ObservedContactRead::Ended:
+					rejectedTouchCursors.erase(rejectedTouchCursors.begin() + static_cast<std::ptrdiff_t>(index));
+					changed = true;
+					break;
+				}
+			}
+			return changed;
+		};
+
 		auto initializeStroke = [&](ContactHandle handle) -> bool
 			{
 				if (!handle.record || handle.record->Generation() != handle.generation) return false;
@@ -17445,6 +17551,7 @@ namespace Inkeys::Drawing::Draw3
 					hasActiveTouch, generalOptions.multiTouchEnabled))
 				{
 					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
+					registerRejectedTouchCursor(handle, tool, down);
 					return false;
 				}
 				const uint64_t registeredTouchKey = CanvasTouchKey(handle);
@@ -18317,8 +18424,14 @@ namespace Inkeys::Drawing::Draw3
 				sealPresentationContacts();
 				if (!input_.ContactAdmitted(handle))
 				{
+					// Discard 后 producer 可能立即终态并复用记录，设备与 Down 位置须在交出前读取。
+					const bool rejectedTouch = record->DeviceType() == InputDeviceType::Touch;
+					const ContactSnapshot rejectedDown = record->DownSnapshot();
 					// 被闸门拒绝的 Down 不能在重开后补画；保留其路由直至真实终态。
 					input_.DiscardUntilTerminal(handle);
+					// 非选择模式下被准入阻塞的触摸仍显示光标并跟随（不出墨）。
+					if (rejectedTouch && !window_.SelectionMode())
+						registerRejectedTouchCursor(handle, window_.ActiveTool(), rejectedDown);
 					return;
 				}
 				if ((activeWorkspace == Bridge::Workspace::Whiteboard && whiteboardLoading) || Bridge::PresentationInputSuppressed(
@@ -18588,6 +18701,20 @@ namespace Inkeys::Drawing::Draw3
 				!invertedPenEraserHoverLane.lifecycle.ContactOwned();
 			return left || right || tip || tail;
 		};
+		// 帧尾光标接触节流的判定：沿用光标构建的有效抑制（选择/移动模式、触摸平移、笔抑制均不计入）。
+		auto cursorContactPacingActive = [&]() noexcept
+		{
+			if (window_.SelectionMode() || window_.CanvasPanMode()) return false;
+			if (!rejectedTouchCursors.empty()) return true;
+			DrawingCursorSample mouseSample;
+			window_.ReadMouseCursorSample(mouseSample);
+			if (mouseSample.valid && mouseSample.inContact) return true;
+			DrawingCursorSample penSample;
+			bool penFeedbackSuppressed = false;
+			window_.ReadPenCursorSample(penSample, &penFeedbackSuppressed);
+			return penSample.valid && penSample.inContact && !penFeedbackSuppressed &&
+				!window_.TouchPanActive() && !suppressPenUntilRelease;
+		};
 		auto buildDrawingCursorVisuals = [&]()
 		{
 			currentCursorVisuals.clear();
@@ -18805,6 +18932,31 @@ namespace Inkeys::Drawing::Draw3
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 					++runtimeCursorSourceCount;
 #endif
+				}
+			}
+
+			// 被拒收的触摸（准入阻塞、关闭多指）：沿用触摸光标规则显示，无运行时对象，不出墨。
+			for (const RejectedTouchCursor& rejected : rejectedTouchCursors)
+			{
+				if (rejected.tool == DrawingTool::Eraser)
+				{
+					DrawingCursorAppearance touchAppearance = eraserAppearance;
+					configureEraser(touchAppearance, nullptr);
+					// 没有接触面积/速度模型，按基准固定直径显示。
+					ApplySpeedEraserCursorDiameter(touchAppearance, SpeedEraser::FixedDiameterPx(
+						SpeedEraser::ResolveSizes(observedEraserInputs.baseSize).fixedDiameterDip,
+						observedSpeedEraserDisplayScale));
+					const DrawingCursorVisual touchVisual = MakeTouchEraserDrawingCursorVisual(
+						rejected.position.x, rejected.position.y, touchAppearance);
+					if (touchVisual.visible) currentCursorVisuals.push_back(touchVisual);
+				}
+				else if (cursorSettingsValid && cursorSettings.touch != CursorStyle::None)
+				{
+					const DrawingCursorVisual touchPenVisual = MakeTouchPenDrawingCursorVisual(
+						rejected.position.x, rejected.position.y,
+						window_.CursorAppearanceForTool(rejected.tool), cursorSettings.touch,
+						ProductTargetScale(rejected.visualStyle), &cursorSettings);
+					if (touchPenVisual.visible) currentCursorVisuals.push_back(touchPenVisual);
 				}
 			}
 
@@ -21517,7 +21669,9 @@ namespace Inkeys::Drawing::Draw3
 			}
 			synchronizeLaserResources();
 			if (active.empty()) window_.ClearActiveDrawingCursorTool();
-			const bool drawingCursorRequested = window_.ConsumeDrawingCursorRenderRequest();
+			const bool rejectedTouchCursorsChanged = refreshRejectedTouchCursors();
+			const bool drawingCursorRequested =
+				window_.ConsumeDrawingCursorRenderRequest() || rejectedTouchCursorsChanged;
 			const double previousFrameMs = lastActiveFrameStartMs > 0.0
 				? frameStartMs - lastActiveFrameStartMs : 0.0;
 			ContactRecord* record = nullptr;
@@ -23568,6 +23722,14 @@ namespace Inkeys::Drawing::Draw3
 					1000.0 / configuration_.timingProfile.target_fps - workMs;
 				input_.WaitForFrameDeadline(remainingFrameBudgetMs);
 				lastActiveFrameStartMs = frameStartMs;
+			}
+			else if (active.empty() && cursorContactPacingActive())
+			{
+				// 无活动笔画但光标仍处于接触（输入被拒收、不出墨）：接触中的移动只发节拍唤醒，
+				// 这里按预设帧间隔等待，每个帧间隔最多一帧光标；按下/抬起仍以打断式唤醒立即返回。
+				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
+				input_.WaitForFrameDeadline(1000.0 / configuration_.timingProfile.target_fps - workMs);
+				lastActiveFrameStartMs = 0.0;
 			}
 			else if (!active.empty())
 			{

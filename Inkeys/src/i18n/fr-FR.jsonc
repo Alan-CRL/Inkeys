@@ -1051,6 +1051,11 @@
       {
         "N": "Activer l’attente en mode waitable",
         "E": "Sous Windows 8.1 et versions ultérieures, évite la latence due à l’accumulation d’images."
+      },
+      "UnthrottledMouseMove":
+      {
+        "N": "Ne pas limiter les mouvements de la souris à la fréquence d’images du canevas pendant le dessin",
+        "E": "Lorsque cette option est activée, chaque mouvement de la souris pendant le dessin, bouton enfoncé, actualise immédiatement le canevas. Les traits à la souris sont échantillonnés plus finement, mais la charge du processeur et du GPU augmente nettement. Lorsqu’elle est désactivée, le canevas s’actualise à sa fréquence d’images."
       }
     },
     "Linkage":

@@ -1051,6 +1051,11 @@
       {
         "N": "Warten im Waitable-Modus aktivieren",
         "E": "Verhindert unter Windows 8.1 und höher Verzögerungen durch aufgestaute Frames."
+      },
+      "UnthrottledMouseMove":
+      {
+        "N": "Mausbewegung beim Zeichnen nicht an die Bildrate der Zeichenfläche binden",
+        "E": "Wenn aktiviert, aktualisiert jede Mausbewegung beim Zeichnen mit gedrückter Taste sofort die Zeichenfläche. Mausstriche werden dichter abgetastet, die CPU- und GPU-Last steigt jedoch deutlich. Wenn deaktiviert, wird mit der Bildrate der Zeichenfläche aktualisiert."
       }
     },
     "Linkage":

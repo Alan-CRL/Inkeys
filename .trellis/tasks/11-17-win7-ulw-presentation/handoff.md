@@ -47,3 +47,29 @@
 - 预设帧率高于刷新率时的默认策略（实现后用开关在 60Hz / 120Hz 屏实测再定）。
 - 熔断事件日志级别目前按用户要求为 Debug；若希望默认日志可见可改 Info。
 - `Inkeys/Memery` 目录名拼写（用户原文 “Memery”）。
+
+## 进展（2026-11-17 晚，阶段 A 实机测试后）
+
+- 阶段 A 已提交 `0c8a7337`（未 push），任务 `11-17-dcomp-waitable-latency` 保持 `in_progress`，规范更新待定。
+- 用户实机测试（120Hz+DRR/预设120、60Hz/预设240）日志分析与预测尖刺/卡顿调查：`11-17-dcomp-waitable-latency/research/field-test-20261117.md`（Codex 原文 `codex-predict-stutter-20261117.md`）。要点：A 无熔断/无错误；SyncInterval 0 下 waitable 约 1 ms 回补，几乎不节流；悬停帧不限速（约 900 Present/s）；尖刺最可能是“预设帧间隔阈值注入静止样本 + RTS 只取批末包 + Kalman 无长度上限”。
+- 等待用户查看报告后，再决定 A/B 之间的修复（预测保护+日志、悬停限速、长帧诊断）与阶段 B 的完成方式；B 的 design/implement 尚未写。
+- 用户追加（同日）：要求解释悬停帧不限速并调查光标层（大橡皮、多指橡皮卡顿）。记录在 `research/hover-cursor-layer-20261117.md`：悬停帧建议按预设帧率限速（小改动）；多指/大橡皮的主要放大因素是“全部光标旧新位置 + 全部落点并成单一脏矩形”，与第5步 §4.4 一致，候选方向为多矩形脏区 / 光标分层 / 精灵预热；附带用户要做的对照实测清单。
+- 后续测试计划：用户将做 CPU/GPU 加压脚本下的高帧率测试（脚本待用户指示后再写）；熔断路径需故障注入开关才能触发（单纯加压不会熔断），需改代码，待定。用户正在复测 240 预设尖刺并做开关对照。本轮约定不改代码。
+- 用户决策（同日）：鼠标光标大体采用方案 A（绘制时光标跟随画布帧率，两条鼠标路径一致；拒收时鼠标/笔/有光标的触摸仍按帧率跟随；性能页新增“绘制时鼠标光标不受画布帧率限制”默认关；悬停不限速）。实施前待确认 Q1（鼠标笔迹采样率下降）、Q3（拒收范围逐类）、Q5（选项实际影响整帧、命名与位置），详见 `research/hover-cursor-layer-20261117.md` §1.7。建议建独立小任务，A 收尾后、B 之前做。
+
+## 恢复指引（2026-11-17，会话压缩前，以此为准）
+
+- **当前状态**：阶段 A 已提交 `0c8a7337`（未 push，任务 `11-17-dcomp-waitable-latency` 保持 in_progress，规范更新待实机通过后再做）。预测尖刺在用户对照复测中未复现（用户推测是日志写入跟不上导致的卡顿），**不处理**。
+- **下一项：阶段 A2 `11-17-cursor-frame-pacing`**（规划完成，status=planning，**等待用户批准后才开工**；未 `task.py start`）。文档：`prd.md`（需求、已确认决策、验收）、`design.md`（唤醒模型、窗口条件、帧尾节流分支、拒收触摸光标、设置项、测试、压力工具）、`implement.md`（步骤 0–10）。
+  - 用户已确认：方案 A；鼠标笔迹采样率随之降为预设帧率可接受；悬停不限速；选项名“绘制时鼠标移动不受画布帧率限制”（默认关、附说明）；压力工具只施压、不做熔断、手动使用、不进自动测试、关窗即停。
+  - 批准时需用户确认的一项：拒收范围按建议（①准入阻塞、②关闭多指显示光标；③手掌、④平移抑制、⑤选择模式、⑥兼容消息抑制保持现状）。
+  - 开工第一步是 design 中的“开工核对项”，有矛盾先停下汇报。
+- **之后**：阶段 B（`11-17-ulw-texture-pipeline`，只有 PRD；完成方式的取舍见 `11-17-dcomp-waitable-latency/research/field-test-20261117.md` §6，待用户决定），再 C。
+- 本会话新增文档均未提交：`11-17-dcomp-waitable-latency/research/{field-test,codex-predict-stutter}-20261117.md`、`research/hover-cursor-layer-20261117.md`、本 handoff 修改、`11-17-cursor-frame-pacing/` 全部文件、父任务 `task.json`（children 新增 A2）。
+
+## 进展（2026-11-17 夜，阶段 A2 实现完成，以此为准）
+
+- A2 `11-17-cursor-frame-pacing` 已 `task.py start`（in_progress），代码全部完成，**未提交**。开工核对（Codex）发现 3 处与设计不符，用户“按建议继续”：D1 拒收触摸走新观察通道；D2 兼容鼠标 `CursorHeld()`；D3 手掌拒收的笔/鼠标光标也跟随。详见 A2 `design.md` §10 与 `research/startup-verification-20261117.md`。
+- 实现要点：`ContactInputCoordinator::PublishPacedWake`（不打断帧尾等待）；窗口侧鼠标/笔按下期间纯移动改发节拍唤醒（新选项开启时鼠标恢复打断式）；帧尾新增 `active.empty() && cursorContactPacingActive()` 节流分支；拒收触摸登记表（带工作区，进入选择模式/切换工作区即退休）；`CursorSettings` bit44 + `Experimental.Inkeys3.Draw3.UnthrottledMouseMoveWhileDrawing`（默认关，`SyncDraw3State` 即时下发，性能页 waitable 之后，20 语言已译）；压力工具 `Scripts/Start-StressLoad.cmd/.ps1` + `Scripts/StressLoad/StressLoad.cpp`（GPU 时间戳计时、超 500 ms 降档、设备异常停止 GPU 部分）。
+- 验证：Debug|ARM64 构建通过；`Inkeys.exe --draw3-control-fence-test` 通过（含新增窗口侧节拍唤醒检查）；新增 contact/mouse 单测；Codex 只读审阅无 P0/P1，4 条 P2 + 1 条 P3 已全部修复。帧尾分支没有整循环测试，需用户实机验证。
+- 待办：用户实机测试（30/120 FPS 鼠标书写帧率、准入阻塞/关闭多指拒收光标、新选项开关、压力工具下高帧率书写）→ 通过后更新规范（`draw3-cursors.md`、`input-and-ink.md`、`settings-performance-and-drawing.md`）→ 经授权提交。之后阶段 B。

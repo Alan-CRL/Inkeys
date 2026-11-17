@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 
@@ -40,6 +40,8 @@ namespace Inkeys::Drawing::Draw3
 		int highlightPenFillOpacity = 50;
 		int dotOpacity = 25;
 		int highlightDotFillOpacity = 50;
+		// 性能选项：绘制时鼠标移动不受画布帧率限制（窗口线程据此决定按下期间的唤醒方式）。
+		bool unthrottledMouseMoveWhileDrawing = false;
 		friend bool operator==(const CursorSettings&, const CursorSettings&) = default;
 	};
 
@@ -171,7 +173,7 @@ namespace Inkeys::Drawing::Draw3
 		return device == CursorDevice::Touch ? 6 : 5;
 	}
 
-	// 低位保持设备样式合同；bit16 起以四个 7-bit 字段保存 Pen/HighlightPen/Dot/HighlightDot 百分比。
+	// 低位保持设备样式合同；bit16 起以四个 7-bit 字段保存 Pen/HighlightPen/Dot/HighlightDot 百分比；bit44 为鼠标帧率选项。
 	inline constexpr std::uint64_t kCursorSettingsValidBit = std::uint64_t{ 1 } << 13;
 
 	constexpr std::uint64_t PackCursorSettings(const CursorSettings& s) noexcept
@@ -186,6 +188,7 @@ namespace Inkeys::Drawing::Draw3
 			| (static_cast<std::uint64_t>(NormalizeCursorOpacityPercent(CursorStyle::HighlightPen, s.highlightPenFillOpacity)) << 23)
 			| (static_cast<std::uint64_t>(NormalizeCursorOpacityPercent(CursorStyle::Dot, s.dotOpacity)) << 30)
 			| (static_cast<std::uint64_t>(NormalizeCursorOpacityPercent(CursorStyle::HighlightDot, s.highlightDotFillOpacity)) << 37)
+			| (s.unthrottledMouseMoveWhileDrawing ? std::uint64_t{ 1 } << 44 : 0u)
 			| kCursorSettingsValidBit;
 	}
 
@@ -201,6 +204,7 @@ namespace Inkeys::Drawing::Draw3
 			NormalizeCursorOpacityPercent(CursorStyle::Pen, static_cast<int>((bits >> 16) & 0x7fu)),
 			NormalizeCursorOpacityPercent(CursorStyle::HighlightPen, static_cast<int>((bits >> 23) & 0x7fu)),
 			NormalizeCursorOpacityPercent(CursorStyle::Dot, static_cast<int>((bits >> 30) & 0x7fu)),
-			NormalizeCursorOpacityPercent(CursorStyle::HighlightDot, static_cast<int>((bits >> 37) & 0x7fu)) };
+			NormalizeCursorOpacityPercent(CursorStyle::HighlightDot, static_cast<int>((bits >> 37) & 0x7fu)),
+			((bits >> 44) & 1u) != 0 };
 	}
 }

@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
@@ -2144,6 +2144,110 @@ namespace
 		if (!Expect(GetTickCount64() - moveWait >= 80, "ordinary Move wake does not bypass active frame budget")) ++failures;
 	}
 
+	// A2：节拍唤醒只唤醒空闲等待，不打断帧尾 WaitForFrameDeadline；与打断式唤醒混合不丢事件。
+	void TestPacedControlWake(int& failures)
+	{
+		ContactInputCoordinator input;
+		input.EnableDiagnostics(true);
+		input.WaitForFrameDeadline(0.0);
+		const uint64_t generation = input.CaptureWakeGeneration();
+		if (!Expect(input.PublishPacedWake() && input.CaptureWakeGeneration() != generation &&
+			input.HasPendingWork(), "paced wake enqueues a control marker and advances the idle wake generation")) ++failures;
+		const ULONGLONG pacedWait = GetTickCount64();
+		input.WaitForFrameDeadline(100.0);
+		if (!Expect(GetTickCount64() - pacedWait >= 80, "paced wake does not interrupt the active frame budget")) ++failures;
+		ContactRecord* record = nullptr;
+		if (!Expect(input.TryDequeue(record) && !record &&
+			input.LastDequeuedControlWakeKind() == ControlWakeKind::General,
+			"paced wake is dequeued as a general control marker")) ++failures;
+		input.AcknowledgeControlWake();
+
+		// 空闲阻塞等待（WaitDequeue）由节拍唤醒的队列标记唤醒。
+		std::thread pacer([&]() { Sleep(20); input.PublishPacedWake(); });
+		ContactRecord* idleRecord = reinterpret_cast<ContactRecord*>(uintptr_t{ 1 });
+		const ULONGLONG idleWait = GetTickCount64();
+		input.WaitDequeue(idleRecord);
+		pacer.join();
+		if (!Expect(!idleRecord && GetTickCount64() - idleWait < 500, "paced wake releases the idle WaitDequeue")) ++failures;
+		input.AcknowledgeControlWake();
+
+		// WaitForWake（橡皮 idle 等）依据 wakeGeneration，节拍唤醒照常让它返回。
+		const uint64_t observed = input.CaptureWakeGeneration();
+		std::thread wakeOnly([&]() { Sleep(20); input.PublishPacedWake(); });
+		if (!Expect(input.WaitForWake(observed, 1000.0), "paced wake releases WaitForWake")) ++failures;
+		wakeOnly.join();
+		while (input.TryDequeue(record)) if (!record) input.AcknowledgeControlWake();
+
+		// 已有节拍标记待处理时，打断式唤醒仍要打断帧尾等待。
+		input.WaitForFrameDeadline(0.0);
+		const uint64_t markers = input.DiagnosticsSnapshot().controlWakes;
+		input.PublishPacedWake();
+		input.PublishControlWake();
+		const ULONGLONG mixedWait = GetTickCount64();
+		input.WaitForFrameDeadline(1000.0);
+		if (!Expect(GetTickCount64() - mixedWait < 500 && input.DiagnosticsSnapshot().controlWakes == markers + 1,
+			"interrupting wake after a pending paced marker still interrupts without a second marker")) ++failures;
+	}
+
+	// A2：被拒收的触摸登记光标观察后，Move 只更新位置（仍对墨迹返回拒收）并发节拍唤醒；终态后读取为 Ended。
+	void TestObservedDiscardedContactCursor(int& failures)
+	{
+		ContactInputCoordinator input;
+		input.EnableDiagnostics(true);
+		ContactRecord* record = nullptr;
+		auto dequeueContact = [&]() -> ContactHandle
+		{
+			while (input.TryDequeue(record))
+			{
+				if (record) return { record, record->Generation() };
+				input.AcknowledgeControlWake();
+			}
+			return {};
+		};
+		input.PublishDown(7, 1, InputDeviceType::Touch, MakeSnapshot(10, 20, ContactPhase::Down));
+		const ContactHandle rejected = dequeueContact();
+		input.DiscardUntilTerminal(rejected);
+		ContactSnapshot snapshot{};
+		if (!Expect(!input.PublishMove(7, 1, MakeSnapshot(11, 21, ContactPhase::Move)),
+			"unobserved quarantined Move stays rejected")) ++failures;
+		input.ObserveDiscardedContactCursor(rejected);
+		input.WaitForFrameDeadline(0.0);
+		const uint64_t generation = input.CaptureWakeGeneration();
+		const uint64_t markers = input.DiagnosticsSnapshot().controlWakes;
+		if (!Expect(!input.PublishMove(7, 1, MakeSnapshot(40, 50, ContactPhase::Move)) &&
+			input.TryReadObservedContact(rejected, snapshot) == ObservedContactRead::Live &&
+			Near(snapshot.position.x, 40) && Near(snapshot.position.y, 50),
+			"observed rejected Move updates only the cursor position")) ++failures;
+		if (!Expect(input.CaptureWakeGeneration() != generation &&
+			input.DiagnosticsSnapshot().controlWakes == markers + 1 && input.HasPendingWork(),
+			"observed rejected Move publishes one paced control marker")) ++failures;
+		const ULONGLONG pacedWait = GetTickCount64();
+		input.WaitForFrameDeadline(100.0);
+		if (!Expect(GetTickCount64() - pacedWait >= 80, "observed rejected Move does not interrupt the frame budget")) ++failures;
+		if (!Expect(dequeueContact().record == nullptr, "observed rejected Move never produces an ink Down")) ++failures;
+		if (!Expect(input.PublishUp(7, 1, MakeSnapshot(41, 51, ContactPhase::Up)) &&
+			input.TryReadObservedContact(rejected, snapshot) == ObservedContactRead::Ended &&
+			!input.HasQuarantinedContacts(),
+			"terminal recycles the observed contact and ends its cursor")) ++failures;
+
+		// 记录被新 Down 复用后，旧 handle 的观察标记不能影响新接触。
+		input.PublishDown(7, 2, InputDeviceType::Touch, MakeSnapshot(60, 70, ContactPhase::Down));
+		const ContactHandle reused = dequeueContact();
+		input.ObserveDiscardedContactCursor(rejected);
+		if (!Expect(reused.record && input.PublishMove(7, 2, MakeSnapshot(61, 71, ContactPhase::Move)) &&
+			input.TryReadSnapshot(reused, snapshot) && Near(snapshot.position.x, 61) &&
+			input.TryReadObservedContact(rejected, snapshot) == ObservedContactRead::Ended,
+			"stale observe handle leaves a reused live contact untouched")) ++failures;
+		// 新一代被拒收并观察后，迟到的旧 handle 观察不能覆盖它。
+		input.DiscardUntilTerminal(reused);
+		input.ObserveDiscardedContactCursor(reused);
+		input.ObserveDiscardedContactCursor(rejected);
+		if (!Expect(!input.PublishMove(7, 2, MakeSnapshot(90, 91, ContactPhase::Move)) &&
+			input.TryReadObservedContact(reused, snapshot) == ObservedContactRead::Live && Near(snapshot.position.x, 90),
+			"stale observe handle cannot overwrite a newer observed quarantine")) ++failures;
+		input.PublishUp(7, 2, MakeSnapshot(61, 71, ContactPhase::Up));
+	}
+
 	void TestTouchpadIngressInputIsolation(int& failures)
 	{
 		struct Viewport
@@ -2373,6 +2477,8 @@ int RunDraw3ContactInputTests()
 	TestNavigationHistory(failures);
 	TestNavigationHistoryOverflow(failures);
 	TestNavigationUrgentFrameWake(failures);
+	TestPacedControlWake(failures);
+	TestObservedDiscardedContactCursor(failures);
 	TestShortcutAdmissionGateComposition(failures);
 	TestConsumerFatalAdmissionGate(failures);
 	TestInvalidAndWakeContracts(failures);
