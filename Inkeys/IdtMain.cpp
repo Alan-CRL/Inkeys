@@ -3915,6 +3915,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			configOnce.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
 		draw3StartOptions.enableZhaoxinCompatibility =
 			configOnce.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
+		draw3StartOptions.enableWaitableWait =
+			configOnce.Experimental.Inkeys3.Draw3.EnableWaitableWait;
 		const auto whiteboardDefault = config.Drawing.Whiteboard.DefaultTheme.load();
 		draw3StartOptions.whiteboardDefaultTheme = { whiteboardDefault.backgroundRgb,
 			static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(whiteboardDefault.pattern) };

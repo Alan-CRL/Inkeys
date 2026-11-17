@@ -2365,6 +2365,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool EnableDirectComposition = Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition;
 				bool EnableHardwareAcceleration = Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
 				bool EnableZhaoxinCompatibility = Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
+				bool EnableWaitableWait = Inkeys::config.Experimental.Inkeys3.Draw3.EnableWaitableWait;
 				Inkeys::UI::Setting::StartupPreviewPreference StartupPreviewPreferenceState{
 					Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable };
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
@@ -4658,6 +4659,12 @@ SettingSessionCoroutine RunSettingSession()
 						IA(I18nKey.SettingsUI.Performance.DirectComposition.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableDirectComposition, IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
 					{
 						Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition = Experimental.Inkeys3.EnableDirectComposition;
+						QueueConfigWrite();
+					}
+					if (Design::ToggleRow("##draw3-waitable-wait", IA(I18nKey.SettingsUI.Performance.WaitableWait.N).c_str(),
+						IA(I18nKey.SettingsUI.Performance.WaitableWait.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableWaitableWait, IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
+					{
+						Inkeys::config.Experimental.Inkeys3.Draw3.EnableWaitableWait = Experimental.Inkeys3.EnableWaitableWait;
 						QueueConfigWrite();
 					}
 					if (Design::ToggleRow("##draw3-zhaoxin", IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.N).c_str(),

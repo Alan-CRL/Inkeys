@@ -280,6 +280,8 @@ namespace Inkeys::Drawing::Draw3
 		// 启动时按值捕获；呈现回退与设备丢失后的恢复沿用本代偏好。
 		bool enableHardwareAcceleration = true;
 		bool enableZhaoxinCompatibility = true;
+		// DComp waitable 交换链是否在帧开头等待帧延迟句柄；关闭时保留标志但不等待。
+		bool enableWaitableWait = true;
 		int frameRate = 120; // 仅在启动时选择画布模型参数组。
 	};
 

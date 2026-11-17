@@ -1046,6 +1046,11 @@
       {
         "N": "Preferisci DirectComposition",
         "E": "Usa la composizione di sistema per mostrare la tela sui dispositivi supportati, passando automaticamente alla modalità compatibile se non disponibile."
+      },
+      "WaitableWait":
+      {
+        "N": "Abilita l'attesa in modalità waitable",
+        "E": "In Windows 8.1 e versioni successive, evita la latenza causata dall'accumulo di fotogrammi."
       }
     },
     "Linkage":

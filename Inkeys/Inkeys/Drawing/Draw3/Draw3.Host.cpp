@@ -2218,6 +2218,7 @@ namespace Inkeys::Drawing::Draw3
 						presentationOptions.failedCleanup = failedCleanup;
 						presentationOptions.enableHardwareAcceleration = startOptions.enableHardwareAcceleration;
 						presentationOptions.enableZhaoxinCompatibility = startOptions.enableZhaoxinCompatibility;
+						presentationOptions.enableWaitableWait = startOptions.enableWaitableWait;
 						graphicsInitialized = presentation.Initialize(windowHandle,
 							presentationWindowHandle, graphics, renderer,
 							static_cast<UINT>((std::max)(1, size.width)),

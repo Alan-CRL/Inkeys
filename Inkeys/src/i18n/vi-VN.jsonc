@@ -1046,6 +1046,11 @@
       {
         "N": "Ưu tiên DirectComposition",
         "E": "Dùng cơ chế tổng hợp của hệ thống để hiển thị trang vẽ trên thiết bị hỗ trợ, tự chuyển sang cách tương thích khi không khả dụng."
+      },
+      "WaitableWait":
+      {
+        "N": "Bật chờ trong chế độ waitable",
+        "E": "Trên Windows 8.1 trở lên, ngăn độ trễ do dồn khung hình."
       }
     },
     "Linkage":

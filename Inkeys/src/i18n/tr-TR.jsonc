@@ -1046,6 +1046,11 @@
       {
         "N": "DirectComposition'ı tercih et",
         "E": "Desteklenen cihazlarda tuvali göstermek için sistem birleştirmesini kullanın; kullanılamıyorsa uyumluluk yöntemine otomatik geçilir."
+      },
+      "WaitableWait":
+      {
+        "N": "Waitable modunda beklemeyi etkinleştir",
+        "E": "Windows 8.1 ve sonraki sürümlerde, biriken karelerin neden olduğu gecikmeyi önler."
       }
     },
     "Linkage":

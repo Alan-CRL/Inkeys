@@ -15347,7 +15347,13 @@ namespace Inkeys::Drawing::Draw3
 		LARGE_INTEGER returnQpc = {};
 		if (metricsState_ || presentReturnQpc) QueryPerformanceCounter(&returnQpc); // 真返回点，先于观察回调/ready/诊断。
 		if (presentReturnQpc) *presentReturnQpc = returnQpc.QuadPart;
-		lastPresentDurationMs_ = GetQpcTimeMilliseconds() - presentStartMs;
+		// 帧循环外的 Present 可能先在帧延迟句柄上补等；这段时间单独记录，不混入 Present 耗时。
+		const FrameLatencyWaitReport presentLatencyWait = presentation_.ConsumePresentLatencyWait();
+		const double presentLatencyWaitMs = presentLatencyWait.waitedMs;
+		frameLatencyWaitMs_ += presentLatencyWaitMs;
+		if (metrics_ && presentLatencyWait.timedOut) metrics_->RecordLatencyWait(true, false);
+		lastPresentDurationMs_ = (std::max)(0.0,
+			GetQpcTimeMilliseconds() - presentStartMs - presentLatencyWaitMs);
 		lastPresentSucceeded_ = succeeded;
 		if (metricsState_)
 		{
@@ -15361,6 +15367,9 @@ namespace Inkeys::Drawing::Draw3
 			metricsState_->frame.presentAttempted = true;
 			metricsState_->frame.presentSucceeded = succeeded;
 			metricsState_->frame.presentWallMs += lastPresentDurationMs_;
+			metricsState_->frame.latencyWaitMs += presentLatencyWaitMs;
+			if (presentLatencyWait.state != FrameLatencyWaitState::NotApplicable)
+				metricsState_->frame.latencyWaitState = static_cast<uint8_t>(presentLatencyWait.state);
 			metricsState_->frame.presentReturnQpc = returnQpc.QuadPart;
 			if (metricsState_->counters.outputMismatch != beforeMismatch)
 				metricsState_->Mark(RuntimeMetricsFrameReason::OutputMismatch);
@@ -21401,6 +21410,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 			} metricsLoopExit{ metricsState_.get(), active };
 			lastPresentDurationMs_ = 0.0;
+			frameLatencyWaitMs_ = 0.0;
 			lastPresentSucceeded_ = false;
 		bool rasterSubmissionFailed = false;
 			bool forceFullPresent = outputTargetChanged || contentRevisionNeedsPresent;
@@ -21595,6 +21605,30 @@ namespace Inkeys::Drawing::Draw3
 				forceFullPresent = true; // Resize 保留 L2，并从 CPU 状态恢复共享 L1/L0。
 			}
 			if (graphicsRecoveryPending_) continue;
+			{
+				// 帧延迟等待：设备恢复/Resize 之后（交换链已确定）、消费输入之前。
+				// 等到交换链有空位再读输入，GPU 吃紧时本帧拿到的输入更新；超时不是错误，本帧照常合成并 Present。
+				// 工作区交接/加载未完成期间的超时不参与熔断；隐藏、交接屏障等由呈现器自行排除。
+				const bool latencyCountable = !presentationLoadUnresolved() && !activePresentationLoadPending &&
+					!whiteboardLoading && !pendingWorkspaceReady;
+				const FrameLatencyWaitReport latencyWait = presentation_.PrepareFrameLatency(
+					1000.0 / configuration_.timingProfile.target_fps, latencyCountable);
+				frameLatencyWaitMs_ += latencyWait.waitedMs;
+				const bool latencyTripped = latencyWait.state == FrameLatencyWaitState::Tripped;
+				if (metricsState_)
+				{
+					metricsState_->frame.latencyWaitMs += latencyWait.waitedMs;
+					metricsState_->frame.latencyWaitState = static_cast<uint8_t>(latencyWait.state);
+				}
+				if (metrics_ && (latencyTripped || latencyWait.timedOut))
+					metrics_->RecordLatencyWait(latencyWait.timedOut, latencyTripped);
+				if (latencyTripped)
+				{
+					// 熔断已安排恢复：下一轮在帧开头重建为不带 waitable 标志的交换链并整帧重放。
+					graphicsRecoveryPending_ = presentation_.RecoveryPending();
+					continue;
+				}
+			}
 			if (activeLayerRebuildPending && !rasterSubmissionFailed)
 			{
 				// 失败帧可能已清空共享层；下一帧先从仍权威的 CPU 笔迹整体重放。
@@ -23456,7 +23490,8 @@ namespace Inkeys::Drawing::Draw3
 					frameDirty.top >= canvasDebugInjectedBounds.top &&
 					frameDirty.right <= canvasDebugInjectedBounds.right &&
 					frameDirty.bottom <= canvasDebugInjectedBounds.bottom;
-				canvasDebugOverlay->OnFrame(canvasFrameElapsedMilliseconds,
+				// 帧延迟等待不是工作耗时：无限制帧率与负载百分比按扣除后的耗时计算。
+				canvasDebugOverlay->OnFrame((std::max)(0.0, canvasFrameElapsedMilliseconds - frameLatencyWaitMs_),
 					presentSucceeded && !debugOnlyFrame);
 				if (presentSucceeded && !debugOnlyFrame)
 				{
@@ -23501,7 +23536,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
 				if (metrics_ && frameHadActiveContact)
-					metrics_->RecordActiveFrame(frameStartMs, workMs,
+					metrics_->RecordActiveFrame(frameStartMs, (std::max)(0.0, workMs - frameLatencyWaitMs_),
 						lastPresentDurationMs_, lastPresentSucceeded_);
 				const double remainingFrameBudgetMs =
 					1000.0 / configuration_.timingProfile.target_fps - workMs;

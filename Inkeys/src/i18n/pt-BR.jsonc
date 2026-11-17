@@ -1046,6 +1046,11 @@
       {
         "N": "Priorizar DirectComposition",
         "E": "Usa a composição do sistema para exibir a tela de desenho nos dispositivos compatíveis. Se indisponível, usa automaticamente o método de compatibilidade."
+      },
+      "WaitableWait":
+      {
+        "N": "Ativar espera no modo waitable",
+        "E": "No Windows 8.1 e versões posteriores, evita a latência causada pelo acúmulo de quadros."
       }
     },
     "Linkage":

@@ -1050,6 +1050,11 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/Performance/DirectComposition/N";
                 const char* E = "SettingsUI/Performance/DirectComposition/E";
             } DirectComposition{};
+            struct Node__SettingsUI__Performance__WaitableWait
+            {
+                const char* N = "SettingsUI/Performance/WaitableWait/N";
+                const char* E = "SettingsUI/Performance/WaitableWait/E";
+            } WaitableWait{};
         } Performance{};
         struct Node__SettingsUI__Linkage
         {

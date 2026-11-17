@@ -1046,6 +1046,11 @@
       {
         "N": "DirectComposition bevorzugen",
         "E": "Auf unterstützten Geräten die Systemkomposition für die Zeichenfläche nutzen; ist sie nicht verfügbar, automatisch auf eine kompatible Methode wechseln."
+      },
+      "WaitableWait":
+      {
+        "N": "Warten im Waitable-Modus aktivieren",
+        "E": "Verhindert unter Windows 8.1 und höher Verzögerungen durch aufgestaute Frames."
       }
     },
     "Linkage":

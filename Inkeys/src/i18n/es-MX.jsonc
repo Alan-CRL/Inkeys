@@ -1046,6 +1046,11 @@
       {
         "N": "Priorizar DirectComposition",
         "E": "Usar la composición del sistema para mostrar el lienzo en dispositivos compatibles, con un modo alternativo automático si no está disponible."
+      },
+      "WaitableWait":
+      {
+        "N": "Activar la espera en modo waitable",
+        "E": "En Windows 8.1 y versiones posteriores, evita la latencia causada por la acumulación de cuadros."
       }
     },
     "Linkage":

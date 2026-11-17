@@ -1046,6 +1046,11 @@
       {
         "N": "Preferă DirectComposition",
         "E": "Folosește compoziția sistemului pentru afișarea pânzei pe dispozitive compatibile; dacă nu este disponibilă, trece automat la modul de compatibilitate."
+      },
+      "WaitableWait":
+      {
+        "N": "Activează așteptarea în modul waitable",
+        "E": "Pe Windows 8.1 și versiunile ulterioare, previne latența cauzată de acumularea cadrelor."
       }
     },
     "Linkage":

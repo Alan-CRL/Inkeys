@@ -1046,6 +1046,11 @@
       {
         "N": "优先使用 DirectComposition",
         "E": "在支持的设备上使用系统合成显示画布，不可用时自动使用兼容方式。"
+      },
+      "WaitableWait":
+      {
+        "N": "waitable 模式下启用等待",
+        "E": "在 Windows 8.1 及以上系统中，防止帧积压造成的延迟。"
       }
     },
     "Linkage":

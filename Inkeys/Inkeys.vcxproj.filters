@@ -645,6 +645,9 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PalmEraser.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.FrameLatencyGate.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h">
       <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </ClInclude>

@@ -1,0 +1,38 @@
+# 第2步 Draw3 透明画布呈现：交换链等待与 ULW 流水线
+
+> 角色：第2步父任务，持有现状调研、任务地图与跨子任务验收；本身不作为实现目标。分支 `refactoring/draw`，与第1步（`refactoring/drawpad-ui`，UI 改动）并行。
+
+## Goal
+
+在不破坏 Win7 SP1 + KB2670838 兼容和画布调试功能的前提下，让 Draw3 透明画布在各呈现后端上都做到“最多排队一帧、CPU 不被 GPU/系统提交拖住”，降低输入→上屏延迟。
+
+## 现状依据
+
+- `research/presentation-pipeline-current.md`：端到端流程图、L0/L1/L2、脏区、ULW 方案对比、DComp CPU/GPU 重叠现状、waitable 与排队控制方式、超时与熔断建议（Claude 读码 + Codex 交叉核对）。
+- `research/codex-investigation-20261117.md`：Codex 只读调查原文（file:line 证据）。
+- 总任务 `research/第2步 …研究_20261113.md`：旧基准研究备忘（候选方向，非已批方案）。
+
+## 任务地图
+
+| 阶段 | 子任务 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| A | `11-17-dcomp-waitable-latency` DComp waitable 交换链帧延迟控制 | 规划完成，待用户指示开工 | 先做；Win8.1+ 正确使用 waitable（令牌/自适应超时/熔断），其余系统保持现状；性能页新增“waitable 模式下启用等待”开关 |
+| B | `11-17-ulw-texture-pipeline` ULW 独立纹理与 CPU/GPU 重叠 | 待 A 完成后规划 | 独立纹理作最终目标 + 非阻塞读回流水线（最多领先一帧） |
+| C | `11-17-perf-dashboard` 性能页设备性能看板 | 需求预告，待 A/B 后调查 | 周期性低影响采样 → `Inkeys/Memery` JSON → 性能页顶部看板；A/B 需满足其“工作耗时不含等待”等前置口径 |
+
+交接说明见 `handoff.md`（上下文压缩后从这里恢复）。
+
+## 跨子任务约束
+
+- 不以微软文档为由改动 FLIP 配置：用户实测 Win7 SP1 + KB2670838 上 `CreateSwapChainForHwnd` + `FLIP_SEQUENTIAL` 可用。
+- 不引入应用侧 GPU 事件查询自旋 / 信号量兼容等待（历史上出现过丢信号问题）；任何等待都有超时与熔断。
+- 画布调试 / 可视化调试保持可用：调试背景板、标记、接触表、输入→上屏延迟，以及 ULW 像素诊断、可信快照、无窗口测试。
+- 主窗 ULW 命中底层 alpha、辅助 DrawpadPresentation 的按需读回与隐藏回收语义不变。
+- Resize、设备丢失恢复、运行期 DComp→ULW 降级、强制呈现模式均可正常工作。
+- 新增诊断走统一日志接口，Draw3 热路径不得因日志阻塞。
+
+## Acceptance Criteria
+
+- [ ] A、B、C 三个子任务各自验收通过并归档。
+- [ ] 集成后 Win11（DComp 与强制 ULW）书写、橡皮、激光、漫游、画布调试显示正确，无残影。
+- [ ] Win7 SP1 + KB2670838 可启动并以 ULW 正常书写（需用户实测）。

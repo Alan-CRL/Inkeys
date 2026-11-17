@@ -1046,6 +1046,11 @@
       {
         "N": "Utamakan DirectComposition",
         "E": "Gunakan komposisi sistem untuk menampilkan kanvas pada perangkat yang mendukung; otomatis beralih ke cara kompatibel jika tidak tersedia."
+      },
+      "WaitableWait":
+      {
+        "N": "Aktifkan penantian dalam mode waitable",
+        "E": "Pada Windows 8.1 dan yang lebih baru, mencegah latensi akibat penumpukan frame."
       }
     },
     "Linkage":

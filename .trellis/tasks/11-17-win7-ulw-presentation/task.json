@@ -1,0 +1,30 @@
+{
+  "id": "win7-ulw-presentation",
+  "name": "win7-ulw-presentation",
+  "title": "第2步 Draw3 透明画布呈现：交换链等待与 ULW 流水线",
+  "description": "第2步父任务：统筹 DComp waitable 帧延迟控制（阶段A）与 ULW 独立纹理/CPU-GPU 重叠（阶段B），持有现状调研与跨子任务验收，保持 Win7 SP1+KB2670838 兼容与画布调试可视化功能",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-17",
+  "completedAt": null,
+  "branch": "refactoring/draw",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-17-dcomp-waitable-latency",
+    "11-17-ulw-texture-pipeline",
+    "11-17-perf-dashboard"
+  ],
+  "parent": "11-16-inkeys3-midterm-refactor",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

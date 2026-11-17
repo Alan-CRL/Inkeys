@@ -399,6 +399,7 @@ namespace Inkeys::Drawing::Draw3
 		uint64_t durationDropped = 0;
 		uint64_t presentDropped = 0;
 		uint64_t presentInvalid = 0;
+		uint64_t latencyWaitTimeouts = 0, latencyWaitTripped = 0;
 		uint64_t presentUnknown = 0;
 		bool currentPresentSucceeded = false;
 		bool frameSerialExhausted = false;
@@ -676,7 +677,8 @@ namespace Inkeys::Drawing::Draw3
 		++impl_->counters.framesSeen;
 		if (sample.frameSerial == 0 || sample.frameSerial != impl_->counters.frameSerial ||
 			!ValidDuration(sample.frameStartMs) || !ValidDuration(sample.wallMs) ||
-			!ValidDuration(sample.presentWallMs) || (sample.presentSucceeded && !sample.presentAttempted))
+			!ValidDuration(sample.presentWallMs) || !ValidDuration(sample.latencyWaitMs) ||
+			(sample.presentSucceeded && !sample.presentAttempted))
 		{
 			++impl_->counters.framesInvalid;
 			++impl_->counters.invalid;
@@ -696,6 +698,12 @@ namespace Inkeys::Drawing::Draw3
 		if (impl_->frames.size() == impl_->maximumSamples) { ++impl_->counters.framesDropped; return; }
 		impl_->frames.push_back(sample);
 		++impl_->counters.framesRetained;
+	}
+
+	void RuntimeMetricsSession::RecordLatencyWait(bool timedOut, bool tripped) noexcept
+	{
+		if (timedOut) ++impl_->latencyWaitTimeouts;
+		if (tripped) ++impl_->latencyWaitTripped;
 	}
 
 	RuntimeMetricsSnapshot RuntimeMetricsSession::Snapshot() const noexcept
@@ -887,6 +895,8 @@ namespace Inkeys::Drawing::Draw3
 			<< ", \"durationDropped\": " << impl_->durationDropped
 			<< ", \"retentionComplete\": " << (impl_->RetentionComplete() ? "true" : "false")
 			<< ", \"complete\": " << (impl_->CoverageComplete() ? "true" : "false") << "},\n";
+		stream << "  \"latencyWait\": {\"timeouts\": " << impl_->latencyWaitTimeouts
+			<< ", \"tripped\": " << impl_->latencyWaitTripped << "},\n";
 		stream << "  \"summary\": {\"legacyThresholdMet\": " << (MeetsStrictThresholds() ? "true" : "false")
 			<< ", \"landingCount\": " << latencies.size() << ", \"landingMedianMs\": ";
 		if (latencies.empty()) stream << "null"; else stream << Median(latencies);
@@ -1107,7 +1117,9 @@ namespace Inkeys::Drawing::Draw3
 				<< ", \"reasonFlags\": " << frame.reasonFlags << ", \"physicalBefore\": " << frame.physicalBefore
 				<< ", \"physicalAfter\": " << frame.physicalAfter << ", \"terminalCount\": " << frame.terminalCount
 				<< ", \"presentAttempted\": " << (frame.presentAttempted ? "true" : "false")
-				<< ", \"presentSucceeded\": " << (frame.presentSucceeded ? "true" : "false") << ", \"presentReturnQpc\": ";
+				<< ", \"presentSucceeded\": " << (frame.presentSucceeded ? "true" : "false")
+				<< ", \"latencyWaitMs\": " << frame.latencyWaitMs
+				<< ", \"latencyWaitState\": " << static_cast<uint32_t>(frame.latencyWaitState) << ", \"presentReturnQpc\": ";
 			if (frame.presentReturnQpc > 0) stream << frame.presentReturnQpc; else stream << "null";
 			stream << ", \"costs\": "; WriteCosts(stream, frame.costs);
 			stream << ", \"priorIngressWallMs\": "; WriteOptional(stream, (frame.priorIngressAvailableMask & 1u) != 0, frame.priorIngressWallMs);

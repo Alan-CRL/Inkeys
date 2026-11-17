@@ -235,6 +235,8 @@ export namespace Inkeys::Drawing::Draw3
 		PenHapticFeedback* haptics_ = nullptr;
 		Haptics::ClickMailbox* hapticClicks_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;
+		// 本帧在帧延迟句柄上的等待耗时：计入帧预算，但不算工作耗时，也不算 Present 耗时。
+		double frameLatencyWaitMs_ = 0.0;
 		bool lastPresentSucceeded_ = false;
 		bool graphicsRecoveryPending_ = false;
 		std::uint64_t currentContentRevision_ = 0;

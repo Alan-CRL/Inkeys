@@ -94,6 +94,9 @@ export namespace Inkeys::Drawing::Draw3
 		uint32_t terminalCount = 0;
 		bool presentAttempted = false;
 		bool presentSucceeded = false;
+		// 帧延迟等待：0 不适用，1 已持有令牌，2 等到信号，3 超时；耗时不计入 presentWallMs。
+		uint8_t latencyWaitState = 0;
+		double latencyWaitMs = 0.0;
 		int64_t presentReturnQpc = 0;
 		RuntimeMetricsFrameCosts costs;
 		RuntimeMetricsLaserFrame laser;
@@ -219,6 +222,8 @@ export namespace Inkeys::Drawing::Draw3
 		void InvalidatePending() noexcept;
 		void RecordVerifiedPresent(double presentMs, bool succeeded) noexcept;
 		void RecordRenderFrame(const RuntimeMetricsFrameSample& sample) noexcept;
+		// 会话级帧延迟等待计数；熔断帧不产生 render attempt，不能只靠逐帧样本统计。
+		void RecordLatencyWait(bool timedOut, bool tripped) noexcept;
 		RuntimeMetricsSnapshot Snapshot() const noexcept;
 		// 标记完全空闲阻塞区间，用于证明 frame/Present 计数不增长。
 		void BeginIdle(double nowMs) noexcept;

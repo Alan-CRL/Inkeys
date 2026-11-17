@@ -1046,6 +1046,11 @@
       {
         "N": "優先使用 DirectComposition",
         "E": "在支援的裝置上使用系統合成顯示畫布，無法使用時自動改用相容方式。"
+      },
+      "WaitableWait":
+      {
+        "N": "waitable 模式下啟用等待",
+        "E": "在 Windows 8.1 及以上系統中，防止畫面格堆積造成的延遲。"
       }
     },
     "Linkage":

@@ -1046,6 +1046,11 @@
       {
         "N": "Privilégier DirectComposition",
         "E": "Utiliser la composition système pour afficher le canevas sur les appareils compatibles, avec un mode de secours automatique si indisponible."
+      },
+      "WaitableWait":
+      {
+        "N": "Activer l’attente en mode waitable",
+        "E": "Sous Windows 8.1 et versions ultérieures, évite la latence due à l’accumulation d’images."
       }
     },
     "Linkage":

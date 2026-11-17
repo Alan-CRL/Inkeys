@@ -1046,6 +1046,11 @@
       {
         "N": "Prefer DirectComposition",
         "E": "Use system composition to display the canvas on supported devices, with automatic compatibility fallback when unavailable."
+      },
+      "WaitableWait":
+      {
+        "N": "Enable waiting in waitable mode",
+        "E": "On Windows 8.1 and later, prevents latency caused by queued frames."
       }
     },
     "Linkage":

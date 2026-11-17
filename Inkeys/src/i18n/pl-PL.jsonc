@@ -1046,6 +1046,11 @@
       {
         "N": "Preferuj DirectComposition",
         "E": "Używaj kompozycji systemowej do wyświetlania płótna na obsługiwanych urządzeniach; gdy jest niedostępna, automatycznie użyj trybu zgodności."
+      },
+      "WaitableWait":
+      {
+        "N": "Włącz oczekiwanie w trybie waitable",
+        "E": "W systemie Windows 8.1 i nowszych zapobiega opóźnieniom spowodowanym kolejkowaniem klatek."
       }
     },
     "Linkage":

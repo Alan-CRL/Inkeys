@@ -60,6 +60,25 @@ export namespace Inkeys::Drawing::Draw3
 		// 与 Host 启动快照一致，运行中改设置不影响设备恢复。
 		bool enableHardwareAcceleration = true;
 		bool enableZhaoxinCompatibility = true;
+		// 仅对取得帧延迟句柄的 DComp waitable 交换链生效；关闭时保留标志但不等待。
+		bool enableWaitableWait = true;
+	};
+
+	enum class FrameLatencyWaitState : std::uint8_t
+	{
+		NotApplicable,
+		AlreadyHeld,
+		Signaled,
+		TimedOut,
+		Tripped,
+	};
+
+	struct FrameLatencyWaitReport
+	{
+		FrameLatencyWaitState state = FrameLatencyWaitState::NotApplicable;
+		double waitedMs = 0.0;
+		// 本次等待是否真的超时；等待失败导致的熔断不算超时。
+		bool timedOut = false;
 	};
 
 	struct TransparentPresentObservation
@@ -107,6 +126,11 @@ export namespace Inkeys::Drawing::Draw3
 		// 呈现指定脏矩形或整张画布。
 		bool Present(RECT dirty, bool presentFull,
 			std::uint64_t contentRevision = 0);
+		// 帧开头、消费输入之前调用：DComp waitable 交换链未持有令牌时做一次有界等待。
+		// 超时不是错误，本帧照常呈现；返回 Tripped 时已安排恢复（重建为不带 waitable 标志的交换链）。
+		FrameLatencyWaitReport PrepareFrameLatency(double targetFrameMs, bool countsTowardTrip);
+		// 取走帧循环外 Present 前补等的结果，供调用方从 Present 耗时中扣除并记入指标。
+		FrameLatencyWaitReport ConsumePresentLatencyWait() noexcept;
 		// 在 DWM 合成状态变化后刷新玻璃效果。
 		bool RefreshAfterCompositionChanged();
 		// Resize 等外部图形操作失败后，记录当前设备状态并安排恢复。

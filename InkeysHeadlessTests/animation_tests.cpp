@@ -75,6 +75,7 @@ int RunSpeedEraserTests();
 int RunPalmEraserTests();
 int RunCanvasDebugTests();
 int RunDraw3CanvasPanTests();
+int RunDraw3FrameLatencyGateTests();
 int RunPenWidthTests();
 int RunEraserAttributeTests();
 int RunRecallAttributeTests();
@@ -1737,6 +1738,7 @@ int main(int argc, char** argv)
 	bool palmEraserOnly = false;
 	bool canvasDebugOnly = false;
 	bool canvasPanOnly = false;
+	bool frameLatencyGateOnly = false;
 	bool settingEraserDemoOnly = false;
 	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
@@ -1761,6 +1763,7 @@ int main(int argc, char** argv)
 		palmEraserOnly |= argument == "--palm-eraser-only";
 		canvasDebugOnly |= argument == "--canvas-debug-only";
 		canvasPanOnly |= argument == "--canvas-pan-only";
+		frameLatencyGateOnly |= argument == "--frame-latency-gate-only";
 		settingEraserDemoOnly |= argument == "--setting-eraser-demo-only";
 		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
 		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
@@ -1813,6 +1816,7 @@ int main(int argc, char** argv)
 	if (palmEraserOnly) return RunPalmEraserTests() == 0 ? 0 : 1;
 	if (canvasDebugOnly) return RunCanvasDebugTests() == 0 ? 0 : 1;
 	if (canvasPanOnly) return RunDraw3CanvasPanTests() == 0 ? 0 : 1;
+	if (frameLatencyGateOnly) return RunDraw3FrameLatencyGateTests() == 0 ? 0 : 1;
 	if (settingEraserDemoOnly)
 	{
 		const int settings = RunSettingDesignTests(false, true), demo = RunSettingEraserDemoTests();
@@ -1887,6 +1891,7 @@ int main(int argc, char** argv)
 	failureCount += RunPalmEraserTests();
 	failureCount += RunCanvasDebugTests();
 	failureCount += RunDraw3CanvasPanTests();
+	failureCount += RunDraw3FrameLatencyGateTests();
 	failureCount += RunPenWidthTests();
 	failureCount += RunEraserAttributeTests();
 	failureCount += RunRecallAttributeTests();

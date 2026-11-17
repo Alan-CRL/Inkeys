@@ -5,6 +5,7 @@ module;
 #endif
 
 #include "Draw3.DiagnosticOutput.h"
+#include "Draw3.FrameLatencyGate.h"
 #include "Draw3.Presentation.h"
 #include <algorithm>
 #include <cstdio>
@@ -116,6 +117,35 @@ namespace Inkeys::Drawing::Draw3
 			if (IsDirectCompositionMode(mode))
 				return waitable ? "CreateWaitableSwapChainForComposition" : "CreateSwapChainForComposition";
 			return waitable ? "CreateWaitableSwapChainForHwnd" : "CreateSwapChainForHwnd";
+		}
+
+		double QpcMilliseconds() noexcept
+		{
+			static const double ticksToMilliseconds = []() noexcept
+			{
+				LARGE_INTEGER frequency = {};
+				return QueryPerformanceFrequency(&frequency) && frequency.QuadPart > 0
+					? 1000.0 / static_cast<double>(frequency.QuadPart) : 0.0;
+			}();
+			LARGE_INTEGER counter = {};
+			QueryPerformanceCounter(&counter);
+			return static_cast<double>(counter.QuadPart) * ticksToMilliseconds;
+		}
+
+		// DWM 合成刷新间隔，作为帧延迟等待超时的下界；取不到或不合理时按 60 Hz。
+		double QueryCompositionRefreshMilliseconds() noexcept
+		{
+			DWM_TIMING_INFO timing = {};
+			timing.cbSize = sizeof(timing);
+			LARGE_INTEGER frequency = {};
+			if (SUCCEEDED(DwmGetCompositionTimingInfo(nullptr, &timing)) &&
+				QueryPerformanceFrequency(&frequency) && frequency.QuadPart > 0)
+			{
+				const double milliseconds = static_cast<double>(timing.qpcRefreshPeriod) * 1000.0 /
+					static_cast<double>(frequency.QuadPart);
+				if (milliseconds >= 1.0 && milliseconds <= 100.0) return milliseconds;
+			}
+			return kFrameLatencyDefaultRefreshMs;
 		}
 
 		bool IsDirectCompositionApiAvailable()
@@ -818,6 +848,84 @@ namespace Inkeys::Drawing::Draw3
 		TransparentPresentObservation lastObservation{};
 		std::string deviceInformation;
 		bool waitableSwapChain = false;
+		// 帧延迟句柄属于当前交换链；gate 的熔断状态跨交换链重建保留到 Shutdown。
+		HANDLE frameLatencyWaitHandle = nullptr;
+		FrameLatencyGate frameLatencyGate;
+		double compositionRefreshMs = kFrameLatencyDefaultRefreshMs;
+		double frameLatencyTargetMs = 1000.0 / 120.0;
+		FrameLatencyWaitReport presentLatencyWait;
+		struct FrameLatencySummary
+		{
+			double startMs = 0.0, waitSumMs = 0.0, waitMaxMs = 0.0;
+			std::uint32_t acquired = 0, timeouts = 0;
+		} frameLatencySummary;
+
+		~Impl() { CloseFrameLatencyHandle(); }
+
+		void CloseFrameLatencyHandle() noexcept
+		{
+			if (frameLatencyWaitHandle) CloseHandle(frameLatencyWaitHandle);
+			frameLatencyWaitHandle = nullptr;
+			frameLatencyGate.Reset();
+			frameLatencySummary = {};
+			presentLatencyWait = {};
+		}
+
+		FrameLatencyWaitResult WaitFrameLatency(FrameLatencyTimeoutPolicy policy) noexcept
+		{
+			const HANDLE handle = frameLatencyWaitHandle;
+			const FrameLatencyWaitResult result = frameLatencyGate.Acquire(
+				frameLatencyTargetMs, compositionRefreshMs, policy,
+				[]() noexcept { return QpcMilliseconds(); },
+				[handle](std::uint32_t timeoutMilliseconds) noexcept
+				{
+					// 内核等待，不自旋；超时由调用方按“本帧照常呈现”处理。
+					switch (WaitForSingleObjectEx(handle, timeoutMilliseconds, FALSE))
+					{
+					case WAIT_OBJECT_0: return FrameLatencySignal::Signaled;
+					case WAIT_TIMEOUT: return FrameLatencySignal::TimedOut;
+					default: return FrameLatencySignal::Failed;
+					}
+				});
+			if (result.outcome != FrameLatencyWaitOutcome::Signaled &&
+				result.outcome != FrameLatencyWaitOutcome::TimedOut) return result;
+			FrameLatencySummary& summary = frameLatencySummary;
+			if (result.outcome == FrameLatencyWaitOutcome::Signaled) ++summary.acquired;
+			else ++summary.timeouts;
+			summary.waitSumMs += result.waitedMs;
+			summary.waitMaxMs = (std::max)(summary.waitMaxMs, result.waitedMs);
+			const double nowMs = QpcMilliseconds();
+			if (summary.startMs <= 0.0) summary.startMs = nowMs;
+			else if (nowMs - summary.startMs >= 1000.0)
+			{
+				// 约每秒汇总一次（Debug 级别，默认不输出），不逐帧记录。
+				const std::uint32_t waits = summary.acquired + summary.timeouts;
+				DiagnosticOutput::Line() << "[Draw3Diag][latency] acquired=" << summary.acquired
+					<< " timeouts=" << summary.timeouts
+					<< " waitAvgMs=" << (waits ? summary.waitSumMs / waits : 0.0)
+					<< " waitMaxMs=" << summary.waitMaxMs
+					<< " timeoutMs=" << result.timeoutMs
+					<< " signalIntervalMs=" << frameLatencyGate.SignalIntervalEmaMs()
+					<< " refreshMs=" << compositionRefreshMs << std::endl;
+				summary = {};
+				summary.startMs = nowMs;
+			}
+			return result;
+		}
+
+		void TripFrameLatency() noexcept
+		{
+			const std::uint32_t consecutiveTimeouts = frameLatencyGate.ConsecutiveTimeouts();
+			frameLatencyGate.Trip();
+			DiagnosticOutput::Line() << "[Draw3Diag][latency] waitable wait tripped reason="
+				<< (frameLatencyGate.TripReason() == FrameLatencyTripReason::WaitFailed ? "wait-failed" : "signal-lost")
+				<< " consecutiveTimeouts=" << consecutiveTimeouts
+				<< " totalTimeouts=" << frameLatencyGate.TotalTimeouts()
+				<< " totalAcquired=" << frameLatencyGate.TotalAcquired()
+				<< "; rebuilding swapchain without waitable flag." << std::endl;
+			// 不在帧中途换链：走现有恢复路径重建同模式交换链，并由 CPU 文档重放画布。
+			SetFailure(DXGI_ERROR_WAIT_TIMEOUT);
+		}
 
 		void CaptureDeviceInformation()
 		{
@@ -922,6 +1030,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const bool retired = ResetPresenters();
 			if (renderer) renderer->ReleaseResources();
+			CloseFrameLatencyHandle();
 			swapChain.Reset();
 			waitableSwapChain = false;
 			return retired;
@@ -1003,6 +1112,27 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 
+			if (IsDirectCompositionMode(mode))
+			{
+				if (options.enableWaitableWait)
+				{
+					// 取不到句柄就无法执行上限：视为 waitable 不可用，回退普通交换链（设备级上限）。
+					const HANDLE waitHandle = swapChain2->GetFrameLatencyWaitableObject();
+					if (!waitHandle)
+					{
+						DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "Waitable frame latency handle is unavailable; fallback to ordinary swapchain." << std::endl;
+						swapChain.Reset();
+						return false;
+					}
+					frameLatencyWaitHandle = waitHandle;
+					frameLatencyGate.Enable();
+					compositionRefreshMs = QueryCompositionRefreshMilliseconds();
+					DiagnosticOutput::Line() << "[Draw3Diag][latency] waitable wait enabled refreshMs=" << compositionRefreshMs
+						<< " timeoutMs=" << frameLatencyGate.TimeoutMs(frameLatencyTargetMs, compositionRefreshMs) << std::endl;
+				}
+				else DiagnosticOutput::Line() << "[Draw3Diag][latency] waitable wait disabled by setting." << std::endl;
+			}
+
 			waitableSwapChain = true;
 			DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "Waitable swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
 			if (IsDwmGlassMode(mode))
@@ -1026,7 +1156,11 @@ namespace Inkeys::Drawing::Draw3
 			description.AlphaMode = IsGpuMode(mode) ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_UNSPECIFIED; // GPU 透明路径需要保留 premultiplied alpha。
 
 			// 先试 Win8.1+ 的 waitable swapchain；失败后不判断系统版本，直接回退普通路径。
-			if (TryCreateWaitableSwapChain(mode, description)) return true;
+			// 帧延迟等待熔断后，本会话的 DComp 不再带 waitable 标志，排队改由设备级上限在 Present 内限制。
+			const bool waitableTripped = frameLatencyGate.Tripped() && IsDirectCompositionMode(mode);
+			if (waitableTripped)
+				DiagnosticOutput::Line() << "[Draw3Diag][latency] waitable swapchain skipped: wait tripped earlier in this session." << std::endl;
+			else if (TryCreateWaitableSwapChain(mode, description)) return true;
 
 			HRESULT result = CreateSwapChainForMode(mode, description);
 			if (FAILED(result) || !swapChain)
@@ -1158,7 +1292,23 @@ namespace Inkeys::Drawing::Draw3
 				parameters.DirtyRectsCount = 1;
 				parameters.pDirtyRects = &dirty;
 			}
-			return swapChain->Present1(0, 0, &parameters);
+			// 帧循环外的呈现（清屏、整帧等）没有令牌时先补等一次，不绕过排队上限；超时照常 Present。
+			if (frameLatencyWaitHandle && frameLatencyGate.NeedsWaitBeforePresent())
+			{
+				const FrameLatencyWaitResult waited = WaitFrameLatency(FrameLatencyTimeoutPolicy::Neutral);
+				presentLatencyWait.waitedMs += waited.waitedMs;
+				if (waited.outcome == FrameLatencyWaitOutcome::Signaled)
+					presentLatencyWait.state = FrameLatencyWaitState::Signaled;
+				else if (waited.outcome == FrameLatencyWaitOutcome::TimedOut)
+				{
+					presentLatencyWait.state = FrameLatencyWaitState::TimedOut;
+					presentLatencyWait.timedOut = true;
+				}
+			}
+			const HRESULT result = swapChain->Present1(0, 0, &parameters);
+			// 只有实际调用且成功的 Present1 才消耗令牌；上面的空矩形早退不算。
+			frameLatencyGate.OnPresentCalled(SUCCEEDED(result));
+			return result;
 		}
 	};
 
@@ -1173,6 +1323,8 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (!impl_) return;
 		impl_->ReleaseAttempt();
+		impl_->frameLatencyGate = {}; // 熔断只在本会话有效。
+		impl_->frameLatencyTargetMs = 1000.0 / 120.0;
 		impl_->primaryWindow = nullptr;
 		impl_->selectionWindow = nullptr;
 		impl_->graphics = nullptr;
@@ -1509,6 +1661,45 @@ namespace Inkeys::Drawing::Draw3
 				!impl_->selectionUlwPresenter.committedFullFrameClean)) return false;
 		impl_->selectionUlwPresenter.ReleaseReadbackResources();
 		return true;
+	}
+
+	FrameLatencyWaitReport TransparentPresentationController::PrepareFrameLatency(
+		double targetFrameMs, bool countsTowardTrip)
+	{
+		FrameLatencyWaitReport report;
+		if (!impl_) return report;
+		if (std::isfinite(targetFrameMs) && targetFrameMs > 0.0) impl_->frameLatencyTargetMs = targetFrameMs;
+		// 仅 DComp waitable 交换链输出到主画布时等待；ULW、辅助输出和待恢复状态立即返回。
+		if (!impl_->frameLatencyGate.Enabled() || !impl_->frameLatencyWaitHandle || impl_->recoveryPending ||
+			impl_->requestedOutputTarget != TransparentOutputTarget::PrimaryDrawpad) return report;
+		if (impl_->frameLatencyGate.TokenHeld())
+		{
+			report.state = FrameLatencyWaitState::AlreadyHeld;
+			return report;
+		}
+		// 窗口隐藏/最小化或输出交接屏障未完成时句柄可能长期不发信号：超时只计统计，不参与熔断。
+		const bool countable = countsTowardTrip && impl_->dcompHandoffBarrier.pendingOutputRevision == 0 &&
+			IsWindowVisible(impl_->primaryWindow) && !IsIconic(impl_->primaryWindow);
+		const FrameLatencyWaitResult result = impl_->WaitFrameLatency(
+			countable ? FrameLatencyTimeoutPolicy::Count : FrameLatencyTimeoutPolicy::Exclude);
+		report.waitedMs = result.waitedMs;
+		report.timedOut = result.outcome == FrameLatencyWaitOutcome::TimedOut;
+		report.state = result.outcome == FrameLatencyWaitOutcome::Signaled
+			? FrameLatencyWaitState::Signaled : FrameLatencyWaitState::TimedOut;
+		if (impl_->frameLatencyGate.ShouldTrip())
+		{
+			impl_->TripFrameLatency();
+			report.state = FrameLatencyWaitState::Tripped;
+		}
+		return report;
+	}
+
+	FrameLatencyWaitReport TransparentPresentationController::ConsumePresentLatencyWait() noexcept
+	{
+		if (!impl_) return {};
+		const FrameLatencyWaitReport report = impl_->presentLatencyWait;
+		impl_->presentLatencyWait = {};
+		return report;
 	}
 
 	bool TransparentPresentationController::RefreshAfterCompositionChanged()
