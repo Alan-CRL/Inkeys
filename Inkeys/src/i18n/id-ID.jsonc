@@ -1061,6 +1061,68 @@
       {
         "N": "Jangan batasi gerakan mouse ke laju bingkai kanvas saat menggambar",
         "E": "Jika aktif, setiap gerakan mouse saat menggambar dengan tombol ditekan langsung menyegarkan kanvas. Goresan mouse diambil sampelnya lebih rapat, tetapi beban CPU dan GPU meningkat signifikan. Jika nonaktif, kanvas disegarkan sesuai laju bingkai kanvas."
+      },
+      "Dashboard":
+      {
+        "Title": "Performa perangkat",
+        "Expand": "Detail",
+        "Collapse": "Ciutkan",
+        "LoadLabel": "Beban rata-rata",
+        "UnlimitedFormat": "Laju tanpa batas sekitar {0} FPS · diukur pada {1} FPS",
+        "EmptyHint": "Setelah beberapa goresan, area ini akan menunjukkan seberapa ringan perangkat ini menggambar kanvas.",
+        "PreviousTag": "Sebelum perubahan",
+        "PausedTag": "Perekaman dijeda",
+        "LowSample": "Sampel sedikit, hanya sebagai acuan",
+        "LowSampleShort": "Sampel sedikit",
+        "EvaluatedFormat": "Dievaluasi {0}",
+        "RangeFormat": "{0} hari penggunaan terakhir ({1} s.d. {2})",
+        "RangeSingleFormat": "1 hari penggunaan terakhir ({0})",
+        "CoverageFormat": "Mencakup: {0}",
+        "NoDimensionData": "Belum ada data",
+        "DimensionFpsFormat": "Sekitar {0} FPS",
+        "Level":
+        {
+          "Ample": "Longgar",
+          "Moderate": "Sedang",
+          "Tight": "Ketat",
+          "Overloaded": "Kelebihan beban"
+        },
+        "Conclusion":
+        {
+          "Ample": "Perangkat sangat santai, dengan banyak ruang tersisa pada laju bingkai saat ini.",
+          "Moderate": "Beban perangkat sedang; laju bingkai saat ini berjalan stabil.",
+          "Tight": "Beban perangkat cukup tinggi; bingkai sesekali bisa terlewat pada adegan rumit.",
+          "Overloaded": "Perangkat tidak sanggup mengikuti laju bingkai saat ini; menulis bisa tersendat atau tertunda."
+        },
+        "Advice":
+        {
+          "Lower": "Sebaiknya turunkan laju bingkai kanvas ke {0} FPS (perkiraan beban sekitar {1}%).",
+          "LowestHeavy": "Laju bingkai terendah pun masih berat. Pastikan akselerasi perangkat keras aktif, atau tutup program yang memakai GPU.",
+          "LowerToMatch": "Sebaiknya turunkan laju bingkai kanvas ke {0} FPS agar sama dengan layar.",
+          "Raise": "Anda dapat menaikkan laju bingkai kanvas ke {0} FPS (perkiraan beban sekitar {1}%). Menulis paling lancar saat sama dengan layar {2} Hz.",
+          "MatchedCanRaise": "Laju bingkai saat ini sudah sama dengan kecepatan refresh layar ({0} Hz). Perangkat masih longgar, jadi Anda juga dapat menaikkannya ke {1} FPS: tampilan tidak lebih lancar, tetapi tinta lebih presisi dan halus.",
+          "AboveRefresh": "Laju bingkai saat ini lebih tinggi dari kecepatan refresh layar ({0} Hz). Tampilan tidak lebih lancar, tetapi tinta lebih presisi dan halus; beban perangkat memungkinkan untuk mempertahankannya.",
+          "Fine": "Pengaturan laju bingkai kanvas saat ini sudah sesuai.",
+          "Stutter": "Beban rata-rata tidak tinggi, tetapi sekitar {0}% bingkai melebihi waktu bingkai, sehingga sesekali bisa tersendat.",
+          "RestartPending": "Laju bingkai kanvas diubah ke {0} FPS. Berlaku setelah dimulai ulang, dan data akan dikumpulkan kembali.",
+          "Previous": "Ini data sebelum pengaturan diubah; data untuk pengaturan saat ini masih dikumpulkan."
+        },
+        "Dimension":
+        {
+          "Writing": "Menulis",
+          "Highlighter": "Penyorot",
+          "Eraser": "Penghapus",
+          "Laser": "Penunjuk laser",
+          "Shape": "Bentuk",
+          "Pan": "Geser"
+        },
+        "Recording":
+        {
+          "N": "Rekam data performa perangkat",
+          "E": "Hanya statistik seperti waktu menggambar yang direkam, disimpan di perangkat ini, dan tidak diunggah."
+        },
+        "Clear": "Hapus data",
+        "ClearConfirm": "Konfirmasi"
       }
     },
     "Linkage":

@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -22,6 +22,7 @@ module;
 #include "Draw3.PalmEraser.h"
 #include "Draw3.PenDiagnostics.h"
 #include "Draw3.CanvasPanSettings.h"
+#include "Draw3.DevicePerformanceLedger.h"
 
 export module Inkeys.Drawing.Draw3.drawing_controller;
 
@@ -125,7 +126,8 @@ export namespace Inkeys::Drawing::Draw3
 			TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
 			DrawingControllerRuntimeObserver observer = {},
 			RuntimeMetricsSession* metrics = nullptr, PenHapticFeedback* haptics = nullptr,
-			Haptics::ClickMailbox* hapticClicks = nullptr);
+			Haptics::ClickMailbox* hapticClicks = nullptr,
+			DevicePerformanceLedger* devicePerformance = nullptr);
 		~DrawingController();
 		// 成组更新设备宽度设置；新设置只影响之后开始的普通笔笔画。
 		bool SetInputWidthModeSettings(InputWidthModeSettings settings) noexcept;
@@ -234,6 +236,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool drawingHapticsEnabled_ = true; // 仅绘制 owner 读写。
 		PenHapticFeedback* haptics_ = nullptr;
 		Haptics::ClickMailbox* hapticClicks_ = nullptr;
+		// 设备性能账本（Host 持有，生命周期长于本对象）；为空时不统计。
+		DevicePerformanceLedger* devicePerformance_ = nullptr;
 		double lastPresentDurationMs_ = 0.0;
 		// 本帧在帧延迟句柄上的等待耗时：计入帧预算，但不算工作耗时，也不算 Present 耗时。
 		double frameLatencyWaitMs_ = 0.0;

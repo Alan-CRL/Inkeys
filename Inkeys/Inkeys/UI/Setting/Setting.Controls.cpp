@@ -1,4 +1,4 @@
-#include "Setting.Controls.h"
+﻿#include "Setting.Controls.h"
 #include "imfluent/imfluent_internal.h"
 #include "Setting.Theme.h"
 #include "imgui/imgui_internal.h"
@@ -53,6 +53,11 @@ namespace Inkeys::UI::Setting::Design
 			.featureTint = { IM_COL32(242, 246, 250, 255), IM_COL32(247, 242, 237, 255), IM_COL32(240, 244, 243, 255) },
 			.featureInk = { IM_COL32(69, 104, 131, 255), IM_COL32(156, 113, 83, 255), IM_COL32(84, 116, 107, 255) },
 			.avatarFill = IM_COL32(240, 240, 240, 255),
+			// 绿/黄/红底与 notice 成功/警告/严重一致，accent 对齐 ImFluent SystemFill；灰为“适中”。
+			.performanceFill = { IM_COL32(255, 255, 255, 255), IM_COL32(235, 246, 238, 255), IM_COL32(241, 241, 243, 255),
+				IM_COL32(255, 248, 223, 255), IM_COL32(253, 239, 237, 255) },
+			.performanceAccent = { IM_COL32(110, 110, 118, 255), IM_COL32(15, 123, 15, 255), IM_COL32(110, 110, 118, 255),
+				IM_COL32(157, 93, 0, 255), IM_COL32(196, 43, 28, 255) },
 		};
 		constexpr Palette darkPalette{
 			.appBase = IM_COL32(32, 32, 32, 255),
@@ -93,6 +98,10 @@ namespace Inkeys::UI::Setting::Design
 			.featureTint = { IM_COL32(40, 53, 66, 255), IM_COL32(59, 49, 42, 255), IM_COL32(40, 55, 50, 255) },
 			.featureInk = { IM_COL32(157, 195, 222, 255), IM_COL32(219, 181, 147, 255), IM_COL32(158, 199, 180, 255) },
 			.avatarFill = IM_COL32(58, 58, 58, 255),
+			.performanceFill = { IM_COL32(43, 43, 43, 255), IM_COL32(37, 55, 43, 255), IM_COL32(48, 48, 52, 255),
+				IM_COL32(64, 56, 31, 255), IM_COL32(68, 42, 43, 255) },
+			.performanceAccent = { IM_COL32(170, 170, 178, 255), IM_COL32(108, 203, 95, 255), IM_COL32(170, 170, 178, 255),
+				IM_COL32(252, 225, 0, 255), IM_COL32(255, 153, 164, 255) },
 		};
 		Palette activePalette = lightPalette;
 		bool activeDarkMode = false;
@@ -2521,6 +2530,8 @@ namespace Inkeys::UI::Setting::Design
 			activePalette.heroFill = alpha(activePalette.heroFill, 179);
 			for (auto& tint : activePalette.featureTint) tint = alpha(tint, 179);
 			activePalette.avatarFill = alpha(activePalette.avatarFill, 179);
+			// 性能看板档位底色同属带色卡片。
+			for (auto& fill : activePalette.performanceFill) fill = alpha(fill, 179);
 			// 与 WinUI SubtleFill 一致：半透明叠色随材质变深/变浅，选中项不再是不透明亮白块。
 			activePalette.subtleHover = activeDarkMode ? IM_COL32(255, 255, 255, 15) : IM_COL32(0, 0, 0, 9);
 			activePalette.subtlePressed = activeDarkMode ? IM_COL32(255, 255, 255, 10) : IM_COL32(0, 0, 0, 6);

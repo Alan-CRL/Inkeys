@@ -1061,6 +1061,68 @@
       {
         "N": "Nu limita mișcarea mouse-ului la rata de cadre a pânzei în timpul desenării",
         "E": "Când este activată, fiecare mișcare a mouse-ului în timp ce desenezi cu butonul apăsat reîmprospătează imediat pânza. Traseele mouse-ului sunt eșantionate mai des, dar sarcina procesorului și a GPU-ului crește vizibil. Când este dezactivată, pânza se reîmprospătează la rata de cadre a pânzei."
+      },
+      "Dashboard":
+      {
+        "Title": "Performanța dispozitivului",
+        "Expand": "Detalii",
+        "Collapse": "Restrânge",
+        "LoadLabel": "Sarcină medie",
+        "UnlimitedFormat": "Rată nelimitată aprox. {0} FPS · măsurată la {1} FPS",
+        "EmptyHint": "După câteva trăsături, aici veți vedea cât de ușor desenează acest dispozitiv pânza.",
+        "PreviousTag": "Înainte de modificare",
+        "PausedTag": "Înregistrare întreruptă",
+        "LowSample": "Puține eșantioane, doar orientativ",
+        "LowSampleShort": "Puține eșantioane",
+        "EvaluatedFormat": "Evaluat: {0}",
+        "RangeFormat": "Ultimele {0} zile de utilizare ({1} - {2})",
+        "RangeSingleFormat": "Ultima zi de utilizare ({0})",
+        "CoverageFormat": "Include: {0}",
+        "NoDimensionData": "Fără date",
+        "DimensionFpsFormat": "Aprox. {0} FPS",
+        "Level":
+        {
+          "Ample": "Confortabil",
+          "Moderate": "Moderat",
+          "Tight": "La limită",
+          "Overloaded": "Supraîncărcat"
+        },
+        "Conclusion":
+        {
+          "Ample": "Dispozitivul este foarte relaxat, cu rezervă mare la rata de cadre actuală.",
+          "Moderate": "Sarcina dispozitivului este moderată, iar rata de cadre actuală este stabilă.",
+          "Tight": "Sarcina dispozitivului este ridicată; în scene complexe se pot pierde ocazional cadre.",
+          "Overloaded": "Dispozitivul nu face față ratei de cadre actuale; scrierea poate sacada sau întârzia."
+        },
+        "Advice":
+        {
+          "Lower": "Vă recomandăm să reduceți rata de cadre a pânzei la {0} FPS (sarcină estimată aprox. {1}%).",
+          "LowestHeavy": "Chiar și cea mai mică rată de cadre este solicitantă. Verificați dacă accelerarea hardware este activată sau închideți programele care folosesc GPU-ul.",
+          "LowerToMatch": "Vă recomandăm să reduceți rata de cadre a pânzei la {0} FPS, la fel ca ecranul.",
+          "Raise": "Puteți crește rata de cadre a pânzei la {0} FPS (sarcină estimată aprox. {1}%). Scrierea este cea mai fluidă când corespunde cu cei {2} Hz ai ecranului.",
+          "MatchedCanRaise": "Rata de cadre actuală corespunde ratei de reîmprospătare a ecranului ({0} Hz). Dispozitivul are rezervă suficientă, deci puteți crește și la {1} FPS: imaginea nu va fi mai fluidă, dar cerneala va fi mai precisă și mai netedă.",
+          "AboveRefresh": "Rata de cadre actuală depășește rata de reîmprospătare a ecranului ({0} Hz). Imaginea nu este mai fluidă, dar cerneala este mai precisă și mai netedă; sarcina dispozitivului permite păstrarea ei.",
+          "Fine": "Rata de cadre a pânzei este setată corespunzător.",
+          "Stutter": "Sarcina medie nu este mare, dar aprox. {0}% dintre cadre depășesc timpul alocat; pot apărea sacadări ocazionale.",
+          "RestartPending": "Rata de cadre a pânzei a fost schimbată la {0} FPS. Se aplică după repornire, iar datele vor fi colectate din nou.",
+          "Previous": "Acestea sunt date de dinainte de modificarea setărilor; datele pentru setările actuale încă se colectează."
+        },
+        "Dimension":
+        {
+          "Writing": "Scriere",
+          "Highlighter": "Evidențiator",
+          "Eraser": "Radieră",
+          "Laser": "Indicator laser",
+          "Shape": "Forme",
+          "Pan": "Deplasare"
+        },
+        "Recording":
+        {
+          "N": "Înregistrare date de performanță",
+          "E": "Se înregistrează doar statistici precum timpul de desenare. Acestea rămân pe acest dispozitiv și nu sunt încărcate."
+        },
+        "Clear": "Șterge datele",
+        "ClearConfirm": "Confirmă"
       }
     },
     "Linkage":

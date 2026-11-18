@@ -15061,7 +15061,8 @@ namespace Inkeys::Drawing::Draw3
 	DrawingController::DrawingController(ContactInputCoordinator& input, WindowController& window, InkRenderer& renderer,
 		TransparentPresentationController& presentation, StrokeModelConfiguration configuration,
 		DrawingControllerRuntimeObserver observer,
-		RuntimeMetricsSession* metrics, PenHapticFeedback* haptics, Haptics::ClickMailbox* hapticClicks)
+		RuntimeMetricsSession* metrics, PenHapticFeedback* haptics, Haptics::ClickMailbox* hapticClicks,
+		DevicePerformanceLedger* devicePerformance)
 		: input_(input), window_(window), renderer_(renderer),
 		presentation_(presentation), configuration_(std::move(configuration)), observer_(observer),
 		inputWidthModeSettings_(configuration_.inputWidthModes),
@@ -15074,7 +15075,8 @@ namespace Inkeys::Drawing::Draw3
 		laserHoldDurationSeconds_(std::isfinite(configuration_.laserHoldDurationSeconds) &&
 			configuration_.laserHoldDurationSeconds >= 0.0
 			? configuration_.laserHoldDurationSeconds : 1.0), metrics_(metrics),
-			metricsState_(DrawingControllerMetricsState::Prepare(metrics)), haptics_(haptics), hapticClicks_(hapticClicks)
+			metricsState_(DrawingControllerMetricsState::Prepare(metrics)), haptics_(haptics), hapticClicks_(hapticClicks),
+			devicePerformance_(devicePerformance)
 	{
 		// 指标预备失败仅关闭诊断，不能影响正常输入/模型/画质或启动。
 		metricsUnavailable_ = metrics && !metricsState_;
@@ -20458,6 +20460,9 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		};
 
+		// 设备性能看板：本帧做过一次性重活（设备恢复、合成变化、Resize、共享层重建、画布命令），不计入统计。
+		// 不能用 forceFullPresent 代替：平移帧每帧都强制全帧，会让漫游维度永远没有数据。
+		bool performanceHeavyFrame = false;
 		auto processCanvasCommands = [&](RECT& frameDirty,
 			LaserParticleDirtySnapshot& particleSnapshot,
 			bool& forceFullPresent, int width, int height)
@@ -20491,6 +20496,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (!shapeDeferredCommands.empty() || window_.TryDequeueCanvasCommand(command))
 				{
+					performanceHeavyFrame = true;
 					if (!shapeDeferredCommands.empty()) { command = std::move(shapeDeferredCommands.front()); shapeDeferredCommands.pop_front(); }
 					if (command.type == CanvasCommandType::SetPresentationTarget ||
 						command.type == CanvasCommandType::SetWorkspace ||
@@ -21526,6 +21532,71 @@ namespace Inkeys::Drawing::Draw3
 		unsigned consecutiveRasterFailures = 0;
 		ULONGLONG lastRasterFailureLogTick = 0;
 		bool activeLayerRebuildPending = false;
+		// ---- 设备性能看板（绘制线程独占）----
+		// 帧内只向固定计数器做常数次加法：无锁、无分配、绝不写文件。抬笔进入空闲等待前才移交账本，
+		// 账本只在绘制空闲时由后台线程写盘。关闭记录时帧内不算维度、不累加、不移交。
+		DevicePerformance::Tally performanceTally;
+		DevicePerformance::Signature performanceSignature{};
+		bool performanceSignatureKnown = false;
+		// 帧内签名变化（熔断/回退，极少）时，旧签名的段转存到这个预分配槽，空闲时再移交：帧内不加锁、不分配。
+		DevicePerformance::Tally performanceDeferredTally;
+		DevicePerformance::Signature performanceDeferredSignature{};
+		std::uint64_t performanceSegmentEpoch = 0;          // 当前段开始时账本的清除代次
+		std::uint64_t performanceDeferredSegmentEpoch = 0;
+		bool performanceSignaturePending = false; // 新签名待在空闲时告知账本
+		uint32_t performanceFrameDimensions = 0; // 本帧在用工具维度，在结束的笔画移出 active 之前算好
+		const auto currentPerformanceSignature = [&]() noexcept
+		{
+			// 实际生效状态（不是偏好）：回退、waitable/ULW 熔断、设备丢失转 WARP、合成变化都会自然改变签名。
+			const TransparentPresentationEffectiveState state = presentation_.EffectiveState();
+			DevicePerformance::Signature signature;
+			signature.frameRate = static_cast<std::uint16_t>(std::lround(configuration_.timingProfile.target_fps));
+			signature.device = state.warpDevice ? DevicePerformance::Device::Warp : DevicePerformance::Device::Hardware;
+			signature.presentation = state.mode == TransparentPresentMode::DirectCompositionVisualTree
+				? DevicePerformance::Presentation::DirectComposition
+				: state.mode == TransparentPresentMode::UlwDirtyRect
+				? DevicePerformance::Presentation::Ulw : DevicePerformance::Presentation::Unknown;
+			signature.waitable = state.waitableWait ? 1 : 0;
+			signature.ulwAsyncReadback = state.ulwAsyncReadback ? 1 : 0;
+			signature.ulwCompositionAlign = state.ulwCompositionAlign ? 1 : 0;
+			signature.zhaoxinCompatibility = renderer_.UsesZhaoxinCompatibleUpload() ? 1 : 0;
+			return DevicePerformance::NormalizeSignature(signature);
+		};
+		const auto submitPerformanceTally = [&]() noexcept
+		{
+			if (!devicePerformance_) return;
+			// 期间关闭了记录：丢弃本段（空段移交只清除忙碌标志），保证关闭后不再产生写盘。
+			if (!devicePerformance_->RecordingEnabled())
+			{
+				performanceTally.Clear();
+				performanceDeferredTally.Clear();
+			}
+			if (!performanceDeferredTally.Empty())
+			{
+				devicePerformance_->Submit(performanceDeferredSignature, performanceDeferredTally.counters,
+					performanceDeferredSegmentEpoch);
+				performanceDeferredTally.Clear();
+			}
+			if (performanceSignaturePending)
+			{
+				devicePerformance_->SetCurrentSignature(performanceSignature);
+				performanceSignaturePending = false;
+			}
+			if (performanceTally.Empty())
+			{
+				devicePerformance_->Submit(performanceSignature, {});
+				return;
+			}
+			devicePerformance_->Submit(performanceSignature, performanceTally.counters, performanceSegmentEpoch);
+			performanceTally.Clear();
+		};
+		if (devicePerformance_)
+		{
+			// 看板在未画任何一笔前也要知道当前签名，才能区分“当前设置”与“设置变更前”的数据。
+			performanceSignature = currentPerformanceSignature();
+			performanceSignatureKnown = true;
+			devicePerformance_->SetCurrentSignature(performanceSignature);
+		}
 		try
 		{
 		while (true)
@@ -21589,11 +21660,14 @@ namespace Inkeys::Drawing::Draw3
 			lastPresentDurationMs_ = 0.0;
 			frameLatencyWaitMs_ = 0.0;
 			lastPresentSucceeded_ = false;
+			performanceHeavyFrame = false;
+			performanceFrameDimensions = 0;
 		bool rasterSubmissionFailed = false;
 			bool forceFullPresent = outputTargetChanged || contentRevisionNeedsPresent;
 			RECT viewportRecoveryDirty = {};
 			if (graphicsRecoveryPending_)
 			{
+				performanceHeavyFrame = true;
 				if (metricsState_)
 				{
 					metricsState_->Mark(RuntimeMetricsFrameReason::Recovery);
@@ -21717,6 +21791,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (window_.ConsumeCompositionChangedRequest())
 			{
+				performanceHeavyFrame = true;
 				if (metricsState_) metricsState_->Mark(RuntimeMetricsFrameReason::Recovery);
 				if (!presentation_.RefreshAfterCompositionChanged())
 				{
@@ -21728,6 +21803,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (ProcessPendingResize(false))
 			{
+				performanceHeavyFrame = true;
 				// 窗口尺寸变化后触点坐标系与视口覆盖都已失效：立即终止平移手势与惯性。
 				if (canvasPan.Active()) stopCanvasNavigation("resize");
 				const WindowSize size = window_.Size();
@@ -21824,6 +21900,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (activeLayerRebuildPending && !rasterSubmissionFailed)
 			{
+				performanceHeavyFrame = true;
 				// 失败帧可能已清空共享层；下一帧先从仍权威的 CPU 笔迹整体重放。
 				const WindowSize rebuildSize = window_.Size();
 				const LiveRasterSubmission rebuilt = RebuildActiveLayers(active, renderer_,
@@ -22285,6 +22362,9 @@ namespace Inkeys::Drawing::Draw3
 				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty))
 			{
 				if (!completeUlwBeforeIdle()) continue; // idle/Hold 等待前 ULW 最后一帧必须上屏。
+				// 抬笔进入空闲：把本段设备性能累加移交账本（短锁合并，不做 I/O）。
+				if (!performanceTally.Empty() || !performanceDeferredTally.Empty() || performanceSignaturePending)
+					submitPerformanceTally();
 				if (metrics_) metrics_->BeginIdle(frameStartMs);
 				if (metricsState_) metricsState_->Finish(); // idle/Hold等待不能混入render wall。
 				lastActiveFrameStartMs = 0.0;
@@ -23047,6 +23127,11 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			drainActiveShapeControlBarrier(frameDirty);
+			if (devicePerformance_ && devicePerformance_->RecordingEnabled())
+				for (const RuntimeStroke* runtime : active)
+					// 手掌仅观察触点不出墨、已取消的接触不代表该工具的真实负载。
+					if (runtime && !runtime->palmObservationOnly && !runtime->cancelled)
+						performanceFrameDimensions |= DevicePerformance::ToolDimensionMask(static_cast<int>(runtime->tool));
 			if (hasEndedStroke)
 			{
 				// 焦点层候选：本批最后一笔、且结束后不再有任何活动接触；只有它可留在 L1 且保持 Z 序最上层。
@@ -23678,16 +23763,17 @@ namespace Inkeys::Drawing::Draw3
 					static_cast<long long>(panPresentReturnQpc), submitInterval, submitAge, rasterSubmissionFailed ? 1u : 0u);
 				if (presentSucceeded) previousPanPresentQpc = panPresentReturnQpc;
 			}
+			// 脏区完全落在调试注入范围内且没有强制全帧时，是调试板自己的刷新帧，不计入帧率。
+			// 可视化标记存在时每个呈现帧都在重绘标记，那是真实的画布帧，必须计入。
+			const bool canvasDebugOnlyFrame = canvasDebugOverlay && canvasDebugInjected && !forceFullPresent &&
+				IsEmptyRect(canvasDebugOverlay->MarkerBounds()) &&
+				frameDirty.left >= canvasDebugInjectedBounds.left &&
+				frameDirty.top >= canvasDebugInjectedBounds.top &&
+				frameDirty.right <= canvasDebugInjectedBounds.right &&
+				frameDirty.bottom <= canvasDebugInjectedBounds.bottom;
 			if (canvasDebugOverlay)
 			{
-				// 脏区完全落在调试注入范围内且没有强制全帧时，是调试板自己的刷新帧，不计入帧率。
-				// 可视化标记存在时每个呈现帧都在重绘标记，那是真实的画布帧，必须计入。
-				const bool debugOnlyFrame = canvasDebugInjected && !forceFullPresent &&
-					IsEmptyRect(canvasDebugOverlay->MarkerBounds()) &&
-					frameDirty.left >= canvasDebugInjectedBounds.left &&
-					frameDirty.top >= canvasDebugInjectedBounds.top &&
-					frameDirty.right <= canvasDebugInjectedBounds.right &&
-					frameDirty.bottom <= canvasDebugInjectedBounds.bottom;
+				const bool debugOnlyFrame = canvasDebugOnlyFrame;
 				// 帧延迟等待不是工作耗时：无限制帧率与负载百分比按扣除后的耗时计算。
 				canvasDebugOverlay->OnFrame((std::max)(0.0, canvasFrameElapsedMilliseconds - frameLatencyWaitMs_),
 					presentSucceeded && !debugOnlyFrame);
@@ -23697,6 +23783,44 @@ namespace Inkeys::Drawing::Draw3
 					LARGE_INTEGER presentedQpc = {};
 					QueryPerformanceCounter(&presentedQpc);
 					canvasDebugOverlay->OnPresented(presentedQpc.QuadPart);
+				}
+			}
+			// 设备性能看板计数：成功上屏的真实绘制帧。排除一次性重帧、模式切换帧、桌面/PPT 选择模式辅助输出
+			// （白板移动模式也是选择模式但仍输出主画布，漫游就在其中，不能排除）、画布调试可视化（标记自身有光栅开销）。
+			if (devicePerformance_ && presentSucceeded && !canvasDebugOnlyFrame && !performanceHeavyFrame &&
+				!outputTargetChanged && !selectionUsesAuxiliary &&
+				canvasDebugOptions_.load(std::memory_order_acquire) != 3u && devicePerformance_->RecordingEnabled())
+			{
+				std::uint32_t dimensions = performanceFrameDimensions;
+				// 平移惯性最后一帧或抬手帧 Step 后 Active() 已为 false，用帧开始时的状态补上。
+				if (navigationInProgress || canvasPan.Active())
+					dimensions |= DevicePerformance::DimensionBit(DevicePerformance::Dimension::Pan);
+				// 激光笔抬起后的保持/淡出仍在按帧率出帧，属于激光笔负载。
+				if (laserLifecycle.phase == LaserTrailPhase::Hold || laserLifecycle.phase == LaserTrailPhase::Fade)
+					dimensions |= DevicePerformance::DimensionBit(DevicePerformance::Dimension::Laser);
+				if (dimensions != 0)
+				{
+					const DevicePerformance::Signature signature = currentPerformanceSignature();
+					if (!performanceSignatureKnown || !(signature == performanceSignature))
+					{
+						// 运行中实际呈现状态变了（极少）：旧签名的段转存到第二个槽（固定大小拷贝），空闲时再移交。
+						// 同一段内第三次变化时较早的数据丢弃（只影响一次极短的统计）。
+						if (!performanceTally.Empty())
+						{
+							performanceDeferredTally = performanceTally;
+							performanceDeferredSignature = performanceSignature;
+							performanceDeferredSegmentEpoch = performanceSegmentEpoch;
+							performanceTally.Clear();
+						}
+						performanceSignature = signature;
+						performanceSignatureKnown = true;
+						performanceSignaturePending = true;
+					}
+					// 一段的第一个计数帧：告诉账本绘制中，写盘线程在下一次空闲移交前不落盘。
+					if (performanceTally.Empty()) performanceSegmentEpoch = devicePerformance_->MarkBusy();
+					performanceTally.Add(dimensions,
+						(std::max)(0.0, canvasFrameElapsedMilliseconds - frameLatencyWaitMs_),
+						1000.0 / configuration_.timingProfile.target_fps);
 				}
 			}
 			previousCanvasFrameWorkMilliseconds = (std::max)(0.0,
@@ -23853,6 +23977,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
+		submitPerformanceTally();
 		FlushCursorDiagnostics();
 		if (haptics_) haptics_->StopFeedback();
 		if (drawingPriorityRaised)

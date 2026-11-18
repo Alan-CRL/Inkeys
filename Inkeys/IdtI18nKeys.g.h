@@ -1065,6 +1065,68 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/Performance/UnthrottledMouseMove/N";
                 const char* E = "SettingsUI/Performance/UnthrottledMouseMove/E";
             } UnthrottledMouseMove{};
+            struct Node__SettingsUI__Performance__Dashboard
+            {
+                const char* Title = "SettingsUI/Performance/Dashboard/Title";
+                const char* Expand = "SettingsUI/Performance/Dashboard/Expand";
+                const char* Collapse = "SettingsUI/Performance/Dashboard/Collapse";
+                const char* LoadLabel = "SettingsUI/Performance/Dashboard/LoadLabel";
+                const char* UnlimitedFormat = "SettingsUI/Performance/Dashboard/UnlimitedFormat";
+                const char* EmptyHint = "SettingsUI/Performance/Dashboard/EmptyHint";
+                const char* PreviousTag = "SettingsUI/Performance/Dashboard/PreviousTag";
+                const char* PausedTag = "SettingsUI/Performance/Dashboard/PausedTag";
+                const char* LowSample = "SettingsUI/Performance/Dashboard/LowSample";
+                const char* LowSampleShort = "SettingsUI/Performance/Dashboard/LowSampleShort";
+                const char* EvaluatedFormat = "SettingsUI/Performance/Dashboard/EvaluatedFormat";
+                const char* RangeFormat = "SettingsUI/Performance/Dashboard/RangeFormat";
+                const char* RangeSingleFormat = "SettingsUI/Performance/Dashboard/RangeSingleFormat";
+                const char* CoverageFormat = "SettingsUI/Performance/Dashboard/CoverageFormat";
+                const char* NoDimensionData = "SettingsUI/Performance/Dashboard/NoDimensionData";
+                const char* DimensionFpsFormat = "SettingsUI/Performance/Dashboard/DimensionFpsFormat";
+                struct Node__SettingsUI__Performance__Dashboard__Level
+                {
+                    const char* Ample = "SettingsUI/Performance/Dashboard/Level/Ample";
+                    const char* Moderate = "SettingsUI/Performance/Dashboard/Level/Moderate";
+                    const char* Tight = "SettingsUI/Performance/Dashboard/Level/Tight";
+                    const char* Overloaded = "SettingsUI/Performance/Dashboard/Level/Overloaded";
+                } Level{};
+                struct Node__SettingsUI__Performance__Dashboard__Conclusion
+                {
+                    const char* Ample = "SettingsUI/Performance/Dashboard/Conclusion/Ample";
+                    const char* Moderate = "SettingsUI/Performance/Dashboard/Conclusion/Moderate";
+                    const char* Tight = "SettingsUI/Performance/Dashboard/Conclusion/Tight";
+                    const char* Overloaded = "SettingsUI/Performance/Dashboard/Conclusion/Overloaded";
+                } Conclusion{};
+                struct Node__SettingsUI__Performance__Dashboard__Advice
+                {
+                    const char* Lower = "SettingsUI/Performance/Dashboard/Advice/Lower";
+                    const char* LowestHeavy = "SettingsUI/Performance/Dashboard/Advice/LowestHeavy";
+                    const char* LowerToMatch = "SettingsUI/Performance/Dashboard/Advice/LowerToMatch";
+                    const char* Raise = "SettingsUI/Performance/Dashboard/Advice/Raise";
+                    const char* MatchedCanRaise = "SettingsUI/Performance/Dashboard/Advice/MatchedCanRaise";
+                    const char* AboveRefresh = "SettingsUI/Performance/Dashboard/Advice/AboveRefresh";
+                    const char* Fine = "SettingsUI/Performance/Dashboard/Advice/Fine";
+                    const char* Stutter = "SettingsUI/Performance/Dashboard/Advice/Stutter";
+                    const char* RestartPending = "SettingsUI/Performance/Dashboard/Advice/RestartPending";
+                    const char* Previous = "SettingsUI/Performance/Dashboard/Advice/Previous";
+                } Advice{};
+                struct Node__SettingsUI__Performance__Dashboard__Dimension
+                {
+                    const char* Writing = "SettingsUI/Performance/Dashboard/Dimension/Writing";
+                    const char* Highlighter = "SettingsUI/Performance/Dashboard/Dimension/Highlighter";
+                    const char* Eraser = "SettingsUI/Performance/Dashboard/Dimension/Eraser";
+                    const char* Laser = "SettingsUI/Performance/Dashboard/Dimension/Laser";
+                    const char* Shape = "SettingsUI/Performance/Dashboard/Dimension/Shape";
+                    const char* Pan = "SettingsUI/Performance/Dashboard/Dimension/Pan";
+                } Dimension{};
+                struct Node__SettingsUI__Performance__Dashboard__Recording
+                {
+                    const char* N = "SettingsUI/Performance/Dashboard/Recording/N";
+                    const char* E = "SettingsUI/Performance/Dashboard/Recording/E";
+                } Recording{};
+                const char* Clear = "SettingsUI/Performance/Dashboard/Clear";
+                const char* ClearConfirm = "SettingsUI/Performance/Dashboard/ClearConfirm";
+            } Dashboard{};
         } Performance{};
         struct Node__SettingsUI__Linkage
         {

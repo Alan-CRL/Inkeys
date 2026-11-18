@@ -6,6 +6,7 @@
 #include <dxgi.h>
 #include "Draw3.PptTiming.h"
 #include "Draw3.SpeedEraser.h"
+#include "Draw3.DevicePerformanceLedger.h"
 
 import Inkeys.Display;
 import Inkeys.UI.PageControl;
@@ -376,6 +377,8 @@ namespace Inkeys::Drawing::Draw3
 		Bridge::StateBridge bridge;
 		DesktopAutoSaveService autoSave;
 		PresentationAutoSaveService presentationAutoSave;
+		// 设备性能账本：声明在 drawing 之前，析构晚于 Controller；Start 早于绘制线程、Stop 晚于 join。
+		DevicePerformanceLedger devicePerformance;
 		// 只由绘制 owner 访问；槽占用时保留终态，下一次 General wake 再交付。
 		std::shared_ptr<const PresentationPersistenceCompletion> pendingPresentationCompletion;
 		ContactInputCoordinator input;
@@ -1642,6 +1645,19 @@ namespace Inkeys::Drawing::Draw3
 			scale.generation = snapshot ? snapshot->generation : 0;
 			const HMONITOR monitorHandle = hwnd ? MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) : nullptr;
 			scale.monitor = reinterpret_cast<std::uintptr_t>(monitorHandle);
+			{
+				// 画布所在显示器的显示模式频率（不是 DWM 实时周期，动态刷新率空闲时不会报 60）；取不到发布 0，界面按 60 处理。
+				std::uint32_t refreshHz = 0;
+				MONITORINFOEXW monitorInfo{};
+				monitorInfo.cbSize = sizeof(monitorInfo);
+				DEVMODEW mode{};
+				mode.dmSize = sizeof(mode);
+				if (monitorHandle && GetMonitorInfoW(monitorHandle, &monitorInfo) &&
+					EnumDisplaySettingsW(monitorInfo.szDevice, ENUM_CURRENT_SETTINGS, &mode) &&
+					mode.dmDisplayFrequency > 1 && mode.dmDisplayFrequency < 1000)
+					refreshHz = mode.dmDisplayFrequency;
+				devicePerformance.SetDisplayRefreshHz(refreshHz);
+			}
 			const auto* monitor = snapshot ? snapshot->Find(monitorHandle) : nullptr;
 			RECT clientBounds{};
 			POINT origin{};
@@ -2144,6 +2160,7 @@ namespace Inkeys::Drawing::Draw3
 			if (!options.autoSaveRoot.empty() && !presentationAutoSave.Start(
 				options.autoSaveRoot, this, &WakeForPresentationPersistence))
 				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.Presentation] action=start result=failed\n");
+			devicePerformance.Start(options.devicePerformancePath);
 			input.EnableDiagnostics(options.enableHiddenTestContactInjection || options.enableRuntimeMetrics);
 			if (options.enableRuntimeMetrics) runtimeMetrics.inputBaseline = input.DiagnosticsSnapshot();
 			window.canvasContactDown = [] { Inkeys::UI::PageControl::RequestWhiteboardMenuDismiss(); };
@@ -2311,7 +2328,8 @@ namespace Inkeys::Drawing::Draw3
 							observer.recoveryChanged = &ObserveRecovery;
 							observer.recoveryRetryAllowed = &RecoveryRetryAllowed;
 							drawing = std::make_unique<DrawingController>(input, window, renderer,
-								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks);
+								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks,
+								&devicePerformance);
 							// 新 Controller 必须重新消费期望值，不能沿用上一代的已应用缓存。
 							appliedGeneralDrawingOptions = appliedLaserOptions = appliedCanvasPanInertiaOptions = UINT32_MAX;
 							appliedPalmEraserOptions.reset();
@@ -2441,6 +2459,7 @@ namespace Inkeys::Drawing::Draw3
 				shortcuts.Stop();
 				autoSave.CloseAndDrain();
 				presentationAutoSave.CloseAndDrain();
+				devicePerformance.Stop();
 				EndDrawingActivity();
 				window.SetInputCoordinator(nullptr);
 				window.DetachExternal();
@@ -2463,6 +2482,7 @@ namespace Inkeys::Drawing::Draw3
 			if (drawingThread.joinable()) drawingThread.join();
 			autoSave.CloseAndDrain();
 			presentationAutoSave.CloseAndDrain();
+			devicePerformance.Stop();
 			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
@@ -2548,6 +2568,7 @@ namespace Inkeys::Drawing::Draw3
 			if (drawingThread.joinable()) drawingThread.join();
 			autoSave.CloseAndDrain();
 			presentationAutoSave.CloseAndDrain();
+			devicePerformance.Stop();
 			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
@@ -2612,6 +2633,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				autoSave.CloseAndDrain();
 				presentationAutoSave.CloseAndDrain();
+				devicePerformance.Stop();
 				EndDrawingActivity();
 				runtimeCallbacks = {};
 				SealRuntimeMetricsRun();
@@ -2663,6 +2685,8 @@ namespace Inkeys::Drawing::Draw3
 			if (drawingThread.joinable()) drawingThread.request_stop();
 			startupCondition.notify_all();
 			if (drawingThread.joinable()) drawingThread.join();
+			// 绘制线程已退出（Run 退出前已移交最后一段）：账本立即落盘并停止写盘线程。
+			devicePerformance.Stop();
 			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
 			window.DetachExternal();
@@ -3056,6 +3080,21 @@ namespace Inkeys::Drawing::Draw3
 	bool Host::CanvasDebugVisual() const noexcept
 	{
 		return (impl_->canvasDebugOptions.load(std::memory_order_acquire) & 2u) != 0;
+	}
+
+	bool Host::DevicePerformanceSnapshot(std::uint64_t knownRevision, DevicePerformance::Report& out) const
+	{
+		return impl_->devicePerformance.Snapshot(knownRevision, out);
+	}
+
+	void Host::SetDevicePerformanceRecording(bool enabled) noexcept
+	{
+		impl_->devicePerformance.SetRecordingEnabled(enabled);
+	}
+
+	void Host::ClearDevicePerformance() noexcept
+	{
+		impl_->devicePerformance.Clear();
 	}
 
 	void Host::SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options)

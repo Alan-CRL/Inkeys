@@ -606,6 +606,9 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Pages.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.PerformanceDashboard.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemo.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
@@ -652,6 +655,15 @@
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CompositionClock.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DevicePerformanceModel.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DevicePerformanceJson.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DevicePerformanceLedger.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h">
@@ -2309,6 +2321,9 @@
     <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.PerformanceDashboard.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.cpp">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
@@ -2379,6 +2394,9 @@
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DevicePerformanceLedger.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm">

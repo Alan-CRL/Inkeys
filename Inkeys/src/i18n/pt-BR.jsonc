@@ -1061,6 +1061,68 @@
       {
         "N": "Não limitar o movimento do mouse à taxa de quadros do desenho ao desenhar",
         "E": "Quando ativado, cada movimento do mouse ao desenhar com o botão pressionado atualiza a tela de desenho imediatamente. Os traços do mouse são amostrados com mais densidade, mas a carga de CPU e GPU aumenta bastante. Quando desativado, a atualização segue a taxa de quadros do desenho."
+      },
+      "Dashboard":
+      {
+        "Title": "Desempenho do dispositivo",
+        "Expand": "Detalhes",
+        "Collapse": "Recolher",
+        "LoadLabel": "Carga média",
+        "UnlimitedFormat": "Taxa ilimitada aprox. {0} FPS · medida a {1} FPS",
+        "EmptyHint": "Depois de alguns traços, esta área mostrará com que facilidade este dispositivo desenha a tela.",
+        "PreviousTag": "Antes da alteração",
+        "PausedTag": "Registro pausado",
+        "LowSample": "Poucas amostras, apenas referência",
+        "LowSampleShort": "Poucas amostras",
+        "EvaluatedFormat": "Avaliado: {0}",
+        "RangeFormat": "Últimos {0} dias de uso ({1} a {2})",
+        "RangeSingleFormat": "Último dia de uso ({0})",
+        "CoverageFormat": "Inclui: {0}",
+        "NoDimensionData": "Sem dados",
+        "DimensionFpsFormat": "Aprox. {0} FPS",
+        "Level":
+        {
+          "Ample": "Folgado",
+          "Moderate": "Moderado",
+          "Tight": "Apertado",
+          "Overloaded": "Sobrecarregado"
+        },
+        "Conclusion":
+        {
+          "Ample": "O dispositivo está bem folgado, com bastante margem na taxa de quadros atual.",
+          "Moderate": "A carga do dispositivo é moderada e a taxa de quadros atual é estável.",
+          "Tight": "A carga do dispositivo está alta; em cenas complexas, pode perder quadros de vez em quando.",
+          "Overloaded": "O dispositivo não acompanha a taxa de quadros atual; a escrita pode travar ou atrasar."
+        },
+        "Advice":
+        {
+          "Lower": "Recomendamos reduzir a taxa de quadros do desenho para {0} FPS (carga estimada aprox. {1}%).",
+          "LowestHeavy": "Mesmo a menor taxa de quadros é pesada. Verifique se a aceleração por hardware está ativada ou feche programas que usam a GPU.",
+          "LowerToMatch": "Recomendamos reduzir a taxa de quadros do desenho para {0} FPS, igual à da tela.",
+          "Raise": "Você pode aumentar a taxa de quadros do desenho para {0} FPS (carga estimada aprox. {1}%). A escrita fica mais fluida quando coincide com os {2} Hz da tela.",
+          "MatchedCanRaise": "A taxa de quadros atual coincide com a taxa de atualização da tela ({0} Hz). O dispositivo tem folga, então você também pode subir para {1} FPS: a imagem não fica mais fluida, mas os traços ficam mais precisos e suaves.",
+          "AboveRefresh": "A taxa de quadros atual está acima da taxa de atualização da tela ({0} Hz). A imagem não fica mais fluida, mas os traços ficam mais precisos e suaves; a carga do dispositivo permite mantê-la.",
+          "Fine": "A taxa de quadros do desenho está adequada.",
+          "Stutter": "A carga média não é alta, mas cerca de {0}% dos quadros excedem o tempo disponível; podem ocorrer travadas ocasionais.",
+          "RestartPending": "Taxa de quadros do desenho alterada para {0} FPS. Ela entra em vigor após reiniciar, e os dados serão coletados novamente.",
+          "Previous": "Estes dados são de antes da alteração das configurações; os das configurações atuais ainda estão sendo coletados."
+        },
+        "Dimension":
+        {
+          "Writing": "Escrita",
+          "Highlighter": "Marca-texto",
+          "Eraser": "Borracha",
+          "Laser": "Apontador laser",
+          "Shape": "Formas",
+          "Pan": "Deslocamento"
+        },
+        "Recording":
+        {
+          "N": "Registrar dados de desempenho",
+          "E": "Registra apenas estatísticas como o tempo de desenho. Elas ficam neste dispositivo e nunca são enviadas."
+        },
+        "Clear": "Limpar dados",
+        "ClearConfirm": "Confirmar"
       }
     },
     "Linkage":

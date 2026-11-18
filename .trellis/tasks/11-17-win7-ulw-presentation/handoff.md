@@ -124,3 +124,15 @@
 - **D4 结论（ULW 提交线程/独立进程）**：不做。实测 `ulwAvgMs` 约 0.1–0.5 ms、`rowsAvgMs` 普通 0.1–1.5 ms，压力下耗时主要在等 GPU（Map），流水模式已消除串行等待；独立进程还需跨进程拥有分层窗与共享 DIB，代价远大于收益。阶段 D 在 Win7 Basic（GDI 直接画屏）实测 `ulwAvgMs` 后再复核。
 - **估计器已确认**（20-32-32 日志，强制 ULW、非压力、三次清屏）：清屏后书写的各秒 `leadAvgMs` 6.4–7.6 ms（周期 8.33 ms 内，瞄准下一次合成），`leadMinMs` −0.9 至 −2.0 ms，每秒迟到 1–2 次；修正前同场景为 20–35 ms。负的大值只出现在选区与主画布切换时的整帧提交（Debug 下 2880×1920 逐行复制约 24 ms），整帧不计入估计器，属预期。D4 用户认可不做；Win7 实测在阶段 D 之后进行。
 - **剩余**：提交（需用户授权）。
+
+## 恢复指引（2026-11-18，阶段 C 规划待审阅，以此为准）
+
+- **状态**：阶段 B 已提交归档（`c95510c4`/`234014ed`/`11cf0164`，未 push）。阶段 C 复用占位任务 `11-17-perf-dashboard`，`prd.md`/`design.md`/`implement.md` 与 jsonl 已写，status=planning，**未 `task.py start`、未写代码、规划文档未提交**。
+- **用户 2026-11-18 追加与回答**：卡片顶部总百分比 + 动画展开各工具百分比；百分比下方文字结论与帧率升降建议（最高建议与显示器一致，并说明高于显示器不会更流畅但墨迹更精确平滑）；窗口 = 最近 7 个使用日（按天分桶）；按设置组合（签名）分开存，改设置后显示“设置变更前”数据；6 维度（书写/荧光笔/橡皮/激光笔/图形/漫游）；目录 `Inkeys/Memory`。
+- **待用户审阅确认**：prd.md R1 逐帧累加（替代“只记前几帧”）、R2 档位阈值 50/80/100 + 超时帧 >10%、R3 去掉周期选项改为记录开关与清除按钮、R4 签名包含项。批准后从 implement 步骤 0 开工核对。
+
+## 恢复指引（2026-11-18 夜，阶段 C 实现完成待提交，以此为准）
+
+- 阶段 C `11-17-perf-dashboard` 已 `task.py start`（in_progress），实现完成：账本 + Host/Controller 接入 + 设置页卡片 + 20 语言文案 + 规范（`draw3-integration.md`“设备性能看板计数与移交”、`settings-performance-and-drawing.md`“性能页设备性能看板”、`configuration-i18n-and-assets.md` 配置归属表）。设计调整见该任务 `design.md` §12，审阅记录见 `implement.md` 末尾。
+- 验证：Debug|ARM64 解决方案构建；`InkeysHeadlessTests --no-window` 全套；`--device-performance-only`；`Inkeys.exe --i18n-locales-test` failures=0；`i18n.ps1 check` 全部 PASS。用户实机：功能基本通过。
+- 下一步：用户要求先提交当前成果，再做文案修改（包括“已与显示器一致时不点名更高档位”）。任务暂不归档，文案改完后再归档。

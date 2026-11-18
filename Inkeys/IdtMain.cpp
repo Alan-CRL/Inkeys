@@ -3230,6 +3230,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				panInertia.Touch.load(), panInertia.Pen.load(), panInertia.PenTail.load() });
 			Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(
 				config.Drawing.Laser.MultiTouchEnabled, config.Drawing.Laser.ParticlesEnabled);
+			Inkeys::Drawing::Draw3::ProductHost().SetDevicePerformanceRecording(
+				config.Drawing.DevicePerformanceRecording);
 			InitializeEraserInputPreferences();
 			Inkeys::Drawing::Draw3::ProductHost().SetPalmEraserOptions(PalmEraserPreferencesSnapshot());
 			// 画布调试开关来自配置；可视化位启动时恒为未选中。
@@ -3930,6 +3932,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		draw3StartOptions.autoSaveRoot =
 			GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave";
+		{
+			// 程序目录取不到时只在内存记录，避免拼出盘符根路径。
+			const std::wstring exeDirectory = GetCurrentExeDirectory();
+			if (!exeDirectory.empty())
+				draw3StartOptions.devicePerformancePath = exeDirectory + L"\\Inkeys\\Memory\\device-performance.json";
+		}
 		draw3StartOptions.startupMilestone = [](void*,
 			Inkeys::Drawing::Draw3::HostStartupStage stage) noexcept
 			{

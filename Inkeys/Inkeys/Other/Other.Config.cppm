@@ -493,6 +493,8 @@ GROUP(UI, \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MultiTouchEnabled, true) \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PenTailCorrectionEnabled, true) \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, InkPredictionMode, 2) \
+		/* 设备性能看板：关闭后绘制线程不累加、不写盘；数据只存本机 Inkeys/Memory，不上传。 */ \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DevicePerformanceRecording, true) \
 		GROUP(AutoSave, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
 		) \

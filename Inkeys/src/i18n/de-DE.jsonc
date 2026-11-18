@@ -1061,6 +1061,68 @@
       {
         "N": "Mausbewegung beim Zeichnen nicht an die Bildrate der Zeichenfläche binden",
         "E": "Wenn aktiviert, aktualisiert jede Mausbewegung beim Zeichnen mit gedrückter Taste sofort die Zeichenfläche. Mausstriche werden dichter abgetastet, die CPU- und GPU-Last steigt jedoch deutlich. Wenn deaktiviert, wird mit der Bildrate der Zeichenfläche aktualisiert."
+      },
+      "Dashboard":
+      {
+        "Title": "Geräteleistung",
+        "Expand": "Details",
+        "Collapse": "Einklappen",
+        "LoadLabel": "Durchschnittliche Last",
+        "UnlimitedFormat": "Unbegrenzte Bildrate ca. {0} FPS · gemessen bei {1} FPS",
+        "EmptyHint": "Nach einigen Strichen zeigt dieser Bereich, wie leicht dieses Gerät die Zeichenfläche bewältigt.",
+        "PreviousTag": "Vor Einstellungsänderung",
+        "PausedTag": "Aufzeichnung pausiert",
+        "LowSample": "Wenige Messwerte, nur als Richtwert",
+        "LowSampleShort": "Wenige Messwerte",
+        "EvaluatedFormat": "Ausgewertet: {0}",
+        "RangeFormat": "Letzte {0} Nutzungstage ({1} bis {2})",
+        "RangeSingleFormat": "Letzter Nutzungstag ({0})",
+        "CoverageFormat": "Erfasst: {0}",
+        "NoDimensionData": "Noch keine Daten",
+        "DimensionFpsFormat": "Ca. {0} FPS",
+        "Level":
+        {
+          "Ample": "Reichlich",
+          "Moderate": "Mittel",
+          "Tight": "Knapp",
+          "Overloaded": "Überlastet"
+        },
+        "Conclusion":
+        {
+          "Ample": "Das Gerät ist kaum ausgelastet und hat bei der aktuellen Bildrate viel Reserve.",
+          "Moderate": "Das Gerät ist mäßig ausgelastet und läuft bei der aktuellen Bildrate stabil.",
+          "Tight": "Das Gerät ist stark ausgelastet; in komplexen Szenen können gelegentlich Bilder ausfallen.",
+          "Overloaded": "Das Gerät schafft die aktuelle Bildrate nicht; das Schreiben kann ruckeln oder verzögert sein."
+        },
+        "Advice":
+        {
+          "Lower": "Empfohlen: Bildrate der Zeichenfläche auf {0} FPS senken (erwartete Last ca. {1} %).",
+          "LowestHeavy": "Selbst die niedrigste Bildrate ist anspruchsvoll. Prüfen, ob die Hardwarebeschleunigung aktiviert ist, oder Programme schließen, die die GPU belasten.",
+          "LowerToMatch": "Empfohlen: Bildrate der Zeichenfläche passend zur Anzeige auf {0} FPS senken.",
+          "Raise": "Die Bildrate der Zeichenfläche kann auf {0} FPS erhöht werden (erwartete Last ca. {1} %). Am flüssigsten ist das Schreiben, wenn sie den {2} Hz der Anzeige entspricht.",
+          "MatchedCanRaise": "Die aktuelle Bildrate entspricht der Bildwiederholrate der Anzeige ({0} Hz). Das Gerät hat genug Reserve, daher sind auch {1} FPS möglich: Das Bild wird nicht flüssiger, aber die Striche werden präziser und glatter.",
+          "AboveRefresh": "Die aktuelle Bildrate liegt über der Bildwiederholrate der Anzeige ({0} Hz). Das Bild wird nicht flüssiger, aber die Striche werden präziser und glatter; die Gerätelast erlaubt es, sie beizubehalten.",
+          "Fine": "Die aktuelle Bildrate der Zeichenfläche ist passend eingestellt.",
+          "Stutter": "Die durchschnittliche Last ist gering, aber etwa {0} % der Bilder überschreiten die verfügbare Bildzeit; gelegentliches Ruckeln ist möglich.",
+          "RestartPending": "Bildrate der Zeichenfläche auf {0} FPS geändert. Wirksam nach einem Neustart; die Daten werden dann neu gesammelt.",
+          "Previous": "Dies sind Daten von vor der Einstellungsänderung; Daten für die aktuelle Einstellung werden noch gesammelt."
+        },
+        "Dimension":
+        {
+          "Writing": "Schreiben",
+          "Highlighter": "Textmarker",
+          "Eraser": "Radierer",
+          "Laser": "Laserpointer",
+          "Shape": "Formen",
+          "Pan": "Verschieben"
+        },
+        "Recording":
+        {
+          "N": "Geräteleistungsdaten aufzeichnen",
+          "E": "Es werden nur Statistiken wie die Zeichendauer erfasst. Sie bleiben auf diesem Gerät und werden nicht hochgeladen."
+        },
+        "Clear": "Daten löschen",
+        "ClearConfirm": "Löschen bestätigen"
       }
     },
     "Linkage":

@@ -1061,6 +1061,68 @@
       {
         "N": "Don't limit mouse movement to the canvas frame rate while drawing",
         "E": "When on, every mouse movement while drawing with the button held refreshes the canvas immediately. Mouse strokes are sampled more densely, but CPU and GPU load rises noticeably. When off, the canvas refreshes at the canvas frame rate."
+      },
+      "Dashboard":
+      {
+        "Title": "Device performance",
+        "Expand": "Details",
+        "Collapse": "Collapse",
+        "LoadLabel": "Average load",
+        "UnlimitedFormat": "Unlimited frame rate about {0} FPS · measured at {1} FPS",
+        "EmptyHint": "Draw a few strokes and this area will show how easily this device handles the canvas.",
+        "PreviousTag": "Before settings change",
+        "PausedTag": "Recording paused",
+        "LowSample": "Few samples, for reference only",
+        "LowSampleShort": "Few samples",
+        "EvaluatedFormat": "Evaluated {0}",
+        "RangeFormat": "Last {0} usage days ({1} to {2})",
+        "RangeSingleFormat": "Last usage day ({0})",
+        "CoverageFormat": "Covered: {0}",
+        "NoDimensionData": "No data yet",
+        "DimensionFpsFormat": "About {0} FPS",
+        "Level":
+        {
+          "Ample": "Ample",
+          "Moderate": "Moderate",
+          "Tight": "Tight",
+          "Overloaded": "Overloaded"
+        },
+        "Conclusion":
+        {
+          "Ample": "The device is very relaxed, with plenty of headroom at the current frame rate.",
+          "Moderate": "The device load is moderate and the current frame rate runs steadily.",
+          "Tight": "The device load is high; frames may occasionally drop in complex scenes.",
+          "Overloaded": "The device can't keep up with the current frame rate; writing may stutter or lag."
+        },
+        "Advice":
+        {
+          "Lower": "Consider lowering the canvas frame rate to {0} FPS (estimated load about {1}%).",
+          "LowestHeavy": "Even the lowest frame rate is demanding. Make sure hardware acceleration is enabled, or close programs that use the GPU.",
+          "LowerToMatch": "Consider lowering the canvas frame rate to {0} FPS to match the display.",
+          "Raise": "You can raise the canvas frame rate to {0} FPS (estimated load about {1}%). Writing is smoothest when it matches the display's {2} Hz.",
+          "MatchedCanRaise": "The current frame rate matches the display refresh rate ({0} Hz). The device has plenty of headroom, so you can also raise it to {1} FPS: the picture won't look smoother, but ink will be more precise and smooth.",
+          "AboveRefresh": "The current frame rate is above the display refresh rate ({0} Hz). The picture won't look smoother, but ink is more precise and smooth; the device load allows keeping it.",
+          "Fine": "The current canvas frame rate is set appropriately.",
+          "Stutter": "Average load is low, but about {0}% of frames exceed the frame time, so occasional stutter is possible.",
+          "RestartPending": "Canvas frame rate changed to {0} FPS. It takes effect after a restart, and data will be collected again.",
+          "Previous": "This data is from before the settings change; data for the current settings is still being collected."
+        },
+        "Dimension":
+        {
+          "Writing": "Writing",
+          "Highlighter": "Highlighter",
+          "Eraser": "Eraser",
+          "Laser": "Laser pointer",
+          "Shape": "Shapes",
+          "Pan": "Panning"
+        },
+        "Recording":
+        {
+          "N": "Record device performance data",
+          "E": "Only statistics such as drawing time are recorded. They stay on this device and are never uploaded."
+        },
+        "Clear": "Clear data",
+        "ClearConfirm": "Confirm clear"
       }
     },
     "Linkage":

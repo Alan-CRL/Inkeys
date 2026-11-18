@@ -9,6 +9,7 @@
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PalmEraser.h"
 #include "Draw3.PenDiagnostics.h"
+#include "Draw3.DevicePerformanceModel.h"
 #include "../../Helper/FailedCleanupDeadline.h"
 
 #include <windows.h>
@@ -264,6 +265,8 @@ namespace Inkeys::Drawing::Draw3
 		bool requirePresentationUiReady = false;
 		// 空路径关闭持久化 worker；产品固定传入 <程序根目录>/Inkeys/AutoSave。
 		std::wstring autoSaveRoot;
+		// 设备性能统计文件；空路径 = 只在内存记录（测试/夹具）。产品传入 <程序根目录>/Inkeys/Memory/device-performance.json。
+		std::wstring devicePerformancePath;
 		WhiteboardTheme whiteboardDefaultTheme;
 		void* startupContext = nullptr;
 		void (*startupMilestone)(void*, HostStartupStage) noexcept = nullptr;
@@ -441,6 +444,12 @@ namespace Inkeys::Drawing::Draw3
 		void SetCanvasDebugOptions(bool enabled, bool visual) noexcept;
 		bool CanvasDebugEnabled() const noexcept;
 		bool CanvasDebugVisual() const noexcept;
+		// 设备性能看板：报告版本与 knownRevision 相同返回 false 且不复制（设置页每帧调用）。
+		bool DevicePerformanceSnapshot(std::uint64_t knownRevision, DevicePerformance::Report& out) const;
+		// 关闭后绘制线程不累加、不移交，也就不写盘；已有数据保留。启动前设置也保留到 Start。
+		void SetDevicePerformanceRecording(bool enabled) noexcept;
+		// 清空统计并删除文件。
+		void ClearDevicePerformance() noexcept;
 		// 临时开发策略在既有显示配置发布路径应用，活动批次不换代。
 		void SetEraserDevelopmentOptions(const SpeedEraser::DevelopmentOptions& options);
 		SpeedEraser::DevelopmentOptions EraserDevelopmentOptions() const;

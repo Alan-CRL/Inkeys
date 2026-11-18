@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Setting.Design.h"
 #include "Setting.Motion.h"
@@ -28,6 +28,8 @@ namespace Inkeys::UI::Setting::Design
 		ImU32 artCool, artWarm, artStroke, artRule, artAxis, artWarmInk;
 		ImU32 artPenSelection, artOrange, artGreen;
 		ImU32 featureTint[3], featureInk[3], avatarFill;
+		// 性能看板档位：[0] 无数据（底色运行时用 card）、[1] 充裕、[2] 适中、[3] 偏紧、[4] 超载。
+		ImU32 performanceFill[5], performanceAccent[5];
 	};
 
 	[[nodiscard]] const Palette& PaletteForTheme(bool darkMode) noexcept;

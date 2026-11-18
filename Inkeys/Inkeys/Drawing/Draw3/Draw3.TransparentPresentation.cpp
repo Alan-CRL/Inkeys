@@ -2520,6 +2520,21 @@ namespace Inkeys::Drawing::Draw3
 		return impl_->activeMode;
 	}
 
+	TransparentPresentationEffectiveState TransparentPresentationController::EffectiveState() const noexcept
+	{
+		TransparentPresentationEffectiveState state;
+		if (!impl_) return state;
+		const Impl& impl = *impl_;
+		state.mode = impl.activeMode;
+		state.warpDevice = impl.graphics && impl.graphics->driverType == D3D_DRIVER_TYPE_WARP;
+		state.waitableWait = IsDirectCompositionMode(impl.activeMode) &&
+			impl.frameLatencyWaitHandle && impl.frameLatencyGate.Enabled();
+		// 不用 UlwAsyncActive()：它随选择模式输出目标翻转，签名只描述主画布。
+		state.ulwAsyncReadback = IsUlwMode(impl.activeMode) && impl.options.enableUlwAsyncReadback && !impl.ulwAsyncFused;
+		state.ulwCompositionAlign = state.ulwAsyncReadback && impl.options.enableUlwCompositionAlign && impl.dwmComposing;
+		return state;
+	}
+
 	TransparentPresentObservation TransparentPresentationController::LastPresentObservation() const
 	{
 		return impl_->lastObservation;

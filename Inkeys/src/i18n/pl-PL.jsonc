@@ -1061,6 +1061,68 @@
       {
         "N": "Nie ograniczaj ruchu myszy do liczby klatek płótna podczas rysowania",
         "E": "Po włączeniu każdy ruch myszy podczas rysowania z wciśniętym przyciskiem natychmiast odświeża płótno. Pociągnięcia myszą są próbkowane gęściej, ale obciążenie procesora i GPU wyraźnie rośnie. Po wyłączeniu płótno odświeża się zgodnie z liczbą klatek płótna."
+      },
+      "Dashboard":
+      {
+        "Title": "Wydajność urządzenia",
+        "Expand": "Szczegóły",
+        "Collapse": "Zwiń",
+        "LoadLabel": "Średnie obciążenie",
+        "UnlimitedFormat": "Bez limitu ok. {0} FPS · zmierzono przy {1} FPS",
+        "EmptyHint": "Po kilku pociągnięciach zobaczysz tu, jak łatwo to urządzenie rysuje płótno.",
+        "PreviousTag": "Przed zmianą ustawień",
+        "PausedTag": "Zapis wstrzymany",
+        "LowSample": "Mało próbek, tylko orientacyjnie",
+        "LowSampleShort": "Mało próbek",
+        "EvaluatedFormat": "Oceniono: {0}",
+        "RangeFormat": "Ostatnie {0} dni użycia ({1} - {2})",
+        "RangeSingleFormat": "Ostatni dzień użycia ({0})",
+        "CoverageFormat": "Obejmuje: {0}",
+        "NoDimensionData": "Brak danych",
+        "DimensionFpsFormat": "Ok. {0} FPS",
+        "Level":
+        {
+          "Ample": "Swobodnie",
+          "Moderate": "Umiarkowanie",
+          "Tight": "Na granicy",
+          "Overloaded": "Przeciążenie"
+        },
+        "Conclusion":
+        {
+          "Ample": "Urządzenie pracuje bardzo swobodnie i ma duży zapas przy obecnej liczbie klatek.",
+          "Moderate": "Obciążenie urządzenia jest umiarkowane, a obecna liczba klatek jest stabilna.",
+          "Tight": "Obciążenie urządzenia jest wysokie; w złożonych scenach mogą czasem wypadać klatki.",
+          "Overloaded": "Urządzenie nie nadąża za obecną liczbą klatek; pisanie może się zacinać lub opóźniać."
+        },
+        "Advice":
+        {
+          "Lower": "Zalecamy obniżenie liczby klatek płótna do {0} FPS (szacowane obciążenie ok. {1}%).",
+          "LowestHeavy": "Nawet najniższa liczba klatek jest wymagająca. Sprawdź, czy przyspieszanie sprzętowe jest włączone, lub zamknij programy używające GPU.",
+          "LowerToMatch": "Zalecamy obniżenie liczby klatek płótna do {0} FPS, zgodnie z wyświetlaczem.",
+          "Raise": "Możesz zwiększyć liczbę klatek płótna do {0} FPS (szacowane obciążenie ok. {1}%). Pisanie jest najpłynniejsze, gdy odpowiada {2} Hz wyświetlacza.",
+          "MatchedCanRaise": "Obecna liczba klatek odpowiada częstotliwości odświeżania wyświetlacza ({0} Hz). Urządzenie ma duży zapas, więc możesz też zwiększyć ją do {1} FPS: obraz nie będzie płynniejszy, ale ślady będą dokładniejsze i gładsze.",
+          "AboveRefresh": "Obecna liczba klatek przekracza częstotliwość odświeżania wyświetlacza ({0} Hz). Obraz nie jest płynniejszy, ale ślady są dokładniejsze i gładsze; obciążenie urządzenia pozwala ją zachować.",
+          "Fine": "Obecna liczba klatek płótna jest odpowiednia.",
+          "Stutter": "Średnie obciążenie nie jest wysokie, ale ok. {0}% klatek przekracza czas klatki; mogą występować sporadyczne zacięcia.",
+          "RestartPending": "Liczbę klatek płótna zmieniono na {0} FPS. Zmiana zadziała po ponownym uruchomieniu, a dane będą zbierane od nowa.",
+          "Previous": "To dane sprzed zmiany ustawień; dane dla obecnych ustawień są jeszcze zbierane."
+        },
+        "Dimension":
+        {
+          "Writing": "Pisanie",
+          "Highlighter": "Zakreślacz",
+          "Eraser": "Gumka",
+          "Laser": "Wskaźnik laserowy",
+          "Shape": "Figury",
+          "Pan": "Przesuwanie"
+        },
+        "Recording":
+        {
+          "N": "Zapisuj dane o wydajności urządzenia",
+          "E": "Zapisywane są tylko statystyki, np. czas rysowania. Pozostają na tym urządzeniu i nie są wysyłane."
+        },
+        "Clear": "Wyczyść dane",
+        "ClearConfirm": "Potwierdź"
       }
     },
     "Linkage":

@@ -515,6 +515,7 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.PageTransition.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Pages.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.PerformanceDashboard.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemo.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.EraserDemoData.g.h" />
@@ -531,6 +532,9 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.FrameLatencyGate.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.UlwReadbackPacing.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CompositionClock.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DevicePerformanceModel.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DevicePerformanceJson.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.DevicePerformanceLedger.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ShapeRendererTests.h" />
@@ -1086,6 +1090,7 @@
     <ClCompile Include="Inkeys\UI\Setting\Setting.Base.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Controls.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.PerformanceDashboard.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Shell.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.cpp">
@@ -1124,6 +1129,7 @@
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp" />
+	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DevicePerformanceLedger.cpp" />
 	<ClCompile Include="Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>

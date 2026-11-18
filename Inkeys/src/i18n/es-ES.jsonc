@@ -1061,6 +1061,68 @@
       {
         "N": "No limitar el movimiento del ratón a la frecuencia del lienzo al dibujar",
         "E": "Si se activa, cada movimiento del ratón al dibujar con el botón pulsado actualiza el lienzo de inmediato. Los trazos del ratón se muestrean con más densidad, pero la carga de CPU y GPU aumenta notablemente. Si se desactiva, el lienzo se actualiza según su frecuencia."
+      },
+      "Dashboard":
+      {
+        "Title": "Rendimiento del dispositivo",
+        "Expand": "Detalles",
+        "Collapse": "Contraer",
+        "LoadLabel": "Carga media",
+        "UnlimitedFormat": "Frecuencia ilimitada aprox. {0} FPS · medida a {1} FPS",
+        "EmptyHint": "Tras unos trazos, aquí verás con qué facilidad este dispositivo dibuja el lienzo.",
+        "PreviousTag": "Antes del cambio",
+        "PausedTag": "Registro en pausa",
+        "LowSample": "Pocas muestras, solo orientativo",
+        "LowSampleShort": "Pocas muestras",
+        "EvaluatedFormat": "Evaluado: {0}",
+        "RangeFormat": "Últimos {0} días de uso ({1} a {2})",
+        "RangeSingleFormat": "Último día de uso ({0})",
+        "CoverageFormat": "Incluye: {0}",
+        "NoDimensionData": "Sin datos",
+        "DimensionFpsFormat": "Aprox. {0} FPS",
+        "Level":
+        {
+          "Ample": "Holgado",
+          "Moderate": "Moderado",
+          "Tight": "Justo",
+          "Overloaded": "Sobrecargado"
+        },
+        "Conclusion":
+        {
+          "Ample": "El dispositivo va muy holgado, con mucho margen a la frecuencia actual.",
+          "Moderate": "La carga del dispositivo es moderada y la frecuencia actual es estable.",
+          "Tight": "La carga del dispositivo es alta; en escenas complejas puede perder algún fotograma.",
+          "Overloaded": "El dispositivo no alcanza la frecuencia actual; la escritura puede ir a tirones o con retraso."
+        },
+        "Advice":
+        {
+          "Lower": "Te recomendamos bajar la frecuencia del lienzo a {0} FPS (carga estimada aprox. {1}%).",
+          "LowestHeavy": "Incluso la frecuencia mínima resulta exigente. Comprueba que la aceleración por hardware esté activada o cierra los programas que usan la GPU.",
+          "LowerToMatch": "Te recomendamos bajar la frecuencia del lienzo a {0} FPS para igualar la pantalla.",
+          "Raise": "Puedes subir la frecuencia del lienzo a {0} FPS (carga estimada aprox. {1}%). La escritura es más fluida cuando coincide con los {2} Hz de la pantalla.",
+          "MatchedCanRaise": "La frecuencia actual coincide con la frecuencia de actualización de la pantalla ({0} Hz). El dispositivo tiene margen de sobra, así que también puedes subir a {1} FPS: la imagen no será más fluida, pero el trazo será más preciso y suave.",
+          "AboveRefresh": "La frecuencia actual supera la frecuencia de actualización de la pantalla ({0} Hz). La imagen no es más fluida, pero el trazo es más preciso y suave; la carga del dispositivo permite mantenerla.",
+          "Fine": "La frecuencia del lienzo actual es adecuada.",
+          "Stutter": "La carga media no es alta, pero aprox. el {0}% de los fotogramas supera su tiempo; puede haber tirones ocasionales.",
+          "RestartPending": "Frecuencia del lienzo cambiada a {0} FPS. Se aplicará tras reiniciar y los datos se volverán a recopilar.",
+          "Previous": "Estos datos son de antes del cambio de configuración; los de la configuración actual aún se están recopilando."
+        },
+        "Dimension":
+        {
+          "Writing": "Escritura",
+          "Highlighter": "Resaltador",
+          "Eraser": "Borrador",
+          "Laser": "Puntero láser",
+          "Shape": "Formas",
+          "Pan": "Desplazamiento"
+        },
+        "Recording":
+        {
+          "N": "Registrar datos de rendimiento",
+          "E": "Solo se registran estadísticas como el tiempo de dibujo. Se guardan en este dispositivo y no se suben."
+        },
+        "Clear": "Borrar datos",
+        "ClearConfirm": "Confirmar"
       }
     },
     "Linkage":

@@ -1061,6 +1061,68 @@
       {
         "N": "Không giới hạn chuyển động chuột theo tốc độ khung hình trang vẽ khi vẽ",
         "E": "Khi bật, mỗi lần di chuyển chuột trong lúc giữ nút để vẽ sẽ làm mới trang vẽ ngay lập tức. Nét chuột được lấy mẫu dày hơn nhưng tải CPU và GPU tăng rõ rệt. Khi tắt, trang vẽ làm mới theo tốc độ khung hình trang vẽ."
+      },
+      "Dashboard":
+      {
+        "Title": "Hiệu năng thiết bị",
+        "Expand": "Chi tiết",
+        "Collapse": "Thu gọn",
+        "LoadLabel": "Tải trung bình",
+        "UnlimitedFormat": "Không giới hạn khoảng {0} FPS · đo ở {1} FPS",
+        "EmptyHint": "Sau vài nét vẽ, mục này sẽ cho biết thiết bị vẽ trang vẽ nhẹ nhàng đến mức nào.",
+        "PreviousTag": "Trước khi đổi cài đặt",
+        "PausedTag": "Đã tạm dừng ghi",
+        "LowSample": "Ít mẫu, chỉ để tham khảo",
+        "LowSampleShort": "Ít mẫu",
+        "EvaluatedFormat": "Đánh giá lúc {0}",
+        "RangeFormat": "{0} ngày sử dụng gần nhất ({1} đến {2})",
+        "RangeSingleFormat": "1 ngày sử dụng gần nhất ({0})",
+        "CoverageFormat": "Đã bao gồm: {0}",
+        "NoDimensionData": "Chưa có dữ liệu",
+        "DimensionFpsFormat": "Khoảng {0} FPS",
+        "Level":
+        {
+          "Ample": "Dư dả",
+          "Moderate": "Vừa phải",
+          "Tight": "Hơi căng",
+          "Overloaded": "Quá tải"
+        },
+        "Conclusion":
+        {
+          "Ample": "Thiết bị rất nhẹ nhàng, còn nhiều dư địa ở tốc độ khung hình hiện tại.",
+          "Moderate": "Tải thiết bị vừa phải, tốc độ khung hình hiện tại chạy ổn định.",
+          "Tight": "Tải thiết bị khá cao, đôi khi có thể rớt khung hình trong cảnh phức tạp.",
+          "Overloaded": "Thiết bị không theo kịp tốc độ khung hình hiện tại, nét viết có thể giật hoặc trễ."
+        },
+        "Advice":
+        {
+          "Lower": "Nên giảm tốc độ khung hình trang vẽ xuống {0} FPS (tải dự kiến khoảng {1}%).",
+          "LowestHeavy": "Ngay cả tốc độ khung hình thấp nhất cũng khá nặng. Hãy kiểm tra đã bật tăng tốc phần cứng chưa, hoặc đóng các chương trình đang dùng GPU.",
+          "LowerToMatch": "Nên giảm tốc độ khung hình trang vẽ xuống {0} FPS cho khớp với màn hình.",
+          "Raise": "Có thể tăng tốc độ khung hình trang vẽ lên {0} FPS (tải dự kiến khoảng {1}%); khớp với màn hình {2} Hz sẽ cho nét viết mượt nhất.",
+          "MatchedCanRaise": "Tốc độ khung hình hiện tại đã khớp với tần số quét của màn hình ({0} Hz). Thiết bị còn dư nhiều, cũng có thể tăng lên {1} FPS: hình ảnh không mượt hơn nhưng nét mực sẽ chính xác và mịn hơn.",
+          "AboveRefresh": "Tốc độ khung hình hiện tại cao hơn tần số quét của màn hình ({0} Hz). Hình ảnh không mượt hơn nhưng nét mực chính xác và mịn hơn; tải thiết bị cho phép giữ nguyên.",
+          "Fine": "Tốc độ khung hình trang vẽ hiện tại là phù hợp.",
+          "Stutter": "Tải trung bình không cao, nhưng khoảng {0}% khung hình vượt quá thời gian khung hình, đôi khi có thể bị giật.",
+          "RestartPending": "Đã đổi tốc độ khung hình trang vẽ thành {0} FPS, có hiệu lực sau khi khởi động lại và dữ liệu sẽ được thu thập lại.",
+          "Previous": "Đây là dữ liệu trước khi đổi cài đặt; dữ liệu cho cài đặt hiện tại vẫn đang được thu thập."
+        },
+        "Dimension":
+        {
+          "Writing": "Viết",
+          "Highlighter": "Bút nhớ dòng",
+          "Eraser": "Tẩy",
+          "Laser": "Bút laser",
+          "Shape": "Hình",
+          "Pan": "Di chuyển"
+        },
+        "Recording":
+        {
+          "N": "Ghi dữ liệu hiệu năng thiết bị",
+          "E": "Chỉ ghi các số liệu thống kê như thời gian vẽ, lưu trên máy này và không tải lên."
+        },
+        "Clear": "Xóa dữ liệu",
+        "ClearConfirm": "Xác nhận xóa"
       }
     },
     "Linkage":

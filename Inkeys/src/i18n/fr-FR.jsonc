@@ -1061,6 +1061,68 @@
       {
         "N": "Ne pas limiter les mouvements de la souris à la fréquence d’images du canevas pendant le dessin",
         "E": "Lorsque cette option est activée, chaque mouvement de la souris pendant le dessin, bouton enfoncé, actualise immédiatement le canevas. Les traits à la souris sont échantillonnés plus finement, mais la charge du processeur et du GPU augmente nettement. Lorsqu’elle est désactivée, le canevas s’actualise à sa fréquence d’images."
+      },
+      "Dashboard":
+      {
+        "Title": "Performances de l’appareil",
+        "Expand": "Détails",
+        "Collapse": "Réduire",
+        "LoadLabel": "Charge moyenne",
+        "UnlimitedFormat": "Fréquence illimitée env. {0} FPS · mesurée à {1} FPS",
+        "EmptyHint": "Après quelques traits, cette zone indiquera avec quelle aisance cet appareil dessine le canevas.",
+        "PreviousTag": "Avant modification",
+        "PausedTag": "Enregistrement en pause",
+        "LowSample": "Peu d’échantillons, à titre indicatif",
+        "LowSampleShort": "Peu d’échantillons",
+        "EvaluatedFormat": "Évaluation : {0}",
+        "RangeFormat": "{0} derniers jours d’utilisation (du {1} au {2})",
+        "RangeSingleFormat": "Dernier jour d’utilisation ({0})",
+        "CoverageFormat": "Outils couverts : {0}",
+        "NoDimensionData": "Aucune donnée",
+        "DimensionFpsFormat": "Env. {0} FPS",
+        "Level":
+        {
+          "Ample": "Ample",
+          "Moderate": "Modéré",
+          "Tight": "Juste",
+          "Overloaded": "Surchargé"
+        },
+        "Conclusion":
+        {
+          "Ample": "L’appareil est très à l’aise, avec une large marge à la fréquence d’images actuelle.",
+          "Moderate": "La charge de l’appareil est modérée ; la fréquence d’images actuelle est stable.",
+          "Tight": "La charge de l’appareil est élevée ; des images peuvent parfois être perdues dans les scènes complexes.",
+          "Overloaded": "L’appareil ne suit pas la fréquence d’images actuelle ; l’écriture peut saccader ou être retardée."
+        },
+        "Advice":
+        {
+          "Lower": "Nous conseillons de réduire la fréquence d’images du canevas à {0} FPS (charge estimée env. {1} %).",
+          "LowestHeavy": "Même la fréquence la plus basse est exigeante. Vérifiez que l’accélération matérielle est activée ou fermez les programmes qui utilisent le GPU.",
+          "LowerToMatch": "Nous conseillons de réduire la fréquence d’images du canevas à {0} FPS, comme celle de l’écran.",
+          "Raise": "Vous pouvez augmenter la fréquence d’images du canevas à {0} FPS (charge estimée env. {1} %). L’écriture est la plus fluide quand elle correspond aux {2} Hz de l’écran.",
+          "MatchedCanRaise": "La fréquence actuelle correspond à la fréquence de rafraîchissement de l’écran ({0} Hz). L’appareil a assez de marge, vous pouvez aussi monter à {1} FPS : l’affichage ne sera pas plus fluide, mais le tracé sera plus précis et plus lisse.",
+          "AboveRefresh": "La fréquence actuelle dépasse la fréquence de rafraîchissement de l’écran ({0} Hz). L’affichage n’est pas plus fluide, mais le tracé est plus précis et plus lisse ; la charge de l’appareil permet de la conserver.",
+          "Fine": "La fréquence d’images actuelle du canevas est adaptée.",
+          "Stutter": "La charge moyenne est faible, mais env. {0} % des images dépassent leur temps imparti ; de légères saccades sont possibles.",
+          "RestartPending": "Fréquence d’images du canevas réglée sur {0} FPS. Elle s’appliquera au redémarrage et les données seront à nouveau collectées.",
+          "Previous": "Ces données datent d’avant la modification des réglages ; celles des réglages actuels sont en cours de collecte."
+        },
+        "Dimension":
+        {
+          "Writing": "Écriture",
+          "Highlighter": "Surligneur",
+          "Eraser": "Gomme",
+          "Laser": "Pointeur laser",
+          "Shape": "Formes",
+          "Pan": "Déplacement"
+        },
+        "Recording":
+        {
+          "N": "Enregistrer les données de performances",
+          "E": "Seules des statistiques comme le temps de dessin sont enregistrées. Elles restent sur cet appareil et ne sont jamais envoyées."
+        },
+        "Clear": "Effacer les données",
+        "ClearConfirm": "Confirmer"
       }
     },
     "Linkage":

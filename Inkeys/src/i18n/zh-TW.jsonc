@@ -1061,6 +1061,68 @@
       {
         "N": "繪製時滑鼠移動不受畫布影格率限制",
         "E": "開啟後，按住滑鼠繪製時每次移動都會立即重新整理畫布，滑鼠筆跡取樣更密，但會明顯增加 CPU 和 GPU 負載。關閉時依畫布影格率重新整理。"
+      },
+      "Dashboard":
+      {
+        "Title": "裝置效能",
+        "Expand": "詳細",
+        "Collapse": "收起",
+        "LoadLabel": "平均負載",
+        "UnlimitedFormat": "無限制影格率 約 {0} FPS · 測得於 {1} FPS",
+        "EmptyHint": "畫幾筆後，這裡會顯示這台裝置繪製畫布的輕鬆程度。",
+        "PreviousTag": "設定變更前",
+        "PausedTag": "記錄已暫停",
+        "LowSample": "樣本較少，僅供參考",
+        "LowSampleShort": "樣本少",
+        "EvaluatedFormat": "評估於 {0}",
+        "RangeFormat": "最近 {0} 個使用日（{1} 至 {2}）",
+        "RangeSingleFormat": "最近 1 個使用日（{0}）",
+        "CoverageFormat": "已涵蓋：{0}",
+        "NoDimensionData": "尚無資料",
+        "DimensionFpsFormat": "約 {0} FPS",
+        "Level":
+        {
+          "Ample": "充裕",
+          "Moderate": "適中",
+          "Tight": "偏緊",
+          "Overloaded": "超載"
+        },
+        "Conclusion":
+        {
+          "Ample": "裝置非常輕鬆，目前影格率下還有大量餘裕。",
+          "Moderate": "裝置負載適中，目前影格率運作穩定。",
+          "Tight": "裝置負載偏高，複雜場景下可能偶爾掉格。",
+          "Overloaded": "裝置跟不上目前影格率，書寫可能卡頓或延遲。"
+        },
+        "Advice":
+        {
+          "Lower": "建議將畫布影格率降低到 {0} FPS（預估負載約 {1}%）。",
+          "LowestHeavy": "即使最低影格率也較吃力，請確認已開啟硬體加速，或關閉占用 GPU 的程式。",
+          "LowerToMatch": "建議將畫布影格率降低到與顯示器一致的 {0} FPS。",
+          "Raise": "可以將畫布影格率提高到 {0} FPS（預估負載約 {1}%），與顯示器 {2} Hz 一致時書寫最流暢。",
+          "MatchedCanRaise": "目前影格率已與顯示器更新頻率（{0} Hz）一致。裝置餘裕充足，也可以提高到 {1} FPS：畫面不會更流暢，但墨跡會更精確、平滑。",
+          "AboveRefresh": "目前影格率高於顯示器更新頻率（{0} Hz），畫面不會更流暢，但墨跡會更精確、平滑；裝置負載允許維持。",
+          "Fine": "目前畫布影格率設定合適。",
+          "Stutter": "平均負載不高，但約 {0}% 的影格超出影格時間，可能偶爾卡頓。",
+          "RestartPending": "畫布影格率已改為 {0} FPS，重新啟動後生效並重新累積資料。",
+          "Previous": "這是設定變更前的資料，目前設定的資料仍在累積。"
+        },
+        "Dimension":
+        {
+          "Writing": "書寫",
+          "Highlighter": "螢光筆",
+          "Eraser": "橡皮擦",
+          "Laser": "雷射筆",
+          "Shape": "圖形",
+          "Pan": "漫遊"
+        },
+        "Recording":
+        {
+          "N": "記錄裝置效能資料",
+          "E": "只記錄繪製耗時等統計數字，儲存在本機，不會上傳。"
+        },
+        "Clear": "清除資料",
+        "ClearConfirm": "確認清除"
       }
     },
     "Linkage":

@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "帧循环、工作耗时口径与 waitable/ULW 等待合同"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "性能页结构、配置键与诊断信息发布模式"}
+{"file": ".trellis/spec/native-desktop/setting-motion.md", "reason": "设置页动画与 ConditionalBlock 用法"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "配置项与 20 语言 i18n 同步"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "日志级别与热路径非阻塞"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 约定（BOM/CRLF、模块）"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "构建与验证要求"}

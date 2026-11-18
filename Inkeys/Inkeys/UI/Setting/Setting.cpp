@@ -27,6 +27,7 @@
 #include "../StartupPlacement.h"
 #include "../StartupPreview.Effect.h"
 #include "Setting.Pages.h"
+#include "Setting.PerformanceDashboard.h"
 #include "Setting.PageTransition.h"
 #include "Setting.HomeEntryCache.h"
 #include "Setting.EraserDemoGpu.h"
@@ -4625,6 +4626,29 @@ SettingSessionCoroutine RunSettingSession()
 				case settingTabEnum::tabPerformance:
 				{
 					Design::PageHeader(IA(I18nKey.SettingsUI.Performance.N).c_str());
+					{
+						// 设备性能看板：报告版本未变时 Host 不复制；数据与写盘都在绘制侧，设置页只读。
+						static Inkeys::Drawing::Draw3::DevicePerformance::Report performanceReport;
+						static std::uint64_t performanceRevision = 0;
+						if (Inkeys::Drawing::Draw3::ProductHost().DevicePerformanceSnapshot(performanceRevision, performanceReport))
+							performanceRevision = performanceReport.revision;
+						Design::PerformanceDashboardInput dashboard;
+						dashboard.report = &performanceReport;
+						dashboard.configuredFps = Inkeys::config.Drawing.FrameRate.load();
+						dashboard.recordingEnabled = Inkeys::config.Drawing.DevicePerformanceRecording.load();
+						dashboard.delta = navigationDelta;
+						dashboard.animationsEnabled = Experimental.Inkeys3.AnimationEnable;
+						dashboard.animationRate = Experimental.Inkeys3.AnimationSpeedRate;
+						const auto events = Design::RenderPerformanceDashboard(dashboard);
+						if (events.recordingChanged)
+						{
+							Inkeys::config.Drawing.DevicePerformanceRecording = events.recordingEnabled;
+							// 即时生效：关闭后绘制线程不再累加、不再写盘。
+							Inkeys::Drawing::Draw3::ProductHost().SetDevicePerformanceRecording(events.recordingEnabled);
+							QueueConfigWrite();
+						}
+						if (events.clearRequested) Inkeys::Drawing::Draw3::ProductHost().ClearDevicePerformance();
+					}
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Performance.FrameRateSection).c_str());
 					int interfaceFrameIndex = Inkeys::config.UI.FrameRate.load() == 30 ? 0 : 1;
 					if (Design::ComboRow("##interface-frame-rate", IA(I18nKey.SettingsUI.Performance.InterfaceFrameRate.N).c_str(),

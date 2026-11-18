@@ -208,6 +208,9 @@ export namespace Inkeys::Drawing::Draw3
 	class InkRenderer
 	{
 	public:
+		// 兆芯兼容上传是否实际生效（开关开启且为兆芯硬件设备）；设备性能签名只记生效值。
+		bool UsesZhaoxinCompatibleUpload() const noexcept { return useDefaultStructuredUpload_; }
+
 		Microsoft::WRL::ComPtr<ID3D11Device> device;
 		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
 

@@ -37,6 +37,16 @@ export namespace Inkeys::Drawing::Draw3
 		SelectionUlw,
 	};
 
+	// 主画布实际生效的呈现状态（不是偏好）：设备性能看板按它划分设置签名。只在绘制 owner 线程读取。
+	struct TransparentPresentationEffectiveState
+	{
+		TransparentPresentMode mode = TransparentPresentMode::UlwDirtyRect;
+		bool warpDevice = false;
+		bool waitableWait = false;        // DComp 下真正在等帧延迟句柄（取不到句柄或已熔断为 false）
+		bool ulwAsyncReadback = false;    // ULW 下异步读回实际开启（未熔断）
+		bool ulwCompositionAlign = false; // 且 DWM 正在合成、对齐开关开启
+	};
+
 	using SetWindowStyleCallback = bool(*)(
 		void* context, DWORD setMask, DWORD clearMask);
 	struct TransparentPresentationCallbacks
@@ -170,6 +180,8 @@ export namespace Inkeys::Drawing::Draw3
 		HRESULT LastFailure() const noexcept;
 		// 返回当前生效的透明呈现模式。
 		TransparentPresentMode ActiveMode() const;
+		// 主画布实际生效的呈现状态，与选择模式输出目标无关。
+		TransparentPresentationEffectiveState EffectiveState() const noexcept;
 		// 返回绘制线程上一次真实 Present 的 ULW alpha/dirty-rect 观测。
 		TransparentPresentObservation LastPresentObservation() const;
 		// 绘制 owner 的名义像素载荷，仅用于生命周期观测，不等同进程/驱动驻留字节。
