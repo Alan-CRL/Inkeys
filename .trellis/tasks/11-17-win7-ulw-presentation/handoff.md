@@ -2,7 +2,7 @@
 
 ## 一句话状态
 
-第2步已拆为 A / B / C 三个子任务（另加 A2）。**以文末“恢复指引（2026-11-18）”为准：A、A2 已完成归档，下一项为 B。** 以下为历史记录。
+第2步已拆为 A / B / C / D / E（另加 A2）。**以文末“恢复指引（2026-11-18，阶段 B 实现完成待实机）”为准：A、A2 已完成归档，B 已实现、审阅修复完毕、未提交，等待用户实机。** 以下为历史记录。
 
 ## 环境与协作约定
 
@@ -85,3 +85,42 @@
 - 实测经验：画布帧率 `Drawing.FrameRate` 只在启动时生效，改档后必须重启再测；`[Draw3Diag][latency] acquired=` 每秒计数可直接当实际出帧率读。
 - **下一项：阶段 B `11-17-ulw-texture-pipeline`**（只有 PRD，status=planning），由下一次对话开始。先读本文件“关键事实”、父任务 `research/presentation-pipeline-current.md` §4–§6 与归档的 `field-test-20261117.md` §6，再与用户确定完成方式后写 design/implement。之后阶段 C `11-17-perf-dashboard`（PRD 中对 A/B 的口径前提：等待耗时不计入工作耗时，A 已满足）。
 - 分支 `refactoring/draw` 均未 push。
+
+## 恢复指引（2026-11-18，阶段 B 规划定稿，以此为准）
+
+- **状态**：阶段 B `11-17-ulw-texture-pipeline` 规划定稿（`prd.md` / `design.md` / `implement.md`），status=planning，**未 `task.py start`、未写代码**。规划文档与本 handoff、父任务 `prd.md`、中期重构总任务 `prd.md`（第5步备注）的修改**均未提交**。用户审阅批准后会先压缩会话，再指示开工。
+- **开工顺序**：先读 B 的 `prd.md`（12 条已确认决策）→ `design.md`（§1 决策表、§5 机制、§7 流程图）→ `implement.md`（步骤 0–13）。执行 `python ./.trellis/scripts/task.py start 11-17-ulw-texture-pipeline`，从步骤 0“开工核对”开始，有矛盾先停下汇报。
+- **B 的范围（用户逐项确认）**：
+  1. ULW 不建交换链，直接画到独立纹理，仍经 Staging 读回到 DIB（不用 GDI 兼容纹理）。
+  2. 双 Staging 槽 + 自适应完成：即时模式（GPU 快，延迟同现状）/ 流水模式（GPU 慢，CPU 最多领先一帧）；三个完成点 C1 帧开头探测、C2 提交背压、C3 帧尾决策；空闲等待前必须完成。
+  3. 提交不超过刷新率，跳过的帧合并脏区。
+  4. DWM 合成时对齐合成时机（原阶段 E 的 ULW 部分）：`DwmGetCompositionTimingInfo` 时钟模型；预设高于刷新率时每周期提交最新且赶得上的一帧，等于或为约数时调整帧相位（每帧 ≤10%），非约数不调。
+  5. 逐行复制 `CopyAndInspectUlwDirtyRows` 改为单遍 SIMD（SSE2 / NEON），逐字节不变。
+  6. DWM 状态检测与日志（`DwmIsCompositionEnabled`，刷新间隔来源 DWM → 显示器 → 60 Hz）。
+  7. 性能页开关“ULW 模式下异步读回”（`EnableUlwAsyncReadback`，默认开、重启生效，waitable 之后）+ 无界面配置键 `UlwCompositionAlign`（默认 true）。
+  8. SelectionUlw 保持同步；“Present 返回 = 已提交”，与 DComp 同口径；`Map` 阻塞与对齐等待计入等待、不计入工作耗时。
+- **不在 B**：ULW 提交线程（B 完成后看实机 `ulw_ms` 平均与长尾再评估）；多矩形脏区（中期重构第5步，已记入总任务 prd）；Win7 DWM GPU 呈现路径（阶段 D）；DComp 合成时机对齐（阶段 E，Win8+ 用 `GetFrameStatistics`，需与 A 的 waitable 等待协调，阶段 D 也可能用）。
+- **用户澄清过的要点**（避免重复讨论）：ULW 每帧拷贝 = GPU 拷到 Staging + CPU 逐行复制到 DIB + ULW 系统内部拷贝；交换链 buffer 0 与独立纹理拷贝次数相同；ULW 系统内部那次拷贝我们无法也无需处理。预设 240 / 刷新 60 时帧循环照常 240（读输入、算墨迹、GPU 画进纹理每帧都做），只把“读回 + ULW”压到每周期一次。
+- 分支 `refactoring/draw` 未 push。
+
+## 恢复指引（2026-11-18，阶段 B 实现完成待实机，以此为准）
+
+- **状态**：`11-17-ulw-texture-pipeline` 已 `task.py start`（in_progress），implement.md 步骤 0–12 完成；**全部改动未提交**（含规划文档、代码、i18n）。待用户实机（步骤 13），通过后更新规范并经授权提交。
+- **分工实况**：Codex（gpt-6.1-sol / high / service_tier=default，只读）做了开工核对与三轮审阅复核；Claude 写全部代码并独立核实每条发现。报告与简报在 `%TEMP%\inkeys-codex\ulw-b-step0\`、`%TEMP%\inkeys-codex\ulw-b-review\`（不在仓库）。
+- **与原设计的差异（design.md 已同步）**：即时模式在 `Present` 内完成（阻塞经 `ConsumePresentLatencyWait` 计入等待）；C3 只在空闲前，覆盖主循环全部空闲等待；C1 只探测待完成帧，累计脏区改在三个固定帧截止等待分支开头拷出（`ServiceUlwBeforeFrameWait`）；整帧永不延后/节流；节流改为槽位推进，强制提交从本次重起；光栅/合成失败时 `DiscardUlwAccumulated`；切换输出收尾失败合入 `graphicsRecoveryPending_`。
+- **主要文件**：`Draw3.TransparentPresentation.cpp/.cppm`（双槽 presenter、SIMD、DWM 状态、合成时钟接入、自测 `RunUlwPipelineSelfTest`）、新头 `Draw3.UlwReadbackPacing.h` / `Draw3.CompositionClock.h`、`Draw3.Renderer.cpp`（无交换链 Resize + 测试）、`Draw3.DrawingController.cpp`（C1/C3/帧尾/相位/失败丢弃）、配置链路（Other.Config.cppm、IdtMain.cpp、Draw3.Host.h/.cpp、Setting.cpp）、20 语言 i18n、新测试 `draw3_ulw_readback_pacing_tests.cpp` / `draw3_composition_clock_tests.cpp`。
+- **已验证（Debug|ARM64）**：解决方案构建；`InkeysHeadlessTests --no-window` 完整套件 EXIT=0；`--ulw-readback-pacing-only`、`--composition-clock-only`；`Inkeys.exe --draw3-ulw-pipeline-test`（5 场景 DIB 与同步逐字节一致，带路径断言）、`--draw3-laser-resources-test`、`--draw3-ulw-copy-benchmark`（SIMD 等价 1332 例；Debug 下整帧 8.0 ms vs 标量 20.0 ms）；`i18n.ps1 check`；BOM/CRLF 与 `git diff --check`。
+- **未验证 / 待实机**：HiddenWindowTest 强制 ULW 场景（需用户授权）；本机强制 ULW 与 Win7（Aero / Basic）实机；Release 基准；`map_wait_ms` 是否只等旧拷贝；`[ulw-pipeline]`/`[ulw-align]`/`[ulw-dwm]` 日志与 `lateCount`；SSE2 路径只编译未运行。
+- **实机后**：更新 `draw3-integration.md`（新 Scenario）与 `settings-performance-and-drawing.md`（两个配置键、“渲染与兼容”节顺序）；用 `ulw_ms` 平均与长尾评估 ULW 提交线程（D4）。
+
+## 恢复指引（2026-11-18 晚，阶段 B 实机认可，以此为准）
+
+- **状态**：B 本机强制 ULW 实机认可（动态刷新率 60/120 Hz、60 Hz/预设 240、压力脚本）；全部改动仍**未提交**。Win7 Aero/Basic 实测并入阶段 D 统一进行。
+- **实机后追加修改**（均已构建、单测通过）：
+  1. ULW 提交耗时估计只记“入队后当场完成的非整帧提交”（`CompletePending` 的 `measureCommit`），整帧与延后完成不计入，避免清屏后约 16 次提交对齐偏离（`leadAvgMs` 20–35 ms）。待在强制 ULW、非压力下看清屏后那一秒的 `leadAvgMs` 确认。
+  2. 阶段 A 的 DComp waitable 超时欠账：超时后 Present 成功记欠账（上限 2，满则计 `debtOverflowTotal`），拿到令牌后多等一次信号还账；任一超时把信号间隔估计抬到本次超时值。根因：压力下每次超时永久多压一帧，DComp 越拖越远（ULW 因背压不会）。压力复测：开画布首秒超时 58→2 次，之后每秒 1–3 次当秒还清；无压力 120 Hz 每秒 120 次获取、0 超时。
+- **规范已更新**：`draw3-integration.md`（Presenter 合同改为 ULW 无交换链、waitable 欠账/超时放宽、新 Scenario“ULW 独立纹理、异步读回与合成对齐”）、`settings-performance-and-drawing.md`（两个配置键与“渲染与兼容”节顺序）、`native/platform-and-resources.md` 引言。
+- **隐藏测试**：`--draw3-shape-focus-hidden-test`（纯 ULW）通过。`--draw3-hidden-test`、`--draw3-eraser-hidden-test` 在 HEAD `bcc11421` 基线上同样以 `0xE143001D`（输入 producer 停止未证明）自终止，且基线另有 FAIL（白板 warm page、UInk 尺寸边界），确认为既有问题，与 B 无关。
+- **D4 结论（ULW 提交线程/独立进程）**：不做。实测 `ulwAvgMs` 约 0.1–0.5 ms、`rowsAvgMs` 普通 0.1–1.5 ms，压力下耗时主要在等 GPU（Map），流水模式已消除串行等待；独立进程还需跨进程拥有分层窗与共享 DIB，代价远大于收益。阶段 D 在 Win7 Basic（GDI 直接画屏）实测 `ulwAvgMs` 后再复核。
+- **估计器已确认**（20-32-32 日志，强制 ULW、非压力、三次清屏）：清屏后书写的各秒 `leadAvgMs` 6.4–7.6 ms（周期 8.33 ms 内，瞄准下一次合成），`leadMinMs` −0.9 至 −2.0 ms，每秒迟到 1–2 次；修正前同场景为 20–35 ms。负的大值只出现在选区与主画布切换时的整帧提交（Debug 下 2880×1920 逐行复制约 24 ms），整帧不计入估计器，属预期。D4 用户认可不做；Win7 实测在阶段 D 之后进行。
+- **剩余**：提交（需用户授权）。

@@ -95,7 +95,7 @@ Wrong：只等 RtsReady/首帧后刷新；Correct：每代窗口准备失败直�
 ## 设备与线程
 
 - Draw3 独立创建 D3D11.1 设备、context、DXGI factory、交换链和呈现资源；默认 hardware-first/WARP-fallback，启动快照 EnableHardwareAcceleration=false 时直接 WARP，回退/恢复复用同一快照。禁止引用 `Inkeys.UI.RenderPipeline` 的设备。
-- Hardware 与 WARP 都可落在 FL11.0；这不保证动态 SRV 的 `WRITE_NO_OVERWRITE`。除实际 Hardware adapter VendorId=0x1D17 且启动 EnableZhaoxinCompatibility=true 时大结构化资源使用 DEFAULT 局部更新外，动态路径的生产 renderer 必须在当前设备上查 `D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，不支持或查询失败时普通笔与 Shape 逐批 DISCARD 且 buffer offset 为零；支持设备保留环形路径。此上传门禁与 ULW 的 `FLIP_SEQUENTIAL` 独立，不能为修一项而替换交换链模式。
+- Hardware 与 WARP 都可落在 FL11.0；这不保证动态 SRV 的 `WRITE_NO_OVERWRITE`。除实际 Hardware adapter VendorId=0x1D17 且启动 EnableZhaoxinCompatibility=true 时大结构化资源使用 DEFAULT 局部更新外，动态路径的生产 renderer 必须在当前设备上查 `D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，不支持或查询失败时普通笔与 Shape 逐批 DISCARD 且 buffer offset 为零；支持设备保留环形路径。此上传门禁与 presenter 的交换链/离屏目标选择独立，不能为修一项而替换呈现方式。
 - UI 线程只向 bridge 发布不可变快照和命令；renderer、document、history、RTS 消费只在 Draw3 绘制线程进行。
 - 进程只允许一套 Draw3 Host、绘制线程及选定的 RTS 或 Win32Mouse 输入 producer；Desktop、Whiteboard 及每个 `PresentationKey` 的 document/history 是该绘制线程独占的独立 slot。辅助 HWND 仅是同一最终 backbuffer 的 presentation target。退出先关闭绘制准入并预约最终保存命令，停止并排空选定输入 producer，再唤醒绘制线程、执行最终保存屏障并排空 worker、释放双 presenter/设备，最后由 Window Service 销毁两窗。
 - `DrawingControllerRuntimeObserver::drawingActivityChanged` 只按全部 physical contact 的聚合值发布 `0→1/1→0`；每个命令消费边界与帧末复核，避免 Down 后提前 `continue` 漏报。Host 通过独立 `HostRuntimeCallbacks` 注入产品通知、再次去重，并在 Run 正常返回、异常或 stop/join 后补发一次 false；Draw3 核心不得直接依赖 Bar。
@@ -418,8 +418,8 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 以下首发选路合同来自 2026-09-27 用户决定；H0 源码仍含 DWM 自动/强制路径。本次工作区已在源码中禁止该选择，但隐藏 HWND、Win7 与运行期设备故障尚未实测，不能把静态选路当作透明呈现 PASS。
 
 - Draw3 自己创建 D3D11.1 device/context（默认 hardware-first/WARP-fallback，硬件加速启动偏好关闭时直接 WARP）、DXGI factory、swap chain 和 presenter，不注册 `Inkeys.UI.RenderPipeline` client，也不共享其 device epoch。
-- 首发正式 presenter 模式顺序为 DComp -> ULW；DwmBlurBehind2 与 DwmBlurBehind 在自动回退和强制模式中均不可选。每次失败都销毁该模式的 swap chain/presenter 状态后再降级。DComp 在创建前通过能力探测决定是否预置 `WS_EX_NOREDIRECTIONBITMAP`；legacy 重建 Host 明确跳过 DComp。ULW 保持现有 FLIP_SEQUENTIAL swap chain、premultiplied top-down 32-bit DIB、`1/255` CPU alpha 边界和 dirty rect，透明像素 alpha 必须保持零。
-- 用户已在 Win7 SP1 且仅安装 KB2670838 的环境实测 `FLIP_SEQUENTIAL` 可用；微软通用 DXGI swap effect 文档写 Win8 起支持，与该实测相冲突。首发实现以用户实测为兼容约束，保留 FLIP，不添加 bitblt 或 swap effect 降级。设备/驱动、Hardware FL11.0 与无 FL11.0 时的 WARP、ULW 成功 Present 仍须逐格复验；文档冲突不能替代本轮真机证据。
+- 首发正式 presenter 模式顺序为 DComp -> ULW；DwmBlurBehind2 与 DwmBlurBehind 在自动回退和强制模式中均不可选。每次失败都销毁该模式的 swap chain/presenter 状态后再降级。DComp 在创建前通过能力探测决定是否预置 `WS_EX_NOREDIRECTIONBITMAP`；legacy 重建 Host 明确跳过 DComp。ULW 不创建交换链（2026-11-18 起）：Draw3 直接画到一张独立 BGRA8 纹理（RT|SRV），经 Staging 读回到 premultiplied top-down 32-bit DIB 后提交，保持 `1/255` CPU alpha 边界和 dirty rect，透明像素 alpha 必须保持零；读回流水线合同见“ULW 独立纹理、异步读回与合成对齐”。
+- 用户已在 Win7 SP1 且仅安装 KB2670838 的环境实测 `FLIP_SEQUENTIAL` 可用；微软通用 DXGI swap effect 文档写 Win8 起支持，与该实测相冲突。ULW 已不再使用交换链，该实测保留为阶段 D（Win7 DWM GPU 呈现）选用 FLIP 的兼容依据，不添加 bitblt 或 swap effect 降级。设备/驱动、Hardware FL11.0 与无 FL11.0 时的 WARP、ULW 成功 Present 仍须逐格复验；文档冲突不能替代本轮真机证据。
 - 主 presenter 与辅助 ULW target 共用 renderer/final backbuffer，每帧只向请求目标提交；辅助初始化失败即 Host 启动失败，运行期失败必须重建并全量重试，不回退到主窗穿透。DComp退休使用共享有界等待，超时或已有退休在途时禁止第二worker及后续模式初始化；迟到完成只清理旧状态。样式可清除时才在原HWND降级ULW；否则运行期进入受保护故障退出，不在运行期停止Window Service或重建窗口链——Bar/PPT/Setting/白板等UI客户端在初始化时绑定HWND，整链重建会让它们持有已销毁的窗口。完整legacy窗口链重建只允许发生在启动期UI客户端初始化之前。
 - 只允许一个绑定主 Drawpad 的选定输入 producer（RTS 或 Win32Mouse）；Draw2 RTS 不得初始化或重复发布。退出顺序为关闭绘制准入并预约最终保存 -> 停止并排空选定 producer -> 唤醒绘制线程并执行最终保存屏障 -> 释放双 presenter/device -> Window Service 销毁两窗。
 
@@ -480,7 +480,7 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 
 ### 2. Signatures
 
-- `Draw3.FrameLatencyGate.h`：纯状态机 `FrameLatencyGate`（不依赖 D3D），`Acquire(targetFrameMs, refreshMs, FrameLatencyTimeoutPolicy{Count,Exclude,Neutral}, nowMs, wait)`、`OnPresentCalled(bool succeeded)`、`NeedsWaitBeforePresent()`、`ShouldTrip()`、`Trip()`；常量 `kFrameLatencyTimeoutScale=1.5`、超时下/上限 4/200 ms、`kFrameLatencyTripTimeouts=8`、`kFrameLatencyTripMinimumMs=1000`。
+- `Draw3.FrameLatencyGate.h`：纯状态机 `FrameLatencyGate`（不依赖 D3D），`Acquire(targetFrameMs, refreshMs, FrameLatencyTimeoutPolicy{Count,Exclude,Neutral}, nowMs, wait)`、`OnPresentCalled(bool succeeded)`、`NeedsWaitBeforePresent()`、`ShouldTrip()`、`Trip()`、`Debt()`、`TotalDebtOverflows()`；常量 `kFrameLatencyTimeoutScale=1.5`、超时下/上限 4/200 ms、`kFrameLatencyTripTimeouts=8`、`kFrameLatencyTripMinimumMs=1000`、`kFrameLatencyMaxDebt=2`；`FrameLatencyWaitResult` 带 `debtRepaid/debtRepayTimedOut`，`waitedMs` 含补等。
 - `TransparentPresentationController::PrepareFrameLatency(targetFrameMs, countsTowardTrip) -> FrameLatencyWaitReport` 与 `ConsumePresentLatencyWait()`。
 - 配置 `Experimental.Inkeys3.Draw3.EnableWaitableWait`（默认 true，启动快照）经 `HostStartOptions.enableWaitableWait` → `TransparentPresentationOptions` 传入。
 
@@ -488,14 +488,15 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 
 - **令牌语义**：未持有令牌才等一次；`Signaled` 持有令牌，只有实际调用且成功的 `Present1` 消耗。空裁剪矩形不调用 `Present1`、`Present1` 失败、`DwmFlush` 失败都不消耗。
 - **等待点**：主循环在设备恢复/Resize 处理之后、导航 Drain 与输入批次之前调用 `PrepareFrameLatency`；帧循环外的 Present（清屏、整画布）在 `PresentSwapChain` 内按 `NeedsWaitBeforePresent()` 补等，策略 `Neutral`（不计数也不打断连续计数）。
-- **超时仍 Present**：超时不是错误，本帧照常合成与 `Present1`，最坏退化为无等待的现状；启动首帧初始句柄已发信号。
-- **自适应超时** `clamp(1.5 × max(预设帧间隔, DWM 刷新间隔, 信号间隔 EMA), 4, 200) ms`。EMA 只吸收不超过 200 ms 的获取间隔（更长的是空闲，不是合成节奏）；刷新间隔取 `DwmGetCompositionTimingInfo`，失败按 16.7 ms。
+- **超时仍 Present**：超时不是错误，本帧照常合成与 `Present1`；启动首帧初始句柄已发信号。
+- **超时欠账与还账（2026-11-18 压力实测后补）**：waitable 交换链的 `Present1` 不阻塞，`SetMaximumFrameLatency(1)` 也不限它；没拿到名额就成功 Present 会永久多压一帧（压力下 10–25% 超时，表现为 DComp 越拖越远、ULW 不会）。因此 `OnPresentCalled` 在“成功且未持有令牌”时记一笔欠账（上限 2，已满只计 `TotalDebtOverflows`）；之后拿到本帧令牌时若有欠账，再以同一超时多等一次信号，等到则还一笔、每帧最多一笔，补等超时只保留欠账、本帧照常 Present。补等不计入超时次数与熔断。空闲后欠账对应的信号已积在句柄里，补等立即返回，不产生落笔突发排队。`Reset`（交换链重建）与 `Trip` 清零欠账，溢出累计不清零。
+- **自适应超时** `clamp(1.5 × max(预设帧间隔, DWM 刷新间隔, 信号间隔 EMA), 4, 200) ms`。EMA 只吸收不超过 200 ms 的获取间隔（更长的是空闲，不是合成节奏）；刷新间隔取 `DwmGetCompositionTimingInfo`，失败按 16.7 ms。任一次等待或补等超时，都把 EMA 抬到本次超时值（下一次超时放宽 1.5 倍）——否则开画布时 GPU 已慢，估计只靠成功获取更新，实测第一秒超时 58 次、欠账溢出 28 次。
 - **只在可能失效时熔断**：`Count` 策略下连续超时 ≥ 8 且连续区间 ≥ 1000 ms，或句柄等待本身失败（`WaitFailed`）。任何一次成功获取都清零连续计数，GPU 慢不会熔断。窗口隐藏/最小化、交接屏障 pending、`recoveryPending`、非主画布输出（SelectionUlw/ULW）、工作区交接/加载未决时为 `Exclude` 或直接不等待。
 - **熔断后**：本会话不再尝试 waitable，经现有 `RecoverFromRuntimeFailure` 重建为同模式、不带 waitable 标志的 FLIP，仍由设备级 `SetMaximumFrameLatency(1)` 限流；新会话复位。
 - **开关关闭** = 保留 waitable 交换链但不等待（A/B 与排障用）；Win8.0（waitable 创建失败）、ULW、Win7 路径不新增任何应用侧等待。
 - **口径**：等待耗时计入帧预算（等得越久帧尾睡得越少），但**不计入工作耗时**——画布调试的无限制帧率/负载与 `RecordActiveFrame` 的 `workMs` 都扣除；运行指标单列 `latencyWaitMs`/`latencyWaitState` 与会话计数 `latencyWait.timeouts/tripped`。
-- **诊断**仅 Debug 级 `[Draw3Diag][latency]`：创建时启用/禁用/跳过原因与 `refreshMs/timeoutMs`，约每秒一行汇总（acquired、timeouts、平均/最大等待、timeoutMs、signalIntervalMs），熔断一行。不逐帧输出。
-- 实测（SyncInterval 0）：句柄约 1 ms 内回补，正常情况几乎零等待；waitable 只在 GPU/合成吃紧时把排队压回一帧。`acquired` 每秒计数可直接读作实际出帧率。
+- **诊断**仅 Debug 级 `[Draw3Diag][latency]`：创建时启用/禁用/跳过原因与 `refreshMs/timeoutMs`，约每秒一行汇总（acquired、timeouts、repaid、repayTimeouts、debt、debtOverflowTotal、平均/最大等待、timeoutMs、signalIntervalMs），熔断一行。不逐帧输出。
+- 实测（SyncInterval 0）：句柄约 1 ms 内回补，正常情况几乎零等待（无压力 120 Hz：每秒 120 次获取、0 超时、0 欠账）；waitable 只在 GPU/合成吃紧时把排队压回一帧。`acquired` 每秒计数可直接读作实际出帧率。压力脚本下（GPU 约 35–55 ms/帧）开画布首秒约 2 次超时，之后每秒 1–3 次超时并当秒还清。
 
 ### 4. Validation & Error Matrix
 
@@ -503,6 +504,9 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 |---|---|
 | 句柄已发信号 | 立即返回，令牌持有直到成功 Present |
 | GPU 慢、信号迟到 | 超时随 EMA 放宽，等待成功，不熔断 |
+| 超时后 Present 成功 | 记欠账（≤2），后续拿到令牌的帧逐帧补等还清；已满计溢出 |
+| 开画布时 GPU 已慢 | 每次超时把下一次超时放宽 1.5 倍，几次内适应，不溢出 |
+| 空闲后残留欠账 | 首帧补等立即返回并还清，不突发排队 |
 | 窗口隐藏/最小化/交接/加载期间超时 | 只计统计，打断连续计数，不熔断 |
 | 信号持续缺失 ≥ 8 次且 ≥ 1 s，或等待失败 | 熔断，重建不带标志的 FLIP，本会话不再尝试 |
 | Present 失败或空裁剪 | 令牌保留，下一帧不重复等待 |
@@ -512,11 +516,11 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 
 - Good：主循环帧首等待 → 读输入 → 合成 → `Present1` 成功消耗令牌；设备严重吃紧时 `acquired` 下降但 `timeouts=0`。
 - Base：正常负载下每帧等待 < 0.1 ms，帧率由预设帧率决定。
-- Bad：把超时当失败跳过 Present；在帧中途直接换交换链；把隐藏期超时计入熔断；把等待耗时算进负载百分比。
+- Bad：把超时当失败跳过 Present；在帧中途直接换交换链；把隐藏期超时计入熔断；把等待耗时算进负载百分比；超时 Present 后不记欠账（每次超时永久多排一帧）；只在成功获取时更新间隔估计（GPU 慢的开头连续超时、欠账溢出）。
 
 ### 6. Tests Required
 
-- `InkeysHeadlessTests/draw3_frame_latency_gate_tests.cpp`（`RunDraw3FrameLatencyGateTests`）：禁用不等、首获令牌、令牌消耗规则、自适应超时、EMA 空闲过滤、三种超时策略、熔断阈值、等待失败熔断。
+- `InkeysHeadlessTests/draw3_frame_latency_gate_tests.cpp`（`RunDraw3FrameLatencyGateTests`，`--frame-latency-gate-only`）：禁用不等、首获令牌、令牌消耗规则、自适应超时、EMA 空闲过滤、三种超时策略、熔断阈值、等待失败熔断；欠账只在无令牌成功 Present 时记、GPU 抖动超时后在途帧回到 1、空闲后补等零等待、信号丢失时欠账封顶且计溢出、开画布 GPU 慢（60 ms/帧、初始超时 25 ms）≤3 次超时内适应且不溢出。
 - 完整 Solution `Debug|ARM64` 构建，`InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-control-fence-test`。
 - 熔断路径没有故障注入开关，单纯加压不会触发；真实熔断只能代码审查 + 状态机单测证明。
 
@@ -525,6 +529,63 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 Wrong：`if (WaitForSingleObjectEx(handle, timeout) == WAIT_TIMEOUT) return /*跳过本帧*/;` 或在 `PresentSwapChain` 无条件等待。
 
 Correct：`PrepareFrameLatency(1000/target_fps, countable)` 在帧首有界等待一次，超时照常 Present；帧循环外的 Present 只在 `NeedsWaitBeforePresent()` 时以 `Neutral` 补等。
+
+## Scenario: ULW 独立纹理、异步读回与合成对齐（2026-11-18）
+
+### 1. Scope / Trigger
+
+修改主画布 ULW 的最终目标、读回/复制/提交流程、提交节流与 DWM 合成对齐、`UlwDirtyRectPresenter`、相关完成点或 `EnableUlwAsyncReadback`/`UlwCompositionAlign` 时适用。来源任务 `11-17-ulw-texture-pipeline`（父任务 `11-17-win7-ulw-presentation` 阶段 B），设计细节见其 `design.md`。用户本机强制 ULW 实机认可（动态刷新率 60/120 Hz、60 Hz/预设 240、压力脚本）；Win7 Aero/Basic 实测并入阶段 D。
+
+### 2. Signatures
+
+- `TransparentPresentationController`：`BeginUlwFrame(frameStartMs, targetFrameMs)`（C1 帧开头探测）、`ServiceUlwBeforeFrameWait()`（帧尾累计脏区拷出）、`CompleteUlwBeforeIdle(textureValid)`（C3 空闲前）、`DiscardUlwAccumulated()`（光栅失败帧）、`UlwFramePhaseAdjustMs(frameStartMs)`（相位微调），均返回 `UlwFrameReport{waitedMs, failed}`；ULW 下 `SwapChain()` 返回空。
+- 纯逻辑头：`Draw3.UlwReadbackPacing.h`（即时/流水自适应：连续 3 帧超预算且 Map 等待 ≥ 帧间隔 25% 进流水；每 500 ms 试一帧即时，≤ 帧间隔 90% 回即时）、`Draw3.CompositionClock.h`（`CompositionClock` 每 250 ms 重读 DWM 时序，`CommitDurationEstimator` 取 EMA 与最近 16 次最大值，`UlwCommitPlanner`、`ClassifyCompositionCadence`）。
+- 配置 `Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback`（默认 true，界面开关）、`Experimental.Inkeys3.Draw3.UlwCompositionAlign`（默认 true，无界面），启动快照经 `HostStartOptions` → `TransparentPresentationOptions`。
+
+### 3. Contracts
+
+- **无交换链**：ULW 主画布与运行期 DComp→ULW 降级、强制 ULW 都走 `TryInitialize` 的离屏分支，`InkRenderer::Resize` 接受空交换链。辅助 SelectionUlw 仍同步读回。
+- **双槽异步读回**：两张 Staging 轮流，最多一条待完成提交，CPU 最多领先 GPU 一帧；每次拷贝入队后 `Flush`。完成点：C1 帧开头 `Map(DO_NOT_WAIT)` 探测一次（不拷出累计脏区）；C2 Present 内背压（上一条未完成则阻塞完成）；即时模式在 Present 内当场完成；帧尾拷出累计脏区；C3 每个空闲等待前阻塞完成并拷出累计脏区（停笔最后一帧必上屏）。整帧（Resize、恢复、输出交接、清屏）一律当场完成、不节流。
+- **回执**：`Present` 成功 = 已写入最终纹理并进入提交流程，与 DComp `Present1` 同口径；实际上屏晚 `commitLag`。延后完成失败 → `SetFailure` + 下一次整帧读回，帧循环 `RequestFullPresent`。光栅失败帧 `DiscardUlwAccumulated`，之后任何收尾都不读回该纹理。
+- **节流**：预设帧率高于刷新率时每个刷新周期最多提交一次 ULW，跳过帧合并脏区；简单间隔规则按刷新周期推进槽位（保留余数，落后超一周期重新起算）。强制提交（整帧、C3、熔断收尾）从本次提交重新起算，不挤后续普通提交。
+- **刷新间隔**：DWM 合成时取 DWM 时序，否则窗口所在显示器刷新率，再失败 60 Hz；启动、`WM_DWMCOMPOSITIONCHANGED`、Resize 时重测并记 `[ulw-dwm]`。
+- **合成对齐**：仅主画布 ULW + DWM 合成 + 即时模式 + 对齐开启。预设高于刷新率：下一帧来提交也赶得上截止（`nextVBlank − 2 ms`）就本帧只合并脏区；预设等于刷新率或其约数：帧尾等待微调相位（每帧 ≤ 帧间隔 10%）；非约数不调相位。提交耗时估计只记入队后当场完成的非整帧提交（整帧与延后完成不计入，否则对齐时机偏离约 16 次提交）。动态刷新率靠 250 ms 重读跟随，空闲后首帧立即重读。
+- **SIMD 复制**：Staging→DIB 单遍 SSE2/NEON，命中 α 修正、全透明与预乘检查逐字节等于标量版；像素诊断采样帧仍走标量。
+- **口径**：Map 阻塞计入等待、不计入工作耗时（Present 内经 `ConsumePresentLatencyWait`，C1 直接累加，C3 只累加 `frameLatencyWaitMs_`）；逐行复制与 ULW 调用计入工作耗时。
+- **熔断/开关**：`Map(DO_NOT_WAIT)` 非 `WAS_STILL_DRAWING` 错误且设备未移除 → 本会话改同步读回并整帧读回；开关关闭 = 同步读回、不节流、不对齐。
+- **诊断**（Debug）：每秒 `[Draw3Diag][ulw-pipeline]`（mode、immediate/deferred/probeHit/backpressure/frameEnd/beforeIdle/skipped、mapWait/commitLag/rows/ulw 均值与最大）与 `[Draw3Diag][ulw-align]`（aligned、periodMs、marginMs、leadAvg/Min、lateCount），模式切换与对齐启停原因各一行。`commitLag` 是本次提交里最早一帧到 ULW 返回，节流合并时自然偏大，不等于最新帧延迟。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需结果 |
+|---|---|
+| GPU 跟得上 | 即时模式，延迟同同步路径，`map_wait` 只等本次拷贝 |
+| GPU 拖慢（大橡皮、加压） | 进流水，CPU 最多领先一帧，背压阻塞完成，不堆积 |
+| 预设 240 / 屏 60 | 每秒提交 ≤ 约 60 次，其余帧 `skipped`，`lateCount` 接近 0 |
+| 停笔进入空闲 | C3 完成并拷出累计脏区，最后一帧上屏 |
+| Resize / 输出切到 SelectionUlw | 丢弃或先完成主画布待完成提交，辅助走同步 |
+| 光栅失败帧 | 不读回被部分覆写的纹理，下一次整帧 |
+| DWM 未合成 / 时序读取失败 | 不对齐，按显示器刷新率简单节流 |
+| 异步开关关 | 同步读回、每帧提交，独立纹理与 SIMD 保留 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：压力下 ULW 进流水后每秒 20–50 次提交、约一半背压完成、`commitLagAvg` 有上限，笔迹不越拖越远。
+- Base：普通书写即时模式，`mapWaitAvgMs` 约 0.3–0.5 ms，`leadAvgMs` 约 3–6 ms。
+- Bad：在帧开头拷出累计脏区（用上一帧旧画面占周期）；把整帧提交耗时计入对齐估计；Map 阻塞计入工作耗时；把 `commitLag` 当成最新帧延迟。
+
+### 6. Tests Required
+
+- 无窗口：`InkeysHeadlessTests.exe --ulw-readback-pacing-only`、`--composition-clock-only`（120/90、240/165、240/60 等长期提交率与对齐判定）。
+- `Inkeys.exe --draw3-ulw-pipeline-test`（WARP + 从不显示的分层窗，5 场景异步/同步 DIB 逐字节一致）、`--draw3-ulw-copy-benchmark`（SIMD 与标量对照）。
+- 完整 Solution `Debug|ARM64` 构建。自检参数按 `lpCmdLine` 全等匹配，PowerShell 用 `& .\Inkeys.exe --xxx | Out-File` 运行，不要用 `Start-Process -ArgumentList`（尾空格会误启动产品）。
+- 实机：强制 ULW 下书写、大橡皮、漫游、清屏、选择态切换；预设 120/240 对 60/120 Hz 与动态刷新率；压力脚本；Win7 Aero/Basic 归阶段 D。
+
+### 7. Wrong vs Correct
+
+Wrong：`Present -> Map(READ, 0) -> 复制 -> ULW`（GPU 慢时整帧串行等待）；或每帧都 ULW 提交而不管刷新率。
+
+Correct：`Present -> 拷贝入槽 + Flush -> 背压完成上一条 -> 即时模式当场完成 / 流水模式留给下一帧 C1/C2`，预设高于刷新率时按周期只提交最后赶得上合成的一帧，空闲前 C3 收尾。
 
 ## 来源任务与验证状态
 

@@ -16,9 +16,11 @@
 
 | 阶段 | 子任务 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| A | `11-17-dcomp-waitable-latency` DComp waitable 交换链帧延迟控制 | 规划完成，待用户指示开工 | 先做；Win8.1+ 正确使用 waitable（令牌/自适应超时/熔断），其余系统保持现状；性能页新增“waitable 模式下启用等待”开关 |
-| B | `11-17-ulw-texture-pipeline` ULW 独立纹理与 CPU/GPU 重叠 | 待 A 完成后规划 | 独立纹理作最终目标 + 非阻塞读回流水线（最多领先一帧） |
+| A | `11-17-dcomp-waitable-latency` DComp waitable 交换链帧延迟控制 | 已完成并归档（0c8a7337，另有 A2 `11-17-cursor-frame-pacing` 696cc4f1） | 先做；Win8.1+ 正确使用 waitable（令牌/自适应超时/熔断），其余系统保持现状；性能页新增“waitable 模式下启用等待”开关 |
+| B | `11-17-ulw-texture-pipeline` ULW 独立纹理、CPU/GPU 重叠与合成时机对齐 | 已完成并归档（2026-11-18，本机强制 ULW 实机认可；Win7 实测并入 D 之后） | 独立纹理作最终目标 + 自适应异步读回（最多领先一帧）+ 提交不超过刷新率 + DWM 合成时机对齐（原 E 的 ULW 部分）+ 单遍 SIMD 复制 + DWM 状态检测 |
 | C | `11-17-perf-dashboard` 性能页设备性能看板 | 需求预告，待 A/B 后调查 | 周期性低影响采样 → `Inkeys/Memery` JSON → 性能页顶部看板；A/B 需满足其“工作耗时不含等待”等前置口径 |
+| D | （未建）Win7 DWM 呈现路径 | 规划预告 | 实现 Win7 DWM 透明呈现路径（像素留在显存、不回读），DWM 未合成时回退 ULW；复用 B 的 DWM 状态检测与合成时钟模型 |
+| E | （未建）DComp 合成时机对齐 | 规划预告（ULW 部分已并入 B） | DComp 帧相位对齐合成时机（Win8+ 用 `IDCompositionDevice::GetFrameStatistics` 的下次合成时间与合成频率），需与 A 的 waitable 等待顺序、超时/熔断计数及动态刷新率协调，单独 A/B；复用 B 的合成时钟模型，阶段 D 也可能使用 |
 
 交接说明见 `handoff.md`（上下文压缩后从这里恢复）。
 
