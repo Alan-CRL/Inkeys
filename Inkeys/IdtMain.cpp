@@ -1,4 +1,4 @@
-/*
+﻿/*
  * @file		IdtMain.cpp
  * @brief		智绘教项目中心源文件
  * @note		用于初始化智绘教并调用相关模块
@@ -10,6 +10,17 @@
  * @qq			2685549821
  * @email		alan-crl@foxmail.com
 */
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include "Inkeys/Helper/Ui3PresentationFixtureAuth.h"
+#include <cstddef>
+#include <cstdint>
+
+#ifdef MessageBox
+#undef MessageBox
+#endif
 
 import Inkeys.Helper.CrashHandler;
 import Inkeys.UI.Setting;
@@ -39,16 +50,18 @@ import Inkeys.Drawing.Draw3.graphics_initialization;
 import Inkeys.Drawing.Draw3.renderer;
 import Inkeys.Drawing.Draw3.ink_prediction;
 import Inkeys.Drawing.Draw3.transparent_presentation;
+import Inkeys.UI.UI3.PresentationProbe;
+
+using namespace Inkeys::UI::UI3;
 
 #include "IdtMain.h"
 #include "Inkeys/Drawing/Draw3/Draw3.DiagnosticOutput.h"
 #include "Inkeys/Drawing/Draw3/Draw3.PptTiming.h"
 #include "Inkeys/Helper/FailedCleanupDeadline.h"
 #include "Inkeys/Helper/FailedCleanupRealCases.h"
-#include "Inkeys/Helper/Ui3PresentationFixtureAuth.h"
-#include "Inkeys/UI/Bar/Bar.Presentation.Source.h"
-#include "Inkeys/UI/Bar/Bar.InteractionWorker.h"
-#include "Inkeys/UI/StartupPlacement.h"
+#include <algorithm>
+#include <cmath>
+#include <optional>
 #include "Inkeys/UI/StartupPreview.Effect.h"
 #include "PptSettingsPersistence.h"
 #include "ShutdownProgressTrace.h"
@@ -95,6 +108,9 @@ int RunShapeCoreTests();
 #include <lm.h>
 #include <shellscalingapi.h>
 #include <shlobj.h>
+
+import Inkeys.UI.StartupPlacement;
+import Inkeys.UI.Bar.PresentationSource;
 #pragma comment(lib, "netapi32.lib")
 
 #ifdef MessageBox
@@ -1894,6 +1910,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			LocalFree(arguments);
 			if (count != 2) return 2;
 			return Inkeys::UI::Bar::RunGeometryAttributeOffscreenTest();
+		}
+		if (count > 1 && wcscmp(arguments[1], L"--ui3-golden-dump") == 0)
+		{
+			if (count != 3) { LocalFree(arguments); return 2; }
+			const std::wstring outputDirectory = arguments[2];
+			LocalFree(arguments);
+			return Inkeys::UI::Bar::RunUi3GoldenDump(outputDirectory.c_str());
+		}
+		// 第二宿主验证：主栏内容画进测试自建的帧目标与外部上下文；不创建任何 HWND。
+		if (count > 1 && wcscmp(arguments[1], L"--ui3-host-offscreen-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::UI::Bar::RunUi3HostOffscreenTest();
 		}
 		if (count > 1 && wcscmp(arguments[1], L"--shape-tool-state-test") == 0)
 		{

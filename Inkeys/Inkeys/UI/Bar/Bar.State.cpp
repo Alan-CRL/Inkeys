@@ -1,19 +1,25 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include "../../../IdtState.h"
-#include "Bar.BottomDock.h"
-#include "Bar.MainLayoutPolicy.h"
-#include "Bar.I18nFormat.h"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <cmath>
 
 module Inkeys.UI.Bar;
 import :State;
 
 import :Main;
 import Inkeys.Other.Config;
+import Inkeys.UI.Bar.BottomDock;
+import Inkeys.UI.Bar.MainLayoutPolicy;
+import Inkeys.UI.Bar.I18nFormat;
+
+using namespace Inkeys::UI::UI3;
 
 void BarStateClass::PositionUpdate(double tarZoom)
 {

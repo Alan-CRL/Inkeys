@@ -2,13 +2,14 @@
 #include "../../../IdtMain.h"
 #include "../../../IdtState.h"
 #include "../../../IdtConfiguration.h"
-#include "../StartupPlacement.h"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <optional>
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include "../../../resource.h"
 #include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
-#include "Bar.ThemeMaterial.h"
-#include "Bar.ButtonFrameRing.h"
 #include "../../Input/UiTouchRouting.h"
 #include <d2d1_1helper.h>
 #include <wincodec.h>
@@ -23,12 +24,24 @@
 #include <iostream>
 #include <vector>
 
+#include <cstdint>
+#include <d2d1_1.h>
+#include <wrl/client.h>
+#include <utility>
+
 module Inkeys.UI.Bar;
 import :Main;
 import :Layout;
 import :Theme;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Text.Font;
+import Inkeys.UI.UI3.Material;
+import Inkeys.UI.UI3.FrameRing;
+import Inkeys.UI.UI3.LoadingIndicator;
+import Inkeys.UI.UI3.Progress;
+import Inkeys.UI.StartupPlacement;
+
+using namespace Inkeys::UI::UI3;
 
 using namespace Inkeys::UI::Bar;
 using namespace draw3::shapes;
@@ -49,23 +62,23 @@ public:
 	static auto PromptFrame(const BarConstructionPrompt& p) { return p.presented_; }
 	static auto PromptCandidate(const BarConstructionPrompt& p) { return p.frame_; }
 	static void PromptSubmit(BarConstructionPrompt& p, std::function<bool(const Inkeys::Drawing::Draw3::ShapeUiAction&)> submit) { p.submit_=std::move(submit); }
-	static const BarUiWordClass& PromptLabel(const BarConstructionPrompt& p) { return p.label_; }
-	static const BarUiWordClass& PromptRingLabel(const BarConstructionPrompt& p) { return p.ringLabel_; }
+	static const UiWordClass& PromptLabel(const BarConstructionPrompt& p) { return p.label_; }
+	static const UiWordClass& PromptRingLabel(const BarConstructionPrompt& p) { return p.ringLabel_; }
 	static double PromptRingProgress(const BarConstructionPrompt& p) { return p.ringProgress_.val; }
 	static auto PromptContentPhase(const BarConstructionPrompt& p) { return p.contentPhase_; }
-	static const BarUiShapeClass& PromptSurface(const BarConstructionPrompt& p) { return p.surface_; }
+	static const UiShapeClass& PromptSurface(const BarConstructionPrompt& p) { return p.surface_; }
 	static const BarButtonClass& PromptButton(const BarConstructionPrompt& p,int i) { return *p.buttons_[i]; }
-	static bool DockIndicatorVisible(const BarUISetClass& p) { return p.bottomDockIndicatorPresentedVisible.load(); }
+	static bool DockIndicatorVisible(const BarUISetClass& p) { return p.BottomDockPresentedSnapshot().indicatorVisible; }
 	static void Execute(BarGeometryAttributePanel& p, BarUISetClass& owner, int item, std::uint64_t revision) { p.Execute(owner, item, revision); }
 	static double ScrollRequest(const BarGeometryAttributePanel& p) { return p.scrollRequest_; }
 	static BarButtonClass& MutableButton(BarGeometryAttributePanel& p, int item) { return *p.buttons_[item]; }
 	// 长按期限用真实 steady_clock；测试把起点前移代替真实等待。
-	static void ShiftHold(BarGeometryAttributePanel& p, std::chrono::milliseconds by) { std::lock_guard lock(p.holdMutex_); p.holdStart_ -= by; }
+	static void ShiftHold(BarGeometryAttributePanel& p, std::chrono::milliseconds by) { std::lock_guard lock(p.holdMutex_); p.holdProgress_.ShiftTime(-by); }
 	static int HoldItem(BarGeometryAttributePanel& p) { std::lock_guard lock(p.holdMutex_); return p.holdItem_; }
 	static int RingItem(const BarGeometryAttributePanel& p) { return p.ringItem_; }
 	static double RingProgress(const BarGeometryAttributePanel& p) { return p.ringProgress_; }
-	static double RingOpacity(const BarGeometryAttributePanel& p) { return p.ringOpacity_.val; }
-	static double RingOpacityTarget(const BarGeometryAttributePanel& p) { return p.ringOpacity_.tar; }
+	static double RingOpacity(const BarGeometryAttributePanel& p) { return p.ringOpacity_; }
+	static double RingOpacityTarget(const BarGeometryAttributePanel& p) { return p.ringShown_ ? 1.0 : 0.0; }
 	// 模拟进度环绘制失败（render owner 同线程写入）。
 	static void FailRing(BarGeometryAttributePanel& p) { p.ringFailed_ = true; }
 	static bool RingFailed(const BarGeometryAttributePanel& p) { return p.ringFailed_; }
@@ -130,7 +143,7 @@ namespace
 	// 抽取前页码加载环的原实现，仅用于证明共享 ButtonFrameRing 的页码模式逐像素不变。
 	bool DrawLegacyPageRing(ID2D1DeviceContext* context, EraserAttributeRect r, float corner, float z, PageLoadingArc arc, COLORREF color, float alpha)
 	{
-		constexpr float inset=static_cast<float>(BarButtonFrameThicknessDip)+PageLoadingStyle::Gap+PageLoadingStyle::Width/2;
+		constexpr float inset=static_cast<float>(ButtonFrameThicknessDip)+PageLoadingStyle::Gap+PageLoadingStyle::Width/2;
 		const float width=static_cast<float>(r.Width())-2*inset,height=static_cast<float>(r.Height())-2*inset;
 		if(width<=PageLoadingStyle::Width||height<=PageLoadingStyle::Width)return true;
 		const float radius=(std::max)(.5F,(std::min)({corner,width/2,height/2}));
@@ -211,10 +224,10 @@ namespace Inkeys::UI::Bar
 		expect(SUCCEEDED(fontHr), "shared multilingual font collection initializes");
 		auto& owner = barUISet; SetThemeStyleSource(&owner.barStyle);
 		expect(I18n::load(1, L"JSON", L"zh-CN"), "bundled base translation");
-		owner.spec.ConfigureLocalizedTypography(); owner.barButtonSet.PresetInitialization(); owner.barMedia.LoadFormat();
-		auto root = std::make_shared<BarUiSuperellipseClass>(100, 600, 80, 80, 3.0, 1.0, std::nullopt, std::nullopt);
+		owner.ConfigureLocalizedTypography(); owner.barButtonSet.PresetInitialization(); owner.barMedia.LoadFormat();
+		auto root = std::make_shared<UiSuperellipseClass>(100, 600, 80, 80, 3.0, 1.0, std::nullopt, std::nullopt);
 		owner.superellipseMap[BarUISetSuperellipseEnum::MainButton] = root;
-		auto main = std::make_shared<BarUiShapeClass>(330, 0, 580, 80, 8, 8, 1, std::nullopt, std::nullopt);
+		auto main = std::make_shared<UiShapeClass>(330, 0, 580, 80, 8, 8, 1, std::nullopt, std::nullopt);
 		owner.shapeMap[BarUISetShapeEnum::MainBar] = main;
 		auto* anchor = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Geometry)];
 		anchor->button.x.SetDirect(250); anchor->button.y.SetDirect(40); anchor->button.w.SetDirect(70); anchor->button.h.SetDirect(70);
@@ -222,7 +235,7 @@ namespace Inkeys::UI::Bar
 		owner.barState.fold = false; owner.barState.geometryAttribute = true;
 		owner.barState.drawAttribute = false; owner.barState.eraserAttribute = false; owner.barState.recallAttribute = false;
 		owner.barState.moreExpanded = false; owner.barState.widgetPosition.primaryBar = false;
-		BarUiAnimationEnabled = true; BarUiAnimationSpeedRate = 1;
+		UiAnimationEnabled = true; UiAnimationSpeedRate = 1;
 		double zoom = 1; RECT work{0, 0, 1200, 800};
 		auto tick = [&](int frames = 1, double dt = 1.0 / 60)
 		{
@@ -257,7 +270,7 @@ namespace Inkeys::UI::Bar
 			expect(pointer(WM_LBUTTONDOWN, item, true, contact), "presented down consumed"); tick(4);
 			expect(pointer(WM_LBUTTONUP, item, false, contact), "presented up consumed"); expect(pointerAccepted, "accepted shape control reports button feedback including repeated selection"); tick(90);
 		};
-		expect(SUCCEEDED(owner.spec.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 1200, 800)), "offscreen target setup");
+		expect(SUCCEEDED(owner.specTarget.Ensure(RenderPipeline::GetDeviceEpoch(), 1200, 800)), "offscreen target setup");
 		owner.spec.SetFrameZoom(1); preset(PresetKind::Line);
 		for (int item = 0; item < GeometryCategoryCount; ++item)
 		{
@@ -288,11 +301,11 @@ namespace Inkeys::UI::Bar
 			const auto shapeGrid = ResolveBarButtonListLayout(subset, BarButtonListLayoutKind::GeometryGrid);
 			expect(shapeGrid.placements.size() == count && shapeGrid.subColumns <= 12 && !shapeGrid.showDivider, "shape policy bounds only its own visible categories");
 		}
-		const auto standard = ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
+		const auto standard = ResolveButtonVisualMetrics(ButtonVisualLayoutKind::StandardTwoTwo);
 		for (int i = 0; i < GeometryCategoryCount; ++i)
 		{
 			const auto& button = *list[i];
-			expect(button.size == BarButtonSizeEnum::twoTwo && (i >= 17 || (f.items[i].Width() == standard.buttonWidthDip && f.items[i].Height() == standard.buttonHeightDip)),
+			expect(button.size == ButtonSizeEnum::twoTwo && (i >= 17 || (f.items[i].Width() == standard.buttonWidthDip && f.items[i].Height() == standard.buttonHeightDip)),
 				"category dimensions follow shared list metrics");
 			expect(button.icon.y.val == standard.iconOffsetYDip && button.name.y.val == standard.primaryOffsetYDip && button.name.h.val == standard.primarySlotHeightDip,
 				"shape list retains shared standard icon and label metrics");
@@ -321,7 +334,7 @@ namespace Inkeys::UI::Bar
 		expect(BarGeometryAttributeTestAccess::CarouselSides(owner.geometryAttribute) != carouselBefore && GetShapeToolSpec(GetStateModeSnapshot()) == selectedBefore, "carousel does not mutate actual sides or selection");
 		expect(!owner.geometryAttribute.Active(), "content transition settles before next timer");
 
-		const auto disabledOpacity = [&] { return BarThemeMaterial::DisabledContentOpacity(owner.barStyle.darkStyle ? 0.0 : 1.0); };
+		const auto disabledOpacity = [&] { return ThemeMaterial::DisabledContentOpacity(owner.barStyle.darkStyle ? 0.0 : 1.0); };
 		expect(catalog.size() == 35 && GeometryImplementedCategoryCount == 20 && GeometryControlCount == 70, "35 catalog tools, 20 enabled presets and derived parameter/segment controls");
 		for (int i = 0; i < GeometryCategoryCount; ++i)
 		{
@@ -341,10 +354,10 @@ namespace Inkeys::UI::Bar
 		(void)SetShapeToolPresetIfRevision(PresetKind::RoundedRectangle,StateModeTransitionRevision());
 		owner.geometryAttribute.Close(owner); tick(90); owner.barState.geometryAttribute = true; tick(90);
 		expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Rectangle
-			&& BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,2).state->state == BarWidgetState::Selected,"old rounded tool opens with rectangle selected");
+			&& BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,2).state->state == WidgetState::Selected,"old rounded tool opens with rectangle selected");
 		preset(PresetKind::Prism); owner.geometryAttribute.Close(owner); tick(90);
 		owner.barState.geometryAttribute = true; tick(90); f = owner.geometryAttribute.PresentationSnapshot();
-		expect(f.category == ShapeToolbarCategory::Solid && BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,21).state->state == BarWidgetState::Selected,
+		expect(f.category == ShapeToolbarCategory::Solid && BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,21).state->state == WidgetState::Selected,
 			"opening with solid tool selects solid category and its actual tool");
 		const auto beforeCategory = GetStateModeVersionedSnapshot();
 		const auto oldCategory = f;
@@ -387,7 +400,7 @@ namespace Inkeys::UI::Bar
 				if (supported) expect(button.name.enable.val && button.icon.enable.val && !f.accessibleNames[item].empty()
 					&& button.name.content.GetVal() == ShapeAuxiliaryLabel(auxiliaryBits[bit],*entry.preset)
 					&& owner.spec.MeasureText(button.name.content.GetVal(),button.name.size.val).width <= button.name.w.val+0.5
-					&& (button.state->state == BarWidgetState::Selected) == ((GetShapeAuxiliary(GetStateModeSnapshot()) & auxiliaryBits[bit]) != Auxiliary::None),"auxiliary toggles keep measured localized labels beside icons and correct defaults");
+					&& (button.state->state == WidgetState::Selected) == ((GetShapeAuxiliary(GetStateModeSnapshot()) & auxiliaryBits[bit]) != Auxiliary::None),"auxiliary toggles keep measured localized labels beside icons and correct defaults");
 			}
 		}
 		for (const auto& entry : catalog) if (entry.preset && SupportedAuxiliary(*entry.preset) != Auxiliary::None)
@@ -429,7 +442,7 @@ namespace Inkeys::UI::Bar
 			BarGeometryAttributeTestAccess::Execute(owner.geometryAttribute, owner, item, before.revision);
 			expect(SameBusinessSnapshot(before, GetStateModeVersionedSnapshot()), "direct Execute cannot activate future tool");
 			const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, item);
-			expect(button.state->state == BarWidgetState::Disable && std::abs(button.icon.pct.val - disabledOpacity()) < 0.000001 && std::abs(button.name.pct.val - disabledOpacity()) < 0.000001,
+			expect(button.state->state == WidgetState::Disable && std::abs(button.icon.pct.val - disabledOpacity()) < 0.000001 && std::abs(button.name.pct.val - disabledOpacity()) < 0.000001,
 				"future tools use shared theme disabled opacity");
 			expect(button.pressScale.val == 1 && !f.hits[item].enabled, "future tools do not acquire successful press feedback or action hit");
 		}
@@ -463,7 +476,7 @@ namespace Inkeys::UI::Bar
 		expect(f.items[GeometryTriangleModeBegin].Width() > 0 && f.items[GeometryTriangleModeBegin+2].Width() > 0 && f.items[GeometryTrapezoidMode].Width() == 0,"triangle exposes three construction constraints");
 		click(GeometryTriangleModeBegin+2); expect(GetShapeToolSpec(GetStateModeSnapshot()).constraint == PlanarConstraint::Equilateral && GetShapeToolSpec(GetStateModeSnapshot()).creationMode == CreationMode::CenterRadius,"triangle equilateral selects center construction");
 		preset(PresetKind::Trapezoid); f = owner.geometryAttribute.PresentationSnapshot();
-		expect(f.items[GeometryTrapezoidMode].Width() > 0 && BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,GeometryTrapezoidMode).state->state != BarWidgetState::Selected,"trapezoid is unconstrained by default");
+		expect(f.items[GeometryTrapezoidMode].Width() > 0 && BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,GeometryTrapezoidMode).state->state != WidgetState::Selected,"trapezoid is unconstrained by default");
 		click(GeometryTrapezoidMode); expect(GetShapeToolSpec(GetStateModeSnapshot()).constraint == PlanarConstraint::Isosceles,"trapezoid isosceles toggles through production action");
 		preset(PresetKind::Circle); f = owner.geometryAttribute.PresentationSnapshot();
 		expect(f.items[GeometryCircleCenter].Width() > 0 && f.items[GeometrySidesBegin].Width() == 0, "circle displays two mode options only");
@@ -479,8 +492,8 @@ namespace Inkeys::UI::Bar
 		{ const auto legacy = GetStateModeVersionedSnapshot(); SetShapeFillModeIfRevision(draw3::shapes::FillMode::OutlineAndFill,legacy.revision); }
 		tick(90); f = owner.geometryAttribute.PresentationSnapshot();
 		expect(f.items[GeometryStyleBegin+2].Width() == 0
-			&& BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,GeometryStyleBegin).state->state == BarWidgetState::Selected
-			&& BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,GeometryStyleBegin+1).state->state == BarWidgetState::Selected,
+			&& BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,GeometryStyleBegin).state->state == WidgetState::Selected
+			&& BarGeometryAttributeTestAccess::Button(owner.geometryAttribute,GeometryStyleBegin+1).state->state == WidgetState::Selected,
 			"legacy mixed style selects both retained entries without exposing a third button");
 		click(GeometryStyleBegin); expect(GetShapeFillMode(GetStateModeSnapshot()) == draw3::shapes::FillMode::Outline,"clicking legacy mixed state converts explicitly to outline only");
 		for (int pattern = 0; pattern < 4; ++pattern) { click(GeometryPatternBegin + pattern); expect(static_cast<int>(GetShapeStyle(GetStateModeSnapshot()).linePattern) == pattern, "line pattern current revision setter"); }
@@ -494,7 +507,7 @@ namespace Inkeys::UI::Bar
 			{
 				const auto& button = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, GeometryThicknessBegin + i);
 				expect(!button.name.enable.val && !button.icon.enable.val && button.name.content.GetVal().empty(), "three thickness buttons contain no numeric label or extra SVG");
-				expect((button.state->state == BarWidgetState::Selected) == (i == presetIndex), "three existing presets preserve selected feedback");
+				expect((button.state->state == WidgetState::Selected) == (i == presetIndex), "three existing presets preserve selected feedback");
 			}
 		}
 		click(GeometryCloseButton); expect(!owner.barState.geometryAttribute && !owner.barState.drawAttribute, "only side-rail button closes panel without opening another view");
@@ -507,8 +520,8 @@ namespace Inkeys::UI::Bar
 			auto& panel = owner.geometryAttribute;
 			const auto indexOf = [&](PresetKind p) { for (int i = 0; i < GeometryCategoryCount; ++i) if (catalog[i].preset == p) return i; return -1; };
 			const int line = indexOf(PresetKind::Line), arrow = indexOf(PresetKind::Arrow), rect = indexOf(PresetKind::Rectangle), ellipse = indexOf(PresetKind::Ellipse);
-			const auto badge = [&](int item) -> BarButtonBadgeClass& { return *BarGeometryAttributeTestAccess::MutableButton(panel,item).badge; };
-			const auto badgeGeometry = [&](int item) { auto& b = BarGeometryAttributeTestAccess::MutableButton(panel,item); return ResolveBarButtonBadgeGeometry(b,{b.button.inhX,b.button.inhY}); };
+			const auto badge = [&](int item) -> ButtonBadgeClass& { return *BarGeometryAttributeTestAccess::MutableButton(panel,item).badge; };
+			const auto badgeGeometry = [&](int item) { auto& b = BarGeometryAttributeTestAccess::MutableButton(panel,item); return ResolveButtonBadgeGeometry(b,{b.button.inhX,b.button.inhY}); };
 			const auto pinned = [] { return IsShapeToolPinned(GetStateModeSnapshot()); };
 			for (int i = 0; i < GeometryCategoryCount; ++i)
 				expect(BarGeometryAttributeTestAccess::Button(panel,i).badge.has_value() == catalog[i].preset.has_value(), "only selectable categories own an optional badge");
@@ -516,8 +529,8 @@ namespace Inkeys::UI::Bar
 			expect(badge(line).progress.val == 1 && badge(arrow).progress.val == 1 && badge(rect).progress.val == 0, "line and arrow categories keep resident pin badges");
 			{
 				const auto g = badgeGeometry(line); const auto r = panel.PresentationSnapshot().items[line];
-				expect(std::abs(g.centerX-(r.right-BarButtonBadgeInsetDip-BarButtonBadgeDiameterDip/2)) < .01 && std::abs(g.centerY-(r.top+BarButtonBadgeInsetDip+BarButtonBadgeDiameterDip/2)) < .01
-					&& g.diameter == BarButtonBadgeDiameterDip && std::abs(g.angle) < .000001, "panel badge sits at the top-right inset of its category");
+				expect(std::abs(g.centerX-(r.right-ButtonBadgeInsetDip-ButtonBadgeDiameterDip/2)) < .01 && std::abs(g.centerY-(r.top+ButtonBadgeInsetDip+ButtonBadgeDiameterDip/2)) < .01
+					&& g.diameter == ButtonBadgeDiameterDip && std::abs(g.angle) < .000001, "panel badge sits at the top-right inset of its category");
 			}
 			click(ellipse);
 			expect(GetShapeToolSpec(GetStateModeSnapshot()).preset == PresetKind::Ellipse && !pinned() && badge(ellipse).progress.val == 0, "short tap still selects without pinning");
@@ -539,14 +552,14 @@ namespace Inkeys::UI::Bar
 			expect(midProgress > .35 && midProgress < .6 && BarGeometryAttributeTestAccess::RingOpacity(panel) == 1, "ring progress follows elapsed time from 0.2s over 0.8s");
 			{
 				// 从顶边中点顺时针：约四成进度时右上有环、左上仍空。
-				auto* dc = owner.spec.GetDeviceContext(); owner.spec.SetFrameZoom(zoom);
-				owner.spec.PrepareFrameLighting(1.0 / 60, {}, static_cast<int>(StateModeSelectEnum::IdtShape), 0, GetPenColor(GetStateModeSnapshot()), 0);
+				auto* dc = owner.specTarget.DeviceContext(); owner.spec.SetFrameZoom(zoom);
+				owner.PrepareFrameLighting(1.0 / 60, {}, ResolveMainBarFrameLightingInput(&owner, static_cast<int>(StateModeSelectEnum::IdtShape), 0, GetPenColor(GetStateModeSnapshot()), 0));
 				dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0, 0, 0, 0)); panel.Draw(owner.spec, dc);
 				expect(SUCCEEDED(dc->EndDraw()), "panel with progress ring draws");
-				const auto pixels = ReadPixels(dc, owner.spec.GetTargetBitmap()); const auto r = panel.PresentationSnapshot().items[rect];
-				const UINT width = owner.spec.GetTargetBitmap()->GetPixelSize().width;
+				const auto pixels = ReadPixels(dc, owner.specTarget.TargetBitmap()); const auto r = panel.PresentationSnapshot().items[rect];
+				const UINT width = owner.specTarget.TargetBitmap()->GetPixelSize().width;
 				// 面板底色不透明，按与环色（IconPrimary）的最小色差比较左右两侧。
-				const COLORREF ringColor = GetThemeColor(BarThemeColorEnum::IconPrimary);
+				const COLORREF ringColor = GetThemeColor(ThemeColorEnum::IconPrimary);
 				const auto distance = [&](size_t i) { return std::abs(static_cast<int>(pixels[i]) - GetBValue(ringColor)) + std::abs(static_cast<int>(pixels[i + 1]) - GetGValue(ringColor))
 					+ std::abs(static_cast<int>(pixels[i + 2]) - GetRValue(ringColor)); };
 				int right = 765, left = 765;
@@ -557,7 +570,7 @@ namespace Inkeys::UI::Bar
 					if (b + 3 < pixels.size() && a + 3 < pixels.size()) { right = (std::min)(right, distance(a)); left = (std::min)(left, distance(b)); }
 				}
 				report << "HoldRingPixels rightDistance=" << right << " leftDistance=" << left << '\n';
-				(void)SavePng(L"Build/shape-p2-ui/hold-ring.png", pixels, width, owner.spec.GetTargetBitmap()->GetPixelSize().height);
+				(void)SavePng(L"Build/shape-p2-ui/hold-ring.png", pixels, width, owner.specTarget.TargetBitmap()->GetPixelSize().height);
 				expect(right < 90 && left > right + 150, "progress ring is drawn clockwise from the top-edge midpoint");
 			}
 			expect(SameBusinessSnapshot(beforeHold, GetStateModeVersionedSnapshot()), "ring phase has no business side effects");
@@ -634,23 +647,23 @@ namespace Inkeys::UI::Bar
 			click(ellipse); expect(!pinned() && badge(ellipse).progress.val == 0, "returning to the old category does not resurrect the pin");
 
 			// 关闭动画时角标直接跳到终态。
-			BarUiAnimationEnabled = false;
+			UiAnimationEnabled = false;
 			pointer(WM_LBUTTONDOWN, ellipse, true); BarGeometryAttributeTestAccess::ShiftHold(panel, 1100ms);
 			(void)panel.ConsumeHoldWake(owner, std::chrono::steady_clock::now()); pointer(WM_LBUTTONUP, ellipse, false); tick(1);
 			expect(pinned() && badge(ellipse).progress.val == 1, "animation-disabled badge jumps to its end state");
-			BarUiAnimationEnabled = true;
+			UiAnimationEnabled = true;
 			click(rect); tick(60);
 
 			// 实际绘制面板，按顶边中点右/左两侧与环色的色差判断进度环是否画出（约四成进度时）。
 			const auto ringContrast = [&](int item)
 			{
-				auto* dc = owner.spec.GetDeviceContext(); owner.spec.SetFrameZoom(zoom);
-				owner.spec.PrepareFrameLighting(1.0 / 60, {}, static_cast<int>(StateModeSelectEnum::IdtShape), 0, GetPenColor(GetStateModeSnapshot()), 0);
+				auto* dc = owner.specTarget.DeviceContext(); owner.spec.SetFrameZoom(zoom);
+				owner.PrepareFrameLighting(1.0 / 60, {}, ResolveMainBarFrameLightingInput(&owner, static_cast<int>(StateModeSelectEnum::IdtShape), 0, GetPenColor(GetStateModeSnapshot()), 0));
 				dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0, 0, 0, 0)); panel.Draw(owner.spec, dc);
 				expect(SUCCEEDED(dc->EndDraw()), "panel draws for ring sampling");
-				const auto pixels = ReadPixels(dc, owner.spec.GetTargetBitmap()); const auto r = panel.PresentationSnapshot().items[item];
-				const UINT width = owner.spec.GetTargetBitmap()->GetPixelSize().width;
-				const COLORREF ringColor = GetThemeColor(BarThemeColorEnum::IconPrimary);
+				const auto pixels = ReadPixels(dc, owner.specTarget.TargetBitmap()); const auto r = panel.PresentationSnapshot().items[item];
+				const UINT width = owner.specTarget.TargetBitmap()->GetPixelSize().width;
+				const COLORREF ringColor = GetThemeColor(ThemeColorEnum::IconPrimary);
 				const auto distance = [&](size_t i) { return std::abs(static_cast<int>(pixels[i]) - GetBValue(ringColor)) + std::abs(static_cast<int>(pixels[i + 1]) - GetGValue(ringColor))
 					+ std::abs(static_cast<int>(pixels[i + 2]) - GetRValue(ringColor)); };
 				int right = 765, left = 765;
@@ -744,26 +757,26 @@ namespace Inkeys::UI::Bar
 
 			// 页码加载环抽取前后逐像素一致；进度模式整圈闭合。
 			{
-				auto* dc = owner.spec.GetDeviceContext(); ButtonFrameRing shared;
-				const COLORREF color = GetThemeColor(BarThemeColorEnum::IconPrimary);
+				auto* dc = owner.specTarget.DeviceContext(); ButtonFrameRing shared;
+				const COLORREF color = GetThemeColor(ThemeColorEnum::IconPrimary);
 				for (const float z : {1.0F, 1.5F})
 					for (const auto& arc : {PageLoadingArc{0,.10},PageLoadingArc{.37,.42},PageLoadingArc{.9,.95},PageLoadingArcAt(.8,true)})
 					{
 						const EraserAttributeRect r{100.25,60.5,170.25,95.5};
 						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0,0,0,0));
 						const bool legacyOk = DrawLegacyPageRing(dc, r, 8, z, arc, color, .8F); expect(SUCCEEDED(dc->EndDraw()) && legacyOk, "legacy page ring reference draws");
-						const auto legacy = ReadPixels(dc, owner.spec.GetTargetBitmap());
+						const auto legacy = ReadPixels(dc, owner.specTarget.TargetBitmap());
 						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0,0,0,0));
-						const bool sharedOk = shared.Draw(dc, r.left, r.top, r.Width(), r.Height(), 8, static_cast<float>(BarButtonFrameThicknessDip), 1, z, {arc.start, arc.length, false}, color, .8F);
+						const bool sharedOk = shared.Draw(dc, r.left, r.top, r.Width(), r.Height(), 8, static_cast<float>(ButtonFrameThicknessDip), 1, z, {arc.start, arc.length, false}, color, .8F);
 						expect(SUCCEEDED(dc->EndDraw()) && sharedOk, "shared page ring draws");
-						const auto current = ReadPixels(dc, owner.spec.GetTargetBitmap());
+						const auto current = ReadPixels(dc, owner.specTarget.TargetBitmap());
 						expect(!legacy.empty() && legacy == current && std::any_of(current.begin(), current.end(), [](auto v){ return v != 0; }), "page loading ring is pixel-identical after extraction");
 					}
 				const EraserAttributeRect r{100,60,170,130};
 				dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0,0,0,0));
-				(void)shared.Draw(dc, r.left, r.top, r.Width(), r.Height(), 8, static_cast<float>(BarButtonFrameThicknessDip), 1, 1, {0, 1, true}, color, 1);
+				(void)shared.Draw(dc, r.left, r.top, r.Width(), r.Height(), 8, static_cast<float>(ButtonFrameThicknessDip), 1, 1, {0, 1, true}, color, 1);
 				expect(SUCCEEDED(dc->EndDraw()), "full progress ring draws");
-				const auto full = ReadPixels(dc, owner.spec.GetTargetBitmap()); const UINT width = owner.spec.GetTargetBitmap()->GetPixelSize().width;
+				const auto full = ReadPixels(dc, owner.specTarget.TargetBitmap()); const UINT width = owner.specTarget.TargetBitmap()->GetPixelSize().width;
 				const auto alphaAt = [&](double x, double y) { const size_t i = (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4 + 3; return i < full.size() ? full[i] : 0; };
 				const double edge = 3.25; // 边框 + 间隙 + 半线宽
 				expect(alphaAt(135, 60 + edge) > 128 && alphaAt(131, 60 + edge) > 128 && alphaAt(170 - edge, 95) > 128 && alphaAt(135, 130 - edge) > 128 && alphaAt(100 + edge, 95) > 128,
@@ -776,14 +789,14 @@ namespace Inkeys::UI::Bar
 		int frames = 0;
 		for (const wchar_t* language : {L"zh-CN", L"zh-TW", L"en-US"})
 		{
-			expect(I18n::load(1, L"JSON", language), "all bundled languages load"); owner.spec.ConfigureLocalizedTypography();
+			expect(I18n::load(1, L"JSON", language), "all bundled languages load"); owner.ConfigureLocalizedTypography();
 			for (bool dark : {false, true}) for (double scale : {0.75, 1.0, 1.5, 2.0}) for (bool below : {false, true}) for (const auto category : {ShapeToolbarCategory::Regular,ShapeToolbarCategory::Solid,ShapeToolbarCategory::CoordinateFunction})
 			{
 				zoom = scale; work = {0, 0, static_cast<LONG>(1200 * zoom), static_cast<LONG>(800 * zoom)};
 				owner.barStyle.zoom = zoom; owner.barStyle.darkStyle = dark; owner.barState.widgetPosition.primaryBar = below;
-				root->y.SetDirect(below ? 120 : 600); BarUiAnimationEnabled = true;
+				root->y.SetDirect(below ? 120 : 600); UiAnimationEnabled = true;
 				const auto epoch = RenderPipeline::GetDeviceEpoch();
-				expect(SUCCEEDED(owner.spec.EnsureDeviceResources(epoch, work.right, work.bottom)), "DPI target resources"); owner.spec.SetFrameZoom(zoom);
+				expect(SUCCEEDED(owner.specTarget.Ensure(epoch, work.right, work.bottom)), "DPI target resources"); owner.spec.SetFrameZoom(zoom);
 				preset(below ? PresetKind::Circle : PresetKind::RegularPolygon); selectCategory(category); tick(60);
 				f = owner.geometryAttribute.PresentationSnapshot();
 				const double expectedContentHeight = category == ShapeToolbarCategory::Regular ? 220 : category == ShapeToolbarCategory::Solid ? 70 : 145;
@@ -799,10 +812,10 @@ namespace Inkeys::UI::Bar
 					const auto& b = BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i);
 					expect(owner.spec.MeasureText(b.name.content.GetVal(), b.name.size.val, DWRITE_FONT_WEIGHT_BOLD).width <= b.name.w.val + 0.5, "localized category label fits shared standard slot");
 				}
-				owner.spec.PrepareFrameLighting(1.0 / 60, {}, static_cast<int>(StateModeSelectEnum::IdtShape), 0, GetPenColor(GetStateModeSnapshot()), 0);
-				auto* dc = owner.spec.GetDeviceContext(); dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0, 0, 0, 0));
+				owner.PrepareFrameLighting(1.0 / 60, {}, ResolveMainBarFrameLightingInput(&owner, static_cast<int>(StateModeSelectEnum::IdtShape), 0, GetPenColor(GetStateModeSnapshot()), 0));
+				auto* dc = owner.specTarget.DeviceContext(); dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0, 0, 0, 0));
 				owner.geometryAttribute.Draw(owner.spec, dc); const HRESULT hr = dc->EndDraw(); expect(SUCCEEDED(hr), "production panel draw completes");
-				const auto pixels = ReadPixels(dc, owner.spec.GetTargetBitmap());
+				const auto pixels = ReadPixels(dc, owner.specTarget.TargetBitmap());
 				expect(!pixels.empty() && std::any_of(pixels.begin(), pixels.end(), [](auto v) { return v != 0; }), "production panel produces actual pixels");
 				for (int i = 0; i < GeometryCategoryCount; ++i) if (catalog[i].category == category) expect(BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, i).icon.cacheBitmap != nullptr, "visible category rasterizes embedded SVG");
 				if (scale == 1 && !dark && !below && language == std::wstring(L"zh-CN"))
@@ -833,8 +846,8 @@ namespace Inkeys::UI::Bar
 			}
 		}
 		// 设备资源重建保留原 SVG 载荷；关闭动画立即稳定并撤销轮播唤醒。
-		owner.spec.DiscardDeviceResources(); expect(SUCCEEDED(owner.spec.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), work.right, work.bottom)), "device resources rebuild");
-		BarUiAnimationEnabled = false; owner.barState.geometryAttribute = false; tick(1, 0);
+		owner.specTarget.Discard(); expect(SUCCEEDED(owner.specTarget.Ensure(RenderPipeline::GetDeviceEpoch(), work.right, work.bottom)), "device resources rebuild");
+		UiAnimationEnabled = false; owner.barState.geometryAttribute = false; tick(1, 0);
 		expect(!owner.geometryAttribute.PresentationSnapshot().visible && !BarGeometryAttributeTestAccess::CarouselArmed(owner.geometryAttribute), "animation-disabled close stops all scheduled wakeups");
 		owner.barState.geometryAttribute = true; preset(PresetKind::Circle); tick(1, 0);
 		expect(owner.geometryAttribute.PresentationSnapshot().opacity == 1 && !owner.geometryAttribute.Active() && !BarGeometryAttributeTestAccess::CarouselArmed(owner.geometryAttribute), "animation-disabled open reaches full state without polling");
@@ -847,7 +860,7 @@ namespace Inkeys::UI::Bar
 			owner.geometryAttribute.Advance(owner, GetStateModeSnapshot(), 1.0 / 60, 1, zoom, work, {}, 0, 0);
 			expect(!owner.geometryAttribute.Changed() && !owner.geometryAttribute.Active() && !BarGeometryAttributeTestAccess::CarouselArmed(owner.geometryAttribute), "hidden stable panel has no animation or carousel wake");
 		}
-		owner.spec.DiscardDeviceResources();
+		owner.specTarget.Discard();
 
 		// 走完整生产协调器，检查新列表及原子树的实际绘制/成功呈现命中。
 		owner.barWindow.x = owner.barWindow.y = 0; owner.barWindow.w = 1200; owner.barWindow.h = 800;
@@ -862,42 +875,42 @@ namespace Inkeys::UI::Bar
 			int otherBadges = 0;
 			for (int id = 0; id < owner.barButtonSet.tot; ++id) if (auto* b = owner.barButtonSet.buttonList.Get(id); b && b != geometry && b->badge) ++otherBadges;
 			expect(otherBadges == 0, "other main-bar buttons stay without badges");
-			const BarButtonAnimationContext frame{1.0 / 60, 1, true, false, true, true};
-			const auto advance = [&](int frames) { for (int i = 0; i < frames; ++i) (void)AdvanceBarButtonVisual(*geometry, frame); };
+			const ButtonAnimationContext frame{1.0 / 60, 1, true, false, true, true};
+			const auto advance = [&](int frames) { for (int i = 0; i < frames; ++i) (void)AdvanceButtonVisual(*geometry, frame); };
 			const auto savedPreset = GetShapeToolSpec(GetStateModeSnapshot()).preset;
 			geometry->button.w.SetDirect(70); geometry->button.h.SetDirect(70);
-			const BarUiInheritClass origin{200, 20};
+			const UiInheritClass origin{200, 20};
 			ChangeStateModeToShape(); (void)SetShapeToolPresetIfRevision(PresetKind::Rectangle, StateModeTransitionRevision());
 			owner.barButtonSet.StateUpdate(); advance(60);
 			expect(!geometry->badge->shown && geometry->badge->progress.val == 0, "unpinned rectangle has no main badge");
 			(void)ToggleShapeToolPinIfRevision(PresetKind::Rectangle, StateModeTransitionRevision()); owner.barButtonSet.StateUpdate();
 			expect(geometry->badge->shown, "user-pinned shape publishes the main badge target");
 			advance(3);
-			auto g = ResolveBarButtonBadgeGeometry(*geometry, origin);
+			auto g = ResolveButtonBadgeGeometry(*geometry, origin);
 			expect(g.scale > 0 && g.scale < 1.2 && g.angle < 0 && g.angle > -45, "main badge enters scaling up with rotation");
-			const RECT entering = ResolveBarButtonBadgeBounds(*geometry, origin, 1.5);
+			const RECT entering = ResolveButtonBadgeBounds(*geometry, origin, 1.5);
 			const double envelope = g.diameter * g.scale * 0.7071 * 1.5;
 			expect(entering.right - entering.left >= static_cast<LONG>(2 * envelope) && entering.left <= static_cast<LONG>(g.centerX * 1.5 - envelope), "badge dirty bounds cover the rotated envelope");
-			advance(60); g = ResolveBarButtonBadgeGeometry(*geometry, origin);
+			advance(60); g = ResolveButtonBadgeGeometry(*geometry, origin);
 			expect(geometry->badge->progress.val == 1 && std::abs(g.angle) < .000001 && std::abs(g.centerX - (origin.x + 70 - 9)) < .01 && std::abs(g.centerY - (origin.y + 9)) < .01,
 				"main badge settles at the top-right corner");
 			// 主栏倒转：换到右下角并随换边过渡。
-			geometry->badge->belowTarget = true; advance(6); g = ResolveBarButtonBadgeGeometry(*geometry, origin);
+			geometry->badge->belowTarget = true; advance(6); g = ResolveButtonBadgeGeometry(*geometry, origin);
 			expect(geometry->badge->below.val > 0 && geometry->badge->below.val < 1 && g.centerY > origin.y + 9 && g.centerY < origin.y + 61, "inverted bar moves the badge along the right edge");
-			advance(60); g = ResolveBarButtonBadgeGeometry(*geometry, origin);
+			advance(60); g = ResolveButtonBadgeGeometry(*geometry, origin);
 			expect(std::abs(g.centerY - (origin.y + 70 - 9)) < .01 && std::abs(g.centerX - (origin.x + 61)) < .01, "inverted bar places the badge at the bottom-right corner");
-			geometry->button.h.SetDirect(32.5); g = ResolveBarButtonBadgeGeometry(*geometry, origin);
+			geometry->button.h.SetDirect(32.5); g = ResolveButtonBadgeGeometry(*geometry, origin);
 			expect(std::abs(g.centerY - (origin.y + 32.5 - 9)) < .01 && g.diameter == 10, "button size changes translate without rescaling the badge");
 			geometry->button.h.SetDirect(70); geometry->badge->belowTarget = false; advance(60);
 			// 切到其他图形清除固定，角标旋转离场。
 			(void)SetShapeToolPresetIfRevision(PresetKind::Ellipse, StateModeTransitionRevision()); owner.barButtonSet.StateUpdate(); advance(9);
-			g = ResolveBarButtonBadgeGeometry(*geometry, origin);
+			g = ResolveButtonBadgeGeometry(*geometry, origin);
 			expect(!geometry->badge->shown && g.scale > 0 && g.angle > 0, "switching shape hides the main badge with exit rotation");
-			advance(60); expect(geometry->badge->progress.val == 0 && ResolveBarButtonBadgeBounds(*geometry, origin, 1).right == 0, "hidden badge leaves no dirty bounds");
+			advance(60); expect(geometry->badge->progress.val == 0 && ResolveButtonBadgeBounds(*geometry, origin, 1).right == 0, "hidden badge leaves no dirty bounds");
 			{
 				// 进出场中途反向：角度沿当前值连续变化，不按新目标重算出现瞬跳。
-				const auto angle = [&] { return ResolveBarButtonBadgeGeometry(*geometry, origin).angle; };
-				const BarButtonAnimationContext still{0.0, 1, true, false, true, true};
+				const auto angle = [&] { return ResolveButtonBadgeGeometry(*geometry, origin).angle; };
+				const ButtonAnimationContext still{0.0, 1, true, false, true, true};
 				double referenceStep = 0;
 				geometry->badge->shown = true; advance(1);
 				for (double previous = angle(), i = 0; i < 60; ++i) { advance(1); const double a = angle(); referenceStep = (std::max)(referenceStep, std::abs(a - previous)); previous = a; }
@@ -906,7 +919,7 @@ namespace Inkeys::UI::Bar
 				const auto reverse = [&](bool shown, const char* label)
 				{
 					const double before = angle();
-					geometry->badge->shown = shown; (void)AdvanceBarButtonVisual(*geometry, still);
+					geometry->badge->shown = shown; (void)AdvanceButtonVisual(*geometry, still);
 					expect(std::abs(angle() - before) < .000001, label);
 					double previous = angle(), maxStep = 0, firstStep = -1;
 					for (int i = 0; i < 60; ++i)
@@ -933,14 +946,14 @@ namespace Inkeys::UI::Bar
 			expect(geometry->badge->shown, "line tool always shows the main badge");
 			ChangeStateModeToPen(); owner.barButtonSet.StateUpdate();
 			expect(!geometry->badge->shown, "badge only follows the selected shape tool");
-			BarUiAnimationEnabled = false; ChangeStateModeToShape(); owner.barButtonSet.StateUpdate();
-			(void)AdvanceBarButtonVisual(*geometry, {1.0 / 60, 1, false, false, true, true});
+			UiAnimationEnabled = false; ChangeStateModeToShape(); owner.barButtonSet.StateUpdate();
+			(void)AdvanceButtonVisual(*geometry, {1.0 / 60, 1, false, false, true, true});
 			expect(geometry->badge->progress.val == 1, "animation-disabled main badge jumps to the end state");
-			BarUiAnimationEnabled = true; (void)SetShapeToolPresetIfRevision(savedPreset, StateModeTransitionRevision()); owner.barButtonSet.StateUpdate(); advance(60);
+			UiAnimationEnabled = true; (void)SetShapeToolPresetIfRevision(savedPreset, StateModeTransitionRevision()); owner.barButtonSet.StateUpdate(); advance(60);
 			caseContext.clear();
 		}
 		owner.barState.fold = false; owner.barState.geometryAttribute = true;
-		owner.barState.drawAttribute = false; BarUiAnimationEnabled = true;
+		owner.barState.drawAttribute = false; UiAnimationEnabled = true;
 		unsigned actualCommits = 0;
 		struct Receipt { POINT source{}, destination{}; SIZE size{}; RECT dirty{}; bool full = true; } receipt, previousReceipt;
 		bool rejectNextPresent = false, rejectedPresent = false, captureScene = false;
@@ -958,7 +971,7 @@ namespace Inkeys::UI::Bar
 		auto capturePresented = [&]
 		{
 			if (!captureScene || capturedCommit == actualCommits) return;
-			const auto size = owner.spec.GetTargetBitmap()->GetPixelSize();
+			const auto size = owner.specTarget.TargetBitmap()->GetPixelSize();
 			const bool cropValid = receipt.source.x >= 0 && receipt.source.y >= 0 &&
 				static_cast<unsigned>(receipt.source.x + receipt.size.cx) <= size.width &&
 				static_cast<unsigned>(receipt.source.y + receipt.size.cy) <= size.height;
@@ -969,7 +982,7 @@ namespace Inkeys::UI::Bar
 			if (!cropValid) return;
 			const D2D1_RECT_U crop{static_cast<UINT32>(receipt.source.x), static_cast<UINT32>(receipt.source.y),
 				static_cast<UINT32>(receipt.source.x + receipt.size.cx), static_cast<UINT32>(receipt.source.y + receipt.size.cy)};
-			scenePixels = ReadPixels(owner.spec.GetDeviceContext(), owner.spec.GetTargetBitmap(), &crop);
+			scenePixels = ReadPixels(owner.specTarget.DeviceContext(), owner.specTarget.TargetBitmap(), &crop);
 			expect(scenePixels.size() == static_cast<size_t>(receipt.size.cx) * receipt.size.cy * 4, "actual ULW pixels read back after successful scene transaction");
 			if (!receipt.full)
 			{
@@ -1019,8 +1032,8 @@ namespace Inkeys::UI::Bar
 			expect(!hit(static_cast<BarUISetShapeEnum>(i)), "retired geometry subtree owns no transparent hit");
 		auto saveScene = [&](const wchar_t* filename)
 		{
-			const auto size = owner.spec.GetTargetBitmap()->GetPixelSize();
-			const auto bytes = ReadPixels(owner.spec.GetDeviceContext(), owner.spec.GetTargetBitmap());
+			const auto size = owner.specTarget.TargetBitmap()->GetPixelSize();
+			const auto bytes = ReadPixels(owner.specTarget.DeviceContext(), owner.specTarget.TargetBitmap());
 			expect(SavePng(std::filesystem::path(L"Build/shape-p2-ui") / filename, bytes, size.width, size.height), "actual scene pixel evidence");
 		};
 		// 从实际ULW窗口截面读像素，不把独立面板贴到另一张“看起来相同”的纹理上。
@@ -1226,7 +1239,7 @@ namespace Inkeys::UI::Bar
 						expect(rect.top >= presented.parameterClip.top - 0.01 && rect.bottom <= presented.parameterClip.bottom + 0.01,
 							"stable parameter buttons fit the exact clip used by production draw");
 					const bool actionable = i >= GeometryCategoryCount || catalog[i].preset.has_value();
-					expect(hit.enabled == actionable && HitTestBarButton(hit, EraserRectCenterX(visibleRect), EraserRectCenterY(visibleRect)) == actionable,
+					expect(hit.enabled == actionable && HitTestButton(hit, EraserRectCenterX(visibleRect), EraserRectCenterY(visibleRect)) == actionable,
 						"successful presentation enables current visible implemented controls and rejects future categories");
 					expect(std::abs(hit.boundsDip.left - visibleRect.left) < 0.02 && std::abs(hit.boundsDip.top - visibleRect.top) < 0.02 &&
 						std::abs(hit.boundsDip.right - visibleRect.right) < 0.02 && std::abs(hit.boundsDip.bottom - visibleRect.bottom) < 0.02,
@@ -1239,7 +1252,7 @@ namespace Inkeys::UI::Bar
 					expect(owner.spec.MeasureText(button.name.content.GetVal(), button.name.size.val, DWRITE_FONT_WEIGHT_BOLD).width <= button.name.w.val + 0.5,
 						"actual scene localized category label fits measured shared slot");
 					if (!catalog[i].preset)
-						expect(button.state->state == BarWidgetState::Disable && std::abs(button.icon.pct.val - disabledOpacity()) < 0.000001 && std::abs(button.name.pct.val - disabledOpacity()) < 0.000001,
+						expect(button.state->state == WidgetState::Disable && std::abs(button.icon.pct.val - disabledOpacity()) < 0.000001 && std::abs(button.name.pct.val - disabledOpacity()) < 0.000001,
 							"disabled future category retains shared theme opacity without becoming selected");
 				}
 				if (i >= GeometryPatternBegin && i < GeometryCloseButton)
@@ -1297,11 +1310,11 @@ namespace Inkeys::UI::Bar
 			}
 			rowGeometry(presented); checkFuturePixels(presented);
 		};
-		captureScene = true; BarUiAnimationEnabled = false; owner.geometryAttribute.ResetPointerFeedback();
+		captureScene = true; UiAnimationEnabled = false; owner.geometryAttribute.ResetPointerFeedback();
 		unsigned sceneCases = 0;
 		for (const wchar_t* language : {L"zh-CN", L"zh-TW", L"en-US"})
 		{
-			expect(I18n::load(1, L"JSON", language), "production matrix language loads"); owner.spec.ConfigureLocalizedTypography();
+			expect(I18n::load(1, L"JSON", language), "production matrix language loads"); owner.ConfigureLocalizedTypography();
 			for (double scale : {0.75, 1.0, 1.5, 2.0}) for (bool smallWork : {false, true}) for (bool below : {false, true}) for (bool dark : {false,true})
 			{
 				const LONG width = smallWork ? 460 : 1200, height = smallWork ? 420 : 800;
@@ -1401,7 +1414,7 @@ namespace Inkeys::UI::Bar
 			const bool thicknessOnScreen = fullyOnScreen(clientRect(start.items[GeometryThicknessBegin + 1],start));
 			std::array<std::vector<double>,10> positions, opacities;
 			std::vector<double> partialThicknessContrast;
-			BarUiAnimationEnabled = true; selectScene(nextShape, nextFill);
+			UiAnimationEnabled = true; selectScene(nextShape, nextFill);
 			for (int frame = 0; frame < 42; ++frame)
 			{
 				sceneTick(1); const auto current = owner.geometryAttribute.PresentationSnapshot(); rowGeometry(current);
@@ -1456,7 +1469,7 @@ namespace Inkeys::UI::Bar
 		};
 		// 矩形已有辅助参数行：切到圆时面板及属性位置不变，只有参数内容淡入退场。
 		const auto rectangleRows = owner.geometryAttribute.PresentationSnapshot();
-		BarUiAnimationEnabled = true; selectScene(PresetKind::Circle,draw3::shapes::FillMode::Outline); sceneTick(2);
+		UiAnimationEnabled = true; selectScene(PresetKind::Circle,draw3::shapes::FillMode::Outline); sceneTick(2);
 		const auto fadingParameters = owner.geometryAttribute.PresentationSnapshot();
 		expect(fadingParameters.acceptsInput && fadingParameters.panel == rectangleRows.panel
 			&& fadingParameters.items[GeometryPatternBegin] == rectangleRows.items[GeometryPatternBegin],
@@ -1479,18 +1492,18 @@ namespace Inkeys::UI::Bar
 		}
 		expect(fadingParameters.categoriesAcceptInput && fadingParameters.hits[0].enabled, "stationary categories retain row animation redirection eligibility");
 		sceneTick(90); checkStableScene(PresetKind::Circle,draw3::shapes::FillMode::Outline);
-		BarUiAnimationEnabled = false; selectScene(PresetKind::Rectangle,draw3::shapes::FillMode::Outline); sceneTick(2);
+		UiAnimationEnabled = false; selectScene(PresetKind::Rectangle,draw3::shapes::FillMode::Outline); sceneTick(2);
 		animateAttributes(PresetKind::Line, draw3::shapes::FillMode::Outline);
 		animateAttributes(PresetKind::Rectangle, draw3::shapes::FillMode::Outline);
 		animateAttributes(PresetKind::Circle, draw3::shapes::FillMode::OutlineAndFill);
 		animateAttributes(PresetKind::Circle, draw3::shapes::FillMode::Fill);
 		animateAttributes(PresetKind::Circle, draw3::shapes::FillMode::Outline);
-		BarUiAnimationEnabled = false; BarGeometryAttributeTestAccess::Display(owner, 460, 420); sceneTick(2);
+		UiAnimationEnabled = false; BarGeometryAttributeTestAccess::Display(owner, 460, 420); sceneTick(2);
 		BarGeometryAttributeTestAccess::MoveRoot(owner, 80, 80); sceneTick(2);
 		animateAttributes(PresetKind::RegularPolygon, draw3::shapes::FillMode::Fill);
 		animateAttributes(PresetKind::Rectangle, draw3::shapes::FillMode::OutlineAndFill);
 		// 提交失败时实际动画值可以前进，交互只能继续使用上次成功呈现的位置。
-		caseContext = "failed presentation and input"; BarUiAnimationEnabled = false;
+		caseContext = "failed presentation and input"; UiAnimationEnabled = false;
 		selectScene(PresetKind::Rectangle, draw3::shapes::FillMode::Outline); sceneTick(2);
 		const auto beforeFailure = owner.geometryAttribute.PresentationSnapshot();
 		selectScene(PresetKind::Line, draw3::shapes::FillMode::Outline); rejectNextPresent = true; sceneTick(1);
@@ -1518,7 +1531,7 @@ namespace Inkeys::UI::Bar
 		scenePointer(WM_LBUTTONDOWN, GeometryPatternBegin + 1, true); scenePointer(WM_LBUTTONUP, GeometryPatternBegin + 1, false); sceneTick(2);
 		expect(StateModeTransitionRevision() > beforeClick.revision && GetShapeStyle(GetStateModeSnapshot()).linePattern == LinePattern::Dashed,
 			"settled attribute list restores real presented pointer action");
-		owner.spec.DiscardDeviceResources(); previousPixels.clear(); sceneTick(2); checkStableScene(PresetKind::Circle, draw3::shapes::FillMode::Outline);
+		owner.specTarget.Discard(); previousPixels.clear(); sceneTick(2); checkStableScene(PresetKind::Circle, draw3::shapes::FillMode::Outline);
 		for (int item = 0; item < GeometryCategoryCount; ++item)
 			if (owner.geometryAttribute.PresentationSnapshot().hits[item].visible)
 				expect(BarGeometryAttributeTestAccess::Button(owner.geometryAttribute, item).icon.cacheBitmap != nullptr,
@@ -1534,12 +1547,12 @@ namespace Inkeys::UI::Bar
 			"hidden actual scene has no residual shape-list animation or timer wake");
 		captureScene = false; previousPixels.clear(); caseContext.clear();
 		BarGeometryAttributeTestAccess::Display(owner, 1200, 800); sceneTick(2); BarGeometryAttributeTestAccess::MoveRoot(owner, 80, 650); sceneTick(2);
-		BarUiAnimationEnabled = true;
+		UiAnimationEnabled = true;
 		// 固定70DIP主栏槽位独立于展开面板：全部类别在三语下都不能被NO_WRAP+CLIP截断。
 		ChangeStateModeToShape(); owner.barState.fold = false; owner.barState.geometryAttribute = false;
 		for (const wchar_t* language : {L"zh-CN", L"zh-TW", L"en-US"})
 		{
-			expect(I18n::load(1, L"JSON", language), "main geometry label language loads"); owner.spec.ConfigureLocalizedTypography();
+			expect(I18n::load(1, L"JSON", language), "main geometry label language loads"); owner.ConfigureLocalizedTypography();
 			for (const auto& entry : catalog) if (entry.preset)
 			{
 				const int i = static_cast<int>(*entry.preset);
@@ -1584,7 +1597,7 @@ namespace Inkeys::UI::Bar
 					if(projection>.20&&projection<1.15&&residual<(std::max)(324.,norm*.04)){++covered;peak=(std::max)(peak,projection);}
 				}return std::pair{covered,peak};
 			};
-			const auto checkWord=[&](const BarUiWordClass& word)
+			const auto checkWord=[&](const UiWordClass& word)
 			{
 				expect(word.size.val>0&&word.w.val>0&&word.h.val>0&&!word.content.GetVal().empty(),"construction prompt uses a real positive-size localized word slot");
 				const EraserAttributeRect slot{word.inhX,word.inhY,word.inhX+word.w.val,word.inhY+word.h.val};
@@ -1600,7 +1613,7 @@ namespace Inkeys::UI::Bar
 				const auto& icon=BarGeometryAttributeTestAccess::PromptButton(owner.constructionPrompt,i).icon;
 				expect(icon.w.val>0&&icon.h.val>0&&!icon.svg.GetVal().empty(),"prompt actions have real standard OneOne SVG slots");
 				const EraserAttributeRect slot{icon.inhX,icon.inhY,icon.inhX+icon.w.val,icon.inhY+icon.h.val};
-				const auto evidence=ink(clientRect(slot,coordinates),GetThemeColor(BarThemeColorEnum::TextPrimary));
+				const auto evidence=ink(clientRect(slot,coordinates),GetThemeColor(ThemeColorEnum::TextPrimary));
 				expect(evidence.first>=3&&evidence.second>(frame.buttons[i].enabled?.35:.12),"actual prompt icon pixels include enabled and disabled content");
 				expect(!frame.accessibleNames[i].empty()&&!frame.tooltips[i].empty(),"each action publishes localized accessible name and tooltip");
 			}
@@ -1612,7 +1625,7 @@ namespace Inkeys::UI::Bar
 		captureScene=true;
 		// 构造提示读取完整生产场景：深浅主题、两档倍率及真实成功呈现几何。
 		owner.barState.fold=false;owner.barState.geometryAttribute=false;
-		expect(I18n::load(1,L"JSON",L"zh-CN"),"prompt base language loads");owner.spec.ConfigureLocalizedTypography();
+		expect(I18n::load(1,L"JSON",L"zh-CN"),"prompt base language loads");owner.ConfigureLocalizedTypography();
 		unsigned promptSession=80;
 		const auto publishPrompt=[&](const std::shared_ptr<Inkeys::Drawing::Draw3::ShapeUiSnapshot>& snapshot)
 		{Inkeys::Drawing::Draw3::PublishShapeUiSnapshot(snapshot);owner.UpdateRendering(false);};
@@ -1659,7 +1672,7 @@ namespace Inkeys::UI::Bar
 			std::cout<<"Construction screenshot: "<<std::filesystem::absolute(path).string()<<'\n';
 		};
 		// 首次呈现失败后重试，继续验证成功呈现提示的触摸行为。
-		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});sceneTick(90);BarUiAnimationEnabled=false;
+		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});sceneTick(90);UiAnimationEnabled=false;
 		{
 			auto construction=std::make_shared<Inkeys::Drawing::Draw3::ShapeUiSnapshot>();
 			construction->identity.session=++promptSession;construction->construction.active=true;construction->construction.preset=PresetKind::Arc;
@@ -1669,7 +1682,7 @@ namespace Inkeys::UI::Bar
 			previousPixels.clear();sceneTick(90);
 			checkPromptTouch();
 		}
-		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});sceneTick(2);BarUiAnimationEnabled=true;
+		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});sceneTick(2);UiAnimationEnabled=true;
 		for(const bool dark:{true,false})for(const double scale:{1.,2.})
 		{
 			Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});sceneTick(90);
@@ -1809,7 +1822,7 @@ namespace Inkeys::UI::Bar
 		checkPromptPixels(L"construction-compact-200.png");
 		Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});owner.UpdateRendering(false);sceneTick(90);
 		expect(!owner.constructionPrompt.Visible(),"finished or cancelled construction prompt retires fully");
-		scene = {}; owner.spec.DiscardDeviceResources();
+		scene = {}; owner.specTarget.Discard();
 		report << "Actual scene commits=" << actualCommits << '\n';
 		globalPath = originalGlobalPath;
 		report << "Geometry UI checks=" << checks << " frames=" << frames << " failures=" << failures << '\n';

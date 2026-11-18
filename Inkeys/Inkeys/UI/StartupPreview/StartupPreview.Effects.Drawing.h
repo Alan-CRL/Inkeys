@@ -1,5 +1,8 @@
-#pragma once
+﻿#pragma once
 
+// 保留普通头及其系统依赖的全局模块归属，允许在 import 后包含。
+extern "C++"
+{
 #include "StartupPreview.Drawing.h"
 #include "StartupPreview.Effects.Policy.h"
 #include <d2d1_3.h>
@@ -334,4 +337,5 @@ namespace Inkeys::UI::StartupPreview::Drawing
 		bool floating_ = false;
 		std::uint32_t seed_ = 1;
 	};
+}
 }

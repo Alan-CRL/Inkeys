@@ -1,4 +1,4 @@
-module;
+﻿module;
 #include "../../../IdtMain.h"
 #include <d2d1_1helper.h>
 #include "../../../IdtState.h"
@@ -13,6 +13,8 @@ module Inkeys.UI.Bar;
 import :Main;
 import :Theme;
 
+using namespace Inkeys::UI::UI3;
+
 using namespace Inkeys::UI::Bar;
 extern const double BarDrawAttributeSurfaceOpacity;
 extern const double BarDrawAttributeCompactWidth;
@@ -24,7 +26,7 @@ namespace
 		double collapse = 0, expand = 0;
 	};
 	RecallSideSwitchDurations ResolveRecallSideSwitchDurations(
-		double duration, const BarUiTimelineClass* parent, double dt, double speed) noexcept
+		double duration, const UiTimelineClass* parent, double dt, double speed) noexcept
 	{
 		duration = std::isfinite(duration) && duration > 0 ? duration : 0;
 		if (parent)
@@ -52,10 +54,10 @@ namespace
 		return { static_cast<LONG>(floor(r.left * zoom)) - outset, static_cast<LONG>(floor(r.top * zoom)) - outset,
 			static_cast<LONG>(ceil(r.right * zoom)) + outset, static_cast<LONG>(ceil(r.bottom * zoom)) + outset };
 	}
-	void Place(BarUiShapeClass& shape, RecallAttributeRect r)
+	void Place(UiShapeClass& shape, RecallAttributeRect r)
 	{
 		shape.x.SetDirect(r.left); shape.y.SetDirect(r.top); shape.w.SetDirect(r.Width()); shape.h.SetDirect(r.Height());
-		shape.UpInh(BarUiInheritClass(r.left, r.top));
+		shape.UpInh(UiInheritClass(r.left, r.top));
 	}
 	wstring RedoButtonLabel()
 	{
@@ -70,25 +72,26 @@ namespace
 void BarRecallAttributePanel::Initialize()
 {
 	if (initialized_) return;
-	surface_.Initialization(0, 0, 0, 0, BarMainBarCornerRadiusDip, BarMainBarCornerRadiusDip, BarButtonFrameThicknessDip,
-		GetThemeColor(BarThemeColorEnum::Surface), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+	panel_.BindFrame(surface_);
+	surface_.Initialization(0, 0, 0, 0, BarMainBarCornerRadiusDip, BarMainBarCornerRadiusDip, ButtonFrameThicknessDip,
+		GetThemeColor(ThemeColorEnum::Surface), GetThemeColor(ThemeColorEnum::SurfaceFrame));
 	surface_.enable.Initialization(true); surface_.pct.SetDirect(BarDrawAttributeSurfaceOpacity);
 	surface_.framePct.emplace(GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity)); surface_.frameLightPct.emplace(BarMainBarFrameOpacity);
-	surface_.frameRendering = BarUiFrameRenderingEnum::PointLight; surface_.frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
+	surface_.frameRendering = UiFrameRenderingEnum::PointLight; surface_.frameLightColor = UiFrameLightColorEnum::PenWhenDrawing;
 	// 内置 Redo 与主栏 70x70 同一套 StandardTwoTwo 视觉：圆角/边框/图标/文字/光源全复用。
-	const auto metrics = ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
-	auto& b = redoButton_; b.hide = false; b.size = BarButtonSizeEnum::twoTwo; b.preset = BarButtonPresetEnum::Redo;
-	b.button.Initialization(0, 0, 0, 0, BarButtonCornerRadiusDip, BarButtonCornerRadiusDip, BarButtonFrameThicknessDip,
-		GetThemeColor(BarThemeColorEnum::PressedFill), GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+	const auto metrics = ResolveButtonVisualMetrics(ButtonVisualLayoutKind::StandardTwoTwo);
+	auto& b = redoButton_; b.hide = false; b.size = ButtonSizeEnum::twoTwo; b.preset = BarButtonPresetEnum::Redo;
+	b.button.Initialization(0, 0, 0, 0, ButtonCornerRadiusDip, ButtonCornerRadiusDip, ButtonFrameThicknessDip,
+		GetThemeColor(ThemeColorEnum::PressedFill), GetThemeColor(ThemeColorEnum::SurfaceFrame));
 	b.button.enable.Initialization(true); b.button.pct.SetDirect(0);
 	b.button.framePct.emplace(0); b.button.frameLightPct.emplace(0);
-	b.button.frameRendering = BarUiFrameRenderingEnum::PointLight; b.button.frameLightColor = BarUiFrameLightColorEnum::Frame;
-	b.button.framePrimaryLightEnabled = false; b.button.frameCursorLightIntensityScale = BarButtonCursorLightIntensity;
+	b.button.frameRendering = UiFrameRenderingEnum::PointLight; b.button.frameLightColor = UiFrameLightColorEnum::Frame;
+	b.button.framePrimaryLightEnabled = false; b.button.frameCursorLightIntensityScale = ButtonCursorLightIntensity;
 	const auto label = RedoButtonLabel();
 	b.name.Initialization(0, 0, metrics.primarySlotWidthDip, metrics.primarySlotHeightDip, label, metrics.primaryFontSizeDip,
-		GetThemeColor(BarThemeColorEnum::TextPrimary));
+		GetThemeColor(ThemeColorEnum::TextPrimary));
 	b.name.enable.Initialization(!label.empty()); b.name.pct.SetDirect(1);
-	b.icon.Initialization(0, 0, GetThemeColor(BarThemeColorEnum::TextPrimary), std::nullopt);
+	b.icon.Initialization(0, 0, GetThemeColor(ThemeColorEnum::TextPrimary), std::nullopt);
 	b.icon.enable.Initialization(true); b.icon.pct.SetDirect(1);
 	b.icon.InitializationFromResource(L"UI", L"barRedo");
 	b.icon.SetWH(metrics.iconSizeDip, metrics.iconSizeDip);
@@ -96,17 +99,17 @@ void BarRecallAttributePanel::Initialize()
 	initialized_ = true;
 }
 
-void BarRecallAttributePanel::ConfigureSurface(BarUiShapeClass& surface, RecallAttributeRect rect, double scale)
+void BarRecallAttributePanel::ConfigureSurface(UiShapeClass& surface, RecallAttributeRect rect, double scale)
 {
 	Place(surface, rect); surface.rw->SetDirect(BarMainBarCornerRadiusDip * scale); surface.rh->SetDirect(BarMainBarCornerRadiusDip * scale);
-	surface.ft->SetDirect(BarButtonFrameThicknessDip * scale);
-	surface.fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface)); surface.frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+	surface.ft->SetDirect(ButtonFrameThicknessDip * scale);
+	surface.fill->SetDirect(GetThemeColor(ThemeColorEnum::Surface)); surface.frame->SetDirect(GetThemeColor(ThemeColorEnum::SurfaceFrame));
 	surface.framePct->SetDirect(GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
 }
 
 bool BarRecallAttributePanel::Advance(BarUISetClass& owner, const RecallChromeView& chrome,
 	bool anchorVisible, double dt, double speed, double zoom, UINT dpi,
-	RECT workArea, POINT origin, double rigidX, double rigidY, const BarUiTimelineClass* parentTimeline,
+	RECT workArea, POINT origin, double rigidX, double rigidY, const UiTimelineClass* parentTimeline,
 	bool dragPlacementLocked)
 {
 	Initialize(); changed_ = false; active_ = false;
@@ -119,6 +122,7 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, const RecallChromeVi
 		Close(owner);
 		changed_ = frame_.panelVisible;
 		frame_.panelVisible = false;
+		UpdatePanelFrame(false);
 		return changed_;
 	}
 	const bool shouldClose = owner.barState.fold ||
@@ -126,12 +130,13 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, const RecallChromeVi
 		owner.barState.eraserAttribute || !anchorVisible;
 	if (shouldClose) Close(owner);
 	const bool open = chrome.popupOpen && !shouldClose;
-	const BarUiAnimationAdvanceContextClass context{ dt, speed, static_cast<bool>(BarUiAnimationEnabled), false };
-	auto advance = [&](auto& value) { const auto result = BarUiAdvanceAnimation(value, context); changed_ |= result.changed; active_ |= result.active; };
+	panel_.SetExternalState(open, panelMotion_.Geometry(), panelMotion_.Opacity());
+	const UiAnimationAdvanceContextClass context{ dt, speed, static_cast<bool>(UiAnimationEnabled), false };
+	auto advance = [&](auto& value) { const auto result = UiAdvanceAnimation(value, context); changed_ |= result.changed; active_ |= result.active; };
 	auto root = owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
-	root->UpInh(BarUiInheritClass(root->x.val - root->w.val / 2, root->y.val - root->h.val / 2));
-	auto main = owner.shapeMap[BarUISetShapeEnum::MainBar]; main->Inherit(BarUiInheritEnum::Center, *root);
-	anchor->button.Inherit(BarUiInheritEnum::CenterFromTopLeft, *main);
+	root->UpInh(UiInheritClass(root->x.val - root->w.val / 2, root->y.val - root->h.val / 2));
+	auto main = owner.shapeMap[BarUISetShapeEnum::MainBar]; main->Inherit(UiInheritEnum::Center, *root);
+	anchor->button.Inherit(UiInheritEnum::CenterFromTopLeft, *main);
 	RecallAttributeLayoutInput currentInput;
 	currentInput.main = { main->inhX, main->inhY, main->inhX + main->w.val, main->inhY + main->h.val };
 	currentInput.anchor = { anchor->button.inhX, anchor->button.inhY, anchor->button.inhX + anchor->button.w.val, anchor->button.inhY + anchor->button.h.val };
@@ -160,15 +165,15 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, const RecallChromeVi
 	if (releasedDragPlacement) releaseSwitchLayoutLocked_ = switching;
 	else if (!switching) releaseSwitchLayoutLocked_ = false;
 	const bool beginSideSwitch = switching && !sideSwitchActive_;
-	double panelDuration = static_cast<double>(BarUiDefaultOperationDur);
+	double panelDuration = static_cast<double>(UiDefaultOperationDur);
 	if (beginSideSwitch)
 	{
-		const auto durations = ResolveRecallSideSwitchDurations(BarUiDefaultOperationDur, parentTimeline, dt, speed);
+		const auto durations = ResolveRecallSideSwitchDurations(UiDefaultOperationDur, parentTimeline, dt, speed);
 		panelDuration = durations.collapse; sideSwitchExpandDuration_ = durations.expand;
 		sideSwitchActive_ = true;
 	}
 	else if (!switching) sideSwitchActive_ = false;
-	const BarUiTimelineClass* panelParent = switching ? nullptr : parentTimeline;
+	const UiTimelineClass* panelParent = switching ? nullptr : parentTimeline;
 	changed_ |= panelMotion_.Retarget(open && !switching, panelDuration, panelParent);
 	double sideSwitchCarryDt = 0;
 	if (switching && context.animationEnabled && std::isfinite(dt) && dt > 0 && std::isfinite(speed) && speed > 0)
@@ -217,7 +222,7 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, const RecallChromeVi
 		frame_.panelPose.scale != next.panelPose.scale;
 	frame_ = next; zoom_ = zoom;
 	const auto& g = frame_.geometry;
-	changed_ |= surface_.fill->val != GetThemeColor(BarThemeColorEnum::Surface);
+	changed_ |= surface_.fill->val != GetThemeColor(ThemeColorEnum::Surface);
 	ConfigureSurface(surface_, g.panel, frame_.panelPose.scale);
 	// 浮窗按钮随按住相位在 Undo / Redo 之间切换，不可用时变灰。
 	auto& b = redoButton_;
@@ -239,31 +244,32 @@ bool BarRecallAttributePanel::Advance(BarUISetClass& owner, const RecallChromeVi
 	const double scale = frame_.panelPose.scale;
 	const int requestedHover=hovered_.load();
 	if(appliedHover_!=requestedHover){
-		if(appliedHover_>=0)StopBarButtonHoverVisual(redoButton_,false);
-		if(requestedHover>=0)StartBarButtonHoverVisual(redoButton_);
+		if(appliedHover_>=0)StopButtonHoverVisual(redoButton_,false);
+		if(requestedHover>=0)StartButtonHoverVisual(redoButton_);
 		appliedHover_=requestedHover;changed_=true;
 	}
-	b.state->state = BarWidgetState::None;
-	SetBarButtonPressedVisual(b, commandEnabled && pressed_ == 0);
+	b.state->state = WidgetState::None;
+	SetButtonPressedVisual(b, commandEnabled && pressed_ == 0);
 	// 与主栏清空/定格共用禁用透明度，仍由现有命令策略处理灰色重复点击。
-	RetargetBarButtonInteractionVisual(b,presented,commandEnabled,false,BarButtonHoverTransitionDuration,
-		std::nullopt,true,std::nullopt,GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+	RetargetButtonInteractionVisual(b,presented,commandEnabled,false,ButtonHoverTransitionDuration,
+		std::nullopt,true,std::nullopt,GetThemeColor(ThemeColorEnum::SurfaceFrame));
 	Place(b.button, g.items[0]);
-	b.button.rw->SetDirect(BarButtonCornerRadiusDip * scale); b.button.rh->SetDirect(BarButtonCornerRadiusDip * scale); b.button.ft->SetDirect(BarButtonFrameThicknessDip * scale);
-	const auto metrics = ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
+	b.button.rw->SetDirect(ButtonCornerRadiusDip * scale); b.button.rh->SetDirect(ButtonCornerRadiusDip * scale); b.button.ft->SetDirect(ButtonFrameThicknessDip * scale);
+	const auto metrics = ResolveButtonVisualMetrics(ButtonVisualLayoutKind::StandardTwoTwo);
 	b.icon.x.SetDirect(0); b.icon.y.SetDirect(metrics.iconOffsetYDip * scale); b.icon.contentScale = scale;
 	b.name.x.SetDirect(0); b.name.y.SetDirect(metrics.primaryOffsetYDip * scale);
 	b.name.w.SetDirect(metrics.primarySlotWidthDip * scale); b.name.h.SetDirect(metrics.primarySlotHeightDip * scale); b.name.size.SetDirect(metrics.primaryFontSizeDip * scale);
 	b.name.fontTargetSize=metrics.primaryFontSizeDip*panelFrame.targetPose.scale;
-	BarButtonAnimationContext buttonFrame;
-	buttonFrame.dtSeconds=dt;buttonFrame.speedRate=speed;buttonFrame.animationEnabled=BarUiAnimationEnabled;
+	ButtonAnimationContext buttonFrame;
+	buttonFrame.dtSeconds=dt;buttonFrame.speedRate=speed;buttonFrame.animationEnabled=UiAnimationEnabled;
 	buttonFrame.visible=presented;buttonFrame.hoverAllowed=commandEnabled;
-	const auto advanced=AdvanceBarButtonVisual(b,buttonFrame);
+	const auto advanced=AdvanceButtonVisual(b,buttonFrame);
 	changed_|=advanced.changed;active_|=advanced.active;
+	UpdatePanelFrame(open);
 	return changed_ || active_;
 }
 
-void BarRecallAttributePanel::Draw(BarUIRendering& renderer, ID2D1DeviceContext* context)
+void BarRecallAttributePanel::Draw(UIRendering& renderer, ID2D1DeviceContext* context)
 {
 	if (!initialized_ || !frame_.panelVisible) return;
 	if (deviceGeneration_ != renderer.GetDeviceGeneration())
@@ -271,22 +277,24 @@ void BarRecallAttributePanel::Draw(BarUIRendering& renderer, ID2D1DeviceContext*
 		redoButton_.icon.ResetCache(); deviceGeneration_ = renderer.GetDeviceGeneration();
 	}
 	const auto& g = frame_.geometry;
-	renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.panel,zoom_),frame_.panelOpacity); renderer.SetFrameDiffuseMaskGeometryScale(1 / frame_.panelPose.scale);
-	DrawBarBackgroundVisual(renderer, context, surface_, BarUiInheritClass(surface_.inhX, surface_.inhY));
-	context->PushAxisAlignedClip(PixelRect(g.panel, zoom_), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-	DrawBarButtonVisual(renderer, context, redoButton_, BarUiInheritClass(redoButton_.button.inhX, redoButton_.button.inhY));
+	renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.panel,zoom_),panel_.Opacity()); renderer.SetFrameDiffuseMaskGeometryScale(1 / frame_.panelPose.scale);
+	panel_.DrawFrame(renderer, context, {surface_.inhX, surface_.inhY}, nullptr, false, PixelRect(g.panel, zoom_));
+	DrawButtonVisual(renderer, context, redoButton_, UiInheritClass(redoButton_.button.inhX, redoButton_.button.inhY));
 	context->PopAxisAlignedClip(); context->PopLayer(); renderer.SetFrameDiffuseMaskGeometryScale(1);
 }
 
-RECT BarRecallAttributePanel::Bounds() const
+void BarRecallAttributePanel::UpdatePanelFrame(bool open)
 {
-	RECT result{}; if (!frame_.panelVisible) return result;
-	const int padding = static_cast<int>(ceil((BarButtonFrameThicknessDip * frame_.panelPose.scale + BarRenderingAttribute::pointLightDiffuseExtraWidth) * zoom_)) + BarRenderingAttribute::dirtyAntialiasPadding;
-	return IntegerRect(frame_.geometry.panel, zoom_, padding);
+	panel_.SetExternalState(open, panelMotion_.Geometry(), frame_.panelOpacity);
+	const int padding = static_cast<int>(ceil((ButtonFrameThicknessDip * frame_.panelPose.scale + RenderingAttribute::pointLightDiffuseExtraWidth) * zoom_)) + RenderingAttribute::dirtyAntialiasPadding;
+	const auto& r = frame_.geometry.panel; const double radius = BarMainBarCornerRadiusDip * frame_.panelPose.scale;
+	panel_.SetCandidate(IntegerRect(r, zoom_, padding), {{r.left, r.top, r.right, r.bottom}, radius, radius,
+		PanelHitGeometry::RoundedWithPixelTolerance, frame_.zoom}, frame_.panelVisible);
 }
+RECT BarRecallAttributePanel::Bounds() const { return panel_.CandidateBounds(); }
 void BarRecallAttributePanel::CommitPresented()
 {
-	std::scoped_lock lock(presentationMutex_); presented_ = frame_;
+	std::scoped_lock lock(presentationMutex_); presented_ = frame_; panel_.CommitPresented();
 }
 RecallAttributePresentation BarRecallAttributePanel::PresentationSnapshot() const
 {
@@ -294,8 +302,8 @@ RecallAttributePresentation BarRecallAttributePanel::PresentationSnapshot() cons
 }
 std::array<RECT, 3> BarRecallAttributePanel::PresentedRegions() const
 {
-	std::scoped_lock lock(presentationMutex_); const auto& f = presented_;
-	return { f.panelVisible ? IntegerRect(f.geometry.panel, f.zoom) : RECT{}, RECT{}, RECT{} };
+	std::scoped_lock lock(presentationMutex_);
+	return { panel_.PresentedInteractionBounds(), RECT{}, RECT{} };
 }
 void BarRecallAttributePanel::Close(BarUISetClass& owner)
 {
@@ -321,13 +329,12 @@ bool BarRecallAttributePanel::ResetPointerFeedback()
 bool BarRecallAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled, bool contactPointer, bool* accepted)
 {
 	if (accepted) *accepted = false;
-	const auto f = PresentationSnapshot();
+	RecallAttributePresentation f; PanelFrame panelFrame;
+	{ std::scoped_lock lock(presentationMutex_); f = presented_; panelFrame = panel_.Presented(); }
 	if(cancelled){const bool owned=ResetPointerFeedback();if(owned)owner.UpdateRendering(false);return owned;}
 	if (!f.panelVisible && pressed_ < 0) return false;
 	const auto& geometry = f.geometry; const double x = message.x / f.zoom, y = message.y / f.zoom;
-	const bool inside = f.panelVisible && geometry.panel.Width() > 0 && geometry.panel.Height() > 0 &&
-		BarUiRoundedRectContainsPoint(message.x, message.y, f.zoom, geometry.panel.left, geometry.panel.top,
-			geometry.panel.Width(), geometry.panel.Height(), BarMainBarCornerRadiusDip * f.panelPose.scale, BarMainBarCornerRadiusDip * f.panelPose.scale);
+	const bool inside = owner.PanelOwnsPoint(BarPanelId::RecallAttribute, panelFrame, message.x, message.y);
 	int hit = -1;
 	if (inside && IntersectRecallRect(geometry.items[0], geometry.panel).Contains(x, y)) hit = 0;
 	if (message.message == WM_MOUSEMOVE)

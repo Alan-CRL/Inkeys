@@ -19,18 +19,25 @@
 #include <utility>
 #include <vector>
 
-#include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.I18nFormat.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.FontSize.h"
+#include <optional>
 
-import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.UI3.Animation;
 import Inkeys.UI.Bar.Metrics;
+import Inkeys.UI.Bar.PenPreviewMotion;
+import Inkeys.UI.Bar.BottomDock;
+import Inkeys.UI.Bar.I18nFormat;
+
+using namespace Inkeys::UI::UI3;
 
 int RunWakeSignalTests();
 int RunPresentDecisionTests();
 int RunSurfaceTests();
 int RunMessageTests();
 int RunUi3InputTests();
+int RunUi3GestureTests();
+int RunUi3ProgressTests();
+int RunUi3ListLayoutTests();
+int RunUi3PanelStackTests();
 int RunWindowTests();
 int RunWindowCommandCompletionTests();
 int RunCanvasPolicyTests();
@@ -107,24 +114,24 @@ namespace
 
 	void TestFontPixelSizes()
 	{
-		using Inkeys::UI::Bar::Detail::ResolveBarFontCorrectionTarget;
-		Check(Near(ResolveBarFontCorrectionTarget(7.8,false)*7.8,7.0),
+		using Inkeys::UI::UI3::Detail::ResolveFontCorrectionTarget;
+		Check(Near(ResolveFontCorrectionTarget(7.8,false)*7.8,7.0),
 			"48 DIP target truncates 7.8px without rounding to 8px");
 		for(const double target:{0.1,0.9,1.0,7.8,13.0,48.25})
 		{
-			const double c=ResolveBarFontCorrectionTarget(target,false);
+			const double c=ResolveFontCorrectionTarget(target,false);
 			Check(c>=0.0 && c<=1.0 && Near(target*c,std::floor(target)),"target coefficient never enlarges stationary text");
-			Check(ResolveBarFontCorrectionTarget(target,true)==1.0,"allow preference keeps original target");
+			Check(ResolveFontCorrectionTarget(target,true)==1.0,"allow preference keeps original target");
 		}
 		for(const double invalid:{0.0,-1.0,std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::infinity()})
-			Check(ResolveBarFontCorrectionTarget(invalid,false)==0.0,"invalid font target is rejected");
+			Check(ResolveFontCorrectionTarget(invalid,false)==0.0,"invalid font target is rejected");
 
-		BarUiValueClass raw(13.0);
-		BarUiFontCorrectionClass c;
+		UiValueClass raw(13.0);
+		UiFontCorrectionClass c;
 		std::uint64_t serial=1;
 		const auto sample=[&](double dt,bool allow=false){
-			const BarUiAnimationAdvanceContextClass frame{dt,1.0,true,false};
-			if(!raw.IsSame())(void)BarUiAdvanceAnimation(raw,frame);
+			const UiAnimationAdvanceContextClass frame{dt,1.0,true,false};
+			if(!raw.IsSame())(void)UiAdvanceAnimation(raw,frame);
 			return static_cast<double>(raw.val)*0.6*c.Resolve(raw.tar*0.6,allow,serial++,frame,0.4);
 		};
 		Check(Near(sample(0),7.0),"font correction starts at the projected stationary endpoint");
@@ -145,7 +152,7 @@ namespace
 		raw.SetTar(11.7,0.4);
 		Check(Near(sample(0),before),"mid-animation retarget preserves the current visible font at zero dt");
 		const auto sameSerial=serial++;
-		const BarUiAnimationAdvanceContextClass frame{0.01,1.0,true,false};
+		const UiAnimationAdvanceContextClass frame{0.01,1.0,true,false};
 		const double first=c.Resolve(11.7*0.6,false,sameSerial,frame,0.4);
 		Check(c.Resolve(11.7*0.6,false,sameSerial,frame,0.4)==first,"same-frame duplicate text draw never advances twice");
 		for(int tick=0;tick<160;++tick){raw.SetTar(11.7,0.4);(void)sample(0.005);}
@@ -211,29 +218,29 @@ namespace
 	void TestSharedBarButtonRuntime()
 	{
 		using namespace Inkeys::UI::Bar;
-		const auto oneOne = ResolveBarButtonVisualMetrics(
-			BarButtonVisualLayoutKind::StandardOneOne);
-		const auto twoOne = ResolveBarButtonVisualMetrics(
-			BarButtonVisualLayoutKind::StandardTwoOne);
-		const auto twoTwo = ResolveBarButtonVisualMetrics(
-			BarButtonVisualLayoutKind::StandardTwoTwo);
-		Check(Near(oneOne.buttonWidthDip, BarButtonOneSideDip)
-			&& Near(oneOne.buttonHeightDip, BarButtonOneSideDip)
+		const auto oneOne = ResolveButtonVisualMetrics(
+			ButtonVisualLayoutKind::StandardOneOne);
+		const auto twoOne = ResolveButtonVisualMetrics(
+			ButtonVisualLayoutKind::StandardTwoOne);
+		const auto twoTwo = ResolveButtonVisualMetrics(
+			ButtonVisualLayoutKind::StandardTwoTwo);
+		Check(Near(oneOne.buttonWidthDip, ButtonOneSideDip)
+			&& Near(oneOne.buttonHeightDip, ButtonOneSideDip)
 			&& Near(oneOne.iconSizeDip, 20.0)
 			&& Near(oneOne.iconOffsetXDip, 0.0)
 			&& Near(oneOne.iconOffsetYDip, 0.0),
 			"shared oneOne metrics match Main Bar");
-		Check(Near(twoOne.buttonWidthDip, BarButtonTwoSideDip)
-			&& Near(twoOne.buttonHeightDip, BarButtonOneSideDip)
+		Check(Near(twoOne.buttonWidthDip, ButtonTwoSideDip)
+			&& Near(twoOne.buttonHeightDip, ButtonOneSideDip)
 			&& Near(twoOne.iconSizeDip, 18.0)
 			&& Near(twoOne.iconOffsetXDip, -21.0)
 			&& Near(twoOne.primaryOffsetXDip, 11.5),
 			"shared twoOne metrics match Main Bar");
-		Check(Near(twoTwo.buttonWidthDip, BarButtonTwoSideDip)
-			&& Near(twoTwo.buttonHeightDip, BarButtonTwoSideDip)
-			&& Near(twoTwo.iconSizeDip, BarButtonTwoTwoIconSizeDip)
-			&& Near(twoTwo.iconOffsetYDip, BarButtonTwoTwoIconOffsetYDip)
-			&& Near(twoTwo.primaryOffsetYDip, BarButtonTwoTwoLabelOffsetYDip),
+		Check(Near(twoTwo.buttonWidthDip, ButtonTwoSideDip)
+			&& Near(twoTwo.buttonHeightDip, ButtonTwoSideDip)
+			&& Near(twoTwo.iconSizeDip, ButtonTwoTwoIconSizeDip)
+			&& Near(twoTwo.iconOffsetYDip, ButtonTwoTwoIconOffsetYDip)
+			&& Near(twoTwo.primaryOffsetYDip, ButtonTwoTwoLabelOffsetYDip),
 			"shared twoTwo metrics match Main Bar");
 	}
 
@@ -263,10 +270,10 @@ namespace
 			"laser and highlighter geometry use exact endpoints");
 
 		// 实际推进并中途反向，验证 SetTar 从当前帧值续接而不是跳回端点。
-		BarUiValueClass previewMorph(1.0);
+		UiValueClass previewMorph(1.0);
 		previewMorph.SetTar(0.0, 1.0);
-		BarUiAdvanceAnimation(previewMorph,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(previewMorph,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		double reverseAnchor = previewMorph.val;
 		Check(reverseAnchor > 0.0 && reverseAnchor < 1.0,
 			"laser highlighter transition reaches an intermediate frame");
@@ -274,19 +281,19 @@ namespace
 			&& Near(previewMorph.startV, reverseAnchor)
 			&& Near(previewMorph.val, reverseAnchor),
 			"laser highlighter reversal captures the current geometry");
-		BarUiAdvanceAnimation(previewMorph,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(previewMorph,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(previewMorph.val > reverseAnchor && previewMorph.val < 1.0,
 			"laser highlighter reversal advances toward the new endpoint");
 
-		BarUiValueClass laserCoreWhiteMix(0.0);
+		UiValueClass laserCoreWhiteMix(0.0);
 		laserCoreWhiteMix.SetTar(1.0, 1.0);
-		BarUiAdvanceAnimation(laserCoreWhiteMix,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(laserCoreWhiteMix,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		double whiteReverseAnchor = laserCoreWhiteMix.val;
 		constexpr COLORREF highlighterColor = RGB(80, 180, 120);
 		constexpr COLORREF laserCoreColor = RGB(255, 255, 255);
-		COLORREF enteringColor = MixBarUiColor(
+		COLORREF enteringColor = MixUiColor(
 			highlighterColor, laserCoreColor, whiteReverseAnchor);
 		Check(enteringColor != highlighterColor && enteringColor != laserCoreColor,
 			"laser core color has an intermediate white blend");
@@ -294,8 +301,8 @@ namespace
 		Check(Near(laserCoreWhiteMix.startV, whiteReverseAnchor)
 			&& Near(laserCoreWhiteMix.val, whiteReverseAnchor),
 			"laser core color reversal preserves the current blend");
-		BarUiAdvanceAnimation(laserCoreWhiteMix,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(laserCoreWhiteMix,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(laserCoreWhiteMix.val < whiteReverseAnchor
 			&& laserCoreWhiteMix.val > 0.0,
 			"laser core color reversal resumes toward highlighter");
@@ -344,24 +351,24 @@ namespace
 		Check(Near(lockedCircleDiameter, 3.0) && lockedNumberValue == 70,
 			"number to circle freezes outgoing text and retargets the circle");
 
-		BarUiValueClass circleDiameter(3.0);
+		UiValueClass circleDiameter(3.0);
 		circleDiameter.SetTar(6.0, 1.0);
-		BarUiAdvanceAnimation(circleDiameter,
-			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		UiAdvanceAnimation(circleDiameter,
+			UiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
 		Check(Near(circleDiameter.val, 4.5),
 			"pen to laser circle diameter has an intermediate value");
 
-		BarUiValueClass presetNumberProgress(0.0);
+		UiValueClass presetNumberProgress(0.0);
 		presetNumberProgress.SetTar(1.0, 1.0);
-		BarUiAdvanceAnimation(presetNumberProgress,
-			BarUiAnimationAdvanceContextClass{ 0.75, 1.0, true, false });
+		UiAdvanceAnimation(presetNumberProgress,
+			UiAnimationAdvanceContextClass{ 0.75, 1.0, true, false });
 		double presetReverseAnchor = presetNumberProgress.val;
 		presetNumberProgress.SetTar(0.0, 1.0);
 		Check(Near(presetNumberProgress.startV, presetReverseAnchor)
 			&& Near(presetNumberProgress.val, presetReverseAnchor),
 			"number circle reversal preserves current opacity progress");
-		BarUiAdvanceAnimation(presetNumberProgress,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(presetNumberProgress,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(presetNumberProgress.val < presetReverseAnchor,
 			"number circle reversal advances without endpoint flash");
 		Check(ResolveBarThicknessPresetVisualKind(
@@ -377,7 +384,7 @@ namespace
 				BarThicknessPreviewVisualKind::Laser)
 				== BarThicknessPresetVisualKind::Circle,
 			"draw attribute initializes the correct preset semantic for every tool");
-		BarUiValueClass initializedHighlighterProgress(
+		UiValueClass initializedHighlighterProgress(
 			ResolveBarThicknessPresetVisualKind(
 				BarThicknessPreviewVisualKind::Highlighter)
 				== BarThicknessPresetVisualKind::Number ? 1.0 : 0.0);
@@ -399,20 +406,20 @@ namespace
 		auto anchor = ResolveBarPenTypeExtensionAnchor(42.5, 73.25, 18.0);
 		Check(Near(anchor.x, 60.5) && Near(anchor.y, 73.25),
 			"extension anchor follows selected button current geometry");
-		BarUiValueClass extensionProgress(1.0);
+		UiValueClass extensionProgress(1.0);
 		extensionProgress.SetTar(0.0, 1.0);
-		BarUiAdvanceAnimation(extensionProgress,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(extensionProgress,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		auto fadingExtension = ResolveBarPenTypeExtensionPresentation(
 			false, extensionProgress.val, 0.8);
 		Check(!fadingExtension.interactive
 			&& fadingExtension.opacity > 0.0
 			&& fadingExtension.opacity < 0.8,
 			"extension disables hit immediately while its visual fades");
-		BarUiColorClass selectedButtonColor(RGB(40, 40, 40));
+		UiColorClass selectedButtonColor(RGB(40, 40, 40));
 		selectedButtonColor.SetTar(RGB(0, 180, 190), 1.0);
-		BarUiAdvanceAnimation(selectedButtonColor,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(selectedButtonColor,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		COLORREF extensionColor = ResolveBarPenTypeExtensionColor(
 			selectedButtonColor.val);
 		Check(extensionColor == static_cast<COLORREF>(selectedButtonColor.val)
@@ -431,14 +438,14 @@ namespace
 			&& !ResolveBarPenTypeExtensionSlot(
 				BarThicknessPreviewVisualKind::Laser),
 			"every supported pen owns an independent extension slot");
-		BarUiValueClass oldExtension(1.0);
-		BarUiValueClass newExtension(0.0);
+		UiValueClass oldExtension(1.0);
+		UiValueClass newExtension(0.0);
 		oldExtension.SetTar(0.0, 0.4);
 		newExtension.SetTar(1.0, 0.4);
-		BarUiAdvanceAnimation(oldExtension,
-			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
-		BarUiAdvanceAnimation(newExtension,
-			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		UiAdvanceAnimation(oldExtension,
+			UiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		UiAdvanceAnimation(newExtension,
+			UiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
 		Check(oldExtension.val > 0.0 && oldExtension.val < 1.0
 			&& newExtension.val > 0.0 && newExtension.val < 1.0,
 			"old and new pen extension visuals cross fade together");
@@ -603,26 +610,26 @@ namespace
 					2.0, animatedOuterDiameter, 0.0, 2.0);
 				return (previewRight - previewLeft) - geometry.endpointDiameter;
 			};
-		BarUiValueClass thinPenEndpoint(3.0);
+		UiValueClass thinPenEndpoint(3.0);
 		thinPenEndpoint.SetTar(6.0, 0.4);
 		double thinStartSpan = ResolveCenterSpan(thinPenEndpoint.val);
-		BarUiAdvanceAnimation(thinPenEndpoint,
-			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		UiAdvanceAnimation(thinPenEndpoint,
+			UiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
 		double thinMiddleSpan = ResolveCenterSpan(thinPenEndpoint.val);
-		BarUiAdvanceAnimation(thinPenEndpoint,
-			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		UiAdvanceAnimation(thinPenEndpoint,
+			UiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
 		double thinEndSpan = ResolveCenterSpan(thinPenEndpoint.val);
 		Check(thinStartSpan > thinMiddleSpan && thinMiddleSpan > thinEndSpan
 			&& Near(thinEndSpan, previewRight - previewLeft - 6.0),
 			"thin pen entry continuously narrows the laser core center span");
-		BarUiValueClass thickPenEndpoint(12.0);
+		UiValueClass thickPenEndpoint(12.0);
 		thickPenEndpoint.SetTar(6.0, 0.4);
 		double thickStartSpan = ResolveCenterSpan(thickPenEndpoint.val);
-		BarUiAdvanceAnimation(thickPenEndpoint,
-			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		UiAdvanceAnimation(thickPenEndpoint,
+			UiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
 		double thickMiddleSpan = ResolveCenterSpan(thickPenEndpoint.val);
-		BarUiAdvanceAnimation(thickPenEndpoint,
-			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		UiAdvanceAnimation(thickPenEndpoint,
+			UiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
 		double thickEndSpan = ResolveCenterSpan(thickPenEndpoint.val);
 		Check(thickStartSpan < thickMiddleSpan && thickMiddleSpan < thickEndSpan
 			&& Near(thickEndSpan, previewRight - previewLeft - 6.0),
@@ -632,8 +639,8 @@ namespace
 		thinPenEndpoint.SetTar(3.0, 0.4);
 		Check(Near(thinPenEndpoint.val, reverseStartDiameter),
 			"laser endpoint reverse preserves the handoff frame");
-		BarUiAdvanceAnimation(thinPenEndpoint,
-			BarUiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
+		UiAdvanceAnimation(thinPenEndpoint,
+			UiAnimationAdvanceContextClass{ 0.2, 1.0, true, false });
 		Check(ResolveCenterSpan(thinPenEndpoint.val)
 			> ResolveCenterSpan(reverseStartDiameter),
 			"laser endpoint reverse continues from the current span");
@@ -659,22 +666,22 @@ namespace
 			"slider morph keeps layer centers aligned while moving to the track");
 	}
 
-	double ApplyLegacyPowCurve(BarUiCurveEnum curve, double progress)
+	double ApplyLegacyPowCurve(UiCurveEnum curve, double progress)
 	{
 		constexpr double back = 1.1;
 		progress = std::clamp(progress, 0.0, 1.0);
 		switch (curve)
 		{
-		case BarUiCurveEnum::EaseOutCubic:
+		case UiCurveEnum::EaseOutCubic:
 			return 1.0 - std::pow(1.0 - progress, 3.0);
-		case BarUiCurveEnum::EaseInOutCubic:
+		case UiCurveEnum::EaseInOutCubic:
 			return progress < 0.5
 				? 4.0 * progress * progress * progress
 				: 1.0 - std::pow(-2.0 * progress + 2.0, 3.0) / 2.0;
-		case BarUiCurveEnum::EaseOutBack:
+		case UiCurveEnum::EaseOutBack:
 			return 1.0 + (back + 1.0) * std::pow(progress - 1.0, 3.0)
 				+ back * std::pow(progress - 1.0, 2.0);
-		case BarUiCurveEnum::EaseInOutBack:
+		case UiCurveEnum::EaseInOutBack:
 		{
 			double c2 = back * 1.525;
 			return progress < 0.5
@@ -691,51 +698,51 @@ namespace
 	{
 		struct CurveSample
 		{
-			BarUiCurveEnum curve;
+			UiCurveEnum curve;
 			double progress;
 			double expected;
 			std::string_view name;
 		};
 		constexpr std::array curveSamples{
-			CurveSample{ BarUiCurveEnum::Linear, 0.25, 0.25, "linear quarter" },
-			CurveSample{ BarUiCurveEnum::EaseInSine, 0.5, 0.2928932188134524,
+			CurveSample{ UiCurveEnum::Linear, 0.25, 0.25, "linear quarter" },
+			CurveSample{ UiCurveEnum::EaseInSine, 0.5, 0.2928932188134524,
 				"sine in midpoint" },
-			CurveSample{ BarUiCurveEnum::EaseOutSine, 0.5, 0.7071067811865476,
+			CurveSample{ UiCurveEnum::EaseOutSine, 0.5, 0.7071067811865476,
 				"sine out midpoint" },
-			CurveSample{ BarUiCurveEnum::EaseInOutSine, 0.5, 0.5,
+			CurveSample{ UiCurveEnum::EaseInOutSine, 0.5, 0.5,
 				"sine in-out midpoint" },
-			CurveSample{ BarUiCurveEnum::EaseInCubic, 0.5, 0.125,
+			CurveSample{ UiCurveEnum::EaseInCubic, 0.5, 0.125,
 				"cubic in midpoint" },
-			CurveSample{ BarUiCurveEnum::EaseOutCubic, 0.5, 0.875,
+			CurveSample{ UiCurveEnum::EaseOutCubic, 0.5, 0.875,
 				"cubic out midpoint" },
-			CurveSample{ BarUiCurveEnum::EaseInOutCubic, 0.25, 0.0625,
+			CurveSample{ UiCurveEnum::EaseInOutCubic, 0.25, 0.0625,
 				"cubic in-out quarter" },
-			CurveSample{ BarUiCurveEnum::EaseInBack, 0.5, -0.0125,
+			CurveSample{ UiCurveEnum::EaseInBack, 0.5, -0.0125,
 				"back in undershoot" },
-			CurveSample{ BarUiCurveEnum::EaseOutBack, 0.5, 1.0125,
+			CurveSample{ UiCurveEnum::EaseOutBack, 0.5, 1.0125,
 				"back out overshoot" },
-			CurveSample{ BarUiCurveEnum::EaseInOutBack, 0.25, -0.04234375,
+			CurveSample{ UiCurveEnum::EaseInOutBack, 0.25, -0.04234375,
 				"back in-out undershoot" },
 		};
 		for (const auto& sample : curveSamples)
 		{
-			Check(Near(BarUiApplyCurve(sample.curve, sample.progress), sample.expected),
+			Check(Near(UiApplyCurve(sample.curve, sample.progress), sample.expected),
 				sample.name);
 		}
 
 		struct LegacyCurveCase
 		{
-			BarUiCurveEnum curve;
+			UiCurveEnum curve;
 			std::string_view name;
 		};
 		constexpr std::array legacyCurveCases{
-			LegacyCurveCase{ BarUiCurveEnum::EaseOutCubic,
+			LegacyCurveCase{ UiCurveEnum::EaseOutCubic,
 				"optimized cubic out matches legacy pow" },
-			LegacyCurveCase{ BarUiCurveEnum::EaseInOutCubic,
+			LegacyCurveCase{ UiCurveEnum::EaseInOutCubic,
 				"optimized cubic in-out matches legacy pow" },
-			LegacyCurveCase{ BarUiCurveEnum::EaseOutBack,
+			LegacyCurveCase{ UiCurveEnum::EaseOutBack,
 				"optimized back out matches legacy pow" },
-			LegacyCurveCase{ BarUiCurveEnum::EaseInOutBack,
+			LegacyCurveCase{ UiCurveEnum::EaseInOutBack,
 				"optimized back in-out matches legacy pow" },
 		};
 		constexpr double legacyCurveEpsilon = 1.0e-12;
@@ -746,7 +753,7 @@ namespace
 			for (int point = 0; point <= 1000; ++point)
 			{
 				double progress = static_cast<double>(point) / 1000.0;
-				if (Near(BarUiApplyCurve(legacyCase.curve, progress),
+				if (Near(UiApplyCurve(legacyCase.curve, progress),
 					ApplyLegacyPowCurve(legacyCase.curve, progress),
 					legacyCurveEpsilon)) continue;
 				matchesLegacy = false;
@@ -756,43 +763,43 @@ namespace
 		}
 
 		constexpr std::array curves{
-			BarUiCurveEnum::Linear,
-			BarUiCurveEnum::EaseInSine,
-			BarUiCurveEnum::EaseOutSine,
-			BarUiCurveEnum::EaseInOutSine,
-			BarUiCurveEnum::EaseInCubic,
-			BarUiCurveEnum::EaseOutCubic,
-			BarUiCurveEnum::EaseInOutCubic,
-			BarUiCurveEnum::EaseInBack,
-			BarUiCurveEnum::EaseOutBack,
-			BarUiCurveEnum::EaseInOutBack,
+			UiCurveEnum::Linear,
+			UiCurveEnum::EaseInSine,
+			UiCurveEnum::EaseOutSine,
+			UiCurveEnum::EaseInOutSine,
+			UiCurveEnum::EaseInCubic,
+			UiCurveEnum::EaseOutCubic,
+			UiCurveEnum::EaseInOutCubic,
+			UiCurveEnum::EaseInBack,
+			UiCurveEnum::EaseOutBack,
+			UiCurveEnum::EaseInOutBack,
 		};
 		for (auto curve : curves)
 		{
-			Check(Near(BarUiApplyCurve(curve, 0.0), 0.0), "curve starts at zero");
-			Check(Near(BarUiApplyCurve(curve, 1.0), 1.0), "curve ends at one");
-			Check(Near(BarUiApplyCurveRange(curve, 0.35, 0.35), 0.0),
+			Check(Near(UiApplyCurve(curve, 0.0), 0.0), "curve starts at zero");
+			Check(Near(UiApplyCurve(curve, 1.0), 1.0), "curve ends at one");
+			Check(Near(UiApplyCurveRange(curve, 0.35, 0.35), 0.0),
 				"curve range starts at zero");
-			Check(Near(BarUiApplyCurveRange(curve, 0.35, 1.0), 1.0),
+			Check(Near(UiApplyCurveRange(curve, 0.35, 1.0), 1.0),
 				"curve range ends at one");
 		}
-		Check(Near(BarUiApplyCurve(BarUiCurveEnum::EaseOutBack, -1.0), 0.0),
+		Check(Near(UiApplyCurve(UiCurveEnum::EaseOutBack, -1.0), 0.0),
 			"curve clamps negative progress");
-		Check(Near(BarUiApplyCurve(BarUiCurveEnum::EaseInBack, 2.0), 1.0),
+		Check(Near(UiApplyCurve(UiCurveEnum::EaseInBack, 2.0), 1.0),
 			"curve clamps progress above one");
 
 		// 续接区间必须从当前相位重新归一化，Back 则从剩余段重建回弹。
-		Check(Near(BarUiApplyCurveRange(
-			BarUiCurveEnum::Linear, 0.25, 0.625), 0.5),
+		Check(Near(UiApplyCurveRange(
+			UiCurveEnum::Linear, 0.25, 0.625), 0.5),
 			"linear range continuation midpoint");
-		Check(Near(BarUiApplyCurveRange(
-			BarUiCurveEnum::EaseInCubic, 0.25, 0.625), 0.23214285714285715),
+		Check(Near(UiApplyCurveRange(
+			UiCurveEnum::EaseInCubic, 0.25, 0.625), 0.23214285714285715),
 			"cubic range continuation midpoint");
-		Check(Near(BarUiApplyCurveRange(
-			BarUiCurveEnum::EaseOutBack, 0.25, 0.625), 1.0125),
+		Check(Near(UiApplyCurveRange(
+			UiCurveEnum::EaseOutBack, 0.25, 0.625), 1.0125),
 			"back range continuation rebuilds remaining segment");
 
-		BarUiTimelineClass timeline;
+		UiTimelineClass timeline;
 		timeline.Restart(2.0);
 		timeline.Advance(1.0, 1.0);
 		Check(Near(timeline.GetProgress(), 0.5), "timeline reaches midpoint");
@@ -801,7 +808,7 @@ namespace
 		timeline.Advance(0.001, 1.0);
 		Check(!timeline.CanJoin(), "timeline rejects after midpoint");
 
-		BarUiKeyframeTimelineClass keyframe;
+		UiKeyframeTimelineClass keyframe;
 		keyframe.Start(1.0, 0.5);
 		auto first = keyframe.Advance(0.6, 1.0);
 		Check(first.reachedKeyframe && Near(first.progress, 0.5),
@@ -815,13 +822,13 @@ namespace
 		std::wstring content = L"old";
 		const std::wstring pendingContent = L"new";
 		int contentReplacementCount = 0;
-		auto ApplyContentKeyframe = [&](const BarUiKeyframeTimelineResultClass& result)
+		auto ApplyContentKeyframe = [&](const UiKeyframeTimelineResultClass& result)
 			{
 				if (!result.reachedKeyframe) return;
 				content = pendingContent;
 				++contentReplacementCount;
 			};
-		BarUiKeyframeTimelineClass contentTransition;
+		UiKeyframeTimelineClass contentTransition;
 		contentTransition.Start(1.0, 0.5);
 		ApplyContentKeyframe(contentTransition.Advance(0.2, 1.0));
 		Check(content == L"old" && contentReplacementCount == 0,
@@ -836,20 +843,20 @@ namespace
 		Check(contentReplacementCount == 1,
 			"content transition does not apply target twice");
 
-		BarUiKeyframeTimelineClass immediateContentTransition;
+		UiKeyframeTimelineClass immediateContentTransition;
 		immediateContentTransition.Start(0.0, 0.5);
 		auto immediate = immediateContentTransition.Advance(0.01, 1.0);
 		Check(immediate.reachedKeyframe && immediate.finished,
 			"zero-duration content transition applies immediately");
-		BarUiKeyframeTimelineClass disabledContentTransition;
+		UiKeyframeTimelineClass disabledContentTransition;
 		disabledContentTransition.Start(1.0, 0.5);
 		const auto idleContent = disabledContentTransition.Advance(0.0, 1.0e12);
 		Check(!idleContent.finished && disabledContentTransition.IsActive(),
 			"zero-time idle frame preserves enabled content transition");
-		const bool previousAnimationEnabled = BarUiAnimationEnabled;
-		BarUiAnimationEnabled = false;
+		const bool previousAnimationEnabled = UiAnimationEnabled;
+		UiAnimationEnabled = false;
 		const auto disabledContent = disabledContentTransition.Advance(0.0, 1.0e12);
-		BarUiAnimationEnabled = previousAnimationEnabled;
+		UiAnimationEnabled = previousAnimationEnabled;
 		Check(disabledContent.reachedKeyframe && disabledContent.finished
 			&& Near(disabledContent.progress, 1.0)
 			&& !disabledContentTransition.IsActive(),
@@ -863,32 +870,32 @@ namespace
 			for (double zoom : { 1.0, 1.5 })
 				for (double initialWidth : { 400.0, 560.0 })
 				{
-					BarUiValueClass hiddenX(190.0);
+					UiValueClass hiddenX(190.0);
 					hiddenX.SetTar(115.0, 0.4);
-					BarUiAdvanceAnimation(hiddenX, { 0.1, 1.0, true, false });
+					UiAdvanceAnimation(hiddenX, { 0.1, 1.0, true, false });
 					const double childStart = hiddenX.val;
 					const double finalWidth = initialWidth - (childStart - 115.0) * 2.0;
 					const double side = opensRight ? 1.0 : -1.0;
-					BarUiValueClass barWidth(initialWidth);
-					BarUiValueClass barX(side * (50.0 + initialWidth / 2.0));
+					UiValueClass barWidth(initialWidth);
+					UiValueClass barX(side * (50.0 + initialWidth / 2.0));
 					const auto startRoot = ResolveBarBottomDockCenteredRootPlacement(
 						960.0, 81.0, barX.val, barWidth.val + 1.0);
 					const double startScreen = (startRoot.mainCenterDip + barX.val
 						- barWidth.val / 2.0 + childStart) * zoom;
-					const BarUiCurveSpecClass curve{
-						BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, 0.0, false };
+					const UiCurveSpecClass curve{
+						UiCurveEnum::EaseOutCubic, UiCurveEnum::EaseOutCubic, 0.0, false };
 					barWidth.SetTar(finalWidth, 0.4, std::nullopt, false, curve);
 					barX.SetTar(side * (50.0 + finalWidth / 2.0), 0.4, std::nullopt, false, curve);
 					// 来源锚点仍是 115；旧 SetTar 的同目标早退会留下另一条局部时间线。
-					Check(BarUiSetLayoutPositionTarget(hiddenX, 115.0, 0.4, true, curve),
+					Check(UiSetLayoutPositionTarget(hiddenX, 115.0, 0.4, true, curve),
 						"new layout batch rejoins a hidden child already travelling to the same anchor");
 					for (int frame = 0; frame < 30; ++frame)
 					{
-						Check(!BarUiSetLayoutPositionTarget(hiddenX, 115.0, 0.4, false, curve),
+						Check(!UiSetLayoutPositionTarget(hiddenX, 115.0, 0.4, false, curve),
 							"ordinary centered frames do not restart hidden-child animation");
-						BarUiAdvanceAnimation(hiddenX, { 1.0 / 60.0, 1.0, true, false });
-						BarUiAdvanceAnimation(barX, { 1.0 / 60.0, 1.0, true, false });
-						BarUiAdvanceAnimation(barWidth, { 1.0 / 60.0, 1.0, true, false });
+						UiAdvanceAnimation(hiddenX, { 1.0 / 60.0, 1.0, true, false });
+						UiAdvanceAnimation(barX, { 1.0 / 60.0, 1.0, true, false });
+						UiAdvanceAnimation(barWidth, { 1.0 / 60.0, 1.0, true, false });
 						const auto root = ResolveBarBottomDockCenteredRootPlacement(
 							960.0, 81.0, barX.val, barWidth.val + 1.0);
 						const double screen = (root.mainCenterDip + barX.val
@@ -911,9 +918,9 @@ namespace
 			for (bool reverseMidway : { false, true })
 				for (bool uneven : { false, true })
 				{
-					BarUiValueClass panelWidth(initiallyOpen ? expandedWidth : compactWidth);
-					BarUiValueClass thickness(panelWidth.val / expandedWidth);
-					BarUiTimelineClass timeline;
+					UiValueClass panelWidth(initiallyOpen ? expandedWidth : compactWidth);
+					UiValueClass thickness(panelWidth.val / expandedWidth);
+					UiTimelineClass timeline;
 					timeline.Restart(0.4);
 					bool opening = !initiallyOpen;
 					for (int frame = 0; frame < 90; ++frame)
@@ -925,18 +932,18 @@ namespace
 						}
 						const double targetWidth = opening ? expandedWidth : compactWidth;
 						const auto curve = opening
-							? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInBack;
+							? UiCurveEnum::EaseOutBack : UiCurveEnum::EaseInBack;
 						const double phase = timeline.GetProgress();
-						const BarUiCurveSpecClass curveSpec{ curve, curve, phase, phase > 0.0 };
+						const UiCurveSpecClass curveSpec{ curve, curve, phase, phase > 0.0 };
 						const double remaining = timeline.GetRemainingDuration();
 						// 同目标重复提交不重启，改变目标时从当前比例续接同一批次。
 						panelWidth.SetTar(targetWidth, remaining, std::nullopt, false, curveSpec);
 						thickness.SetTar(targetWidth / expandedWidth,
 							remaining, std::nullopt, false, curveSpec);
 						const double dt = uneven ? unevenSteps[frame % unevenSteps.size()] : 1.0 / 60.0;
-						const BarUiAnimationAdvanceContextClass context{ dt, 1.0, true, false };
-						if (!panelWidth.IsSame()) BarUiAdvanceAnimation(panelWidth, context);
-						if (!thickness.IsSame()) BarUiAdvanceAnimation(thickness, context);
+						const UiAnimationAdvanceContextClass context{ dt, 1.0, true, false };
+						if (!panelWidth.IsSame()) UiAdvanceAnimation(panelWidth, context);
+						if (!thickness.IsSame()) UiAdvanceAnimation(thickness, context);
 						timeline.Advance(dt, 1.0);
 						Check(Near(thickness.val / (panelWidth.val / expandedWidth), 1.0),
 							"single swatch thickness target preserves panel scale through back easing and reversal");
@@ -949,11 +956,11 @@ namespace
 	void TestTargetsAndAdvancement()
 	{
 		TestCenteredHiddenButtonRejoinsLayoutBatch();
-		BarUiValueClass value(0.0);
+		UiValueClass value(0.0);
 		Check(value.SetTar(10.0, 1.0), "new value target starts animation");
 		Check(!value.SetTar(10.0, 1.0), "same value target is a no-op");
-		BarUiAnimationAdvanceContextClass context{ 0.25, 1.0, true, false };
-		auto first = BarUiAdvanceAnimation(value, context);
+		UiAnimationAdvanceContextClass context{ 0.25, 1.0, true, false };
+		auto first = UiAdvanceAnimation(value, context);
 		Check(first.changed && first.active, "value advances and remains active");
 		double interruptedAt = value.val;
 		Check(value.SetTar(20.0, 1.0), "interruption accepts a new target");
@@ -962,11 +969,11 @@ namespace
 			"force restart accepts the same target");
 
 		// 模拟 Draw 到 Selection：主栏自身只推进 x/w，根节点每帧由联合边界反推。
-		BarUiValueClass centeredCollapseX(250.0);
-		BarUiValueClass centeredCollapseWidth(400.0);
-		const BarUiCurveSpecClass centeredCollapseCurve{
-			BarUiCurveEnum::EaseOutCubic,
-			BarUiCurveEnum::EaseOutCubic,
+		UiValueClass centeredCollapseX(250.0);
+		UiValueClass centeredCollapseWidth(400.0);
+		const UiCurveSpecClass centeredCollapseCurve{
+			UiCurveEnum::EaseOutCubic,
+			UiCurveEnum::EaseOutCubic,
 			0.0,
 			false,
 		};
@@ -981,11 +988,11 @@ namespace
 			200.0, 0.4, std::nullopt, false, centeredCollapseCurve);
 		for (int frame = 0; frame < 30; ++frame)
 		{
-			BarUiAdvanceAnimation(centeredCollapseX,
-				BarUiAnimationAdvanceContextClass{
+			UiAdvanceAnimation(centeredCollapseX,
+				UiAnimationAdvanceContextClass{
 					1.0 / 60.0, 1.0, true, false });
-			BarUiAdvanceAnimation(centeredCollapseWidth,
-				BarUiAnimationAdvanceContextClass{
+			UiAdvanceAnimation(centeredCollapseWidth,
+				UiAnimationAdvanceContextClass{
 					1.0 / 60.0, 1.0, true, false });
 			const auto placement =
 				Inkeys::UI::Bar::ResolveBarBottomDockCenteredRootPlacement(
@@ -1010,87 +1017,87 @@ namespace
 			&& Near(previousRootCenter, 855.0),
 			"centered Draw to Selection collapse keeps every presented union centered");
 
-		BarUiValueClass middle(0.0);
+		UiValueClass middle(0.0);
 		middle.SetTar(1.0, 1.0, 0.8);
-		auto midpoint = BarUiAdvanceAnimation(
-			middle, BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		auto midpoint = UiAdvanceAnimation(
+			middle, UiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
 		Check(midpoint.changed && midpoint.active && Near(middle.val, 0.8),
 			"middle keyframe uses the exact half-time value");
-		auto finished = BarUiAdvanceAnimation(
-			middle, BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		auto finished = UiAdvanceAnimation(
+			middle, UiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
 		Check(finished.changed && !finished.active && Near(middle.val, 1.0),
 			"final value is changed but no longer active");
 
-		BarUiColorClass quantized(RGB(0, 0, 0));
+		UiColorClass quantized(RGB(0, 0, 0));
 		quantized.SetTar(RGB(1, 0, 0), 1.0);
-		auto quantizedFrame = BarUiAdvanceAnimation(
-			quantized, BarUiAnimationAdvanceContextClass{ 0.0001, 1.0, true, false });
+		auto quantizedFrame = UiAdvanceAnimation(
+			quantized, UiAnimationAdvanceContextClass{ 0.0001, 1.0, true, false });
 		Check(!quantizedFrame.changed && quantizedFrame.active,
 			"quantized color remains scheduled when the pixel value is unchanged");
 
 		// 休眠后的首帧 dt 为零，数值、颜色和透明度都不能瞬间落到目标。
-		BarUiValueClass idleValue(0.0);
+		UiValueClass idleValue(0.0);
 		idleValue.SetTar(10.0, 1.0);
-		auto idleValueFrame = BarUiAdvanceAnimation(idleValue,
-			BarUiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
+		auto idleValueFrame = UiAdvanceAnimation(idleValue,
+			UiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
 		Check(!idleValueFrame.changed && idleValueFrame.active
 			&& Near(idleValue.val, 0.0) && Near(idleValue.progress, 0.0),
 			"zero-time wake preserves the pending value animation");
-		BarUiColorClass idleColor(RGB(0, 0, 0));
+		UiColorClass idleColor(RGB(0, 0, 0));
 		idleColor.SetTar(RGB(255, 255, 255), 1.0);
-		auto idleColorFrame = BarUiAdvanceAnimation(idleColor,
-			BarUiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
+		auto idleColorFrame = UiAdvanceAnimation(idleColor,
+			UiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
 		Check(!idleColorFrame.changed && idleColorFrame.active
 			&& idleColor.val == RGB(0, 0, 0) && Near(idleColor.progress, 0.0),
 			"zero-time wake preserves the pending color animation");
-		BarUiPctClass idlePct(0.0);
+		UiPctClass idlePct(0.0);
 		idlePct.SetTar(1.0, 1.0);
-		auto idlePctFrame = BarUiAdvanceAnimation(idlePct,
-			BarUiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
+		auto idlePctFrame = UiAdvanceAnimation(idlePct,
+			UiAnimationAdvanceContextClass{ 0.0, 1.0, true, false });
 		Check(!idlePctFrame.changed && idlePctFrame.active
 			&& Near(idlePct.val, 0.0) && Near(idlePct.progress, 0.0),
 			"zero-time wake preserves the pending opacity animation");
-		BarUiAdvanceAnimation(idleValue,
-			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
-		BarUiAdvanceAnimation(idleColor,
-			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
-		BarUiAdvanceAnimation(idlePct,
-			BarUiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		UiAdvanceAnimation(idleValue,
+			UiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		UiAdvanceAnimation(idleColor,
+			UiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
+		UiAdvanceAnimation(idlePct,
+			UiAnimationAdvanceContextClass{ 0.5, 1.0, true, false });
 		Check(Near(idleValue.val, 5.0) && idleColor.val == RGB(128, 128, 128)
 			&& Near(idlePct.val, 0.7071067811865476),
 			"animations resume their original trajectory after the zero-time wake");
-		BarUiValueClass disabledIdleValue(0.0);
+		UiValueClass disabledIdleValue(0.0);
 		disabledIdleValue.SetTar(10.0, 1.0);
-		BarUiColorClass disabledIdleColor(RGB(0, 0, 0));
+		UiColorClass disabledIdleColor(RGB(0, 0, 0));
 		disabledIdleColor.SetTar(RGB(255, 255, 255), 1.0);
-		BarUiPctClass disabledIdlePct(0.0);
+		UiPctClass disabledIdlePct(0.0);
 		disabledIdlePct.SetTar(1.0, 1.0);
-		const BarUiAnimationAdvanceContextClass disabledIdleContext{ 0.0,
+		const UiAnimationAdvanceContextClass disabledIdleContext{ 0.0,
 			1.0e12, false, false };
-		Check(!BarUiAdvanceAnimation(disabledIdleValue, disabledIdleContext).active
-			&& !BarUiAdvanceAnimation(disabledIdleColor, disabledIdleContext).active
-			&& !BarUiAdvanceAnimation(disabledIdlePct, disabledIdleContext).active
+		Check(!UiAdvanceAnimation(disabledIdleValue, disabledIdleContext).active
+			&& !UiAdvanceAnimation(disabledIdleColor, disabledIdleContext).active
+			&& !UiAdvanceAnimation(disabledIdlePct, disabledIdleContext).active
 			&& Near(disabledIdleValue.val, 10.0)
 			&& disabledIdleColor.val == RGB(255, 255, 255)
 			&& Near(disabledIdlePct.val, 1.0),
 			"animation-disabled targets replace immediately even on an idle wake");
 
-		BarUiColorClass disabledHover(RGB(0, 0, 0));
+		UiColorClass disabledHover(RGB(0, 0, 0));
 		disabledHover.animateWhenDisabled = true;
 		disabledHover.SetTar(RGB(255, 255, 255), 1.0);
-		auto disabledFrame = BarUiAdvanceAnimation(disabledHover,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0e12, false, false });
+		auto disabledFrame = UiAdvanceAnimation(disabledHover,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0e12, false, false });
 		Check(disabledFrame.active,
 			"animateWhenDisabled uses real-time speed instead of the finish multiplier");
 
-		BarUiPctClass pct(0.5);
+		UiPctClass pct(0.5);
 		pct.SetTar(2.0, 0.0);
-		auto pctResult = BarUiAdvanceAnimation(
-			pct, BarUiAnimationAdvanceContextClass{ 0.01, 1.0, true, false });
+		auto pctResult = UiAdvanceAnimation(
+			pct, UiAnimationAdvanceContextClass{ 0.01, 1.0, true, false });
 		Check(pctResult.changed && !pctResult.active && Near(pct.val, 1.0),
 			"opacity clamps and finishes invalid target range");
 
-		BarUiValueClass finiteValue(3.0);
+		UiValueClass finiteValue(3.0);
 		const double infinity = std::numeric_limits<double>::infinity();
 		const double quietNaN = std::numeric_limits<double>::quiet_NaN();
 		Check(!finiteValue.SetTar(infinity, 1.0)
@@ -1104,126 +1111,126 @@ namespace
 			"direct value ignores non-finite input");
 		// 模拟旧版本已经写入的异常目标，完成路径必须恢复有限状态。
 		finiteValue.tar = infinity;
-		auto recoveredValue = BarUiAdvanceAnimation(
-			finiteValue, BarUiAnimationAdvanceContextClass{ 0.01, 1.0, true, false });
+		auto recoveredValue = UiAdvanceAnimation(
+			finiteValue, UiAnimationAdvanceContextClass{ 0.01, 1.0, true, false });
 		Check(!recoveredValue.active && std::isfinite(static_cast<double>(finiteValue.val))
 			&& std::isfinite(static_cast<double>(finiteValue.tar))
 			&& Near(finiteValue.val, 3.0),
 			"value completion recovers a legacy non-finite target");
 
 		// 两段曲线分别覆盖进入和回弹，且跨中点帧精确落在 middleV。
-		BarUiValueClass customValue(0.0);
-		const BarUiCurveSpecClass valueCurve{
-			BarUiCurveEnum::EaseInCubic,
-			BarUiCurveEnum::EaseOutBack,
+		UiValueClass customValue(0.0);
+		const UiCurveSpecClass valueCurve{
+			UiCurveEnum::EaseInCubic,
+			UiCurveEnum::EaseOutBack,
 			0.0,
 			false,
 		};
 		customValue.SetTar(10.0, 1.0, 8.0, true, valueCurve);
-		BarUiAdvanceAnimation(customValue,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(customValue,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(Near(customValue.val, 1.0), "custom value first curve quarter");
-		BarUiAdvanceAnimation(customValue,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(customValue,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(Near(customValue.val, 8.0), "custom value exact middle keyframe");
-		BarUiAdvanceAnimation(customValue,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(customValue,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(Near(customValue.val, 10.025), "custom value second curve overshoots");
-		auto customValueFinal = BarUiAdvanceAnimation(customValue,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		auto customValueFinal = UiAdvanceAnimation(customValue,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(customValueFinal.changed && !customValueFinal.active
 			&& Near(customValue.val, 10.0),
 			"custom value settles on final target");
 
-		BarUiPctClass customPct(0.0);
-		const BarUiCurveSpecClass pctCurve{
-			BarUiCurveEnum::EaseInSine,
-			BarUiCurveEnum::EaseOutSine,
+		UiPctClass customPct(0.0);
+		const UiCurveSpecClass pctCurve{
+			UiCurveEnum::EaseInSine,
+			UiCurveEnum::EaseOutSine,
 			0.0,
 			false,
 		};
 		customPct.SetTar(1.0, 1.0, 0.4, true, pctCurve);
-		BarUiAdvanceAnimation(customPct,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(customPct,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(Near(customPct.val, 0.117157287525381),
 			"custom opacity first curve quarter");
-		BarUiAdvanceAnimation(customPct,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(customPct,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(Near(customPct.val, 0.4), "custom opacity exact middle keyframe");
-		BarUiAdvanceAnimation(customPct,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(customPct,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(Near(customPct.val, 0.824264068711929),
 			"custom opacity second curve quarter");
-		auto customPctFinal = BarUiAdvanceAnimation(customPct,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		auto customPctFinal = UiAdvanceAnimation(customPct,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(customPctFinal.changed && !customPctFinal.active
 			&& Near(customPct.val, 1.0),
 			"custom opacity settles on final target");
 
-		BarUiTimelineClass continuedTimeline;
+		UiTimelineClass continuedTimeline;
 		continuedTimeline.Restart(1.0);
 		continuedTimeline.Advance(0.25, 1.0);
-		BarUiValueClass continuedValue(2.0);
-		const BarUiCurveSpecClass continuedCurve{
-			BarUiCurveEnum::EaseInOutCubic,
-			BarUiCurveEnum::EaseInOutCubic,
+		UiValueClass continuedValue(2.0);
+		const UiCurveSpecClass continuedCurve{
+			UiCurveEnum::EaseInOutCubic,
+			UiCurveEnum::EaseInOutCubic,
 			continuedTimeline.GetProgress(),
 			true,
 		};
 		continuedValue.SetTar(10.0, continuedTimeline.GetRemainingDuration(),
 			std::nullopt, true, continuedCurve);
-		BarUiAdvanceAnimation(continuedValue,
-			BarUiAnimationAdvanceContextClass{ 0.375, 1.0, true, false });
+		UiAdvanceAnimation(continuedValue,
+			UiAnimationAdvanceContextClass{ 0.375, 1.0, true, false });
 		Check(Near(continuedValue.val, 8.2),
 			"continued value preserves remaining cubic curve range");
-		auto continuedValueFinal = BarUiAdvanceAnimation(continuedValue,
-			BarUiAnimationAdvanceContextClass{ 0.375, 1.0, true, false });
+		auto continuedValueFinal = UiAdvanceAnimation(continuedValue,
+			UiAnimationAdvanceContextClass{ 0.375, 1.0, true, false });
 		Check(!continuedValueFinal.active && Near(continuedValue.val, 10.0),
 			"continued value shares original finish time");
 
-		BarUiValueClass postKeyframeValue(15.0);
-		const BarUiCurveSpecClass postKeyframeCurve{
-			BarUiCurveEnum::EaseInCubic,
-			BarUiCurveEnum::EaseOutBack,
+		UiValueClass postKeyframeValue(15.0);
+		const UiCurveSpecClass postKeyframeCurve{
+			UiCurveEnum::EaseInCubic,
+			UiCurveEnum::EaseOutBack,
 			0.75,
 			true,
 		};
 		postKeyframeValue.SetTar(20.0, 0.25, 12.0, true, postKeyframeCurve);
 		Check(!static_cast<bool>(postKeyframeValue.hasMiddleV)
-			&& static_cast<BarUiCurveEnum>(postKeyframeValue.activeCurve)
-				== BarUiCurveEnum::EaseOutBack
+			&& static_cast<UiCurveEnum>(postKeyframeValue.activeCurve)
+				== UiCurveEnum::EaseOutBack
 			&& Near(postKeyframeValue.timelineStartProgress, 0.5),
 			"continued value after keyframe enters second segment directly");
 
-		BarUiColorClass continuedColor(RGB(10, 20, 30));
-		const BarUiCurveSpecClass colorCurve{
-			BarUiCurveEnum::EaseInOutSine,
-			BarUiCurveEnum::EaseInOutSine,
+		UiColorClass continuedColor(RGB(10, 20, 30));
+		const UiCurveSpecClass colorCurve{
+			UiCurveEnum::EaseInOutSine,
+			UiCurveEnum::EaseInOutSine,
 			0.5,
 			true,
 		};
 		continuedColor.SetTar(RGB(210, 120, 80), 0.5, colorCurve);
-		BarUiAdvanceAnimation(continuedColor,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		UiAdvanceAnimation(continuedColor,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(static_cast<COLORREF>(continuedColor.val) == RGB(151, 91, 65),
 			"continued color uses remaining sine range");
-		auto continuedColorFinal = BarUiAdvanceAnimation(continuedColor,
-			BarUiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
+		auto continuedColorFinal = UiAdvanceAnimation(continuedColor,
+			UiAnimationAdvanceContextClass{ 0.25, 1.0, true, false });
 		Check(!continuedColorFinal.active
 			&& static_cast<COLORREF>(continuedColor.val) == RGB(210, 120, 80),
 			"continued color reaches exact target");
-		Check(MixBarUiColor(RGB(1, 3, 5), RGB(2, 4, 6), 0.5) == RGB(2, 4, 6),
+		Check(MixUiColor(RGB(1, 3, 5), RGB(2, 4, 6), 0.5) == RGB(2, 4, 6),
 			"color mixing rounds channels consistently");
 	}
 
 	void TestKeyframeTimelineTransactions()
 	{
-		static_assert(std::is_copy_constructible_v<BarUiKeyframeTimelineClass>);
-		static_assert(std::is_copy_assignable_v<BarUiKeyframeTimelineClass>);
-		static_assert(std::is_move_constructible_v<BarUiKeyframeTimelineClass>);
-		static_assert(std::is_move_assignable_v<BarUiKeyframeTimelineClass>);
+		static_assert(std::is_copy_constructible_v<UiKeyframeTimelineClass>);
+		static_assert(std::is_copy_assignable_v<UiKeyframeTimelineClass>);
+		static_assert(std::is_move_constructible_v<UiKeyframeTimelineClass>);
+		static_assert(std::is_move_assignable_v<UiKeyframeTimelineClass>);
 
-		BarUiKeyframeTimelineClass generationTimeline;
+		UiKeyframeTimelineClass generationTimeline;
 		uint64_t startGeneration = generationTimeline.Start(1.0, 0.5);
 		auto generationAdvance = generationTimeline.Advance(0.25, 1.0);
 		Check(generationAdvance.generation == startGeneration,
@@ -1232,20 +1239,20 @@ namespace
 		Check(cancelGeneration != startGeneration && !generationTimeline.IsActive(),
 			"timeline cancel advances generation and deactivates");
 		bool oldGenerationCurrent = generationTimeline.Transaction(
-			[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+			[&](UiKeyframeTimelineClass::LockedView& timeline)
 			{
 				return timeline.IsCurrentGeneration(startGeneration);
 			});
 		Check(!oldGenerationCurrent, "cancel rejects the prior generation");
 
-		BarUiKeyframeTimelineClass immediateTimeline;
+		UiKeyframeTimelineClass immediateTimeline;
 		immediateTimeline.Start(1.0, 0.5);
 		std::wstring currentImmediate = L"old";
 		std::wstring targetImmediate = L"old";
 		std::wstring pendingImmediate = L"stale";
 		double immediateScale = 0.8;
 		double immediateOpacity = 0.4;
-		const bool immediateChanged = ApplyBarImmediateContentUpdate(
+		const bool immediateChanged = ApplyImmediateContentUpdate(
 			immediateTimeline,
 			[&]
 			{
@@ -1265,8 +1272,8 @@ namespace
 			&& pendingImmediate == L"fresh" && Near(immediateScale, 1.0)
 			&& Near(immediateOpacity, 1.0),
 			"immediate content cancels stale keyframe without a late rewrite");
-		Check(ShouldKeepBarContentVisibleForExit(true, true, true, true)
-			&& !ShouldKeepBarContentVisibleForExit(false, true, true, true),
+		Check(ShouldKeepContentVisibleForExit(true, true, true, true)
+			&& !ShouldKeepContentVisibleForExit(false, true, true, true),
 			"only animated empty content remains visible for its exit transition");
 
 		std::wstring requestedTarget = L"old";
@@ -1274,7 +1281,7 @@ namespace
 		auto TransitionTo = [&](const std::wstring& target)
 			{
 				return generationTimeline.Transaction(
-					[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+					[&](UiKeyframeTimelineClass::LockedView& timeline)
 					{
 						if (timeline.IsActive() && requestedTarget == target)
 							return false;
@@ -1295,10 +1302,10 @@ namespace
 			int committedTarget = 0;
 			uint64_t generation = 0;
 		};
-		BarUiKeyframeTimelineClass concurrentTimeline;
+		UiKeyframeTimelineClass concurrentTimeline;
 		TransitionPayload payload;
 		concurrentTimeline.Transaction(
-			[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+			[&](UiKeyframeTimelineClass::LockedView& timeline)
 			{
 				payload.target = 1;
 				payload.generation = timeline.Start(1.0, 0.5);
@@ -1312,12 +1319,12 @@ namespace
 			{
 				struct RenderSnapshot
 				{
-					BarUiKeyframeTimelineResultClass result;
+					UiKeyframeTimelineResultClass result;
 					int target = 0;
 					uint64_t payloadGeneration = 0;
 				};
 				RenderSnapshot snapshot = concurrentTimeline.Transaction(
-					[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+					[&](UiKeyframeTimelineClass::LockedView& timeline)
 					{
 						return RenderSnapshot{
 							timeline.Advance(0.6, 1.0),
@@ -1336,7 +1343,7 @@ namespace
 					YieldProcessor();
 
 				bool committed = concurrentTimeline.Transaction(
-					[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+					[&](UiKeyframeTimelineClass::LockedView& timeline)
 					{
 						if (!timeline.IsCurrentGeneration(snapshot.result.generation))
 							return false;
@@ -1349,7 +1356,7 @@ namespace
 
 		while (!snapshotReady.load(std::memory_order_acquire)) YieldProcessor();
 		concurrentTimeline.Transaction(
-			[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+			[&](UiKeyframeTimelineClass::LockedView& timeline)
 			{
 				payload.target = 2;
 				payload.generation = timeline.Start(1.0, 0.5);
@@ -1358,7 +1365,7 @@ namespace
 		renderThread.join();
 
 		bool newTransactionIntact = concurrentTimeline.Transaction(
-			[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+			[&](UiKeyframeTimelineClass::LockedView& timeline)
 			{
 				return timeline.IsActive()
 					&& timeline.IsCurrentGeneration(payload.generation)
@@ -1370,13 +1377,13 @@ namespace
 			&& newTransactionIntact,
 			"old advance cannot commit across a newer start generation");
 
-		BarUiKeyframeTimelineClass sourceTimeline;
+		UiKeyframeTimelineClass sourceTimeline;
 		sourceTimeline.Start(2.0, 0.5);
 		auto sourceAdvance = sourceTimeline.Advance(0.5, 1.0);
-		BarUiKeyframeTimelineClass copiedTimeline(sourceTimeline);
+		UiKeyframeTimelineClass copiedTimeline(sourceTimeline);
 		auto copiedAdvance = copiedTimeline.Advance(0.0, 1.0);
 		bool sourceTokenAcceptedByCopy = copiedTimeline.Transaction(
-			[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+			[&](UiKeyframeTimelineClass::LockedView& timeline)
 			{
 				return timeline.IsCurrentGeneration(sourceAdvance.generation);
 			});
@@ -1385,10 +1392,10 @@ namespace
 			"timeline copy preserves state with an independent generation");
 
 		uint64_t copiedGeneration = copiedAdvance.generation;
-		BarUiKeyframeTimelineClass movedTimeline(std::move(copiedTimeline));
+		UiKeyframeTimelineClass movedTimeline(std::move(copiedTimeline));
 		auto movedAdvance = movedTimeline.Advance(0.0, 1.0);
 		bool copiedTokenAcceptedByMove = movedTimeline.Transaction(
-			[&](BarUiKeyframeTimelineClass::LockedView& timeline)
+			[&](UiKeyframeTimelineClass::LockedView& timeline)
 			{
 				return timeline.IsCurrentGeneration(copiedGeneration);
 			});
@@ -1396,9 +1403,9 @@ namespace
 			&& !copiedTokenAcceptedByMove,
 			"timeline move preserves state with an independent generation");
 
-		BarUiKeyframeTimelineClass copyAssignedTimeline;
+		UiKeyframeTimelineClass copyAssignedTimeline;
 		copyAssignedTimeline = sourceTimeline;
-		BarUiKeyframeTimelineClass moveAssignedTimeline;
+		UiKeyframeTimelineClass moveAssignedTimeline;
 		moveAssignedTimeline = std::move(movedTimeline);
 		Check(copyAssignedTimeline.IsActive() && moveAssignedTimeline.IsActive()
 			&& Near(copyAssignedTimeline.Advance(0.0, 1.0).progress, 0.25)
@@ -1409,7 +1416,7 @@ namespace
 	void TestConcurrentAnimationPublication()
 	{
 		constexpr int iterations = 20000;
-		const BarUiAnimationAdvanceContextClass context{
+		const UiAnimationAdvanceContextClass context{
 			0.000000001, 1.0, true, false };
 
 		auto RunStress = [&](auto& animation, auto reset, auto publish,
@@ -1436,7 +1443,7 @@ namespace
 				start.store(true, std::memory_order_release);
 				while (!done.load(std::memory_order_acquire))
 				{
-					auto result = BarUiAdvanceAnimation(animation, context);
+					auto result = UiAdvanceAnimation(animation, context);
 					++advanceCount;
 					// 发布中的请求始终带正时长；changed + inactive 表示读到了拆开的字段代次。
 					if (publicationPhase.load(std::memory_order_acquire) == 1
@@ -1449,7 +1456,7 @@ namespace
 					std::string(name) + " publishes one coherent transaction");
 			};
 
-		BarUiValueClass value(0.0);
+		UiValueClass value(0.0);
 		RunStress(value,
 			[](auto& item) { item.SetDirect(0.0); },
 			[](auto& item, int index)
@@ -1459,7 +1466,7 @@ namespace
 			},
 			"value");
 
-		BarUiPctClass pct(0.5);
+		UiPctClass pct(0.5);
 		RunStress(pct,
 			[](auto& item) { item.SetDirect(0.5); },
 			[](auto& item, int index)
@@ -1469,7 +1476,7 @@ namespace
 			},
 			"pct");
 
-		BarUiColorClass color(RGB(0, 0, 0));
+		UiColorClass color(RGB(0, 0, 0));
 		RunStress(color,
 			[](auto& item) { item.SetDirect(RGB(0, 0, 0)); },
 			[](auto& item, int index)
@@ -1546,19 +1553,19 @@ namespace
 		struct CurveBenchmarkCase
 		{
 			std::string_view name;
-			BarUiCurveEnum curve;
+			UiCurveEnum curve;
 		};
 		constexpr std::array curveBenchmarks{
-			CurveBenchmarkCase{ "curve_linear", BarUiCurveEnum::Linear },
-			CurveBenchmarkCase{ "curve_ease_in_sine", BarUiCurveEnum::EaseInSine },
-			CurveBenchmarkCase{ "curve_ease_out_sine", BarUiCurveEnum::EaseOutSine },
-			CurveBenchmarkCase{ "curve_ease_in_out_sine", BarUiCurveEnum::EaseInOutSine },
-			CurveBenchmarkCase{ "curve_ease_in_cubic", BarUiCurveEnum::EaseInCubic },
-			CurveBenchmarkCase{ "curve_ease_out_cubic", BarUiCurveEnum::EaseOutCubic },
-			CurveBenchmarkCase{ "curve_ease_in_out_cubic", BarUiCurveEnum::EaseInOutCubic },
-			CurveBenchmarkCase{ "curve_ease_in_back", BarUiCurveEnum::EaseInBack },
-			CurveBenchmarkCase{ "curve_ease_out_back", BarUiCurveEnum::EaseOutBack },
-			CurveBenchmarkCase{ "curve_ease_in_out_back", BarUiCurveEnum::EaseInOutBack },
+			CurveBenchmarkCase{ "curve_linear", UiCurveEnum::Linear },
+			CurveBenchmarkCase{ "curve_ease_in_sine", UiCurveEnum::EaseInSine },
+			CurveBenchmarkCase{ "curve_ease_out_sine", UiCurveEnum::EaseOutSine },
+			CurveBenchmarkCase{ "curve_ease_in_out_sine", UiCurveEnum::EaseInOutSine },
+			CurveBenchmarkCase{ "curve_ease_in_cubic", UiCurveEnum::EaseInCubic },
+			CurveBenchmarkCase{ "curve_ease_out_cubic", UiCurveEnum::EaseOutCubic },
+			CurveBenchmarkCase{ "curve_ease_in_out_cubic", UiCurveEnum::EaseInOutCubic },
+			CurveBenchmarkCase{ "curve_ease_in_back", UiCurveEnum::EaseInBack },
+			CurveBenchmarkCase{ "curve_ease_out_back", UiCurveEnum::EaseOutBack },
+			CurveBenchmarkCase{ "curve_ease_in_out_back", UiCurveEnum::EaseInOutBack },
 		};
 		constexpr std::uint64_t curveIterations = 100000;
 		for (const auto& benchmark : curveBenchmarks)
@@ -1566,7 +1573,7 @@ namespace
 			PrintBenchmark(benchmark.name, curveIterations, Measure(curveIterations,
 				[curve = benchmark.curve](std::uint64_t i)
 				{
-					return BarUiApplyCurve(curve,
+					return UiApplyCurve(curve,
 						static_cast<double>(i % 1000) / 999.0);
 				}));
 		}
@@ -1575,25 +1582,25 @@ namespace
 			{
 				double progress = 0.25
 					+ 0.75 * static_cast<double>(i % 1000) / 999.0;
-				return BarUiApplyCurveRange(
-					BarUiCurveEnum::EaseInOutCubic, 0.25, progress);
+				return UiApplyCurveRange(
+					UiCurveEnum::EaseInOutCubic, 0.25, progress);
 			}));
 		PrintBenchmark("curve_range_back", curveIterations, Measure(curveIterations,
 			[](std::uint64_t i)
 			{
 				double progress = 0.25
 					+ 0.75 * static_cast<double>(i % 1000) / 999.0;
-				return BarUiApplyCurveRange(
-					BarUiCurveEnum::EaseOutBack, 0.25, progress);
+				return UiApplyCurveRange(
+					UiCurveEnum::EaseOutBack, 0.25, progress);
 			}));
 
 		constexpr std::uint64_t iterations = 20000;
 
-		BarUiValueClass noOp(1.0);
+		UiValueClass noOp(1.0);
 		PrintBenchmark("same_target_noop", iterations, Measure(iterations,
 			[&](std::uint64_t) { return noOp.SetTar(1.0, 0.4) ? 1.0 : 0.0; }));
 
-		std::array<BarUiValueClass, 57> inactive{};
+		std::array<UiValueClass, 57> inactive{};
 		for (auto& value : inactive) value.SetDirect(1.0);
 		PrintBenchmark("inactive_value_scan_57", iterations, Measure(iterations,
 			[&](std::uint64_t)
@@ -1603,7 +1610,7 @@ namespace
 				return active;
 			}));
 
-		std::array<BarUiValueClass, 57> oneActive{};
+		std::array<UiValueClass, 57> oneActive{};
 		for (auto& value : oneActive) value.SetDirect(0.0);
 		oneActive[28].SetTar(1.0, 1.0);
 		PrintBenchmark("one_active_value_scan_57", iterations, Measure(iterations,
@@ -1613,8 +1620,8 @@ namespace
 				for (auto& value : oneActive)
 				{
 					if (value.IsSame()) continue;
-					auto result = BarUiAdvanceAnimation(value,
-						BarUiAnimationAdvanceContextClass{ 1.0 / 60000.0, 1.0, true, false });
+					auto result = UiAdvanceAnimation(value,
+						UiAnimationAdvanceContextClass{ 1.0 / 60000.0, 1.0, true, false });
 					changed += result.changed || result.active ? 1.0 : 0.0;
 				}
 				if (oneActive[28].IsSame())
@@ -1625,10 +1632,10 @@ namespace
 				return changed;
 			}));
 
-		BarUiValueClass benchmarkValue(0.0);
-		const BarUiCurveSpecClass benchmarkValueCurve{
-			BarUiCurveEnum::EaseInCubic,
-			BarUiCurveEnum::EaseOutBack,
+		UiValueClass benchmarkValue(0.0);
+		const UiCurveSpecClass benchmarkValueCurve{
+			UiCurveEnum::EaseInCubic,
+			UiCurveEnum::EaseOutBack,
 			0.0,
 			false,
 		};
@@ -1641,17 +1648,17 @@ namespace
 					benchmarkValue.SetTar(
 						10.0, 1.0, 8.0, true, benchmarkValueCurve);
 				}
-				auto result = BarUiAdvanceAnimation(benchmarkValue,
-					BarUiAnimationAdvanceContextClass{
+				auto result = UiAdvanceAnimation(benchmarkValue,
+					UiAnimationAdvanceContextClass{
 						1.0 / 10000.0, 1.0, true, false });
 				return static_cast<double>(benchmarkValue.val)
 					+ (result.active ? 1.0 : 0.0);
 			}));
 
-		BarUiPctClass benchmarkPct(0.0);
-		const BarUiCurveSpecClass benchmarkPctCurve{
-			BarUiCurveEnum::EaseInSine,
-			BarUiCurveEnum::EaseOutSine,
+		UiPctClass benchmarkPct(0.0);
+		const UiCurveSpecClass benchmarkPctCurve{
+			UiCurveEnum::EaseInSine,
+			UiCurveEnum::EaseOutSine,
 			0.0,
 			false,
 		};
@@ -1664,17 +1671,17 @@ namespace
 					benchmarkPct.SetTar(
 						1.0, 1.0, 0.4, true, benchmarkPctCurve);
 				}
-				auto result = BarUiAdvanceAnimation(benchmarkPct,
-					BarUiAnimationAdvanceContextClass{
+				auto result = UiAdvanceAnimation(benchmarkPct,
+					UiAnimationAdvanceContextClass{
 						1.0 / 10000.0, 1.0, true, false });
 				return static_cast<double>(benchmarkPct.val)
 					+ (result.active ? 1.0 : 0.0);
 			}));
 
-		BarUiColorClass benchmarkColor(RGB(10, 20, 30));
-		const BarUiCurveSpecClass benchmarkColorCurve{
-			BarUiCurveEnum::EaseInOutSine,
-			BarUiCurveEnum::EaseInOutSine,
+		UiColorClass benchmarkColor(RGB(10, 20, 30));
+		const UiCurveSpecClass benchmarkColorCurve{
+			UiCurveEnum::EaseInOutSine,
+			UiCurveEnum::EaseInOutSine,
 			0.5,
 			true,
 		};
@@ -1687,14 +1694,14 @@ namespace
 					benchmarkColor.SetTar(
 						RGB(210, 120, 80), 0.5, benchmarkColorCurve);
 				}
-				auto result = BarUiAdvanceAnimation(benchmarkColor,
-					BarUiAnimationAdvanceContextClass{
+				auto result = UiAdvanceAnimation(benchmarkColor,
+					UiAnimationAdvanceContextClass{
 						1.0 / 20000.0, 1.0, true, false });
 				return static_cast<double>(static_cast<COLORREF>(benchmarkColor.val))
 					+ (result.active ? 1.0 : 0.0);
 			}));
 
-		BarUiKeyframeTimelineClass benchmarkContentTimeline;
+		UiKeyframeTimelineClass benchmarkContentTimeline;
 		benchmarkContentTimeline.Start(1.0, 0.5);
 		PrintBenchmark("content_transition_timeline_advance", iterations,
 			Measure(iterations,
@@ -1849,6 +1856,10 @@ int main(int argc, char** argv)
 	failureCount += RunSurfaceTests();
 	failureCount += RunMessageTests();
 	failureCount += RunUi3InputTests();
+	failureCount += RunUi3GestureTests();
+	failureCount += RunUi3ProgressTests();
+	failureCount += RunUi3ListLayoutTests();
+	failureCount += RunUi3PanelStackTests();
 	failureCount += RunMessageBoxTests(runWindowTests);
 	failureCount += RunWindowCommandCompletionTests();
 	failureCount += RunCanvasPolicyTests();

@@ -1,18 +1,28 @@
-#include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.DirtyRegion.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.WindowGeometry.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.PresentDecision.h"
+﻿#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
 
 #include <iostream>
 #include <string_view>
 #include <vector>
 
+#include <cmath>
+#include <cstdint>
+
+import Inkeys.UI.UI3.DirtyRegion;
+import Inkeys.UI.Bar.BottomDock;
+import Inkeys.UI.Bar.WindowGeometry;
+import Inkeys.UI.Bar.PresentDecision;
+
+using namespace Inkeys::UI::UI3;
+
 namespace
 {
-	using Inkeys::UI::Bar::BarDirtyRegionTracker;
-	using Inkeys::UI::Bar::ResolveBarDebugDamage;
-	using Inkeys::UI::Bar::ResolveBarLightBorderDamage;
-	using Inkeys::UI::Bar::ResolveBarScaledDirtyBounds;
+	using Inkeys::UI::UI3::DirtyRegionTracker;
+	using Inkeys::UI::UI3::ResolveDebugDamage;
+	using Inkeys::UI::UI3::ResolveLightBorderDamage;
+	using Inkeys::UI::UI3::ResolveScaledDirtyBounds;
 
 	int failureCount = 0;
 
@@ -36,7 +46,7 @@ namespace
 		for (bool opensRight : { true, false })
 			for (double zoom : { 1.0, 1.5 })
 			{
-				BarDirtyRegionTracker tracker;
+				DirtyRegionTracker tracker;
 				BarWindowViewportController viewport;
 				BarPresentMappingTracker mapping;
 				const RECT layout{ 0, 0, 6000, 2000 };
@@ -92,14 +102,14 @@ namespace
 	void TestInitialAndFallbackDamage()
 	{
 		constexpr RECT window{ 0, 0, 1920, 1080 };
-		BarDirtyRegionTracker tracker;
+		DirtyRegionTracker tracker;
 		tracker.BeginFrame(window);
 		Check(SameRect(tracker.ResolveDamage(false), window),
 			"first frame is full damage");
 		tracker.CommitPresented();
 
 		tracker.BeginFrame(window);
-		Check(BarDirtyRegionTracker::IsEmpty(tracker.ResolveDamage(false)),
+		Check(DirtyRegionTracker::IsEmpty(tracker.ResolveDamage(false)),
 			"idle frame has no damage");
 		Check(SameRect(tracker.ResolveDamage(true), window),
 			"unclassified demand falls back to full damage");
@@ -109,7 +119,7 @@ namespace
 	{
 		constexpr RECT window{ 0, 0, 100, 80 };
 		constexpr std::uint64_t control = 1;
-		BarDirtyRegionTracker tracker;
+		DirtyRegionTracker tracker;
 		tracker.BeginFrame(window);
 		tracker.Observe(control, RECT{ 10, 10, 30, 30 });
 		tracker.CommitPresented();
@@ -125,7 +135,7 @@ namespace
 	{
 		constexpr RECT window{ 0, 0, 1600, 900 };
 		constexpr std::uint64_t control = 3;
-		BarDirtyRegionTracker tracker;
+		DirtyRegionTracker tracker;
 		tracker.BeginFrame(window);
 		tracker.Observe(control, RECT{ 100, 200, 220, 280 });
 		tracker.CommitPresented();
@@ -144,7 +154,7 @@ namespace
 		constexpr RECT window{ 0, 0, 200, 120 };
 		constexpr std::uint64_t first = 1;
 		constexpr std::uint64_t second = 2;
-		BarDirtyRegionTracker tracker;
+		DirtyRegionTracker tracker;
 		tracker.BeginFrame(window);
 		tracker.Observe(first, RECT{ 10, 10, 30, 30 });
 		tracker.Observe(second, RECT{});
@@ -163,7 +173,7 @@ namespace
 	{
 		constexpr RECT window{ 0, 0, 200, 120 };
 		constexpr std::uint64_t control = 7;
-		BarDirtyRegionTracker tracker;
+		DirtyRegionTracker tracker;
 		tracker.BeginFrame(window);
 		tracker.Observe(control, RECT{ 10, 10, 20, 20 });
 		tracker.CommitPresented();
@@ -191,7 +201,7 @@ namespace
 	void TestExplicitAndFullRetryDamage()
 	{
 		constexpr RECT window{ 0, 0, 200, 120 };
-		BarDirtyRegionTracker tracker;
+		DirtyRegionTracker tracker;
 		tracker.BeginFrame(window);
 		tracker.CommitPresented();
 
@@ -209,7 +219,7 @@ namespace
 		constexpr RECT window{ 0, 0, 200, 120 };
 		constexpr std::uint64_t moving = 7;
 		constexpr std::uint64_t stable = 8;
-		BarDirtyRegionTracker tracker;
+		DirtyRegionTracker tracker;
 		tracker.BeginFrame(window);
 		tracker.Observe(moving, RECT{ 10, 10, 20, 20 });
 		tracker.Observe(stable, RECT{ 80, 10, 100, 30 });
@@ -251,7 +261,7 @@ namespace
 		constexpr RECT window{0,0,300,200};
 		for (bool rootMoved : {false,true})
 		{
-			BarDirtyRegionTracker tracker;
+			DirtyRegionTracker tracker;
 			tracker.BeginFrame(window);
 			tracker.Observe(1, RECT{10,10,30,30});
 			tracker.Observe(2, RECT{80,10,100,30});
@@ -282,7 +292,7 @@ namespace
 		constexpr RECT window{ 0, 0, 1400, 800 };
 		constexpr std::uint64_t mainGroup = 21;
 		constexpr std::uint64_t moreGroup = 22;
-		BarDirtyRegionTracker tracker;
+		DirtyRegionTracker tracker;
 		// 这里只验证 tracker 的 pending/commit 事务，不覆盖 RenderLoop 的 Inherit 时序。
 		tracker.BeginFrame(window);
 		tracker.Observe(mainGroup, RECT{ 90, 300, 900, 430 });
@@ -320,18 +330,18 @@ namespace
 	{
 		constexpr RECT outer{ 0, 0, 1000, 400 };
 		constexpr RECT content{ 10, 10, 990, 390 };
-		Check(BarDirtyRegionTracker::IsEmpty(ResolveBarLightBorderDamage(
+		Check(DirtyRegionTracker::IsEmpty(ResolveLightBorderDamage(
 			outer, content, RECT{ 450, 150, 550, 250 })),
 			"light inside a large control without reaching its border has no damage");
-		Check(SameRect(ResolveBarLightBorderDamage(
+		Check(SameRect(ResolveLightBorderDamage(
 			outer, content, RECT{ 450, 0, 550, 30 }),
 			RECT{ 450, 0, 550, 20 }),
 			"top light damage is clipped to the affected border band");
-		Check(SameRect(ResolveBarLightBorderDamage(
+		Check(SameRect(ResolveLightBorderDamage(
 			outer, content, RECT{ 0, 180, 30, 220 }),
 			RECT{ 0, 180, 20, 220 }),
 			"side light damage is clipped to the affected border band");
-		Check(SameRect(ResolveBarLightBorderDamage(
+		Check(SameRect(ResolveLightBorderDamage(
 			outer, content, RECT{ -20, -20, 30, 30 }),
 			RECT{ 0, 0, 30, 30 }),
 			"corner light conservatively merges the two affected edge bands");
@@ -339,12 +349,12 @@ namespace
 
 	void TestScaledDirectContentUsesPresentedBounds()
 	{
-		Check(SameRect(ResolveBarScaledDirtyBounds(
+		Check(SameRect(ResolveScaledDirtyBounds(
 			400.0, 200.0, 460.0, 220.0,
 			420.0, 220.0, 0.5, 1.0, 3),
 			RECT{ 407, 207, 443, 223 }),
 			"scaled direct content uses its presented position instead of zero origin");
-		Check(BarDirtyRegionTracker::IsEmpty(ResolveBarScaledDirtyBounds(
+		Check(DirtyRegionTracker::IsEmpty(ResolveScaledDirtyBounds(
 			400.0, 200.0, 460.0, 220.0,
 			420.0, 220.0, 0.0, 1.0, 3)),
 			"hidden scaled direct content contributes no damage");
@@ -356,30 +366,30 @@ namespace
 		constexpr RECT previousText{ 5, 70, 80, 90 };
 		constexpr RECT previousFrame{ 10, 10, 100, 100 };
 		constexpr RECT currentText{ 50, 70, 130, 90 };
-		const auto enabled = ResolveBarDebugDamage(
+		const auto enabled = ResolveDebugDamage(
 			business, previousText, previousFrame, currentText, true);
 		Check(SameRect(enabled.frameTarget, RECT{ 20, 20, 130, 90 }),
 			"debug frame targets business damage and current text only");
 		Check(SameRect(enabled.presentDamage, RECT{ 5, 10, 130, 100 }),
 			"debug present damage includes old and new overlays");
 
-		const auto frameOnly = ResolveBarDebugDamage(
+		const auto frameOnly = ResolveDebugDamage(
 			business, previousText, previousFrame, RECT{}, true);
 		Check(SameRect(frameOnly.frameTarget, business),
 			"dirty debug without FPS frames business damage only");
 		Check(SameRect(frameOnly.presentDamage, RECT{ 5, 10, 100, 100 }),
 			"dirty debug without FPS clears stale text and frame");
 
-		const auto finalIdle = ResolveBarDebugDamage(
+		const auto finalIdle = ResolveDebugDamage(
 			RECT{}, previousText, previousFrame, RECT{}, true, true);
 		Check(SameRect(finalIdle.frameTarget, previousFrame),
 			"final idle frame reuses the last red frame as its green target");
 		Check(SameRect(finalIdle.presentDamage, RECT{ 5, 10, 100, 100 }),
 			"final idle frame damages the previous overlays before recoloring");
 
-		const auto disabled = ResolveBarDebugDamage(
+		const auto disabled = ResolveDebugDamage(
 			RECT{}, previousText, previousFrame, RECT{}, false);
-		Check(BarDirtyRegionTracker::IsEmpty(disabled.frameTarget),
+		Check(DirtyRegionTracker::IsEmpty(disabled.frameTarget),
 			"disabled debug mode emits no new frame");
 		Check(SameRect(disabled.presentDamage, RECT{ 5, 10, 100, 100 }),
 			"disabled debug mode clears stale text and frame");

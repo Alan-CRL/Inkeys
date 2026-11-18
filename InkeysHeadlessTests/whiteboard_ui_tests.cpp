@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
@@ -12,6 +12,8 @@
 import Inkeys.UI.Bar.SurfaceLayout;
 import Inkeys.UI.Whiteboard;
 import Inkeys.Window;
+
+using namespace Inkeys::UI::UI3;
 
 namespace
 {
@@ -243,10 +245,10 @@ namespace
 	{
 		using namespace Inkeys::UI::Bar;
 		BarSurfaceHorizontalGroupSpec group;
-		Check(group.edgeMarginDip == BarButtonGapDip
-			&& group.bottomMarginDip == BarButtonGapDip
-			&& group.itemSizeDip == BarButtonTwoSideDip
-			&& group.gapDip == BarButtonGapDip,
+		Check(group.edgeMarginDip == ButtonGapDip
+			&& group.bottomMarginDip == ButtonGapDip
+			&& group.itemSizeDip == ButtonTwoSideDip
+			&& group.gapDip == ButtonGapDip,
 			"surface layout defaults to the shared Bar twoTwo metrics");
 		Check(group.anchor == BarSurfaceHorizontalAnchor::Left,
 			"surface anchor remains explicit instead of relying on Whiteboard-local geometry");

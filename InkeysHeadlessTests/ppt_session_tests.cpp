@@ -1,6 +1,12 @@
-#include "../Inkeys/Inkeys/Business/PptSession.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.A2.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+﻿#include "../Inkeys/Inkeys/Business/PptSession.h"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#include <algorithm>
+#include <cstdint>
+#include <optional>
+#include <limits>
 #include "../Inkeys/PptNavigationDiagnostics.h"
 #include "../Inkeys/ShutdownProgressTrace.h"
 #include "../Inkeys/PptWaitingDiagnostics.h"
@@ -11,6 +17,9 @@
 #include <vector>
 #include <array>
 #include <thread>
+
+import Inkeys.UI.Bar.BottomDock;
+import Inkeys.UI.Bar.A2;
 
 namespace
 {

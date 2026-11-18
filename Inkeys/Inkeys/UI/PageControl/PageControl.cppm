@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -20,6 +20,8 @@ export module Inkeys.UI.PageControl;
 
 import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.Bar.Metrics;
+
+using namespace Inkeys::UI::UI3;
 
 export namespace Inkeys::UI::PageControl
 {
@@ -282,13 +284,13 @@ export namespace Inkeys::UI::PageControl
 	inline constexpr double PptControlLongSideDip = BarPptPaginationLongSideDip;
 	inline constexpr double PptControlShortSideDip = BarPptPaginationShortSideDip;
 	inline constexpr double PptDragHandleSlotDip = BarPaginationDragHandleSlotDip;
-	inline constexpr double PptArrowButtonSideDip = BarPptCompactPaginationEnabled ? BarButtonOneSideDip : BarButtonTwoSideDip;
-	inline constexpr double PptPageButtonLongSideDip = BarButtonTwoSideDip;
-	inline constexpr double PageControlGapDip = BarButtonGapDip;
+	inline constexpr double PptArrowButtonSideDip = BarPptCompactPaginationEnabled ? ButtonOneSideDip : ButtonTwoSideDip;
+	inline constexpr double PptPageButtonLongSideDip = ButtonTwoSideDip;
+	inline constexpr double PageControlGapDip = ButtonGapDip;
 	inline constexpr double WhiteboardWidthDip = BarWhiteboardPaginationWidthDip;
 	inline constexpr double WhiteboardLeftWidthDip = BarWhiteboardPaginationLeftWidthDip;
 	inline constexpr double WhiteboardHeightDip = BarWhiteboardPaginationHeightDip;
-	inline constexpr double WhiteboardButtonSideDip = BarButtonTwoSideDip;
+	inline constexpr double WhiteboardButtonSideDip = ButtonTwoSideDip;
 
 	enum class PptWidgetRole : std::uint8_t
 	{
@@ -1249,7 +1251,7 @@ export namespace Inkeys::UI::PageControl
 	[[nodiscard]] inline LONG ResolvePageControlVisibleBottomOffsetPixels(double heightDip, float scale) noexcept
 	{
 		// 公共背景的描边以轮廓线为中心；布局锚定可见外沿，不能按透明 HWND 包络留边。
-		return static_cast<LONG>(std::ceil((heightDip + BarButtonFrameThicknessDip / 2.0) * scale));
+		return static_cast<LONG>(std::ceil((heightDip + ButtonFrameThicknessDip / 2.0) * scale));
 	}
 
 	[[nodiscard]] inline ResolvedSurfaceLayout ResolveSurfaceLayout(
@@ -1506,7 +1508,7 @@ export namespace Inkeys::UI::PageControl
 					* normalizedDpi),
 				// 底部可见高度包含半个共享描边，并为其向外取整预留至多一像素。
 				bottom ? (std::max)(0.0F, height - static_cast<float>(ResolvePageControlBottomInsetPixels(dpiScale)) - 1.0F)
-					/ static_cast<float>((controlHeight + PageControlGapDip + BarButtonFrameThicknessDip / 2.0) * normalizedDpi)
+					/ static_cast<float>((controlHeight + PageControlGapDip + ButtonFrameThicknessDip / 2.0) * normalizedDpi)
 					: height / static_cast<float>((controlHeight + PageControlGapDip * 2.0) * normalizedDpi));
 			const float resourceMaximum = static_cast<float>((std::max)(1U, bitmapLimit) - 1U)
 				/ static_cast<float>((std::max)(controlWidth, controlHeight)

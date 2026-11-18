@@ -5,7 +5,9 @@
 #include <iostream>
 
 import Inkeys.UI.Bar.EraserAttributeMotion;
-import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.UI3.Animation;
+
+using namespace Inkeys::UI::UI3;
 
 int RunEraserAttributeTests()
 {
@@ -66,11 +68,11 @@ int RunEraserAttributeTests()
 			"divider sides follow the main bar (2 DIP), adjacent buttons and the panel edge keep5 DIP");
 		expect(std::abs(l.palm.Width()-70.0)<0.001 && std::abs(l.palm.Height()-70.0)<0.001 && l.palm==l.items[10],
 			"palm eraser toggle is a standard70x70 button directly adjacent to automatic with no divider or expansion arrow");
-		expect(std::abs(l.items[1].Width()-(l.previews[0].Width()+BarButtonGapDip*2))<0.001,
+		expect(std::abs(l.items[1].Width()-(l.previews[0].Width()+ButtonGapDip*2))<0.001,
 			"small circle hit bounds follow the visible circle instead of the old70DIP slot");
-		const auto small=l.previews[0];const double hitRadius=small.Width()/2+BarButtonGapDip;
-		expect(EraserAttributeCircleContains(small,BarButtonGapDip,EraserRectCenterX(small),EraserRectCenterY(small)+hitRadius-0.01) &&
-			!EraserAttributeCircleContains(small,BarButtonGapDip,EraserRectCenterX(small)+hitRadius-0.01,EraserRectCenterY(small)+hitRadius-0.01),
+		const auto small=l.previews[0];const double hitRadius=small.Width()/2+ButtonGapDip;
+		expect(EraserAttributeCircleContains(small,ButtonGapDip,EraserRectCenterX(small),EraserRectCenterY(small)+hitRadius-0.01) &&
+			!EraserAttributeCircleContains(small,ButtonGapDip,EraserRectCenterX(small)+hitRadius-0.01,EraserRectCenterY(small)+hitRadius-0.01),
 			"size preset hit testing is a true circle rather than its bounding rectangle");
 	}
 	for (auto shape : { Inkeys::Drawing::Draw3::EraserShape::Circle, Inkeys::Drawing::Draw3::EraserShape::Rectangle,
@@ -170,13 +172,13 @@ int RunEraserAttributeTests()
 		for(size_t i=0;i<3;++i)
 		{
 			expect(std::abs(l.previewDiameters[i]*input.zoom-input.diametersDip[i]*dpi)<0.001,"preview pixels are independent of custom UI scale");
-			expect(l.items[i+1].Width()>=0 && l.items[i+1].Width()<=(std::max)(BarButtonOneSideDip,l.previewDiameters[i]+BarButtonGapDip*2)+0.001,"circle hit expansion is bounded without70DIP slots");
+			expect(l.items[i+1].Width()>=0 && l.items[i+1].Width()<=(std::max)(ButtonOneSideDip,l.previewDiameters[i]+ButtonGapDip*2)+0.001,"circle hit expansion is bounded without70DIP slots");
 			expect(std::abs((l.items[i+1].top+l.items[i+1].bottom)-(l.panel.top+l.panel.bottom))<0.001,"all circle centers vertically centered");
 		}
 		expect(l.items[1].right<=l.items[2].left+0.001 && l.items[2].right<=l.items[3].left+0.001,"circle hit regions remain disjoint after clipping");
 		if(reversed)expect(l.palm.right<l.items[0].left && l.items[4].right<l.palm.left && l.items[0].right<l.previews[0].left,"B reversal exchanges complete side groups");
 		else expect(l.previews[2].right<l.items[0].left && l.items[0].right<l.items[4].left && l.items[5].right<l.palm.left,"B standard circles/clear/automatic/palm order");
-		const double expectedClear=(std::clamp)(EraserRectCenterX(input.anchor),input.work.left+BarButtonTwoSideDip/2,input.work.right-BarButtonTwoSideDip/2);
+		const double expectedClear=(std::clamp)(EraserRectCenterX(input.anchor),input.work.left+ButtonTwoSideDip/2,input.work.right-ButtonTwoSideDip/2);
 		expect(std::abs(EraserRectCenterX(l.items[0])-expectedClear)<0.001,"clear stays anchored while asymmetric sides extend independently");
 		const double gap1=l.previews[1].left-l.previews[0].right,gap2=l.previews[2].left-l.previews[1].right;
 		expect(std::abs(gap1-16.0)<0.001 && std::abs(gap2-16.0)<0.001,"normal circle edge gaps remain 16 DIP");
@@ -190,8 +192,8 @@ int RunEraserAttributeTests()
 			?narrow.dividers[0].left-narrow.palm.right
 			:narrow.automatic.left-narrow.dividers[1].right;
 		expect(narrow.horizontalOverflow && narrow.panel.Width()<=300.001 && narrow.previewDiameters==huge.previewDiameters &&
-			narrow.items[0].Width()==BarButtonTwoSideDip && narrow.automatic.Width()==BarButtonTwoSideDip+EraserAttributeAutomaticArrowWidthDip &&
-			narrow.items[4].Width()==BarButtonTwoSideDip && narrow.items[5].Width()==EraserAttributeAutomaticArrowWidthDip &&
+			narrow.items[0].Width()==ButtonTwoSideDip && narrow.automatic.Width()==ButtonTwoSideDip+EraserAttributeAutomaticArrowWidthDip &&
+			narrow.items[4].Width()==ButtonTwoSideDip && narrow.items[5].Width()==EraserAttributeAutomaticArrowWidthDip &&
 			std::abs((narrow.previews[1].left-narrow.previews[0].right)-EraserAttributeCircleGapDip)<0.001 &&
 			std::abs((narrow.previews[2].left-narrow.previews[1].right)-EraserAttributeCircleGapDip)<0.001 &&
 			std::abs(narrowCircleEndGap-EraserAttributeCircleGapDip)<0.001 &&
@@ -227,7 +229,7 @@ int RunEraserAttributeTests()
 	// 直接推进生产surface motion：Back过冲、关闭可见性、反向连续、父子锚点与禁用动画。
 	{
 		EraserSurfaceMotion motion;
-		BarUiAnimationAdvanceContextClass context{1.0/60,1,true,false};
+		UiAnimationAdvanceContextClass context{1.0/60,1,true,false};
 		motion.Retarget(true,0.4);double openingPeak=0,closingPeak=0;
 		for(int f=0;f<30;++f){motion.Advance(context);openingPeak=(std::max)(openingPeak,motion.Geometry());expect(motion.Opacity()>=0 && motion.Opacity()<=1,"alpha remains bounded during overshoot");}
 		expect(openingPeak>1.01 && motion.Geometry()==1 && !motion.Active(),"opening has real geometric overshoot and returns exactly to1");
@@ -240,7 +242,7 @@ int RunEraserAttributeTests()
 		motion.Retarget(true,0.4);motion.Advance({0,1,false,false});
 		expect(motion.Geometry()==1 && motion.Opacity()==1 && !motion.Active(),"disabled animation settles immediately");
 		motion.Retarget(false,0.4);motion.Advance({0,1,false,false});expect(!motion.Visible(),"disabled close has no hidden hit surface");
-		BarUiTimelineClass parent;parent.Restart(0.4);parent.Advance(0.1,1);
+		UiTimelineClass parent;parent.Restart(0.4);parent.Advance(0.1,1);
 		motion.Retarget(true,0.4,&parent);expect(std::abs(motion.Timeline().GetRemainingDuration()-0.3)<0.001,"child joins parent's existing first-half timeline");
 		for(int f=0;f<10;++f)motion.Advance({1.0/60,2,true,false});expect(!motion.Active(),"global speed changes the same frame clock");
 		const EraserAttributeRect panel{200,300,558,380},anchor{344,390,414,460},automatic{430,305,532.5,375},menu{390,200,572.5,290};

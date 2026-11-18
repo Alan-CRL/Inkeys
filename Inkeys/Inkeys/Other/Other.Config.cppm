@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../IdtMain.h"
 #include "../../IdtConfiguration.h"
@@ -17,6 +17,8 @@ module;
 export module Inkeys.Other.Config;
 
 import Inkeys.UI.Bar.Metrics;
+
+using namespace Inkeys::UI::UI3;
 
 export namespace Inkeys
 {
@@ -83,7 +85,7 @@ export namespace Inkeys
 		inline constexpr char Setting[] = "Inkeys.Bar.Setting";
 	}
 
-// 与 BarButtonSizeEnum 对应的配置侧尺寸枚举，JSON 使用同名字符串。
+// 与 ButtonSizeEnum 对应的配置侧尺寸枚举，JSON 使用同名字符串。
 		enum class BarButtonSizeKind
 		{
 			TwoTwo,

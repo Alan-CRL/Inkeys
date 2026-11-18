@@ -1,10 +1,10 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
-#include "../StartupPlacement.h"
+#include <limits>
 #include "../StartupPreview.Effect.h"
 
 #include <chrono>
@@ -15,15 +15,18 @@ export module Inkeys.UI.StartupPreview;
 export import Inkeys.Startup.Progress;
 export import Inkeys.UI.StartupPreview.State;
 import Inkeys.UI.Bar.Metrics;
+export import Inkeys.UI.StartupPlacement;
+
+using namespace Inkeys::UI::UI3;
 
 export namespace Inkeys::UI::StartupPreview
 {
 	inline constexpr double StartupBarCornerRadiusDip =
 		DefaultStartupBarCornerRadiusDip;
 	inline constexpr double StartupPreviewSurfaceColorChannel =
-		static_cast<double>(BarDarkSurfaceColorChannel) / 255.0;
+		static_cast<double>(DarkSurfaceColorChannel) / 255.0;
 	inline constexpr double StartupPreviewSurfaceFrameColorChannel =
-		static_cast<double>(BarDarkSurfaceFrameColorChannel) / 255.0;
+		static_cast<double>(DarkSurfaceFrameColorChannel) / 255.0;
 	inline constexpr double StartupPreviewFillAlpha = BarMainBarFillOpacity;
 	inline constexpr double StartupPreviewFloatingFillAlpha = BarMainButtonCollapsedFillOpacity;
 	inline constexpr double StartupPreviewFrameAlpha = BarMainBarFrameOpacity;

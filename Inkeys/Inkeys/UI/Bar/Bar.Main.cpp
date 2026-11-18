@@ -1,32 +1,39 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 
 #include "../../../IdtConfiguration.h"
+#include "../../../IdtI18n.h"
+#include <d2d1_1.h>
+#include <d2d1helper.h>
 #include <dwrite_1.h>
 #include "../../../IdtDraw.h"
 #include "../../Business/LegacyDrawState.hpp"
 #include "../../../IdtState.h"
 #include "../../Window/Window.Legacy.hpp"
-#include "Bar.A2.h"
-#include "Bar.BottomDock.h"
-#include "Bar.MainLayoutPolicy.h"
-#include "Bar.PresentDecision.h"
-#include "Bar.PresentationProbe.h"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <algorithm>
+#include <cmath>
+#include <optional>
 #include <bit>
 #include <limits>
 
 #pragma comment(lib, "dxguid.lib")
 
+#include <atomic>
+#include <cstdint>
+
 module Inkeys.UI.Bar;
 import :Main;
-import :Rendering;
+import Inkeys.UI.UI3;
 import :Layout;
 import :Atomic;
 import :Zoom;
 import :Theme;
 
-import Inkeys.UI.Bar.FramePacing;
+import Inkeys.UI.UI3.FramePacing;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Display;
 import Inkeys.Window;
@@ -37,6 +44,150 @@ import Inkeys.Conv.Color;
 import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.Other.Config;
+import Inkeys.UI.UI3.PresentationProbe;
+import Inkeys.UI.Bar.BottomDock;
+import Inkeys.UI.Bar.MainLayoutPolicy;
+import Inkeys.UI.Bar.PresentDecision;
+import Inkeys.UI.Bar.A2;
+
+using namespace Inkeys::UI::UI3;
+
+bool Inkeys::UI::Bar::GetBarEdgeLightingEnabled() noexcept
+{
+	return BarUiEdgeLightingEnabled;
+}
+
+// 产品语言只经服务传入，保留先读版本再取同一语言快照的顺序。
+UIRenderingServices MakeBarLocalizedTypographyServices()
+{
+	UIRenderingServices services;
+	services.localizedTypographyRevision = [] { return I18n::revision(); };
+	services.localizedTypography = []
+	{
+		LocalizedTypography typography;
+		typography.revision = I18n::revision();
+		const auto& locale = I18n::locale();
+		typography.fontFamily = locale.fontFamily;
+		typography.textLocale = locale.code;
+		return typography;
+	};
+	return services;
+}
+
+// 回调只捕获 owner；成员在主栏构造完成后才会被读取。
+UIRenderingServices MakeMainBarRenderingServices(BarUISetClass* owner)
+{
+	if (!owner) return {};
+	auto services = MakeBarLocalizedTypographyServices();
+	services.typography = [owner] { return owner->barMedia.formatCache.get(); };
+	services.resetDeviceCaches = [owner]
+	{
+		for (const auto& [key, svg] : owner->svgMap) if (svg) svg->ResetCache();
+		for (const auto& [key, png] : owner->pngMap) if (png) png->ResetCache();
+		owner->barButtonSet.ResetIconCaches();
+		owner->penPreviewRendering.ResetDeviceCaches();
+		owner->colorPicker.ResetDeviceCaches();
+	};
+	return services;
+}
+
+bool BarUISetClass::PrepareFrameLighting(double animationDtSeconds, POINT layoutScreenOrigin,
+	const UiFrameLightingInput& input)
+{
+	lightingStateMachine.SetFrameZoom(spec.GetFrameZoom());
+	const bool changed=lightingStateMachine.PrepareFrameLighting(animationDtSeconds,layoutScreenOrigin,input);
+	// 同一帧先推进，再交给绘制器；共享发布仍紧随其后。
+	spec.SetFrameLightingSnapshot(lightingStateMachine.SnapshotFrameLighting(),input.edgeLightingEnabled);
+	return changed;
+}
+
+BarUiMainLightingInput ReadMainBarLightingInput(BarUISetClass* owner)
+{
+	if (!owner) return {};
+	BarUiMainLightingInput input;
+	const auto mainIt = owner->superellipseMap.find(BarUISetSuperellipseEnum::MainButton);
+	const auto barIt = owner->shapeMap.find(BarUISetShapeEnum::MainBar);
+	if (mainIt != owner->superellipseMap.end() && mainIt->second)
+	{
+		const auto& main = *mainIt->second;
+		input.anchors[0] = D2D1::Point2F(static_cast<FLOAT>(main.x.val),
+			static_cast<FLOAT>(main.y.val + main.h.val / 2.0));
+		input.anchorAvailable[0] = true;
+		constexpr BarButtonPresetEnum presets[] = {BarButtonPresetEnum::Select,
+			BarButtonPresetEnum::Draw, BarButtonPresetEnum::Eraser,
+			BarButtonPresetEnum::Geometry, BarButtonPresetEnum::Pierce};
+		if (barIt != owner->shapeMap.end() && barIt->second)
+		{
+			const auto& bar = *barIt->second;
+			const double left = main.x.val + bar.x.val - bar.w.val / 2.0;
+			const double top = main.y.val + bar.y.val - bar.h.val / 2.0;
+			for (size_t index = 0; index < std::size(presets); ++index)
+				if (const auto* button = owner->barButtonSet.preset[static_cast<int>(presets[index])])
+				{
+					input.anchors[index + 1] = D2D1::Point2F(
+						static_cast<FLOAT>(left + button->button.x.val),
+						static_cast<FLOAT>(top + button->button.y.val + button->button.h.val / 2.0));
+					input.anchorAvailable[index + 1] = true;
+				}
+		}
+	}
+	{
+		std::lock_guard lock(owner->borderCursorLightMutex);
+		input.cursorScreenPoint = owner->borderCursorLightScreenPoint;
+		input.cursorSerial = owner->borderCursorLightSerial;
+		input.cursorAvailable = owner->borderCursorInputAvailable && owner->borderCursorLightReady;
+	}
+	return input;
+}
+
+UiFrameLightingInput ResolveMainBarFrameLightingInput(BarUISetClass* owner,
+	int drawingMode, int penMode, COLORREF brush1Color, COLORREF highlighterColor)
+{
+	UiFrameLightingInput result;
+	result.initialAccentColor = (penMode
+		== static_cast<int>(PenModeSelectEnum::IdtPenHighlighter1)
+		? highlighterColor : brush1Color) & 0x00FFFFFF;
+	// 与原读取顺序一致：先检查总开关，关闭时不读取按钮和加锁光标快照。
+	result.edgeLightingEnabled = BarUiEdgeLightingEnabled;
+	result.dynamicEdgeLightingEnabled = result.edgeLightingEnabled && BarUiDynamicEdgeLightingEnabled;
+	if (!result.edgeLightingEnabled) return result;
+	const auto input = owner && owner->mainLightingInput
+		? owner->mainLightingInput() : BarUiMainLightingInput{};
+	result.accentColor = result.initialAccentColor;
+	if (drawingMode == static_cast<int>(StateModeSelectEnum::IdtShape))
+		result.accentColor = brush1Color & 0x00FFFFFF;
+	BarBorderPrimaryAnchorEnum desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::MainButton;
+	switch (static_cast<StateModeSelectEnum>(drawingMode))
+	{
+	case StateModeSelectEnum::IdtPen: desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Draw; break;
+	case StateModeSelectEnum::IdtEraser: desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Eraser; break;
+	case StateModeSelectEnum::IdtShape: desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Geometry; break;
+	case StateModeSelectEnum::IdtSelection: desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Select; break;
+	case StateModeSelectEnum::IdtClickThrough: desiredPrimaryAnchor = BarBorderPrimaryAnchorEnum::Pierce; break;
+	default: break;
+	}
+	result.primaryAnchorId = static_cast<int>(desiredPrimaryAnchor);
+	size_t anchor = static_cast<size_t>(desiredPrimaryAnchor);
+	if (!input.anchorAvailable[anchor]) anchor = 0;
+	if (input.anchorAvailable[anchor])
+	{
+		result.primaryAnchor = input.anchors[anchor];
+		result.primaryAnchorAvailable = true;
+	}
+	result.usesAccentColor = drawingMode == static_cast<int>(StateModeSelectEnum::IdtPen)
+		|| drawingMode == static_cast<int>(StateModeSelectEnum::IdtShape);
+	result.cursorSerial = input.cursorSerial;
+	result.cursorAvailable = input.cursorAvailable;
+	result.cursorScreenPoint = input.cursorScreenPoint;
+	result.modeId = drawingMode;
+	result.colorSourceId = drawingMode == static_cast<int>(StateModeSelectEnum::IdtShape)
+		? static_cast<int>(PenModeSelectEnum::IdtPenSoftPen) : penMode;
+	result.colorSourceCarriesHistory = result.colorSourceId
+		== static_cast<int>(PenModeSelectEnum::IdtPenHighlighter1);
+	result.takeOverAccentColor = drawingMode == static_cast<int>(StateModeSelectEnum::IdtShape);
+	result.historyResetSourceId = static_cast<int>(PenModeSelectEnum::IdtPenSoftPen);
+	return result;
+}
 
 // Interaction 实现单元独占窗口消息状态；协调器仅通过窄接口读取或投递。
 bool ReadColorPickerEntryPressed();
@@ -44,6 +195,20 @@ void RequestBarBorderCursorSuspend();
 
 namespace
 {
+	// 离屏测试不调用主栏初始化，静态订阅保持这些路径原有的主题唤醒。
+	struct ThemeChangeRegistration
+	{
+		ThemeChangeListenerToken token = AddThemeChangeListener([]
+		{
+			Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::SelectionOverlay);
+		});
+
+		~ThemeChangeRegistration()
+		{
+			RemoveThemeChangeListener(token);
+		}
+	} themeChangeRegistration;
+
 	IdtAtomic<bool> currentPageHasContent = false;
 	std::atomic_bool contentStateUpdatesReady = false;
 	std::atomic_bool pptPresentationActive = false;
@@ -62,7 +227,7 @@ namespace
 	std::atomic_bool whiteboardBottomDockRequested = false;
 	std::atomic_bool whiteboardDockLockActive = false;
 }
-extern constexpr double BarButtonHoverFadeDur = BarButtonHoverFadeDurationSeconds;
+extern constexpr double BarButtonHoverFadeDur = ButtonHoverFadeDurationSeconds;
 // Rendering 与 topology 共享同一组 module-linkage 常量，拆分后不复制数值。
 extern constexpr double BarDrawAttributeExpandedHeight = 185.0;
 extern constexpr double BarDrawAttributeCompactWidth = 60.0;
@@ -171,25 +336,13 @@ extern constexpr double BarThicknessTooltipFillOpacity =
 	BarDrawAttributeSurfaceOpacity;
 extern constexpr double BarThicknessTooltipFrameOpacity = 0.18;
 extern constexpr double BarColorSwatchFrameOpacity = 0.18;
-extern constexpr double BarColorPickerPanelWidth = 300.0;
-// 5 顶距 + 30 顶栏 + 5 间隔 + 132 色板 + 32 读数（含底部 10px 额外间隙）+ 5 底距 = 209。
-extern constexpr double BarColorPickerPanelHeight = 209.0;
-extern constexpr double BarColorPickerPaletteInset = 5.0;
-extern constexpr double BarColorPickerPaletteTop = 40.0;
-extern constexpr double BarColorPickerPaletteWidth = 290.0;
-extern constexpr double BarColorPickerPaletteHeight = 132.0;
-// 与粗细快速调节按钮同高（30px），顶部色系/预览/关闭共用。
-extern constexpr double BarColorPickerChromeHeight = 30.0;
-extern constexpr double BarColorPickerChromeTop = 5.0;
+// 取色器面板自身的尺寸与内部布局归 UI3 的取色器组件；这里只保留主栏摆放它用的间距与收拢比例。
 extern constexpr double BarColorPickerPanelGap = BarDrawAttributeGap;
-// 颜色选择器与绘制属性窗口共用默认展开时长，保证回弹节奏一致。
-extern constexpr double BarColorPickerPanelAnimationDur = 0.40;
 extern constexpr double BarColorPickerCompactScale = BarDrawAttributeCompactScale;
 extern constexpr double BarColorPickerCompactWidth =
-	BarColorPickerPanelWidth * BarColorPickerCompactScale;
+	ColorPickerPanelWidth * BarColorPickerCompactScale;
 extern constexpr double BarColorPickerCompactHeight =
-	BarColorPickerPanelHeight * BarColorPickerCompactScale;
-extern constexpr double BarColorPickerHoldHintAnimationDur = 0.18;
+	ColorPickerPanelHeight * BarColorPickerCompactScale;
 extern constexpr double BarMorePanelGap = 5.0;
 // 主栏与浮层之间留出更明显的净空；网格单元仍沿用标准 5 DIP 间距。
 extern constexpr double BarMorePanelAnchorGap = 12.0;
@@ -206,14 +359,14 @@ extern constexpr double BarMorePanelCompactHeight = 30.0;
 // 媒体操控类
 void BarMediaClass::LoadFormat()
 {
-	formatCache = make_unique<BarFormatCache>(
+	formatCache = make_unique<FormatCache>(
 		Inkeys::UI::RenderPipeline::DWriteFactory().Get());
 }
 
 // ====================
 // 界面
 
-Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
+Inkeys::UI::UI3::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 	const StateModeVersionedSnapshot& tool)
 {
 	using namespace Inkeys::UI::Bar;
@@ -231,8 +384,8 @@ Inkeys::UI::Bar::Ui3FiniteSignature BarUISetClass::ReadFiniteSignature(
 		&& !attribute.thicknessAnnotationHover && !attribute.thicknessAnnotationHoverGrace
 		&& !attribute.thicknessAnnotationPinned && !attribute.thicknessOverflowHover
 		&& !attribute.thicknessOverflowHoverGrace && !attribute.thicknessOverflowPinned
-		&& !attribute.colorPickerPointerPressed && !attribute.colorPickerPointerCapture
-		&& !attribute.colorPickerHoldHintActive && !attribute.colorPickerHoldLocked;
+		&& !colorPicker.colorPickerPointerPressed && !attribute.colorPickerPointerCapture
+		&& !colorPicker.colorPickerHoldHintActive && !colorPicker.colorPickerHoldLocked;
 	signature.flags = (barState.fold ? 1u : 0u) | (barState.drawAttribute ? 2u : 0u)
 		| (barState.geometryAttribute ? 4u : 0u) | (barState.moreExpanded ? 8u : 0u)
 		| (barState.eraserAttribute ? 16u : 0u) | (barState.eraserSensitivityOpen ? 32u : 0u)
@@ -291,19 +444,19 @@ void BarUISetClass::UpdateRendering(bool updateState)
 	{
 		lock_guard<mutex> lock(mtx);
 		// 按钮、面板归位和粗细文字使用同一工具代次，再统一发布渲染请求。
-		const auto stateMode = Inkeys::UI::Bar::CurrentUi3FiniteMutation() ? GetStateModeSnapshot() : GetCommittedStateModeSnapshot();
+		const auto stateMode = Inkeys::UI::UI3::CurrentUi3FiniteMutation() ? GetStateModeSnapshot() : GetCommittedStateModeSnapshot();
 		barButtonSet.StateUpdate(stateMode);
 		// 仅在画笔模式刷新粗细文字，收起过程中保留最后一次有效显示。
 		if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 			barState.ThicknessDisplayUpdate(GetPenWidthMetrics(stateMode).resolvedWidthDip);
 	}
 
-	if (Inkeys::UI::Bar::CurrentUi3FiniteMutation())
+	if (Inkeys::UI::UI3::CurrentUi3FiniteMutation())
 	{
 		const auto tool = GetStateModeVersionedSnapshot();
 		const auto signature = ReadFiniteSignature(tool);
 		// 规范化已结束；包括UpdateRendering(false)，仍在原Notify/Request之前封口。
-		Inkeys::UI::Bar::FinishCurrentUi3FiniteAtRenderRequest(signature);
+		Inkeys::UI::UI3::FinishCurrentUi3FiniteAtRenderRequest(signature);
 	}
 
 	// 通知计算并渲染
@@ -326,8 +479,8 @@ namespace Inkeys::UI::Bar
 	{
 		speedRate = isfinite(speedRate) ? clamp(speedRate, 0.1, 5.0) : 1.0;
 		// 使用足够大的有限倍率统一完成普通动画、批次和 SVG 关键帧，不能用 0 让时间轴停住。
-		BarUiAnimationEnabled = enable;
-		BarUiAnimationSpeedRate = enable ? speedRate : 1.0e12;
+		UiAnimationEnabled = enable;
+		UiAnimationSpeedRate = enable ? speedRate : 1.0e12;
 		if (!enable) RequestBarBorderCursorSuspend();
 		barUISet.UpdateRendering(false);
 		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::PptPageMask());

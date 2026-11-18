@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 #include "../../../IdtConfiguration.h"
@@ -6,11 +6,10 @@ module;
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include "../../../resource.h"
-#include "../StartupPlacement.h"
-#include "Bar.BottomDock.h"
-#include "Bar.WindowGeometry.h"
-#include "Bar.InteractionWorker.h"
-#include "Bar.PresentationProbe.h"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <mutex>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -28,6 +27,9 @@ module;
 #include <utility>
 #include <vector>
 
+#include <cstddef>
+#include <cstdint>
+
 module Inkeys.UI.Bar;
 import :Main;
 import :Atomic;
@@ -35,6 +37,13 @@ import Inkeys.Display;
 import Inkeys.UI.PageControl;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Text.Font;
+import Inkeys.UI.UI3.PresentationProbe;
+import Inkeys.UI.StartupPlacement;
+import Inkeys.UI.Bar.BottomDock;
+import Inkeys.UI.Bar.WindowGeometry;
+import Inkeys.UI.UI3.Interaction;
+
+using namespace Inkeys::UI::UI3;
 
 namespace Inkeys::UI::Bar
 {
@@ -231,7 +240,7 @@ namespace Inkeys::UI::Bar
 			owner.barState.fold = false;
 			ChangeStateModeToPen();
 			owner.barMedia.LoadFormat();
-			owner.spec.ConfigureLocalizedTypography();
+			owner.ConfigureLocalizedTypography();
 			SetPptPresentationActive(workload == Workload::Ppt);
 			SetWhiteboardActive(workload == Workload::Whiteboard);
 			owner.UpdateRendering(false);
@@ -265,7 +274,7 @@ namespace Inkeys::UI::Bar
 					if (owner.spec.GetFontFamily() != locale.fontFamily
 						|| owner.barButtonSet.GetMoreButton()!=stableMore
 						|| stableMore->name.content.GetTar()!=IW(I18nKey.UI.Bar.MainButtons.MoreLabel)
-						|| owner.wordMap[BarUISetWordEnum::DrawAttributeBar_ColorPickerHoldLabel]->content.GetTar()
+						|| owner.colorPicker.HoldLabel()
 							!=IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel))
 					{
 						std::fputs("[UI3MultiTarget] live locale frame did not update font/labels in place\n",stderr);return 1;
@@ -276,6 +285,8 @@ namespace Inkeys::UI::Bar
 				liveLocaleVerified = true;
 			}
 			// 使用与产品相同的 mailbox/dispatcher；这些 HWND 值只是注册身份，从不调用 USER32。
+			// 主栏的时间事件与暂存输入经主内容处理器由同一 worker 执行；登记须早于 worker、晚于它结束。
+			MainInteractionHandlerScope mainInput;
 			auto inputWorker = CreateOffscreenInteractionWorker();
 			if (!inputWorker) return 1;
 			MainInputFeedback mainFeedback;
@@ -331,14 +342,14 @@ namespace Inkeys::UI::Bar
 					{
 						if (auto* button = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Draw)])
 						{
-							if (desired & 0xFFFFFFFFULL) (void)StartBarButtonHoverVisual(*button);
-							else (void)StopBarButtonHoverVisual(*button, false);
-							SetBarButtonPressedVisual(*button, (desired >> 32) != 0);
+							if (desired & 0xFFFFFFFFULL) (void)StartButtonHoverVisual(*button);
+							else (void)StopButtonHoverVisual(*button, false);
+							SetButtonPressedVisual(*button, (desired >> 32) != 0);
 						}
 						appliedFeedback = desired;
 					}
 					// 主栏中心由生产显示布局持有；在另一枚真实按钮上持续按压动画，保留 Draw 的输入反馈。
-					SetBarButtonPressedVisual(*activityButton, frame <= TotalFrames && (frame % 2) != 0);
+					SetButtonPressedVisual(*activityButton, frame <= TotalFrames && (frame % 2) != 0);
 					const auto result = mainFrame(context);
 					if(frame>WarmFrames&&frame<=TotalFrames)
 					{
@@ -520,7 +531,7 @@ namespace Inkeys::UI::Bar
 		std::filesystem::create_directories(std::filesystem::path(globalPath)/L"Inkeys/Config");
 		std::ofstream summary(directory / L"summary.csv");
 		summary << "workload,scale,run,batches,main_commits,all_commits,batch_p95_ms,batch_p99_ms,main_p95_ms,compute_p95_ms,draw_p95_ms,getdc_p95_ms,main_commit_interval_p95_ms,main_commit_interval_p99_ms,warm_mask_creates,dropped,idle_extra_callbacks,input_events,main_culled_draws,main_visible_frames,page0_commits,page1_commits,page2_commits,page3_commits,failures\n";
-		BarUiAnimationEnabled = true; BarUiAnimationSpeedRate = 1.0;
+		UiAnimationEnabled = true; UiAnimationSpeedRate = 1.0;
 		BarUiEdgeLightingEnabled = true; BarUiDynamicEdgeLightingEnabled = true;
 		BarUiDebugModeEnabled = false;
 		bool presetsInitialized=false;
@@ -538,7 +549,7 @@ namespace Inkeys::UI::Bar
 				for (const auto workload : { Workload::Main, Workload::Ppt, Workload::Whiteboard })
 					for (unsigned run = 1; run <= 3; ++run)
 						failures += MeasureRun(workload, scale, run, summary, directory, presetsInitialized);
-		barUISet.spec.DiscardDeviceResources();
+		barUISet.specTarget.Discard();
 		Pipeline::Shutdown();
 		globalPath=originalGlobalPath;
 		CoUninitialize();
@@ -890,7 +901,7 @@ namespace Inkeys::UI::Bar
 				}
 				if (!Initialize()) return failures_;
 				if (!RunRebaseRoundTrip()) return failures_;
-				if (!BarUiAnimationEnabled) caseName_ += "-animations-off";
+				if (!UiAnimationEnabled) caseName_ += "-animations-off";
 				if (workspace)
 				{
 					caseName_ += workspace == 1 ? "-ppt" : "-whiteboard";
@@ -916,7 +927,7 @@ namespace Inkeys::UI::Bar
 				if (!left_ && workspace == 2) grabRatio_ = 1.0;
 				if (left_ && workspace == 2) grabRatio_ = 0.0;
 				if (negativeOrigin_ && workspace == 2) grabRatio_ = 1.0;
-				if (!BarUiAnimationEnabled) grabRatio_ = 38.0 / 81.0;
+				if (!UiAnimationEnabled) grabRatio_ = 38.0 / 81.0;
 				activeGrabRatio_ = grabRatio_;
 				const auto mainButton = owner_->superellipseMap[BarUISetSuperellipseEnum::MainButton];
 				const double initialStroke = mainButton->ft.has_value()
@@ -1012,7 +1023,7 @@ namespace Inkeys::UI::Bar
 						Pipeline::GetDeviceEpoch(), Pipeline::GetSharedAssets(), frameTime_ });
 					frameTime_ += std::chrono::milliseconds(16);
 					const auto after = owner_->BottomDockPresentedSnapshot();
-					const auto target = owner_->spec.GetTargetBitmapSize();
+					const auto target = owner_->specTarget.PixelSize();
 					const bool committed = presentedUlw_ && after.serial != before.serial
 						&& lastResult_ == Pipeline::FrameResult::Continue;
 					if (lastResult_ == Pipeline::FrameResult::DeviceLost || rejectedMappingAttempts_)
@@ -1184,7 +1195,7 @@ namespace Inkeys::UI::Bar
 					{
 						if (!after.dragActive) return Fail("held frame lost its active drag identity");
 						const auto& ulw = *presentedUlw_;
-						const auto pixels = owner_->spec.GetTargetBitmapSize();
+						const auto pixels = owner_->specTarget.PixelSize();
 						const SIZE target{ static_cast<LONG>(pixels.width), static_cast<LONG>(pixels.height) };
 						// 原点期望只取独立输入差；屏幕钳制段不套用未经钳制的 pointer 公式。
 						const double rawCenterX = pointer.x - downGrabOffsetX;
@@ -1231,7 +1242,7 @@ namespace Inkeys::UI::Bar
 					if (successful && std::string_view(phase) == "FinalRelease")
 					{
 						if (after.dragActive) return Fail("Up did not commit the released surface identity");
-						const auto releasedPixels = owner_->spec.GetTargetBitmapSize();
+						const auto releasedPixels = owner_->specTarget.PixelSize();
 						if (!lastHeldUlw || !fixedSurface
 							|| releasedPixels.width != static_cast<UINT32>(fixedSurface->target.cx)
 							|| releasedPixels.height != static_cast<UINT32>(fixedSurface->target.cy)
@@ -1264,7 +1275,7 @@ namespace Inkeys::UI::Bar
 						const double effectiveShift = inputShift - displayedShift;
 						transitionTopError = top - (beforeTop + effectiveShift);
 						transitionBottomError = bottom - (screenY(before, before.mapping.visualBottomDip) + effectiveShift);
-						const double expectedError = BarUiAnimationEnabled
+						const double expectedError = UiAnimationEnabled
 							? (std::max)(std::abs(transitionTopError), std::abs(transitionBottomError))
 							: detaching ? std::abs(bottom - top
 								- (after.mapping.baseBottomDip - after.mapping.baseTopDip) * after.zoom) : 0.0;
@@ -1275,7 +1286,7 @@ namespace Inkeys::UI::Bar
 								caseName_.c_str(), phase, transitionTopError, transitionBottomError, heightError);
 						}
 					}
-					if (successful && !BarUiAnimationEnabled
+					if (successful && !UiAnimationEnabled
 						&& std::string_view(phase) == "FinalRelease")
 					{
 						const bool settled = after.phase == BarBottomDockPhase::Stable
@@ -1318,7 +1329,7 @@ namespace Inkeys::UI::Bar
 						lastSuccessfulPointerY = effectiveY;
 						lastSuccessfulTop = top;
 					}
-					const auto target = owner_->spec.GetTargetBitmapSize();
+					const auto target = owner_->specTarget.PixelSize();
 					const auto ulw = attemptedUlw_.value_or(WorkspaceCenteringUlw{});
 					samples_ << caseName_ << ',' << phase << ',' << after.serial << ',' << after.transitionSerial
 						<< ',' << successful << ',' << static_cast<unsigned>(after.mode) << ',' << static_cast<unsigned>(after.centerMode)
@@ -1331,12 +1342,12 @@ namespace Inkeys::UI::Bar
 						<< ',' << static_cast<unsigned>(after.phase) << ',' << static_cast<unsigned>(after.centerPhase)
 						<< ',' << std::chrono::duration<double, std::milli>(frameTime_ - frameOrigin_).count() - 16.0
 						<< ',' << static_cast<double>(owner_->shapeMap[BarUISetShapeEnum::MainBar]->w.val)
-						<< ',' << static_cast<bool>(BarUiAnimationEnabled)
+						<< ',' << static_cast<bool>(UiAnimationEnabled)
 						<< ',' << activeGrabRatio_ << ',' << expectedTop << ',' << topError
 						<< ',' << transitionTopError << ',' << transitionBottomError << '\n';
 					return true;
 				}, grabRatio_, directMove, beforeMove, repeatRelease);
-				if (!tail || initialTailFrames != 125 || initialTailCommits < (BarUiAnimationEnabled ? 2u : 1u)
+				if (!tail || initialTailFrames != 125 || initialTailCommits < (UiAnimationEnabled ? 2u : 1u)
 					|| !windowShrank(lastHeldUlw, initialTailLast))
 					Fail("release tail did not cover successful recovery frames");
 				std::fprintf(stderr, "[UI3ReleaseSurface] case=%s tailFrames=%u commits=%u\n", caseName_.c_str(), initialTailFrames, initialTailCommits);
@@ -1611,7 +1622,7 @@ namespace Inkeys::UI::Bar
 					: Inkeys::Display::DisplayTopology::Unknown;
 				display->fallback = actualDisplay ? actualDisplay->fallback : true;
 
-				owner_->spec.DiscardDeviceResources();
+				owner_->specTarget.Discard();
 				owner_->barWindow.x = monitor_.bounds.left;
 				owner_->barWindow.y = monitor_.bounds.top;
 				owner_->barWindow.w = static_cast<unsigned>(monitor_.bounds.right - monitor_.bounds.left);
@@ -1634,7 +1645,7 @@ namespace Inkeys::UI::Bar
 				owner_->barButtonSet.Load();
 				owner_->barButtonSet.StateUpdate();
 				owner_->barMedia.LoadFormat();
-				owner_->spec.ConfigureLocalizedTypography();
+				owner_->ConfigureLocalizedTypography();
 				SetContentStateUpdatesReady(true);
 				SetCurrentPageHasContent(false);
 				if (!SetTool(false)) return false;
@@ -1657,7 +1668,7 @@ namespace Inkeys::UI::Bar
 						sample.size = *info.psize;
 						sample.fullReplacement = info.prcDirty == nullptr;
 						if (info.prcDirty) sample.dirty = *info.prcDirty;
-						const auto target = owner_->spec.GetTargetBitmapSize();
+						const auto target = owner_->specTarget.PixelSize();
 						const bool sourceValid = sample.source.x >= 0 && sample.source.y >= 0
 							&& static_cast<unsigned long long>(sample.source.x)
 								+ static_cast<unsigned long long>(sample.size.cx) <= target.width
@@ -1794,7 +1805,7 @@ namespace Inkeys::UI::Bar
 				if (after.serial == before.serial) return true;
 				if (after.serial < before.serial || !presentedUlw_)
 					return Fail("successful serial lacks its ULW tuple");
-				const auto target = owner_->spec.GetTargetBitmapSize();
+				const auto target = owner_->specTarget.PixelSize();
 				const auto& ulw = *presentedUlw_;
 				const bool sourceValid = ulw.source.x >= 0 && ulw.source.y >= 0
 					&& ulw.size.cx > 0 && ulw.size.cy > 0
@@ -2088,10 +2099,10 @@ namespace Inkeys::UI::Bar
 				const double desktopY = owner_->BottomDockPresentedSnapshot().mainCenterScreenY;
 				struct RestoreAnimation
 				{
-					bool enabled = static_cast<bool>(BarUiAnimationEnabled);
-					~RestoreAnimation() { BarUiAnimationEnabled = enabled; }
+					bool enabled = static_cast<bool>(UiAnimationEnabled);
+					~RestoreAnimation() { UiAnimationEnabled = enabled; }
 				} restoreAnimation;
-				BarUiAnimationEnabled = false;
+				UiAnimationEnabled = false;
 				workspaceScope_->Set(WorkspaceScene::Presentation);
 				PublishPptSession(1, true, nullptr);
 				if (!Settle()) return false;
@@ -2161,8 +2172,8 @@ namespace Inkeys::UI::Bar
 		std::ofstream samples(directory / L"samples.csv");
 		if (bottomDock) samples << "case,phase,serial,transition_serial,successful,mode,center_mode,elastic,top,bottom,height_error,pointer_x,pointer_y,direct_x,direct_y,source_x,source_y,window_w,window_h,target_w,target_h,full_replacement,dest_x,dest_y,dirty_left,dirty_top,dirty_right,dirty_bottom,present_attempted,dock_phase,center_phase,frame_time_ms,main_bar_width,animations_enabled,grab_ratio,expected_top,top_error,transition_top_error,transition_bottom_error\n";
 		else samples << "case,phase,phase_frame,attempt,frame_time_ms,animation_dt_s,presented_serial,transition_serial,display_serial,mode,center_mode,center_phase,center_error_px,visual_center_px,expected_center_px,main_center_x,main_center_y,main_button_x,main_bar_x,main_bar_width,zoom,direct_x,direct_y,dest_x,dest_y,source_x,source_y,window_w,window_h,target_w,target_h,full_replacement,dirty_left,dirty_top,dirty_right,dirty_bottom\n";
-		BarUiAnimationEnabled = true;
-		BarUiAnimationSpeedRate = 1.0;
+		UiAnimationEnabled = true;
+		UiAnimationSpeedRate = 1.0;
 		BarUiEdgeLightingEnabled = true;
 		BarUiDynamicEdgeLightingEnabled = true;
 		BarUiDebugModeEnabled = false;
@@ -2170,10 +2181,10 @@ namespace Inkeys::UI::Bar
 		int failures = FAILED(fontResult) || !I18n::load(1, L"JSON", L"zh-CN") || !samples ? 1 : 0;
 		if (bottomDock && !failures)
 		{
-			BarUiAnimationEnabled = false;
+			UiAnimationEnabled = false;
 			WorkspaceCenteringFixture fixture(1.0, false, presetsInitialized, samples);
 			failures += fixture.RunFoldedClickRelease();
-			BarUiAnimationEnabled = true;
+			UiAnimationEnabled = true;
 		}
 		if (!failures)
 			for (const double scale : { 1.0, 1.5 })
@@ -2206,12 +2217,12 @@ namespace Inkeys::UI::Bar
 			}
 		if (bottomDock && !failures)
 		{
-			BarUiAnimationEnabled = false;
+			UiAnimationEnabled = false;
 			WorkspaceCenteringFixture fixture(1.0, false, presetsInitialized, samples);
 			failures += fixture.RunDockTransitions();
-			BarUiAnimationEnabled = true;
+			UiAnimationEnabled = true;
 		}
-		barUISet.spec.DiscardDeviceResources();
+		barUISet.specTarget.Discard();
 		Pipeline::Shutdown();
 		globalPath = originalGlobalPath;
 		CoUninitialize();
@@ -2250,7 +2261,7 @@ namespace Inkeys::UI::Bar
 		std::filesystem::create_directories(std::filesystem::path(globalPath)/L"Inkeys/Config");
 		std::ofstream samples(directory/L"geometry.csv"), summary(directory/L"summary.csv");
 		summary << "scale,run,direction,cycles,commits,batch_p95_ms,batch_p99_ms,bar_p95_ms,compute_p95_ms,draw_p95_ms,getdc_p95_ms,interval_p95_ms,interval_p99_ms,target_changes,failures\n";
-		BarUiAnimationEnabled=true; BarUiAnimationSpeedRate=1; BarUiEdgeLightingEnabled=true; BarUiDynamicEdgeLightingEnabled=true; BarUiDebugModeEnabled=false;
+		UiAnimationEnabled=true; UiAnimationSpeedRate=1; BarUiEdgeLightingEnabled=true; BarUiDynamicEdgeLightingEnabled=true; BarUiDebugModeEnabled=false;
 		bool initialized=false;
 		for (double scale : {1.0,1.5,2.0})
 		{
@@ -2261,7 +2272,7 @@ namespace Inkeys::UI::Bar
 				failures += fixture.RunPerformance(cycles,run,directory,summary,svgTimingEnabled);
 			}
 		}
-		barUISet.spec.DiscardDeviceResources(); Pipeline::Shutdown(); globalPath=originalPath; CoUninitialize();
+		barUISet.specTarget.Discard(); Pipeline::Shutdown(); globalPath=originalPath; CoUninitialize();
 		return failures?1:0;
 	}
 	int RunUi3BottomDockTransitionTest() { return RunUi3GeometryTests(true); }

@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -9,44 +9,53 @@ module;
 #include <mutex>
 #include <utility>
 #include <windows.h>
-#include "Bar.DirtyRegion.h"
 #include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
-#include "Bar.ThemeMaterial.h"
-#include "Bar.PageLoadingIndicator.h"
-#include "Bar.ButtonFrameRing.h"
 #include <wrl/client.h>
 #include "../../../PptWaitingDiagnostics.h"
-#include "Bar.InteractionWorker.h"
+#include <condition_variable>
+#include <coroutine>
+#include <deque>
+#include <exception>
+#include <functional>
+#include <memory>
+#include <optional>
 #include "../Whiteboard/Whiteboard.Theme.h"
+
+#include <cstdint>
+#include <vector>
+#include <chrono>
+#include <d2d1_1.h>
 
 module Inkeys.UI.Bar;
 import :Scene;
 import :Main;
-import :Rendering;
 import :Button;
 import :State;
 import :Theme;
-import :UI;
-import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.UI3;
+import Inkeys.UI.UI3.Animation;
 import Inkeys.UI.Bar.EraserAttributeMotion;
-import Inkeys.UI.Bar.FramePacing;
+import Inkeys.UI.UI3.FramePacing;
 import Inkeys.Other.Config;
+import Inkeys.UI.UI3.DirtyRegion;
+import Inkeys.UI.UI3.Material;
+import Inkeys.UI.UI3.LoadingIndicator;
+import Inkeys.UI.UI3.FrameRing;
+import Inkeys.UI.UI3.Interaction;
+
+using namespace Inkeys::UI::UI3;
 
 namespace Inkeys::UI::Bar
 {
 	namespace
 	{
-		constexpr double DamageOutsetDip = BarButtonFrameThicknessDip
-			+ BarRenderingAttribute::pointLightDiffuseExtraWidth
-			+ BarRenderingAttribute::dirtyAntialiasPadding;
+		constexpr double DamageOutsetDip = ButtonFrameThicknessDip
+			+ RenderingAttribute::pointLightDiffuseExtraWidth
+			+ RenderingAttribute::dirtyAntialiasPadding;
 		constexpr EraserAttributeRect MenuBounds{190,-122.5,340,-5};
 		constexpr EraserAttributeRect ThemeBounds{345,-301,575,-5};
 		constexpr EraserAttributeRect ThemeAnchor{195,-42.5,335,-10};
 		constexpr auto& ThemeColors=WhiteboardVisual::ThemeColors;
-		std::mutex lightingMutex;
-		BarSurfaceSharedLighting sharedLighting;
-		std::uint64_t lightingRevision=1;
-		std::vector<BarPageSurface*> lightingSubscribers;
 
 		bool Empty(const RECT& r) noexcept { return r.right<=r.left || r.bottom<=r.top; }
 		RECT Pixels(EraserAttributeRect r,double scale) noexcept
@@ -54,69 +63,34 @@ namespace Inkeys::UI::Bar
 			return {static_cast<LONG>(std::floor(r.left*scale)),static_cast<LONG>(std::floor(r.top*scale)),
 				static_cast<LONG>(std::ceil(r.right*scale)),static_cast<LONG>(std::ceil(r.bottom*scale))};
 		}
-		EraserAttributeRect Bounds(BarUiShapeClass& shape) noexcept
+		EraserAttributeRect Bounds(UiShapeClass& shape) noexcept
 		{
 			return {shape.x.val-shape.w.val/2,shape.y.val-shape.h.val/2,
 				shape.x.val+shape.w.val/2,shape.y.val+shape.h.val/2};
 		}
-		BarUiInheritClass Inherit(BarUiShapeClass& shape) noexcept
+		UiInheritClass Inherit(UiShapeClass& shape) noexcept
 		{ const auto b=Bounds(shape); return {b.left,b.top}; }
-		bool RoundedContains(EraserAttributeRect r,double radius,double x,double y) noexcept
-		{
-			if(x<r.left || x>=r.right || y<r.top || y>=r.bottom) return false;
-			radius=(std::min)({radius,r.Width()/2,r.Height()/2});
-			const double cx=(std::clamp)(x,r.left+radius,r.right-radius);
-			const double cy=(std::clamp)(y,r.top+radius,r.bottom-radius);
-			return (x-cx)*(x-cx)+(y-cy)*(y-cy)<=radius*radius;
-		}
-		void InitializeShape(BarUiShapeClass& shape,EraserAttributeRect r,COLORREF fill,
+		void InitializeShape(UiShapeClass& shape,EraserAttributeRect r,COLORREF fill,
 			double radius,double alpha,double frameAlpha=0)
 		{
 			shape.Initialization(EraserRectCenterX(r),EraserRectCenterY(r),r.Width(),r.Height(),
-				radius,radius,1.0,fill,GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+				radius,radius,1.0,fill,GetThemeColor(ThemeColorEnum::SurfaceFrame));
 			shape.enable.Initialization(true); shape.pct.SetDirect(alpha);
 			shape.framePct.emplace(frameAlpha); shape.frameLightPct.emplace(frameAlpha);
-			shape.frameRendering=BarUiFrameRenderingEnum::PointLight;
-			shape.frameLightColor=BarUiFrameLightColorEnum::PenWhenDrawing;
+			shape.frameRendering=UiFrameRenderingEnum::PointLight;
+			shape.frameLightColor=UiFrameLightColorEnum::PenWhenDrawing;
 		}
-		void SetShapeBounds(BarUiShapeClass& shape,EraserAttributeRect r,double duration,bool direct)
+		void SetShapeBounds(UiShapeClass& shape,EraserAttributeRect r,double duration,bool direct)
 		{
 			const auto set=[&](auto& value,double target){ if(direct)value.SetDirect(target);else value.SetTar(target,duration); };
 			set(shape.x,EraserRectCenterX(r));set(shape.y,EraserRectCenterY(r));
 			set(shape.w,r.Width());set(shape.h,r.Height());
 		}
-		bool SameLighting(const BarSurfaceSharedLighting& a,const BarSurfaceSharedLighting& b) noexcept
-		{
-			return a.primaryScreenX==b.primaryScreenX && a.primaryScreenY==b.primaryScreenY
-				&& a.primaryRadiusPixels==b.primaryRadiusPixels && a.cursorScreenX==b.cursorScreenX
-				&& a.cursorScreenY==b.cursorScreenY && a.cursorRadiusPixels==b.cursorRadiusPixels
-				&& a.cursorIntensity==b.cursorIntensity && a.drawingPenColor==b.drawingPenColor
-				&& a.drawingPenColorBlend==b.drawingPenColorBlend && a.drawingLightOpacity==b.drawingLightOpacity
-				&& a.primaryVisible==b.primaryVisible && a.cursorVisible==b.cursorVisible
-				&& a.edgeLightingEnabled==b.edgeLightingEnabled;
-		}
+
 	}
 
-	BarSurfaceSharedLighting ReadShapeEditorSharedLighting() noexcept
-	{ std::scoped_lock lock(lightingMutex); return sharedLighting; }
 
-	BarUiFrameLightingSnapshot ResolveBarSurfaceFrameLightingSnapshot(
-		const BarSurfaceSharedLighting& lighting,const RECT& bounds,LONG outset) noexcept
-	{
-		BarUiFrameLightingSnapshot result;
-		result.primaryLight=D2D1::Point2F(static_cast<FLOAT>(lighting.primaryScreenX-bounds.left+outset),
-			static_cast<FLOAT>(lighting.primaryScreenY-bounds.top+outset));
-		result.primaryRadius=static_cast<FLOAT>(lighting.primaryRadiusPixels);
-		result.cursorLight=D2D1::Point2F(static_cast<FLOAT>(lighting.cursorScreenX-bounds.left+outset),
-			static_cast<FLOAT>(lighting.cursorScreenY-bounds.top+outset));
-		result.cursorScreenLight=D2D1::Point2F(static_cast<FLOAT>(lighting.cursorScreenX),static_cast<FLOAT>(lighting.cursorScreenY));
-		result.cursorRadius=static_cast<FLOAT>(lighting.cursorRadiusPixels);
-		result.cursorIntensity=static_cast<FLOAT>(lighting.cursorIntensity);
-		result.drawingPenColor=lighting.drawingPenColor;result.drawingPenColorBlend=lighting.drawingPenColorBlend;
-		result.drawingLightOpacity=lighting.drawingLightOpacity;result.primaryLightVisible=lighting.primaryVisible;
-		result.cursorLightVisible=lighting.cursorVisible;result.edgeLightingEnabled=lighting.edgeLightingEnabled;
-		return result;
-	}
+
 
 	struct BarPageSurface::Impl
 	{
@@ -128,20 +102,25 @@ namespace Inkeys::UI::Bar
 		std::uint64_t layoutRevision=0;
 		std::array<BarButtonClass,3> actions;
 		std::array<BarButtonClass,9> previews;
-		std::array<BarUiShapeClass,9> previewBackgrounds;
+		std::array<UiShapeClass,9> previewBackgrounds;
 		std::array<std::wstring,17> iconNames;
-		BarUiWordClass pageTotal,unsaved;
-		std::array<BarUiWordClass,2> headings;
-		BarUiShapeClass root,menu,theme,divider,dragHandle;
+		UiWordClass pageTotal,unsaved;
+		std::array<UiWordClass,2> headings;
+		UiShapeClass root,menu,theme,divider,dragHandle;
 		BarAttributePanelMotion menuMotion,themeMotion;
+		std::array<Panel,3> panels{Panel{"Pagination"},Panel{"PageMore"},Panel{"PageTheme"}};
+		// 绘制由后到前；输入优先级独立，根栏的留白仍挡住菜单。
+		PanelStack panelStack{{0,&panels[0],2,2},{1,&panels[1],1,1},{2,&panels[2],0,0}};
 		BarAttributePanelFrame menuFrame,themeFrame;
 		EraserSurfacePose menuPose,themePose;
-		BarUIRendering renderer;
-		BarUiFrameLightingSnapshot drawingLighting;
+		UIRendering renderer{MakeBarLocalizedTypographyServices()};
+		// 宿主持有的帧目标（不拥有）；renderer 经 BindFrameTarget 绑定上去，宿主驱动帧生命周期。
+		FrameTarget* boundTarget=nullptr;
+		UiFrameLightingSnapshot drawingLighting;
 		COLORREF appliedSurfaceColor=CLR_INVALID;
 		double appliedResidentFillOpacity=-1,appliedResidentContentOpacity=-1;
 		float pagePrimaryWidth=0,pageSecondaryWidth=0;
-		BarUiPctClass opacity{1},idleFade{0};
+		UiPctClass opacity{1},idleFade{0};
 		BarPageSurfaceContent content;
 		PageLoadingIndicator indicator;
 		bool indicatorAllowed=true,indicatorInputDirty=true,indicatorAnimations=true,ringFailed=false;
@@ -156,38 +135,34 @@ namespace Inkeys::UI::Bar
 		float scale=1;
 		double fontTargetScale=0;
 		bool initialized=false,backgroundOnly=false,active=false,invalidated=true,subscribed=false;
+		LightingSubscriberToken lightingSubscription=0;
 		std::chrono::steady_clock::time_point previousFrame{};
 		FrameAnimationClock animationClock;
 		bool frameSeen=false;
 		std::uint64_t appliedLightingRevision=0;
 		RECT appliedLightingPresentation{};
-		BarSurfaceSharedLighting appliedLighting;
+		SurfaceSharedLighting appliedLighting;
 		RECT previousCursorDamage{};
 		struct FrameHit
 		{
-			std::array<BarButtonHitSnapshot,17> buttons{};
-			std::array<EraserAttributeRect,3> panels{};
-			std::array<double,3> panelRadii{};
-			std::array<bool,3> panelVisible{};
+			std::array<ButtonHitSnapshot,17> buttons{};
 			RECT logical{},presentation{};
 			float scale=1;
 			bool enabled=false;
 			std::uint64_t generation=0;
 		};
-		// 命中与绘制的前后层级一致；前景面板的空白区域也不能点到后层按钮。
-		static int FrontPanel(const FrameHit& frame,double x,double y) noexcept
+		int FrontPanel(double x,double y) const noexcept
 		{
-			for(std::size_t i=0;i<frame.panels.size();++i)
-				if(frame.panelVisible[i]&&RoundedContains(frame.panels[i],frame.panelRadii[i],x,y))return static_cast<int>(i);
-			return -1;
+			const auto front=panelStack.FrontPanel(x,y);
+			return front?static_cast<int>(*front):-1;
 		}
-		static BarSurfaceButtonId HitButton(const FrameHit& frame,POINT point) noexcept
+		BarSurfaceButtonId HitButton(const FrameHit& frame,POINT point) const noexcept
 		{
 			if(!frame.enabled)return 0;
 			const double x=point.x/frame.scale,y=point.y/frame.scale;
-			const int panel=FrontPanel(frame,x,y);if(panel<0)return 0;
+			const int panel=FrontPanel(x,y);if(panel<0)return 0;
 			const BarSurfaceButtonId first=panel==0?1:panel==1?6:9,last=panel==0?5:panel==1?8:17;
-			for(auto id=first;id<=last;++id)if(HitTestBarButton(frame.buttons[id-1],x,y))return id;
+			for(auto id=first;id<=last;++id)if(HitTestButton(frame.buttons[id-1],x,y))return id;
 			return 0;
 		}
 		FrameHit candidate,committed,capturedCandidate;
@@ -205,34 +180,35 @@ namespace Inkeys::UI::Bar
 			pagination.Replace(std::move(list));
 			paginationMembers=pagination.Snapshot();
 			buttonRow.assign(paginationMembers.begin()+1,paginationMembers.end());
-			const COLORREF surface=GetThemeColor(BarThemeColorEnum::Surface);appliedSurfaceColor=surface;
+			const COLORREF surface=GetThemeColor(ThemeColorEnum::Surface);appliedSurfaceColor=surface;
 			InitializeShape(root,{0,0,BarPptPaginationLongSideDip,BarPptPaginationShortSideDip},surface,BarMainBarCornerRadiusDip,
 				GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity),GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
 			root.residentSurface=true;
 			InitializeShape(menu,MenuBounds,surface,BarMainBarCornerRadiusDip,0.95,GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
 			InitializeShape(theme,ThemeBounds,surface,BarMainBarCornerRadiusDip,0.95,GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
-			InitializeShape(divider,{350,-116,570,-115},GetThemeColor(BarThemeColorEnum::SurfaceFrame),0.5,0.30);
-			InitializeShape(dragHandle,{5,5,7,25},GetThemeColor(BarThemeColorEnum::SurfaceFrame),1,0.72);
+			panels[0].BindFrame(root);panels[1].BindFrame(menu);panels[2].BindFrame(theme);
+			InitializeShape(divider,{350,-116,570,-115},GetThemeColor(ThemeColorEnum::SurfaceFrame),0.5,0.30);
+			InitializeShape(dragHandle,{5,5,7,25},GetThemeColor(ThemeColorEnum::SurfaceFrame),1,0.72);
 			for(auto& button:pageButtons) InitializeButton(*button);
 			for(auto& button:actions) InitializeButton(button);
 			for(auto& button:previews) InitializeButton(button);
-			const auto text=GetThemeColor(BarThemeColorEnum::TextPrimary);
+			const auto text=GetThemeColor(ThemeColorEnum::TextPrimary);
 			pageTotal.Initialization(0,20,70,25,L"",13,text);
 			unsaved.Initialization(5,-32,295,27,L"",14,text);
 			// 白板主题分区标题与主栏标题同为 13 DIP 粗体。
-			for(auto& word:headings){word.Initialization(0,0,220,25,L"",BarButtonTwoTwoLabelFontSizeDip,text);word.enable.Initialization(true);}
+			for(auto& word:headings){word.Initialization(0,0,220,25,L"",ButtonTwoTwoLabelFontSizeDip,text);word.enable.Initialization(true);}
 			unsaved.enable.Initialization(true);
-			for(auto& shape:previewBackgrounds){InitializeShape(shape,{0,0,70,70},RGB(18,59,50),4,1,1);shape.frameRendering=BarUiFrameRenderingEnum::Solid;}
+			for(auto& shape:previewBackgrounds){InitializeShape(shape,{0,0,70,70},RGB(18,59,50),4,1,1);shape.frameRendering=UiFrameRenderingEnum::Solid;}
 		}
 		void InitializeButton(BarButtonClass& button)
 		{
-			const auto text=GetThemeColor(BarThemeColorEnum::TextPrimary);
-			button.size=BarButtonSizeEnum::twoTwo;button.hide=false;
-			InitializeShape(button.button,{0,0,70,70},GetThemeColor(BarThemeColorEnum::PressedFill),4,0);
+			const auto text=GetThemeColor(ThemeColorEnum::TextPrimary);
+			button.size=ButtonSizeEnum::twoTwo;button.hide=false;
+			InitializeShape(button.button,{0,0,70,70},GetThemeColor(ThemeColorEnum::PressedFill),4,0);
 			button.button.framePrimaryLightEnabled=false;
-			button.button.frameCursorLightIntensityScale=BarButtonCursorLightIntensity;
+			button.button.frameCursorLightIntensityScale=ButtonCursorLightIntensity;
 			button.name.Initialization(0,20,70,25,L"",13,text);
-			button.icon.Initialization(0,-10,GetThemeColor(BarThemeColorEnum::IconPrimary),std::nullopt);
+			button.icon.Initialization(0,-10,GetThemeColor(ThemeColorEnum::IconPrimary),std::nullopt);
 			button.icon.enable.Initialization(false);
 		}
 		BarButtonClass& Button(BarSurfaceButtonId id)
@@ -260,43 +236,21 @@ namespace Inkeys::UI::Bar
 			if(id<6)return true;
 			return content.whiteboard&&content.surface==0&&(id<9?content.menu!=0:content.menu==2);
 		}
-		bool NeedsLightingUpdate(const BarSurfaceSharedLighting& before,
-			const BarSurfaceSharedLighting& after) const noexcept
+		LightingSubscriptionTarget SnapshotLightingTarget() const
 		{
-			FrameHit frame;
-			{std::scoped_lock lock(inputMutex);frame=committed;}
-			if(!frame.enabled)return false;
-			const bool colorsChanged=before.drawingPenColor!=after.drawingPenColor
-				||before.drawingPenColorBlend!=after.drawingPenColorBlend
-				||before.drawingLightOpacity!=after.drawingLightOpacity;
-			const bool primaryChanged=colorsChanged||before.primaryScreenX!=after.primaryScreenX
-				||before.primaryScreenY!=after.primaryScreenY||before.primaryRadiusPixels!=after.primaryRadiusPixels
-				||before.primaryVisible!=after.primaryVisible||before.edgeLightingEnabled!=after.edgeLightingEnabled;
-			const bool cursorChanged=colorsChanged||before.cursorScreenX!=after.cursorScreenX
-				||before.cursorScreenY!=after.cursorScreenY||before.cursorRadiusPixels!=after.cursorRadiusPixels
-				||before.cursorVisible!=after.cursorVisible||before.cursorIntensity!=after.cursorIntensity
-				||before.edgeLightingEnabled!=after.edgeLightingEnabled;
-			const auto influence=[&](const BarSurfaceSharedLighting& light,bool cursor){
-				if(!light.edgeLightingEnabled||(cursor?(!light.cursorVisible||light.cursorIntensity<=0.0001):!light.primaryVisible))return RECT{};
-				const double x=cursor?light.cursorScreenX:light.primaryScreenX;
-				const double y=cursor?light.cursorScreenY:light.primaryScreenY;
-				const double radius=cursor?light.cursorRadiusPixels:light.primaryRadiusPixels;
-				if(!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(radius)||radius<=0)return RECT{};
-				const double reach=radius+DamageOutsetDip*frame.scale;
-				return Pixels({x-reach,y-reach,x+reach,y+reach},1);
-			};
-			const RECT oldPrimary=primaryChanged?influence(before,false):RECT{};
-			const RECT newPrimary=primaryChanged?influence(after,false):RECT{};
-			const RECT oldCursor=cursorChanged?influence(before,true):RECT{};
-			const RECT newCursor=cursorChanged?influence(after,true):RECT{};
+			std::scoped_lock lock(inputMutex);
+			const auto& frame=committed;
+			LightingSubscriptionTarget target;target.enabled=frame.enabled;
+			target.damageOutsetPixels=DamageOutsetDip*frame.scale;
 			const LONG outset=static_cast<LONG>(std::ceil(DamageOutsetDip*frame.scale));
-			for(std::size_t i=0;i<frame.panels.size();++i)if(frame.panelVisible[i]){
-				RECT inner=Pixels(frame.panels[i],frame.scale);OffsetRect(&inner,frame.logical.left,frame.logical.top);
-				RECT outer=inner;InflateRect(&outer,outset,outset);
-				for(const RECT& light:{oldPrimary,newPrimary,oldCursor,newCursor})
-					if(!Empty(ResolveBarLightBorderDamage(outer,inner,light)))return true;
+			for(const auto& panel:panels)if(panel.Presented().visible){
+				const auto& r=panel.Presented().interaction.bounds;
+				RECT inner=Pixels({r.left,r.top,r.right,r.bottom},frame.scale);OffsetRect(&inner,frame.logical.left,frame.logical.top);
+				RECT outer=inner;InflateRect(&outer,outset,outset);target.borders.push_back({outer,inner});
 			}
-			return false;
+			// hooks 按值带出注册表锁，Reset/销毁后也不访问 Impl。
+			target.notify=[callbacks=hooks]{if(callbacks.invalidate)callbacks.invalidate();if(callbacks.wake)callbacks.wake();};
+			return target;
 		}
 		BarSurfaceHooks SnapshotHooks() const
 		{std::scoped_lock lock(inputMutex);return hooks;}
@@ -314,8 +268,8 @@ namespace Inkeys::UI::Bar
 		{
 			const LONG pad=Outset();InflateRect(&r,pad,pad);
 			OffsetRect(&r,logical.left-presentation.left,logical.top-presentation.top);
-			r=IntersectBarDirtyRect(r,{0,0,presentation.right-presentation.left,presentation.bottom-presentation.top});
-			if(!Empty(r)){BarDirtyRegionTracker::UnionInPlace(damage,r);invalidated=true;++damageRevision;}
+			r=IntersectDirtyRect(r,{0,0,presentation.right-presentation.left,presentation.bottom-presentation.top});
+			if(!Empty(r)){DirtyRegionTracker::UnionInPlace(damage,r);invalidated=true;++damageRevision;}
 		}
 		LONG Outset() const noexcept { return backgroundOnly?0:static_cast<LONG>(std::ceil(DamageOutsetDip*scale)); }
 		void ConfigureButtonContent(BarButtonClass& button,const std::wstring& icon,
@@ -335,11 +289,11 @@ namespace Inkeys::UI::Bar
 			button.name.enable.Initialization(true);
 			if(direct)button.icon.angle.SetDirect(angle);else button.icon.angle.SetTar(angle,duration);
 		}
-		void ConfigureButton(BarButtonClass& button,BarButtonVisualLayoutKind kind,EraserAttributeRect rect,
+		void ConfigureButton(BarButtonClass& button,ButtonVisualLayoutKind kind,EraserAttributeRect rect,
 			const std::wstring& icon,const std::wstring& label,double angle,double duration,bool direct)
 		{
 			ConfigureButtonContent(button,icon,label,angle,duration,direct);
-			ConfigureBarButtonVisualTargets(button,kind,duration,1,direct);
+			ConfigureButtonVisualTargets(button,kind,duration,1,direct);
 			SetShapeBounds(button.button,rect,duration,direct);
 		}
 		void IncludeButton(BarSurfaceButtonId id) noexcept
@@ -349,7 +303,7 @@ namespace Inkeys::UI::Bar
 		}
 		void UpdateHorizontalPageWidths(const BarPageSurfaceContent& next,bool currentChanged,bool totalChanged,bool direct,double duration)
 		{
-			const auto metrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::PageHorizontal);
+			const auto metrics=ResolveButtonVisualMetrics(ButtonVisualLayoutKind::PageHorizontal);
 			if(currentChanged)pagePrimaryWidth=renderer.MeasureText(next.currentPage,metrics.primaryFontSizeDip,DWRITE_FONT_WEIGHT_BOLD).width;
 			if(totalChanged)pageSecondaryWidth=renderer.MeasureText(next.totalPage,metrics.secondaryFontSizeDip,DWRITE_FONT_WEIGHT_NORMAL).width;
 			const auto slot=[&](auto& value,double target){if(direct)value.SetDirect(target);else value.SetTar(target,duration);};
@@ -364,7 +318,7 @@ namespace Inkeys::UI::Bar
 			value=Trace::contentSample->fields;value.oldKind=oldKind;value.newKind=static_cast<long>(next.kind);
 			value.contentPolicy=static_cast<unsigned>(policy);value.contentChanges=changes;
 			value.flags&=~Trace::AnimationEnabled;
-			if(static_cast<bool>(BarUiAnimationEnabled))value.flags|=Trace::AnimationEnabled;
+			if(static_cast<bool>(UiAnimationEnabled))value.flags|=Trace::AnimationEnabled;
 			// 公开原子数值仅作setter前/后观察；不读取可能复制字符串的val/target，也不猜中点。
 			value.primaryScaleBefore=Trace::ContentMilli(static_cast<double>(pageButtons[2]->name.contentScale));
 			value.primaryPctBefore=Trace::ContentMilli(static_cast<double>(pageButtons[2]->name.contentPct));
@@ -416,7 +370,7 @@ namespace Inkeys::UI::Bar
 				auto& name=pageButtons[2]->name;
 				const bool moving=!name.x.IsSame()||!name.w.IsSame()||!name.size.IsSame()
 					||!pageTotal.x.IsSame()||!pageTotal.w.IsSame()||!pageTotal.y.IsSame()||!pageTotal.size.IsSame();
-				UpdateHorizontalPageWidths(shown,currentChanged,totalChanged,!moving,BarUiDefaultOperationDur);
+				UpdateHorizontalPageWidths(shown,currentChanged,totalChanged,!moving,UiDefaultOperationDur);
 			}
 			shownCurrent=current;shownTotal=total;shownStatus=status;
 			return true;
@@ -430,7 +384,7 @@ namespace Inkeys::UI::Bar
 			indicatorInputDirty|=content.loadingSession!=next.loadingSession||content.loadState!=next.loadState;
 			// 内容更新不得重新提交布局目标，否则普通翻页会截断正在进行的 PPT/白板转换。
 			const auto text=[&](BarSurfaceButtonId id,const std::wstring& icon,const std::wstring& label,double angle=0){
-				ConfigureButtonContent(Button(id),icon,label,angle,BarUiDefaultOperationDur,false);IncludeButton(id);
+				ConfigureButtonContent(Button(id),icon,label,angle,UiDefaultOperationDur,false);IncludeButton(id);
 			};
 			const bool wb=next.whiteboard,vertical=next.surface>=2,standard=wb||!BarPptCompactPaginationEnabled;
 			if(content.previousLabel!=next.previousLabel)text(2,L"barMore",standard?next.previousLabel:L"",vertical&&!wb?0:-90);
@@ -467,8 +421,8 @@ namespace Inkeys::UI::Bar
 				}
 			}
 			content=next;(void)RefreshDisplayedText();
-			const bool menuChanged=menuMotion.Retarget(wb&&next.surface==0&&next.menu!=0,BarUiDefaultOperationDur);
-			const bool themeChanged=themeMotion.Retarget(wb&&next.surface==0&&next.menu==2,BarUiDefaultOperationDur,&menuMotion.Timeline());
+			const bool menuChanged=menuMotion.Retarget(wb&&next.surface==0&&next.menu!=0,UiDefaultOperationDur);
+			const bool themeChanged=themeMotion.Retarget(wb&&next.surface==0&&next.menu==2,UiDefaultOperationDur,&menuMotion.Timeline());
 			if(menuChanged||themeChanged)FullDamage();
 		}
 		void Configure(const BarPageSurfaceContent& next,double duration)
@@ -479,7 +433,7 @@ namespace Inkeys::UI::Bar
 			const bool wb=next.whiteboard,vertical=next.surface>=2,left=next.surface==0,standard=wb||!BarPptCompactPaginationEnabled;
 			for(std::size_t i=0;i<pageButtons.size();++i){
 				pageButtons[i]->hide=(i==0&&wb)||(i==4&&(!wb||!left));
-				pageButtons[i]->size=BarButtonSizeEnum::twoTwo;
+				pageButtons[i]->size=ButtonSizeEnum::twoTwo;
 			}
 			UpdatePaginationDrawOrder();++layoutRevision;
 			std::array<EraserAttributeRect,5> rects{};
@@ -502,8 +456,8 @@ namespace Inkeys::UI::Bar
 					}
 					rects[i+1]=vertical?EraserAttributeRect{rect.top,rect.left,rect.bottom,rect.right}:rect;
 				}
-				const double start=leading?BarButtonGapDip:row.width-BarButtonGapDip;
-				const EraserAttributeRect drag{start,BarButtonGapDip,start+lane,row.height-BarButtonGapDip};
+				const double start=leading?ButtonGapDip:row.width-ButtonGapDip;
+				const EraserAttributeRect drag{start,ButtonGapDip,start+lane,row.height-ButtonGapDip};
 				rects[0]=vertical?EraserAttributeRect{drag.top,drag.left,drag.bottom,drag.right}:drag;
 			}
 			else{
@@ -513,15 +467,15 @@ namespace Inkeys::UI::Bar
 				if(vertical)rects={EraserAttributeRect{5,5,37.5,15},{5,15,37.5,47.5},{5,52.5,37.5,122.5},{5,127.5,37.5,160},{37.5,127.5,37.5,160}};
 				else if(next.surface==1)rects={EraserAttributeRect{150,5,160,37.5},{5,5,37.5,37.5},{42.5,5,112.5,37.5},{117.5,5,150,37.5},{160,5,160,37.5}};
 				else rects={EraserAttributeRect{5,5,15,37.5},{15,5,47.5,37.5},{52.5,5,122.5,37.5},{127.5,5,160,37.5},{160,5,160,37.5}};
-				const double half=BarButtonTwoSideDip/2,x=EraserRectCenterX(rects[3]),y=EraserRectCenterY(rects[3]);
+				const double half=ButtonTwoSideDip/2,x=EraserRectCenterX(rects[3]),y=EraserRectCenterY(rects[3]);
 				rects[4]={x-half,y-half,x+half,y+half};
 			}
 			SetShapeBounds(root,rootRect,duration,direct);
-			ConfigureButton(*pageButtons[0],BarButtonVisualLayoutKind::Custom,rects[0],L"",L"",0,duration,direct);
-			ConfigureButton(*pageButtons[1],standard?BarButtonVisualLayoutKind::StandardTwoTwo:BarButtonVisualLayoutKind::StandardOneOne,
+			ConfigureButton(*pageButtons[0],ButtonVisualLayoutKind::Custom,rects[0],L"",L"",0,duration,direct);
+			ConfigureButton(*pageButtons[1],standard?ButtonVisualLayoutKind::StandardTwoTwo:ButtonVisualLayoutKind::StandardOneOne,
 				rects[1],L"barMore",standard?next.previousLabel:L"",vertical&&!wb?0:-90,duration,direct);
-			ConfigureButton(*pageButtons[2],standard?BarButtonVisualLayoutKind::PageTwoTwo:
-				(vertical?BarButtonVisualLayoutKind::PageVertical:BarButtonVisualLayoutKind::PageHorizontal),rects[2],L"",L"",0,duration,direct);
+			ConfigureButton(*pageButtons[2],standard?ButtonVisualLayoutKind::PageTwoTwo:
+				(vertical?ButtonVisualLayoutKind::PageVertical:ButtonVisualLayoutKind::PageHorizontal),rects[2],L"",L"",0,duration,direct);
 			// 页码属于状态输出：不沿文字切换动画延迟页身份。
 			const auto observation=ContentObservationBefore(-1,next,Inkeys::Business::PptWaitTrace::ContentPolicy::Initial,0);
 			const auto [shownNow,shownTotalNow]=DisplayedPages(next);
@@ -530,22 +484,22 @@ namespace Inkeys::UI::Bar
 			const bool secondaryChanged=pageTotal.SetStringImmediate(shownTotalNow);
 			shownCurrent=shownNow;shownTotal=shownTotalNow;shownStatus=indicator.reached&&next.loadState!=BarPageLoadState::None;
 			CompleteContentObservation(observation,primaryChanged,secondaryChanged);
-			const auto metrics=ResolveBarButtonVisualMetrics(standard?BarButtonVisualLayoutKind::PageTwoTwo:
-				(vertical?BarButtonVisualLayoutKind::PageVertical:BarButtonVisualLayoutKind::PageHorizontal));
+			const auto metrics=ResolveButtonVisualMetrics(standard?ButtonVisualLayoutKind::PageTwoTwo:
+				(vertical?ButtonVisualLayoutKind::PageVertical:ButtonVisualLayoutKind::PageHorizontal));
 			const auto slot=[&](auto& value,double target){if(direct)value.SetDirect(target);else value.SetTar(target,duration);};
 			// 页身份立即更新，字体及双行槽位仍从当前呈现值连续变换。
 			slot(pageTotal.size,metrics.secondaryFontSizeDip);
 			slot(pageTotal.x,metrics.secondaryOffsetXDip);slot(pageTotal.y,metrics.secondaryOffsetYDip);
-			slot(pageTotal.w,metrics.secondarySlotWidthDip?metrics.secondarySlotWidthDip:BarButtonTwoSideDip);
+			slot(pageTotal.w,metrics.secondarySlotWidthDip?metrics.secondarySlotWidthDip:ButtonTwoSideDip);
 			slot(pageTotal.h,metrics.secondarySlotHeightDip);pageTotal.enable.Initialization(true);
 			if(!standard&&!vertical){
 				auto shown=next;shown.currentPage=shownNow;shown.totalPage=shownTotalNow;
 				UpdateHorizontalPageWidths(shown,true,true,direct,duration);
 			}
-			ConfigureButton(*pageButtons[3],standard?BarButtonVisualLayoutKind::StandardTwoTwo:BarButtonVisualLayoutKind::StandardOneOne,rects[3],
+			ConfigureButton(*pageButtons[3],standard?ButtonVisualLayoutKind::StandardTwoTwo:ButtonVisualLayoutKind::StandardOneOne,rects[3],
 				wb&&next.nextIsAdd?L"barAdd":(!wb&&next.nextIsEndShow?L"barEndShow":L"barMore"),standard?next.nextLabel:L"",
 				(wb&&next.nextIsAdd)||(!wb&&next.nextIsEndShow)?0:(vertical&&!wb?180:90),duration,direct);
-			ConfigureButton(*pageButtons[4],BarButtonVisualLayoutKind::StandardTwoTwo,rects[4],L"barMenu",next.moreLabel,0,duration,direct);
+			ConfigureButton(*pageButtons[4],ButtonVisualLayoutKind::StandardTwoTwo,rects[4],L"barMenu",next.moreLabel,0,duration,direct);
 			if(direct)for(auto& button:pageButtons)if(!button->IsVisible()){
 				// 首帧没有动画 dt；直接配置的隐藏成员从透明开始，普通退场仍保留当前值渐隐。
 				button->icon.pct.SetDirect(0);button->name.pct.SetDirect(0);button->button.pct.SetDirect(0);
@@ -554,28 +508,28 @@ namespace Inkeys::UI::Bar
 			}
 			const wchar_t* icons[]={L"barCloseWhiteboard",L"barMinimize",L"barPalette"};
 			for(std::size_t i=0;i<actions.size();++i){
-				const double y=MenuBounds.top+5+i*(BarButtonOneSideDip+5);
-				ConfigureButton(actions[i],BarButtonVisualLayoutKind::StandardFourOne,{195,y,335,y+32.5},icons[i],next.actionLabels[i],0,0,true);
+				const double y=MenuBounds.top+5+i*(ButtonOneSideDip+5);
+				ConfigureButton(actions[i],ButtonVisualLayoutKind::StandardFourOne,{195,y,335,y+32.5},icons[i],next.actionLabels[i],0,0,true);
 			}
 			for(std::size_t i=0;i<previews.size();++i){
 				const double x=ThemeBounds.left+5+(i%3)*75;
 				const double y=ThemeBounds.top+(i<6?35.0+(i/3)*75:221.0);
-				ConfigureButton(previews[i],BarButtonVisualLayoutKind::StandardTwoTwo,{x,y,x+70,y+70},L"colorSelect",i<6?L"":next.patternLabels[i-6],0,0,true);
+				ConfigureButton(previews[i],ButtonVisualLayoutKind::StandardTwoTwo,{x,y,x+70,y+70},L"colorSelect",i<6?L"":next.patternLabels[i-6],0,0,true);
 				previews[i].icon.color1.reset();previews[i].icon.w.SetDirect(30);previews[i].icon.h.SetDirect(30);
-				previews[i].icon.y.SetDirect(i<6?0:BarButtonTwoTwoIconOffsetYDip);
+				previews[i].icon.y.SetDirect(i<6?0:ButtonTwoTwoIconOffsetYDip);
 				previewBackgrounds[i].fill->SetDirect(i<6?RGB((ThemeColors[i]>>16)&255,(ThemeColors[i]>>8)&255,ThemeColors[i]&255):
 					RGB((next.backgroundRgb>>16)&255,(next.backgroundRgb>>8)&255,next.backgroundRgb&255));
 				// 浅色用色块边框角色（约 18% 黑）；深色保持原 #909090 实线。
 				const bool lightPreview=GetThemeLightWeight()>0.5;
-				previewBackgrounds[i].frame->SetDirect(lightPreview?GetThemeColor(BarThemeColorEnum::SwatchFrame):RGB(144,144,144));
+				previewBackgrounds[i].frame->SetDirect(lightPreview?GetThemeColor(ThemeColorEnum::SwatchFrame):RGB(144,144,144));
 				previewBackgrounds[i].framePct->SetDirect(lightPreview?0.18:1.0);
 				SetShapeBounds(previewBackgrounds[i],Bounds(previews[i].button),0,true);
 			}
 			for(std::size_t i=0;i<headings.size();++i){headings[i].content.SetVal(next.sectionLabels[i]);headings[i].content.SetTar(next.sectionLabels[i]);}
 			unsaved.content.SetVal(next.unsavedLabel);unsaved.content.SetTar(next.unsavedLabel);
 			content=next;initialized=true;backgroundOnly=false;
-			menuMotion.Retarget(wb&&left&&next.menu!=0,BarUiDefaultOperationDur);
-			themeMotion.Retarget(wb&&left&&next.menu==2,BarUiDefaultOperationDur,&menuMotion.Timeline());
+			menuMotion.Retarget(wb&&left&&next.menu!=0,UiDefaultOperationDur);
+			themeMotion.Retarget(wb&&left&&next.menu==2,UiDefaultOperationDur,&menuMotion.Timeline());
 			FullDamage();
 		}
 		void RefreshGeometry()
@@ -585,25 +539,31 @@ namespace Inkeys::UI::Bar
 			themeFrame=ResolveBarAttributePanelFrame(themeMotion,ThemeBounds,ThemeAnchor,60,&menuFrame);
 			menuPose=menuFrame.pose;themePose=themeFrame.pose;
 			RECT extent=Pixels(Bounds(root),scale);
-			if(menuFrame.visible&&menuFrame.opacity>0.0001)BarDirtyRegionTracker::UnionInPlace(extent,Pixels(menuPose.Apply(MenuBounds),scale));
-			if(themeFrame.visible&&themeFrame.opacity>0.0001)BarDirtyRegionTracker::UnionInPlace(extent,Pixels(themePose.Apply(ThemeBounds),scale));
-			if(content.whiteboard&&content.surface==0&&content.unsaved)BarDirtyRegionTracker::UnionInPlace(extent,Pixels({5,-32,300,0},scale));
+			if(menuFrame.visible&&menuFrame.opacity>0.0001)DirtyRegionTracker::UnionInPlace(extent,Pixels(menuPose.Apply(MenuBounds),scale));
+			if(themeFrame.visible&&themeFrame.opacity>0.0001)DirtyRegionTracker::UnionInPlace(extent,Pixels(themePose.Apply(ThemeBounds),scale));
+			if(content.whiteboard&&content.surface==0&&content.unsaved)DirtyRegionTracker::UnionInPlace(extent,Pixels({5,-32,300,0},scale));
 			presentation=extent;OffsetRect(&presentation,logical.left,logical.top);InflateRect(&presentation,Outset(),Outset());
 			candidate={};candidate.logical=logical;candidate.presentation=presentation;candidate.scale=scale;candidate.enabled=opacity.val>0.0001;
-			candidate.panels[0]=Bounds(root);candidate.panelRadii[0]=backgroundOnly?background.cornerRadiusDip:BarMainBarCornerRadiusDip;
-			candidate.panelVisible[0]=candidate.enabled;
-			candidate.panels[1]=menuPose.Apply(MenuBounds);candidate.panelRadii[1]=BarMainBarCornerRadiusDip*menuPose.scale;
-			candidate.panelVisible[1]=menuFrame.visible&&menuFrame.opacity>0.0001;
-			candidate.panels[2]=themePose.Apply(ThemeBounds);candidate.panelRadii[2]=BarMainBarCornerRadiusDip*themePose.scale;
-			candidate.panelVisible[2]=themeFrame.visible&&themeFrame.opacity>0.0001;
+			const std::array<EraserAttributeRect,3> panelRects{Bounds(root),menuPose.Apply(MenuBounds),themePose.Apply(ThemeBounds)};
+			const std::array<double,3> panelRadii{backgroundOnly?background.cornerRadiusDip:BarMainBarCornerRadiusDip,
+				BarMainBarCornerRadiusDip*menuPose.scale,BarMainBarCornerRadiusDip*themePose.scale};
+			const std::array<bool,3> panelVisible{candidate.enabled,menuFrame.visible&&menuFrame.opacity>0.0001,themeFrame.visible&&themeFrame.opacity>0.0001};
+			panels[0].SetExternalState(static_cast<double>(opacity.tar)>0.0001,1,opacity.val);
+			panels[1].SetExternalState(!backgroundOnly&&content.whiteboard&&content.surface==0&&content.menu!=0,menuMotion.Geometry(),menuFrame.opacity);
+			panels[2].SetExternalState(!backgroundOnly&&content.whiteboard&&content.surface==0&&content.menu==2,themeMotion.Geometry(),themeFrame.opacity);
+			for(std::size_t i=0;i<panels.size();++i){
+				const auto& r=panelRects[i];const double radius=panelRadii[i];
+				RECT visual=Pixels(r,scale);InflateRect(&visual,Outset(),Outset());
+				panels[i].SetCandidate(visual,{{r.left,r.top,r.right,r.bottom},radius,radius,PanelHitGeometry::Rounded},panelVisible[i]);
+			}
 			if(!backgroundOnly)for(BarSurfaceButtonId id=1;id<=17;++id){
-				auto& button=Button(id);auto hit=ResolveBarButtonHitSnapshot(button,Inherit(button.button));
+				auto& button=Button(id);auto hit=ResolveButtonHitSnapshot(button,Inherit(button.button));
 				const auto pose=id>=9?themePose:id>=6?menuPose:EraserSurfacePose{};
 				auto r=pose.Apply({hit.boundsDip.left,hit.boundsDip.top,hit.boundsDip.right,hit.boundsDip.bottom});
 				hit.boundsDip=D2D1::RectF(static_cast<FLOAT>(r.left),static_cast<FLOAT>(r.top),static_cast<FLOAT>(r.right),static_cast<FLOAT>(r.bottom));
 				hit.radiusX*=pose.scale;hit.radiusY*=pose.scale;
 				hit.visible=id<=4 || (id==5&&((content.whiteboard&&content.surface==0)||button.icon.pct.val>0.0001||button.name.pct.val>0.0001))
-					|| (id>=6&&id<=8&&candidate.panelVisible[1]) || (id>=9&&candidate.panelVisible[2]);
+					|| (id>=6&&id<=8&&panelVisible[1]) || (id>=9&&panelVisible[2]);
 				hit.enabled=hit.visible&&!content.switching&&PropertyButtonEnabled(id);
 				if(id>=2&&id<=4)hit.enabled=hit.enabled&&content.enabled[id-2]&&content.interactive[id-2];
 				// 重试按钮在“重试”文字出现之前保持不可点，避免点到仍显示页码的按钮。
@@ -618,8 +578,8 @@ namespace Inkeys::UI::Bar
 		void RefreshLighting()
 		{
 			if(!subscribed)return;
-			BarSurfaceSharedLighting light;std::uint64_t revision;
-			{std::scoped_lock lock(lightingMutex);light=sharedLighting;revision=lightingRevision;}
+			SurfaceSharedLighting light;std::uint64_t revision;
+			{const auto snapshot=ReadSharedLighting();light=snapshot.lighting;revision=snapshot.revision;}
 			if(subscribed&&(appliedLightingRevision!=revision||!EqualRect(&appliedLightingPresentation,&presentation))){
 				const bool mappingChanged=!EqualRect(&appliedLightingPresentation,&presentation);
 				const bool primaryChanged=mappingChanged||light.primaryScreenX!=appliedLighting.primaryScreenX
@@ -627,22 +587,24 @@ namespace Inkeys::UI::Bar
 					||light.primaryVisible!=appliedLighting.primaryVisible||light.edgeLightingEnabled!=appliedLighting.edgeLightingEnabled
 					||light.drawingPenColor!=appliedLighting.drawingPenColor||light.drawingPenColorBlend!=appliedLighting.drawingPenColorBlend
 					||light.drawingLightOpacity!=appliedLighting.drawingLightOpacity;
-				renderer.SetFrameLightingSnapshot(ResolveBarSurfaceFrameLightingSnapshot(light,presentation,0));
+				renderer.SetFrameLightingSnapshot(ResolveSurfaceFrameLightingSnapshot(light,presentation,0), BarUiEdgeLightingEnabled);
 				RECT cursorDamage{};
 				if(light.edgeLightingEnabled&&light.cursorVisible&&light.cursorIntensity>0.0001){
 					const auto influence=renderer.GetFrameCursorLightDamageBounds();
 					const auto includeBorder=[&](EraserAttributeRect rect){
 						RECT contentPixels=Pixels(rect,scale);OffsetRect(&contentPixels,logical.left-presentation.left,logical.top-presentation.top);
 						RECT outer=contentPixels;InflateRect(&outer,Outset(),Outset());
-						BarDirtyRegionTracker::UnionInPlace(cursorDamage,ResolveBarLightBorderDamage(outer,contentPixels,influence));
+						DirtyRegionTracker::UnionInPlace(cursorDamage,ResolveLightBorderDamage(outer,contentPixels,influence));
 					};
-					for(std::size_t i=0;i<candidate.panels.size();++i)if(candidate.panelVisible[i])includeBorder(candidate.panels[i]);
+					for(const auto& panel:panels)if(panel.Candidate().visible){
+						const auto& r=panel.Candidate().interaction.bounds;includeBorder({r.left,r.top,r.right,r.bottom});
+					}
 				}
 				if(primaryChanged)FullDamage();
 				else{
-					RECT changedLight=previousCursorDamage;BarDirtyRegionTracker::UnionInPlace(changedLight,cursorDamage);
-					changedLight=IntersectBarDirtyRect(changedLight,{0,0,presentation.right-presentation.left,presentation.bottom-presentation.top});
-					if(!Empty(changedLight)){BarDirtyRegionTracker::UnionInPlace(damage,changedLight);invalidated=true;++damageRevision;}
+					RECT changedLight=previousCursorDamage;DirtyRegionTracker::UnionInPlace(changedLight,cursorDamage);
+					changedLight=IntersectDirtyRect(changedLight,{0,0,presentation.right-presentation.left,presentation.bottom-presentation.top});
+					if(!Empty(changedLight)){DirtyRegionTracker::UnionInPlace(damage,changedLight);invalidated=true;++damageRevision;}
 				}
 				previousCursorDamage=cursorDamage;appliedLighting=light;
 				appliedLightingRevision=revision;appliedLightingPresentation=presentation;
@@ -652,10 +614,10 @@ namespace Inkeys::UI::Bar
 		{
 			BarSurfaceButtonId newHover,newPressed;
 			{std::scoped_lock lock(inputMutex);if(!feedbackDirty)return;newHover=hover;newPressed=pressed;feedbackDirty=false;}
-			if(appliedHover&&appliedHover!=newHover)StopBarButtonHoverVisual(Button(appliedHover),false);
-			if(newHover&&newHover!=appliedHover)StartBarButtonHoverVisual(Button(newHover));
-			if(appliedPressed&&appliedPressed!=newPressed)SetBarButtonPressedVisual(Button(appliedPressed),false);
-			if(newPressed) {StopBarButtonHoverVisual(Button(newPressed),true,true);SetBarButtonPressedVisual(Button(newPressed),true);}
+			if(appliedHover&&appliedHover!=newHover)StopButtonHoverVisual(Button(appliedHover),false);
+			if(newHover&&newHover!=appliedHover)StartButtonHoverVisual(Button(newHover));
+			if(appliedPressed&&appliedPressed!=newPressed)SetButtonPressedVisual(Button(appliedPressed),false);
+			if(newPressed) {StopButtonHoverVisual(Button(newPressed),true,true);SetButtonPressedVisual(Button(newPressed),true);}
 			if(appliedHover)Include(Pixels({candidate.buttons[appliedHover-1].boundsDip.left,candidate.buttons[appliedHover-1].boundsDip.top,
 				candidate.buttons[appliedHover-1].boundsDip.right,candidate.buttons[appliedHover-1].boundsDip.bottom},scale));
 			appliedHover=newHover;appliedPressed=newPressed;
@@ -664,7 +626,7 @@ namespace Inkeys::UI::Bar
 		{
 			// 相同 frameTime 或隐藏后恢复也先处理字号策略，不能被 idle 早退吞掉。
 			if(renderer.UpdateFontRenderingPolicy(Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load()))FullDamage();
-			if(frameSeen&&now==previousFrame&&!indicatorInputDirty&&indicatorAnimations==static_cast<bool>(BarUiAnimationEnabled))return active||renderer.FontAnimationsActive();
+			if(frameSeen&&now==previousFrame&&!indicatorInputDirty&&indicatorAnimations==static_cast<bool>(UiAnimationEnabled))return active||renderer.FontAnimationsActive();
 			const bool fontPending=renderer.FontAnimationsActive();
 			if(fontPending)FullDamage();
 			Inkeys::UI::RenderPipeline::FrameStageTimer timer(Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics(),
@@ -674,14 +636,14 @@ namespace Inkeys::UI::Bar
 			if(auto* diagnostics=Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics()){
 				diagnostics->rawDtSeconds=animationClock.LastRawElapsedSeconds();diagnostics->animationDtSeconds=dt;
 			}
-			const double speed=(std::max)(0.01,static_cast<double>(BarUiAnimationSpeedRate));
-			const BarUiAnimationAdvanceContextClass frame{dt,speed,static_cast<bool>(BarUiAnimationEnabled),false};
+			const double speed=(std::max)(0.01,static_cast<double>(UiAnimationSpeedRate));
+			const UiAnimationAdvanceContextClass frame{dt,speed,static_cast<bool>(UiAnimationEnabled),false};
 			renderer.BeginFontFrame(now,frame,fontTargetScale>0?fontTargetScale:scale);
             indicatorInputDirty=false;indicatorAnimations=frame.animationEnabled;
             const auto episode=indicator.episode,indicatorSession=indicator.session;
             const bool indicatorChanged=indicator.Advance(now,content.loadingSession,
                 indicatorAllowed&&!backgroundOnly,static_cast<PageLoadState>(content.loadState),dt,speed,frame.animationEnabled,
-                [](bool entering,double t){return BarUiApplyCurve(entering?BarUiCurveEnum::EaseOutCubic:BarUiCurveEnum::EaseInCubic,t);});
+                [](bool entering,double t){return UiApplyCurve(entering?UiCurveEnum::EaseOutCubic:UiCurveEnum::EaseInCubic,t);});
             if((episode!=indicator.episode||indicatorSession!=indicator.session)&&ringFailed)ResetRingResources();
             // 门控到点/撤销时才切换状态文字，短暂的跳变不会出现任何变化。
             if(indicatorChanged)(void)RefreshDisplayedText();
@@ -695,10 +657,10 @@ namespace Inkeys::UI::Bar
             }
 
 			active=fontPending;bool changed=false,panelsChanged=false;
-			const auto surface=GetThemeColor(BarThemeColorEnum::Surface);
+			const auto surface=GetThemeColor(ThemeColorEnum::Surface);
 			if(appliedSurfaceColor!=surface){
 				// 普通表面跟随主栏样式，预览内部颜色仍由页面主题独立控制。
-				const auto text=GetThemeColor(BarThemeColorEnum::TextPrimary),border=GetThemeColor(BarThemeColorEnum::SurfaceFrame);
+				const auto text=GetThemeColor(ThemeColorEnum::TextPrimary),border=GetThemeColor(ThemeColorEnum::SurfaceFrame);
 				const double frameOpacity=GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity);
 				for(auto* shape:{&root,&menu,&theme})if(shape!=&root||!backgroundOnly||background.useThemeColors){
 					shape->fill->SetTar(surface);shape->frame->SetTar(border);
@@ -710,7 +672,7 @@ namespace Inkeys::UI::Bar
 				pageTotal.color.SetTar(text);unsaved.color.SetTar(text);for(auto& word:headings)word.color.SetTar(text);
 				const bool lightPreview=GetThemeLightWeight()>0.5;
 				for(auto& shape:previewBackgrounds){
-					shape.frame->SetTar(lightPreview?GetThemeColor(BarThemeColorEnum::SwatchFrame):RGB(144,144,144));
+					shape.frame->SetTar(lightPreview?GetThemeColor(ThemeColorEnum::SwatchFrame):RGB(144,144,144));
 					shape.framePct->SetTar(lightPreview?0.18:1.0);
 				}
 				appliedSurfaceColor=surface;
@@ -734,15 +696,15 @@ namespace Inkeys::UI::Bar
 			}
 			const auto advance=[&](auto& value){
 				if(frame.animationEnabled&&dt<=0&&!value.IsSame()){active=true;return;}
-				auto r=BarUiAdvanceAnimation(value,frame);active|=r.active;changed|=r.changed;};
+				auto r=UiAdvanceAnimation(value,frame);active|=r.active;changed|=r.changed;};
 			advance(opacity);advance(idleFade);
-			const BarButtonAnimationContext common{dt,speed,static_cast<bool>(BarUiAnimationEnabled)};
+			const ButtonAnimationContext common{dt,speed,static_cast<bool>(UiAnimationEnabled)};
 			const auto join=[&](const auto& result){active|=result.active;changed|=result.changed;};
-			join(AdvanceBarShapeVisual(root,common));
+			join(AdvanceShapeVisual(root,common));
 			if(!backgroundOnly){
-				for(auto* shape:{&menu,&theme,&divider,&dragHandle})join(AdvanceBarShapeVisual(*shape,common));
-				for(auto& word:headings)join(AdvanceBarWordVisual(word,common));
-				join(AdvanceBarWordVisual(unsaved,common));
+				for(auto* shape:{&menu,&theme,&divider,&dragHandle})join(AdvanceShapeVisual(*shape,common));
+				for(auto& word:headings)join(AdvanceWordVisual(word,common));
+				join(AdvanceWordVisual(unsaved,common));
 				panelsChanged=menuMotion.Advance(frame);panelsChanged|=themeMotion.Advance(frame);
 				active|=menuMotion.Active()||themeMotion.Active();
 				UpdateFeedback();
@@ -753,17 +715,17 @@ namespace Inkeys::UI::Bar
 					// 与主栏一致：图标用 IconPrimary、文字用 TextPrimary；只有压在白板底色上的样式预览按背景亮度覆盖。
 					std::optional<COLORREF> text;
 					if(id>=15){const auto rgb=content.backgroundRgb;const unsigned lum=((rgb>>16)&255)*299+((rgb>>8)&255)*587+(rgb&255)*114;
-						text=GetThemeColor(lum>128000?BarThemeModeEnum::Light:BarThemeModeEnum::Dark,BarThemeColorEnum::TextPrimary);}
+						text=GetThemeColor(lum>128000?ThemeModeEnum::Light:ThemeModeEnum::Dark,ThemeColorEnum::TextPrimary);}
 					const bool selected=id>=9&&(id<15?ThemeColors[id-9]==content.backgroundRgb:static_cast<int>(id-15)==content.pattern);
-					RetargetBarButtonInteractionVisual(button,visible,enabled,false,BarButtonHoverTransitionDuration,text,
+					RetargetButtonInteractionVisual(button,visible,enabled,false,ButtonHoverTransitionDuration,text,
 						id>=9?selected:(id!=1&&id!=3),
-						GetThemeColor(BarThemeColorEnum::PressedFill),GetThemeColor(BarThemeColorEnum::TextPrimary));
+						GetThemeColor(ThemeColorEnum::PressedFill),GetThemeColor(ThemeColorEnum::TextPrimary));
 					if(id>=9)button.icon.color1.reset();
-					BarButtonAnimationContext animation{dt,speed,static_cast<bool>(BarUiAnimationEnabled)};
+					ButtonAnimationContext animation{dt,speed,static_cast<bool>(UiAnimationEnabled)};
 					animation.visible=visible;animation.hoverAllowed=enabled&&id!=1;
 					// 通用禁用变浅只覆盖图标与主文字；总页码槽由 Scene 独立持有，需同口径补上。
-					if(id==3)pageTotal.pct.SetTar(visible?(enabled?1.0:GetThemeDisabledContentOpacity()):0.0,BarButtonHoverTransitionDuration);
-					const auto result=AdvanceBarButtonVisual(button,animation,id==3?&pageTotal:nullptr);
+					if(id==3)pageTotal.pct.SetTar(visible?(enabled?1.0:GetThemeDisabledContentOpacity()):0.0,ButtonHoverTransitionDuration);
+					const auto result=AdvanceButtonVisual(button,animation,id==3?&pageTotal:nullptr);
 					active|=result.active;
 					if(result.changed)Include(Pixels({candidate.buttons[id-1].boundsDip.left,candidate.buttons[id-1].boundsDip.top,
 						candidate.buttons[id-1].boundsDip.right,candidate.buttons[id-1].boundsDip.bottom},scale));
@@ -785,18 +747,19 @@ namespace Inkeys::UI::Bar
 			return {hover,pressed,static_cast<BarSurfaceButtonId>(result.activate),result.previousHover!=result.hover,
 				result.previousPressed!=result.pressed,hit!=0||result.previousPressed!=0};
 		}
-		void DrawShape(ID2D1DeviceContext* dc,BarUiShapeClass& shape)
-		{DrawBarBackgroundVisual(renderer,dc,shape,Inherit(shape));}
-		void SetPose(ID2D1DeviceContext* dc,EraserSurfacePose pose,EraserSurfacePose targetPose={})
+		void DrawShape(ID2D1DeviceContext* dc,UiShapeClass& shape)
+		{DrawBackgroundVisual(renderer,dc,shape,Inherit(shape));}
+		PanelPose DrawingPose(EraserSurfacePose pose,EraserSurfacePose targetPose={}) const
 		{
-			renderer.SetFrameZoom(scale*pose.scale);renderer.SetFontTargetScale(1.0);renderer.SetFontTargetZoom((fontTargetScale>0?fontTargetScale:scale)*targetPose.scale);renderer.SetFrameDiffuseReferenceZoom(scale);renderer.SetFrameDiffuseMaskGeometryScale(1.0/(std::max)(0.001,pose.scale));
+			PanelPose result;result.zoom=scale*pose.scale;result.fontTargetZoom=(fontTargetScale>0?fontTargetScale:scale)*targetPose.scale;
+			result.diffuseReferenceZoom=scale;result.diffuseGeometryScale=1.0/(std::max)(0.001,pose.scale);
 			const auto x=static_cast<FLOAT>(logical.left-presentation.left+pose.x*scale),y=static_cast<FLOAT>(logical.top-presentation.top+pose.y*scale);
 			auto light=drawingLighting;light.primaryLight.x-=x;light.primaryLight.y-=y;light.cursorLight.x-=x;light.cursorLight.y-=y;
-			renderer.SetFrameLightingSnapshot(light);dc->SetTransform(D2D1::Matrix3x2F::Translation(x,y));
+			result.lighting=light;result.edgeLighting=BarUiEdgeLightingEnabled;result.transform=D2D1::Matrix3x2F::Translation(x,y);return result;
 		}
 		void DrawButton(ID2D1DeviceContext* dc,BarSurfaceButtonId id)
 		{
-			auto& button=Button(id);BarButtonDrawOptions options;
+			auto& button=Button(id);ButtonDrawOptions options;
 			if(id==3)options.secondary=&pageTotal;
 			if(id>=6&&id<=8)options.primaryAlignment=DWRITE_TEXT_ALIGNMENT_LEADING;
 			if(id>=9){
@@ -816,28 +779,28 @@ namespace Inkeys::UI::Bar
             if(id==3&&indicator.Ring()>0&&!ringFailed)options.content=[&](auto& target,auto* context,auto& item,const auto&){
                 // 沿页码按钮边框内侧的圆角矩形画一段弧：无轨道、圆角端帽，弧长与起点由相位推导。
                 const auto r=Bounds(item.button);
-                const float corner=item.button.rw?static_cast<float>(item.button.rw->val):static_cast<float>(BarButtonCornerRadiusDip);
+                const float corner=item.button.rw?static_cast<float>(item.button.rw->val):static_cast<float>(ButtonCornerRadiusDip);
                 const auto arc=PageLoadingArcAt(indicator.phase,indicatorAnimations);
                 // 装饰失败不改变数字提交或业务恢复状态。
-                if(!ring.Draw(context,r.left,r.top,r.Width(),r.Height(),corner,static_cast<float>(BarButtonFrameThicknessDip),1.0F,
-                    static_cast<float>(target.GetFrameZoom()),{arc.start,arc.length,false},GetThemeColor(BarThemeColorEnum::IconPrimary),
+                if(!ring.Draw(context,r.left,r.top,r.Width(),r.Height(),corner,static_cast<float>(ButtonFrameThicknessDip),1.0F,
+                    static_cast<float>(target.GetFrameZoom()),{arc.start,arc.length,false},GetThemeColor(ThemeColorEnum::IconPrimary),
                     static_cast<FLOAT>(indicator.Ring())))ringFailed=true;
                 return true;
             };
-			DrawBarButtonVisual(renderer,dc,button,Inherit(button.button),options);
+			DrawButtonVisual(renderer,dc,button,Inherit(button.button),options);
 		}
 		void DrawGroup(ID2D1DeviceContext* dc,bool child)
 		{
 			const auto pose=child?themePose:menuPose;
-			const double alpha=child?themeFrame.opacity:menuFrame.opacity;
+			const double alpha=panels[child?2:1].Opacity();
 			if(alpha<=0.0001)return;
-			SetPose(dc,pose,child?themeFrame.targetPose:menuFrame.targetPose);
+			PanelPoseScope poseScope(renderer,dc,DrawingPose(pose,child?themeFrame.targetPose:menuFrame.targetPose));
 			const auto bounds=child?ThemeBounds:MenuBounds;
 			const auto pixels=Pixels(bounds,scale*pose.scale);
 			const bool layer=alpha<0.9999;
 			if(layer)renderer.PushPanelOpacity(dc,D2D1::RectF(static_cast<FLOAT>(pixels.left),static_cast<FLOAT>(pixels.top),
 				static_cast<FLOAT>(pixels.right),static_cast<FLOAT>(pixels.bottom)),alpha);
-			DrawShape(dc,child?theme:menu);
+			auto& surface=child?theme:menu;panels[child?2:1].DrawFrame(renderer,dc,Inherit(surface));
 			if(child){
 				DrawShape(dc,divider);
 				for(std::size_t i=0;i<headings.size();++i)
@@ -852,19 +815,14 @@ namespace Inkeys::UI::Bar
 
 	BarPageSurface::BarPageSurface():impl_(std::make_unique<Impl>()){}
 	BarPageSurface::~BarPageSurface(){SetSharedLightingSubscribed(false);}
-	BarPageSurface::BarPageSurface(BarPageSurface&& other) noexcept
-	{
-		// 注册表中的对象和 impl 必须在同一边界转移，发布线程不能看到已移空的 owner。
-		std::scoped_lock lock(lightingMutex);impl_=std::move(other.impl_);
-		for(auto*& item:lightingSubscribers)if(item==&other)item=this;
-	}
+	// 订阅捕获稳定的 Impl 地址，移动 unique_ptr 不改变注册目标。
+	BarPageSurface::BarPageSurface(BarPageSurface&& other) noexcept:impl_(std::move(other.impl_)){}
 	BarPageSurface& BarPageSurface::operator=(BarPageSurface&& other) noexcept
 	{
-		if(this!=&other){
-			std::scoped_lock lock(lightingMutex);std::erase(lightingSubscribers,this);
-			impl_=std::move(other.impl_);
-			for(auto*& item:lightingSubscribers)if(item==&other)item=this;
-		}
+		if(this!=&other){SetSharedLightingSubscribed(false);
+			// 旧 Impl 即将销毁：先让仍存活的帧目标放下对旧绘制器的引用。
+			if(impl_&&impl_->boundTarget)impl_->boundTarget->BindRenderer(nullptr);
+			impl_=std::move(other.impl_);}
 		return *this;
 	}
 	bool BarPageSurface::ConfigurePagination(const BarPageSurfaceContent& content,double duration)
@@ -878,9 +836,9 @@ namespace Inkeys::UI::Bar
 		auto& p=*impl_;p.background=background;p.backgroundOnly=true;p.initialized=true;
 		p.root.residentSurface=false;
 		InitializeShape(p.root,{background.bounds.left,background.bounds.top,background.bounds.right,background.bounds.bottom},
-			background.useThemeColors?GetThemeColor(BarThemeColorEnum::Surface):background.fill,
+			background.useThemeColors?GetThemeColor(ThemeColorEnum::Surface):background.fill,
 			background.cornerRadiusDip,background.fillOpacity,background.frameOpacity);
-		p.root.frame->SetDirect(background.useThemeColors?GetThemeColor(BarThemeColorEnum::SurfaceFrame):background.frame);
+		p.root.frame->SetDirect(background.useThemeColors?GetThemeColor(ThemeColorEnum::SurfaceFrame):background.frame);
 		p.root.ft->SetDirect(background.frameThicknessDip);p.root.frameLightPct->SetDirect(0);
 		p.RefreshGeometry();p.FullDamage();return true;
 	}
@@ -916,37 +874,43 @@ namespace Inkeys::UI::Bar
 	{std::scoped_lock lock(impl_->inputMutex);impl_->hooks=std::move(hooks);}
 	void BarPageSurface::SetSharedLightingSubscribed(bool value) noexcept
 	{
-		if(!impl_)return;
-		{
-			std::scoped_lock lock(lightingMutex);if(impl_->subscribed==value)return;
-			impl_->subscribed=value;
-			if(value)lightingSubscribers.push_back(this);else std::erase(lightingSubscribers,this);
-		}
-		// 订阅可晚于本帧 Advance/SetBounds；锁外重映射，首帧不等待下一次动画或光源发布。
+		if(!impl_||impl_->subscribed==value)return;
+		impl_->subscribed=value;
+		if(value)impl_->lightingSubscription=AddSharedLightingSubscriber(
+			[owner=impl_.get()]{return owner->SnapshotLightingTarget();});
+		else{RemoveSharedLightingSubscriber(impl_->lightingSubscription);impl_->lightingSubscription=0;}
+		// 订阅可晚于本帧 Advance/SetBounds；首帧不等待下一次光源发布。
 		if(value){impl_->appliedLightingRevision=0;impl_->RefreshLighting();}
-	}
-	void BarPageSurface::PublishSharedLighting(const BarSurfaceSharedLighting& value) noexcept
-	{
-		std::vector<BarSurfaceHooks> targets;
-		{
-			std::scoped_lock lock(lightingMutex);if(SameLighting(sharedLighting,value))return;
-			const auto previous=sharedLighting;sharedLighting=value;++lightingRevision;
-			// 只在锁内读取 owner；锁外只保留值回调，Reset/移动/销毁不能留下悬空 impl。
-			for(auto* surface:lightingSubscribers)
-				if(surface->impl_->NeedsLightingUpdate(previous,value))targets.push_back(surface->impl_->SnapshotHooks());
-		}
-		for(const auto& hooks:targets){if(hooks.invalidate)hooks.invalidate();if(hooks.wake)hooks.wake();}
-		const auto shape = Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
-		if (shape && shape->object) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::SelectionOverlay);
 	}
 	void BarPageSurface::Reset() noexcept
 	{
-		SetSharedLightingSubscribed(false);impl_->renderer.DiscardDeviceResources();impl_=std::make_unique<Impl>();
+		SetSharedLightingSubscribed(false);
+		// 帧目标归宿主持有、跨 Reset 存活：与原来同序先丢弃目标资源，再解除它对旧绘制器的引用；
+		// 整体重建 Impl 后重新绑定，帧目标不会指向已销毁的绘制器。
+		FrameTarget* const target=impl_->boundTarget;
+		if(target){target->Discard();target->BindRenderer(nullptr);}
+		impl_=std::make_unique<Impl>();
+		if(target)BindFrameTarget(target);
+	}
+	void BarPageSurface::BindFrameTarget(FrameTarget* target)
+	{
+		if(!impl_||impl_->boundTarget==target)return;
+		if(impl_->boundTarget)impl_->boundTarget->BindRenderer(nullptr);
+		impl_->boundTarget=target;
+		if(target)target->BindRenderer(&impl_->renderer);
+	}
+	void BarPageSurface::PrepareDeviceGeneration(unsigned long long generation) noexcept
+	{
+		// 先清场景自有设备资源，宿主随后才 Ensure 帧目标（与原 EnsureDeviceResources 同序）。
+		const unsigned long long current=impl_->boundTarget?impl_->boundTarget->DeviceGeneration():0;
+		if(current!=generation){impl_->ResetRingResources();for(BarSurfaceButtonId id=1;id<=17;++id)impl_->Button(id).icon.ResetCache();}
 	}
 	void BarPageSurface::ReleaseDeviceResources() noexcept
 	{
 		impl_->ResetRingResources();
-		impl_->renderer.DiscardDeviceResources();for(BarSurfaceButtonId id=1;id<=17;++id){impl_->Button(id).icon.ResetCache();impl_->Button(id).pngIcon.ResetCache();}
+		// 帧目标由宿主持有，但其丢弃必须夹在环资源与图标缓存清理之间，保持原有先后。
+		if(impl_->boundTarget)impl_->boundTarget->Discard();
+		for(BarSurfaceButtonId id=1;id<=17;++id){impl_->Button(id).icon.ResetCache();impl_->Button(id).pngIcon.ResetCache();}
 		impl_->FullDamage();
 	}
 	void BarPageSurface::Invalidate() noexcept{impl_->FullDamage();impl_->Wake();}
@@ -968,47 +932,43 @@ namespace Inkeys::UI::Bar
 	BarPageSurfaceGeometry BarPageSurface::Geometry() const noexcept
 	{
 		auto& p=*impl_;const auto body=Bounds(p.root);
-		return {{body.left,body.top,body.right,body.bottom},p.opacity.val,BarThemeMaterial::ResolveIdleOpacity(p.root.pct.val,BarThemeMaterial::IdleBackgroundOpacity,p.backgroundOnly?0.0:static_cast<double>(p.idleFade.val)),p.layoutRevision,
+		return {{body.left,body.top,body.right,body.bottom},p.opacity.val,ThemeMaterial::ResolveIdleOpacity(p.root.pct.val,ThemeMaterial::IdleBackgroundOpacity,p.backgroundOnly?0.0:static_cast<double>(p.idleFade.val)),p.layoutRevision,
 			!p.root.x.IsSame()||!p.root.y.IsSame()||!p.root.w.IsSame()||!p.root.h.IsSame()};
 	}
 	RECT BarPageSurface::LogicalBounds() const noexcept{return impl_->logical;}
 	RECT BarPageSurface::PresentationBounds() const noexcept{return impl_->presentation;}
 	LONG BarPageSurface::PresentationOutsetPixels() const noexcept{return impl_->Outset();}
-	HRESULT BarPageSurface::EnsureDeviceResources(const Inkeys::UI::RenderPipeline::DeviceEpoch& epoch,UINT w,UINT h)
-	{
-		if(impl_->renderer.GetDeviceGeneration()!=epoch.generation){impl_->ResetRingResources();for(BarSurfaceButtonId id=1;id<=17;++id)impl_->Button(id).icon.ResetCache();}
-		return impl_->renderer.EnsureDeviceResources(epoch,w,h);
-	}
-	ID2D1DeviceContext* BarPageSurface::DeviceContext() const noexcept{return impl_->renderer.GetDeviceContext();}
-	ID2D1GdiInteropRenderTarget* BarPageSurface::GdiInteropRenderTarget() const noexcept{return impl_->renderer.GetGdiInteropRenderTarget();}
-	BarUIRendering& BarPageSurface::Renderer() noexcept{return impl_->renderer;}
-	void BarPageSurface::HandleFrameEndDrawResult(HRESULT value){impl_->renderer.HandleFrameEndDrawResult(value);}
 	void BarPageSurface::CommitPresented(bool inputEnabled) noexcept
 	{
 		std::scoped_lock lock(impl_->inputMutex);const auto generation=impl_->committed.generation+1;
 		impl_->committed=impl_->candidate;impl_->committed.generation=generation;
 		for(auto& button:impl_->committed.buttons)button.enabled&=inputEnabled;
 		impl_->committedSerial=impl_->capturedSerial;
+		for(auto& panel:impl_->panels)panel.CommitPresented();
 	}
 	std::uint64_t BarPageSurface::CapturePresentationCandidate() noexcept
 	{
 		impl_->capturedCandidate=impl_->candidate;
 		impl_->capturedDamageRevision=impl_->damageRevision;
-		return ++impl_->capturedSerial;
+		const auto serial=++impl_->capturedSerial;
+		for(auto& panel:impl_->panels)panel.CaptureCandidate(serial);
+		return serial;
 	}
 	bool BarPageSurface::IsPresentationCandidateCurrent(std::uint64_t serial) const noexcept
 	{
-		return serial&&serial==impl_->capturedSerial&&serial>impl_->committedSerial
+		return std::all_of(impl_->panels.begin(),impl_->panels.end(),[serial](const Panel& panel){return panel.CanConfirm(serial);})
 			&&impl_->capturedDamageRevision==impl_->damageRevision;
 	}
 	bool BarPageSurface::CommitPresentationCandidate(std::uint64_t serial,bool inputEnabled) noexcept
 	{
 		if(!serial||serial!=impl_->capturedSerial||serial<=impl_->committedSerial)return false;
 		std::scoped_lock lock(impl_->inputMutex);
+		for(const auto& panel:impl_->panels)if(!panel.CanConfirm(serial))return false;
 		const auto generation=impl_->committed.generation+1;
 		impl_->committed=impl_->capturedCandidate;impl_->committed.generation=generation;
 		for(auto& button:impl_->committed.buttons)button.enabled&=inputEnabled;
 		impl_->committedSerial=serial;
+		for(auto& panel:impl_->panels)panel.ConfirmPresented(serial);
 		// 捕获后的反馈/光照失效仍归下一帧，旧回执只消费它实际覆盖的 damage。
 		if(impl_->capturedDamageRevision==impl_->damageRevision){impl_->damage={};impl_->invalidated=false;}
 		return true;
@@ -1024,13 +984,12 @@ namespace Inkeys::UI::Bar
 	bool BarPageSurface::HitTestBackground(POINT point) const noexcept
 	{
 		std::scoped_lock lock(impl_->inputMutex);const auto& c=impl_->committed;if(!c.enabled)return false;
-		for(std::size_t i=0;i<c.panels.size();++i)if(c.panelVisible[i]&&RoundedContains(c.panels[i],c.panelRadii[i],point.x/c.scale,point.y/c.scale))return true;
-		return false;
+		return impl_->FrontPanel(point.x/c.scale,point.y/c.scale)>=0;
 	}
 	BarSurfaceButtonId BarPageSurface::HitTest(POINT point) const noexcept
 	{
 		std::scoped_lock lock(impl_->inputMutex);const auto& c=impl_->committed;if(!c.enabled)return 0;
-		return Impl::HitButton(c,point);
+		return impl_->HitButton(c,point);
 	}
 	BarSurfaceButtonId BarPageSurface::HitTestPresentation(POINT point) const noexcept
 	{const auto logical=PresentationToLogical(point);return logical?HitTest(*logical):0;}
@@ -1041,9 +1000,9 @@ namespace Inkeys::UI::Bar
 		if(!c.enabled)return result;
 		result.logical={point.x+c.presentation.left-c.logical.left,point.y+c.presentation.top-c.logical.top};
 		result.valid=true;
-		const int panel=Impl::FrontPanel(c,result.logical.x/c.scale,result.logical.y/c.scale);
+		const int panel=impl_->FrontPanel(result.logical.x/c.scale,result.logical.y/c.scale);
 		result.background=panel>=0;result.primaryBackground=panel==0;result.popupBackground=panel>0;
-		result.hit=Impl::HitButton(c,result.logical);
+		result.hit=impl_->HitButton(c,result.logical);
 		return result;
 	}
 	BarSurfacePointerResult BarPageSurface::ApplyPointer(BarSurfacePointerEventKind kind,BarSurfaceButtonId hit,
@@ -1066,6 +1025,7 @@ namespace Inkeys::UI::Bar
 	bool BarPageSurface::Advance(std::chrono::steady_clock::time_point now) noexcept{return impl_->Advance(now);}
 	void BarPageSurface::SuspendForIdle(std::chrono::steady_clock::time_point now) noexcept{impl_->animationClock.SuspendForIdle(now);}
 	bool BarPageSurface::AnimationActive() const noexcept{return impl_->active||impl_->renderer.FontAnimationsActive();}
+	bool BarPageSurface::FontAnimationsActive() const noexcept{return impl_->renderer.FontAnimationsActive();}
     void BarPageSurface::SetLoadingIndicatorVisible(bool visible) noexcept
     {
         if(impl_->indicatorAllowed!=visible)impl_->indicatorInputDirty=true;
@@ -1073,7 +1033,7 @@ namespace Inkeys::UI::Bar
         if(!visible){if(impl_->indicator.Ring()>0)impl_->Include(impl_->ringDamage);impl_->ringDamage={};impl_->indicator.Reset();(void)impl_->RefreshDisplayedText();}
     }
     bool BarPageSurface::LoadingIndicatorAnimationActive() const noexcept
-    {return impl_->indicatorAllowed&&!impl_->ringFailed&&impl_->indicator.NeedsFrames(static_cast<bool>(BarUiAnimationEnabled));}
+    {return impl_->indicatorAllowed&&!impl_->ringFailed&&impl_->indicator.NeedsFrames(static_cast<bool>(UiAnimationEnabled));}
     std::chrono::steady_clock::time_point BarPageSurface::LoadingIndicatorDeadline() const noexcept
     {return impl_->indicatorAllowed?impl_->indicator.WakeDeadline():std::chrono::steady_clock::time_point::max();}
 	bool BarPageSurface::PopupAnimationActive() const noexcept{return impl_->menuMotion.Active()||impl_->themeMotion.Active();}
@@ -1086,21 +1046,24 @@ namespace Inkeys::UI::Bar
 				|(light.cursorLightVisible?4U:0U)|(light.cursorIntensity>0.0001F?8U:0U);
 		}
 		p.drawingLighting=p.renderer.SnapshotFrameLighting();
-		D2D1_MATRIX_3X2_F original;dc->GetTransform(&original);p.SetPose(dc,{});
+		D2D1_MATRIX_3X2_F original;dc->GetTransform(&original);
+		{
+		PanelPoseScope rootPose(p.renderer,dc,p.DrawingPose({}));
 		const float alpha=static_cast<FLOAT>(p.opacity.val);const bool layer=alpha<0.9999F;
 		if(layer)p.renderer.PushPanelOpacity(dc,D2D1::RectF(static_cast<FLOAT>(p.presentation.left-p.logical.left),static_cast<FLOAT>(p.presentation.top-p.logical.top),
 			static_cast<FLOAT>(p.presentation.right-p.logical.left),static_cast<FLOAT>(p.presentation.bottom-p.logical.top)),alpha);
 		// 后层先画：主题位于菜单下，菜单位于分页栏下；沿用共享面板的当前姿态。
 		if(!p.backgroundOnly){
-			if(p.themeFrame.visible)p.DrawGroup(dc,true);
-			if(p.menuFrame.visible)p.DrawGroup(dc,false);
-			p.SetPose(dc,{});
+			for(const auto& entry:p.panelStack.DrawOrder()){
+				if(entry.id==2&&p.themeFrame.visible)p.DrawGroup(dc,true);
+				if(entry.id==1&&p.menuFrame.visible)p.DrawGroup(dc,false);
+			}
 		}
 		p.renderer.SetResidentIdleFade(p.backgroundOnly?0.0:static_cast<double>(p.idleFade.val));
-		p.DrawShape(dc,p.root);
+		p.panels[0].DrawFrame(p.renderer,dc,Inherit(p.root));
 		if(p.backgroundOnly&&p.background.drawContent){
 			dc->SetTransform(D2D1::Matrix3x2F::Scale(p.scale,p.scale)*D2D1::Matrix3x2F::Translation(static_cast<FLOAT>(p.logical.left-p.presentation.left),static_cast<FLOAT>(p.logical.top-p.presentation.top)));
-			p.background.drawContent(dc,D2D1::RectF(static_cast<FLOAT>(p.background.bounds.left),static_cast<FLOAT>(p.background.bounds.top),static_cast<FLOAT>(p.background.bounds.right),static_cast<FLOAT>(p.background.bounds.bottom)));p.SetPose(dc,{});
+			p.background.drawContent(dc,D2D1::RectF(static_cast<FLOAT>(p.background.bounds.left),static_cast<FLOAT>(p.background.bounds.top),static_cast<FLOAT>(p.background.bounds.right),static_cast<FLOAT>(p.background.bounds.bottom)));dc->SetTransform(p.DrawingPose({}).transform);
 		}
 		if(!p.backgroundOnly){
 			if(!p.content.whiteboard){
@@ -1115,8 +1078,12 @@ namespace Inkeys::UI::Bar
 			p.renderer.SetResidentContentOpacity(1.0);
 		}
 		p.renderer.SetResidentIdleFade(0);
-		if(layer)dc->PopLayer();dc->SetTransform(original);p.renderer.SetFrameZoom(p.scale);p.renderer.SetFrameDiffuseMaskGeometryScale(1);
-		p.renderer.SetFrameLightingSnapshot(p.drawingLighting);
+		if(layer)dc->PopLayer();
+		}
+		// 退出作用域后仍保持原 Render 对外留下的根字号/倍率，供下一次布局测量使用。
+		dc->SetTransform(original);p.renderer.SetFrameZoom(p.scale);p.renderer.SetFrameDiffuseMaskGeometryScale(1);
+		p.renderer.SetFontTargetScale(1.0);p.renderer.SetFontTargetZoom(p.fontTargetScale>0?p.fontTargetScale:p.scale);p.renderer.SetFrameDiffuseReferenceZoom(p.scale);
+		p.renderer.SetFrameLightingSnapshot(p.drawingLighting, BarUiEdgeLightingEnabled);
 		return {true,p.active||p.renderer.FontAnimationsActive(),p.invalidated,p.damage};
 	}
 }

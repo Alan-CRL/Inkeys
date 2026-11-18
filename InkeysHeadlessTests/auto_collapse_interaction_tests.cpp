@@ -1,6 +1,6 @@
-#include "../Inkeys/Inkeys/UI/Bar/Bar.AutoCollapseInteraction.h"
+﻿#include <iostream>
 
-#include <iostream>
+import Inkeys.UI.Bar.AutoCollapse;
 
 int RunAutoCollapseInteractionTests()
 {

@@ -1,9 +1,13 @@
-#include "../Inkeys/Inkeys/UI/Bar/Bar.PresentDecision.h"
+﻿#include <Windows.h>
+#include <d2d1.h>
+#include <dxgi.h>
 
 #include <array>
 #include <cstdint>
 #include <iostream>
 #include <string_view>
+
+import Inkeys.UI.Bar.PresentDecision;
 
 namespace
 {

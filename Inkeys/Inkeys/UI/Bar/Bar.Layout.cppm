@@ -12,12 +12,15 @@ export module Inkeys.UI.Bar:Layout;
 
 export import Inkeys.UI.Bar.Metrics;
 
-import :UI;
+export import Inkeys.UI.UI3;
 import :Theme;
 
-import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.UI3.Animation;
 
 import Inkeys.Conv.Color;
+import Inkeys.UI.Bar.PenPreviewMotion;
+
+using namespace Inkeys::UI::UI3;
 
 namespace
 {
@@ -165,11 +168,11 @@ export
 	};
 
 	BarThicknessPreviewGeometry CalculateBarThicknessPreviewGeometry(
-		const BarUiShapeClass& panel,
-		const BarUiShapeClass& thicknessRegion,
-		const BarUiInheritClass& thicknessRegionInherit,
-		const BarUiShapeClass& thicknessAdjust,
-		const BarUiInheritClass& thicknessAdjustInherit)
+		const UiShapeClass& panel,
+		const UiShapeClass& thicknessRegion,
+		const UiInheritClass& thicknessRegionInherit,
+		const UiShapeClass& thicknessAdjust,
+		const UiInheritClass& thicknessAdjustInherit)
 	{
 		BarThicknessPreviewGeometry geometry;
 		geometry.panelScale = panel.w.val / BarDrawAttributeExpandedWidth;
@@ -386,7 +389,7 @@ export
 			GetPenWidthFamily(snapshot), snapshot.penWidthContext);
 	}
 
-	void UpdateBarThicknessPreviewWidth(BarUiValueClass& value,
+	void UpdateBarThicknessPreviewWidth(UiValueClass& value,
 		double canvasWidthPx, bool candidateActive, double duration)
 	{
 		// 手势候选值直接更新绘制所读的 val；按钮和程序化切换仍保留过渡动画。
@@ -442,98 +445,6 @@ export
 			+ 0.7152 * LinearChannel(GetGValue(background))
 			+ 0.0722 * LinearChannel(GetBValue(background));
 		return luminance > 0.179 ? RGB(0, 0, 0) : RGB(255, 255, 255);
-	}
-
-	struct BarColorPickerHsv
-	{
-		double hue = 0.0;
-		double saturation = 0.0;
-		double value = 0.0;
-	};
-
-	BarColorPickerHsv ConvertBarColorPickerRgbToHsv(COLORREF color)
-	{
-		double red = static_cast<double>(GetRValue(color)) / 255.0;
-		double green = static_cast<double>(GetGValue(color)) / 255.0;
-		double blue = static_cast<double>(GetBValue(color)) / 255.0;
-		double maximum = max(max(red, green), blue);
-		double minimum = min(min(red, green), blue);
-		double delta = maximum - minimum;
-
-		BarColorPickerHsv hsv;
-		hsv.value = maximum;
-		hsv.saturation = maximum <= 0.0 ? 0.0 : delta / maximum;
-		if (delta <= 0.000001) return hsv;
-		if (maximum == red)
-			hsv.hue = fmod((green - blue) / delta, 6.0) / 6.0;
-		else if (maximum == green)
-			hsv.hue = ((blue - red) / delta + 2.0) / 6.0;
-		else hsv.hue = ((red - green) / delta + 4.0) / 6.0;
-		if (hsv.hue < 0.0) hsv.hue += 1.0;
-		return hsv;
-	}
-
-	COLORREF ConvertBarColorPickerHsvToRgb(
-		double hue, double saturation, double value)
-	{
-		hue = hue - floor(hue);
-		saturation = clamp(saturation, 0.0, 1.0);
-		value = clamp(value, 0.0, 1.0);
-		double sector = hue * 6.0;
-		int index = static_cast<int>(floor(sector)) % 6;
-		double fraction = sector - floor(sector);
-		double p = value * (1.0 - saturation);
-		double q = value * (1.0 - fraction * saturation);
-		double t = value * (1.0 - (1.0 - fraction) * saturation);
-		double red = 0.0, green = 0.0, blue = 0.0;
-		switch (index)
-		{
-		case 0: red = value; green = t; blue = p; break;
-		case 1: red = q; green = value; blue = p; break;
-		case 2: red = p; green = value; blue = t; break;
-		case 3: red = p; green = q; blue = value; break;
-		case 4: red = t; green = p; blue = value; break;
-		default: red = value; green = p; blue = q; break;
-		}
-		auto Channel = [](double channel)
-			{
-				return static_cast<BYTE>(clamp(
-					lround(channel * 255.0), 0L, 255L));
-			};
-		return RGB(Channel(red), Channel(green), Channel(blue));
-	}
-
-	COLORREF GetBarColorPickerColor(double x, double y, bool darkTone,
-		bool openBelowSwatch)
-	{
-		x = x - floor(x);
-		y = clamp(y, 0.0, 1.0);
-		// 黑/白端始终远离入口；上下展开时只翻转纵向色义，不翻转内容。
-		double farProgress = openBelowSwatch ? y : 1.0 - y;
-		return darkTone
-			? ConvertBarColorPickerHsvToRgb(x, 1.0, 1.0 - farProgress)
-			: ConvertBarColorPickerHsvToRgb(x, 1.0 - farProgress, 1.0);
-	}
-
-	bool ProjectBarColorPickerColor(COLORREF color, bool darkTone,
-		bool openBelowSwatch, double& x, double& y, bool& exact)
-	{
-		BarColorPickerHsv hsv = ConvertBarColorPickerRgbToHsv(color);
-		x = hsv.hue;
-		double farProgress = 0.0;
-		if (darkTone)
-		{
-			farProgress = 1.0 - hsv.value;
-			exact = hsv.saturation >= 1.0 - 0.5 / 255.0
-				|| hsv.value <= 0.5 / 255.0;
-		}
-		else
-		{
-			farProgress = 1.0 - hsv.saturation;
-			exact = hsv.value >= 1.0 - 0.5 / 255.0;
-		}
-		y = openBelowSwatch ? farProgress : 1.0 - farProgress;
-		return true;
 	}
 
 	bool IsBarPresetColor(COLORREF color)

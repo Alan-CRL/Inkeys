@@ -1,3 +1,8 @@
+﻿#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <string_view>
+#include "../Inkeys/Inkeys/Helper/Ui3PresentationFixtureAuth.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -13,11 +18,17 @@
 #include <thread>
 #include <vector>
 
-#include "../Inkeys/Inkeys/UI/Bar/Bar.PresentDecision.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.PresentationProbe.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.Presentation.Source.h"
+#include <Windows.h>
+
+#include <cstddef>
+#include <cstdint>
 
 import Inkeys.UI.RenderPipeline;
+import Inkeys.UI.UI3.PresentationProbe;
+import Inkeys.UI.Bar.PresentDecision;
+import Inkeys.UI.Bar.PresentationSource;
+
+using namespace Inkeys::UI::UI3;
 
 #include "../Inkeys/Inkeys/UI/RenderPipeline/RenderPipeline.Diagnostics.h"
 
@@ -71,9 +82,9 @@ namespace
 		frame.presentFailed = frame.presentAttempted && !completion.IsCommitted();
 	}
 
-	Inkeys::UI::Bar::Ui3FiniteSignature FiniteSignature()
+	Inkeys::UI::UI3::Ui3FiniteSignature FiniteSignature()
 	{
-		Inkeys::UI::Bar::Ui3FiniteSignature signature;
+		Inkeys::UI::UI3::Ui3FiniteSignature signature;
 		signature.flags = 64;
 		signature.stateMode = 1;
 		signature.penMode = 0;
@@ -84,12 +95,12 @@ namespace
 		signature.toolRevision = 1;
 		signature.displaySerial = 2;
 		signature.configZoomBits = std::bit_cast<std::uint64_t>(1.0);
-		signature.validMask = Inkeys::UI::Bar::Ui3FiniteRequiredMask;
+		signature.validMask = Inkeys::UI::UI3::Ui3FiniteRequiredMask;
 		return signature;
 	}
 
-	void PublishFinite(Inkeys::UI::Bar::Ui3FinitePublication& publication, std::uint64_t step,
-		Inkeys::UI::Bar::Ui3FiniteScene scene, const Inkeys::UI::Bar::Ui3FiniteSignature& signature)
+	void PublishFinite(Inkeys::UI::UI3::Ui3FinitePublication& publication, std::uint64_t step,
+		Inkeys::UI::UI3::Ui3FiniteScene scene, const Inkeys::UI::UI3::Ui3FiniteSignature& signature)
 	{
 		auto mutation = publication.BeginMutation(step, scene, step);
 		publication.MarkBusinessAccepted(mutation);
@@ -101,9 +112,9 @@ namespace
 	{
 		std::mutex mutex;
 		std::condition_variable condition;
-		Inkeys::UI::Bar::Ui3FiniteTestPoint target;
+		Inkeys::UI::UI3::Ui3FiniteTestPoint target;
 		bool entered = false, release = false;
-		static void Checkpoint(Inkeys::UI::Bar::Ui3FiniteTestPoint point, void* context) noexcept
+		static void Checkpoint(Inkeys::UI::UI3::Ui3FiniteTestPoint point, void* context) noexcept
 		{
 			auto& self = *static_cast<FinitePause*>(context);
 			if (point != self.target) return;
@@ -2158,7 +2169,7 @@ int RunRenderSchedulerTests()
 
 	static_assert(32768 * (sizeof(Inkeys::UI::RenderPipeline::RawCallbackSample)
 		+ sizeof(Inkeys::UI::RenderPipeline::RawBatchSample))
-		+ sizeof(Inkeys::UI::Bar::Ui3FinitePublication) <= 64ull * 1024 * 1024);
+		+ sizeof(Inkeys::UI::UI3::Ui3FinitePublication) <= 64ull * 1024 * 1024);
 
 	{
 		using namespace Inkeys::UI::Bar;
@@ -2469,13 +2480,13 @@ int RunRenderSchedulerTests()
 	{
 		using namespace Inkeys::UI::Bar;
 		const auto mainRows = CompiledUi3FixtureInputs(Ui3FiniteScene::MainFold), drawRows = CompiledUi3FixtureInputs(Ui3FiniteScene::DrawAttribute);
-		const auto mainDescriptor = GetCompiledUi3FixtureSourceV1(Ui3FiniteScene::MainFold), drawDescriptor = GetCompiledUi3FixtureSourceV1(Ui3FiniteScene::DrawAttribute);
+		const auto mainDescriptor = GetCompiledUi3FixtureSourceV1(static_cast<std::uint32_t>(Ui3FiniteScene::MainFold)), drawDescriptor = GetCompiledUi3FixtureSourceV1(static_cast<std::uint32_t>(Ui3FiniteScene::DrawAttribute));
 		bool exact = mainRows.size() == 433 && drawRows.size() == 435 && mainDescriptor.expectedSteps == 216 && drawDescriptor.expectedSteps == 216
 			&& mainDescriptor.sourceHash != 0 && drawDescriptor.sourceHash != 0 && mainDescriptor.sourceHash != drawDescriptor.sourceHash;
 		for (std::size_t index = 0; index < mainRows.size(); ++index) exact &= IsUi3FixtureInputValid(Ui3FiniteScene::MainFold, mainRows[index], index);
 		for (std::size_t index = 0; index < drawRows.size(); ++index) exact &= IsUi3FixtureInputValid(Ui3FiniteScene::DrawAttribute, drawRows[index], index);
 		const auto unknown = static_cast<Ui3FiniteScene>(99);
-		if (!Expect(exact && CompiledUi3FixtureInputs(unknown).empty() && GetCompiledUi3FixtureSourceV1(unknown).sourceHash == 0,
+		if (!Expect(exact && CompiledUi3FixtureInputs(unknown).empty() && GetCompiledUi3FixtureSourceV1(static_cast<std::uint32_t>(unknown)).sourceHash == 0,
 			"F210 compiled immutable source tables and descriptors have exact planned rows and reject unknown scene")) ++failures;
 		std::vector<Ui3FixtureInputV1> changed(mainRows.begin(), mainRows.end());
 		changed[0].reserved0 = 1;
@@ -2519,8 +2530,8 @@ int RunRenderSchedulerTests()
 		if (!Expect(SameUi3FixtureWire(wire, wire) && !SameUi3FixtureWire(wire, altered), "F214 production wire fingerprint preserves actual button state")) ++failures;
 	}
 	static_assert(32768 * (sizeof(Inkeys::UI::RenderPipeline::RawCallbackSample)
-		+ sizeof(Inkeys::UI::RenderPipeline::RawBatchSample)) + sizeof(Inkeys::UI::Bar::Ui3FinitePublication)
-		+ sizeof(Inkeys::UI::Bar::Ui3FiniteObserver) <= 64ull * 1024 * 1024);
+		+ sizeof(Inkeys::UI::RenderPipeline::RawBatchSample)) + sizeof(Inkeys::UI::UI3::Ui3FinitePublication)
+		+ sizeof(Inkeys::UI::UI3::Ui3FiniteObserver) <= 64ull * 1024 * 1024);
 
 	return failures;
 }

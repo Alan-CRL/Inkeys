@@ -1,10 +1,14 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include "../Inkeys/Inkeys/Helper/Ui3PresentationFixtureAuth.h"
 
+#include "../Inkeys/Inkeys/Helper/Ui3PresentationFixtureAuth.h"
 #include <array>
 #include <iostream>
+
+import Inkeys.UI.UI3.PresentationProbe;
+
+using namespace Inkeys::UI::UI3;
 
 static_assert(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS == 0);
 

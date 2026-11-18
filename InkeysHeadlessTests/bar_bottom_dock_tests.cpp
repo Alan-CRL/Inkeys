@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
@@ -11,13 +11,18 @@
 #include <string_view>
 #include <thread>
 
-#include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.FontSize.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.A2.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.MainLayoutPolicy.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.DirtyRegion.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.WindowGeometry.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.PresentDecision.h"
+#include <algorithm>
+#include <atomic>
+
+import Inkeys.UI.UI3.Animation;
+import Inkeys.UI.UI3.DirtyRegion;
+import Inkeys.UI.Bar.BottomDock;
+import Inkeys.UI.Bar.MainLayoutPolicy;
+import Inkeys.UI.Bar.WindowGeometry;
+import Inkeys.UI.Bar.PresentDecision;
+import Inkeys.UI.Bar.A2;
+
+using namespace Inkeys::UI::UI3;
 
 namespace
 {
@@ -320,12 +325,12 @@ namespace
 			const auto held = ResolveBarBottomDockVerticalMapping(0.0, 80.0, resolvedOffset);
 			const double targetScale = ResolveBarBottomDockFontTargetScale(held, true);
 			const double targetPixels = 13.0 * zoom * targetScale;
-			const double coefficient = Detail::ResolveBarFontCorrectionTarget(targetPixels, false);
+			const double coefficient = Inkeys::UI::UI3::Detail::ResolveFontCorrectionTarget(targetPixels, false);
 			Check(Near(targetScale, held.scaleY)
 				&& Near(13.0 * zoom * held.scaleY * coefficient, std::floor(targetPixels)),
 				"held font target shares the render owner's resolved physical grip");
 			const auto stale = ResolveBarBottomDockVerticalMapping(0.0, 80.0, 5.0);
-			const double staleCoefficient = Detail::ResolveBarFontCorrectionTarget(13.0 * zoom * stale.scaleY, false);
+			const double staleCoefficient = Inkeys::UI::UI3::Detail::ResolveFontCorrectionTarget(13.0 * zoom * stale.scaleY, false);
 			Check(!Near(13.0 * zoom * held.scaleY * staleCoefficient, std::floor(targetPixels)),
 				"stale input offset is a distinct fractional-font regression witness");
 			const auto captureMoving = ResolveBarBottomDockVerticalMapping(0.0, 80.0, resolvedOffset, 9.0, true);
@@ -629,7 +634,7 @@ namespace
 		const RECT window{ 0, 0, 800, 600 };
 		const RECT previous{ 100, 100, 400, 200 };
 		const RECT finalBounds{ 150, 100, 350, 200 };
-		BarDirtyRegionTracker dirty;
+		DirtyRegionTracker dirty;
 		dirty.BeginFrame(window);
 		dirty.Observe(1, previous);
 		dirty.CommitPresented();
@@ -1163,7 +1168,7 @@ int RunBarBottomDockTests()
 	const RECT stableIndicatorEnvelope =
 		ResolveBarBottomDockIndicatorVisualEnvelope(
 			dockIndicator, 1.0, 1.0, 6.0, 1.0, 3);
-	BarDirtyRegionTracker indicatorDirtyTracker;
+	DirtyRegionTracker indicatorDirtyTracker;
 	constexpr std::uint64_t indicatorDirtyKey = 1;
 	const RECT indicatorWindow{ 0, 0, 1920, 1080 };
 	indicatorDirtyTracker.BeginFrame(indicatorWindow);

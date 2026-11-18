@@ -1,4 +1,4 @@
-#include <atomic>
+﻿#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <future>
@@ -7,12 +7,14 @@
 #include <thread>
 #include <vector>
 
-import Inkeys.UI.Bar.WakeSignal;
+import Inkeys.UI.UI3.WakeSignal;
+
+using namespace Inkeys::UI::UI3;
 
 namespace
 {
 	using namespace std::chrono_literals;
-	using Inkeys::UI::Bar::WakeSignal;
+	using Inkeys::UI::UI3::WakeSignal;
 
 	int failureCount = 0;
 

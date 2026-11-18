@@ -1,12 +1,14 @@
-module;
+﻿module;
 #include <algorithm>
 #include <cmath>
 #include <optional>
 
 export module Inkeys.UI.Bar.RecallAttributeMotion;
 export import Inkeys.UI.Bar.RecallAttributeLayout;
-import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.UI3.Animation;
 import Inkeys.UI.Bar.EraserAttributeMotion;
+
+using namespace Inkeys::UI::UI3;
 
 export namespace Inkeys::UI::Bar
 {

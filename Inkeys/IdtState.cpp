@@ -1,4 +1,4 @@
-#include "Inkeys/Drawing/Draw3/Draw3.ShapeInteraction.h"
+﻿#include "Inkeys/Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "IdtState.h"
 
 #include "IdtConfiguration.h"
@@ -11,7 +11,6 @@
 #include "Inkeys/Drawing/Draw3/Draw3.Product.h"
 #include "Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
-#include "Inkeys/UI/Bar/Bar.A2.h"
 
 #include <algorithm>
 #include <array>
@@ -33,6 +32,7 @@ import Inkeys.UI.Ppt;
 import Inkeys.UI.Whiteboard;
 import Inkeys.UI.Freeze;
 import Inkeys.Window;
+import Inkeys.UI.Bar.A2;
 
 StateModeClass stateMode;
 

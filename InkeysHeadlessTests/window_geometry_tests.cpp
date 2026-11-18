@@ -1,9 +1,16 @@
-#include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.WindowGeometry.h"
+﻿#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#include <cmath>
+#include <mutex>
 
 #include <iostream>
 #include <string_view>
 #include <thread>
+
+import Inkeys.UI.Bar.BottomDock;
+import Inkeys.UI.Bar.WindowGeometry;
 
 namespace
 {

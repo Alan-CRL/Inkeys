@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
@@ -14,20 +14,22 @@
 #include <sstream>
 #include <string>
 
-#include "../Inkeys/Inkeys/UI/Bar/Bar.ThemeMaterial.h"
 
-import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.UI3.Animation;
 import Inkeys.UI.Bar.Metrics;
 import Inkeys.Other.Config;
+import Inkeys.UI.UI3.Material;
+
+using namespace Inkeys::UI::UI3;
 
 namespace
 {
-	using namespace BarThemeMaterial;
+	using namespace ThemeMaterial;
 	int failures = 0;
-	constexpr Color darkSurface = Rgb(BarDarkSurfaceColorChannel,
-		BarDarkSurfaceColorChannel, BarDarkSurfaceColorChannel);
-	constexpr Color darkFrame = Rgb(BarDarkSurfaceFrameColorChannel,
-		BarDarkSurfaceFrameColorChannel, BarDarkSurfaceFrameColorChannel);
+	constexpr Color darkSurface = Rgb(DarkSurfaceColorChannel,
+		DarkSurfaceColorChannel, DarkSurfaceColorChannel);
+	constexpr Color darkFrame = Rgb(DarkSurfaceFrameColorChannel,
+		DarkSurfaceFrameColorChannel, DarkSurfaceFrameColorChannel);
 	constexpr std::array samples{ 0.0, 0.25, 0.5, 0.75, 1.0 };
 	constexpr std::array penColors{ Rgb(0, 0, 0), Rgb(255, 255, 255),
 		Rgb(255, 244, 163), Rgb(255, 16, 0), Rgb(50, 110, 217), Rgb(112, 72, 149) };
@@ -123,7 +125,7 @@ namespace
 			};
 			Check(std::abs(share(ColorRole::SurfaceFrame, BarMainBarFrameOpacity) - 0.08) < 0.005
 				&& std::abs(share(ColorRole::Divider, 0.30) - 0.10) < 0.005
-				&& std::abs(share(ColorRole::PressedFill, BarButtonHoverOpacity) - 0.045) < 0.005
+				&& std::abs(share(ColorRole::PressedFill, ButtonHoverOpacity) - 0.045) < 0.005
 				&& std::abs(share(ColorRole::SwatchFrame, 0.18) - 0.18) < 0.005,
 				"pre-mixed neutral overlays produce the designed black shares");
 		}
@@ -182,14 +184,14 @@ namespace
 			&& Near(BarMainBarFrameOpacity * light.lightIntensity
 				* light.cursorLightIntensityScale, 0.153),
 			"Light edge light matches Dark strength instead of a brighter gray glow");
-		Check(Near(Mix(BarButtonCursorLightIntensity,
-			BarButtonLightCursorLightIntensity, 0.0), 0.30)
-			&& Near(Mix(BarButtonCursorLightIntensity,
-				BarButtonLightCursorLightIntensity, 1.0), 0.40),
+		Check(Near(Mix(ButtonCursorLightIntensity,
+			ButtonLightCursorLightIntensity, 0.0), 0.30)
+			&& Near(Mix(ButtonCursorLightIntensity,
+				ButtonLightCursorLightIntensity, 1.0), 0.40),
 			"selected button cursor scale keeps Dark 0.30 and Light 0.40 endpoints");
 		Check(Near(SelectedFillOpacity(0.0), 0.20)
 			&& Near(SelectedFillOpacity(1.0), 0.10)
-			&& Near(SelectedFillOpacity(1.0, BarButtonPressedOpacity), 0.05),
+			&& Near(SelectedFillOpacity(1.0, ButtonPressedOpacity), 0.05),
 			"selected plate stays a translucent accent tint at both endpoints");
 	}
 
@@ -332,9 +334,9 @@ namespace
 
 	void TestAnimationReversalAndDisabled()
 	{
-		BarUiValueClass weight(0.0);
+		UiValueClass weight(0.0);
 		Check(weight.SetTar(1.0, 1.0), "opening requests Light endpoint");
-		BarUiAdvanceAnimation(weight, { 0.25, 1.0, true, false });
+		UiAdvanceAnimation(weight, { 0.25, 1.0, true, false });
 		const double opening = weight.val;
 		const auto openingMaterial = Resolve(opening, darkSurface, darkFrame);
 		Check(opening > 0.0 && opening < 1.0, "opening has an intermediate material frame");
@@ -342,7 +344,7 @@ namespace
 		Check(weight.SetTar(0.0, 1.0) && Near(weight.startV, opening)
 			&& SameMaterial(Resolve(weight.val, darkSurface, darkFrame), openingMaterial),
 			"fast fold reverses all material fields from the current frame");
-		BarUiAdvanceAnimation(weight, { 0.25, 1.0, true, false });
+		UiAdvanceAnimation(weight, { 0.25, 1.0, true, false });
 		const double closing = weight.val;
 		Check(closing < opening && closing > 0.0, "reversed close advances toward Dark");
 		const auto closingMaterial = Resolve(closing, darkSurface, darkFrame);
@@ -352,14 +354,14 @@ namespace
 			"reopening during collapse preserves the complete material anchor");
 		// 产品关闭动画时使用有限大倍率，让数值与共享时间轴同帧到达终点。
 		constexpr double disabledSpeedRate = 1.0e12;
-		const auto disabled = BarUiAdvanceAnimation(weight, { 0.01, disabledSpeedRate, false, false });
+		const auto disabled = UiAdvanceAnimation(weight, { 0.01, disabledSpeedRate, false, false });
 		Check(disabled.changed && !disabled.active && Near(weight.val, 1.0)
 			&& SameMaterial(Resolve(weight.val, darkSurface, darkFrame), Resolve(1.0, darkSurface, darkFrame)),
 			"disabled animation commits Light background, frame and light together");
 		weight.SetTar(0.0, 1.0);
-		BarUiAdvanceAnimation(weight, { 0.01, disabledSpeedRate, false, false });
+		UiAdvanceAnimation(weight, { 0.01, disabledSpeedRate, false, false });
 		Check(Near(weight.val, 0.0) && weight.IsSame(), "disabled fold commits exact Dark endpoint");
-		const auto idle = BarUiAdvanceAnimation(weight, { 1.0, 1.0, true, false });
+		const auto idle = UiAdvanceAnimation(weight, { 1.0, 1.0, true, false });
 		Check(!idle.changed && !idle.active, "settled material permits renderer idle");
 		weight.SetDirect(1.0);
 		Check(Near(weight.val, 1.0) && weight.IsSame(), "first Light frame can initialize directly without stale Dark target");

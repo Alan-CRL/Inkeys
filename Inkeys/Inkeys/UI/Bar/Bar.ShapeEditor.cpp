@@ -1,4 +1,4 @@
-module;
+﻿module;
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -8,10 +8,7 @@ module;
 #include "../../../IdtI18nKeys.g.h"
 #include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "../../Drawing/Draw3/Draw3.Bridge.h"
-#include "Bar.InteractionWorker.h"
-#include "Bar.ShapeGesture.h"
 #include <ink_stroke_modeler/stroke_modeler.h>
-#include "Bar.ThemeMaterial.h"
 #include <d2d1_1helper.h>
 #include <wincodec.h>
 #include <algorithm>
@@ -27,15 +24,24 @@ module;
 #include <fstream>
 #include <cstring>
 #include <crtdbg.h>
+#include <cstdint>
+
 module Inkeys.UI.Bar;
 import :Scene;
 import :Main;
 import :Layout;
 import :Theme;
-import Inkeys.UI.Bar.FramePacing;
+import Inkeys.UI.UI3;
+import Inkeys.UI.UI3.FramePacing;
 import Inkeys.UI.Bar.EraserAttributeMotion;
 import Inkeys.Drawing.Draw3.drawing_controller;
 import Inkeys.Drawing.Draw3.ink_prediction;
+import Inkeys.UI.UI3.Material;
+import Inkeys.UI.Bar.ShapeGesture;
+import Inkeys.UI.UI3.Interaction;
+import Inkeys.UI.UI3.Progress;
+
+using namespace Inkeys::UI::UI3;
 extern const double BarUiDividerRadius;
 extern const double BarUiDividerCursorLightIntensity;
 extern const double BarDrawAttributeSurfaceOpacity;
@@ -43,10 +49,24 @@ namespace Inkeys::UI::Bar
 {
 	using namespace Inkeys::Drawing::Draw3;
 	using namespace draw3::shapes;
-	BarSurfaceSharedLighting ReadShapeEditorSharedLighting() noexcept;
-	BarUiFrameLightingSnapshot ResolveBarSurfaceFrameLightingSnapshot(const BarSurfaceSharedLighting&, const RECT&, LONG) noexcept;
+	SurfaceSharedLighting ReadShapeEditorSharedLighting() noexcept
+	{ return ReadSharedLighting().lighting; }
 	namespace
 	{
+		// 离屏入口也需在首帧发布前完成订阅，保持原发布端的无条件检查。
+		struct ShapeLightingRegistration
+		{
+			LightingSubscriberToken token=AddSharedLightingSubscriber([]{
+				LightingSubscriptionTarget target;target.enabled=true;target.allChanges=true;
+				target.notify=[]{
+					const auto shape = Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
+					if (shape && shape->object) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::SelectionOverlay);
+				};
+				return target;
+			});
+			~ShapeLightingRegistration(){RemoveSharedLightingSubscriber(token);}
+		} shapeLightingRegistration;
+
 		constexpr unsigned Color = 1, Style = 2, Pattern = 5, Thickness = 9, Sides = 12, Swatch = Sides+GeometrySidesCount, Tone = Swatch+11, Rotate = Tone+1;
 		constexpr unsigned SidesEntry = Rotate+1, Aux = SidesEntry+1, Custom = Aux+3, PickerClose = Custom+1;
 		constexpr unsigned TriangleMode = PickerClose+1, TrapezoidMode = TriangleMode+3, Finish = TrapezoidMode+1, FlipHorizontal = Finish+1, FlipVertical = FlipHorizontal+1, Rotate45 = FlipVertical+1, Rotate90 = Rotate45+1, Count = Rotate90+1;
@@ -92,7 +112,7 @@ namespace Inkeys::UI::Bar
 			pose.y = (std::clamp)(pose.y, top, bottom >= top ? bottom : top);
 			return pose;
 		}
-		EraserSurfacePose ResolveEditorPickerPose(const BarAttributePanelMotion& motion, EraserAttributeRect work,
+		EraserSurfacePose ResolveEditorPickerPose(double geometryProgress, EraserAttributeRect work,
 			EraserAttributeRect barRect, EraserAttributeRect paletteRect, double triggerX, double triggerY, bool preferBelow, bool barBelow, bool& placedBelow)
 		{
 			const EraserAttributeRect panel{0, 0, 300, 209};
@@ -162,8 +182,8 @@ namespace Inkeys::UI::Bar
 			}
 			placedBelow = EraserRectCenterY(base.Apply(panel)) >= EraserRectCenterY(paletteRect);
 			const double ax = (triggerX-base.x)/base.scale, ay = (triggerY-base.y)/base.scale;
-			const auto frame = ResolveBarAttributePanelFrame(motion, panel, {ax, ay, ax, ay}, 60);
-			return FitEditorPose(ComposeEraserPose(base, frame.pose), panel, envelope);
+			const auto pose = ResolveEraserSurfacePose(panel, {ax, ay, ax, ay}, geometryProgress, 300.*60./370.);
+			return FitEditorPose(ComposeEraserPose(base, pose), panel, envelope);
 		}
 		bool EmptyRect(RECT r)
 		{
@@ -185,19 +205,19 @@ namespace Inkeys::UI::Bar
 			return (static_cast<std::uint32_t>(GetRValue(color))<<16)|(static_cast<std::uint32_t>(GetGValue(color))<<8)|GetBValue(color);
 		}
 
-		void InitShape(BarUiShapeClass& p, double radius, double opacity)
+		void InitShape(UiShapeClass& p, double radius, double opacity)
 		{
-			p.Initialization(0, 0, 1, 1, radius, radius, BarButtonFrameThicknessDip, GetThemeColor(BarThemeColorEnum::Surface),
-				GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+			p.Initialization(0, 0, 1, 1, radius, radius, ButtonFrameThicknessDip, GetThemeColor(ThemeColorEnum::Surface),
+				GetThemeColor(ThemeColorEnum::SurfaceFrame));
 			p.enable.Initialization(true);
 			p.pct.SetDirect(opacity);
 			p.framePct.emplace(BarMainBarFrameOpacity);
 			p.frameLightPct.emplace(BarMainBarFrameOpacity);
-			p.frameRendering = BarUiFrameRenderingEnum::PointLight;
-			p.frameLightColor = BarUiFrameLightColorEnum::PenWhenDrawing;
+			p.frameRendering = UiFrameRenderingEnum::PointLight;
+			p.frameLightColor = UiFrameLightColorEnum::PenWhenDrawing;
 		}
 
-		void PlaceShape(BarUiShapeClass& p, double x, double y, double w, double h)
+		void PlaceShape(UiShapeClass& p, double x, double y, double w, double h)
 		{
 			p.x.SetDirect(x+w/2);
 			p.y.SetDirect(y+h/2);
@@ -211,7 +231,7 @@ namespace Inkeys::UI::Bar
 			return p.icon.pct.val > .000001 || p.name.pct.val > .000001 || p.button.pct.val > .000001;
 		}
 
-		bool SameEditorLighting(const BarSurfaceSharedLighting& a, const BarSurfaceSharedLighting& b) noexcept
+		bool SameEditorLighting(const SurfaceSharedLighting& a, const SurfaceSharedLighting& b) noexcept
 		{
 			return a.primaryScreenX == b.primaryScreenX && a.primaryScreenY == b.primaryScreenY && a.primaryRadiusPixels == b.primaryRadiusPixels
 				&& a.cursorScreenX == b.cursorScreenX && a.cursorScreenY == b.cursorScreenY && a.cursorRadiusPixels == b.cursorRadiusPixels
@@ -243,10 +263,10 @@ namespace Inkeys::UI::Bar
 			return SUCCEEDED(hr);
 		}
 
-		std::vector<BYTE> ReadEditorPixels(BarUIRendering& renderer, SIZE extent)
+		std::vector<BYTE> ReadEditorPixels(FrameTarget& frameTarget, SIZE extent)
 		{
-			auto* dc = renderer.GetDeviceContext();
-			auto* target = renderer.GetTargetBitmap();
+			auto* dc = frameTarget.DeviceContext();
+			auto* target = frameTarget.TargetBitmap();
 			if (!dc || !target || extent.cx <= 0 || extent.cy <= 0) return {};
 			Microsoft::WRL::ComPtr<ID2D1Bitmap1> readable;
 			const auto props = D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW, target->GetPixelFormat());
@@ -349,7 +369,7 @@ namespace Inkeys::UI::Bar
 			return preset != PresetKind::Line && preset != PresetKind::Arrow && preset != PresetKind::Rectangle;
 		}
 
-		void DrawEditorInputCoverage(BarUIRendering& renderer, ID2D1DeviceContext* dc,
+		void DrawEditorInputCoverage(UIRendering& renderer, ID2D1DeviceContext* dc,
 			const ShapeUiSnapshot& snapshot, RECT bounds, double scale)
 		{
 			// ULW输入需要非零alpha；COPY使重叠热区仍恰为1，不进入材质、阴影或内容透明度通道。
@@ -582,27 +602,29 @@ namespace Inkeys::UI::Bar
 
 	struct ShapeEditorSurface::Impl
 	{
-		BarUIRendering renderer;
+		UIRendering renderer{MakeBarLocalizedTypographyServices()};
+		// 宿主持有的帧目标（不拥有）；renderer 经 BindFrameTarget 绑定上去，宿主驱动帧生命周期。
+		FrameTarget* boundTarget = nullptr;
 		BarButtonListClass attributes;
 		std::array<std::shared_ptr<BarButtonClass>, Count> buttons;
 		std::array<std::shared_ptr<BarButtonClass>, GroupStarts.size()> dividers;
-		BarUiShapeClass toolbar, sidesPanel, palettePanel, pickerPanel;
-		std::array<BarUiShapeClass, 12> swatchSurfaces;
-		BarUiPNGClass colorWheel;
-		std::array<BarUiWordClass, 8> pickerWords;
-		BarUiWordClass holdWord;
-		BarUiShapeClass pickerPreview, holdSurface;
-		std::array<BarUiValueClass, Count> x, y;
-		std::array<BarUiValueClass, GroupStarts.size()> dividerX, dividerY;
-		BarUiValueClass toolbarWidthValue{0}, toolbarHeightValue{0}, toolbarX{0}, toolbarY{0};
-		BarUiTimelineClass memberBatch;
+		UiShapeClass toolbar, sidesPanel, palettePanel;
+		ColorPicker colorPicker{false, UiCurveEnum::EaseOutSine};
+		std::array<Panel,4> panels{Panel{"ShapeToolbar"},Panel{"ShapeSides"},Panel{"ShapePalette"},Panel{"ShapePicker"}};
+		PanelStack panelStack{{0,&panels[0],0,0},{1,&panels[1],1,1},{2,&panels[2],2,2},{3,&panels[3],3,3}};
+		std::array<UiShapeClass, 12> swatchSurfaces;
+		UiPNGClass colorWheel;
+		std::array<UiValueClass, Count> x, y;
+		std::array<UiValueClass, GroupStarts.size()> dividerX, dividerY;
+		UiValueClass toolbarWidthValue{0}, toolbarHeightValue{0}, toolbarX{0}, toolbarY{0};
+		UiTimelineClass memberBatch;
 		std::array<bool, Count> memberWanted{};
 		std::array<bool, GroupStarts.size()> dividerWanted{};
-		BarAttributePanelMotion toolbarMotion, paletteMotion, sidesMotion, pickerMotion;
+		BarAttributePanelMotion toolbarMotion, paletteMotion, sidesMotion;
 		bool twoRows = false;
 		bool toolbarBelow = true;
 		int toolbarPlacement = 0;
-		BarUiValueClass dockResidualX{0}, dockResidualY{0};
+		UiValueClass dockResidualX{0}, dockResidualY{0};
 		double dockTargetX = 0, dockTargetY = 0;
 		double toolbarFit = 1;
 		std::array<double, 3> auxiliaryWidths{};
@@ -611,14 +633,14 @@ namespace Inkeys::UI::Bar
 		std::array<std::wstring, 4> constraintLabels{};
 		std::wstring auxiliaryFontFamily, auxiliaryLocale;
 		std::uint64_t auxiliaryFontGeneration = 0;
-		BarUiPctClass editOpacity{0};
+		UiPctClass editOpacity{0};
 		FrameAnimationClock clock;
 		std::shared_ptr<const ShapeUiSnapshot> snapshot;
 		GeometryResult geometry;
 		RECT work{}, bar{}, bounds{};
 		double scale = 1;
 		bool active = false, initialized = false, requestedVisible = false;
-		std::atomic_bool colorOpen = false, sidesOpen = false, pickerOpen = false, darkTone = false;
+		std::atomic_bool colorOpen = false, sidesOpen = false, pickerOpen = false;
 		std::uint64_t deviceGeneration = 0;
 		std::array<float, 3> widths{2, 4, 6};
 		struct Frame
@@ -632,11 +654,13 @@ namespace Inkeys::UI::Bar
 			D2D1_RECT_F toolbar{}, parameters{}, colors{}, picker{}, palette{};
 			std::array<EraserSurfacePose, 4> poses{};
 			std::array<double, 4> panelOpacity{};
+			std::array<PanelFrame,4> panelFrames{};
 			bool paletteLayer = false, sidesLayer = false, pickerLayer = false, pickerBelow = true;
+			ColorPickerSnapshot pickerFrame;
 			COLORREF pickerColor = 0;
 			double markerX = 0, markerY = 0;
 			bool markerVisible = false;
-			std::array<BarButtonHitSnapshot, Count> buttons{};
+			std::array<ButtonHitSnapshot, Count> buttons{};
 			bool visible = false, input = false, darkTone = false;
 			std::array<float, 3> widths{};
 		};
@@ -661,15 +685,6 @@ namespace Inkeys::UI::Bar
 		bool gesture = false, paletteGesture = false, dismissGesture = false;
 		ShapeStyle pickerBaseStyle;
 		ShapeUiIdentity pickerIdentity;
-		bool pickerDragging = false, pickerLocked = false; // inputMutex保护本地取色反馈，不写工具默认值。
-		POINT pickerStablePoint{};
-		std::chrono::steady_clock::time_point pickerStableTime{};
-		BarUiPctClass holdOpacity{0}, holdRingOpacity{0}, holdTextMix{0}, toneMix{0};
-		std::array<BarUiValueClass, 4> pickerDisplay;
-		bool holdOnTop = false, holdWasVisible = false;
-		double holdProgress = 0;
-		COLORREF pickerDragColor = 0;
-		double pickerDragX = 0, pickerDragY = 0;
 		ShapeUiIdentity gestureIdentity;
 		Vec2 down, pointerOffset{};
 		unsigned handleDockSide = 0;
@@ -683,10 +698,10 @@ namespace Inkeys::UI::Bar
 			std::uint32_t id = 0;
 			EditHandleKind kind = EditHandleKind::Vertex;
 			Vec2 position;
-			BarUiValueClass offsetX{0}, offsetY{0};
-			BarUiSVGClass glyph; std::wstring glyphResource;
-			BarUiValueClass centerDiameter{12}, accent{1}, iconScale{1}, scale{.75}, bracketThickness{4};
-			BarUiPctClass opacity{0};
+			UiValueClass offsetX{0}, offsetY{0};
+			UiSVGClass glyph; std::wstring glyphResource;
+			UiValueClass centerDiameter{12}, accent{1}, iconScale{1}, scale{.75}, bracketThickness{4};
+			UiPctClass opacity{0};
 			bool wanted = false;
 		};
 		std::vector<std::unique_ptr<HandleVisual>> handles;
@@ -710,7 +725,7 @@ namespace Inkeys::UI::Bar
 		// 渲染线程私有：本帧输入来源与是否需要重新呈现。
 		std::shared_ptr<const ShapeUiSnapshot> sourceSnapshot, sourceLocal;
 		bool tracking = false, holdingLocal = false, presentPending = true, lightingValid = false;
-		BarSurfaceSharedLighting presentedLighting{};
+		SurfaceSharedLighting presentedLighting{};
 		double appliedSurfaceOpacity = -1, appliedContentOpacity = -1, appliedLightWeight = -1;
 		Microsoft::WRL::ComPtr<ID2D1StrokeStyle> connectorStyle;
 		Microsoft::WRL::ComPtr<ID2D1PathGeometry> bracketGeometry;
@@ -721,46 +736,46 @@ namespace Inkeys::UI::Bar
 		{
 			renderer.ConfigureLocalizedTypography();
 			InitShape(toolbar, BarMainBarCornerRadiusDip, BarMainBarFillOpacity);
-			for (auto* p : {&sidesPanel, &palettePanel, &pickerPanel}) InitShape(*p, 8, BarDrawAttributeSurfaceOpacity);
-			pickerPanel.frameLightPct->SetDirect(1);
-			InitShape(pickerPreview, 4, 1);
-			InitShape(holdSurface, 4, .82);
+			for (auto* p : {&sidesPanel, &palettePanel}) InitShape(*p, 8, BarDrawAttributeSurfaceOpacity);
+			panels[0].BindFrame(toolbar);panels[1].BindFrame(sidesPanel);panels[2].BindFrame(palettePanel);
+			panels[3].BindFrame(*colorPicker.Shape(ColorPickerPart::Panel));
 			colorWheel.Initialization(0, 0);
 			colorWheel.InitializationFromResource(L"PNG", L"colorCustom");
 			colorWheel.SetWH(30, 30);
 			colorWheel.w.SetDirect(30); colorWheel.h.SetDirect(30);
 			colorWheel.enable.Initialization(true); colorWheel.pct.SetDirect(1);
-			for (auto& word : pickerWords) { word.Initialization(0, 0, 1, 37, L"", 13); word.enable.Initialization(true); word.pct.SetDirect(1); }
-			holdWord.Initialization(0, 0, 1, 28, L"", 12); holdWord.enable.Initialization(true); holdWord.pct.SetDirect(1);
+			colorPicker.SetCloseRequest([this] { pickerOpen = false; });
+			colorPicker.SetLabels({IW(I18nKey.UI.Bar.ColorPicker.RedChannelLabel), IW(I18nKey.UI.Bar.ColorPicker.GreenChannelLabel), IW(I18nKey.UI.Bar.ColorPicker.BlueChannelLabel), IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel)}, IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel));
 			for (auto& swatch : swatchSurfaces)
 			{
 				InitShape(swatch, 4, 1);
 				swatch.framePct->SetDirect(.18);
 				swatch.frameLightPct.reset(); // 与主栏一致，点光透明度直接取色块自身pct。
 				swatch.framePrimaryLightEnabled = false;
-				swatch.frameLightColor = BarUiFrameLightColorEnum::Frame;
+				swatch.frameLightColor = UiFrameLightColorEnum::Frame;
 				swatch.frameCursorLightIntensityScale = .50; // 与主栏色块的鼠标点光强度一致。
-				swatch.frameLightOpacitySource = BarUiFrameLightOpacitySourceEnum::ObjectPct;
+				swatch.frameLightOpacitySource = UiFrameLightOpacitySourceEnum::ObjectPct;
 			}
 			for (unsigned id = 1; id<Count; ++id)
 			{
+				if (id == Tone || id == PickerClose) continue;
 				auto& p = buttons[id];
 				p = std::make_shared<BarButtonClass>();
 				p->hide = false;
-				p->size = BarButtonSizeEnum::oneOne;
-				InitShape(p->button, BarButtonCornerRadiusDip, 0);
+				p->size = ButtonSizeEnum::oneOne;
+				InitShape(p->button, ButtonCornerRadiusDip, 0);
 				p->button.framePct->SetDirect(0);
 				p->button.frameLightPct->SetDirect(0);
-				p->button.frameLightColor = BarUiFrameLightColorEnum::Frame;
+				p->button.frameLightColor = UiFrameLightColorEnum::Frame;
 				p->button.framePrimaryLightEnabled = false;
-				p->button.frameCursorLightIntensityScale = BarButtonCursorLightIntensity;
-				p->icon.Initialization(0, 0, GetThemeColor(BarThemeColorEnum::TextPrimary), GetThemeColor(BarThemeColorEnum::TextPrimary));
-				p->name.Initialization(0, 0, BarButtonOneSideDip, BarButtonOneSideDip, L"", 12, GetThemeColor(BarThemeColorEnum::TextPrimary));
+				p->button.frameCursorLightIntensityScale = ButtonCursorLightIntensity;
+				p->icon.Initialization(0, 0, GetThemeColor(ThemeColorEnum::TextPrimary), GetThemeColor(ThemeColorEnum::TextPrimary));
+				p->name.Initialization(0, 0, ButtonOneSideDip, ButtonOneSideDip, L"", 12, GetThemeColor(ThemeColorEnum::TextPrimary));
 				const auto resource = Resource(id);
 				p->icon.enable.Initialization(!resource.empty());
 				if (!resource.empty()) p->icon.InitializationFromResource(L"UI", resource);
 				// 公共oneOne布局必须在载荷就绪后解析SVG比例；它默认没有文字槽。
-				ConfigureBarButtonVisualTargets(*p, BarButtonVisualLayoutKind::StandardOneOne, 0, 1, true, id >= Swatch
+				ConfigureButtonVisualTargets(*p, ButtonVisualLayoutKind::StandardOneOne, 0, 1, true, id >= Swatch
 					&& id<Tone || id == Custom ? std::optional<double>(15) : std::nullopt);
 				p->name.enable.Initialization(true);
 				if ((id >= Sides && id<Swatch) || id == SidesEntry)
@@ -768,15 +783,15 @@ namespace Inkeys::UI::Bar
 					p->name.SetStringImmediate(id == SidesEntry ? L"3" : std::to_wstring(id-Sides+3));
 					p->name.x.SetDirect(0);
 					p->name.y.SetDirect(0);
-					p->name.w.SetDirect(BarButtonOneSideDip);
-					p->name.h.SetDirect(BarButtonOneSideDip);
+					p->name.w.SetDirect(ButtonOneSideDip);
+					p->name.h.SetDirect(ButtonOneSideDip);
 					p->name.size.SetDirect(13);
 				}
 				if (id == Custom) { p->icon.x.SetDirect(7.5); p->icon.y.SetDirect(7.5); }
 				if (id == Rotate)
 				{
-					p->button.rw->SetDirect(BarButtonOneSideDip/2);
-					p->button.rh->SetDirect(BarButtonOneSideDip/2);
+					p->button.rw->SetDirect(ButtonOneSideDip/2);
+					p->button.rh->SetDirect(ButtonOneSideDip/2);
 				}
 			}
 			std::vector<std::shared_ptr<BarButtonClass>> list;
@@ -787,10 +802,10 @@ namespace Inkeys::UI::Bar
 				{
 					auto& d = dividers[static_cast<size_t>(group-GroupStarts.begin())];
 					d = std::make_shared<BarButtonClass>();
-					d->preset = BarButtonPresetEnum::Divider; d->size = BarButtonSizeEnum::oneTwo; d->hide = false;
+					d->preset = BarButtonPresetEnum::Divider; d->size = ButtonSizeEnum::oneTwo; d->hide = false;
 					InitShape(d->button, BarUiDividerRadius, .30);
 					d->button.framePct->SetDirect(0); d->button.frameLightPct->SetDirect(1);
-					d->button.frameLightColor = BarUiFrameLightColorEnum::Frame;
+					d->button.frameLightColor = UiFrameLightColorEnum::Frame;
 					d->button.framePrimaryLightEnabled = false;
 					d->button.frameCursorLightIntensityScale = BarUiDividerCursorLightIntensity;
 					d->icon.enable.Initialization(false); d->name.enable.Initialization(false);
@@ -914,12 +929,13 @@ namespace Inkeys::UI::Bar
 			if (!frame.visible || !frame.snapshot || !frame.snapshot->object || frame.snapshot->drawingPreview) return hit;
 			hit.identity = frame.snapshot->identity;
 			const double lx = (p.x-frame.bounds.left)/frame.scale, ly = (p.y-frame.bounds.top)/frame.scale;
+			const auto front=panelStack.FrontPanel(lx,ly,[&](const PanelStackEntry& entry)->const PanelFrame&{return frame.panelFrames[entry.id];});
 			// 弹层同时充当输入屏障；外部按下只关闭最上层，不继续命中浮条或对象。
-			const auto layerHit = [&](D2D1_RECT_F rect, unsigned first, unsigned last)
+			const auto layerHit = [&](PanelId panel, unsigned first, unsigned last)
 			{
 				hit.occupied = true;
-				if (!Inside(rect, lx, ly)) { hit.button = OutsideLayerHit; return; }
-				for (unsigned id = first; id<last; ++id) if (HitTestBarButton(frame.buttons[id], lx, ly)) { hit.button = id; return; }
+				if (!front || *front!=panel) { hit.button = OutsideLayerHit; return; }
+				for (unsigned id = first; id<last; ++id) if (HitTestButton(frame.buttons[id], lx, ly)) { hit.button = id; return; }
 			};
 			if (frame.snapshot->construction.active) {
 				if (frame.snapshot->construction.preset!=PresetKind::Polyline && frame.snapshot->construction.preset!=PresetKind::Polygon) return hit;
@@ -929,26 +945,25 @@ namespace Inkeys::UI::Bar
 			}
 			if (frame.pickerLayer)
 			{
-				layerHit(frame.picker, Tone, Tone+1);
-				if (Inside(frame.picker, lx, ly))
-				{
-					if (HitTestBarButton(frame.buttons[PickerClose], lx, ly)) hit.button = PickerClose;
-					else if (frame.input && frame.buttons[Tone].enabled && Inside(frame.palette, lx, ly) && pickerOpen.load()) hit.button = PaletteHit;
-				}
+				layerHit(3, Tone, Tone+1);
+				const auto part = ColorPicker::Hit(frame.pickerFrame, lx, ly);
+				if (part == ColorPickerPart::Close) hit.button = PickerClose;
+				else if (part == ColorPickerPart::Tone) hit.button = Tone;
+				else if (part == ColorPickerPart::Palette && frame.input && frame.buttons[Tone].enabled && pickerOpen.load()) hit.button = PaletteHit;
 				return hit;
 			}
 			if (frame.paletteLayer)
 			{
-				layerHit(frame.colors, Swatch, Tone);
-				if (Inside(frame.colors, lx, ly) && HitTestBarButton(frame.buttons[Custom], lx, ly)) hit.button = Custom;
+				layerHit(2, Swatch, Tone);
+				if (front==2 && HitTestButton(frame.buttons[Custom], lx, ly)) hit.button = Custom;
 				return hit;
 			}
-			if (frame.sidesLayer) { layerHit(frame.parameters, Sides, Swatch); return hit; }
-			for (unsigned id : ToolbarItems) if (id && HitTestBarButton(frame.buttons[id], lx, ly))
+			if (frame.sidesLayer) { layerHit(1, Sides, Swatch); return hit; }
+			for (unsigned id : ToolbarItems) if (id && HitTestButton(frame.buttons[id], lx, ly))
 			{
 				hit.occupied = true; hit.button = id; return hit;
 			}
-			if (Inside(frame.toolbar, lx, ly)) { hit.occupied = true; return hit; }
+			if (front==0) { hit.occupied = true; return hit; }
 			if (!frame.input || frame.snapshot->construction.active) return hit;
 			const Vec2 point = CanvasPoint(frame, p);
 			float nearest = std::numeric_limits<float>::max();
@@ -1087,22 +1102,21 @@ namespace Inkeys::UI::Bar
 				toolbarBelow = true; handleDockSide = 0; dockDeterminant.reset(); dockTangentSign = 1;
 				memberWanted.fill(false); dividerWanted.fill(false);
 				memberBatch.Restart(0);
-				toolbarMotion = {}; paletteMotion = {}; sidesMotion = {}; pickerMotion = {};
+				toolbarMotion = {}; paletteMotion = {}; sidesMotion = {};
 				toolbarMotion.Retarget(!snapshot->construction.active && !snapshot->drawingPreview, .4);
 				colorOpen = sidesOpen = pickerOpen = false;
-				{ std::scoped_lock lock(inputMutex); pickerDragging = pickerLocked = false; }
-				holdOpacity.SetDirect(0); holdRingOpacity.SetDirect(0); holdTextMix.SetDirect(0); holdWasVisible = false;
+				colorPicker.Reset();
 				editOpacity.SetDirect(0);
 			}
-			const auto curve = requestedVisible ? BarUiCurveEnum::EaseOutCubic : BarUiCurveEnum::EaseInCubic;
+			const auto curve = requestedVisible ? UiCurveEnum::EaseOutCubic : UiCurveEnum::EaseInCubic;
 			editOpacity.SetTar(requestedVisible ? 1 : 0, requestedVisible ? .28 : .16, std::nullopt, false, {curve, curve, 0.0, false});
 			updateWidths();
 		}
 
 		bool Advance(std::chrono::steady_clock::time_point now)
 		{
-			const double dt = clock.Tick(now), speed = (std::max)(.01, static_cast<double>(BarUiAnimationSpeedRate));
-			const BarUiAnimationAdvanceContextClass anim{dt, speed, static_cast<bool>(BarUiAnimationEnabled), false};
+			const double dt = clock.Tick(now), speed = (std::max)(.01, static_cast<double>(UiAnimationSpeedRate));
+			const UiAnimationAdvanceContextClass anim{dt, speed, static_cast<bool>(UiAnimationEnabled), false};
 			active = false;
 			bool changed = false;
 			const double surfaceOpacity = GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity);
@@ -1117,7 +1131,7 @@ namespace Inkeys::UI::Bar
 			}
 			const auto step = [&](auto& value)
 			{
-				const auto r = BarUiAdvanceAnimation(value, anim);
+				const auto r = UiAdvanceAnimation(value, anim);
 				active |= r.active;
 				changed |= r.changed;
 			};
@@ -1129,6 +1143,8 @@ namespace Inkeys::UI::Bar
 			{
 				candidate.visible = false;
 				candidate.input = false;
+				for(auto& panel:panels){panel.SetExternalState(false,0,0);panel.SetCandidate(PanelFrame{});}
+				candidate.panelFrames={};
 				return changed;
 			}
 			const auto& object = *snapshot->object;
@@ -1143,8 +1159,12 @@ namespace Inkeys::UI::Bar
 			}
 			paletteMotion.Retarget(openColor, openColor ? .4 : .24);
 			sidesMotion.Retarget(openSides, openSides ? .4 : .24);
-			pickerMotion.Retarget(openPicker, openPicker ? .4 : .24);
-			for (auto* motion : {&paletteMotion, &sidesMotion, &pickerMotion}) { changed |= motion->Advance(anim); active |= motion->Active(); }
+			colorPicker.SampleHold(now);
+			const COLORREF pickerSource = ShapeRgbToUiColor(object.style.stroke ? object.style.strokeRgb : object.style.fillRgb);
+			colorPicker.Retarget(openPicker, pickerSource, 100.*(object.style.stroke ? object.style.strokeOpacity : object.style.fillOpacity), ButtonDefaultOperationDurationSeconds, true);
+			const auto pickerStep = colorPicker.Advance({dt, speed, static_cast<bool>(UiAnimationEnabled), false, true, true}, true);
+			changed |= pickerStep.changed; active |= pickerStep.active || static_cast<bool>(colorPicker.colorPickerPointerPressed);
+			for (auto* motion : {&paletteMotion, &sidesMotion}) { changed |= motion->Advance(anim); active |= motion->Active(); }
 			const bool auxiliaryTypographyChanged = auxiliaryFontFamily != renderer.GetFontFamily() || auxiliaryLocale != renderer.GetTextLocale()
 				|| auxiliaryFontGeneration != renderer.GetDeviceGeneration();
 			bool auxiliaryLayoutChanged = false;
@@ -1162,7 +1182,7 @@ namespace Inkeys::UI::Bar
 				if (p.name.TargetContent() != label) changed |= p.name.SetStringImmediate(label);
 				const double textWidth = auxiliaryWidths[bit]-44;
 				p.name.enable.Initialization(true); p.name.x.SetDirect(12); p.name.y.SetDirect(0);
-				p.name.w.SetDirect(textWidth); p.name.h.SetDirect(BarButtonOneSideDip); p.name.size.SetDirect(12); p.name.fontTargetSize = 12;
+				p.name.w.SetDirect(textWidth); p.name.h.SetDirect(ButtonOneSideDip); p.name.size.SetDirect(12); p.name.fontTargetSize = 12;
 				p.icon.x.SetDirect(-(textWidth+4)/2); p.icon.y.SetDirect(0); p.icon.SetWH(20, 20);
 				p.icon.w.SetDirect(p.icon.w.tar); p.icon.h.SetDirect(p.icon.h.tar);
 			}
@@ -1181,7 +1201,7 @@ namespace Inkeys::UI::Bar
 				if (p.name.TargetContent() != label) changed |= p.TransitionContent(mode == 3 ? (preset == PresetKind::Prism ? L"barShapePrism" : preset == PresetKind::Pyramid ? L"barShapePyramid" : L"barShapeTrapezoid") : L"barShapeTriangle",label);
 				const double textWidth = constraintWidths[mode]-44-(mode==1?12:0);
 				p.name.enable.Initialization(true); p.name.x.SetDirect(12-(mode==1?6:0)); p.name.y.SetDirect(0);
-				p.name.w.SetDirect(textWidth); p.name.h.SetDirect(BarButtonOneSideDip); p.name.size.SetDirect(12); p.name.fontTargetSize = 12;
+				p.name.w.SetDirect(textWidth); p.name.h.SetDirect(ButtonOneSideDip); p.name.size.SetDirect(12); p.name.fontTargetSize = 12;
 				p.icon.x.SetDirect(-(textWidth+4)/2-(mode==1?6:0)); p.icon.y.SetDirect(0); p.icon.SetWH(20,20);
 				p.icon.w.SetDirect(p.icon.w.tar); p.icon.h.SetDirect(p.icon.h.tar);
 			}
@@ -1246,7 +1266,7 @@ namespace Inkeys::UI::Bar
 				const unsigned row = rowOf(id ? id : GroupStarts[divider]);
 				const bool visible = id ? wanted[id] : nextDividers[divider] && rowHasButton[row];
 				if (!id) { nextDividers[divider] = visible; dividers[divider]->hide = !visible; }
-				const double px = rowWidth[row]+p.width/2, py = 5+BarButtonOneSideDip/2+row*(BarButtonOneSideDip+5);
+				const double px = rowWidth[row]+p.width/2, py = 5+ButtonOneSideDip/2+row*(ButtonOneSideDip+5);
 				if (id) { targetX[id] = px; targetY[id] = py; if (visible) rowHasButton[row] = true; }
 				else { targetDividerX[divider] = px; targetDividerY[divider] = py; }
 				if (visible) rowWidth[row] += p.width+5;
@@ -1270,7 +1290,7 @@ namespace Inkeys::UI::Bar
 				targetDividerX[di] = targetX[anchor]; targetDividerY[di] = targetY[anchor];
 			}
 			const double targetWidth = nextTwoRows ? (std::max)(firstWidth, secondWidth) : layout.width;
-			const double targetHeight = BarButtonOneSideDip+10+(nextTwoRows ? BarButtonOneSideDip+5 : 0);
+			const double targetHeight = ButtonOneSideDip+10+(nextTwoRows ? ButtonOneSideDip+5 : 0);
 			bool layoutChanged = !initialized || auxiliaryLayoutChanged || wanted != memberWanted || nextDividers != dividerWanted || nextTwoRows != twoRows;
 			double batchDuration = .4, phase = 0;
 			bool restart = false;
@@ -1279,7 +1299,7 @@ namespace Inkeys::UI::Bar
 				if (memberBatch.CanJoin()) { batchDuration = memberBatch.GetRemainingDuration(); phase = memberBatch.GetProgress(); }
 				else { memberBatch.Restart(.4); restart = true; }
 			}
-			const BarUiCurveSpecClass batchCurve{BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, phase, phase>0};
+			const UiCurveSpecClass batchCurve{UiCurveEnum::EaseOutCubic, UiCurveEnum::EaseOutCubic, phase, phase>0};
 			const auto layoutValue = [&](auto& value, double target)
 			{
 				if (!initialized) value.SetDirect(target);
@@ -1403,12 +1423,12 @@ namespace Inkeys::UI::Bar
 			if (!initialized || frozen) { dockResidualX.SetDirect(0); dockResidualY.SetDirect(0); }
 			else if (resume || toolbarPlacement != nextPlacement) {
 				dockResidualX.SetDirect((resume ? frozenX : static_cast<double>(toolbarX.val))-position.x); dockResidualY.SetDirect((resume ? frozenY : static_cast<double>(toolbarY.val))-position.y);
-				const BarUiCurveSpecClass curve{BarUiCurveEnum::EaseOutCubic,BarUiCurveEnum::EaseOutCubic,0,false};
+				const UiCurveSpecClass curve{UiCurveEnum::EaseOutCubic,UiCurveEnum::EaseOutCubic,0,false};
 				dockResidualX.SetTar(0,.4,std::nullopt,true,curve); dockResidualY.SetTar(0,.4,std::nullopt,true,curve);
 			}
 			// 到期前的空闲间隔不计入新残差动画，首帧仍从冻结位置开始。
-			const BarUiAnimationAdvanceContextClass dockAnim{resume ? 0.0 : dt,speed,static_cast<bool>(BarUiAnimationEnabled),false};
-			for (auto* value : {&dockResidualX,&dockResidualY}) { const auto r=BarUiAdvanceAnimation(*value,dockAnim); active|=r.active; changed|=r.changed; }
+			const UiAnimationAdvanceContextClass dockAnim{resume ? 0.0 : dt,speed,static_cast<bool>(UiAnimationEnabled),false};
+			for (auto* value : {&dockResidualX,&dockResidualY}) { const auto r=UiAdvanceAnimation(*value,dockAnim); active|=r.active; changed|=r.changed; }
 			if (!frozen) { toolbarPlacement=nextPlacement; toolbarBelow=nextBelow; }
 			dockTargetX=position.x; dockTargetY=position.y;
 			if (frozen) { position.x=frozenX; position.y=frozenY; position=FitEditorPose(position,{0,0,toolbarWidth,toolbarHeight},safeWork); }
@@ -1447,24 +1467,26 @@ namespace Inkeys::UI::Bar
 			poses[2] = layerPose(paletteMotion, {0, 0, 215, 75}, barRect, poses[0].x+targetX[Color]*poses[0].scale,
 				poses[0].y+targetY[Color]*poses[0].scale, below, layerBelow);
 			const auto paletteRect = poses[2].Apply({0, 0, 215, 75});
-			if (pickerMotion.Visible()) poses[3] = ResolveEditorPickerPose(pickerMotion, safeWork, barRect, paletteRect,
+			if (colorPicker.Visible()) poses[3] = ResolveEditorPickerPose(colorPicker.Geometry(), safeWork, barRect, paletteRect,
 				poses[2].x+195*poses[2].scale, poses[2].y+55*poses[2].scale, layerBelow, below, pickerBelow);
 			RECT nextBounds{};
+			std::array<RECT,4> panelVisualBounds{};
 			const auto include = [&](EraserAttributeRect rect)
 			{
 				RECT pixels{static_cast<LONG>(std::floor((rect.left-8)*scale)), static_cast<LONG>(std::floor((rect.top-8)*scale)),
 					static_cast<LONG>(std::ceil((rect.right+8)*scale)), static_cast<LONG>(std::ceil((rect.bottom+8)*scale))};
 				if (EmptyRect(nextBounds)) nextBounds = pixels; else UnionRect(&nextBounds, &nextBounds, &pixels);
+				return pixels;
 			};
-			include(barRect);
+			panelVisualBounds[0]=include(barRect);
 			if(hasDock) include({(snapshot->canvasOriginX+handleDock.x)/scale-24,(snapshot->canvasOriginY+handleDock.y)/scale-24,(snapshot->canvasOriginX+handleDock.x)/scale+24,(snapshot->canvasOriginY+handleDock.y)/scale+24});
 			// 退场点仍在绘制，窗口不能只按新快照中的点收缩。
 			for(const auto& v:handles) if(v->opacity.val>0) include({(snapshot->canvasOriginX+v->position.x)/scale-18,(snapshot->canvasOriginY+v->position.y)/scale-18,(snapshot->canvasOriginX+v->position.x)/scale+18,(snapshot->canvasOriginY+v->position.y)/scale+18});
-			if (sidesMotion.Visible()) include(poses[1].Apply({0, 0, sidesPanelWidth, sidesPanelHeight}));
-			if (paletteMotion.Visible()) include(paletteRect);
-			if (pickerMotion.Visible()) include(poses[3].Apply({0, 0, 300, 209}));
+			if (sidesMotion.Visible()) panelVisualBounds[1]=include(poses[1].Apply({0, 0, sidesPanelWidth, sidesPanelHeight}));
+			if (paletteMotion.Visible()) panelVisualBounds[2]=include(paletteRect);
+			if (colorPicker.Visible()) panelVisualBounds[3]=include(poses[3].Apply({0, 0, 300, 209}));
 			// 同窗弹层的窗外点击也必须被消费；仅在弹层期间为工作区铺1alpha输入屏障。
-			if (paletteMotion.Visible() || sidesMotion.Visible() || pickerMotion.Visible()) UnionRect(&nextBounds, &nextBounds, &work);
+			if (paletteMotion.Visible() || sidesMotion.Visible() || colorPicker.Visible()) UnionRect(&nextBounds, &nextBounds, &work);
 			for (const auto& h : snapshot->handles)
 			{
 				nextBounds.left = (std::min)(nextBounds.left, static_cast<LONG>(std::floor(snapshot->canvasOriginX+h.position.x-56*scale)));
@@ -1516,9 +1538,9 @@ namespace Inkeys::UI::Bar
 			// 已呈现的圆点立即可拖；浮条的入场动画不能把首个按下漏给画布。
 			next.input = requestedVisible && editOpacity.val>.000001;
 			const bool toolbarInput = !toolbarMotion.Active() && toolbarMotion.Opacity()>.99 && editOpacity.IsSame();
-			next.darkTone = darkTone; next.pickerBelow = pickerBelow;
-			next.paletteLayer = paletteMotion.Visible(); next.sidesLayer = sidesMotion.Visible(); next.pickerLayer = pickerMotion.Visible();
-			next.panelOpacity = {toolbarMotion.Opacity(), sidesMotion.Opacity(), paletteMotion.Opacity(), pickerMotion.Opacity()};
+			next.darkTone = colorPicker.colorPickerDarkTone; next.pickerBelow = pickerBelow;
+			next.paletteLayer = paletteMotion.Visible(); next.sidesLayer = sidesMotion.Visible(); next.pickerLayer = colorPicker.Visible();
+			next.panelOpacity = {toolbarMotion.Opacity(), sidesMotion.Opacity(), paletteMotion.Opacity(), colorPicker.Opacity()};
 			for (auto& pose : poses) { pose.x -= bounds.left/scale; pose.y -= bounds.top/scale; }
 			next.poses = poses;
 			next.toolbar = EditorRect(poses[0].Apply({0, 0, toolbarWidth, toolbarHeight}));
@@ -1526,15 +1548,14 @@ namespace Inkeys::UI::Bar
 			if (next.paletteLayer) next.colors = EditorRect(poses[2].Apply({0, 0, 215, 75}));
 			if (next.pickerLayer) { next.picker = EditorRect(poses[3].Apply({0, 0, 300, 209})); next.palette = EditorRect(poses[3].Apply({5, 40, 295, 172})); }
 			PlaceShape(toolbar, 0, 0, toolbarWidth, toolbarHeight); PlaceShape(sidesPanel, 0, 0, sidesPanelWidth, sidesPanelHeight);
-			PlaceShape(palettePanel, 0, 0, 215, 75); PlaceShape(pickerPanel, 0, 0, 300, 209);
+			PlaceShape(palettePanel, 0, 0, 215, 75);
 			for (unsigned k = 0; k<GeometrySidesCount; ++k) { wanted[Sides+k] = next.sidesLayer && (preset == PresetKind::RegularPolygon || k < 6); const unsigned columns = preset == PresetKind::RegularPolygon ? 5 : 3; targetX[Sides+k] = 21.25+(k%columns)*37.5; targetY[Sides+k] = 21.25+(k/columns)*37.5; }
 			for (unsigned k = 0; k<11; ++k) { wanted[Swatch+k] = next.paletteLayer; targetX[Swatch+k] = 20+(k%6)*35; targetY[Swatch+k] = 20+(k/6)*35; }
 			wanted[Custom] = next.paletteLayer; targetX[Custom] = 195; targetY[Custom] = 55;
-			wanted[Tone] = wanted[PickerClose] = next.pickerLayer; targetX[Tone] = 20; targetY[Tone] = 20; targetX[PickerClose] = 280; targetY[PickerClose] = 20;
 			buttons[SidesEntry]->name.SetStringImmediate(std::to_wstring(object.construction ? object.construction->tool.sides : 3));
 			const COLORREF currentColor = ShapeRgbToUiColor(object.style.stroke ? object.style.strokeRgb : object.style.fillRgb);
 			bool rowStable = toolbarWidthValue.IsSame() && toolbarHeightValue.IsSame();
-			for (unsigned id = 1; id<Count; ++id) if (id != Rotate)
+			for (unsigned id = 1; id<Count; ++id) if (id != Rotate && id != Tone && id != PickerClose)
 			{
 				auto& p = *buttons[id]; const unsigned panel = EditorPanel(id);
 				const bool selected = id == Color ? openColor : id == SidesEntry ? openSides : id >= Aux && id<Aux+3 ? (object.style.auxiliary&AuxiliaryBits[id-Aux]) != Auxiliary::None
@@ -1546,31 +1567,30 @@ namespace Inkeys::UI::Bar
 					: id >= Pattern && id<Thickness ? static_cast<unsigned>(object.style.linePattern) == id-Pattern
 					: id >= Thickness && id<Sides ? std::abs(object.style.width*ShapeWidthScale(object)-widths[id-Thickness])<.01
 					: id >= Sides && id<Swatch ? object.construction && object.construction->tool.sides == id-Sides+3 : false;
-				p.state->state = selected ? BarWidgetState::Selected : BarWidgetState::None;
+				p.state->state = selected ? WidgetState::Selected : WidgetState::None;
 				const bool badge = (id >= Swatch && id<Tone) || id == Custom;
-				RetargetBarButtonInteractionVisual(p, wanted[id], true, selected, panel ? .12 : batchDuration,
-					badge ? std::optional<COLORREF>(GetThemeColor(BarThemeColorEnum::TextPrimary)) : std::nullopt, badge ? selected : !Resource(id).empty());
+				RetargetButtonInteractionVisual(p, wanted[id], true, selected, panel ? .12 : batchDuration,
+					badge ? std::optional<COLORREF>(GetThemeColor(ThemeColorEnum::TextPrimary)) : std::nullopt, badge ? selected : !Resource(id).empty());
 				if (!panel && layoutChanged) { p.icon.pct.SetTar(p.icon.pct.tar, batchDuration, std::nullopt, true, batchCurve); p.name.pct.SetTar(p.name.pct.tar, batchDuration, std::nullopt, true, batchCurve); }
-				if (id == Tone) p.icon.TransitionToResource(L"UI", darkTone ? L"colorMoon" : L"colorSun");
-				if (id == hoverId && id != appliedHover) StartBarButtonHoverVisual(p);
-				if (id == appliedHover && id != hoverId) StopBarButtonHoverVisual(p, false);
-				if (id == pressedId || id == appliedPressed) SetBarButtonPressedVisual(p, id == pressedId);
+				if (id == hoverId && id != appliedHover) StartButtonHoverVisual(p);
+				if (id == appliedHover && id != hoverId) StopButtonHoverVisual(p, false);
+				if (id == pressedId || id == appliedPressed) SetButtonPressedVisual(p, id == pressedId);
 				if (!panel) { layoutValue(x[id], targetX[id]); layoutValue(y[id], targetY[id]); }
 				else { x[id].SetDirect(targetX[id]); y[id].SetDirect(targetY[id]); }
 				if (!initialized || panel) { p.icon.pct.SetDirect(wanted[id] && (!badge || selected) ? 1 : 0); p.name.pct.SetDirect(wanted[id] ? 1 : 0); }
 				if (!initialized) { p.button.pct.SetDirect(p.button.pct.tar); p.button.frameLightPct->SetDirect(p.button.frameLightPct->tar); }
 				if (badge) { p.button.pct.SetDirect(0); p.button.frameLightPct->SetDirect(0); }
-				const auto result = AdvanceBarButtonVisual(p, {dt, speed, static_cast<bool>(BarUiAnimationEnabled), false, wanted[id] || HasOpacity(p), true});
+				const auto result = AdvanceButtonVisual(p, {dt, speed, static_cast<bool>(UiAnimationEnabled), false, wanted[id] || HasOpacity(p), true});
 				active |= result.active; changed |= result.changed; p.hide = !wanted[id] && !HasOpacity(p);
 				const bool auxiliary = id >= Aux && id<Aux+3;
 				const bool constraint = id >= TriangleMode && id<TriangleMode+3 || id == TrapezoidMode;
-				const double side = badge || panel == 3 ? 30 : BarButtonOneSideDip;
+				const double side = badge || panel == 3 ? 30 : ButtonOneSideDip;
 				const double width = auxiliary ? auxiliaryWidths[id-Aux] : constraint ? constraintWidths[id == TrapezoidMode ? 3 : id-TriangleMode] : side;
 				PlaceShape(p.button, x[id].val-width/2, y[id].val-side/2, width, side);
-				next.buttons[id] = ResolveBarButtonHitSnapshot(p, {p.button.inhX, p.button.inhY});
+				next.buttons[id] = ResolveButtonHitSnapshot(p, {p.button.inhX, p.button.inhY});
 				next.buttons[id].boundsDip = EditorRect(poses[panel].Apply(EditorRect(next.buttons[id].boundsDip)));
 				next.buttons[id].visible = next.visible && !p.hide.load();
-				const bool panelInput = panel == 1 ? openSides && !sidesMotion.Active() : panel == 2 ? openColor && !paletteMotion.Active() && !next.pickerLayer : panel == 3 ? openPicker && !pickerMotion.Active() : !next.paletteLayer && !next.sidesLayer;
+				const bool panelInput = panel == 1 ? openSides && !sidesMotion.Active() : panel == 2 ? openColor && !paletteMotion.Active() && !next.pickerLayer : panel == 3 ? openPicker && !colorPicker.Active() : !next.paletteLayer && !next.sidesLayer;
 				next.buttons[id].enabled &= wanted[id] && next.input && toolbarInput && panelInput;
 				if (!panel) rowStable &= x[id].IsSame() && y[id].IsSame() && p.icon.pct.IsSame() && p.name.pct.IsSame();
 			}
@@ -1580,56 +1600,44 @@ namespace Inkeys::UI::Bar
 				auto& d = *dividers[di]; layoutValue(dividerX[di], targetDividerX[di]); layoutValue(dividerY[di], targetDividerY[di]);
 				if (!initialized) { d.button.pct.SetDirect(nextDividers[di] ? .30 : 0); d.button.frameLightPct->SetDirect(nextDividers[di] ? 1 : 0); }
 				else if (layoutChanged) { d.button.pct.SetTar(nextDividers[di] ? .30 : 0, batchDuration, std::nullopt, restart, batchCurve); d.button.frameLightPct->SetTar(nextDividers[di] ? 1 : 0, batchDuration, std::nullopt, restart, batchCurve); }
-				const auto result = AdvanceBarButtonVisual(d, {dt, speed, static_cast<bool>(BarUiAnimationEnabled), false, true, false});
+				const auto result = AdvanceButtonVisual(d, {dt, speed, static_cast<bool>(UiAnimationEnabled), false, true, false});
 				active |= result.active; changed |= result.changed;
-				PlaceShape(d.button, dividerX[di].val-.5, dividerY[di].val-(BarButtonOneSideDip-4)/2, 1, BarButtonOneSideDip-4);
-				d.button.fill->SetDirect(GetThemeColor(BarThemeColorEnum::Divider));
-				d.button.frame->SetDirect(GetThemeColor(BarThemeColorEnum::Divider));
+				PlaceShape(d.button, dividerX[di].val-.5, dividerY[di].val-(ButtonOneSideDip-4)/2, 1, ButtonOneSideDip-4);
+				d.button.fill->SetDirect(GetThemeColor(ThemeColorEnum::Divider));
+				d.button.frame->SetDirect(GetThemeColor(ThemeColorEnum::Divider));
 			}
-			if (static_cast<bool>(BarUiAnimationEnabled)) memberBatch.Advance(dt, speed); else memberBatch.Restart(0);
+			if (static_cast<bool>(UiAnimationEnabled)) memberBatch.Advance(dt, speed); else memberBatch.Restart(0);
 			active |= memberBatch.IsActive(); appliedHover = hoverId; appliedPressed = pressedId;
 			// 子控件与面板逐帧共用同一材质权重，避免浅色按钮仍解析为深色点光。
 			for (auto& p : buttons) if (p) p->button.lightMaterial = lightWeight;
 			for (auto& p : dividers) p->button.lightMaterial = lightWeight;
 			for (auto& p : swatchSurfaces) p.lightMaterial = lightWeight;
-			pickerPreview.lightMaterial = holdSurface.lightMaterial = lightWeight;
-			for (auto* p : {&toolbar, &sidesPanel, &palettePanel, &pickerPanel})
+			for (auto* p : {&toolbar, &sidesPanel, &palettePanel})
 			{
 				p->themeSurface = true; p->residentSurface = p == &toolbar; p->lightMaterial = lightWeight;
-				p->lightFillOpacityScale = p == &toolbar ? BarThemeMaterial::LightResidentSurfaceOpacityScale : 1;
+				p->lightFillOpacityScale = p == &toolbar ? ThemeMaterial::LightResidentSurfaceOpacityScale : 1;
 				p->pct.SetDirect(p == &toolbar ? BarMainBarFillOpacity : BarDrawAttributeSurfaceOpacity);
-				p->fill->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface));
-				p->frame->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame));
+				p->fill->SetDirect(GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::Surface));
+				p->frame->SetDirect(GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::SurfaceFrame));
 			}
-			next.pickerColor = currentColor;
-			bool draggingPicker = false;
-			bool exact = false;
-			ProjectBarColorPickerColor(currentColor, next.darkTone, pickerBelow, next.markerX, next.markerY, exact);
-			next.markerVisible = exact && !IsBarPresetColor(currentColor);
+			if (!colorPicker.colorPickerPointerPressed) colorPicker.ProjectColor(currentColor, IsBarPresetColor(currentColor), pickerBelow);
+			ColorPickerPlacement pickerPlacement; pickerPlacement.below = pickerBelow;
+			pickerPlacement.hostOpacity = true; pickerPlacement.cursorLightIntensityScale = 1.; pickerPlacement.lightWeight = lightWeight;
+			pickerPlacement.buttonBackgroundDuration = .12; pickerPlacement.keepButtonsVisibleDuringClose = true;
+			colorPicker.SetLabels({IW(I18nKey.UI.Bar.ColorPicker.RedChannelLabel), IW(I18nKey.UI.Bar.ColorPicker.GreenChannelLabel), IW(I18nKey.UI.Bar.ColorPicker.BlueChannelLabel), IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel)}, IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel));
+			colorPicker.Layout(renderer, pickerPlacement);
+			const auto pickerFeedback = colorPicker.RenderedFeedback();
+			next.pickerColor = pickerFeedback.color; next.markerX = pickerFeedback.x; next.markerY = pickerFeedback.y; next.markerVisible = pickerFeedback.markerVisible;
+			next.pickerFrame = colorPicker.Snapshot();
+			// 样式栏原来用矩形色板命中；视觉圆角不改变其四角输入范围。
+			next.pickerFrame.palette.radiusX = next.pickerFrame.palette.radiusY = 0;
+			for (auto* hit : {&next.pickerFrame.panel, &next.pickerFrame.palette, &next.pickerFrame.tone, &next.pickerFrame.close})
 			{
-				std::scoped_lock lock(inputMutex);
-				draggingPicker = pickerDragging;
-				if (pickerDragging) { next.pickerColor = pickerDragColor; next.markerX = pickerDragX; next.markerY = pickerDragY; next.markerVisible = true; }
-				const double still = pickerDragging ? std::chrono::duration<double>(now-pickerStableTime).count() : 0;
-				holdProgress = pickerDragging ? (std::clamp)((still-.5)/1.5, 0., 1.) : 0;
-				if (holdProgress >= 1) pickerLocked = true;
-				const bool holdVisible = pickerDragging && (still >= .5 || pickerLocked);
-				if (holdVisible && !holdWasVisible) holdOnTop = next.markerY >= .5;
-				holdWasVisible = holdVisible;
-				holdOpacity.SetTar(holdVisible ? 1 : 0, .18); holdRingOpacity.SetTar(holdVisible && !pickerLocked ? 1 : 0, .18);
-				holdTextMix.SetTar(pickerLocked ? 1 : 0, .18); active |= pickerDragging;
+				hit->boundsDip = EditorRect(poses[3].Apply(EditorRect(hit->boundsDip)));
+				hit->visible = next.pickerLayer; hit->enabled = next.input && toolbarInput && openPicker && !colorPicker.Active();
 			}
-			toneMix.SetTar(darkTone.load() ? 1 : 0, .4);
-			step(toneMix); step(holdOpacity); step(holdRingOpacity); step(holdTextMix);
-			const std::array<double, 4> display{double(GetRValue(next.pickerColor)), double(GetGValue(next.pickerColor)), double(GetBValue(next.pickerColor)),
-				100.*(object.style.stroke ? object.style.strokeOpacity : object.style.fillOpacity)};
-			for (size_t i = 0; i<display.size(); ++i)
-			{
-				if (!initialized || draggingPicker) pickerDisplay[i].SetDirect(display[i]);
-				else pickerDisplay[i].SetTar(display[i], BarButtonDefaultOperationDurationSeconds);
-				step(pickerDisplay[i]);
-			}
-			const BarUiCurveSpecClass stateCurve{BarUiCurveEnum::EaseOutCubic, BarUiCurveEnum::EaseOutCubic, 0.0, false};
+			next.buttons[Tone] = next.pickerFrame.tone; next.buttons[PickerClose] = next.pickerFrame.close;
+			const UiCurveSpecClass stateCurve{UiCurveEnum::EaseOutCubic, UiCurveEnum::EaseOutCubic, 0.0, false};
 			for (auto& v : handles) v->wanted = false;
 			auto uiHandles = snapshot->handles;
 			for (const auto& h : snapshot->handles) if (h.kind == EditHandleKind::Rotate) { uiHandles.push_back({0,EditHandleKind::Move,h.position}); break; }
@@ -1669,7 +1677,7 @@ namespace Inkeys::UI::Bar
 					if (!requestedVisible) continue;
 					auto v = std::make_unique<HandleVisual>();
 					v->id = h.id;
-					v->glyph.Initialization(0,0,GetThemeColor(BarThemeColorEnum::TextPrimary),GetThemeColor(BarThemeColorEnum::TextPrimary));
+					v->glyph.Initialization(0,0,GetThemeColor(ThemeColorEnum::TextPrimary),GetThemeColor(ThemeColorEnum::TextPrimary));
 					v->glyph.enable.Initialization(true);
 					handles.push_back(std::move(v));
 					found = handles.end() - 1;
@@ -1704,7 +1712,7 @@ namespace Inkeys::UI::Bar
 				if (h.kind==EditHandleKind::Center || h.kind==EditHandleKind::Focus || h.kind==EditHandleKind::Move) {
 					const std::wstring resource=(auxiliary || h.kind==EditHandleKind::Move) ? L"barShapeMove" : h.kind==EditHandleKind::Focus ? L"barShapeAuxFoci" : L"barShapeAuxCenter";
 					if(v.glyphResource!=resource) { if(v.glyphResource.empty()) v.glyph.InitializationFromResource(L"UI",resource); else v.glyph.TransitionToResource(L"UI",resource); v.glyphResource=resource; }
-					const auto advanced=AdvanceBarSvgVisual(v.glyph,{dt,speed,static_cast<bool>(BarUiAnimationEnabled),false,true,true}); changed|=advanced.changed; active|=advanced.active;
+					const auto advanced=AdvanceSvgVisual(v.glyph,{dt,speed,static_cast<bool>(UiAnimationEnabled),false,true,true}); changed|=advanced.changed; active|=advanced.active;
 				}
 				step(v.offsetX); step(v.offsetY);
 				v.position = {h.position.x+static_cast<float>(v.offsetX.val),h.position.y+static_cast<float>(v.offsetY.val)};
@@ -1718,8 +1726,8 @@ namespace Inkeys::UI::Bar
 			}
 			for (auto& v : handles)
 			{
-				const auto opacityCurve = v->wanted ? BarUiCurveEnum::EaseOutCubic : BarUiCurveEnum::EaseInCubic;
-				const auto scaleCurve = v->wanted ? BarUiCurveEnum::EaseOutBack : BarUiCurveEnum::EaseInCubic;
+				const auto opacityCurve = v->wanted ? UiCurveEnum::EaseOutCubic : UiCurveEnum::EaseInCubic;
+				const auto scaleCurve = v->wanted ? UiCurveEnum::EaseOutBack : UiCurveEnum::EaseInCubic;
 				v->opacity.SetTar(v->wanted ? 1.0 : 0.0, v->wanted ? .28 : .16, std::nullopt, false, {opacityCurve, opacityCurve, 0.0, false});
 				v->scale.SetTar(v->wanted ? 1.0 : .75, v->wanted ? .28 : .16, std::nullopt, false, {scaleCurve, scaleCurve, 0.0, false});
 				step(v->opacity);
@@ -1749,6 +1757,7 @@ namespace Inkeys::UI::Bar
 				toolbarWidthValue.SetDirect(0); toolbarHeightValue.SetDirect(0);
 				geometry = {};
 				candidate = {};
+				for(auto& panel:panels){panel.SetExternalState(false,0,0);panel.SetCandidate(PanelFrame{});}
 				initialized = false;
 				active = false;
 				presentPending = true;
@@ -1761,7 +1770,21 @@ namespace Inkeys::UI::Bar
 				presentedLighting = lighting;
 				lightingValid = true;
 			}
-			renderer.SetFrameLightingSnapshot(ResolveBarSurfaceFrameLightingSnapshot(lighting, bounds, 0));
+			renderer.SetFrameLightingSnapshot(ResolveSurfaceFrameLightingSnapshot(lighting, bounds, 0), BarUiEdgeLightingEnabled);
+			const std::array<D2D1_RECT_F,4> panelRects{next.toolbar,next.parameters,next.colors,next.picker};
+			const std::array<bool,4> panelVisible{next.visible,next.sidesLayer,next.paletteLayer,next.pickerLayer};
+			const std::array<bool,4> panelOpen{requestedVisible&&!snapshot->construction.active&&!snapshot->drawingPreview,openSides,openColor,openPicker};
+			const std::array<double,4> panelGeometry{toolbarMotion.Geometry(),sidesMotion.Geometry(),paletteMotion.Geometry(),colorPicker.Geometry()};
+			for(std::size_t i=0;i<panels.size();++i){
+				const auto& r=panelRects[i];
+				PanelFrame f;f.interaction.bounds={r.left,r.top,r.right,r.bottom};f.visible=panelVisible[i];
+				// 复用窗口包络已取整的 8 DIP 外扩，避免再次从 FLOAT 命中矩形推导。
+				const auto& visual=panelVisualBounds[i];
+				f.visualBounds={static_cast<double>(visual.left-bounds.left),static_cast<double>(visual.top-bounds.top),
+					static_cast<double>(visual.right-bounds.left),static_cast<double>(visual.bottom-bounds.top)};
+				panels[i].SetExternalState(panelOpen[i],panelGeometry[i],next.panelOpacity[i]);panels[i].SetCandidate(f);
+				next.panelFrames[i]=f;
+			}
 			candidate = std::move(next);
 			initialized = true;
 			presentPending |= changed || active;
@@ -1770,29 +1793,21 @@ namespace Inkeys::UI::Bar
 			return changed || active;
 		}
 
-		void DrawButton(unsigned id)
+		// 内容画入宿主交来的设备上下文（即所绑定帧目标的上下文）。
+		void DrawButton(unsigned id, ID2D1DeviceContext* context)
 		{
 			auto& p = *buttons[id];
 			if (p.hide) return;
-			BarButtonDrawOptions options;
+			ButtonDrawOptions options;
 			const bool badge = (id >= Swatch && id<Tone) || id == Custom;
-			if (id == Color || badge || id == PickerClose || (id >= Thickness && id<Sides))
+			if (id == Color || badge || (id >= Thickness && id<Sides))
 			{
-				options.content = [&, id, badge](BarUIRendering& r, ID2D1DeviceContext* dc, BarButtonClass& button, const BarButtonVisualInheritance& inh)
+				options.content = [&, id, badge](UIRendering& r, ID2D1DeviceContext* dc, ButtonClass& button, const ButtonVisualInheritance& inh)
 				{
 					const double z = scale;
 					const FLOAT cx = static_cast<FLOAT>((inh.button.x+button.button.w.val/2)*z), cy = static_cast<FLOAT>((inh.button.y+button.button.h.val/2)*z);
 					const double content = EditorPanel(id) ? 1 : appliedContentOpacity;
-					if (id == PickerClose)
-					{
-						const FLOAT half = static_cast<FLOAT>(5*z);
-						if (auto* brush = r.ContentSolidBrush(GetThemeColor(BarThemeColorEnum::IconPrimary), button.name.pct.val))
-						{
-							dc->DrawLine({cx-half, cy-half}, {cx+half, cy+half}, brush, static_cast<FLOAT>((std::max)(1., 1.6*z)));
-							dc->DrawLine({cx+half, cy-half}, {cx-half, cy+half}, brush, static_cast<FLOAT>((std::max)(1., 1.6*z)));
-						}
-					}
-					else if (id >= Thickness && id<Sides)
+					if (id >= Thickness && id<Sides)
 					{
 						const FLOAT diameter = static_cast<FLOAT>(24*z), width = (std::min)(diameter, (std::max)(1.f, widths[id-Thickness]));
 						if (auto* brush = r.ContentSolidBrush(button.name.color.val, button.name.pct.val*content))
@@ -1810,14 +1825,14 @@ namespace Inkeys::UI::Bar
 						const auto rect = D2D1::RoundedRect({cx-static_cast<FLOAT>(10*z), cy-static_cast<FLOAT>(10*z), cx+static_cast<FLOAT>(10*z), cy+static_cast<FLOAT>(10*z)}, static_cast<FLOAT>(4*z), static_cast<FLOAT>(4*z));
 						// 共享画刷逐次消费，后取的描边色不能覆盖先前的填充色。
 						if (auto* fill = r.ContentSolidBrush(rgb, button.name.pct.val*content)) dc->FillRoundedRectangle(rect, fill);
-						if (auto* frame = r.ContentSolidBrush(GetThemeColor(BarThemeColorEnum::SwatchFrame), .18*button.name.pct.val*content)) dc->DrawRoundedRectangle(rect, frame, static_cast<FLOAT>(z));
+						if (auto* frame = r.ContentSolidBrush(GetThemeColor(ThemeColorEnum::SwatchFrame), .18*button.name.pct.val*content)) dc->DrawRoundedRectangle(rect, frame, static_cast<FLOAT>(z));
 					}
 					else
 					{
 						const unsigned index = id == Custom ? 11 : id-Swatch;
 						auto& surface = swatchSurfaces[index];
 						PlaceShape(surface, inh.button.x, inh.button.y, 30, 30);
-						surface.frame->SetDirect(GetThemeColor(BarThemeColorEnum::SwatchFrame));
+						surface.frame->SetDirect(GetThemeColor(ThemeColorEnum::SwatchFrame));
 						if (!surface.fill) surface.fill.emplace(0);
 						surface.fill->SetDirect(id == Custom ? candidate.pickerColor : GetPresetColor(static_cast<BarThemePresetColorEnum>(index)));
 						if (id == Custom)
@@ -1827,7 +1842,7 @@ namespace Inkeys::UI::Bar
 							r.Shape(dc, surface, {surface.inhX, surface.inhY});
 							const D2D1_ELLIPSE core{{cx, cy}, static_cast<FLOAT>(10*z), static_cast<FLOAT>(10*z)};
 							if (auto* fill = r.ContentSolidBrush(candidate.pickerColor, 1)) dc->FillEllipse(core, fill);
-							if (auto* frame = r.ContentSolidBrush(GetThemeColor(BarThemeColorEnum::SwatchFrame), .18)) dc->DrawEllipse(core, frame, static_cast<FLOAT>(z));
+							if (auto* frame = r.ContentSolidBrush(GetThemeColor(ThemeColorEnum::SwatchFrame), .18)) dc->DrawEllipse(core, frame, static_cast<FLOAT>(z));
 						}
 						else r.Shape(dc, surface, {surface.inhX, surface.inhY});
 						r.Svg(dc, button.icon, inh.icon);
@@ -1836,72 +1851,7 @@ namespace Inkeys::UI::Bar
 				};
 			}
 			if (id == Color || badge) options.drawIcon = false;
-			DrawBarButtonVisual(renderer, renderer.GetDeviceContext(), p, {p.button.inhX, p.button.inhY}, options);
-		}
-
-		void DrawPicker(ID2D1DeviceContext* dc)
-		{
-			D2D1_MATRIX_3X2_F transform; dc->GetTransform(&transform);
-			// ColorPalette直接消费像素矩形；在局部DIP矩阵下复用，4DIP圆角与主栏保持一致。
-			dc->SetTransform(D2D1::Matrix3x2F::Scale(static_cast<FLOAT>(scale), static_cast<FLOAT>(scale))*transform);
-			const auto rounded = D2D1::RoundedRect({5, 40, 295, 172}, 4, 4);
-			if (auto* hue = renderer.GetColorPickerHueGradientBrush(dc, {5, 40}, {295, 40}))
-			{
-				hue->SetOpacity(1); dc->FillRoundedRectangle(rounded, hue);
-				const D2D1_POINT_2F nearPoint{5, candidate.pickerBelow ? 40.f : 172.f}, farPoint{5, candidate.pickerBelow ? 172.f : 40.f};
-				if (auto* light = renderer.GetColorPickerToneGradientBrush(dc, false, farPoint, nearPoint, static_cast<FLOAT>(1-toneMix.val))) dc->FillRoundedRectangle(rounded, light);
-				if (auto* dark = renderer.GetColorPickerToneGradientBrush(dc, true, nearPoint, farPoint, static_cast<FLOAT>(toneMix.val))) dc->FillRoundedRectangle(rounded, dark);
-			}
-			dc->SetTransform(transform);
-			if (candidate.markerVisible)
-			{
-				const D2D1_ELLIPSE marker{{static_cast<FLOAT>((5+candidate.markerX*290)*scale), static_cast<FLOAT>((40+candidate.markerY*132)*scale)}, static_cast<FLOAT>(5.5*scale), static_cast<FLOAT>(5.5*scale)};
-				if (auto* brush = renderer.ContentSolidBrush(RGB(0, 0, 0), .72)) dc->DrawEllipse(marker, brush, static_cast<FLOAT>(3*scale));
-				if (auto* brush = renderer.ContentSolidBrush(RGB(255, 255, 255), 1)) dc->DrawEllipse(marker, brush, static_cast<FLOAT>(1.5*scale));
-			}
-			DrawButton(Tone); DrawButton(PickerClose);
-			const auto channel = [&](size_t i) { return static_cast<int>(std::lround(static_cast<double>(pickerDisplay[i].val))); };
-			PlaceShape(pickerPreview, 40, 5, 220, 30); pickerPreview.fill->SetDirect(RGB(channel(0), channel(1), channel(2)));
-			pickerPreview.framePct->SetDirect(0); pickerPreview.frameLightPct->SetDirect(0);
-			renderer.Shape(dc, pickerPreview, {40, 5});
-			const std::array<std::wstring, 4> labels{IW(I18nKey.UI.Bar.ColorPicker.RedChannelLabel), IW(I18nKey.UI.Bar.ColorPicker.GreenChannelLabel),
-				IW(I18nKey.UI.Bar.ColorPicker.BlueChannelLabel), IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel)};
-			const auto textSize = renderer.MeasureText(L"Ag", 13);
-			const double padding = (std::clamp)((37-textSize.height)/2., 0., 18.5);
-			const double valueWidth = renderer.MeasureText(L"255", 13).width, opacityWidth = renderer.MeasureText(L"100%", 13).width;
-			double labelWidth = 0; for (unsigned i = 0; i<3; ++i) labelWidth = (std::max)(labelWidth, static_cast<double>(renderer.MeasureText(labels[i], 13).width));
-			const double opacityLabelWidth = renderer.MeasureText(labels[3], 13).width;
-			const double budget = (std::max)(0., 300-padding*2-labelWidth*3-valueWidth*3-opacityLabelWidth-opacityWidth);
-			const double innerGap = (std::min)(3., budget/4), columnGap = (std::min)(6., (std::max)(0., (budget-innerGap*4)/2));
-			const double columnWidth = labelWidth+innerGap+valueWidth;
-			const std::array<std::wstring, 4> values{std::to_wstring(channel(0)), std::to_wstring(channel(1)),
-				std::to_wstring(channel(2)), std::to_wstring(channel(3))+L"%"};
-			for (unsigned i = 0; i<4; ++i)
-			{
-				const double left = i<3 ? padding+i*(columnWidth+columnGap) : 300-padding-opacityLabelWidth-innerGap-opacityWidth;
-				const double width = i<3 ? labelWidth : opacityLabelWidth;
-				for (unsigned part = 0; part<2; ++part)
-				{
-					auto& word = pickerWords[i+part*4]; word.SetStringImmediate(part ? values[i] : labels[i]);
-					word.w.SetDirect(part ? (i<3 ? valueWidth : opacityWidth) : width); word.h.SetDirect(37); word.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
-					renderer.Word(dc, word, {left+(part ? width+innerGap : 0), 172}, DWRITE_FONT_WEIGHT_NORMAL, part ? DWRITE_TEXT_ALIGNMENT_TRAILING : DWRITE_TEXT_ALIGNMENT_LEADING);
-				}
-			}
-			if (holdOpacity.val>.000001)
-			{
-				holdWord.SetStringImmediate(IW(I18nKey.UI.Bar.ColorPicker.HoldColorLabel));
-				const double width = (std::min)(280., renderer.MeasureText(holdWord.TargetContent(), 12).width+29.);
-				const double left = 5+(290-width)/2, top = holdOnTop ? 45 : 139;
-				PlaceShape(holdSurface, left, top, width, 28); holdSurface.fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));
-				holdSurface.pct.SetDirect(.82*holdOpacity.val); holdSurface.framePct->SetDirect(0); holdSurface.frameLightPct->SetDirect(0);
-				renderer.Shape(dc, holdSurface, {left, top});
-				holdWord.w.SetDirect(width-24); holdWord.h.SetDirect(28); holdWord.pct.SetDirect(holdOpacity.val);
-				holdWord.color.SetDirect(MixBarUiColor(MixBarUiColor(GetThemeColor(BarThemeColorEnum::TextPrimary), GetThemeColor(BarThemeColorEnum::Surface), .45), GetThemeColor(BarThemeColorEnum::TextPrimary), holdTextMix.val));
-				renderer.Word(dc, holdWord, {left+5, top}, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_TEXT_ALIGNMENT_LEADING);
-				renderer.DrawProgressRing(dc, {static_cast<FLOAT>((left+width-12)*scale), static_cast<FLOAT>((top+14)*scale)}, static_cast<FLOAT>(7*scale), static_cast<FLOAT>(2*scale), static_cast<FLOAT>(holdProgress),
-					MixBarUiColor(GetThemeColor(BarThemeColorEnum::TextPrimary), GetThemeColor(BarThemeColorEnum::Surface), .70),
-					MixBarUiColor(GetThemeColor(BarThemeColorEnum::TextPrimary), GetThemeColor(BarThemeColorEnum::Surface), .35), static_cast<FLOAT>(holdRingOpacity.val*.45), static_cast<FLOAT>(holdRingOpacity.val));
-			}
+			DrawButtonVisual(renderer, context, p, {p.button.inhX, p.button.inhY}, options);
 		}
 
 		ID2D1PathGeometry* BracketGeometry(ID2D1DeviceContext* dc, FLOAT radius)
@@ -1928,11 +1878,11 @@ namespace Inkeys::UI::Bar
 			return bracketGeometry.Get();
 		}
 
-		void Draw()
+		void Draw(ID2D1DeviceContext* dc)
 		{
 			if (!candidate.visible) return;
-			auto* dc = renderer.GetDeviceContext();
 			if (!dc) return;
+			renderer.SetFrameEdgeLightingAllowed(BarUiEdgeLightingEnabled);
 			renderer.SetFrameZoom(scale);
 			if (candidate.input && !snapshot->drawingPreview) { auto coverage = *snapshot; coverage.handles = candidate.visualHandles; DrawEditorInputCoverage(renderer, dc, coverage, bounds, scale); }
 			if (candidate.paletteLayer || candidate.sidesLayer || candidate.pickerLayer)
@@ -1943,8 +1893,8 @@ namespace Inkeys::UI::Bar
 				dc->SetPrimitiveBlend(blend);
 			}
 			const auto& object = *snapshot->object;
-			const auto accent = MixBarUiColor(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Accent),
-				GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::Accent), appliedLightWeight);
+			const auto accent = MixUiColor(GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::Accent),
+				GetThemeColor(ThemeModeEnum::Light, ThemeColorEnum::Accent), appliedLightWeight);
 			// 两腰提示仅属于编辑层，不进入文档和导出几何。
 			if (object.construction && object.construction->tool.preset == PresetKind::Triangle && object.construction->tool.constraint == PlanarConstraint::Isosceles)
 			{
@@ -2011,20 +1961,20 @@ namespace Inkeys::UI::Bar
 				D2D1_MATRIX_3X2_F original;dc->GetTransform(&original);
 				const FLOAT x=static_cast<FLOAT>(snapshot->canvasOriginX+handleDock.x-bounds.left),y=static_cast<FLOAT>(snapshot->canvasOriginY+handleDock.y-bounds.top),r=static_cast<FLOAT>(10*scale*v.scale.val),half=static_cast<FLOAT>(10*scale*v.scale.val);
 				// 与普通圆柄复用相同材质公式，独立于外框透明层，不叠加青色边框。
-				const auto darkFill=MixBarUiColor(GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::Surface),GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::TextPrimary),.20);
-				const auto fill=MixBarUiColor(darkFill,RGB(255,255,255),appliedLightWeight);
-				const auto darkFrame=MixBarUiColor(darkFill,GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::TextPrimary),.12);
-				const auto lightFrame=MixBarUiColor(GetThemeColor(BarThemeModeEnum::Light,BarThemeColorEnum::Surface),GetThemeColor(BarThemeModeEnum::Light,BarThemeColorEnum::TextPrimary),BarThemeMaterial::LightSliderThumbBorderOpacity);
+				const auto darkFill=MixUiColor(GetThemeColor(ThemeModeEnum::Dark,ThemeColorEnum::Surface),GetThemeColor(ThemeModeEnum::Dark,ThemeColorEnum::TextPrimary),.20);
+				const auto fill=MixUiColor(darkFill,RGB(255,255,255),appliedLightWeight);
+				const auto darkFrame=MixUiColor(darkFill,GetThemeColor(ThemeModeEnum::Dark,ThemeColorEnum::TextPrimary),.12);
+				const auto lightFrame=MixUiColor(GetThemeColor(ThemeModeEnum::Light,ThemeColorEnum::Surface),GetThemeColor(ThemeModeEnum::Light,ThemeColorEnum::TextPrimary),ThemeMaterial::LightSliderThumbBorderOpacity);
 				renderer.PushPanelOpacity(dc,{0,0,static_cast<FLOAT>(bounds.right-bounds.left),static_cast<FLOAT>(bounds.bottom-bounds.top)},appliedContentOpacity*v.opacity.val);
 				dc->SetTransform(D2D1::Matrix3x2F(handleTangent.x,handleTangent.y,-handleTangent.y,handleTangent.x,x,y)*original);
-				if(auto* brush=renderer.ContentSolidBrush(MixBarUiColor(darkFrame,lightFrame,appliedLightWeight),1))dc->FillRoundedRectangle(D2D1::RoundedRect({-half-r,-r,half+r,r},r,r),brush);
+				if(auto* brush=renderer.ContentSolidBrush(MixUiColor(darkFrame,lightFrame,appliedLightWeight),1))dc->FillRoundedRectangle(D2D1::RoundedRect({-half-r,-r,half+r,r},r,r),brush);
 				const FLOAT inner=(std::max)(0.f,r-static_cast<FLOAT>(scale));
 				if(auto* brush=renderer.ContentSolidBrush(fill,1))dc->FillRoundedRectangle(D2D1::RoundedRect({-half-inner,-inner,half+inner,inner},inner,inner),brush);
 				dc->SetTransform(original);
 				for(const auto& h:handles)if(h->kind==EditHandleKind::Rotate||h->kind==EditHandleKind::Move) {
 					const bool rotate=h->kind==EditHandleKind::Rotate;const FLOAT cx=static_cast<FLOAT>(snapshot->canvasOriginX+h->position.x-bounds.left),cy=static_cast<FLOAT>(snapshot->canvasOriginY+h->position.y-bounds.top);
 					if(rotate)PlaceShape(buttons[Rotate]->button,cx/scale-10,cy/scale-10,20,20);
-					auto& icon=rotate?buttons[Rotate]->icon:h->glyph;const double d=16*h->iconScale.val*h->scale.val;const auto color=MixBarUiColor(fill,accent,h->accent.val);
+					auto& icon=rotate?buttons[Rotate]->icon:h->glyph;const double d=16*h->iconScale.val*h->scale.val;const auto color=MixUiColor(fill,accent,h->accent.val);
 					icon.w.SetDirect(d);icon.h.SetDirect(d);icon.pct.SetDirect(1);if(icon.color1)icon.color1->SetDirect(color);if(icon.color2)icon.color2->SetDirect(color);
 					dc->SetTransform(D2D1::Matrix3x2F::Translation(-cx,-cy)*D2D1::Matrix3x2F(handleTangent.x,handleTangent.y,-handleTangent.y,handleTangent.x,cx,cy)*original);
 					renderer.Svg(dc,icon,icon.UpInh({cx/scale-d/2,cy/scale-d/2}));
@@ -2057,9 +2007,9 @@ namespace Inkeys::UI::Bar
 						D2D1_MATRIX_3X2_F original;
 						dc->GetTransform(&original);
 						dc->SetTransform(D2D1::Matrix3x2F(sx, 0, 0, sy, cornerX, cornerY) * visual.transform * original);
-						const auto surface = MixBarUiColor(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface),
-							GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::Surface), appliedLightWeight);
-						if (auto* brush = renderer.ContentSolidBrush(MixBarUiColor(surface, accent, v->accent.val), 1.0)) dc->DrawGeometry(path, brush,
+						const auto surface = MixUiColor(GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::Surface),
+							GetThemeColor(ThemeModeEnum::Light, ThemeColorEnum::Surface), appliedLightWeight);
+						if (auto* brush = renderer.ContentSolidBrush(MixUiColor(surface, accent, v->accent.val), 1.0)) dc->DrawGeometry(path, brush,
 							static_cast<FLOAT>(v->bracketThickness.val * scale), connectorStyle.Get());
 						dc->SetTransform(original);
 						continue;
@@ -2067,7 +2017,7 @@ namespace Inkeys::UI::Bar
 					const bool rotate = v->kind == EditHandleKind::Rotate;
 					D2D1_MATRIX_3X2_F original;
 					dc->GetTransform(&original);
-					BarSliderThumbStyle thumbStyle;
+					SliderThumbStyle thumbStyle;
 					thumbStyle.centerPx = center;
 					thumbStyle.outerDiameterPx = static_cast<FLOAT>(20 * scale * v->scale.val);
 					const bool movePoint = v->kind == EditHandleKind::Center || v->kind == EditHandleKind::Focus || v->kind == EditHandleKind::Move;
@@ -2076,43 +2026,43 @@ namespace Inkeys::UI::Bar
 					thumbStyle.lightWeight = appliedLightWeight;
 					thumbStyle.opacity = appliedContentOpacity * v->opacity.val;
 					thumbStyle.frameThicknessPx = static_cast<FLOAT>(scale);
-					thumbStyle.surfaceColor = MixBarUiColor(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface),
-						GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::Surface), appliedLightWeight);
+					thumbStyle.surfaceColor = MixUiColor(GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::Surface),
+						GetThemeColor(ThemeModeEnum::Light, ThemeColorEnum::Surface), appliedLightWeight);
 					thumbStyle.accentColor = accent;
 					thumbStyle.compositeOpacity = true;
 					if (rotateHandle==handles.end() || (!rotate && v->kind!=EditHandleKind::Move))
-						DrawBarSliderThumb(renderer, dc, thumbStyle, movePoint ? &v->glyph : nullptr, v->iconScale.val * v->scale.val);
+						DrawSliderThumb(renderer, dc, thumbStyle, movePoint ? &v->glyph : nullptr, v->iconScale.val * v->scale.val);
 					dc->SetTransform(original);
 				}
 			}
 			D2D1_MATRIX_3X2_F original; dc->GetTransform(&original);
-			const std::array<BarUiShapeClass*, 4> surfaces{&toolbar, &sidesPanel, &palettePanel, &pickerPanel};
-			for (unsigned panel = 0; panel<4; ++panel)
+			for (const auto& entry:panelStack.DrawOrder())
 			{
-				if (candidate.panelOpacity[panel] <= .000001) continue;
+				const auto panel=entry.id;
+				if (panels[panel].Opacity() <= .000001) continue;
 				const auto pose = candidate.poses[panel];
-				renderer.PushPanelOpacity(dc, {0, 0, static_cast<FLOAT>(bounds.right-bounds.left), static_cast<FLOAT>(bounds.bottom-bounds.top)}, candidate.panelOpacity[panel]);
+				renderer.PushPanelOpacity(dc, {0, 0, static_cast<FLOAT>(bounds.right-bounds.left), static_cast<FLOAT>(bounds.bottom-bounds.top)}, panels[panel].Opacity());
 				dc->SetTransform(D2D1::Matrix3x2F(static_cast<FLOAT>(pose.scale), 0, 0, static_cast<FLOAT>(pose.scale), static_cast<FLOAT>(pose.x*scale), static_cast<FLOAT>(pose.y*scale))*original);
 				renderer.SetFrameDiffuseMaskGeometryScale(1./(std::max)(.01, pose.scale));
-				auto& surface = *surfaces[panel]; DrawBarBackgroundVisual(renderer, dc, surface, {0, 0});
+				if (panel != 3) panels[panel].DrawFrame(renderer, dc, {0, 0});
 				renderer.SetResidentContentOpacity(panel ? 1 : appliedContentOpacity);
 				if (!panel)
 				{
 					// 退场成员先画，可见成员覆盖；不使用随宽度动画的裁剪揭示内容。
-					for (bool visible : {false, true}) for (unsigned id : ToolbarItems) if (id && memberWanted[id] == visible) DrawButton(id);
+					for (bool visible : {false, true}) for (unsigned id : ToolbarItems) if (id && memberWanted[id] == visible) DrawButton(id, dc);
 					if (memberWanted[TriangleMode+1] && object.construction) {
 						const auto& b=*buttons[TriangleMode+1]; const auto apex=object.construction->tool.constraint == PlanarConstraint::Isosceles ? object.construction->tool.constraintVertex%3 : 3;
-						for(unsigned i=0;i<3;++i) if(auto* brush=renderer.ContentSolidBrush(i==apex ? accent : GetThemeColor(BarThemeColorEnum::TextPrimary),i==apex ? 1 : .3)) dc->FillEllipse({{static_cast<FLOAT>((b.button.inhX+b.button.w.val-6)*scale),static_cast<FLOAT>((b.button.inhY+b.button.h.val/2+(static_cast<int>(i)-1)*5)*scale)},static_cast<FLOAT>(1.5*scale),static_cast<FLOAT>(1.5*scale)},brush);
+						for(unsigned i=0;i<3;++i) if(auto* brush=renderer.ContentSolidBrush(i==apex ? accent : GetThemeColor(ThemeColorEnum::TextPrimary),i==apex ? 1 : .3)) dc->FillEllipse({{static_cast<FLOAT>((b.button.inhX+b.button.w.val-6)*scale),static_cast<FLOAT>((b.button.inhY+b.button.h.val/2+(static_cast<int>(i)-1)*5)*scale)},static_cast<FLOAT>(1.5*scale),static_cast<FLOAT>(1.5*scale)},brush);
 					}
 					for (auto& d : dividers) if (d->button.pct.val>.000001)
 					{
 						renderer.PushPanelOpacity(dc, {0, 0, static_cast<FLOAT>((std::max)(static_cast<double>(toolbarWidthValue.val), static_cast<double>(toolbarWidthValue.tar))*scale), static_cast<FLOAT>((std::max)(static_cast<double>(toolbarHeightValue.val), static_cast<double>(toolbarHeightValue.tar))*scale)}, appliedContentOpacity);
-						DrawBarButtonVisual(renderer, dc, *d, {d->button.inhX, d->button.inhY}); dc->PopLayer();
+						DrawButtonVisual(renderer, dc, *d, {d->button.inhX, d->button.inhY}); dc->PopLayer();
 					}
 				}
-				else if (panel == 1) for (unsigned id = Sides; id<Swatch; ++id) DrawButton(id);
-				else if (panel == 2) { for (unsigned id = Swatch; id<Tone; ++id) DrawButton(id); DrawButton(Custom); }
-				else DrawPicker(dc);
+				else if (panel == 1) for (unsigned id = Sides; id<Swatch; ++id) DrawButton(id, dc);
+				else if (panel == 2) { for (unsigned id = Swatch; id<Tone; ++id) DrawButton(id, dc); DrawButton(Custom, dc); }
+				else colorPicker.Draw(renderer, dc);
 				renderer.SetResidentContentOpacity(1); renderer.SetFrameDiffuseMaskGeometryScale(1);
 				dc->SetTransform(original); dc->PopLayer();
 			}
@@ -2126,18 +2076,20 @@ namespace Inkeys::UI::Bar
 			}
 			return false;
 		}
+		ColorPickerPointer PickerInput(const Frame& frame, POINT point)
+		{
+			ColorPickerPointer input; input.frame = frame.pickerFrame;
+			const auto r = frame.palette;
+			input.x = (std::clamp)(((point.x-frame.bounds.left)/frame.scale-r.left)/(r.right-r.left), 0., 1.);
+			input.y = (std::clamp)(((point.y-frame.bounds.top)/frame.scale-r.top)/(r.bottom-r.top), 0., 1.);
+			input.frame.palette.boundsDip = {0, 0, 1, 1};
+			input.screen = point; input.now = std::chrono::steady_clock::now(); input.thresholdScale = frame.scale;
+			return input;
+		}
 		void UpdatePickerPoint(const Frame& frame, POINT point)
 		{
-			const auto& r = frame.palette;
-			std::scoped_lock lock(inputMutex);
-			if (pickerLocked || r.right <= r.left || r.bottom <= r.top) return;
-			if (std::hypot(double(point.x-pickerStablePoint.x), double(point.y-pickerStablePoint.y))>5*(std::max)(1., frame.scale))
-			{
-				pickerStablePoint = point; pickerStableTime = std::chrono::steady_clock::now();
-			}
-			pickerDragX = (std::clamp)(((point.x-frame.bounds.left)/frame.scale-r.left)/(r.right-r.left), 0., 1.);
-			pickerDragY = (std::clamp)(((point.y-frame.bounds.top)/frame.scale-r.top)/(r.bottom-r.top), 0., 1.);
-			pickerDragColor = GetBarColorPickerColor(pickerDragX, pickerDragY, frame.darkTone, frame.pickerBelow);
+			colorPicker.ResetHoldIfMoved(point, std::chrono::steady_clock::now(), frame.scale);
+			colorPicker.PointerMove(PickerInput(frame, point));
 		}
 		void Activate(unsigned id, const Frame& frame, POINT screen)
 		{
@@ -2151,12 +2103,12 @@ namespace Inkeys::UI::Bar
 			}
 			if (id == SidesEntry) { sidesOpen = !sidesOpen.load(); colorOpen = pickerOpen = false; return; }
 			if (id == Custom) { pickerOpen = true; return; }
-			if (id == PickerClose) { pickerOpen = false; return; }
+			if (id == PickerClose) { colorPicker.Activate(ColorPickerPart::Close); return; }
 			if (id == Finish) { ShapeUiAction a; a.identity = frame.snapshot->identity; a.kind = ShapeUiActionKind::CloseEditor; a.finishEditing = true; colorOpen = sidesOpen = pickerOpen = false; Emit(a); return; }
 			if (id == Tone)
 			{
 				std::scoped_lock lock(inputMutex);
-				darkTone = !darkTone.load();
+				colorPicker.Activate(ColorPickerPart::Tone);
 				return;
 			}
 			ShapeUiAction a;
@@ -2195,12 +2147,6 @@ namespace Inkeys::UI::Bar
 				a.style.auxiliary = static_cast<Auxiliary>(static_cast<uint8_t>(a.style.auxiliary)^static_cast<uint8_t>(AuxiliaryBits[id-Aux]));
 			}
 			else if (id >= Swatch && id<Tone) a.style.strokeRgb = a.style.fillRgb = UiColorToShapeRgb(GetPresetColor(static_cast<BarThemePresetColorEnum>(id-Swatch)));
-			else if (id == PaletteHit)
-			{
-				const auto r = frame.palette;
-				const double x = ((screen.x-frame.bounds.left)/frame.scale-r.left)/(r.right-r.left), y = ((screen.y-frame.bounds.top)/frame.scale-r.top)/(r.bottom-r.top);
-				a.style.strokeRgb = a.style.fillRgb = UiColorToShapeRgb(GetBarColorPickerColor(x, y, frame.darkTone, frame.pickerBelow));
-			}
 			else return;
 			Emit(a);
 		}
@@ -2239,66 +2185,30 @@ namespace Inkeys::UI::Bar
 		return impl_->bounds;
 	}
 
-	HRESULT ShapeEditorSurface::EnsureDeviceResources(const RenderPipeline::DeviceEpoch& epoch)
+	void ShapeEditorSurface::BindFrameTarget(FrameTarget* target)
 	{
+		if (impl_->boundTarget == target) return;
+		if (impl_->boundTarget) impl_->boundTarget->BindRenderer(nullptr);
+		impl_->boundTarget = target;
+		if (target) target->BindRenderer(&impl_->renderer);
+	}
+
+	void ShapeEditorSurface::PrepareDeviceGeneration(unsigned long long generation)
+	{
+		// 先清场景自有设备资源，宿主随后才 Ensure 帧目标（与原 EnsureDeviceResources 同序）。
 		auto& p = *impl_;
-		if (p.deviceGeneration != epoch.generation)
+		if (p.deviceGeneration != generation)
 		{
 			for (auto& b : p.buttons) if (b) b->icon.ResetCache();
-			p.colorWheel.ResetCache();
+			p.colorWheel.ResetCache(); p.colorPicker.ResetDeviceCaches();
 			p.bracketGeometry.Reset(); p.connectorStyle.Reset();
-			p.deviceGeneration = epoch.generation;
+			p.deviceGeneration = generation;
 		}
-
-		return p.renderer.EnsureDeviceResources(epoch, (std::max)(1L, p.bounds.right-p.bounds.left), (std::max)(1L, p.bounds.bottom-p.bounds.top));
 	}
 
-	BarUIRendering& ShapeEditorSurface::Renderer() noexcept
+	void ShapeEditorSurface::Draw(ID2D1DeviceContext* dc)
 	{
-		return impl_->renderer;
-	}
-
-	void ShapeEditorSurface::Draw()
-	{
-		impl_->Draw();
-	}
-
-	HRESULT ShapeEditorSurface::Present(const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>& sink)
-	{
-		auto& p = *impl_;
-		auto* dc = p.renderer.GetDeviceContext();
-		auto* gdi = p.renderer.GetGdiInteropRenderTarget();
-		if (!dc || !gdi || !sink) return E_UNEXPECTED;
-		dc->SetTransform(D2D1::Matrix3x2F::Identity());
-		p.renderer.BeginFrameDraw(dc, {0, 0, static_cast<float>(p.bounds.right-p.bounds.left), static_cast<float>(p.bounds.bottom-p.bounds.top)});
-		p.Draw();
-		p.renderer.FinishFrameDrawCommands(dc);
-		HDC source = nullptr;
-		const HRESULT get = gdi->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &source);
-		HRESULT release = S_OK;
-		bool presented = false;
-		if (SUCCEEDED(get) && source)
-		{
-			POINT dst{p.bounds.left, p.bounds.top}, src{};
-			SIZE size{p.bounds.right-p.bounds.left, p.bounds.bottom-p.bounds.top};
-			BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
-			UPDATELAYEREDWINDOWINFO info{sizeof(info)};
-			info.hdcSrc = source;
-			info.pptDst = &dst;
-			info.psize = &size;
-			info.pptSrc = &src;
-			info.pblend = &blend;
-			info.dwFlags = ULW_ALPHA;
-			presented = sink(info) != FALSE;
-			const RECT modified{};
-			release = gdi->ReleaseDC(&modified);
-		}
-
-		const HRESULT end = p.renderer.EndFrameDraw(dc);
-		if (FAILED(end)) return end;
-		if (FAILED(get)) return get;
-		if (FAILED(release)) return release;
-		return presented ? S_OK : E_FAIL;
+		impl_->Draw(dc);
 	}
 
 	void ShapeEditorSurface::CommitPresented(bool enabled)
@@ -2308,6 +2218,8 @@ namespace Inkeys::UI::Bar
 		impl_->presented = impl_->candidate;
 		impl_->presented.presentationGeneration = generation;
 		impl_->presented.input&=enabled;
+		for(auto& panel:impl_->panels)panel.CommitPresented();
+		impl_->colorPicker.CommitPresented(impl_->presented.pickerFrame);
 		impl_->presentPending = !enabled;
 	}
 
@@ -2337,9 +2249,10 @@ namespace Inkeys::UI::Bar
 
 	void ShapeEditorSurface::ReleaseDeviceResources()
 	{
-		impl_->renderer.DiscardDeviceResources();
+		// 帧目标由宿主持有；其丢弃仍先于场景自有设备资源的清理，保持原有先后。
+		if (impl_->boundTarget) impl_->boundTarget->Discard();
 		for (auto& b : impl_->buttons) if (b) b->icon.ResetCache();
-		impl_->colorWheel.ResetCache();
+		impl_->colorWheel.ResetCache(); impl_->colorPicker.ResetDeviceCaches();
 		impl_->bracketGeometry.Reset(); impl_->connectorStyle.Reset();
 	}
 
@@ -2427,15 +2340,8 @@ namespace Inkeys::UI::Bar
 			if (message == WM_MOUSEMOVE || message == WM_LBUTTONUP) { p.HoldToolbar(frame,message != WM_LBUTTONUP); p.UpdatePickerPoint(frame, point); }
 			if (message == WM_LBUTTONUP)
 			{
-				ShapeUiAction action; action.kind = ShapeUiActionKind::SetStyle; action.identity = p.pickerIdentity;
-				action.style = p.pickerBaseStyle;
-				{
-					std::scoped_lock lock(p.inputMutex);
-					action.style.strokeRgb = action.style.fillRgb = UiColorToShapeRgb(p.pickerDragColor);
-					p.pickerDragging = false; p.pickerLocked = false;
-				}
-				// 当前Draw3没有样式预览事务；松手仅提交一次，绝不逐Move产生历史。
-				p.paletteGesture = false; p.Emit(action);
+				p.paletteGesture = false;
+				p.colorPicker.PointerUp(captureOwned);
 			}
 			return true;
 		}
@@ -2474,11 +2380,13 @@ namespace Inkeys::UI::Bar
 			p.HoldToolbar(frame,true);
 			p.paletteGesture = true;
 			p.pickerIdentity = frame.snapshot->identity; p.pickerBaseStyle = frame.snapshot->object->style;
-			{
-				std::scoped_lock lock(p.inputMutex); p.pickerDragging = true; p.pickerLocked = false;
-				p.pickerStablePoint = point; p.pickerStableTime = std::chrono::steady_clock::now();
-			}
-			p.UpdatePickerPoint(frame, point);
+			ColorPickerCallbacks callbacks;
+			callbacks.commit = [&p](COLORREF color) {
+				ShapeUiAction action; action.kind = ShapeUiActionKind::SetStyle; action.identity = p.pickerIdentity;
+				action.style = p.pickerBaseStyle; action.style.strokeRgb = action.style.fillRgb = UiColorToShapeRgb(color);
+				p.Emit(action);
+			};
+			p.colorPicker.PointerDown(p.PickerInput(frame, point), std::move(callbacks));
 			return true;
 		}
 
@@ -2492,7 +2400,17 @@ namespace Inkeys::UI::Bar
 		unsigned activate = 0;
 		{
 			std::scoped_lock lock(p.inputMutex);
-			auto r = p.pointer.Update(event, hit.button);
+			const auto part = hit.button == Tone ? ColorPickerPart::Tone : hit.button == PickerClose ? ColorPickerPart::Close : ColorPickerPart::Outside;
+   ButtonPointerResult r;
+   if (part != ColorPickerPart::Outside || p.pressed == Tone || p.pressed == PickerClose) {
+    p.pointer.Reset();
+    r = p.colorPicker.ButtonInput(event, part);
+    const auto hostId = [](std::uint64_t value) -> std::uint64_t { return value == static_cast<std::uint64_t>(ColorPickerPart::Tone) ? Tone : value == static_cast<std::uint64_t>(ColorPickerPart::Close) ? PickerClose : 0; };
+    r.hover = hostId(r.hover); r.pressed = hostId(r.pressed); r.activate = hostId(r.activate);
+   } else {
+    r = p.pointer.Update(event, hit.button);
+    if (p.hover == Tone || p.hover == PickerClose) p.colorPicker.SetHover(ColorPickerPart::Outside);
+   }
 			activate = static_cast<unsigned>(r.activate);
 			p.hover = static_cast<unsigned>(r.hover);
 			p.pressed = static_cast<unsigned>(r.pressed);
@@ -2622,7 +2540,7 @@ namespace Inkeys::UI::Bar
 		std::scoped_lock lock(p.inputMutex);
 		p.ReleaseToolbarOperationLocked();
 		p.gesture = p.paletteGesture = p.dismissGesture = false;
-		p.pickerDragging = p.pickerLocked = false;
+		p.colorPicker.Cancel();
 		p.pointer.Reset();
 		p.hover = p.pressed = 0;
 		p.buttonIdentity = {};
@@ -2642,6 +2560,150 @@ namespace Inkeys::UI::Bar
 	bool ShapeEditorSurface::NeedsPresent() const noexcept
 	{
 		return impl_->presentPending;
+	}
+
+	// 原 ShapeEditorSurface::Present 的时序改由帧事务驱动；宿主（SelectionOverlay）与离屏测试共用，先后与返回口径不变。
+	HRESULT PresentShapeEditorFrame(ShapeEditorSurface& content, FrameTarget& target,
+		const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>& sink,
+		FrameTransactionLogState* log, const char* role)
+	{
+		auto* dc = target.DeviceContext();
+		if (!dc || !target.GdiInteropRenderTarget() || !sink) return E_UNEXPECTED;
+		const RECT bounds = content.Bounds();
+		dc->SetTransform(D2D1::Matrix3x2F::Identity());
+		// 构造即 BeginDraw、整窗裁剪并透明清空；GDI interop 由事务持有到结束。
+		FrameTransaction transaction(target, {0, 0, static_cast<float>(bounds.right-bounds.left), static_cast<float>(bounds.bottom-bounds.top)});
+		content.Draw(transaction.DeviceContext());
+		transaction.FinishDrawCommands();
+		// 提交端：把源 DC 组装成 ULW 参数交给宿主 sink；错误码只供失败日志使用。
+		const auto submit = [&](const FramePresentSource& pixels) -> FramePresentOutcome
+		{
+			POINT dst{bounds.left, bounds.top}, src{};
+			SIZE size{bounds.right-bounds.left, bounds.bottom-bounds.top};
+			BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+			UPDATELAYEREDWINDOWINFO info{sizeof(info)};
+			info.hdcSrc = pixels.sourceDc;
+			info.pptDst = &dst;
+			info.psize = &size;
+			info.pptSrc = &src;
+			info.pblend = &blend;
+			info.dwFlags = ULW_ALPHA;
+			const bool presented = sink(info) != FALSE;
+			return {presented, presented ? ERROR_SUCCESS : GetLastError()};
+		};
+		// GetDC(COPY) → 提交端 → ReleaseDC(空修改矩形) → EndDraw；std::ref 避免渲染线程逐帧堆分配。
+		const FrameTransactionResult result = transaction.Commit(std::ref(submit));
+		if (log) log->Report(role, result);
+		// 原返回优先级：EndDraw → GetDC → ReleaseDC → 是否提交成功；GetDC 成功却没有 DC 不算 GetDC 失败。
+		if (FAILED(result.endDraw)) return result.endDraw;
+		if (FAILED(result.getDc) && !result.sourceDcMissing) return result.getDc;
+		if (result.releaseDcAttempted && FAILED(result.releaseDc)) return result.releaseDc;
+		return result.presentSucceeded ? S_OK : E_FAIL;
+	}
+
+	namespace
+	{
+		// 离屏测试与像素基线桥用的独立场景：帧目标由测试自持，沿用原先的调用形态。
+		struct HostedShapeEditor : ShapeEditorSurface
+		{
+			// 成员先于基类析构，即帧目标先于场景销毁。
+			FrameTarget target;
+			HostedShapeEditor() { BindFrameTarget(&target); }
+			HRESULT EnsureDeviceResources(const RenderPipeline::DeviceEpoch& epoch)
+			{
+				// 与 SelectionOverlay 宿主同序：先清场景自有设备资源，再按本帧外框确保帧目标。
+				PrepareDeviceGeneration(epoch.generation);
+				const RECT bounds = Bounds();
+				return target.Ensure(epoch, (std::max)(1L, bounds.right-bounds.left), (std::max)(1L, bounds.bottom-bounds.top));
+			}
+			[[nodiscard]] FrameTarget& Target() noexcept { return target; }
+			[[nodiscard]] UIRendering& Renderer() noexcept { return *target.BoundRenderer(); }
+			// 与生产宿主走同一份呈现事务，只是提交端换成测试 sink。
+			HRESULT Present(const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>& sink)
+			{
+				return PresentShapeEditorFrame(*this, target, sink);
+			}
+		};
+	}
+
+	HRESULT RenderShapeEditorGoldenScene(unsigned layer,
+		const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>& present)
+	{
+		if (layer > 4 || !present) return E_INVALIDARG;
+		ToolSpec tool;
+		tool.preset = PresetKind::RegularPolygon;
+		tool.creationMode = CreationMode::CenterRadius;
+		tool.sides = 5;
+		ObjectId id{}; id[0] = 1;
+		ShapeStyle objectStyle;
+		objectStyle.width = 4;
+		objectStyle.strokeRgb = objectStyle.fillRgb = 0x1E8CDCu;
+		const auto object = MakePresetShape(tool, {600, 450}, {720, 530}, objectStyle, id);
+		if (!object) return E_FAIL;
+		auto snapshot = std::make_shared<ShapeUiSnapshot>();
+		snapshot->object = *object;
+		snapshot->identity.session = snapshot->identity.generation = 1;
+		snapshot->identity.objectId = id;
+		snapshot->identity.objectRevision = snapshot->identity.documentGeneration = snapshot->identity.displayGeneration = 1;
+		snapshot->displayScale = 1;
+		snapshot->handles = BuildEditHandles(*object, {1}, &snapshot->frameRect);
+		GeometryResult geometry;
+		if (!BuildGeometry(*object, geometry, {1})) return E_FAIL;
+		snapshot->bounds = geometry.bounds;
+		HostedShapeEditor scene;
+		auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds(1);
+		// 不经过真实输入，不触发预览/提交期限；保留可注入的工具栏时钟为固定帧时刻。
+		scene.impl_->toolbarNow = [&] { return now; };
+		scene.SetActionSink([](const ShapeUiAction&) {});
+		scene.Configure(snapshot, {0, 0, 1600, 1000}, {});
+		unsigned frame = 0;
+		const auto settle = [&]
+		{
+			for (unsigned i = 0; i < 240; ++i)
+			{
+				now = std::chrono::steady_clock::time_point{} + std::chrono::seconds(1)
+					+ std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(++frame / 60.0));
+				(void)scene.Advance(now);
+			}
+		};
+		settle();
+		const auto epoch = RenderPipeline::GetDeviceEpoch();
+		const HRESULT initialResources = scene.EnsureDeviceResources(epoch);
+		if (FAILED(initialResources)) return initialResources;
+		scene.impl_->colorOpen = layer == 1 || layer >= 3;
+		scene.impl_->sidesOpen = layer == 2;
+		scene.impl_->pickerOpen = layer >= 3;
+		scene.impl_->colorPicker.colorPickerDarkTone = layer == 4;
+		settle();
+		// 设备代次可影响文字测量缓存；先让真实资源就绪，再等待布局收敛。
+		const HRESULT layerResources = scene.EnsureDeviceResources(epoch);
+		if (FAILED(layerResources)) return layerResources;
+		settle();
+		if (scene.AnimationActive()) return S_FALSE;
+		const auto& candidate = scene.impl_->candidate;
+		if (!scene.Visible() || (layer == 1 && !candidate.paletteLayer)
+			|| (layer == 2 && !candidate.sidesLayer) || (layer >= 3 && !candidate.pickerLayer)) return E_FAIL;
+		const HRESULT resources = scene.EnsureDeviceResources(epoch);
+		if (FAILED(resources)) return resources;
+		const HRESULT submitted = scene.Present([&](const UPDATELAYEREDWINDOWINFO& info) -> BOOL
+		{
+			// 候选层标志不能证明实际绘制；在待测面板内部取样，排除空白屏障和其他层的像素。
+			const auto area = layer >= 3 ? candidate.picker : layer == 2 ? candidate.parameters
+				: layer == 1 ? candidate.colors : candidate.toolbar;
+			if (!info.hdcSrc || !info.pptSrc || area.right <= area.left || area.bottom <= area.top) return FALSE;
+			unsigned ink = 0;
+			for (unsigned y = 1; y <= 4; ++y)
+				for (unsigned x = 1; x <= 4; ++x)
+				{
+					const auto color = GetPixel(info.hdcSrc,
+						info.pptSrc->x + static_cast<int>((area.left + (area.right - area.left) * x / 5) * candidate.scale),
+						info.pptSrc->y + static_cast<int>((area.top + (area.bottom - area.top) * y / 5) * candidate.scale));
+					if (color != CLR_INVALID && (GetRValue(color) > 16 || GetGValue(color) > 16 || GetBValue(color) > 16)) ++ink;
+				}
+			return ink >= 12 ? present(info) : FALSE;
+		});
+		if (SUCCEEDED(submitted)) scene.CommitPresented();
+		return submitted;
 	}
 
 	int RunShapeEditorOffscreenTest()
@@ -2668,6 +2730,32 @@ namespace Inkeys::UI::Bar
 				report<<"FAIL "<<why<<" case="<<scenes<<'\n';
 			}
 		};
+		{
+			// 真实推进组件的背景动画，防止高频 Move 反复把同目标反馈重置到起点。
+			ColorPicker picker;
+			auto& background = picker.Button(ColorPickerPart::Tone).button.pct;
+			const UiAnimationAdvanceContextClass animation{.05, 1, true, false};
+			picker.ButtonInput(ButtonPointerEvent::Move, ColorPickerPart::Tone);
+			(void)UiAdvanceAnimation(background, animation);
+			const double hoverProgress = background.progress;
+			picker.ButtonInput(ButtonPointerEvent::Move, ColorPickerPart::Tone);
+			expect(hoverProgress > 0 && background.progress == hoverProgress
+				&& background.tar == ButtonHoverOpacity && picker.CloseHoverStage() == ButtonHoverStageEnum::None,
+				"picker repeated hover preserves progress and leaves untouched buttons idle");
+			picker.SetHover(ColorPickerPart::Outside);
+			(void)UiAdvanceAnimation(background, animation);
+			const double fadeProgress = background.progress;
+			picker.SetHover(ColorPickerPart::Outside);
+			expect(fadeProgress > 0 && background.progress == fadeProgress && background.tar == 0,
+				"picker repeated outside moves preserve the running fade");
+			picker.ButtonInput(ButtonPointerEvent::Move, ColorPickerPart::Tone);
+			expect(background.tar == ButtonHoverOpacity && background.progress == 0,
+				"picker reentry restarts hover after the host cleared its target");
+			picker.Cancel();
+			expect(background.tar == 0, "picker cancellation retires its hovered target");
+			picker.ButtonInput(ButtonPointerEvent::Move, ColorPickerPart::Tone);
+			expect(background.tar == ButtonHoverOpacity, "picker can hover again after cancellation");
+		}
 		{
 			ShapeContactGesture gesture;
 			const ShapeContactGesture::Key first{1,7}, second{2,7};
@@ -2788,23 +2876,23 @@ namespace Inkeys::UI::Bar
 		// 对照完整旧内联公式：主题过渡、缩放、半透明入场和悬停/按下中途均逐像素一致。
 		for (double weight : {0.0, .5, 1.0}) for (int state = 0; state < 3; ++state) for (bool moving : {false, true})
 		{
-			BarUIRendering thumbRenderer;
-			expect(SUCCEEDED(thumbRenderer.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 256, 128)), "Thumb regression target initializes");
-			auto* dc = thumbRenderer.GetDeviceContext();
+			UIRendering thumbRenderer; FrameTarget thumbTarget{thumbRenderer};
+			expect(SUCCEEDED(thumbTarget.Ensure(RenderPipeline::GetDeviceEpoch(), 256, 128)), "Thumb regression target initializes");
+			auto* dc = thumbTarget.DeviceContext();
 			if (!dc) continue;
 			const FLOAT zoom = static_cast<FLOAT>(1 + weight);
 			const double panelScale = moving ? .63 : 1.0, thumbScale = moving ? .89 : 1.0;
-			const double progress = moving ? BarUiApplyCurve(BarUiCurveEnum::EaseOutCubic, .5) : 1.0;
+			const double progress = moving ? UiApplyCurve(UiCurveEnum::EaseOutCubic, .5) : 1.0;
 			const double accentOpacity = 1 + (state == 1 ? -.10 : state == 2 ? -.20 : 0) * progress;
 			const double centerDiameter = 12 + (state == 1 ? 2 : state == 2 ? -2 : 0) * progress;
 			const double opacity = moving ? .37 : 1.0;
-			const COLORREF surface = MixBarUiColor(RGB(19, 23, 27), RGB(251, 251, 251), moving ? .31 : weight);
-			const COLORREF accent = GetThemeColor(weight < 1 ? BarThemeModeEnum::Dark : BarThemeModeEnum::Light, BarThemeColorEnum::Accent);
+			const COLORREF surface = MixUiColor(RGB(19, 23, 27), RGB(251, 251, 251), moving ? .31 : weight);
+			const COLORREF accent = GetThemeColor(weight < 1 ? ThemeModeEnum::Dark : ThemeModeEnum::Light, ThemeColorEnum::Accent);
 			const FLOAT diameterPx = static_cast<FLOAT>(20 * panelScale * thumbScale * zoom);
 			const FLOAT centerPx = static_cast<FLOAT>(centerDiameter) * static_cast<FLOAT>(panelScale * thumbScale) * zoom;
 			thumbRenderer.SetFrameZoom(zoom);
-			thumbRenderer.BeginFrameDraw(dc, {0, 0, 256, 128});
-			BarSliderThumbStyle thumbStyle;
+			thumbTarget.BeginFrame(dc, {0, 0, 256, 128});
+			SliderThumbStyle thumbStyle;
 			thumbStyle.centerPx = {64, 64};
 			thumbStyle.outerDiameterPx = diameterPx;
 			thumbStyle.centerDiameterPx = centerPx;
@@ -2814,25 +2902,25 @@ namespace Inkeys::UI::Bar
 			thumbStyle.frameThicknessPx = static_cast<FLOAT>(panelScale * zoom);
 			thumbStyle.surfaceColor = surface;
 			thumbStyle.accentColor = accent;
-			DrawBarSliderThumb(thumbRenderer, dc, thumbStyle);
-			const auto darkFill = MixBarUiColor(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface),
-				GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::TextPrimary), .20);
-			const auto darkFrame = MixBarUiColor(darkFill, GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::TextPrimary), .12);
-			const auto lightFrame = MixBarUiColor(GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::Surface),
-				GetThemeColor(BarThemeModeEnum::Light, BarThemeColorEnum::TextPrimary), BarThemeMaterial::LightSliderThumbBorderOpacity);
+			DrawSliderThumb(thumbRenderer, dc, thumbStyle);
+			const auto darkFill = MixUiColor(GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::Surface),
+				GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::TextPrimary), .20);
+			const auto darkFrame = MixUiColor(darkFill, GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::TextPrimary), .12);
+			const auto lightFrame = MixUiColor(GetThemeColor(ThemeModeEnum::Light, ThemeColorEnum::Surface),
+				GetThemeColor(ThemeModeEnum::Light, ThemeColorEnum::TextPrimary), ThemeMaterial::LightSliderThumbBorderOpacity);
 			const auto oldCircle = [&](COLORREF color, FLOAT radius)
 			{
 				if (radius > 0) if (auto* brush = thumbRenderer.ContentSolidBrush(color, opacity))
 					dc->FillEllipse(D2D1::Ellipse({192, 64}, radius, radius), brush);
 			};
 			const FLOAT radius = diameterPx / 2.0F;
-			oldCircle(MixBarUiColor(darkFrame, lightFrame, weight), radius);
-			oldCircle(MixBarUiColor(darkFill, RGB(255, 255, 255), weight),
+			oldCircle(MixUiColor(darkFrame, lightFrame, weight), radius);
+			oldCircle(MixUiColor(darkFill, RGB(255, 255, 255), weight),
 				(std::max)(0.0F, radius - static_cast<FLOAT>(panelScale * zoom)));
-			oldCircle(MixBarUiColor(surface, accent, accentOpacity), (std::min)(radius * .70F, centerPx / 2.0F));
-			thumbRenderer.FinishFrameDrawCommands(dc);
-			expect(SUCCEEDED(thumbRenderer.EndFrameDraw(dc)), "Thumb regression draw completes");
-			const auto pixels = ReadEditorPixels(thumbRenderer, {256, 128});
+			oldCircle(MixUiColor(surface, accent, accentOpacity), (std::min)(radius * .70F, centerPx / 2.0F));
+			thumbTarget.FinishDrawCommands(dc);
+			expect(SUCCEEDED(thumbTarget.EndFrame(dc)), "Thumb regression draw completes");
+			const auto pixels = ReadEditorPixels(thumbTarget, {256, 128});
 			bool identical = !pixels.empty();
 			for (int y = 0; y < 128 && identical; ++y) for (int x = 0; x < 128; ++x)
 			{
@@ -2848,9 +2936,9 @@ namespace Inkeys::UI::Bar
 			style.darkStyle = dark;
 			style.backgroundOpacity = background;
 			style.contentOpacity = static_cast<int>(content * 100);
-			BarUIRendering hitRenderer;
-			expect(SUCCEEDED(hitRenderer.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 128, 128)), "invisible input regression target initializes");
-			auto* dc = hitRenderer.GetDeviceContext();
+			UIRendering hitRenderer; FrameTarget hitTarget{hitRenderer};
+			expect(SUCCEEDED(hitTarget.Ensure(RenderPipeline::GetDeviceEpoch(), 128, 128)), "invisible input regression target initializes");
+			auto* dc = hitTarget.DeviceContext();
 			if (!dc) continue;
 			hitRenderer.SetFrameZoom(zoom);
 			hitRenderer.SetResidentContentOpacity(content);
@@ -2859,23 +2947,23 @@ namespace Inkeys::UI::Bar
 			hitSnapshot.bounds.valid = true;
 			hitSnapshot.bounds.left = hitSnapshot.bounds.top = 48;
 			hitSnapshot.bounds.right = hitSnapshot.bounds.bottom = 80;
-			hitRenderer.BeginFrameDraw(dc, {0, 0, 128, 128});
+			hitTarget.BeginFrame(dc, {0, 0, 128, 128});
 			DrawEditorInputCoverage(hitRenderer, dc, hitSnapshot, {}, zoom);
-			BarSliderThumbStyle thumbStyle;
+			SliderThumbStyle thumbStyle;
 			thumbStyle.centerPx = {64, 64};
 			thumbStyle.outerDiameterPx = 20 * zoom;
 			thumbStyle.centerDiameterPx = 12 * zoom;
 			thumbStyle.frameThicknessPx = zoom;
 			thumbStyle.lightWeight = GetThemeLightWeight();
 			thumbStyle.opacity = content;
-			thumbStyle.surfaceColor = GetThemeColor(BarThemeColorEnum::Surface);
-			thumbStyle.accentColor = GetThemeColor(BarThemeColorEnum::Accent);
+			thumbStyle.surfaceColor = GetThemeColor(ThemeColorEnum::Surface);
+			thumbStyle.accentColor = GetThemeColor(ThemeColorEnum::Accent);
 			thumbStyle.compositeOpacity = true;
-			DrawBarSliderThumb(hitRenderer, dc, thumbStyle);
+			DrawSliderThumb(hitRenderer, dc, thumbStyle);
 			hitRenderer.SetResidentContentOpacity(1);
-			hitRenderer.FinishFrameDrawCommands(dc);
-			expect(SUCCEEDED(hitRenderer.EndFrameDraw(dc)), "invisible input regression draw completes");
-			const auto pixels = ReadEditorPixels(hitRenderer, {128, 128});
+			hitTarget.FinishDrawCommands(dc);
+			expect(SUCCEEDED(hitTarget.EndFrame(dc)), "invisible input regression draw completes");
+			const auto pixels = ReadEditorPixels(hitTarget, {128, 128});
 			bool invisible = !pixels.empty();
 			unsigned covered = 0;
 			for (int y = 0; y < 128 && invisible; ++y) for (int x = 0; x < 128; ++x)
@@ -2942,7 +3030,7 @@ namespace Inkeys::UI::Bar
 			{
 				return h.kind == EditHandleKind::Scale;
 			}) == (preset >= PresetKind::Cuboid ? 4 : 0), "only solids expose four frame corners; planar frames have no scale handles");
-			ShapeEditorSurface scene;
+			HostedShapeEditor scene;
 			std::vector<ShapeUiAction> actions;
 			scene.SetActionSink([&](const auto& action)
 			{
@@ -2957,17 +3045,17 @@ namespace Inkeys::UI::Bar
 			{
 				const auto& d = *scene.impl_->dividers[di];
 				expect(scene.impl_->dividerX[di].IsSame() && scene.impl_->dividerY[di].IsSame(), "first-frame divider position equals target");
-				expect(d.button.w.val == 1 && d.button.h.val == BarButtonOneSideDip-4 && d.button.frameLightColor == BarUiFrameLightColorEnum::Frame
+				expect(d.button.w.val == 1 && d.button.h.val == ButtonOneSideDip-4 && d.button.frameLightColor == UiFrameLightColorEnum::Frame
 					&& !d.button.framePrimaryLightEnabled && d.button.frameCursorLightIntensityScale == BarUiDividerCursorLightIntensity
 					&& d.button.framePct->val == 0
-					&& d.button.fill->val == GetThemeColor(BarThemeColorEnum::Divider)
-					&& d.button.frame->val == GetThemeColor(BarThemeColorEnum::Divider), "divider parameters and color equal GeometryAttribute SingleRow template");
+					&& d.button.fill->val == GetThemeColor(ThemeColorEnum::Divider)
+					&& d.button.frame->val == GetThemeColor(ThemeColorEnum::Divider), "divider parameters and color equal GeometryAttribute SingleRow template");
 			}
 			expect(scene.impl_->toolbarMotion.Active() && scene.impl_->toolbarMotion.Geometry() == 0, "new session opens using compact panel motion");
 			// 同一实例切换主题，不能仅验证重新构造时的分隔线默认色。
 			style.darkStyle = !dark; now += std::chrono::milliseconds(17); scene.Advance(now);
-			for (const auto& d : scene.impl_->dividers) expect(d->button.fill->val == GetThemeColor(BarThemeColorEnum::Divider)
-				&& d->button.frame->val == GetThemeColor(BarThemeColorEnum::Divider)
+			for (const auto& d : scene.impl_->dividers) expect(d->button.fill->val == GetThemeColor(ThemeColorEnum::Divider)
+				&& d->button.frame->val == GetThemeColor(ThemeColorEnum::Divider)
 				&& d->button.lightMaterial == GetThemeLightWeight(), "theme switch updates divider fill, frame and material in place");
 			style.darkStyle = dark; now += std::chrono::milliseconds(17); scene.Advance(now);
 			for (int frame = 0; frame<70; ++frame)
@@ -2981,26 +3069,26 @@ namespace Inkeys::UI::Bar
 			for (unsigned id = Style; id<Thickness; ++id)
 			{
 				const auto& b = *scene.impl_->buttons[id];
-				if (b.state->state != BarWidgetState::Selected) continue;
+				if (b.state->state != WidgetState::Selected) continue;
 				selectedIcon = true;
-				expect(b.icon.color1->val == GetThemeColor(BarThemeColorEnum::Accent)
-					&& b.icon.color2->val == GetThemeColor(BarThemeColorEnum::Accent)
-					&& b.name.color.val == GetThemeColor(BarThemeColorEnum::Accent), "selected editor icon and text use the common Accent role");
+				expect(b.icon.color1->val == GetThemeColor(ThemeColorEnum::Accent)
+					&& b.icon.color2->val == GetThemeColor(ThemeColorEnum::Accent)
+					&& b.name.color.val == GetThemeColor(ThemeColorEnum::Accent), "selected editor icon and text use the common Accent role");
 			}
 			expect(selectedIcon, "selected-icon assertion exercises a selected production button");
 			for (const auto& b : scene.impl_->buttons) if (b) expect(b->button.lightMaterial == GetThemeLightWeight(), "every button shares the frame light-material weight");
 			for (const auto& swatch : scene.impl_->swatchSurfaces) expect(swatch.lightMaterial == GetThemeLightWeight(), "every swatch shares the frame light-material weight");
-			expect(scene.impl_->pickerPreview.lightMaterial == GetThemeLightWeight() && scene.impl_->holdSurface.lightMaterial == GetThemeLightWeight(), "picker shapes share the frame light-material weight");
+			expect(scene.impl_->colorPicker.Shape(ColorPickerPart::Preview)->lightMaterial == GetThemeLightWeight() && scene.impl_->colorPicker.Shape(ColorPickerPart::HoldHint)->lightMaterial == GetThemeLightWeight(), "picker shapes share the frame light-material weight");
 			if (!dark)
 			{
 				const auto& b = scene.impl_->buttons[Pattern+1]->button;
-				auto material = BarThemeMaterial::Resolve(b.lightMaterial, b.fill->val, b.frame->val);
-				material.edgeLight = BarThemeMaterial::ObjectEdgeLight(material.lightWeight, b.frame->val);
-				const auto lighting = BarThemeMaterial::ResolveCursorLighting(material, RGB(0, 0, 0), 0);
-				expect(lighting.color == BarThemeMaterial::LightColor(BarThemeMaterial::ColorRole::EdgeLight)
-					&& std::abs(lighting.diffuseOpacity-BarThemeMaterial::LightFrameDiffuseOpacity)<.000001
-					&& material.primaryLightRadiusScale == BarThemeMaterial::LightPrimaryRadiusScale
-					&& material.cursorLightRadiusScale == BarThemeMaterial::LightCursorRadiusScale, "light editor button resolves light-theme point-light color, diffuse and radii");
+				auto material = ThemeMaterial::Resolve(b.lightMaterial, b.fill->val, b.frame->val);
+				material.edgeLight = ThemeMaterial::ObjectEdgeLight(material.lightWeight, b.frame->val);
+				const auto lighting = ThemeMaterial::ResolveCursorLighting(material, RGB(0, 0, 0), 0);
+				expect(lighting.color == ThemeMaterial::LightColor(ThemeMaterial::ColorRole::EdgeLight)
+					&& std::abs(lighting.diffuseOpacity-ThemeMaterial::LightFrameDiffuseOpacity)<.000001
+					&& material.primaryLightRadiusScale == ThemeMaterial::LightPrimaryRadiusScale
+					&& material.cursorLightRadiusScale == ThemeMaterial::LightCursorRadiusScale, "light editor button resolves light-theme point-light color, diffuse and radii");
 			}
 			expect(SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch())), "shared epoch creates private editor target");
 			unsigned nontransparent = 0;
@@ -3019,9 +3107,9 @@ namespace Inkeys::UI::Bar
 				if (FAILED(resource)) return resource;
 				const HRESULT hr = scene.Present(sink);
 				if (FAILED(hr)) return hr;
-				const auto targetSize = scene.Renderer().GetTargetBitmap()->GetPixelSize();
+				const auto targetSize = scene.Target().TargetBitmap()->GetPixelSize();
 				expect(targetSize.width == receipt.cx && targetSize.height == receipt.cy, "actual ULW extent matches this frame target before content readback");
-				const auto pixels = ReadEditorPixels(scene.Renderer(), receipt);
+				const auto pixels = ReadEditorPixels(scene.Target(), receipt);
 				expect(pixels.size() == static_cast<size_t>(receipt.cx)*receipt.cy*4, "actual committed ULW source crop can be read after EndDraw");
 				nontransparent = 0;
 				for (size_t pixel = 3; pixel<pixels.size(); pixel += 4) if (pixels[pixel])++nontransparent;
@@ -3034,7 +3122,7 @@ namespace Inkeys::UI::Bar
 				}
 				auto glyph = [&](unsigned id, bool word, COLORREF expected)
 				{
-					const auto& button = *scene.impl_->buttons[id];
+					const ButtonClass& button = id == Tone ? scene.impl_->colorPicker.Button(ColorPickerPart::Tone) : static_cast<ButtonClass&>(*scene.impl_->buttons[id]);
 					const double z = candidate.scale;
 					D2D1_RECT_F dip = word ? D2D1_RECT_F{static_cast<float>(button.name.inhX+3), static_cast<float>(button.name.inhY+3),
 						static_cast<float>(button.name.inhX+button.name.w.val-3),
@@ -3087,8 +3175,8 @@ namespace Inkeys::UI::Bar
 					if (id == Rotate)
 					{
 						const auto surface = EditorPixelRgb(pixels, receipt, blank.x, blank.y);
-						const auto theme = dark ? MixBarUiColor(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface),
-							GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::TextPrimary), .20) : RGB(255, 255, 255);
+						const auto theme = dark ? MixUiColor(GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::Surface),
+							GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::TextPrimary), .20) : RGB(255, 255, 255);
 						expect(surface[0] >= 0 && std::abs(surface[0]-GetRValue(theme))<14 && std::abs(surface[1]-GetGValue(theme))<14
 							&& std::abs(surface[2]-GetBValue(theme))<14, "rotation control uses the shared Thumb outer fill rather than alpha1 hit coverage");
 					}
@@ -3101,12 +3189,12 @@ namespace Inkeys::UI::Bar
 					const auto& button = *scene.impl_->buttons[Aux+bit];
 					expect(button.name.enable.val && button.name.content.GetVal() == ShapeAuxiliaryLabel(AuxiliaryBits[bit],preset)
 						&& scene.Renderer().MeasureText(button.name.content.GetVal(),button.name.size.val).width <= button.name.w.val+.5
-						&& button.button.w.val > BarButtonOneSideDip,"floating auxiliary entry reserves a real measured label slot beside its icon");
+						&& button.button.w.val > ButtonOneSideDip,"floating auxiliary entry reserves a real measured label slot beside its icon");
 					glyph(Aux+bit,false,button.icon.color1->val); glyph(Aux+bit,true,button.name.color.val);
 				}
 				if (scene.impl_->colorOpen.load())
 				{
-					if (candidate.pickerLayer) glyph(Tone, false, scene.impl_->buttons[Tone]->icon.color1->val);
+					if (candidate.pickerLayer) glyph(Tone, false, scene.impl_->colorPicker.Button(ColorPickerPart::Tone).icon.color1->val);
 					for (unsigned id = Color; id<Tone; ++id) if (id == Color || id >= Swatch)
 					{
 						const auto& b = *scene.impl_->buttons[id];
@@ -3114,7 +3202,7 @@ namespace Inkeys::UI::Bar
 						const double cx = (cell.left+cell.right)/2, cy = (cell.top+cell.bottom)/2;
 						const auto color = EditorPixelRgb(pixels, receipt, static_cast<int>(cx*candidate.scale), static_cast<int>(cy*candidate.scale));
 						const auto expected = id == Color ? candidate.pickerColor : GetPresetColor(static_cast<BarThemePresetColorEnum>(id-Swatch));
-						if (id >= Swatch && b.state->state == BarWidgetState::Selected) glyph(id, false, RGB(255, 255, 255));
+						if (id >= Swatch && b.state->state == WidgetState::Selected) glyph(id, false, RGB(255, 255, 255));
 						else
 						{
 							const bool rgb = color[0] >= 0 && std::abs(color[0]-GetRValue(expected))<14 && std::abs(color[1]-GetGValue(expected))<14
@@ -3182,7 +3270,7 @@ namespace Inkeys::UI::Bar
 				scene.Configure(points,work,{});for(int i=0;i<30;++i){now+=std::chrono::milliseconds(17);scene.Advance(now);}expect(SUCCEEDED(present()),"outlying confirmed point enters full window");scene.CommitPresented();
 				auto removed=std::make_shared<ShapeUiSnapshot>(*points);removed->handles.pop_back();++removed->identity.generation;
 				scene.Configure(removed,work,{});now+=std::chrono::milliseconds(17);scene.Advance(now);expect(SUCCEEDED(present()),"removed point exit frame renders");scene.CommitPresented();
-				const auto pixels=ReadEditorPixels(scene.Renderer(),receipt);const int x=static_cast<int>(snapshot->canvasOriginX+departingPoint.x-scene.Bounds().left),y=static_cast<int>(snapshot->canvasOriginY+departingPoint.y-scene.Bounds().top);
+				const auto pixels=ReadEditorPixels(scene.Target(),receipt);const int x=static_cast<int>(snapshot->canvasOriginX+departingPoint.x-scene.Bounds().left),y=static_cast<int>(snapshot->canvasOriginY+departingPoint.y-scene.Bounds().top);
 				bool complete=x>=12&&y>=12&&x+12<receipt.cx&&y+12<receipt.cy;
 				if(complete)for(const POINT d:std::array<POINT,4>{{{-5,0},{5,0},{0,-5},{0,5}}})complete&=pixels[(static_cast<size_t>(y+d.y)*receipt.cx+x+d.x)*4+3]>1;
 				expect(complete,"undo point exit retains all four sides of its circle inside actual ULW bitmap");
@@ -3225,7 +3313,7 @@ namespace Inkeys::UI::Bar
 				const auto h=scene.impl_->presented.visualHandles.back(); const POINT point{snapshot->canvasOriginX+static_cast<LONG>(h.position.x),snapshot->canvasOriginY+static_cast<LONG>(h.position.y)};
 				const RECT main{point.x-30,point.y-30,point.x+30,point.y+30};
 				scene.Configure(snapshot,work,main); for(int i=0;i<30;++i){now+=std::chrono::milliseconds(17);scene.Advance(now);} expect(SUCCEEDED(present()),"main bar overlap renders");scene.CommitPresented();
-				const auto pixels=ReadEditorPixels(scene.Renderer(),receipt);const int x=point.x-scene.Bounds().left,y=point.y-scene.Bounds().top;
+				const auto pixels=ReadEditorPixels(scene.Target(),receipt);const int x=point.x-scene.Bounds().left,y=point.y-scene.Bounds().top;
 				expect(scene.Hit(point).occupied&&x>=0&&y>=0&&x<receipt.cx&&y<receipt.cy&&!pixels.empty()&&pixels[(static_cast<size_t>(y)*receipt.cx+x)*4+3]>0,"transparent main window bounds do not cut editor pixels or hit testing");
 				scene.Configure(snapshot,work,{});for(int i=0;i<30;++i){now+=std::chrono::milliseconds(17);scene.Advance(now);}expect(SUCCEEDED(present()),"restore editor after main bar exclusion");scene.CommitPresented();
 			}
@@ -3235,7 +3323,7 @@ namespace Inkeys::UI::Bar
 				expect(nontransparent>0&&scene.impl_->handles.empty()&&!scene.impl_->toolbarMotion.Visible()&&!scene.Hit({snapshot->canvasOriginX+130,snapshot->canvasOriginY+150}).occupied,"first-stroke isosceles preview renders marks without editing handles toolbar or input coverage");
 				scene.Configure(snapshot,work,{});for(int i=0;i<30;++i){now+=std::chrono::milliseconds(17);scene.Advance(now);}expect(SUCCEEDED(present()),"restore editor after drawing preview");scene.CommitPresented();
 			}
-			const auto normalPixels = ReadEditorPixels(scene.Renderer(),receipt);
+			const auto normalPixels = ReadEditorPixels(scene.Target(),receipt);
 			const auto normalFrame = ResolveEditorFrame(*snapshot,scene.Bounds(),scale);
 			const int frameX = static_cast<int>(std::floor(normalFrame.rounded.rect.left+(normalFrame.rounded.rect.right-normalFrame.rounded.rect.left)*.25+normalFrame.transform._31));
 			const int frameY = static_cast<int>(std::floor(normalFrame.rounded.rect.top+normalFrame.transform._32));
@@ -3306,7 +3394,7 @@ namespace Inkeys::UI::Bar
 			{
 				auto save = [&](const wchar_t* state)
 				{
-					const auto pixels = ReadEditorPixels(scene.Renderer(), receipt);
+					const auto pixels = ReadEditorPixels(scene.Target(), receipt);
 					const auto path = std::filesystem::path(L"Build/shape-p34-ui")/(L"visual-"+std::to_wstring(presetIndex)+(dark ? L"-dark-" : L"-light-")+std::to_wstring(static_cast<int>(scale*100))+L"-"+state+L".png");
 					expect(!pixels.empty() && SaveEditorPng(path, pixels.data(), receipt.cx, receipt.cy, receipt.cx*4),
 						"visual matrix writes the actual production source bitmap");
@@ -3316,7 +3404,7 @@ namespace Inkeys::UI::Bar
 				save(L"normal");
 				if (preset == PresetKind::Cuboid)
 				{
-					const auto pixels = ReadEditorPixels(scene.Renderer(), receipt);
+					const auto pixels = ReadEditorPixels(scene.Target(), receipt);
 					for (const auto& h : snapshot->handles) if (h.kind == EditHandleKind::Scale)
 					{
 						const double px = snapshot->canvasOriginX + h.position.x - scene.Bounds().left,
@@ -3391,7 +3479,7 @@ namespace Inkeys::UI::Bar
 				expect(SUCCEEDED(present()), "resident content opacity presents");
 				scene.CommitPresented();
 				save(L"opacity-50-60");
-				const auto faded = ReadEditorPixels(scene.Renderer(), receipt);
+				const auto faded = ReadEditorPixels(scene.Target(), receipt);
 				// floor选中线穿过的像素中心；lround在1x时可能跳到只有75%覆盖的AA边缘。
 				const int fx = static_cast<int>(std::floor(frameVisual.rounded.rect.left+(frameVisual.rounded.rect.right-frameVisual.rounded.rect.left)*.25+frameVisual.transform._31));
 				const int fy = static_cast<int>(std::floor(frameVisual.rounded.rect.top+frameVisual.transform._32));
@@ -3430,29 +3518,29 @@ namespace Inkeys::UI::Bar
 					}
 				}
 				// 用真实浮条shape与主栏初始化参数分别绘制，避免仅断言相同的策略公式。
-				BarUIRendering materialRenderer;
-				expect(SUCCEEDED(materialRenderer.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), receipt.cx, receipt.cy)), "resident material comparison target initializes");
-				if (auto* dc = materialRenderer.GetDeviceContext())
+				UIRendering materialRenderer; FrameTarget materialTarget{materialRenderer};
+				expect(SUCCEEDED(materialTarget.Ensure(RenderPipeline::GetDeviceEpoch(), receipt.cx, receipt.cy)), "resident material comparison target initializes");
+				if (auto* dc = materialTarget.DeviceContext())
 				{
 					materialRenderer.SetFrameZoom(scale);
 					const D2D1_RECT_F all{0, 0, static_cast<FLOAT>(receipt.cx), static_cast<FLOAT>(receipt.cy)};
-					auto drawSurface = [&](BarUiShapeClass& surface)
+					auto drawSurface = [&](UiShapeClass& surface)
 					{
-						materialRenderer.BeginFrameDraw(dc, all);
-						DrawBarBackgroundVisual(materialRenderer, dc, surface, {surface.inhX, surface.inhY});
-						materialRenderer.FinishFrameDrawCommands(dc);
-						expect(SUCCEEDED(materialRenderer.EndFrameDraw(dc)), "resident surface comparison draw completes");
-						return ReadEditorPixels(materialRenderer, receipt);
+						materialTarget.BeginFrame(dc, all);
+						DrawBackgroundVisual(materialRenderer, dc, surface, {surface.inhX, surface.inhY});
+						materialTarget.FinishDrawCommands(dc);
+						expect(SUCCEEDED(materialTarget.EndFrame(dc)), "resident surface comparison draw completes");
+						return ReadEditorPixels(materialTarget, receipt);
 					};
 					auto& toolbar = scene.impl_->toolbar;
 					const auto floatingPixels = drawSurface(toolbar);
-					BarUiShapeClass mainBar;
+					UiShapeClass mainBar;
 					InitShape(mainBar, BarMainBarCornerRadiusDip, BarMainBarFillOpacity);
-					mainBar.fill->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::Surface));
-					mainBar.frame->SetDirect(GetThemeColor(BarThemeModeEnum::Dark, BarThemeColorEnum::SurfaceFrame));
+					mainBar.fill->SetDirect(GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::Surface));
+					mainBar.frame->SetDirect(GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::SurfaceFrame));
 					mainBar.themeSurface = mainBar.residentSurface = true;
 					mainBar.lightMaterial = GetThemeLightWeight();
-					mainBar.lightFillOpacityScale = BarThemeMaterial::LightResidentSurfaceOpacityScale;
+					mainBar.lightFillOpacityScale = ThemeMaterial::LightResidentSurfaceOpacityScale;
 					PlaceShape(mainBar, toolbar.inhX, toolbar.inhY, toolbar.w.val, toolbar.h.val);
 					const auto mainPixels = drawSurface(mainBar);
 					expect(!floatingPixels.empty() && floatingPixels == mainPixels,
@@ -3463,7 +3551,7 @@ namespace Inkeys::UI::Bar
 						"resident background alpha is 50 percent independently of content 60 percent");
 					auto drawContent = [&](double opacity)
 					{
-						materialRenderer.BeginFrameDraw(dc, all);
+						materialTarget.BeginFrame(dc, all);
 						materialRenderer.SetResidentContentOpacity(opacity);
 						// 取当前可见的第一个属性图标；直线等无填充组的图形会隐藏样式组，不能固定取 Style。
 						int visibleId = Color;
@@ -3478,9 +3566,9 @@ namespace Inkeys::UI::Bar
 						auto& icon = scene.impl_->buttons[visibleId]->icon;
 						materialRenderer.Svg(dc, icon, {icon.inhX, icon.inhY});
 						materialRenderer.SetResidentContentOpacity(1);
-						materialRenderer.FinishFrameDrawCommands(dc);
-						expect(SUCCEEDED(materialRenderer.EndFrameDraw(dc)), "resident content comparison draw completes");
-						return ReadEditorPixels(materialRenderer, receipt);
+						materialTarget.FinishDrawCommands(dc);
+						expect(SUCCEEDED(materialTarget.EndFrame(dc)), "resident content comparison draw completes");
+						return ReadEditorPixels(materialTarget, receipt);
 					};
 					const auto fullContent = drawContent(1), fadedContent = drawContent(GetThemeResidentContentOpacity());
 					bool scaled = !fullContent.empty() && fadedContent.size() == fullContent.size();
@@ -3518,6 +3606,7 @@ namespace Inkeys::UI::Bar
 				fixture.bounds = {};
 				fixture.scale = 1;
 				fixture.toolbar = {};
+				fixture.panelFrames = {}; // 独立控制点夹具同步清空新增的面板范围。
 				fixture.paletteLayer = fixture.sidesLayer = fixture.pickerLayer = false;
 				fixture.buttons = {};
 				expect(scene.impl_->Hit(fixture, {110, 100}).handle == 1000, "equal distance chooses dedicated handle independently of iteration order");
@@ -3644,7 +3733,7 @@ namespace Inkeys::UI::Bar
 			const auto saveLayer = [&](const wchar_t* layer)
 			{
 				if (!matrix) return;
-				const auto pixels = ReadEditorPixels(scene.Renderer(), receipt);
+				const auto pixels = ReadEditorPixels(scene.Target(), receipt);
 				const auto path = std::filesystem::path(L"Build/shape-p34-ui")/(L"v2-"+std::to_wstring(presetIndex)+(dark ? L"-dark-" : L"-light-")+std::to_wstring(static_cast<int>(scale*100))+L"-"+layer+L".png");
 				expect(!pixels.empty() && SaveEditorPng(path, pixels.data(), receipt.cx, receipt.cy, receipt.cx*4), "bar and layer matrix writes actual production bitmap");
 				report<<"SCREENSHOT "<<path.string()<<'\n'; std::fprintf(stderr, "Shape editor screenshot: %s\n", path.string().c_str());
@@ -3663,9 +3752,9 @@ namespace Inkeys::UI::Bar
 			expect(actions.empty(), "picker moves emit no object preview or history action");
 			now += std::chrono::milliseconds(17); scene.Advance(now);
 			expect(scene.impl_->candidate.snapshot->object->style == pickerFrame.snapshot->object->style
-				&& scene.impl_->candidate.pickerColor == scene.impl_->pickerDragColor && scene.impl_->candidate.pickerColor != pickerFrame.pickerColor
+				&& scene.impl_->candidate.pickerColor == scene.impl_->colorPicker.PreviewColor() && scene.impl_->candidate.pickerColor != pickerFrame.pickerColor
 				&& scene.impl_->candidate.markerVisible
-				&& scene.impl_->candidate.markerX == scene.impl_->pickerDragX && scene.impl_->candidate.markerY == scene.impl_->pickerDragY,
+				&& scene.impl_->candidate.markerX == scene.impl_->colorPicker.colorPickerMarkerX && scene.impl_->candidate.markerY == scene.impl_->colorPicker.colorPickerMarkerY,
 				"picker marker and preview change locally while object style stays authoritative");
 			expect(SUCCEEDED(present()), "picker drag paints local feedback including actual bar color entry"); scene.CommitPresented();
 			scene.Pointer(WM_LBUTTONUP, {pick.x+5, pick.y+3});
@@ -3674,7 +3763,19 @@ namespace Inkeys::UI::Bar
 				"picker release commits one style action with frozen identity");
 			actions.clear();
 			scene.Pointer(WM_LBUTTONDOWN, pick); scene.Pointer(WM_MOUSEMOVE, {pick.x+8, pick.y+4}); scene.CancelPointer();
-			expect(actions.empty() && !scene.impl_->pickerDragging, "cancelled picker drag emits no object transaction");
+			expect(actions.empty() && !scene.impl_->colorPicker.colorPickerPointerPressed, "cancelled picker drag emits no object transaction");
+			// 固定时间推进生产长按状态，不等待真实两秒，也不放宽原提交断言。
+			const auto holdStart = std::chrono::steady_clock::now();
+			scene.Pointer(WM_LBUTTONDOWN, pick);
+			scene.impl_->colorPicker.SampleHold(holdStart+std::chrono::milliseconds(2100));
+			const auto lockedColor = scene.impl_->colorPicker.PreviewColor();
+			scene.Pointer(WM_MOUSEMOVE, {pick.x+25, pick.y+20});
+			expect(scene.impl_->colorPicker.colorPickerHoldLocked && scene.impl_->colorPicker.PreviewColor() == lockedColor && actions.empty(),
+			 "picker hold locks local color without changing object style");
+			scene.Pointer(WM_LBUTTONUP, {pick.x+25, pick.y+20});
+			expect(actions.size() == 1 && actions.back().kind == ShapeUiActionKind::SetStyle
+			 && actions.back().style.strokeRgb == UiColorToShapeRgb(lockedColor), "locked picker still commits exactly once on release");
+			actions.clear();
 			scene.impl_->CloseTopLayer();
 			for (int f = 0; f<70; ++f) { now += std::chrono::milliseconds(17); scene.Advance(now); }
 			expect(SUCCEEDED(present()), "palette remains after picker exit"); scene.CommitPresented();
@@ -3700,7 +3801,7 @@ namespace Inkeys::UI::Bar
 				}
 				expect(SUCCEEDED(present()), "restyling moves the existing colorSelect check to the actual object color");
 				scene.CommitPresented();
-				expect(scene.impl_->buttons[Swatch+2]->state->state == BarWidgetState::Selected && scene.impl_->buttons[Swatch+2]->icon.pct.val == 1,
+				expect(scene.impl_->buttons[Swatch+2]->state->state == WidgetState::Selected && scene.impl_->buttons[Swatch+2]->icon.pct.val == 1,
 					"selected swatch uses shared colorSelect SVG state");
 			}
 			actions.clear();
@@ -3763,7 +3864,7 @@ namespace Inkeys::UI::Bar
 			for (const auto& c : placements)
 			{
 				bool placedBelow = c.paletteBelow;
-				const auto pose = ResolveEditorPickerPose(motion, c.work, c.barRect, c.paletteRect,
+				const auto pose = ResolveEditorPickerPose(motion.Geometry(), c.work, c.barRect, c.paletteRect,
 					c.triggerX, c.triggerY, c.paletteBelow, c.barBelow, placedBelow);
 				const auto rect = pose.Apply({0, 0, 300, 209});
 				const auto disjoint = [&](EraserAttributeRect r) { return rect.right <= r.left+.000001 || rect.left >= r.right-.000001
@@ -3792,7 +3893,7 @@ namespace Inkeys::UI::Bar
 			snapshot->identity.session = 17; snapshot->identity.objectId = id; snapshot->displayScale = scale;
 			snapshot->handles = BuildEditHandles(*shape, {scale}, &snapshot->frameRect);
 			GeometryResult geometry; BuildGeometry(*shape, geometry, {scale}); snapshot->bounds = geometry.bounds;
-			ShapeEditorSurface scene; std::vector<ShapeUiAction> actions;
+			HostedShapeEditor scene; std::vector<ShapeUiAction> actions;
 			scene.SetActionSink([&](const auto& action) { actions.push_back(action); });
 			const auto click = [&](unsigned id)
 			{
@@ -3855,7 +3956,7 @@ namespace Inkeys::UI::Bar
 				SIZE receipt{};
 				expect(SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch())), "small-work sides target initializes");
 				expect(SUCCEEDED(scene.Present([&](const UPDATELAYEREDWINDOWINFO& info)->BOOL { receipt = *info.psize; return TRUE; })), "small-work sides emits real ULW source");
-				const auto pixels = ReadEditorPixels(scene.Renderer(), receipt); unsigned visibleNumbers = 0;
+				const auto pixels = ReadEditorPixels(scene.Target(), receipt); unsigned visibleNumbers = 0;
 				for (unsigned id = Sides; id<Swatch; ++id)
 				{
 					const auto& b = *scene.impl_->buttons[id]; const auto pose = scene.impl_->candidate.poses[1];
@@ -3878,7 +3979,7 @@ namespace Inkeys::UI::Bar
 			click(Custom); settle();
 			expect(contained(scene.impl_->candidate.toolbar) && contained(scene.impl_->candidate.colors) && contained(scene.impl_->candidate.picker), "bar plus both layers remain inside work area");
 			expect(scene.impl_->palettePanel.pct.val == BarDrawAttributeSurfaceOpacity && !scene.impl_->palettePanel.residentSurface
-				&& scene.impl_->pickerPanel.pct.val == BarDrawAttributeSurfaceOpacity && !scene.impl_->pickerPanel.residentSurface, "layers retain fixed .95 surface opacity independently of resident settings");
+				&& scene.impl_->colorPicker.Shape(ColorPickerPart::Panel)->pct.val == BarDrawAttributeSurfaceOpacity && !scene.impl_->colorPicker.Shape(ColorPickerPart::Panel)->residentSurface, "layers retain fixed .95 surface opacity independently of resident settings");
 			// 工作区空白也属于弹层输入屏障；一次按下/抬起不能继续触发下层动作。
 			const POINT outside{work.left+1, work.top+1};
 			expect(scene.Hit(outside).button == OutsideLayerHit, "topmost layer captures an outside work-area click");
@@ -3901,8 +4002,8 @@ namespace Inkeys::UI::Bar
 			expect(scene.impl_->toolbarMotion.Active() && scene.impl_->toolbarMotion.Geometry()<1, "switch-object restarts full compact panel motion"); settle();
 			auto mixed = std::make_shared<ShapeUiSnapshot>(*switched); mixed->object->style.stroke = mixed->object->style.fill = true;
 			scene.Configure(mixed, work, {}); now += std::chrono::milliseconds(17); scene.Advance(now); scene.CommitPresented();
-			expect(!scene.impl_->memberWanted[Style+2] && scene.impl_->buttons[Style]->state->state == BarWidgetState::Selected
-				&& scene.impl_->buttons[Style+1]->state->state == BarWidgetState::Selected,"legacy mixed object selects outline and fill without a third entry");
+			expect(!scene.impl_->memberWanted[Style+2] && scene.impl_->buttons[Style]->state->state == WidgetState::Selected
+				&& scene.impl_->buttons[Style+1]->state->state == WidgetState::Selected,"legacy mixed object selects outline and fill without a third entry");
 			actions.clear(); scene.impl_->Activate(Style+1,scene.impl_->presented,{});
 			expect(actions.size() == 1 && !actions.back().style.stroke && actions.back().style.fill && mixed->object->style.stroke && mixed->object->style.fill,
 				"only clicking a retained entry converts legacy mixed object to single fill mode");
@@ -4003,7 +4104,7 @@ namespace Inkeys::UI::Bar
 				GeometryResult geometry;
 				BuildGeometry(*shape, geometry, {1.f, .25f});
 				snapshot->bounds = geometry.bounds;
-				ShapeEditorSurface scene;
+				HostedShapeEditor scene;
 				std::vector<ShapeUiAction> actions;
 				scene.SetActionSink([&](const auto& action)
 				{
@@ -4059,7 +4160,7 @@ namespace Inkeys::UI::Bar
 						return Vec2{(left+right)*.5f,below ? bottom : top};
 					};
 					unsigned recreated = 0, tracked = 0;
-					auto* target = scene.Renderer().GetTargetBitmap();
+					auto* target = scene.Target().TargetBitmap();
 					RECT previousBounds = scene.Bounds();
 					bool monotonic = true;
 					for (int step = 1; step <= 40; ++step)
@@ -4067,10 +4168,10 @@ namespace Inkeys::UI::Bar
 						const POINT move{down.x+step*5, down.y+step*3};
 						scene.Pointer(WM_MOUSEMOVE, move, true, scene.PresentedGeneration());
 						frame();
-						if (scene.Renderer().GetTargetBitmap() != target)
+						if (scene.Target().TargetBitmap() != target)
 						{
 							++recreated;
-							target = scene.Renderer().GetTargetBitmap();
+							target = scene.Target().TargetBitmap();
 						}
 						const RECT b = scene.Bounds();
 						monotonic&=b.left <= previousBounds.left && b.top <= previousBounds.top && b.right >= previousBounds.right && b.bottom >= previousBounds.bottom;
@@ -4141,13 +4242,13 @@ namespace Inkeys::UI::Bar
 			for (size_t i=0;i<construction.Points().size();++i) state->handles.push_back({static_cast<uint32_t>(1000+i),EditHandleKind::Vertex,construction.Points()[i]});
 			if (!state->object) { expect(false,"coverage fixture has live preview"); continue; }
 			GeometryResult geometry; expect(BuildGeometry(*state->object,geometry,{displayScale}),"coverage preview builds"); state->bounds=geometry.bounds;
-			ShapeEditorSurface scene; scene.Configure(state,{-200,-100,1400,1000},{});
+			HostedShapeEditor scene; scene.Configure(state,{-200,-100,1400,1000},{});
 			for (int i=0;i<40;++i) { now+=std::chrono::milliseconds(17); scene.Advance(now); }
 			SIZE extent{};
 			expect(SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch())),"construction coverage target initializes");
 			expect(SUCCEEDED(scene.Present([&](const UPDATELAYEREDWINDOWINFO& info)->BOOL { extent=*info.psize; return TRUE; })),"construction coverage uses real Present");
 			scene.CommitPresented();
-			const auto pixels=ReadEditorPixels(scene.Renderer(),extent); const auto bounds=scene.Bounds();
+			const auto pixels=ReadEditorPixels(scene.Target(),extent); const auto bounds=scene.Bounds();
 			const auto alpha=[&](POINT canvas)->int {
 				const int x=canvas.x+state->canvasOriginX-bounds.left,y=canvas.y+state->canvasOriginY-bounds.top;
 				if (x<0 || y<0 || x>=extent.cx || y>=extent.cy || pixels.size()!=static_cast<size_t>(extent.cx)*extent.cy*4) return -1;
@@ -4165,7 +4266,7 @@ namespace Inkeys::UI::Bar
 			if (object)
 			{
 				auto state=std::make_shared<ShapeUiSnapshot>(); state->object=*object; state->identity.session=132; state->identity.objectId=id;
-				ShapeEditorSurface scene; scene.impl_->toolbarNow=[&] { return now; };
+				HostedShapeEditor scene; scene.impl_->toolbarNow=[&] { return now; };
 				scene.SetActionSink([](const ShapeUiAction&){});
 				const auto geometry=[&] {
 					state->handles=BuildEditHandles(*state->object,{1,.25f},&state->frameRect);
@@ -4226,7 +4327,7 @@ namespace Inkeys::UI::Bar
 			{
 				auto snapshot=std::make_shared<ShapeUiSnapshot>(); snapshot->object=*object;
 				snapshot->identity.session=45; snapshot->identity.objectId=id; snapshot->displayScale=1;
-				ShapeEditorSurface scene; RECT work{0,0,1600,1000},bar{};
+				HostedShapeEditor scene; RECT work{0,0,1600,1000},bar{};
 				const auto place=[&](float dy)
 				{
 					snapshot=std::make_shared<ShapeUiSnapshot>(*snapshot); snapshot->object->transform.dy=dy;
@@ -4275,7 +4376,7 @@ namespace Inkeys::UI::Bar
 				GeometryResult geometry;
 				BuildGeometry(*shape, geometry);
 				state->bounds = geometry.bounds;
-				ShapeEditorSurface scene;
+				HostedShapeEditor scene;
 				std::vector<ShapeUiAction> actions;
 				scene.SetActionSink([&](const auto& a)
 				{
@@ -4336,6 +4437,8 @@ namespace Inkeys::UI::Bar
 						static void Cancel(const SurfaceInputEvent&, void* context) { static_cast<Batch*>(context)->scene->CancelPointer(); }
 					} batch;
 					batch.scene = &scene;
+					// 离屏 worker 的主栏部分（时间事件、暂存输入）经主内容处理器执行；登记须早于 worker、晚于它结束。
+					MainInteractionHandlerScope mainInput;
 					auto worker = CreateOffscreenInteractionWorker();
 					expect(static_cast<bool>(worker), "arc mailbox fixture acquires the real offscreen worker");
 					const HWND identity = reinterpret_cast<HWND>(static_cast<std::uintptr_t>(0x5348));
@@ -4412,7 +4515,7 @@ namespace Inkeys::UI::Bar
 				state->identity.objectId=id; state->identity.objectRevision=1; state->predictionMode=0;
 				GeometryResult geometry; BuildGeometry(*object,geometry); state->bounds=geometry.bounds;
 				state->handles=BuildEditHandles(*object,{},&state->frameRect);
-				ShapeEditorSurface scene; std::vector<ShapeUiAction> actions;
+				HostedShapeEditor scene; std::vector<ShapeUiAction> actions;
 				scene.SetActionSink([&](const ShapeUiAction& action){actions.push_back(action);});
 				auto now=std::chrono::steady_clock::now();
 				for(int i=0;i<75;++i)

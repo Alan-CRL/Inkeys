@@ -1,16 +1,25 @@
-#define NOMINMAX
-#include "../Inkeys/Inkeys/UI/Bar/Bar.InteractionWorker.h"
+﻿#define NOMINMAX
+#include <Windows.h>
+#include <chrono>
+#include <coroutine>
+#include <utility>
 
+#include <algorithm>
 #include <array>
 #include <iostream>
+#include <memory>
+#include <string>
 #include <string_view>
 #include "../Inkeys/Inkeys/Helper/SecRandom.PipeIo.h"
 #include "../Inkeys/Inkeys/UI/Ppt/Ppt.Recovery.h"
 #include <thread>
 
+import Inkeys.UI.UI3.Interaction;
+
+using namespace Inkeys::UI::UI3;
+
 namespace
 {
-	using namespace Inkeys::UI::Bar;
 	int failures = 0;
 	void Check(bool value, std::string_view name)
 	{

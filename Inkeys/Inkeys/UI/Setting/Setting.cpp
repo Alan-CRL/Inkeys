@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "Setting.Wrap.h"
 
@@ -24,7 +24,11 @@ module;
 #include "../../Window/Window.MessageDispatch.h"
 #include "Setting.SessionState.h"
 #include "imgui/misc/freetype/imgui_freetype.h"
-#include "../StartupPlacement.h"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <cmath>
+#include <cstdint>
 #include "../StartupPreview.Effect.h"
 #include "Setting.Pages.h"
 #include "Setting.PageTransition.h"
@@ -73,6 +77,9 @@ import Inkeys.Helper.CrashHandler;
 import Inkeys.Other.Config;
 import Inkeys.Window;
 import Inkeys.UI.MessageBox;
+import Inkeys.UI.StartupPlacement;
+
+using namespace Inkeys::UI::UI3;
 
 // 从 imgui_impl_win32.cpp 中前向声明消息处理器
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

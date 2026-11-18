@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 #include "../../../IdtState.h"
@@ -10,17 +10,12 @@ module;
 
 export module Inkeys.UI.Bar:Button;
 
-import :UI;
+export import Inkeys.UI.UI3;
 import :State;
 import Inkeys.Other.Config;
 
-enum class BarButtonSizeEnum : int
-{
-	twoTwo, // 2*2 -> 70 * 70（= 两枚 2*1 + 间隙 5，或四枚 1*1）
-	twoOne, // 2*1 -> 70 * 32.5（= 两枚 1*1 + 间隙 5）
-	oneTwo, // 1*2 -> 10 * 70 仅限分割线（偏窄）
-	oneOne // 1*1 -> 32.5 * 32.5（正方形）
-};
+using namespace Inkeys::UI::UI3;
+
 enum class BarButtonPresetEnum : int
 {
 	None,
@@ -45,56 +40,13 @@ enum class BarButtonPresetEnum : int
 	CanvasDebug
 };
 
-class BarButtonStateClass
+class BarButtonClass : public ButtonClass
 {
 public:
-	BarButtonStateClass() {}
-public:
-	IdtAtomic<BarWidgetState> state = BarWidgetState::None;
-	IdtAtomic<BarWidgetEmphasize> emph = BarWidgetEmphasize::None;
-};
-
-enum class BarButtonHoverStageEnum : int
-{
-	None,
-	Showing,
-	Fading,
-};
-
-enum class BarButtonIconKindEnum : int
-{
-	Svg,
-	Png,
-};
-
-// 按钮角标：相对按钮外框固定，独立显隐动画；默认不挂载，其他按钮不受影响。
-class BarButtonBadgeClass
-{
-public:
-	BarUiSVGClass svg;
-	// 可见度驱动以角标中心为原点的缩放与旋转；below 为 0 右上、1 右下的换边过渡。
-	BarUiValueClass progress = BarUiValueClass(0.0);
-	BarUiValueClass below = BarUiValueClass(0.0);
-	// 独立旋转角：进场 -45→0，离场 →+45；中途反向从当前角度继续，避免按目标重算产生跳变。
-	BarUiValueClass angle = BarUiValueClass(45.0);
-	IdtAtomic<bool> shown = false;
-	IdtAtomic<bool> belowTarget = false;
-	// 所在面板的姿态缩放；主栏为 1。
-	IdtAtomic<double> scale = 1.0;
-};
-
-class BarButtonClass
-{
-public:
-	BarButtonClass()
-		: state(&localState)
-	{
-		// 按钮背景只承载选中、按下和悬停效果，首次显示前必须保持完全透明。
-		button.pct.Initialization(0.0);
-	}
-	// 拷贝构造函数，深拷贝所有数据成员，mutex新建
+	BarButtonClass() = default;
+	// 产品元数据留在主栏；通用视觉与共享状态指针由基类保持原拷贝语义。
 	BarButtonClass(const BarButtonClass& other)
-		: size(other.size),
+		: ButtonClass(other),
 		baseSize(other.baseSize),
 		baseUserVisible(other.baseUserVisible),
 		preset(other.preset),
@@ -103,18 +55,7 @@ public:
 		hide(other.hide),
 		only(other.only),
 		compactMultilineLabel(other.compactMultilineLabel),
-		button(other.button),
-		hoverStage(other.hoverStage),
-		pressScale(other.pressScale),
-		name(other.name),
-		icon(other.icon),
-		pngIcon(other.pngIcon),
-		iconKind(other.iconKind),
-		clickFunc(other.clickFunc),
-		closeMoreAfterAction(other.closeMoreAfterAction),
-		badge(other.badge),
-		localState(other.localState),
-		state(other.state == &other.localState ? &localState : other.state)
+		closeMoreAfterAction(other.closeMoreAfterAction)
 	{}
 
 	bool IsVisible() const
@@ -133,9 +74,8 @@ public:
 
 public:
 	// 基准元数据由注册/Load更新；运行时有效值只由统一主栏投影提交。
-	IdtAtomic<BarButtonSizeEnum> baseSize = BarButtonSizeEnum::twoTwo;
+	IdtAtomic<ButtonSizeEnum> baseSize = ButtonSizeEnum::twoTwo;
 	IdtAtomic<bool> baseUserVisible = true;
-	IdtAtomic<BarButtonSizeEnum> size;
 	IdtAtomic<BarButtonPresetEnum> preset = BarButtonPresetEnum::None;
 	std::string id;
 	// 配置显隐与运行时上下文 hide 分离，所有消费方统一读取 IsVisible()。
@@ -144,30 +84,9 @@ public:
 	IdtAtomic<bool> only = true;
 	IdtAtomic<bool> compactMultilineLabel = false;
 
-	// 绘制记录
-	IdtAtomic<double> lastDrawX = 0.0;
-	IdtAtomic<double> lastDrawY = 0.0;
-
-	// 按钮控件
-	BarUiShapeClass button;
-	// 悬停、按下和选中共用按钮原背景层，避免多层透明色叠加时发生闪变。
-	IdtAtomic<BarButtonHoverStageEnum> hoverStage = BarButtonHoverStageEnum::None;
-	// 背景、图标和文字共用的绘制倍率，不参与布局及命中区域计算。
-	BarUiValueClass pressScale = BarUiValueClass(1.0);
-	BarUiWordClass name;
-	// SVG 继续承载统一的布局、透明度和动画状态；PNG 仅替换最终绘制载荷。
-	BarUiSVGClass icon;
-	BarUiPNGClass pngIcon;
-	IdtAtomic<BarButtonIconKindEnum> iconKind = BarButtonIconKindEnum::Svg;
-
-	function<void()> clickFunc;
 	// 默认动作完成后关闭更多浮层；需要连续操作的按钮可显式保留浮层。
 	bool closeMoreAfterAction = true;
-	// 可选角标须在按钮发布给渲染线程前挂载，运行期只改其目标值。
-	std::optional<BarButtonBadgeClass> badge;
 
-	BarButtonStateClass localState;
-	BarButtonStateClass* state = nullptr;
 };
 
 enum class BarButtonLayoutZoneEnum : int
@@ -191,7 +110,7 @@ enum class BarButtonLayoutZoneEnum : int
 		bool allowMultiple = false;
 		BarButtonLayoutZoneEnum zone = BarButtonLayoutZoneEnum::Extension;
 		// 注册时写死的默认尺寸/用户显隐；A 区配置不可改 Visible，Size 本轮也纠正回这里。
-		BarButtonSizeEnum defaultSize = BarButtonSizeEnum::twoTwo;
+		ButtonSizeEnum defaultSize = ButtonSizeEnum::twoTwo;
 		bool defaultUserVisible = true;
 		std::string legacyField;
 		function<bool()> legacyEnabled;
@@ -211,47 +130,12 @@ enum class BarButtonLayoutZoneEnum : int
 		}
 	};
 
-class BarButtonListClass
-{
-public:
-	BarButtonClass* Get(int x)
-	{
-		shared_lock lock(mt);
-		if (x >= 0 && x < list.size()) return list.at(x).get();
-		return nullptr;
-	}
-	// 一次持锁取得强引用快照，帧内不逐按钮重锁，也不暴露替换后的悬空指针。
-	[[nodiscard]] vector<shared_ptr<BarButtonClass>> Snapshot() const
-	{
-		shared_lock lock(mt);
-		return list;
-	}
-	void Replace(vector<shared_ptr<BarButtonClass>> next)
-	{
-		unique_lock lock(mt);
-		list = move(next);
-	}
-
-	bool Swap(int x, int y)
-	{
-		unique_lock lock(mt);
-		if (!(x >= 0 && x < list.size())) return false;
-		if (!(y >= 0 && y < list.size())) return false;
-		if (x == y) return false;
-
-		swap(list[x], list[y]);
-		return true;
-	}
-
-protected:
-	mutable shared_mutex mt;
-	vector<shared_ptr<BarButtonClass>> list;
-};
+using BarButtonListClass = ButtonListOf<BarButtonClass>;
 
 struct BarMainButtonLayoutEntry
 {
 	const BarButtonClass* identity = nullptr;
-	BarButtonSizeEnum size = BarButtonSizeEnum::twoTwo;
+	ButtonSizeEnum size = ButtonSizeEnum::twoTwo;
 	bool visible = false;
 	bool operator==(const BarMainButtonLayoutEntry&) const = default;
 };
@@ -265,7 +149,7 @@ public:
 	IdtAtomic<int> tot = 0; // 顺序列顶，开
 
 	// 按钮状态
-	unordered_map<int, BarButtonStateClass> barButtonState;
+	unordered_map<int, ButtonStateClass> barButtonState;
 
 	// 预设按钮模态
 	BarButtonClass* preset[40]{};
@@ -308,8 +192,8 @@ bool RegisterButton(
 		void UpdateEraserButtonStyle(const StateModeClass& stateMode, bool immediateLabel = false);
 		void UpdateGeometryButtonStyle(const StateModeClass& stateMode, bool immediateLabel = false);
 		void PresetHoming(const StateModeClass& stateMode);
-		static Inkeys::BarButtonSizeKind ToConfigSize(BarButtonSizeEnum size);
-		static BarButtonSizeEnum ToRuntimeSize(Inkeys::BarButtonSizeKind size);
+		static Inkeys::BarButtonSizeKind ToConfigSize(ButtonSizeEnum size);
+		static ButtonSizeEnum ToRuntimeSize(Inkeys::BarButtonSizeKind size);
 		static bool IsExactFixedZonePermutation(
 			const std::vector<Inkeys::BarFixedButtonLayoutEntry>& configured,
 			const std::vector<Inkeys::BarFixedButtonLayoutEntry>& defaults);
@@ -350,3 +234,35 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 		bool clearAttemptedForDoubleClick = false;
 		bool clearAcceptedForDoubleClick = false;
 	};
+
+namespace Inkeys::UI::Bar
+{
+	// 补上主栏默认值后转调 UI3 入口。
+	bool StartButtonHoverVisual(BarButtonClass& button) noexcept;
+	bool StopButtonHoverVisual(BarButtonClass& button, bool immediate,
+		bool preserveVisual = false) noexcept;
+	void RetargetButtonInteractionVisual(BarButtonClass& button,
+		bool visible, bool enabled, bool selected,
+		double durationSeconds, std::optional<COLORREF> contentColor = std::nullopt,
+		bool iconVisible = true, std::optional<COLORREF> fillColorOverride = std::nullopt,
+		std::optional<COLORREF> frameColorOverride = std::nullopt) noexcept;
+	void RetargetFixedButtonVisual(const ButtonVisualParts& parts,
+		bool visible, bool enabled, bool selected, bool pressed, double duration,
+		std::optional<COLORREF> contentColor = std::nullopt, bool iconVisible = true,
+		std::optional<COLORREF> fillColor = std::nullopt,
+		std::optional<COLORREF> frameColor = std::nullopt) noexcept;
+	void ConfigureButtonVisualTargets(BarButtonClass& button,
+		ButtonVisualLayoutKind layoutKind, double durationSeconds,
+		double scale = 1.0, bool direct = false,
+		std::optional<double> iconHeightOverride = std::nullopt,
+		std::optional<double> fontTargetScale = std::nullopt);
+	[[nodiscard]] ButtonAnimationResult AdvanceButtonVisual(
+		BarButtonClass& button, const ButtonAnimationContext& frame,
+		UiWordClass* secondary = nullptr);
+	[[nodiscard]] ButtonHitSnapshot ResolveButtonHitSnapshot(
+		BarButtonClass& button, const UiInheritClass& inherit) noexcept;
+	bool DrawButtonVisual(UIRendering& renderer,
+		ID2D1DeviceContext* deviceContext, BarButtonClass& button,
+		const UiInheritClass& inherit,
+		const ButtonDrawOptions& options = {});
+}

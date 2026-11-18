@@ -1,4 +1,4 @@
-#include "Setting.Pages.h"
+﻿#include "Setting.Pages.h"
 #include "Setting.HomeBrand.h"
 #include "imfluent/imfluent_internal.h"
 #include <cstring>
@@ -9,9 +9,15 @@
 #include <array>
 #include "imgui/imgui_internal.h"
 #include "../../Drawing/Draw3/Draw3.CursorSettings.h"
-#include "../StartupPlacement.h"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 
 import Inkeys.Conv.Text;
+import Inkeys.UI.StartupPlacement;
 
 namespace Inkeys::UI::Setting::Design
 {

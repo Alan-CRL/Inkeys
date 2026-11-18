@@ -1,6 +1,21 @@
-module;
+﻿module;
 
-#include "Bar.Presentation.Source.h"
+#ifndef INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+#define INKEYS_ENABLE_UI3_PRESENTATION_HARNESS 1
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include "../../Helper/Ui3PresentationFixtureAuth.h"
+#include <Windows.h>
+#include <array>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <span>
+#include <string>
+#include <type_traits>
 
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 
@@ -27,6 +42,8 @@ module;
 #endif
 
 module Inkeys.UI.Bar;
+import Inkeys.UI.UI3.PresentationProbe;
+import Inkeys.UI.Bar.PresentationSource;
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 import :Main;
 import :Theme;
@@ -37,6 +54,12 @@ import Inkeys.Window;
 import Inkeys.Message;
 import Inkeys.Display;
 import Inkeys.UI.RenderPipeline;
+
+#endif
+
+using namespace Inkeys::UI::UI3;
+
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 
 namespace Inkeys::UI::Bar
 {
@@ -335,6 +358,9 @@ namespace Inkeys::UI::Bar
 		}
 	}
 
+	// 与夹具协议声明保持普通 C++ 链接，跨模块调用同一实体。
+	extern "C++"
+	{
 	bool AuthorizedUi3FixtureSourceInstalled() noexcept { return installed.load(std::memory_order_acquire) != nullptr; }
 	bool AuthorizedFixtureEquivalenceReady(const Ui3FixtureAuthorization& cap) noexcept
 	{
@@ -578,6 +604,7 @@ namespace Inkeys::UI::Bar
 		if (!state || !state->stopping.load(std::memory_order_acquire)) RejectAuthorizedFixtureSource(Ui3FixtureSourceFailure::UnexpectedSource);
 		return true;
 	}
+	}
 
 	namespace
 	{
@@ -640,7 +667,7 @@ namespace Inkeys::UI::Bar
 		bool PrepareStorageAndDefaults(FixtureState& state)
 		{
 			const auto& input = state.authorization->Input();
-			const auto descriptor = GetCompiledUi3FixtureSourceV1(static_cast<Ui3FiniteScene>(input.scene));
+			const auto descriptor = GetCompiledUi3FixtureSourceV1(input.scene);
 			if (descriptor.sourceHash != input.sourceHash || descriptor.trajectoryCount != input.trajectoryCount
 				|| descriptor.expectedSteps != input.expectedSteps || descriptor.sourceVersion != input.sourceVersion
 				|| state.table.empty() || installed.load(std::memory_order_acquire) || offSignal
@@ -693,9 +720,9 @@ namespace Inkeys::UI::Bar
 		}
 		bool BindRealSvgObjects(FixtureState& state)
 		{
-			std::array<BarUiSVGClass*, Ui3SvgCapacity> bound{};
+			std::array<UiSVGClass*, Ui3SvgCapacity> bound{};
 			std::size_t count = 0;
-			auto bind = [&](BarUiSVGClass& object, std::uint32_t tag, const char* source,
+			auto bind = [&](UiSVGClass& object, std::uint32_t tag, const char* source,
 				int id, int preset, int iconKind)
 			{
 				if (std::find(bound.begin(), bound.begin() + count, &object) != bound.begin() + count) return true;
@@ -712,7 +739,7 @@ namespace Inkeys::UI::Bar
 			for (std::size_t preset = 0; preset < std::size(barUISet.barButtonSet.preset); ++preset)
 			{
 				auto* button = barUISet.barButtonSet.preset[preset];
-				if (button && button->iconKind == BarButtonIconKindEnum::Svg
+				if (button && button->iconKind == ButtonIconKindEnum::Svg
 					&& !bind(button->icon, 0x20000u + ordinal++, "preset", static_cast<int>(preset),
 						static_cast<int>(button->preset.load()), static_cast<int>(button->iconKind.load()))) return false;
 			}
@@ -720,7 +747,7 @@ namespace Inkeys::UI::Bar
 			if (extensions.size() > Ui3SvgCapacity) return false;
 			std::sort(extensions.begin(), extensions.end(), [](const auto& a, const auto& b) { return a.id < b.id; });
 			for (const auto& registration : extensions)
-				if (registration.button && registration.button->iconKind == BarButtonIconKindEnum::Svg
+				if (registration.button && registration.button->iconKind == ButtonIconKindEnum::Svg
 					&& !bind(registration.button->icon, 0x20000u + ordinal++, "extension", -1,
 						static_cast<int>(registration.button->preset.load()), static_cast<int>(registration.button->iconKind.load()))) return false;
 			if (auto* button = barUISet.barButtonSet.GetMoreButton(); button
@@ -797,7 +824,7 @@ namespace Inkeys::UI::Bar
 			if (!ChangeStateModeToPen() || !InitializeWindow(barUISet)) return false;
 			{
 				SvgObservationScope initialization(&state.svg, state.clocks, true);
-				barUISet.spec.ConfigureLocalizedTypography();
+				barUISet.ConfigureLocalizedTypography();
 				InitializeUI(barUISet);
 				state.displayTrackingAttempted = true;
 				barUISet.StartDisplayTracking();
@@ -1409,6 +1436,8 @@ namespace Inkeys::UI::Bar
 		}
 	}
 
+	extern "C++"
+	{
 	int RunAuthorizedPresentationFixture(const Ui3FixtureAuthorization& cap) noexcept
 	{
 		if (!IsAuthorizedUi3Fixture(cap)) return 91;
@@ -1455,8 +1484,11 @@ namespace Inkeys::UI::Bar
 		PublishStage(*state, Ui3FixtureStage::Sealed);
 		return passed ? 0 : 90;
 	}
+	}
 }
 #else
+extern "C++"
+{
 namespace Inkeys::UI::Bar
 {
 	// 产品连接保持“未安装 fixture”分支；不提供 runner 或虚假的测试成功结果。
@@ -1476,5 +1508,6 @@ namespace Inkeys::UI::Bar
 	bool PermitAuthorizedFixtureAction(Ui3FiniteScene, Ui3FixtureActionPoint) noexcept { return true; }
 	bool PermitAuthorizedFixturePointerStages(const Ui3FiniteSignature&) noexcept { return true; }
 	bool AuthorizedFixtureWindowMessageMustBeHandled(HWND, UINT, WPARAM, LPARAM, LRESULT&) noexcept { return false; }
+}
 }
 #endif

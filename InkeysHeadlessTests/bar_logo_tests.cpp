@@ -14,9 +14,12 @@
 #include <string>
 #include <utility>
 
-#include "../Inkeys/Inkeys/UI/Bar/Bar.LogoAppearance.h"
 
-import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.UI3.Animation;
+import Inkeys.UI.UI3.Material;
+import Inkeys.UI.Bar.LogoAppearance;
+
+using namespace Inkeys::UI::UI3;
 
 namespace
 {
@@ -100,8 +103,8 @@ namespace
 					Check(Near(appearance.indicatorOpacity, drawing * (1.0 - light)),
 						"original Dark indicator fades by both current material and drawing weights");
 					Check(Near(appearance.outlineOpacity, light * BarLogoAppearance::LightOutlineOpacity(
-							BarThemeMaterial::MixColor(BarThemeMaterial::LightColor(
-								BarThemeMaterial::ColorRole::IconPrimary), color, drawing))),
+							ThemeMaterial::MixColor(ThemeMaterial::LightColor(
+								ThemeMaterial::ColorRole::IconPrimary), color, drawing))),
 						"outline follows Light material and only appears for low-contrast pens");
 					Check(appearance.screenFill == neutral.screenFill
 						&& Near(appearance.screenOpacity, neutral.screenOpacity),
@@ -148,16 +151,16 @@ namespace
 	void TestAnimationContinuity()
 	{
 		// 直接推进产品 Value/Pct/Color；测试不复制曲线，也不重置反向瞬间的 current。
-		BarUiValueClass material(0.0);
-		BarUiPctClass drawing(0.0);
-		BarUiColorClass pen(colors[3]);
+		UiValueClass material(0.0);
+		UiPctClass drawing(0.0);
+		UiColorClass pen(colors[3]);
 		material.SetTar(1.0, 1.0);
 		drawing.SetTar(1.0, 1.0);
 		pen.SetTar(colors[4], 1.0);
-		const BarUiAnimationAdvanceContextClass tick{ 0.25, 1.0, true, false };
-		BarUiAdvanceAnimation(material, tick);
-		BarUiAdvanceAnimation(drawing, tick);
-		BarUiAdvanceAnimation(pen, tick);
+		const UiAnimationAdvanceContextClass tick{ 0.25, 1.0, true, false };
+		UiAdvanceAnimation(material, tick);
+		UiAdvanceAnimation(drawing, tick);
+		UiAdvanceAnimation(pen, tick);
 		const auto current = Resolve(material.val, drawing.val, pen.val);
 		Check(material.val > 0.0 && material.val < 1.0 && drawing.val > 0.0
 			&& drawing.val < 1.0 && pen.val != colors[3] && pen.val != colors[4],
@@ -170,9 +173,9 @@ namespace
 		Check(Resolve(material.val, drawing.val, pen.val) == current
 			&& Near(material.startV, material.val) && Near(drawing.startV, drawing.val),
 			"reversing theme/mode and changing pen preserves the current appearance");
-		BarUiAdvanceAnimation(material, tick);
-		BarUiAdvanceAnimation(drawing, tick);
-		BarUiAdvanceAnimation(pen, tick);
+		UiAdvanceAnimation(material, tick);
+		UiAdvanceAnimation(drawing, tick);
+		UiAdvanceAnimation(pen, tick);
 		const auto reversed = Resolve(material.val, drawing.val, pen.val);
 		Check(reversed != current, "reversed transitions advance the actual SVG appearance");
 		material.SetTar(1.0, 1.0);
@@ -180,20 +183,20 @@ namespace
 		Check(Resolve(material.val, drawing.val, pen.val) == reversed,
 			"reopening and reentering drawing preserve their partially reversed frame");
 		// 与生产关闭动画的有限倍率一致，避免虚构不同的动画语义。
-		const BarUiAnimationAdvanceContextClass disabled{ 0.01, 1.0e12, false, false };
-		BarUiAdvanceAnimation(material, disabled);
-		BarUiAdvanceAnimation(drawing, disabled);
-		BarUiAdvanceAnimation(pen, disabled);
+		const UiAnimationAdvanceContextClass disabled{ 0.01, 1.0e12, false, false };
+		UiAdvanceAnimation(material, disabled);
+		UiAdvanceAnimation(drawing, disabled);
+		UiAdvanceAnimation(pen, disabled);
 		Check(Near(material.val, 1.0) && Near(drawing.val, 1.0) && pen.val == colors[5]
 			&& Resolve(material.val, drawing.val, pen.val) == Resolve(1.0, 1.0, colors[5]),
 			"disabled animation reaches consistent Light drawing/color endpoint");
 		drawing.SetTar(0.0, 1.0);
-		BarUiAdvanceAnimation(drawing, disabled);
+		UiAdvanceAnimation(drawing, disabled);
 		Check(Resolve(material.val, drawing.val, pen.val) == Resolve(1.0, 0.0, colors[0]),
 			"leaving drawing reaches a neutral endpoint regardless of animated pen history");
-		const auto materialIdle = BarUiAdvanceAnimation(material, tick);
-		const auto drawingIdle = BarUiAdvanceAnimation(drawing, tick);
-		const auto colorIdle = BarUiAdvanceAnimation(pen, tick);
+		const auto materialIdle = UiAdvanceAnimation(material, tick);
+		const auto drawingIdle = UiAdvanceAnimation(drawing, tick);
+		const auto colorIdle = UiAdvanceAnimation(pen, tick);
 		Check(!materialIdle.active && !materialIdle.changed && !drawingIdle.active
 			&& !drawingIdle.changed && !colorIdle.active && !colorIdle.changed,
 			"all appearance channels settle and permit idle");

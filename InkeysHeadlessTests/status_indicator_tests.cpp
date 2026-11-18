@@ -1,9 +1,12 @@
-#include "../Inkeys/Inkeys/UI/Bar/Bar.StatusIndicator.h"
-
+﻿#include <utility>
+#include <cstdint>
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <limits>
 #include <string>
+
+import Inkeys.UI.Bar.StatusIndicatorModel;
 
 namespace
 {

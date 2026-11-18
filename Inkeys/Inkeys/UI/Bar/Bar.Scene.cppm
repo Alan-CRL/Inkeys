@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -18,8 +18,10 @@ module;
 export module Inkeys.UI.Bar:Scene;
 export import Inkeys.UI.Bar.Metrics;
 export import Inkeys.UI.Bar.SurfaceLayout;
-export class BarUIRendering;
+import Inkeys.UI.UI3;
 import Inkeys.UI.RenderPipeline;
+
+using namespace Inkeys::UI::UI3;
 
 export namespace Inkeys::UI::Bar
 {
@@ -32,6 +34,8 @@ export namespace Inkeys::UI::Bar
 		double fillOpacity = 1, frameOpacity = 0;
 		bool visible = true;
 		std::function<void(ID2D1DeviceContext*, D2D1_RECT_F)> drawContent;
+		// 相对背景左上角的 DIP 包络及动画声明；省略时保持既有保守绘制，调用方负责脏区。
+		std::optional<Inkeys::UI::UI3::ContentExtent> contentExtent;
 	};
 
 	using BarSurfaceButtonId = std::uint32_t;
@@ -105,15 +109,6 @@ export namespace Inkeys::UI::Bar
 	{
 		std::function<void()> invalidate, wake;
 	};
-	struct BarSurfaceSharedLighting
-	{
-		double primaryScreenX = 0, primaryScreenY = 0, primaryRadiusPixels = 0;
-		double cursorScreenX = 0, cursorScreenY = 0, cursorRadiusPixels = 0;
-		double cursorIntensity = 0;
-		COLORREF drawingPenColor = RGB(0, 0, 0);
-		double drawingPenColorBlend = 0, drawingLightOpacity = 1;
-		bool primaryVisible = false, cursorVisible = false, edgeLightingEnabled = false;
-	};
 
 	// 这里只保留分页的数据适配；按钮、输入、动画和渲染事务由主栏公共函数执行。
 	// More/Theme 是两个固定属性面板，不是可递归的 UI 节点图。
@@ -134,8 +129,13 @@ export namespace Inkeys::UI::Bar
 		void SetIdleFade(bool dimmed, double durationSeconds) noexcept;
 		void SetHooks(BarSurfaceHooks);
 		void SetSharedLightingSubscribed(bool) noexcept;
-		static void PublishSharedLighting(const BarSurfaceSharedLighting&) noexcept;
 		void Reset() noexcept;
+		// 帧目标由宿主持有并驱动（Ensure、帧事务）；场景只把内部绘制器绑定上去，传 nullptr 解绑。
+		// 一个帧目标同一时刻只绑定一个场景；帧目标须先于场景析构（声明在场景之后）或先解绑。
+		void BindFrameTarget(FrameTarget*);
+		// 宿主在 Ensure 帧目标之前调用：所绑定帧目标的设备代次将变化时，先清场景自有的设备资源。
+		void PrepareDeviceGeneration(unsigned long long generation) noexcept;
+		// 设备缓存重置：按固定先后清场景自有设备资源并丢弃所绑定的帧目标，随后整窗失效。
 		void ReleaseDeviceResources() noexcept;
 		void Invalidate() noexcept;
 		[[nodiscard]] bool IsInvalidated() const noexcept;
@@ -146,11 +146,6 @@ export namespace Inkeys::UI::Bar
 		[[nodiscard]] RECT LogicalBounds() const noexcept;
 		[[nodiscard]] RECT PresentationBounds() const noexcept;
 		[[nodiscard]] LONG PresentationOutsetPixels() const noexcept;
-		[[nodiscard]] HRESULT EnsureDeviceResources(const Inkeys::UI::RenderPipeline::DeviceEpoch&, UINT, UINT);
-		[[nodiscard]] ID2D1DeviceContext* DeviceContext() const noexcept;
-		[[nodiscard]] ID2D1GdiInteropRenderTarget* GdiInteropRenderTarget() const noexcept;
-		[[nodiscard]] BarUIRendering& Renderer() noexcept;
-		void HandleFrameEndDrawResult(HRESULT);
 		// 输入仅查询上次成功提交的快照，候选帧失败不能提前移动命中区域。
 		void CommitPresented(bool inputEnabled = true) noexcept;
 		// 固定候选快照只保留最新帧；异步原生回执不能确认后来推进的命中或清除新 damage。
@@ -174,6 +169,8 @@ export namespace Inkeys::UI::Bar
 		[[nodiscard]] bool Advance(std::chrono::steady_clock::time_point) noexcept;
 		void SuspendForIdle(std::chrono::steady_clock::time_point) noexcept;
 		[[nodiscard]] bool AnimationActive() const noexcept;
+		// 仅字号修正动画；宿主在本帧 Render 之后据此决定是否续帧。
+		[[nodiscard]] bool FontAnimationsActive() const noexcept;
 		[[nodiscard]] bool PopupAnimationActive() const noexcept;
 		void SetLoadingIndicatorVisible(bool) noexcept;
 		[[nodiscard]] bool LoadingIndicatorAnimationActive() const noexcept;
@@ -195,6 +192,9 @@ export namespace Inkeys::UI::Bar
 	std::chrono::steady_clock::time_point RetryShapeUiIntents(std::chrono::steady_clock::time_point) noexcept;
 	void ClearShapeUiIntents() noexcept;
 	int RunShapeEditorOffscreenTest();
+	// 仅供迁移像素基线使用：0 工具栏、1 色板、2 边数、3/4 亮/暗色系取色器。
+	HRESULT RenderShapeEditorGoldenScene(unsigned layer,
+		const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>& present);
 	class ShapeEditorSurface
 	{
 	public:
@@ -205,10 +205,13 @@ export namespace Inkeys::UI::Bar
 		bool Visible() const noexcept;
 		bool AnimationActive() const noexcept;
 		RECT Bounds() const noexcept;
-		HRESULT EnsureDeviceResources(const RenderPipeline::DeviceEpoch&);
-		BarUIRendering& Renderer() noexcept;
-		void Draw();
-		HRESULT Present(const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>&);
+		// 帧目标与帧事务由宿主持有并驱动；场景只把内部绘制器绑定上去，传 nullptr 解绑。
+		// 帧目标须先于场景析构或先解绑；场景析构不访问帧目标。
+		void BindFrameTarget(FrameTarget*);
+		// 宿主在 Ensure 帧目标之前调用：设备代次变化时先清场景自有的设备资源。
+		void PrepareDeviceGeneration(unsigned long long generation);
+		// 内容绘制：宿主已开始帧事务，传入所绑定帧目标的设备上下文。
+		void Draw(ID2D1DeviceContext*);
 		void CommitPresented(bool inputEnabled = true);
 		// 自上次成功提交后输入快照、布局、动画或光照有变化才需要回读与 ULW。
 		bool NeedsPresent() const noexcept;
@@ -221,13 +224,23 @@ export namespace Inkeys::UI::Bar
 		std::chrono::steady_clock::time_point TickToolbarIdle(std::chrono::steady_clock::time_point);
 		std::uint64_t PresentedGeneration() const;
 		void CancelPointer();
+		// 设备缓存重置：先丢弃所绑定的帧目标，再清场景自有设备资源。
 		void ReleaseDeviceResources();
 		// 离屏测试与生产输入共用同一动作出口；不改业务状态。
 		void SetActionSink(std::function<void(const Inkeys::Drawing::Draw3::ShapeUiAction&)>);
 		friend int RunShapeEditorOffscreenTest();
+		friend HRESULT RenderShapeEditorGoldenScene(unsigned layer,
+			const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>& present);
 	private:
 		struct Impl;
 		std::unique_ptr<Impl> impl_;
 	};
+	// 形状编辑一帧的呈现事务（清变换 → 帧事务开始 → Draw → GetDC → 提交端 → ReleaseDC → EndDraw）。
+	// 帧目标由宿主持有并已 Ensure；提交端由宿主给出（生产为 ULW，离屏测试为读回）。生产与测试共用这一份，
+	// 返回口径不变：EndDraw → GetDC → ReleaseDC 的失败码依次优先，否则按提交端是否成功返回 S_OK / E_FAIL。
+	// log 非空时把事务结果报给日志闩锁（role 为静态字符串）。
+	HRESULT PresentShapeEditorFrame(ShapeEditorSurface& content, FrameTarget& target,
+		const std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)>& sink,
+		FrameTransactionLogState* log = nullptr, const char* role = nullptr);
 
 }

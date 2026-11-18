@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -12,9 +12,10 @@ module;
 #include <tpcshrd.h>
 #include <wrl/client.h>
 
-#include "../Bar/Bar.DirtyRegion.h"
-#include "../Bar/Bar.PageLoadingIndicator.h"
-#include "../Bar/Bar.InteractionWorker.h"
+#include <condition_variable>
+#include <coroutine>
+#include <deque>
+#include <exception>
 #include "../Whiteboard/Whiteboard.Theme.h"
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nLocales.h"
@@ -22,7 +23,6 @@ module;
 #include "../../../IdtI18nKeys.g.h"
 #include "../Ppt/Ppt.Recovery.h"
 #include "../../../PptWaitingDiagnostics.h"
-#include "../Bar/Bar.BottomDock.h"
 #include "../../Drawing/Draw3/Draw3.PptTiming.h"
 #include "../../Input/UiPointerInput.h"
 #include "../../Input/UiTouchRouting.h"
@@ -38,6 +38,7 @@ module;
 #include <cstdarg>
 #include <cstdio>
 #include <cwchar>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -51,19 +52,26 @@ module;
 #undef MessageBox
 #endif
 
+#include <cstdint>
+
 module Inkeys.UI.PageControl;
 
 import Inkeys.UI.Bar;
 import Inkeys.UI.MessageBox;
 import Inkeys.UI.Whiteboard;
-import Inkeys.UI.Bar.FramePacing;
-import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.UI3.FramePacing;
+import Inkeys.UI.UI3.Animation;
 import Inkeys.UI.Bar.EraserAttributeMotion;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Display;
 import Inkeys.Other.Config;
 import Inkeys.Message;
 import Inkeys.Window;
+import Inkeys.UI.UI3.DirtyRegion;
+import Inkeys.UI.UI3.LoadingIndicator;
+import Inkeys.UI.Bar.BottomDock;
+
+using namespace Inkeys::UI::UI3;
 
 namespace UiDiag = Inkeys::Input::UiPointer::Diagnostics;
 
@@ -151,7 +159,7 @@ namespace Inkeys::UI::PageControl
 		}
 		[[nodiscard]] double LayoutTransitionDurationSeconds() noexcept
 		{
-			return BarButtonDefaultOperationDurationSeconds;
+			return ButtonDefaultOperationDurationSeconds;
 		}
 
 		[[nodiscard]] PptKeyboardRepeatTiming QueryPptKeyboardRepeatTiming() noexcept
@@ -173,6 +181,14 @@ namespace Inkeys::UI::PageControl
 			constexpr std::array names{
 				"bottom-left", "bottom-right", "middle-left", "middle-right" };
 			return index < names.size() ? names[index] : "unknown";
+		}
+
+		// 帧事务与帧目标日志里的宿主角色名。
+		[[nodiscard]] const char* SurfaceRoleName(std::size_t index) noexcept
+		{
+			constexpr std::array names{
+				"page-bottom-left", "page-bottom-right", "page-middle-left", "page-middle-right" };
+			return index < names.size() ? names[index] : "page-unknown";
 		}
 
 		[[nodiscard]] const char* PointerRegionName(
@@ -221,7 +237,7 @@ namespace Inkeys::UI::PageControl
 
 		struct AnimatedBounds
 		{
-			std::array<BarUiValueClass,5> values;
+			std::array<UiValueClass,5> values;
 			std::chrono::steady_clock::time_point frameTime{};
 			double left = 0.0;
 			double top = 0.0;
@@ -239,6 +255,13 @@ namespace Inkeys::UI::PageControl
 		struct SurfaceState
 		{
 			Scene scene;
+			// 帧目标由宿主持有：放在堆上保持地址稳定，SurfaceState 整体移动/重置时与场景的绑定不失效。
+			// 声明在 scene 之后：析构时先于场景销毁（场景析构不访问它）；移动赋值按声明顺序先换 scene，
+			// 旧场景解绑时旧帧目标仍存活。
+			std::unique_ptr<FrameTarget> frameTarget = std::make_unique<FrameTarget>();
+			// 帧事务首次失败/恢复的日志闩锁。
+			FrameTransactionLogState presentLog;
+			SurfaceState() { scene.BindFrameTarget(frameTarget.get()); }
 			WorkspaceMode configuredMode = WorkspaceMode::Hidden;
 			AnimatedBounds bounds;
 			RECT appliedSceneBounds{};
@@ -293,7 +316,7 @@ namespace Inkeys::UI::PageControl
 			bool windowCommitFailureActive = false;
 			RECT lastPresentedDebugFrameBounds{};
 			RECT lastPresentedDebugWindowBounds{};
-			Inkeys::UI::Bar::DebugFrameSleepLatch debugFrameSleepLatch;
+			Inkeys::UI::UI3::DebugFrameSleepLatch debugFrameSleepLatch;
 			bool debugOverlayRefreshPending = false;
 			const char* lastFailureStage = nullptr;
 			HRESULT lastFailureHr = S_OK;
@@ -304,6 +327,40 @@ namespace Inkeys::UI::PageControl
 			std::uint64_t retryDeviceGeneration = 0;
 			unsigned retryBitmapLimit = 0;
 			unsigned repeatedFailureCount = 0;
+		};
+
+		// 宿主确保帧目标：设备代次将变化时先清场景自有设备资源，再 Ensure（先后与原场景资源入口一致）。
+		[[nodiscard]] HRESULT EnsureSurfaceTarget(Scene& scene, FrameTarget& target,
+			const Inkeys::UI::RenderPipeline::DeviceEpoch& epoch, UINT width, UINT height)
+		{
+			scene.PrepareDeviceGeneration(epoch.generation);
+			return target.Ensure(epoch, width, height);
+		}
+
+		// 宿主生命周期日志：帧目标随 SurfaceState 构造即与场景绑定、随其重置解绑并销毁，
+		// 这里只在四个分页宿主接入与退休的边沿各记一条。
+		void LogSurfaceFrameTargets(bool bound) noexcept
+		{
+			for (std::size_t index = 0; index < 4; ++index)
+				Inkeys::Log::TryFormat(Inkeys::Log::Level::Info, Inkeys::Log::Module::PageControl,
+					"frame target {}: role={}, kind=GDI-compatible",
+					bound ? "bound" : "unbound", SurfaceRoleName(index));
+		}
+
+		// 离屏测试用的独立场景：内容之外由测试自持帧目标，沿用原先的调用形态。
+		struct HostedScene : Scene
+		{
+			// 成员先于基类析构，即帧目标先于场景销毁。
+			FrameTarget target;
+			HostedScene() { BindFrameTarget(&target); }
+			[[nodiscard]] HRESULT EnsureDeviceResources(
+				const Inkeys::UI::RenderPipeline::DeviceEpoch& epoch, UINT width, UINT height)
+			{
+				return EnsureSurfaceTarget(*this, target, epoch, width, height);
+			}
+			[[nodiscard]] ID2D1DeviceContext* DeviceContext() const noexcept { return target.DeviceContext(); }
+			[[nodiscard]] FrameTarget& Target() noexcept { return target; }
+			[[nodiscard]] UIRendering& Renderer() noexcept { return *target.BoundRenderer(); }
 		};
 
 		struct GroupLayoutBudgetCache
@@ -425,7 +482,7 @@ namespace Inkeys::UI::PageControl
 		std::mutex inputSnapshotMutex;
 		std::array<InputPresentation,4> inputPresentations;
 		std::atomic_uint64_t inputLifecycle=1;
-		std::array<Inkeys::UI::Bar::PageLoadingDeadline,4> loadingDeadlines;
+		std::array<Inkeys::UI::UI3::PageLoadingDeadline,4> loadingDeadlines;
 		// 闲置淡化信号跨输入 worker、发布线程与渲染线程；渲染线程只读后决定 Scene 透明度。
 		struct IdleFadeSignals
 		{
@@ -434,7 +491,7 @@ namespace Inkeys::UI::PageControl
 			std::atomic_uint64_t consumedExternalTurn{ 0 };
 		};
 		std::array<IdleFadeSignals,4> idleFade;
-		std::array<Inkeys::UI::Bar::PageLoadingDeadline,4> idleDeadlines;
+		std::array<Inkeys::UI::UI3::PageLoadingDeadline,4> idleDeadlines;
 		std::atomic_uint64_t externalTurnSerial{ 0 };
 		std::atomic<std::int64_t> lastControlNavigation{ 0 };
 		struct InputRegistrationContext {std::size_t index=0;std::uint64_t generation=0;};
@@ -845,7 +902,7 @@ namespace Inkeys::UI::PageControl
 			  if(debugNavigationDelay.Pending()&&debugNavigationDelay.surface==index){
 				debugNavigationDelay={};publishedRevision.fetch_add(1,std::memory_order_release);retired=true;
 			  } }
-			if(retired){RequestAll();Inkeys::UI::Bar::WakeInteractionWorker();}
+			if(retired){RequestAll();Inkeys::UI::UI3::WakeInteractionWorker();}
 		}
 		void RetireStaleDebugNavigationLocked() noexcept
 		{
@@ -958,7 +1015,7 @@ namespace Inkeys::UI::PageControl
 					surfaceIndex,next,whiteboard.active,whiteboard.active?whiteboard.generation:ppt.layout.session,
 					ppt.layout.epoch,whiteboard.active?whiteboard.currentPage:ppt.currentPage};
 				  publishedRevision.fetch_add(1,std::memory_order_release); }
-				RequestAll(); Inkeys::UI::Bar::WakeInteractionWorker();
+				RequestAll(); Inkeys::UI::UI3::WakeInteractionWorker();
 				return;
 			}
 			// 先登记控件发起的翻页，随后的页码发布不能被误判为翻页笔/键盘翻页。
@@ -1144,7 +1201,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				const float oldScale = NormalizeScale(state.appliedSceneScale);
 				local[item].presentationOutsetDip =
 					static_cast<float>(state.scene.PresentationOutsetPixels()) / oldScale;
-				if (auto* context = state.scene.DeviceContext())
+				if (auto* context = state.frameTarget->DeviceContext())
 					local[item].bitmapLimit = (std::min)(
 						local[item].bitmapLimit, context->GetMaximumBitmapSize());
 			}
@@ -1183,11 +1240,11 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			const double dt=animation.frameTime.time_since_epoch().count()
 				?(std::clamp)(std::chrono::duration<double>(now-animation.frameTime).count(),0.0,0.05):0;
 			animation.frameTime=now;
-			if(!animation.active || (dt<=0&&BarUiAnimationEnabled))return;
-			const BarUiAnimationAdvanceContextClass frame{
-				dt,static_cast<double>(BarUiAnimationSpeedRate),static_cast<bool>(BarUiAnimationEnabled),false};
+			if(!animation.active || (dt<=0&&UiAnimationEnabled))return;
+			const UiAnimationAdvanceContextClass frame{
+				dt,static_cast<double>(UiAnimationSpeedRate),static_cast<bool>(UiAnimationEnabled),false};
 			animation.active=false;
-			for(auto& value:animation.values)animation.active|=BarUiAdvanceAnimation(value,frame).active;
+			for(auto& value:animation.values)animation.active|=UiAdvanceAnimation(value,frame).active;
 			if(animation.sceneSized){animation.anchorX=animation.values[0].val;animation.anchorBottom=animation.values[1].val;}
 			else{animation.left=animation.values[0].val;animation.top=animation.values[1].val;
 				animation.right=animation.values[2].val;animation.bottom=animation.values[3].val;}
@@ -1373,9 +1430,9 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			const bool wasVisible=state.targetVisible;state.targetVisible=desiredMode!=WorkspaceMode::Hidden;
 			if(modeChanged||(wasVisible&&!state.targetVisible)||(whiteboard.switching&&!state.renderedWhiteboard.switching)){
 				// 工作区交接只投递取消；指针和长按仍由唯一输入 worker 清理。
-				Inkeys::UI::Bar::SurfaceInputEvent cancel;cancel.window=Inkeys::Window::GetService().Handle(Roles[index]);
+				Inkeys::UI::UI3::SurfaceInputEvent cancel;cancel.window=Inkeys::Window::GetService().Handle(Roles[index]);
 				cancel.generation=inputLifecycle.load(std::memory_order_acquire);cancel.message=WM_CANCELMODE;
-				if(cancel.window)(void)Inkeys::UI::Bar::SubmitSurfaceInput(cancel);
+				if(cancel.window)(void)Inkeys::UI::UI3::SubmitSurfaceInput(cancel);
 			}
 			const bool entering=!wasVisible&&state.targetVisible;
 			if(!state.bounds.initialized&&entering&&index>=2)
@@ -1397,7 +1454,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 					signals.consumedExternalTurn.load(std::memory_order_acquire)!=externalTurnSerial.load(std::memory_order_acquire),
 					std::chrono::steady_clock::time_point(std::chrono::steady_clock::duration(signals.activity.load(std::memory_order_acquire))),now});
 				signals.dimmed.store(fade.dimmed,std::memory_order_release);
-				if(idleDeadlines[index].Publish(fade.wake))Inkeys::UI::Bar::WakeInteractionWorker();
+				if(idleDeadlines[index].Publish(fade.wake))Inkeys::UI::UI3::WakeInteractionWorker();
 				// 显隐只负责工作区过渡；闲置在 Scene 内分开限制背景与内容。
 				state.scene.SetIdleFade(fade.dimmed,desiredMode!=WorkspaceMode::PptCompact?0
 					:fade.dimmed?PptIdleFadeOutSeconds:PptIdleFadeInSeconds);
@@ -1424,7 +1481,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			AdvanceBounds(state.bounds,now);
 			state.scene.SetLoadingIndicatorVisible(state.targetVisible&&visualMode!=WorkspaceMode::Hidden);
 			(void)state.scene.Advance(now);
-			if(loadingDeadlines[index].Publish(state.scene.LoadingIndicatorDeadline()))Inkeys::UI::Bar::WakeInteractionWorker();
+			if(loadingDeadlines[index].Publish(state.scene.LoadingIndicatorDeadline()))Inkeys::UI::UI3::WakeInteractionWorker();
 			state.inputLocked=ShouldLockSurfaceInput(state.targetVisible,
 				(state.bounds.active||state.scene.Geometry().layoutAnimating)&&!settleDragPosition,WhiteboardWorkspaceSwitching(whiteboard));
 			if(!ApplyCurrentSceneBounds(state)){failedStage="pagination-bounds";return false;}
@@ -1493,7 +1550,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			}
 			const HRESULT resourceHr = hiddenTestBlockedResourceSurface.load(
 				std::memory_order_relaxed) == static_cast<int>(index)
-				? E_OUTOFMEMORY : state.scene.EnsureDeviceResources(
+				? E_OUTOFMEMORY : EnsureSurfaceTarget(state.scene, *state.frameTarget,
 					frameContext.epoch,
 					static_cast<UINT>((std::max)(1L, backingCapacity.cx)),
 					static_cast<UINT>((std::max)(1L, backingCapacity.cy)));
@@ -1515,8 +1572,8 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 					? PresentStatus::DeviceLost : PresentStatus::Retry;
 				return result;
 			}
-			auto* rawContext = state.scene.DeviceContext();
-			auto* rawGdi = state.scene.GdiInteropRenderTarget();
+			auto* rawContext = state.frameTarget->DeviceContext();
+			auto* rawGdi = state.frameTarget->GdiInteropRenderTarget();
 			if (!rawContext || !rawGdi)
 			{
 				if (diagnostics)
@@ -1528,12 +1585,12 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				result.failureHr = E_POINTER;
 				return result;
 			}
+			// GDI interop 由帧事务在整个提交期间持有。
 			ComPtr<ID2D1DeviceContext> context(rawContext);
-			ComPtr<ID2D1GdiInteropRenderTarget> gdi(rawGdi);
 			RECT businessDamage=forceFullReplacement
 				?RECT{0,0,static_cast<LONG>(width),static_cast<LONG>(height)}:state.scene.PendingDamage();
 			const bool businessDamagePending =
-				!Inkeys::UI::Bar::BarDirtyRegionTracker::IsEmpty(businessDamage);
+				!Inkeys::UI::UI3::DirtyRegionTracker::IsEmpty(businessDamage);
 			if(!businessDamagePending&&!forceFullReplacement&&!lifecycleRendering
 				&&!state.scene.AnimationActive()&&!state.scene.LoadingIndicatorAnimationActive()&&!state.debugFrameSleepLatch.IsPending()&&!state.debugOverlayRefreshPending){
 				result.status=PresentStatus::Success;return result;
@@ -1555,7 +1612,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				businessDamage = RECT{ 0, 0, static_cast<LONG>(width),
 					static_cast<LONG>(height) };
 			}
-			const auto debugDamage = Inkeys::UI::Bar::ResolveBarDebugDamage(
+			const auto debugDamage = Inkeys::UI::UI3::ResolveDebugDamage(
 				businessDamage, {}, state.lastPresentedDebugFrameBounds, {},
 				showDebugFrames, finalIdleFrame);
 			RECT frameTarget = debugDamage.frameTarget;
@@ -1566,44 +1623,45 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				ResolvePageControlDebugWindowDamagePolicy(forceFullReplacement,
 					state.debugOverlayRefreshPending, showDebugFrames);
 			if (debugWindowDamage.includePreviousWindow)
-				Inkeys::UI::Bar::BarDirtyRegionTracker::UnionInPlace(
+				Inkeys::UI::UI3::DirtyRegionTracker::UnionInPlace(
 					presentDirty, state.lastPresentedDebugWindowBounds);
 			if (debugWindowDamage.includeCurrentWindow)
-				Inkeys::UI::Bar::BarDirtyRegionTracker::UnionInPlace(
+				Inkeys::UI::UI3::DirtyRegionTracker::UnionInPlace(
 					presentDirty, windowTarget);
-			presentDirty = Inkeys::UI::Bar::IntersectBarDirtyRect(
+			presentDirty = Inkeys::UI::UI3::IntersectDirtyRect(
 				presentDirty, windowTarget);
-			if (Inkeys::UI::Bar::BarDirtyRegionTracker::IsEmpty(presentDirty))
+			if (Inkeys::UI::UI3::DirtyRegionTracker::IsEmpty(presentDirty))
 				presentDirty = windowTarget;
 			// 与主栏相同：先裁剪，再清理/绘制；保留的大位图不扩大实际工作量。
 			FrameStageTimer drawTimer(diagnostics,FrameStage::Draw);
 			context->SetTransform(D2D1::Matrix3x2F::Identity());
-			state.scene.Renderer().BeginFrameDraw(context.Get(),D2D1::RectF(
+			// 帧事务：构造即 BeginDraw + 脏区裁剪 + 透明清空；此后每条路径都经它成对结束。
+			FrameTransaction transaction(*state.frameTarget, D2D1::RectF(
 				static_cast<FLOAT>(presentDirty.left),static_cast<FLOAT>(presentDirty.top),
 				static_cast<FLOAT>(presentDirty.right),static_cast<FLOAT>(presentDirty.bottom)));
 			WaitTrace::DrawStarted();
 			(void)state.scene.Render(context.Get(),frameContext.frameTime);
 			WaitTrace::DrawFinished();
 			// 本帧新启动的字号修正也必须接回调度，不能等下一次外部事件。
-			result.continueRendering |= state.scene.Renderer().FontAnimationsActive();
+			result.continueRendering |= state.scene.FontAnimationsActive();
 			if (showDebugFrames)
 			{
 				// 红/绿框表示本帧 damage，蓝框直接表示当前 HWND 提交边界。
 				ComPtr<ID2D1SolidColorBrush> damageBrush;
 				ComPtr<ID2D1SolidColorBrush> windowBrush;
 				const COLORREF damageColor =
-					Inkeys::UI::Bar::ResolveBarDebugFrameColor(finalIdleFrame);
+					Inkeys::UI::UI3::ResolveDebugFrameColor(finalIdleFrame);
 				(void)context->CreateSolidColorBrush(D2D1::ColorF(
 					GetRValue(damageColor) / 255.0F,
 					GetGValue(damageColor) / 255.0F,
 					GetBValue(damageColor) / 255.0F, 1.0F), &damageBrush);
 				(void)context->CreateSolidColorBrush(D2D1::ColorF(
 					0.0F, 120.0F / 255.0F, 1.0F, 1.0F), &windowBrush);
-				constexpr FLOAT frameWidth = Inkeys::UI::Bar::BarDebugFrameWidth;
+				constexpr FLOAT frameWidth = Inkeys::UI::UI3::DebugFrameWidth;
 				constexpr FLOAT dirtyInset =
-					Inkeys::UI::Bar::BarDebugDirtyFrameInset;
+					Inkeys::UI::UI3::DebugDirtyFrameInset;
 				constexpr FLOAT windowInset =
-					Inkeys::UI::Bar::BarDebugWindowFrameInset;
+					Inkeys::UI::UI3::DebugWindowFrameInset;
 				const D2D1_RECT_F damageRect = D2D1::RectF(
 					static_cast<FLOAT>((std::max)(0L, frameTarget.left)) + dirtyInset,
 					static_cast<FLOAT>((std::max)(0L, frameTarget.top)) + dirtyInset,
@@ -1621,8 +1679,9 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				if (windowBrush)
 					context->DrawRectangle(&windowRect, windowBrush.Get(), frameWidth);
 			}
-			state.scene.Renderer().FinishFrameDrawCommands(context.Get());
+			transaction.FinishDrawCommands();
 			drawTimer.Stop();
+			// 提交准备（留在宿主）：原生呈现租约与直移/发布修订核对，位于结束绘制命令之后、GetDC 之前。
 			auto nativeLease = hwnd ? Inkeys::Window::GetService().TryAcquirePresentationLease(Roles[index])
 				: Inkeys::Window::SurfacePresentationLease{};
 			const bool nativeDeferred = hwnd && (!nativeLease
@@ -1630,20 +1689,19 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				|| (expectedPublication && expectedPublication != publishedRevision.load(std::memory_order_acquire)));
 			if (nativeDeferred)
 			{
-				const auto end = state.scene.Renderer().EndFrameDraw(context.Get());
+				// 延后本帧：不取 DC、不提交，只成对 EndDraw。
+				const FrameTransactionResult deferred = transaction.EndWithoutPresent();
+				state.presentLog.Report(SurfaceRoleName(index), deferred);
+				const auto end = deferred.endDraw;
 				result.failureStage = "native-presentation-busy"; result.failureHr = end; result.deferred = SUCCEEDED(end);
 				result.status = IsDeviceLost(end) ? PresentStatus::DeviceLost : PresentStatus::Retry;
 				return result;
 			}
-			HDC source = nullptr;
 			bool presented = false;
 			DWORD ulwError = ERROR_SUCCESS;
 			if (diagnostics) diagnostics->presentAttempted = true;
-			FrameStageTimer getDcTimer(diagnostics, FrameStage::GetDC);
-			HRESULT getDcHr = gdi->GetDC(D2D1_DC_INITIALIZE_MODE_COPY, &source);
-			getDcTimer.Stop();
-			HRESULT releaseDcHr = S_OK;
-			if (SUCCEEDED(getDcHr) && source)
+			// 提交端：ULW 或离屏测试 sink；失败时紧跟其后取 GetLastError（早于 ReleaseDC）。
+			const auto presentPixels = [&](const FramePresentSource& pixels) -> FramePresentOutcome
 			{
 				POINT destination{ presentationBounds.left, presentationBounds.top };
 				POINT sourcePoint{};
@@ -1654,7 +1712,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				info.pptDst = &destination;
 				info.psize = &size;
 				info.pptSrc = &sourcePoint;
-				info.hdcSrc = source;
+				info.hdcSrc = pixels.sourceDc;
 				info.pblend = &blend;
 				info.prcDirty = forceFullReplacement ? nullptr : &presentDirty;
 				info.dwFlags = ULW_ALPHA;
@@ -1672,16 +1730,24 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 					else if (nativeLease) result.presentationRevision = nativeLease.PixelsChanged(Roles[index]);
 				}
 				ulwTimer.Stop();
-				// ULW 只读取源 DC；这里没有通过 GDI 修改像素。
-				const RECT gdiModifiedRect{};
-				FrameStageTimer releaseDcTimer(diagnostics, FrameStage::ReleaseDC);
-				releaseDcHr = gdi->ReleaseDC(&gdiModifiedRect);
-				releaseDcTimer.Stop();
-			}
-			else if (SUCCEEDED(getDcHr)) getDcHr = E_FAIL;
-			FrameStageTimer endDrawTimer(diagnostics, FrameStage::EndDraw);
-			const HRESULT endDrawHr = state.scene.Renderer().EndFrameDraw(context.Get());
-			endDrawTimer.Stop();
+				return { presented, ulwError };
+			};
+			// GetDC / ReleaseDC / EndDraw 由事务执行，分步观察只用于原有的阶段计时。
+			std::optional<FrameStageTimer> stepTimer;
+			const auto observeStep = [&](FrameCommitStep step, bool begin)
+			{
+				if (!begin) { stepTimer.reset(); return; }
+				stepTimer.emplace(diagnostics, step == FrameCommitStep::GetDC ? FrameStage::GetDC
+					: step == FrameCommitStep::ReleaseDC ? FrameStage::ReleaseDC : FrameStage::EndDraw);
+			};
+			// GetDC(COPY) → 提交端 → ReleaseDC(空修改矩形) → EndDraw；std::ref 避免渲染线程逐帧堆分配。
+			const FrameTransactionResult submitted = transaction.Commit(
+				std::ref(presentPixels), std::ref(observeStep));
+			state.presentLog.Report(SurfaceRoleName(index), submitted);
+			// 保持本宿主原有口径：GetDC 成功却没有 DC 记 E_FAIL；未执行 ReleaseDC 记 S_OK。
+			const HRESULT getDcHr = submitted.sourceDcMissing ? E_FAIL : submitted.getDc;
+			const HRESULT releaseDcHr = submitted.releaseDcAttempted ? submitted.releaseDc : S_OK;
+			const HRESULT endDrawHr = submitted.endDraw;
 			if (diagnostics)
 			{
 				diagnostics->getDcResult = getDcHr;
@@ -2282,7 +2348,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			if (!hiddenCommitted || state.targetVisible || state.bounds.active || state.scene.AnimationActive()
 				|| state.pointerActive || state.dragging || state.dragPending || state.pressedCaptureTicket) return;
 			// 设备资源可能已被失败路径释放，但 backing 水位仍在；两者都空才无需处理。
-			const bool deviceHeld = state.scene.DeviceContext() != nullptr;
+			const bool deviceHeld = state.frameTarget->DeviceContext() != nullptr;
 			if (!deviceHeld && state.backingCapacity.cx == 1 && state.backingCapacity.cy == 1) return;
 			// 原生命令与输入提交仍保留，只归还已隐藏客户端的像素与图形缓存。
 			if (deviceHeld) state.scene.ReleaseDeviceResources();
@@ -2825,7 +2891,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 		}
 
 		[[nodiscard]] std::chrono::steady_clock::time_point InputSampleTime(
-			const Inkeys::UI::Bar::SurfaceInputEvent& event) noexcept
+			const Inkeys::UI::UI3::SurfaceInputEvent& event) noexcept
 		{
 			const auto now=std::chrono::steady_clock::now();
 			if(!event.tick)return now; // 离屏 fixture 没有原生时钟，沿用调用时刻。
@@ -2864,8 +2930,8 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
             if(due||idleDue)RequestSurface(registration->index); // 只唤醒，Scene按最新loading/session重新判定。
             return (std::min)({deadline,idleDeadline,DebugNavigationTick(now,registration->index),PageControlLongPressTick(now,context)});
         }
-		void PageControlInputCancel(const Inkeys::UI::Bar::SurfaceInputEvent& cancellation,void* context);
-		void PageControlInputEvent(const Inkeys::UI::Bar::SurfaceInputEvent& event,void* context)
+		void PageControlInputCancel(const Inkeys::UI::UI3::SurfaceInputEvent& cancellation,void* context);
+		void PageControlInputEvent(const Inkeys::UI::UI3::SurfaceInputEvent& event,void* context)
 		{
 			const HWND hwnd=event.window;const auto message=event.message;
 			const auto lParam=event.lParam;
@@ -2902,7 +2968,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 						message, event.extraInfo)))
 				{
 					state.borderCursorPointerInside = true;
-					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerEntered();
+					if(!offSignal) Inkeys::UI::UI3::NotifyLightingPointer({LightingPointerEventKind::Entered,static_cast<std::uintptr_t>(index)+1,screen,true});
 				}
 				if (state.dragPending && HasExceededPptDragThreshold(
 					state.dragStartScreen, screen, GetSystemMetrics(SM_CXDRAG),
@@ -2963,7 +3029,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 					}
 				}
 				if (notifyBorderCursor)
-					Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();
+					if(!offSignal) Inkeys::UI::UI3::NotifyLightingPointer({LightingPointerEventKind::Left,static_cast<std::uintptr_t>(index)+1});
 				return;
 			}
 			if (message == WM_LBUTTONDOWN)
@@ -3190,7 +3256,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 					rollbackDrag = state.dragging || state.dragPending;
 					if(index>=2&&(state.pointerActive||rollbackDrag)){PublishMiddleSnapRequest({},false,{});RequestDragPair(1);}
 					state.pointerActive=false;
-					if(state.borderCursorPointerInside){state.borderCursorPointerInside=false;Inkeys::UI::Bar::NotifyBorderCursorSurfacePointerLeft();}
+					if(state.borderCursorPointerInside){state.borderCursorPointerInside=false;if(!offSignal) Inkeys::UI::UI3::NotifyLightingPointer({LightingPointerEventKind::Left,static_cast<std::uintptr_t>(index)+1});}
 					state.scene.CancelPointer();
 					state.dragging = false;
 					state.dragPending = false;
@@ -3257,7 +3323,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			if(state.pressStarted.time_since_epoch().count()==0)return std::chrono::steady_clock::time_point::max();
 			return state.lastRepeat.time_since_epoch().count()?state.lastRepeat+state.repeatTiming.repeatInterval:state.pressStarted+state.repeatTiming.initialDelay;
 		}
-		void PageControlInputCancel(const Inkeys::UI::Bar::SurfaceInputEvent& cancellation,void* context)
+		void PageControlInputCancel(const Inkeys::UI::UI3::SurfaceInputEvent& cancellation,void* context)
 		{
 			const auto hwnd=cancellation.window;
 			PointerInput::Touch::RequestCancel({hwnd,cancellation.touchRegistration,cancellation.touchRouteGeneration});
@@ -3388,7 +3454,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 					return false;
 				}
 			}
-			Inkeys::UI::Bar::SurfaceInputEvent event;event.window=hwnd;
+			Inkeys::UI::UI3::SurfaceInputEvent event;event.window=hwnd;
 			event.message=message;
 			event.wParam=wParam;event.lParam=MAKELPARAM(local.x,local.y);
 			event.extraInfo=static_cast<ULONG_PTR>(GetMessageExtraInfo());
@@ -3404,7 +3470,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			event.captureOwned=GetCapture()==hwnd;
 			event.captureTicket=client.captureTicket?client.captureTicket:nativeCaptureTickets[index];
 			event.nativeCaptureReleased=event.message==WM_CANCELMODE||event.message==WM_CAPTURECHANGED;
-			const bool accepted=Inkeys::UI::Bar::SubmitSurfaceInput(event);
+			const bool accepted=Inkeys::UI::UI3::SubmitSurfaceInput(event);
 			UiDiag::Log(SurfaceName(index),hwnd,"queue",accepted?"accepted":"mailbox_or_registration_rejected",event.message,&pointer,"ticket=%llu generation=%llu semantic=%llu hit=%u",static_cast<unsigned long long>(event.captureTicket),static_cast<unsigned long long>(event.generation),static_cast<unsigned long long>(event.semanticRevision),static_cast<unsigned>(event.hitButtonId));
 			if(!accepted&&(message==WM_LBUTTONDOWN||client.session.Active()))ResetNativePointer(hwnd,index);
 			const bool release=!accepted||message==WM_LBUTTONUP||event.message==WM_CANCELMODE;
@@ -3656,7 +3722,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 					MarkIdleActivity(index,now);
 					// 在 HWND producer 固定 token/代次，排队期间切换会话只能丢弃旧输入。
 					EnqueueLocalWheel(GET_WHEEL_DELTA_WPARAM(wParam));
-					Inkeys::UI::Bar::WakeInteractionWorker();
+					Inkeys::UI::UI3::WakeInteractionWorker();
 				}
 				return 0;
 			}
@@ -3691,12 +3757,12 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 		};
 		const auto destroy=[](Fixture* fixture){
 			if(fixture->identity){
-				Inkeys::UI::Bar::UnregisterInteractionSurface(fixture->identity);
-				if(!Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks()){
+				Inkeys::UI::UI3::UnregisterInteractionSurface(fixture->identity);
+				if(!Inkeys::UI::UI3::DrainInteractionSurfaceCallbacks()){
 					// 即便调用方在共享 worker 释放最后引用，也要等当前 callback 返回后再销毁。
 					// 按 WINAPI 回调类型转换，避免一元 + 在 Win32 下固定为 __cdecl。
 					if(!QueueUserWorkItem([](void* context)->DWORD{
-						if(Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks())delete static_cast<Fixture*>(context);
+						if(Inkeys::UI::UI3::DrainInteractionSurfaceCallbacks())delete static_cast<Fixture*>(context);
 						return 0;},fixture,WT_EXECUTEDEFAULT))OutputDebugStringA("[PageControlUI3] deferred fixture cleanup could not be queued\n");
 					return;
 				}
@@ -3705,7 +3771,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 		};
 		auto fixture=std::shared_ptr<Fixture>(new Fixture,destroy);fixture->identity=inputIdentity;
 		if(inputIdentity){
-			Inkeys::UI::Bar::RegisterInteractionSurface(inputIdentity,1,+[](const Inkeys::UI::Bar::SurfaceInputEvent& event,void* context){
+			Inkeys::UI::UI3::RegisterInteractionSurface(inputIdentity,1,+[](const Inkeys::UI::UI3::SurfaceInputEvent& event,void* context){
 				auto& scene=static_cast<Fixture*>(context)->surface.scene;
 				using Kind=Inkeys::UI::Bar::BarSurfacePointerEventKind;
 				Kind kind;switch(event.message){
@@ -3715,7 +3781,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				}
 				// 无 HWND 提交端约定 screenPoint 是呈现位图内坐标，仍读取最近成功的真实命中帧。
 				const auto sample=scene.SamplePointer(event.screenPoint);(void)scene.ApplyPointer(kind,sample.hit,event.screenPoint);
-			},nullptr,+[](const Inkeys::UI::Bar::SurfaceInputEvent&,void* context){(void)static_cast<Fixture*>(context)->surface.scene.CancelPointer();},fixture.get(),false);
+			},nullptr,+[](const Inkeys::UI::UI3::SurfaceInputEvent&,void* context){(void)static_cast<Fixture*>(context)->surface.scene.CancelPointer();},fixture.get(),false);
 		}
 		return [fixture,index,provider=std::move(provider),logicalBounds,scale,sink=std::move(sink)](const FrameContext& frame) mutable
 		{
@@ -3758,6 +3824,8 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 
 	int RunOffscreenTests()
 	{
+		// 本函数内独立构造的场景都由测试自持帧目标；SurfaceState 仍使用自己的宿主帧目标。
+		using Scene=HostedScene;
 		int failures=0;
 		const auto Check=[&](bool valid,const char* why){if(!valid){++failures;std::fprintf(stderr,"[PageControlUI3] FAIL %s\n",why);}};
         {
@@ -3967,10 +4035,10 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 					const UINT firstHeight=firstBounds.bottom-firstBounds.top;
 					const HRESULT firstSetup=surface.EnsureDeviceResources(epoch,firstWidth,firstHeight);
 					Check(SUCCEEDED(firstSetup),"initial hidden member frame owns a real target before any settling");
-					if(SUCCEEDED(firstSetup)){auto* firstDc=surface.DeviceContext();auto& firstRenderer=surface.Renderer();
-						firstRenderer.BeginFrameDraw(firstDc,D2D1::RectF(0,0,static_cast<FLOAT>(firstWidth),static_cast<FLOAT>(firstHeight)));
-						(void)surface.Render(firstDc,origin);firstRenderer.FinishFrameDrawCommands(firstDc);
-						Check(SUCCEEDED(firstRenderer.EndFrameDraw(firstDc)),"initial hidden member renders at the first zero-dt clock sample");}
+					if(SUCCEEDED(firstSetup)){auto* firstDc=surface.DeviceContext();auto& firstTarget=surface.Target();
+						firstTarget.BeginFrame(firstDc,D2D1::RectF(0,0,static_cast<FLOAT>(firstWidth),static_cast<FLOAT>(firstHeight)));
+						(void)surface.Render(firstDc,origin);firstTarget.FinishDrawCommands(firstDc);
+						Check(SUCCEEDED(firstTarget.EndFrame(firstDc)),"initial hidden member renders at the first zero-dt clock sample");}
 					const auto more=surface.Layout().buttons[4];
 					Check(!more.visible&&!more.enabled&&more.contentOpacity==0,"initial PPT and right whiteboard frame never flash the stable hidden More");
 				}
@@ -3980,10 +4048,10 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			const UINT w=bounds.right-bounds.left,h=bounds.bottom-bounds.top;
 			const HRESULT setup=surface.EnsureDeviceResources(epoch,w+23,h+19);
 			Check(SUCCEEDED(setup),"independent target owns device resources without a main Bar owner");if(FAILED(setup))continue;
-			auto* dc=surface.DeviceContext();auto& renderer=surface.Renderer();
-			renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(w),static_cast<FLOAT>(h)));
-			(void)surface.Render(dc,origin+900ms);renderer.FinishFrameDrawCommands(dc);
-			Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"real shared draw transaction succeeds");
+			auto* dc=surface.DeviceContext();auto& frameTarget=surface.Target();
+			frameTarget.BeginFrame(dc,D2D1::RectF(0,0,static_cast<FLOAT>(w),static_cast<FLOAT>(h)));
+			(void)surface.Render(dc,origin+900ms);frameTarget.FinishDrawCommands(dc);
+			Check(SUCCEEDED(frameTarget.EndFrame(dc)),"real shared draw transaction succeeds");
 			surface.CommitPresented();(void)surface.ConsumeDamage();
 			Check(!surface.HitTestBackground({0,0}),"rounded transparent corner passes through");
 			Check(surface.HitTestBackground({static_cast<LONG>(width*scale/2),static_cast<LONG>(height*scale/2)}),"rendered root and hit geometry agree");
@@ -3997,14 +4065,14 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				// 命中矩形向外覆盖像素；0.25 倍下 17.5px 的正方形可覆盖 19px，不能比较浮点边长差。
 				const RECT expected{static_cast<LONG>(std::floor(dip.left*scale)),static_cast<LONG>(std::floor(dip.top*scale)),
 					static_cast<LONG>(std::ceil(dip.right*scale)),static_cast<LONG>(std::ceil(dip.bottom*scale))};
-				const bool standard=!BarPptCompactPaginationEnabled&&dip.right-dip.left==BarButtonTwoSideDip
-					&&dip.bottom-dip.top==BarButtonTwoSideDip&&EqualRect(&rect,&expected);
+				const bool standard=!BarPptCompactPaginationEnabled&&dip.right-dip.left==ButtonTwoSideDip
+					&&dip.bottom-dip.top==ButtonTwoSideDip&&EqualRect(&rect,&expected);
 				if(!standard)std::fprintf(stderr,"[PageControlUI3] size index=%zu scale=%.3f id=%u "
 					"actual=(%ld,%ld,%ld,%ld) expected=(%ld,%ld,%ld,%ld) dip=(%.2f,%.2f,%.2f,%.2f)\n",
 					index,scale,static_cast<unsigned>(id),rect.left,rect.top,rect.right,rect.bottom,
 					expected.left,expected.top,expected.right,expected.bottom,dip.left,dip.top,dip.right,dip.bottom);
 				Check(standard,"production PPT Scene uses standard squares on all four surfaces");
-				const POINT lower{(rect.left+rect.right)/2,rect.top+static_cast<LONG>(BarButtonTwoSideDip*scale*0.8)};
+				const POINT lower{(rect.left+rect.right)/2,rect.top+static_cast<LONG>(ButtonTwoSideDip*scale*0.8)};
 				Check(surface.HitTest(lower)==id,"standard label region participates in the same committed button hit");
 			}
 			ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap;
@@ -4031,7 +4099,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				Check(bright>10,"current and total page text are actually drawn");
 				if(mode==WorkspaceMode::PptCompact)for(const auto id:{PreviousWidget,PageWidget,NextWidget}){
 					const auto rect=surface.Layout().buttons[id-1].localPixels;unsigned labelInk=0;
-					for(LONG y=rect.top+static_cast<LONG>(BarButtonTwoSideDip*scale*0.65);y<rect.bottom-2;++y)
+					for(LONG y=rect.top+static_cast<LONG>(ButtonTwoSideDip*scale*0.65);y<rect.bottom-2;++y)
 						for(LONG x=rect.left+2;x<rect.right-2;++x){const auto* pixel=mapped.bits+(y+100-bounds.top)*mapped.pitch+(x+200-bounds.left)*4;
 							if(pixel[0]>120&&pixel[1]>120&&pixel[2]>120)++labelInk;}
 					Check(labelInk>3,"PPT arrows and page totals draw ink in the standard two by two label slot");
@@ -4059,9 +4127,9 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				// 同布局翻页必须继续使用 PageTwoTwo；旧横排测宽会改变双行槽位的实际像素。
 				auto changed=content;changed.currentPage=L"8";changed.totalPage=L"/29";
 				surface.ConfigurePagination(changed);surface.ConfigurePagination(content);
-				renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(w),static_cast<FLOAT>(h)));
-				(void)surface.Render(dc,origin+900ms);renderer.FinishFrameDrawCommands(dc);
-				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"PPT content-only roundtrip renders through shared standard buttons");
+				frameTarget.BeginFrame(dc,D2D1::RectF(0,0,static_cast<FLOAT>(w),static_cast<FLOAT>(h)));
+				(void)surface.Render(dc,origin+900ms);frameTarget.FinishDrawCommands(dc);
+				Check(SUCCEEDED(frameTarget.EndFrame(dc)),"PPT content-only roundtrip renders through shared standard buttons");
 				if(SUCCEEDED(cpu->CopyFromBitmap(nullptr,bitmap.Get(),nullptr))&&SUCCEEDED(cpu->Map(D2D1_MAP_OPTIONS_READ,&mapped))){
 					Check(PageSlotPixels()==originalPagePixels,"PPT page-number updates never restore compact horizontal slots");cpu->Unmap();
 				}else Check(false,"updated standard page slots can be read back");
@@ -4069,9 +4137,9 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			if(provePageMorph){
 				auto matching=wb;matching.menu=0;matching.currentPage=ppt.currentPage;matching.totalPage=ppt.totalPage;
 				surface.ConfigurePagination(BuildPageContent(0,WorkspaceMode::WhiteboardExpanded,ppt,matching),LayoutTransitionDurationSeconds());
-				(void)surface.Advance(origin+900ms);renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(w),static_cast<FLOAT>(h)));
-				(void)surface.Render(dc,origin+900ms);renderer.FinishFrameDrawCommands(dc);
-				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"page morph reversal frame draws through common renderer");
+				(void)surface.Advance(origin+900ms);frameTarget.BeginFrame(dc,D2D1::RectF(0,0,static_cast<FLOAT>(w),static_cast<FLOAT>(h)));
+				(void)surface.Render(dc,origin+900ms);frameTarget.FinishDrawCommands(dc);
+				Check(SUCCEEDED(frameTarget.EndFrame(dc)),"page morph reversal frame draws through common renderer");
 				if(SUCCEEDED(cpu->CopyFromBitmap(nullptr,bitmap.Get(),nullptr))&&SUCCEEDED(cpu->Map(D2D1_MAP_OPTIONS_READ,&mapped))){
 					Check(PageSlotPixels()==originalPagePixels,"same-frame PPT to whiteboard retarget preserves both page text slots exactly");cpu->Unmap();
 				}else Check(false,"page morph readback succeeds");
@@ -4089,9 +4157,9 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 		}
 		{
 			// 真实 Scene/DWrite 验证数字即时、状态中点过渡和打断，不读取源码或复制动画公式。
-			const bool savedAnimation=BarUiAnimationEnabled;
-			const double savedSpeed=static_cast<double>(BarUiAnimationSpeedRate);
-			BarUiAnimationEnabled=true;BarUiAnimationSpeedRate=1.0;
+			const bool savedAnimation=UiAnimationEnabled;
+			const double savedSpeed=static_cast<double>(UiAnimationSpeedRate);
+			UiAnimationEnabled=true;UiAnimationSpeedRate=1.0;
 			struct PageTestPixels
 			{
 				UINT width=0,height=0;RECT bounds{};std::vector<BYTE> bytes;
@@ -4101,13 +4169,13 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				PageTestPixels result;(void)scene.Advance(now);result.bounds=scene.PresentationBounds();
 				result.width=result.bounds.right-result.bounds.left;result.height=result.bounds.bottom-result.bounds.top;
 				if(FAILED(scene.EnsureDeviceResources(epoch,result.width,result.height))){Check(false,"page status test owns real D2D resources");return result;}
-				auto* dc=scene.DeviceContext();auto& renderer=scene.Renderer();
+				auto* dc=scene.DeviceContext();auto& frameTarget=scene.Target();
 				const auto damage=full?RECT{0,0,static_cast<LONG>(result.width),static_cast<LONG>(result.height)}:scene.PendingDamage();
-				renderer.BeginFrameDraw(dc,D2D1::RectF(static_cast<FLOAT>(damage.left),static_cast<FLOAT>(damage.top),
+				frameTarget.BeginFrame(dc,D2D1::RectF(static_cast<FLOAT>(damage.left),static_cast<FLOAT>(damage.top),
 					static_cast<FLOAT>(damage.right),static_cast<FLOAT>(damage.bottom)));
 				WaitTrace::DrawStarted();
-				(void)scene.Render(dc,now);WaitTrace::DrawFinished();renderer.FinishFrameDrawCommands(dc);
-				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"page status test renders through the shared button transaction");
+				(void)scene.Render(dc,now);WaitTrace::DrawFinished();frameTarget.FinishDrawCommands(dc);
+				Check(SUCCEEDED(frameTarget.EndFrame(dc)),"page status test renders through the shared button transaction");
 				ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
 				if(!image||FAILED(image.As(&bitmap))){Check(false,"page status target supports readback");return result;}
 				const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
@@ -4146,12 +4214,12 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				const auto halfway=idle.Geometry().fillOpacity;
 				idle.SetIdleFade(false,.15);(void)drawScene(idle,start+60ms);
 				Check(std::abs(idle.Geometry().fillOpacity-halfway)<0.000001,"same-frame idle reversal preserves the current rendered fill");
-				BarUiAnimationEnabled=false;idle.SetIdleFade(true,.5);(void)drawScene(idle,start+80ms);
+				UiAnimationEnabled=false;idle.SetIdleFade(true,.5);(void)drawScene(idle,start+80ms);
 				Check(std::abs(idle.Geometry().fillOpacity-.3)<0.000001,"animation disabled snaps idle channels to their exact targets");
 				Inkeys::UI::Bar::BarSurfaceBackgroundSpec backgroundOnly;backgroundOnly.bounds={0,0,240,80};backgroundOnly.fillOpacity=.8;
 				idle.ConfigureBackground(backgroundOnly);(void)drawScene(idle,start+100ms);
 				Check(std::abs(idle.Geometry().fillOpacity-.8)<0.000001,"background-only reuse never inherits a pagination idle cap");
-				BarUiAnimationEnabled=true;
+				UiAnimationEnabled=true;
 			}
 			const auto reference=[&](const PageContent& content,std::chrono::steady_clock::time_point now,LONG width=240){
 				Scene scene;scene.ConfigurePagination(content);scene.SetBounds({0,0,width,80},1);scene.SetOpacity(1,0);
@@ -4250,7 +4318,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
                 Check(readyPixels==drawScene(readyReference,later+100ms),"ready numbers replace stable display immediately without a loading-content transition");
                 partialScene.SetLoadingIndicatorVisible(false);Check(partialScene.LoadingIndicatorDeadline()==std::chrono::steady_clock::time_point::max()&&!partialScene.LoadingIndicatorAnimationActive(),"hidden surface retires ring demand and deadline");
                 // 禁动画仍等待500ms；静态环与Wait文字都只落在页码按钮内。
-                BarUiAnimationEnabled=false;frame.navigationWaiting={};frame.pagePreparing=false;frame.numericPageOverride=false;frame.recovery={};
+                UiAnimationEnabled=false;frame.navigationWaiting={};frame.pagePreparing=false;frame.numericPageOverride=false;frame.recovery={};
                 frame.currentPage=frame.totalPage=index<2?9999:999;
                 const auto maximum=BuildPageContent(index,WorkspaceMode::PptCompact,frame,{});
                 Scene maxScene;maxScene.ConfigurePagination(maximum);maxScene.SetBounds({0,0,width,height},scale);maxScene.SetOpacity(1,0);
@@ -4268,10 +4336,10 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
                     const auto pixels=region(maxRing,page);
                     const auto containsColor=[&](COLORREF color){for(std::size_t i=0;i+3<pixels.size();i+=4)
                         if(pixels[i]==GetBValue(color)&&pixels[i+1]==GetGValue(color)&&pixels[i+2]==GetRValue(color)&&pixels[i+3]==255)return true;return false;};
-                    Check(containsColor(GetThemeColor(BarThemeColorEnum::IconPrimary)),"thin foreground uses the bright icon color with the shared renderer");
+                    Check(containsColor(GetThemeColor(ThemeColorEnum::IconPrimary)),"thin foreground uses the bright icon color with the shared renderer");
                 }
                 maxScene.ConfigurePagination(maximum);Check(drawScene(maxScene,maxBegin+500ms)==maxPlain,"disabled animation hides the ring immediately with clean pixels");
-                BarUiAnimationEnabled=true;
+                UiAnimationEnabled=true;
 
             }
 
@@ -4361,13 +4429,13 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				Check(pageOnly(scene,settledNumber)==pageOnly(scene,gatedReference(finalNumber,time))&&!scene.AnimationActive(),
 					"the interrupted status can still exit to stable numeric content");
 			}
-			BarUiAnimationEnabled=false;scene.ConfigurePagination(recovery);(void)drawScene(scene,time);time+=500ms;
+			UiAnimationEnabled=false;scene.ConfigurePagination(recovery);(void)drawScene(scene,time);time+=500ms;
 			const auto disabledEntry=drawScene(scene,time);
 			Check(pageOnly(scene,disabledEntry)==pageOnly(scene,gatedReference(recovery,time)),"disabled animation enters a status with final pixels in the same frame as the gate");
 			scene.ConfigurePagination(cancelledNumber);time+=20ms;
 			const auto disabledExit=drawScene(scene,time);
 			Check(pageOnly(scene,disabledExit)==pageOnly(scene,gatedReference(cancelledNumber,time)),"disabled animation exits a status to final numeric pixels in the same frame");
-			BarUiAnimationEnabled=true;
+			UiAnimationEnabled=true;
 			// 所有语言：每个状态词都放得进真实DWrite槽位；白板翻页等待保持页码并在右槽放Wait。
 			for(const auto& locale:Inkeys::Localization::Locales){
 				const wchar_t* language=locale.code;
@@ -4379,7 +4447,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 					&&loading.currentPage==std::to_wstring(loadingState.currentPage)&&loading.statusSecondary==IW(labels.Wait),
 					"each language projects its localized Wait into the whiteboard total slot while keeping the page number");
 				Scene localized;localized.ConfigurePagination(loading);localized.SetBounds({0,0,305,80},1);localized.SetOpacity(1,0);
-				const auto metrics=Inkeys::UI::Bar::ResolveBarButtonVisualMetrics(Inkeys::UI::Bar::BarButtonVisualLayoutKind::PageTwoTwo);
+				const auto metrics=Inkeys::UI::UI3::ResolveButtonVisualMetrics(Inkeys::UI::UI3::ButtonVisualLayoutKind::PageTwoTwo);
 				// 右槽可能出现：Wait/Recovering/Retry/原因词；左槽只在可重试失败时出现原因词。数字页码另有宽度预算，不在此测。
 				for(const char* key:{labels.Wait,labels.Recovering,labels.Retry,labels.Conflict,labels.ReadFailed,labels.PresentFailed,labels.Failed}){
 					const auto secondary=localized.Renderer().MeasureText(IW(key),metrics.secondaryFontSizeDip,DWRITE_FONT_WEIGHT_NORMAL);
@@ -4414,7 +4482,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			(void)pointerScene.ApplyPointer(Inkeys::UI::Bar::BarSurfacePointerEventKind::Move,3,POINT{501,600});
 			time+=20ms;Check(drawScene(pointerScene,time)!=pointerBaseline,"real pointer movement restores shared hover pixels");
 			(void)pointerScene.PointerLeave();for(int frame=0;frame<30;++frame){time+=20ms;(void)drawScene(pointerScene,time);}
-			BarUiAnimationEnabled=savedAnimation;BarUiAnimationSpeedRate=savedSpeed;
+			UiAnimationEnabled=savedAnimation;UiAnimationSpeedRate=savedSpeed;
 		}
 		{
 			// 真实展开帧中检查前层按钮遮挡后层，不只验证静止时彼此分离的矩形。
@@ -4430,9 +4498,9 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			for(int frame=1;frame<=45;++frame){
 				const auto time=origin+frame*10ms;(void)surface.Advance(time);const auto bounds=surface.PresentationBounds();
 				if(FAILED(surface.EnsureDeviceResources(epoch,bounds.right-bounds.left,bounds.bottom-bounds.top))){Check(false,"overlap frame resources");break;}
-				auto* dc=surface.DeviceContext();auto& renderer=surface.Renderer();renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,
+				auto* dc=surface.DeviceContext();auto& frameTarget=surface.Target();frameTarget.BeginFrame(dc,D2D1::RectF(0,0,
 					static_cast<FLOAT>(bounds.right-bounds.left),static_cast<FLOAT>(bounds.bottom-bounds.top)));
-				surface.Render(dc,time);renderer.FinishFrameDrawCommands(dc);Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"overlapping panels draw through shared renderer");
+				surface.Render(dc,time);frameTarget.FinishDrawCommands(dc);Check(SUCCEEDED(frameTarget.EndFrame(dc)),"overlapping panels draw through shared renderer");
 				surface.CommitPresented();const auto layout=surface.Layout();
 				for(const auto& front:layout.buttons){if(!front.visible||!front.interactive||front.id>8)continue;
 					for(const auto& back:layout.buttons){if(!back.visible||back.id<(front.id<=5?6U:9U))continue;
@@ -4459,8 +4527,8 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 		// 字体自身启动/尾段走实际 PageControl 回调和呈现 continue，不依赖其他几何动画续帧。
 		{
 			const bool savedFont=Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load();
-			const bool savedAnimation=BarUiAnimationEnabled;
-			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=false;BarUiAnimationEnabled=true;
+			const bool savedAnimation=UiAnimationEnabled;
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=false;UiAnimationEnabled=true;
 			OffscreenSnapshot fontSnapshot{ppt,wb};fontSnapshot.whiteboard.menu=0;
 			unsigned fontSubmits=0;
 			auto fontCallback=CreatePageControlOffscreenRenderCallback(0,[&]{return fontSnapshot;},{0,0,193,51},0.63F,
@@ -4475,7 +4543,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			bool idle=false;
 			for(int tick=0;tick<90;++tick){fontFrame.frameTime+=16ms;if(fontCallback(fontFrame)==FrameResult::Idle){idle=true;break;}}
 			Check(idle&&fontSubmits>before+2,"font-only PageControl tail submits multiple frames then returns idle");
-			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=savedFont;BarUiAnimationEnabled=savedAnimation;
+			Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize=savedFont;UiAnimationEnabled=savedAnimation;
 		}
 		// 无 HWND 的故障注入走实际 GetDC/ReleaseDC/EndDraw 事务，不以数学动画冒充呈现。
 		OffscreenSnapshot snapshot{ppt,wb};snapshot.whiteboard.menu=2;
@@ -4508,8 +4576,8 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				return result;
 			};
 			struct TargetPixels {UINT width=0,height=0;std::vector<BYTE> bytes;};
-			const auto readScenePixels=[&](Scene& scene){
-				TargetPixels result;auto* dc=scene.DeviceContext();ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
+			const auto readScenePixels=[&](ID2D1DeviceContext* dc){
+				TargetPixels result;ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
 				if(!image||FAILED(image.As(&bitmap)))return result;
 				const auto size=bitmap->GetPixelSize();const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
 					D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
@@ -4519,7 +4587,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				for(UINT y=0;y<size.height;++y)std::copy_n(mapped.bits+y*mapped.pitch,size.width*4,result.bytes.data()+static_cast<std::size_t>(y)*size.width*4);
 				cpu->Unmap();return result;
 			};
-			const auto readPixels=[&]{return readScenePixels(state.scene);};
+			const auto readPixels=[&]{return readScenePixels(state.frameTarget->DeviceContext());};
 			Check(present(true).status==PresentStatus::Success,"initial real transaction commits");
 			const auto committed=state.scene.PresentedGeneration();Check(state.scene.HitTest({265,40})==5,"committed More hit is available");
 			content.menu=2;state.scene.ConfigurePagination(content);time+=20ms;(void)state.scene.Advance(time);
@@ -4527,7 +4595,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			Check(present(true).status==PresentStatus::Retry,"actual final-submit failure is reported");
 			const auto afterFailure=state.scene.PresentationBounds();
 			Check(state.scene.PresentedGeneration()==committed&&state.scene.HitTest({265,40})==5,"failed present preserves the committed generation and hit");
-			Check(!Inkeys::UI::Bar::BarDirtyRegionTracker::IsEmpty(state.scene.PendingDamage()),"failed present retains dirty work");
+			Check(!Inkeys::UI::UI3::DirtyRegionTracker::IsEmpty(state.scene.PendingDamage()),"failed present retains dirty work");
 			Check(EqualRect(&pose,&afterFailure),"Render after Advance does not advance the same batch twice");
 			hiddenTestBlockedResourceSurface.store(0,std::memory_order_release);time+=20ms;
 			Check(present(true).resourcesFailed&&state.scene.PresentedGeneration()==committed,"resource failure also preserves committed input");
@@ -4631,7 +4699,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			Check(actualDirty.right-actualDirty.left<actualViewport.cx/2&&actualViewport.cy<largeBacking.cy,
 				"closed hover clips work before drawing instead of clearing the high-water bitmap");
 			const auto pagePixels=[&] {
-				auto* dc=state.scene.DeviceContext();ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
+				auto* dc=state.frameTarget->DeviceContext();ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
 				if(!image||FAILED(image.As(&bitmap)))return 0U;
 				const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
 					D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED));
@@ -4644,7 +4712,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			};
 			for(const bool epochChange:{false,true}){
 				state.scene.PointerMove({190,40});time+=20ms;(void)state.scene.Advance(time);
-				Check(!Inkeys::UI::Bar::BarDirtyRegionTracker::IsEmpty(state.scene.PendingDamage()),"rebuild starts with only partial hover damage");
+				Check(!Inkeys::UI::UI3::DirtyRegionTracker::IsEmpty(state.scene.PendingDamage()),"rebuild starts with only partial hover damage");
 				if(epochChange)++testEpoch.generation;else state.backingCapacity.cx+=23;
 				Check(present(true).status==PresentStatus::Success&&pagePixels()>10,
 					"new target or epoch redraws the entire viewport despite partial preexisting damage");
@@ -4658,16 +4726,16 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				const bool capture=scheduler.ConfigureRawCapture(16);
 				const bool started=capture&&scheduler.Start([&](auto now){FrameContext context;context.epoch=testEpoch;context.frameTime=now;return context;});
 				const bool registered=started&&scheduler.Register(Client::PptBottomLeft,[&](const FrameContext&){
-					BarUiFrameLightingSnapshot light;light.edgeLightingEnabled=light.cursorLightVisible=true;
+					UiFrameLightingSnapshot light;light.edgeLightingEnabled=light.cursorLightVisible=true;
 					light.cursorLight=D2D1::Point2F(40,40);light.cursorRadius=120;light.cursorIntensity=1;
-					state.scene.Renderer().SetFrameLightingSnapshot(light);
+			state.frameTarget->BoundRenderer()->SetFrameLightingSnapshot(light, Inkeys::UI::Bar::GetBarEdgeLightingEnabled());
 					auto* diagnostics=Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics();diagnosticsAvailable=diagnostics!=nullptr;
 					transactionOk=true;
 					for(int warm=0;warm<3;++warm){state.scene.Invalidate();transactionOk&=present(false).status==PresentStatus::Success;}
-					auto* context=state.scene.DeviceContext();auto* gdi=state.scene.GdiInteropRenderTarget();
+					auto* context=state.frameTarget->DeviceContext();auto* gdi=state.frameTarget->GdiInteropRenderTarget();
 					const auto before=diagnostics?diagnostics->light:Inkeys::UI::RenderPipeline::LightingDiagnostics{};
 					for(int sample=0;sample<2;++sample){state.scene.Invalidate();transactionOk&=present(false).status==PresentStatus::Success;}
-					reused=diagnostics&&state.scene.DeviceContext()==context&&state.scene.GdiInteropRenderTarget()==gdi
+					reused=diagnostics&&state.frameTarget->DeviceContext()==context&&state.frameTarget->GdiInteropRenderTarget()==gdi
 						&&diagnostics->light.roundedParentCreate==before.roundedParentCreate
 						&&diagnostics->light.geometryParentCreate==before.geometryParentCreate
 						&&diagnostics->light.roundedParentHit>before.roundedParentHit;
@@ -4696,8 +4764,8 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			time+=20ms;(void)state.scene.Advance(time);const auto middle=state.scene.Layout();
 			Check(middle.buttons[4].visible&&!middle.buttons[4].enabled,"outgoing More remains drawable while the new PPT layout cannot activate it");
 			const auto& outgoingMore=middle.buttons[4];const auto& outgoingNext=middle.buttons[3];
-			Check(samePaginationMembers(middle)&&outgoingMore.localPixels.right-outgoingMore.localPixels.left>=BarButtonTwoSideDip
-				&&outgoingMore.localPixels.bottom-outgoingMore.localPixels.top>=BarButtonTwoSideDip
+			Check(samePaginationMembers(middle)&&outgoingMore.localPixels.right-outgoingMore.localPixels.left>=ButtonTwoSideDip
+				&&outgoingMore.localPixels.bottom-outgoingMore.localPixels.top>=ButtonTwoSideDip
 				&&outgoingMore.localPixels.left>=outgoingNext.localPixels.left&&outgoingMore.drawOrder<outgoingNext.drawOrder,
 				"hidden More retains its list identity and standard size while retiring below Next instead of toward an empty origin");
 			Check(outgoingMore.contentOpacity>0&&outgoingMore.contentOpacity<beforeExit.buttons[4].contentOpacity,
@@ -4744,7 +4812,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				&&state.scene.HitTest({265,40})==5,"re-entered whiteboard restores More in the normal list order and hit frame");
 			state.scene.ConfigurePagination(compact,LayoutTransitionDurationSeconds());
 			for(int i=1;i<=60;++i)(void)state.scene.Advance(time+i*20ms);time+=1200ms;
-			state.scene.Renderer().SetFrameLightingSnapshot({});
+			state.frameTarget->BoundRenderer()->SetFrameLightingSnapshot({}, Inkeys::UI::Bar::GetBarEdgeLightingEnabled());
 			Check(present(true).status==PresentStatus::Success,"final More retirement commits real pixels");
 			const auto retiredMore=state.scene.Layout();const auto& nextRect=retiredMore.buttons[3].localPixels;
 			Check(samePaginationMembers(retiredMore)&&!retiredMore.buttons[4].visible&&!retiredMore.buttons[4].enabled
@@ -4759,11 +4827,11 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			const HRESULT referenceSetup=reference.EnsureDeviceResources(testEpoch,referenceWidth,referenceHeight);
 			Check(SUCCEEDED(referenceSetup),"clean PPT reference owns an independent real target");
 			if(SUCCEEDED(referenceSetup)){
-				auto* dc=reference.DeviceContext();auto& renderer=reference.Renderer();renderer.SetFrameLightingSnapshot({});
-				renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(referenceWidth),static_cast<FLOAT>(referenceHeight)));
-				(void)reference.Render(dc,time+1200ms);renderer.FinishFrameDrawCommands(dc);
-				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"clean PPT reference renders through common UI3 drawing");
-				const auto actual=readPixels(),expected=readScenePixels(reference);const auto actualBounds=state.scene.PresentationBounds();
+				auto* dc=reference.DeviceContext();auto& renderer=reference.Renderer();auto& frameTarget=reference.Target();renderer.SetFrameLightingSnapshot({}, Inkeys::UI::Bar::GetBarEdgeLightingEnabled());
+				frameTarget.BeginFrame(dc,D2D1::RectF(0,0,static_cast<FLOAT>(referenceWidth),static_cast<FLOAT>(referenceHeight)));
+				(void)reference.Render(dc,time+1200ms);frameTarget.FinishDrawCommands(dc);
+				Check(SUCCEEDED(frameTarget.EndFrame(dc)),"clean PPT reference renders through common UI3 drawing");
+				const auto actual=readPixels(),expected=readScenePixels(reference.DeviceContext());const auto actualBounds=state.scene.PresentationBounds();
 				bool samePixels=EqualRect(&actualBounds,&referenceBounds)&&!actual.bytes.empty()&&!expected.bytes.empty()
 					&&actual.width>=referenceWidth&&actual.height>=referenceHeight&&expected.width>=referenceWidth&&expected.height>=referenceHeight;
 				if(samePixels)for(UINT y=0;y<referenceHeight;++y)for(UINT x=0;x<referenceWidth*4;++x)
@@ -4775,24 +4843,24 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			Scene surface;surface.ConfigurePagination(BuildPageContent(0,WorkspaceMode::PptCompact,ppt,{}));surface.SetBounds({200,100,200+static_cast<LONG>(PptControlLongSideDip),100+static_cast<LONG>(PptControlShortSideDip)},1);
 			for(int i=0;i<=45;++i)(void)surface.Advance(origin+20s+i*20ms);surface.CommitPresented();
 			unsigned wakes=0;surface.SetHooks({{},[&]{++wakes;}});surface.SetSharedLightingSubscribed(true);
-			Inkeys::UI::Bar::BarSurfaceSharedLighting light;light.edgeLightingEnabled=light.cursorVisible=true;light.cursorIntensity=1;light.cursorRadiusPixels=30;
-			light.cursorScreenX=-10000;light.cursorScreenY=-10000;Scene::PublishSharedLighting(light);wakes=0;
-			light.cursorScreenX=-9990;Scene::PublishSharedLighting(light);Check(wakes==0,"far cursor changes do not wake unrelated targets");
-			light.cursorScreenX=205;light.cursorScreenY=120;Scene::PublishSharedLighting(light);Check(wakes>0,"cursor entering a committed border wakes it");wakes=0;
-			light.cursorScreenX=-9000;light.cursorScreenY=-9000;Scene::PublishSharedLighting(light);Check(wakes>0,"cursor leaving wakes the previous lit border");wakes=0;
-			light.cursorScreenX=-8990;Scene::PublishSharedLighting(light);Check(wakes==0,"subsequent far cursor movement remains idle");
+			Inkeys::UI::UI3::SurfaceSharedLighting light;light.edgeLightingEnabled=light.cursorVisible=true;light.cursorIntensity=1;light.cursorRadiusPixels=30;
+			light.cursorScreenX=-10000;light.cursorScreenY=-10000;Inkeys::UI::UI3::PublishSharedLighting(light);wakes=0;
+			light.cursorScreenX=-9990;Inkeys::UI::UI3::PublishSharedLighting(light);Check(wakes==0,"far cursor changes do not wake unrelated targets");
+			light.cursorScreenX=205;light.cursorScreenY=120;Inkeys::UI::UI3::PublishSharedLighting(light);Check(wakes>0,"cursor entering a committed border wakes it");wakes=0;
+			light.cursorScreenX=-9000;light.cursorScreenY=-9000;Inkeys::UI::UI3::PublishSharedLighting(light);Check(wakes>0,"cursor leaving wakes the previous lit border");wakes=0;
+			light.cursorScreenX=-8990;Inkeys::UI::UI3::PublishSharedLighting(light);Check(wakes==0,"subsequent far cursor movement remains idle");
 			light.primaryVisible=true;light.primaryScreenX=300;light.primaryScreenY=180;light.primaryRadiusPixels=80;
-			light.cursorScreenX=240;light.cursorScreenY=150;Scene::PublishSharedLighting(light);
+			light.cursorScreenX=240;light.cursorScreenY=150;Inkeys::UI::UI3::PublishSharedLighting(light);
 			const auto sameFrame=origin+22s;(void)surface.Advance(sameFrame);
 			surface.SetBounds({500,300,860,420},1.5F);const auto movedBounds=surface.PresentationBounds();
 			const UINT movedWidth=movedBounds.right-movedBounds.left,movedHeight=movedBounds.bottom-movedBounds.top;
 			const HRESULT movedSetup=surface.EnsureDeviceResources(epoch,movedWidth,movedHeight);
 			Check(SUCCEEDED(movedSetup),"same-frame lighting move has an independent real target");
 			if(SUCCEEDED(movedSetup)){
-				auto* dc=surface.DeviceContext();auto& renderer=surface.Renderer();
-				renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(movedWidth),static_cast<FLOAT>(movedHeight)));
-				(void)surface.Render(dc,sameFrame);renderer.FinishFrameDrawCommands(dc);
-				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"Advance then SetBounds then Render share one clock sample");
+				auto* dc=surface.DeviceContext();auto& renderer=surface.Renderer();auto& frameTarget=surface.Target();
+				frameTarget.BeginFrame(dc,D2D1::RectF(0,0,static_cast<FLOAT>(movedWidth),static_cast<FLOAT>(movedHeight)));
+				(void)surface.Render(dc,sameFrame);frameTarget.FinishDrawCommands(dc);
+				Check(SUCCEEDED(frameTarget.EndFrame(dc)),"Advance then SetBounds then Render share one clock sample");
 				const auto mapped=renderer.SnapshotFrameLighting();
 				Check(std::abs(mapped.primaryLight.x+movedBounds.left-light.primaryScreenX)<0.001
 					&&std::abs(mapped.primaryLight.y+movedBounds.top-light.primaryScreenY)<0.001
@@ -4800,8 +4868,8 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 					&&std::abs(mapped.cursorLight.y+movedBounds.top-light.cursorScreenY)<0.001,
 					"final same-frame origin and scale map primary and cursor light to their unchanged screen points");
 			}
-			surface.SetSharedLightingSubscribed(false);BarUiFrameLightingSnapshot manual;manual.primaryLight={12,34};manual.cursorLight={56,78};
-			surface.Renderer().SetFrameLightingSnapshot(manual);surface.SetBounds({700,400,940,480},1);(void)surface.Advance(sameFrame);
+			surface.SetSharedLightingSubscribed(false);UiFrameLightingSnapshot manual;manual.primaryLight={12,34};manual.cursorLight={56,78};
+			surface.Renderer().SetFrameLightingSnapshot(manual, Inkeys::UI::Bar::GetBarEdgeLightingEnabled());surface.SetBounds({700,400,940,480},1);(void)surface.Advance(sameFrame);
 			const auto retainedLight=surface.Renderer().SnapshotFrameLighting();
 			Check(retainedLight.primaryLight.x==12&&retainedLight.primaryLight.y==34&&retainedLight.cursorLight.x==56&&retainedLight.cursorLight.y==78,
 				"unsubscribed offscreen lighting remains under the explicit renderer snapshot contract");
@@ -4812,10 +4880,10 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			const HRESULT subscribedSetup=surface.EnsureDeviceResources(epoch,subscribedWidth,subscribedHeight);
 			Check(SUCCEEDED(subscribedSetup),"late same-frame subscription owns a real rendering target");
 			if(SUCCEEDED(subscribedSetup)){
-				auto* dc=surface.DeviceContext();auto& renderer=surface.Renderer();
-				renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,static_cast<FLOAT>(subscribedWidth),static_cast<FLOAT>(subscribedHeight)));
-				(void)surface.Render(dc,sameFrame);renderer.FinishFrameDrawCommands(dc);
-				Check(SUCCEEDED(renderer.EndFrameDraw(dc)),"late subscription renders without advancing the shared clock again");
+				auto* dc=surface.DeviceContext();auto& renderer=surface.Renderer();auto& frameTarget=surface.Target();
+				frameTarget.BeginFrame(dc,D2D1::RectF(0,0,static_cast<FLOAT>(subscribedWidth),static_cast<FLOAT>(subscribedHeight)));
+				(void)surface.Render(dc,sameFrame);frameTarget.FinishDrawCommands(dc);
+				Check(SUCCEEDED(frameTarget.EndFrame(dc)),"late subscription renders without advancing the shared clock again");
 				const auto mapped=renderer.SnapshotFrameLighting();
 				Check(std::abs(mapped.primaryLight.x+subscribedBounds.left-light.primaryScreenX)<0.001
 					&&std::abs(mapped.primaryLight.y+subscribedBounds.top-light.primaryScreenY)<0.001
@@ -4823,7 +4891,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 					&&std::abs(mapped.cursorLight.y+subscribedBounds.top-light.cursorScreenY)<0.001,
 					"first subscribed render maps both lights immediately despite same-frame Advance deduplication");
 			}
-			surface.Reset();wakes=0;light.cursorScreenX=205;light.cursorScreenY=120;Scene::PublishSharedLighting(light);
+			surface.Reset();wakes=0;light.cursorScreenX=205;light.cursorScreenY=120;Inkeys::UI::UI3::PublishSharedLighting(light);
 			Check(wakes==0,"reset removes the old target lighting subscription and hooks");
 		}
 		{
@@ -4861,7 +4929,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			publishedPpt=ppt;publishedPpt.layout.session=101;publishedPpt.longPressEnabled=true;publishedWhiteboard={};
 			{std::scoped_lock lock(inputSnapshotMutex);CommitInputPresentationLocked(0,WorkspaceMode::PptCompact,{}, {},true,false,publishedPpt.layout.session);}
 			initialized.store(true,std::memory_order_release);
-			Inkeys::UI::Bar::SurfaceInputEvent event;event.message=WM_LBUTTONDOWN;event.hitButtonId=4;
+			Inkeys::UI::UI3::SurfaceInputEvent event;event.message=WM_LBUTTONDOWN;event.hitButtonId=4;
 			event.logicalPointValid=event.captureOwned=true;event.logicalPoint={140,20};
 			event.semanticRevision=InputSnapshot(0).semanticRevision;
 			InputRegistrationContext registration{0,inputLifecycle.load(std::memory_order_acquire)};
@@ -4965,7 +5033,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			auto Press=[&](std::size_t index,WidgetId id){
 				const auto bounds=ResolvePptWidgetContracts(SurfaceFor(index))[id-1].bounds;
 				const auto body=surfaces[index].scene.LogicalBounds();
-				Inkeys::UI::Bar::SurfaceInputEvent event;event.message=WM_LBUTTONDOWN;event.captureTicket=7;
+				Inkeys::UI::UI3::SurfaceInputEvent event;event.message=WM_LBUTTONDOWN;event.captureTicket=7;
 				event.captureOwned=event.logicalPointValid=true;event.hitButtonId=id;
 				event.logicalPoint={static_cast<LONG>((bounds.left+bounds.right)/2),static_cast<LONG>((bounds.top+bounds.bottom)/2)};
 				event.screenPoint={body.left+static_cast<LONG>(std::lround(event.logicalPoint.x*baseline.uiScale)),
@@ -4975,7 +5043,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				PageControlInputEvent(event,&registration);return event;
 			};
 			const auto visibleBottomFromPixels=[](SurfaceState& state,const RECT& submitted,SIZE viewport)->std::optional<LONG>{
-				auto* dc=state.scene.DeviceContext();if(!dc)return std::nullopt;
+				auto* dc=state.frameTarget->DeviceContext();if(!dc)return std::nullopt;
 				ComPtr<ID2D1Image> image;dc->GetTarget(&image);ComPtr<ID2D1Bitmap1> bitmap,cpu;
 				if(!image||FAILED(image.As(&bitmap)))return std::nullopt;
 				const auto props=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
@@ -5002,7 +5070,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 						Check(ConfigureSurface(index,WorkspaceMode::PptCompact,baseline,{},monitor,target,
 							fixedRevision,time,false,failed),"production pagination config consumes language-only revision");
 						Check(state.localeRevision==I18n::revision() && state.observedRevision==fixedRevision
-							&& state.scene.Renderer().GetFontFamily()==locale.fontFamily,
+							&& state.frameTarget->BoundRenderer()->GetFontFamily()==locale.fontFamily,
 							"all pagination renderers switch family without business revision");
 						Check(state.scene.IsInvalidated() && state.scene.PresentedGeneration()==priorGeneration,
 							"locale change marks visual damage but does not commit input prematurely");
@@ -5048,7 +5116,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 						std::function<BOOL(const UPDATELAYEREDWINDOWINFO&)> sink=[&](const auto& info){
 							++submittedFrames;return info.hdcSrc&&info.psize->cx==viewport.cx&&info.psize->cy==viewport.cy
 								&&info.pptDst->x==bounds.left&&info.pptDst->y==bounds.top;};
-						FrameContext frame;frame.epoch=epoch;frame.frameTime=stamp;state.scene.Renderer().SetFrameLightingSnapshot({});
+						FrameContext frame;frame.epoch=epoch;frame.frameTime=stamp;state.frameTarget->BoundRenderer()->SetFrameLightingSnapshot({}, Inkeys::UI::Bar::GetBarEdgeLightingEnabled());
 						const auto result=PresentScene(index,state,nullptr,frame,bounds,state.backingCapacity,true,false,active,&sink);
 						if(blockResources&&index==0)Check(result.status==PresentStatus::Retry&&result.resourcesFailed,"resource failure keeps the staged workspace transaction pending");
 						else{Check(result.status==PresentStatus::Success&&result.pixelsSubmitted,"staged workspace uses real D2D/GetDC/ReleaseDC/EndDraw presentation");
@@ -5091,11 +5159,11 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				const auto afterVisible=surfaces[0].scene.LogicalBounds();
 				Check(EqualRect(&beforeVisible,&afterVisible)&&VisiblePptMask(show,board)==15&&morphFrames>2&&submittedFrames>100,
 					"late visible restoration keeps the fitted bottom geometry and restores only the middle hosts");
-				std::array<ID2D1DeviceContext*,2> contexts{surfaces[0].scene.DeviceContext(),surfaces[1].scene.DeviceContext()};
+				std::array<ID2D1DeviceContext*,2> contexts{surfaces[0].frameTarget->DeviceContext(),surfaces[1].frameTarget->DeviceContext()};
 				const auto settledRevision=surfaces[0].scene.Geometry().layoutRevision;
 				for(int frame=0;frame<8;++frame){++show.currentPage;publishShow();tick();publishShow();tick();}
-				Check(surfaces[0].scene.Geometry().layoutRevision==settledRevision&&surfaces[0].scene.DeviceContext()==contexts[0]
-					&&surfaces[1].scene.DeviceContext()==contexts[1],"page-only and duplicate publications reuse layout and existing device contexts");
+				Check(surfaces[0].scene.Geometry().layoutRevision==settledRevision&&surfaces[0].frameTarget->DeviceContext()==contexts[0]
+					&&surfaces[1].frameTarget->DeviceContext()==contexts[1],"page-only and duplicate publications reuse layout and existing device contexts");
 				settle();for(const auto& state:surfaces)Check(!ShouldContinuePageControlFrame(state.targetVisible,
 					state.bounds.active||state.scene.AnimationActive(),state.bounds.active,state.scene.AnimationActive(),false)
 					&&!state.scene.IsInvalidated(),"settled production surfaces return Idle without forced Continue or pending damage");
@@ -5186,7 +5254,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 							submitted={info.pptDst->x,info.pptDst->y,info.pptDst->x+info.psize->cx,info.pptDst->y+info.psize->cy};
 							++submissions;return TRUE;};
 						// 关闭光源扩散，只测量主体填充与共享描边；透明 backing/光晕不定义底距。
-						surfaceState.scene.Renderer().SetFrameLightingSnapshot({});
+						surfaceState.frameTarget->BoundRenderer()->SetFrameLightingSnapshot({}, Inkeys::UI::Bar::GetBarEdgeLightingEnabled());
 						const auto result=PresentScene(index,surfaceState,nullptr,context,bounds,surfaceState.backingCapacity,true,false,
 							surfaceState.scene.AnimationActive(),&sink);
 						Check(result.status==PresentStatus::Success&&result.pixelsSubmitted&&submissions==1&&EqualRect(&submitted,&bounds),
@@ -5220,7 +5288,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 					&&localWheels[localWheelRead].generation==savedWheelGeneration,
 					"native wheel queue retains the producer session and route generation");}
 				++publishedPpt.layout.session;++producer.localSession;
-				Inkeys::UI::Bar::SurfaceInputEvent wheel;wheel.message=WM_MOUSEWHEEL;
+				Inkeys::UI::UI3::SurfaceInputEvent wheel;wheel.message=WM_MOUSEWHEEL;
 				InputRegistrationContext registration{0,inputLifecycle.load()};PageControlInputEvent(wheel,&registration);
 				Check(captures==1&&localWheelCount==0&&localWheelSession==0,
 					"worker discards the old-session wheel without recapturing the replacement show");
@@ -5583,7 +5651,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				auto& state = surfaces[index];
 				std::fprintf(stderr,"[PageDirectNative] ready-detail surface=%zu visible=%d locked=%d native_pending=%d state_visible=%d state_locked=%d bounds=%d layout=%d animation=%d fonts=%d native_revision=%llu input_publication=%llu published=%llu mode=%u session=%llu\n",
 					index,input.visible,input.locked,input.nativePending,state.targetVisible,state.inputLocked,state.bounds.active,
-					state.scene.Geometry().layoutAnimating,state.scene.AnimationActive(),state.scene.Renderer().FontAnimationsActive(),
+					state.scene.Geometry().layoutAnimating,state.scene.AnimationActive(),state.scene.FontAnimationsActive(),
 					static_cast<unsigned long long>(nativeFrames[index].revision),static_cast<unsigned long long>(input.nativePublicationRevision),
 					static_cast<unsigned long long>(publishedRevision.load()),static_cast<unsigned>(input.mode),static_cast<unsigned long long>(input.pptSession));
 			}
@@ -5632,7 +5700,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			const auto page=surfaces[0].scene.Layout().buttons[PageWidget-1].localPixels;
 			const POINT local{(page.left+page.right)/2,(page.top+page.bottom)/2};
 			const auto outset=surfaces[0].scene.PresentationOutsetPixels();
-			Inkeys::UI::Bar::SurfaceInputEvent event;event.window=initial->hwnd;event.message=WM_LBUTTONDOWN;
+			Inkeys::UI::UI3::SurfaceInputEvent event;event.window=initial->hwnd;event.message=WM_LBUTTONDOWN;
 			event.logicalPointValid=true;event.logicalPoint=local;event.hitButtonId=PageWidget;event.backgroundHit=true;
 			event.semanticRevision=InputSnapshot(0).semanticRevision;event.screenPoint={initial->bounds.left+local.x+outset,initial->bounds.top+local.y+outset};
 			PageControlInputEvent(event,nullptr);
@@ -5966,7 +6034,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				{
 					std::scoped_lock renderLock(renderTransactionMutex);
 					for (auto& state : surfaces)
-						if (state.scene.Renderer().GetTargetBitmapSize().width != 0 || state.scene.DeviceContext()) return false;
+						if (state.frameTarget->PixelSize().width != 0 || state.frameTarget->DeviceContext()) return false;
 					return true;
 				};
 				Check(WaitFor(hiddenTargetsReleased), "real Hide receipts retire all hidden PageControl targets");
@@ -6090,7 +6158,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 					Check(surfaces[index].scene.HitTestBackground(center),
 						"visible body keeps its input hit geometry");
 					ComPtr<ID2D1Image> target;
-					auto* context = surfaces[index].scene.DeviceContext();
+					auto* context = surfaces[index].frameTarget->DeviceContext();
 					if (context) context->GetTarget(&target);
 					ComPtr<ID2D1Bitmap1> bitmap;
 					if (!target || FAILED(target.As(&bitmap)))
@@ -6199,10 +6267,10 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 		}
 		// Release 可由 HWND owner 发起异步排空；禁止新代复用仍被旧 worker 引用的对象。
 		if(!inputContexts.empty()){
-			if(!Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks())return false;
+			if(!Inkeys::UI::UI3::DrainInteractionSurfaceCallbacks())return false;
 			// 上一代异步清理可能尚未调度成功；排空后由新 Acquire 补齐，不能继承旧手势或资源。
 			{std::unique_lock renderLock(renderTransactionMutex);std::scoped_lock inputLock(inputSnapshotMutex);
-				inputPresentations={};for(auto& surface:surfaces)surface=SurfaceState{};groupLayoutBudget={};middleSnap={};}
+				inputPresentations={};LogSurfaceFrameTargets(false);for(auto& surface:surfaces)surface=SurfaceState{};groupLayoutBudget={};middleSnap={};}
 			inputContexts.clear();
 		}
 		for(auto& deadline:loadingDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
@@ -6213,7 +6281,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			const HWND hwnd=Inkeys::Window::GetService().Handle(Roles[index]);
 			if(hwnd){
 				auto context=std::make_unique<InputRegistrationContext>(InputRegistrationContext{index,lifecycle});
-				Inkeys::UI::Bar::RegisterInteractionSurface(hwnd,lifecycle,PageControlInputEvent,PageControlInputTick,PageControlInputCancel,context.get());
+				Inkeys::UI::UI3::RegisterInteractionSurface(hwnd,lifecycle,PageControlInputEvent,PageControlInputTick,PageControlInputCancel,context.get());
 				inputContexts.push_back(std::move(context));
 			}
 		}
@@ -6228,8 +6296,8 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				for (std::size_t registered = 0; registered < index; ++registered)
 					Inkeys::UI::RenderPipeline::Unregister(Clients[registered]);
 				initialized.store(false, std::memory_order_release);
-				for(const auto role:Roles)Inkeys::UI::Bar::UnregisterInteractionSurface(Inkeys::Window::GetService().Handle(role));
-				(void)Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks();
+				for(const auto role:Roles)Inkeys::UI::UI3::UnregisterInteractionSurface(Inkeys::Window::GetService().Handle(role));
+				(void)Inkeys::UI::UI3::DrainInteractionSurfaceCallbacks();
 				return false;
 			}
 		}
@@ -6239,6 +6307,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				if (initialized.load(std::memory_order_acquire)) RequestAll();
 			});
 		referenceCount.store(1, std::memory_order_release);
+		LogSurfaceFrameTargets(true);
 		RequestAll();
 		return true;
 	}
@@ -6258,7 +6327,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 		{ std::scoped_lock lock(snapshotMutex); debugNavigationDelay={}; }
 		for(auto& deadline:loadingDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
 		for(auto& deadline:idleDeadlines)deadline.Publish(std::chrono::steady_clock::time_point::max());
-		for(const auto role:Roles)Inkeys::UI::Bar::UnregisterInteractionSurface(Inkeys::Window::GetService().Handle(role));
+		for(const auto role:Roles)Inkeys::UI::UI3::UnregisterInteractionSurface(Inkeys::Window::GetService().Handle(role));
 		wheelInputGeneration.fetch_add(1, std::memory_order_acq_rel);
 		{
 			std::scoped_lock lock(localWheelMutex);
@@ -6294,18 +6363,20 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 		const auto reset=[] {
 			std::unique_lock renderLock(renderTransactionMutex);
 			std::scoped_lock inputLock(inputSnapshotMutex);inputPresentations={};
+			LogSurfaceFrameTargets(false);
 			for(auto& surface:surfaces)surface=SurfaceState{};
 			groupLayoutBudget={};middleSnap={};
 		};
-		if(Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks())reset();
+		if(Inkeys::UI::UI3::DrainInteractionSurfaceCallbacks())reset();
 		else{
 			// 窗口 owner 不能等待可能正在向它提交窗口效果的 worker；排空后再销毁内部对象。
 			(void)QueueUserWorkItem([](void*)->DWORD{
 				std::scoped_lock lifecycleLock(lifecycleMutex);
 				if(referenceCount.load(std::memory_order_acquire)!=0)return 0;
-				if(!Inkeys::UI::Bar::DrainInteractionSurfaceCallbacks())return 0;
+				if(!Inkeys::UI::UI3::DrainInteractionSurfaceCallbacks())return 0;
 				std::unique_lock renderLock(renderTransactionMutex);
 				std::scoped_lock inputLock(inputSnapshotMutex);inputPresentations={};
+				LogSurfaceFrameTargets(false);
 				for(auto& surface:surfaces)surface=SurfaceState{};groupLayoutBudget={};middleSnap={};return 0;
 			},nullptr,WT_EXECUTEDEFAULT);
 		}
@@ -6523,9 +6594,9 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 		CloseWhiteboardMenu();
 		(void)Inkeys::Window::GetService().CancelPointerCapture();
 		for(const auto role:Roles){
-			Inkeys::UI::Bar::SurfaceInputEvent event;event.window=Inkeys::Window::GetService().Handle(role);
+			Inkeys::UI::UI3::SurfaceInputEvent event;event.window=Inkeys::Window::GetService().Handle(role);
 			event.generation=inputLifecycle.load(std::memory_order_acquire);event.message=WM_CANCELMODE;
-			if(event.window)(void)Inkeys::UI::Bar::SubmitSurfaceInput(event);
+			if(event.window)(void)Inkeys::UI::UI3::SubmitSurfaceInput(event);
 		}
 	}
 }

@@ -1,7 +1,11 @@
-#pragma once
+﻿#pragma once
 
+// 使用前须 import Inkeys.UI.UI3.Material;
+
+// 保留普通头及其系统依赖的全局模块归属，允许在 import 后包含。
+extern "C++"
+{
 #include "../StartupPreview.Effect.h"
-#include "../Bar/Bar.ThemeMaterial.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -135,8 +139,8 @@ namespace Inkeys::UI::StartupPreview::Effects
 	struct Appearance final
 	{
 		bool light = false;
-		std::uint32_t surface = BarThemeMaterial::Rgb(24, 24, 24);
-		std::uint32_t frame = BarThemeMaterial::Rgb(255, 255, 255);
+		std::uint32_t surface = Inkeys::UI::UI3::ThemeMaterial::Rgb(24, 24, 24);
+		std::uint32_t frame = Inkeys::UI::UI3::ThemeMaterial::Rgb(255, 255, 255);
 		float backgroundOpacity = .8f;
 		float contentOpacity = 1.f;
 		float canonicalFrameOpacity = .225f;
@@ -146,7 +150,7 @@ namespace Inkeys::UI::StartupPreview::Effects
 		Appearance result;
 		result.light = themeMode == 2 && !floating;
 		const float themeOpacity = floating ? .6f : static_cast<float>(
-			BarThemeMaterial::DefaultResidentFillOpacity(result.light ? 1.0 : 0.0));
+			Inkeys::UI::UI3::ThemeMaterial::DefaultResidentFillOpacity(result.light ? 1.0 : 0.0));
 		result.backgroundOpacity = background == 0 ? themeOpacity
 			: std::clamp(background, 30, 100) * .01f * (floating ? .75f : 1.f);
 		result.contentOpacity = std::clamp(content, 30, 100) * .01f;
@@ -154,8 +158,8 @@ namespace Inkeys::UI::StartupPreview::Effects
 		result.canonicalFrameOpacity = .18f / themeOpacity;
 		if (result.light)
 		{
-			result.surface = BarThemeMaterial::LightColor(BarThemeMaterial::ColorRole::Surface);
-			result.frame = BarThemeMaterial::LightColor(BarThemeMaterial::ColorRole::SurfaceFrame);
+			result.surface = Inkeys::UI::UI3::ThemeMaterial::LightColor(Inkeys::UI::UI3::ThemeMaterial::ColorRole::Surface);
+			result.frame = Inkeys::UI::UI3::ThemeMaterial::LightColor(Inkeys::UI::UI3::ThemeMaterial::ColorRole::SurfaceFrame);
 		}
 		return result;
 	}
@@ -274,4 +278,5 @@ namespace Inkeys::UI::StartupPreview::Effects
 			}
 		return particles;
 	}
+}
 }

@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
@@ -7,9 +7,11 @@
 #include <iostream>
 #include <string_view>
 
-#include "../Inkeys/Inkeys/UI/Bar/Bar.DisplayTransition.h"
 
-import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.UI3.Animation;
+import Inkeys.UI.Bar.DisplayTransition;
+
+using namespace Inkeys::UI::UI3;
 
 namespace
 {
@@ -61,19 +63,19 @@ int RunBarDisplayTransitionTests()
 							Check(CanAnimateBarTaskbarDockY(docked, dragging, recovering, desktop, pending, scene)
 								== (docked && !dragging && !recovering && desktop && !pending && !scene),
 								"taskbar animation respects drag/recovery/floating/PPT/whiteboard ownership");
-	BarUiValueClass x(617.0), y(1034.5);
+	UiValueClass x(617.0), y(1034.5);
 	Check(RetargetBarTaskbarDockY(y, 991.5, 1034.5) && y.val == 1034.5,
 		"taskbar rise starts at successful screen Y");
-	(void)BarUiAdvanceAnimation(y, BarUiAnimationAdvanceContextClass{ .1, 1.0, true, false });
+	(void)UiAdvanceAnimation(y, UiAnimationAdvanceContextClass{ .1, 1.0, true, false });
 	const double before = y.val;
 	Check(!RetargetBarTaskbarDockY(y, 991.5, 1034.5) && y.val == before,
 		"repeated taskbar sample neither resets Y nor restarts animation");
-	(void)BarUiAdvanceAnimation(y, BarUiAnimationAdvanceContextClass{ .1, 1.0, true, false });
+	(void)UiAdvanceAnimation(y, UiAnimationAdvanceContextClass{ .1, 1.0, true, false });
 	Check(y.val < before, "same target continues its existing animation");
 	const double lastPresented = before + 2.0;
 	Check(RetargetBarTaskbarDockY(y, 1034.5, lastPresented) && y.val == lastPresented,
 		"rapid reverse starts from last presented Y rather than uncommitted candidate");
-	(void)BarUiAdvanceAnimation(y, BarUiAnimationAdvanceContextClass{ .1, 1.0, false, false });
+	(void)UiAdvanceAnimation(y, UiAnimationAdvanceContextClass{ .1, 1.0, false, false });
 	Check(y.IsSame() && y.val == 1034.5 && x.val == 617.0 && x.tar == 617.0,
 		"animation off settles immediately and taskbar transition changes only Y");
 	return failureCount;

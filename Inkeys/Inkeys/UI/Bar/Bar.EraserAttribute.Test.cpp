@@ -8,7 +8,6 @@
 #include "../../Drawing/Draw3/Assets/EraserGripVisual.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
 #include "../../../resource.h"
-#include "Bar.ThemeMaterial.h"
 #include <d3d11.h>
 #include <filesystem>
 #include <iostream>
@@ -26,10 +25,14 @@
 #include <bit>
 #include <limits>
 #include <cmath>
-#include "Bar.PresentationProbe.h"
-#include "Bar.MainLayoutPolicy.h"
-#include "../StartupPlacement.h"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <optional>
 #pragma comment(lib,"windowscodecs.lib")
+
+#include <cstdint>
+#include <cstddef>
 
 module Inkeys.UI.Bar;
 import :Main;
@@ -41,20 +44,21 @@ import Inkeys.UI.Freeze;
 import Inkeys.Other.Config;
 import Inkeys.Text.Font;
 import Inkeys.Conv.Text;
+import Inkeys.UI.UI3.Material;
+import Inkeys.UI.UI3.PresentationProbe;
+import Inkeys.UI.Bar.MainLayoutPolicy;
+import Inkeys.UI.StartupPlacement;
+
+using namespace Inkeys::UI::UI3;
 
 extern const double BarThicknessTooltipPadding;
 extern const double BarThicknessTooltipCloseReserve;
 extern const double BarThicknessTooltipTitleFontSize;
 extern const double BarThicknessTooltipBodyFontSize;
 extern const double BarThicknessTooltipLineGap;
-extern const double BarColorPickerPanelWidth;
 
 namespace Inkeys::UI::Bar
 {
-	// 测试调用已有 Surface 屏幕光源映射，不增加产品注入接口。
-	BarUiFrameLightingSnapshot ResolveBarSurfaceFrameLightingSnapshot(
-		const BarSurfaceSharedLighting& lighting,
-		const RECT& logicalBounds, LONG presentationOutset) noexcept;
 	namespace
 	{
 		class MissingGlyphProbe final : public IDWriteTextRenderer
@@ -128,8 +132,8 @@ namespace Inkeys::UI::Bar
 			}
 			void Prepare(POINT layoutScreenOrigin)
 			{
-				(void)spec.PrepareFrameLighting(1.0 / 60.0, layoutScreenOrigin,
-					static_cast<int>(StateModeSelectEnum::IdtSelection), 0, 0, 0);
+				(void)PrepareFrameLighting(1.0 / 60.0, layoutScreenOrigin, ResolveMainBarFrameLightingInput(this,
+					static_cast<int>(StateModeSelectEnum::IdtSelection), 0, 0, 0));
 			}
 		};
 
@@ -208,20 +212,20 @@ namespace Inkeys::UI::Bar
 		expect(SUCCEEDED(fontCollectionHr),"SC/TC font collection initializes");
 		{
 			// 使用真实主栏 Shape 绘制通道验证 cap 与收展显隐独立，半收起不能仍停在30%。
-			BarUIRendering renderer;
-			const bool ready=SUCCEEDED(renderer.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),80,40));
+			UIRendering renderer; FrameTarget frameTarget{renderer};
+			const bool ready=SUCCEEDED(frameTarget.Ensure(RenderPipeline::GetDeviceEpoch(),80,40));
 			expect(ready,"idle main body owns a real offscreen renderer");
 			if(ready){
-				BarUiShapeClass body;body.Initialization(40,20,80,40,0,0,0,RGB(30,30,30),std::nullopt);
+				UiShapeClass body;body.Initialization(40,20,80,40,0,0,0,RGB(30,30,30),std::nullopt);
 				body.enable.Initialization(true);body.themeSurface=true;body.residentSurface=true;
 				body.lightFillOpacityScale=1.10;
 				const auto draw=[&](double pct,double idle){
 					body.pct.SetDirect(pct);renderer.SetFrameZoom(1);renderer.SetResidentIdleFade(idle);
-					auto* dc=renderer.GetDeviceContext();dc->SetDpi(96,96);dc->SetTransform(D2D1::IdentityMatrix());
-					renderer.BeginFrameDraw(dc,D2D1::RectF(0,0,80,40));
-					const bool drew=renderer.Shape(dc,body,{0,0});renderer.FinishFrameDrawCommands(dc);
-					expect((drew||pct==0)&&SUCCEEDED(renderer.EndFrameDraw(dc)),"idle main body draws through production Shape");
-					return static_cast<int>(ReadEraserTestPixel(dc,renderer.GetTargetBitmap(),40,20)[3]);
+					auto* dc=frameTarget.DeviceContext();dc->SetDpi(96,96);dc->SetTransform(D2D1::IdentityMatrix());
+					frameTarget.BeginFrame(dc,D2D1::RectF(0,0,80,40));
+					const bool drew=renderer.Shape(dc,body,{0,0});frameTarget.FinishDrawCommands(dc);
+					expect((drew||pct==0)&&SUCCEEDED(frameTarget.EndFrame(dc)),"idle main body draws through production Shape");
+					return static_cast<int>(ReadEraserTestPixel(dc,frameTarget.TargetBitmap(),40,20)[3]);
 				};
 				for(double light:{0.0,1.0}){
 					body.lightMaterial=light;
@@ -233,18 +237,18 @@ namespace Inkeys::UI::Bar
 					const int full=draw(.8,0),half=draw(.4,0);
 					expect(std::abs(half*2-full)<=2,"normal body visibility is unchanged when idle is off");
 				}
-				renderer.SetResidentIdleFade(0);renderer.DiscardDeviceResources();
+				renderer.SetResidentIdleFade(0);frameTarget.Discard();
 			}
 		}
 		// screenPoint/serial 保持不变，验证直移吸收和显示原点变更不依赖下一次 WM_MOUSEMOVE。
 		{
 			const bool savedEdge = BarUiEdgeLightingEnabled;
 			const bool savedDynamic = BarUiDynamicEdgeLightingEnabled;
-			const double savedSpeed = BarUiAnimationSpeedRate;
-			const bool savedAnimation = BarUiAnimationEnabled;
+			const double savedSpeed = UiAnimationSpeedRate;
+			const bool savedAnimation = UiAnimationEnabled;
 			BarUiEdgeLightingEnabled = true; BarUiDynamicEdgeLightingEnabled = true;
-			BarUiAnimationSpeedRate = 1.0;
-			BarUiAnimationEnabled = true;
+			UiAnimationSpeedRate = 1.0;
+			UiAnimationEnabled = true;
 			struct RebaseCase { POINT screen, beforeOrigin, afterOrigin; };
 			const std::array cases{
 				RebaseCase{{900,450},{300,0},{0,0}},
@@ -259,8 +263,8 @@ namespace Inkeys::UI::Bar
 				fixture->spec.SetFrameZoom(zoom); fixture->SeedCursor(item.screen,item.beforeOrigin);
 				for(int frame=0;frame<90;++frame)fixture->Prepare(item.beforeOrigin);
 				const auto before = fixture->spec.SnapshotFrameLighting();
-				const auto beforeBounds = fixture->spec.GetFrameCursorLightDamageBounds();
-				const auto atScreen = [&](const BarUiFrameLightingSnapshot& light,POINT origin)
+				const auto beforeBounds = fixture->lightingStateMachine.GetFrameCursorLightDamageBounds();
+				const auto atScreen = [&](const UiFrameLightingSnapshot& light,POINT origin)
 				{
 					return std::abs(light.cursorLight.x + origin.x - item.screen.x)<0.01F
 						&& std::abs(light.cursorLight.y + origin.y - item.screen.y)<0.01F;
@@ -272,24 +276,24 @@ namespace Inkeys::UI::Bar
 				fixture->SetTranslationDistractors({730,-510},{-40,-25});
 				fixture->Prepare(item.afterOrigin);
 				const auto after = fixture->spec.SnapshotFrameLighting();
-				const auto afterBounds = fixture->spec.GetFrameCursorLightDamageBounds();
+				const auto afterBounds = fixture->lightingStateMachine.GetFrameCursorLightDamageBounds();
 				expect(atScreen(after,item.afterOrigin),
 					"drag release rebases real Prepare cursor light without a new input serial");
 				const bool originChanged = item.beforeOrigin.x!=item.afterOrigin.x || item.beforeOrigin.y!=item.afterOrigin.y;
-				expect(fixture->spec.DidFrameCursorLightChange()==originChanged
+				expect(fixture->lightingStateMachine.DidFrameCursorLightChange()==originChanged
 					&& ((beforeBounds.left!=afterBounds.left || beforeBounds.top!=afterBounds.top)==originChanged)
 					&& afterBounds.left<=after.cursorLight.x-after.cursorRadius
 					&& afterBounds.right>=after.cursorLight.x+after.cursorRadius
 					&& afterBounds.top<=after.cursorLight.y-after.cursorRadius
 					&& afterBounds.bottom>=after.cursorLight.y+after.cursorRadius,
 					"drag release local light change invalidates complete old and new damage bounds");
-				const auto surfaceLight = [&](const BarUiFrameLightingSnapshot& light)
+				const auto surfaceLight = [&](const UiFrameLightingSnapshot& light)
 				{
-					BarSurfaceSharedLighting shared;
+					SurfaceSharedLighting shared;
 					shared.cursorScreenX=light.cursorScreenLight.x;shared.cursorScreenY=light.cursorScreenLight.y;
 					shared.cursorRadiusPixels=light.cursorRadius;shared.cursorIntensity=light.cursorIntensity;
 					shared.cursorVisible=light.cursorLightVisible;shared.edgeLightingEnabled=light.edgeLightingEnabled;
-					return ResolveBarSurfaceFrameLightingSnapshot(shared,{-2000,-500,-1600,-300},12);
+					return ResolveSurfaceFrameLightingSnapshot(shared,{-2000,-500,-1600,-300},12);
 				};
 				const auto beforeSurface=surfaceLight(before),afterSurface=surfaceLight(after);
 				expect(beforeSurface.cursorLight.x==afterSurface.cursorLight.x
@@ -308,7 +312,7 @@ namespace Inkeys::UI::Bar
 						&& std::abs(light.cursorRadius-240.0*zoom)<0.001
 						&& light.cursorScreenLight.x==before.cursorScreenLight.x
 						&& light.cursorScreenLight.y==before.cursorScreenLight.y
-						&& !fixture->spec.DidFrameCursorLightChange();
+						&& !fixture->lightingStateMachine.DidFrameCursorLightChange();
 				}
 				expect(stable,"stationary release stays continuous for 120 frames at each zoom");
 				report<<"[DragCursorLight] zoom="<<zoom<<" origin="<<item.beforeOrigin.x<<','<<item.beforeOrigin.y
@@ -321,14 +325,14 @@ namespace Inkeys::UI::Bar
 				auto fixture=std::make_unique<DragCursorLightFixture>();
 				fixture->spec.SetFrameZoom(zoom);fixture->SeedCursor({900,450},{300,0});
 				for(int frame=0;frame<90;++frame)fixture->Prepare({300,0});
-				expect(SUCCEEDED(fixture->spec.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),512,512)),
+				expect(SUCCEEDED(fixture->specTarget.Ensure(RenderPipeline::GetDeviceEpoch(),512,512)),
 					"drag third-light pixel target initializes");
-				auto* dc=fixture->spec.GetDeviceContext();
+				auto* dc=fixture->specTarget.DeviceContext();
 				if(!dc)continue;
-				BarUiShapeClass border(0,0,160,60,12,12,2,std::nullopt,RGB(255,255,255));
+				UiShapeClass border(0,0,160,60,12,12,2,std::nullopt,RGB(255,255,255));
 				border.enable.Initialization(true);border.pct.SetDirect(1);
 				border.framePct.emplace(0);border.frameLightPct.emplace(1);
-				border.frameRendering=BarUiFrameRenderingEnum::PointLight; border.framePrimaryLightEnabled=false;
+				border.frameRendering=UiFrameRenderingEnum::PointLight; border.framePrimaryLightEnabled=false;
 				const auto draw=[&](POINT origin)
 				{
 					const auto light=fixture->spec.SnapshotFrameLighting();
@@ -338,10 +342,10 @@ namespace Inkeys::UI::Bar
 					dc->BeginDraw();dc->SetTransform(D2D1::Matrix3x2F::Translation(
 						static_cast<FLOAT>(64.0-left*zoom),static_cast<FLOAT>(64.0-top*zoom)));
 					dc->Clear(D2D1::ColorF(0,0,0,0));
-					const bool drew=fixture->spec.Shape(dc,border,BarUiInheritClass(left,top));
+					const bool drew=fixture->spec.Shape(dc,border,UiInheritClass(left,top));
 					const HRESULT hr=dc->EndDraw();fixture->spec.HandleFrameEndDrawResult(hr);
 					expect(drew && SUCCEEDED(hr),"real third-light border renders across drag release");
-					return ReadSvgProofPixels(dc,fixture->spec.GetTargetBitmap());
+					return ReadSvgProofPixels(dc,fixture->specTarget.TargetBitmap());
 				};
 				const auto before=draw({300,0});
 				fixture->SetTranslationDistractors({730,-510},{-40,-25});fixture->Prepare({0,0});
@@ -361,7 +365,7 @@ namespace Inkeys::UI::Bar
 				expect(withoutCursor.size()==after.size() && darkBytes==0 && lit>100,
 					"third-light-off control is transparent while the isolated enabled border contributes pixels");
 				report<<"[DragCursorPixels] zoom="<<zoom<<" lit="<<lit<<" maxDelta="<<maxDelta<<" offLit="<<darkBytes<<'\n';
-				fixture->spec.DiscardDeviceResources();
+				fixture->specTarget.Discard();
 			}
 			// 保持既有 Prepare 门禁；这里只检验生产光照帧，不启动 Raw Input/timer/HWND 状态机。
 			{
@@ -381,32 +385,42 @@ namespace Inkeys::UI::Bar
 				BarUiDynamicEdgeLightingEnabled=false;settle({-40,-25});
 				expect(!fixture->spec.SnapshotFrameLighting().cursorLightVisible,"dynamic-light gate preserves its fade-out behavior");
 				BarUiDynamicEdgeLightingEnabled=true;settle({-40,-25});
-				BarUiAnimationEnabled=false;fixture->Prepare({0,0});
+				UiAnimationEnabled=false;fixture->Prepare({0,0});
 				expect(!fixture->spec.SnapshotFrameLighting().cursorLightVisible,"animation gate immediately hides third light during a rebase");
-				BarUiAnimationEnabled=true;settle({0,0});
+				UiAnimationEnabled=true;settle({0,0});
 				BarUiEdgeLightingEnabled=false;fixture->Prepare({300,0});
 				expect(!fixture->spec.SnapshotFrameLighting().edgeLightingEnabled
 					&& !fixture->spec.SnapshotFrameLighting().cursorLightVisible,"total-light gate hides all light during a rebase");
 			}
-			BarUiAnimationSpeedRate=savedSpeed;
+			UiAnimationSpeedRate=savedSpeed;
 			BarUiEdgeLightingEnabled = savedEdge; BarUiDynamicEdgeLightingEnabled = savedDynamic;
-			BarUiAnimationEnabled = savedAnimation;
+			UiAnimationEnabled = savedAnimation;
 		}
 		auto& owner=barUISet;
 		expect(I18n::load(1,L"JSON",L"zh-CN"),"default bundled translation loads");
-		owner.spec.ConfigureLocalizedTypography();
+		owner.ConfigureLocalizedTypography();
 		owner.barButtonSet.PresetInitialization();owner.barMedia.LoadFormat();
 		// 同一生产 Word 路径对照独立推导的整数字号，不用截图观感代替最终像素尺寸验证。
 		{
-			// 只在离屏测试局部公开受保护的缓存检查入口，生产接口保持不变。
-			struct FontTestRenderer : BarUIRendering
+			// 独立绘制器配对产品预览缓存，仍验证真实字体解析与 DWrite 布局。
+			struct FontTestRenderer : UIRendering
 			{
-				using BarUIRendering::BarUIRendering;
-				using BarUIRendering::GetThicknessFineDialLabelLayout;
+				using UIRendering::UIRendering;
+				BarPenPreviewRenderer preview;
+					FrameTarget target{*this};
+				void DiscardDeviceResources()
+				{ preview.ResetDeviceCaches(); target.Discard(); }
+				auto* GetThicknessFineDialLabelLayout(int value, FLOAT zoom, ID2D1DeviceContext* context)
+				{ return preview.GetThicknessFineDialLabelLayout(*this, value, zoom, context); }
+				bool UpdateFontRenderingPolicy(bool allow) noexcept
+				{
+					if (!UIRendering::UpdateFontRenderingPolicy(allow)) return false;
+					preview.ResetTypographyCaches(); return true;
+				}
 			};
-			FontTestRenderer fonts(&owner), reference(&owner);
-			const bool ready = SUCCEEDED(fonts.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 256, 128))
-				&& SUCCEEDED(reference.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(), 256, 128));
+			FontTestRenderer fonts(MakeMainBarRenderingServices(&owner)), reference(MakeMainBarRenderingServices(&owner));
+			const bool ready = SUCCEEDED(fonts.target.Ensure(RenderPipeline::GetDeviceEpoch(), 256, 128))
+				&& SUCCEEDED(reference.target.Ensure(RenderPipeline::GetDeviceEpoch(), 256, 128));
 			expect(ready, "font pixel policy creates offscreen targets");
 			if (ready)
 			{
@@ -418,32 +432,32 @@ namespace Inkeys::UI::Bar
 					const double deviceScale = item.scaleY * (item.pixels ? 1.0 : item.dpi / 96.0);
 					const double expectedPixels = std::floor(13.0 * zoom * deviceScale);
 					const double expectedSize = expectedPixels / deviceScale * contentScale;
-					const auto draw = [&](BarUIRendering& renderer, bool allow, double logicalSize)
+					const auto draw = [&](UIRendering& renderer, FrameTarget& frameTarget, bool allow, double logicalSize)
 					{
 						renderer.UpdateFontRenderingPolicy(allow); renderer.SetFrameZoom(zoom);
-						auto* dc = renderer.GetDeviceContext(); dc->SetDpi(item.dpi, item.dpi);
+						auto* dc = frameTarget.DeviceContext(); dc->SetDpi(item.dpi, item.dpi);
 						dc->SetUnitMode(item.pixels ? D2D1_UNIT_MODE_PIXELS : D2D1_UNIT_MODE_DIPS);
 						dc->SetTransform(D2D1::IdentityMatrix());
 						const float units = item.pixels ? 1.0F : 96.0F / item.dpi;
-						renderer.BeginFrameDraw(dc, D2D1::RectF(0,0,256 * units,128 * units));
+						frameTarget.BeginFrame(dc, D2D1::RectF(0,0,256 * units,128 * units));
 						dc->SetTransform(D2D1::Matrix3x2F::Scale(item.scaleX,item.scaleY)
 							* D2D1::Matrix3x2F::Translation(3.25F,2.75F));
-						BarUiWordClass word(0,0,180,70,L"字号 123",logicalSize,RGB(20,20,20));
+						UiWordClass word(0,0,180,70,L"字号 123",logicalSize,RGB(20,20,20));
 						word.enable.Initialization(true); word.pct.SetDirect(1); word.contentScale=contentScale;
 						const bool drew = renderer.Word(dc,word,{10,10},DWRITE_FONT_WEIGHT_NORMAL);
-						renderer.FinishFrameDrawCommands(dc); dc->SetTransform(D2D1::IdentityMatrix());
-						expect(drew && SUCCEEDED(renderer.EndFrameDraw(dc)), "font Word renders through the real D2D path");
-						return ReadSvgProofPixels(dc,renderer.GetTargetBitmap());
+						frameTarget.FinishDrawCommands(dc); dc->SetTransform(D2D1::IdentityMatrix());
+						expect(drew && SUCCEEDED(frameTarget.EndFrame(dc)), "font Word renders through the real D2D path");
+						return ReadSvgProofPixels(dc,frameTarget.TargetBitmap());
 					};
-					const auto actual=draw(fonts,false,13.0);
-					const auto expected=draw(reference,true,expectedSize/(zoom*contentScale));
+					const auto actual=draw(fonts,fonts.target,false,13.0);
+					const auto expected=draw(reference,reference.target,true,expectedSize/(zoom*contentScale));
 					expect(!actual.empty() && actual==expected,
 						"Word pixels retain continuous content scale around the projected stationary target");
-					const auto fractional=draw(fonts,true,13.0);
+					const auto fractional=draw(fonts,fonts.target,true,13.0);
 					expect(fractional!=actual, "fractional preference preserves a distinct untruncated Word render");
-					expect(draw(fonts,false,13.0)==actual, "font preference switches back without stale cached text");
+					expect(draw(fonts,fonts.target,false,13.0)==actual, "font preference switches back without stale cached text");
 				}
-				auto* dc=fonts.GetDeviceContext(); dc->SetDpi(96,96); dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);
+				auto* dc=fonts.target.DeviceContext(); dc->SetDpi(96,96); dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);
 				dc->SetTransform(D2D1::IdentityMatrix()); fonts.UpdateFontRenderingPolicy(false);
 				auto* label=fonts.GetThicknessFineDialLabelLayout(15,0.63F,dc);
 				expect(label && label->layout && static_cast<IDWriteTextFormat*>(label->layout.Get())->GetFontSize()==6.0F,
@@ -475,17 +489,17 @@ namespace Inkeys::UI::Bar
 					button.button.enable.Initialization(true);button.button.pct.SetDirect(1);
 					button.name.Initialization(0,0,70,24,L"Press",13,RGB(20,20,20));
 					button.name.enable.Initialization(true);button.name.pct.SetDirect(1);
-					BarButtonDrawOptions options;options.drawIcon=false;
+					ButtonDrawOptions options;options.drawIcon=false;
 					auto time=std::chrono::steady_clock::now();
 					const auto drawButton=[&](double dt){
 						time+=std::chrono::nanoseconds(1)+std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(dt));
 						fonts.BeginFontFrame(time,{dt,1,true,false},1);fonts.SetFontTargetScale(1);
-						dc->SetTransform(D2D1::IdentityMatrix());fonts.BeginFrameDraw(dc,D2D1::RectF(0,0,256,128));
-						expect(DrawBarButtonVisual(fonts,dc,button,{10,10},options),"real font press button draws");
+						dc->SetTransform(D2D1::IdentityMatrix());fonts.target.BeginFrame(dc,D2D1::RectF(0,0,256,128));
+						expect(DrawButtonVisual(fonts,dc,button,{10,10},options),"real font press button draws");
 						const double first=button.name.fontCorrection.Current();
-						(void)DrawBarButtonVisual(fonts,dc,button,{10,10},options);
+						(void)DrawButtonVisual(fonts,dc,button,{10,10},options);
 						expect(button.name.fontCorrection.Current()==first,"duplicate real button draw advances font once");
-						fonts.FinishFrameDrawCommands(dc);expect(SUCCEEDED(fonts.EndFrameDraw(dc)),"font press frame commits D2D commands");
+						fonts.target.FinishDrawCommands(dc);expect(SUCCEEDED(fonts.target.EndFrame(dc)),"font press frame commits D2D commands");
 						return 13.0*static_cast<double>(button.pressScale.val)*first;
 					};
 					for(const double current:{1.0,0.95,0.96,0.99,1.01,0.9,1.0}){
@@ -495,7 +509,7 @@ namespace Inkeys::UI::Bar
 					button.pressScale.SetDirect(1);button.pressScale.SetTar(0.95,0.2);
 					double previous=13;int intermediate=0;
 					for(int tick=0;tick<30;++tick){
-						if(!button.pressScale.IsSame())(void)BarUiAdvanceAnimation(button.pressScale,{0.01,1,true,false});
+						if(!button.pressScale.IsSame())(void)UiAdvanceAnimation(button.pressScale,{0.01,1,true,false});
 						const double pixel=drawButton(0.01);intermediate+=std::abs(pixel-std::round(pixel))>0.00001;
 						expect(std::abs(pixel-previous)<0.2,"real pressed font follows a continuous fractional trajectory");previous=pixel;
 					}
@@ -504,7 +518,7 @@ namespace Inkeys::UI::Bar
 					const double held=previous;button.pressScale.SetTar(1,0.2);
 					expect(std::abs(drawButton(0)-held)<0.00001,"release retarget at zero dt preserves current visible font");
 					for(int tick=0;tick<30;++tick){
-						if(!button.pressScale.IsSame())(void)BarUiAdvanceAnimation(button.pressScale,{0.01,1,true,false});
+						if(!button.pressScale.IsSame())(void)UiAdvanceAnimation(button.pressScale,{0.01,1,true,false});
 						previous=drawButton(0.01);
 					}
 					expect(std::abs(previous-13.0)<0.00001&&std::abs(drawButton(0)-previous)<0.00001,
@@ -518,47 +532,47 @@ namespace Inkeys::UI::Bar
 
 
 				// 更多的派生尺寸逐帧变化，但文字必须从首帧就使用最终字号目标。
-				for (const auto kind : {BarButtonVisualLayoutKind::StandardTwoTwo,
-					BarButtonVisualLayoutKind::StandardTwoOne})
+				for (const auto kind : {ButtonVisualLayoutKind::StandardTwoTwo,
+					ButtonVisualLayoutKind::StandardTwoOne})
 				for (const double zoom : {1.0, 0.6})
 				for (const bool allowFractional : {false, true})
 				{
-					const double nominal=ResolveBarButtonVisualMetrics(kind).primaryFontSizeDip;
+					const double nominal=ResolveButtonVisualMetrics(kind).primaryFontSizeDip;
 					const double expected=allowFractional?nominal*zoom:std::floor(nominal*zoom);
-					const double duration=BarUiDefaultOperationDur,dt=duration/32.0;
+					const double duration=UiDefaultOperationDur,dt=duration/32.0;
 					fonts.SetFrameZoom(zoom);fonts.UpdateFontRenderingPolicy(allowFractional);
 					dc->SetDpi(96,96);dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);dc->SetTransform(D2D1::IdentityMatrix());
 					BarButtonClass button;
 					button.button.Initialization(0,0,70,70,4,4,1,RGB(240,240,240),RGB(20,20,20));
 					button.button.enable.Initialization(true);button.button.pct.SetDirect(1);
-					button.name.Initialization(0,0,70,24,kind==BarButtonVisualLayoutKind::StandardTwoTwo?L"设置":L"组件",nominal,RGB(20,20,20));
+					button.name.Initialization(0,0,70,24,kind==ButtonVisualLayoutKind::StandardTwoTwo?L"设置":L"组件",nominal,RGB(20,20,20));
 					button.name.enable.Initialization(true);button.name.pct.SetDirect(1);
-					BarButtonDrawOptions options;options.drawIcon=false;
+					ButtonDrawOptions options;options.drawIcon=false;
 					auto time=std::chrono::steady_clock::now();
 					const auto drawFrame=[&](double elapsed){
 						time+=std::chrono::nanoseconds(1)+std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(elapsed));
 						fonts.BeginFontFrame(time,{elapsed,1,true,false},zoom);fonts.SetFontTargetScale(1);
-						dc->SetTransform(D2D1::IdentityMatrix());fonts.BeginFrameDraw(dc,D2D1::RectF(0,0,256,128));
-						expect(DrawBarButtonVisual(fonts,dc,button,{10,10},options),"More label draws through the production button path");
+						dc->SetTransform(D2D1::IdentityMatrix());fonts.target.BeginFrame(dc,D2D1::RectF(0,0,256,128));
+						expect(DrawButtonVisual(fonts,dc,button,{10,10},options),"More label draws through the production button path");
 						const double size=fonts.ResolveWordFontSize(dc,button.name,button.name.size.val*zoom);
-						fonts.FinishFrameDrawCommands(dc);expect(SUCCEEDED(fonts.EndFrameDraw(dc)),"More font frame commits D2D commands");
+						fonts.target.FinishDrawCommands(dc);expect(SUCCEEDED(fonts.target.EndFrame(dc)),"More font frame commits D2D commands");
 						return size;
 					};
-					BarUiValueClass scale{0.01};
-					const BarUiCurveSpecClass opening{BarUiCurveEnum::EaseOutBack,BarUiCurveEnum::EaseOutBack,0,false};
-					const BarUiCurveSpecClass closing{BarUiCurveEnum::EaseInBack,BarUiCurveEnum::EaseInBack,0,false};
+					UiValueClass scale{0.01};
+					const UiCurveSpecClass opening{UiCurveEnum::EaseOutBack,UiCurveEnum::EaseOutBack,0,false};
+					const UiCurveSpecClass closing{UiCurveEnum::EaseInBack,UiCurveEnum::EaseInBack,0,false};
 					const auto moreFrame=[&](double elapsed){
-						ConfigureBarButtonVisualTargets(button,kind,duration,scale.val,true,std::nullopt,scale.tar);
+						ConfigureButtonVisualTargets(button,kind,duration,scale.val,true,std::nullopt,scale.tar);
 						return drawFrame(elapsed);
 					};
 					// 隐藏布局不消费字体修正；覆盖首次可见尺寸尚不足 1px 的边界。
-					ConfigureBarButtonVisualTargets(button,kind,duration,0.01,true,std::nullopt,0.01);
+					ConfigureButtonVisualTargets(button,kind,duration,0.01,true,std::nullopt,0.01);
 					scale.SetTar(1,duration,std::nullopt,false,opening);
 					expect(std::abs(moreFrame(0)-expected*0.01)<0.00001,"first visible More label projects the final size even below one pixel");
 					bool overshoot=false;
 					double settled=0;
 					for(int tick=0;tick<36;++tick){
-						if(!scale.IsSame())(void)BarUiAdvanceAnimation(scale,{dt,1,true,false});
+						if(!scale.IsSame())(void)UiAdvanceAnimation(scale,{dt,1,true,false});
 						overshoot|=scale.val>1;settled=moreFrame(dt);
 						expect(std::abs(settled-expected*static_cast<double>(scale.val))<0.00001,
 							"More opening retains its raw scale curve without a second font-growth animation");
@@ -567,19 +581,19 @@ namespace Inkeys::UI::Bar
 						&&std::abs(settled-expected)<0.00001&&moreFrame(0)==settled,
 						"More opening and overshoot settle at the final font size with no idle-frame growth");
 					scale.SetTar(0.16,duration,std::nullopt,false,closing);
-					for(int tick=0;tick<8;++tick){(void)BarUiAdvanceAnimation(scale,{dt,1,true,false});(void)moreFrame(dt);}
+					for(int tick=0;tick<8;++tick){(void)UiAdvanceAnimation(scale,{dt,1,true,false});(void)moreFrame(dt);}
 					const double interrupted=moreFrame(0);
 					scale.SetTar(1,duration,std::nullopt,false,opening);
 					expect(std::abs(moreFrame(0)-interrupted)<0.00001,"reopening More at zero dt preserves the current label size");
 					for(int tick=0;tick<36;++tick){
-						if(!scale.IsSame())(void)BarUiAdvanceAnimation(scale,{dt,1,true,false});
+						if(!scale.IsSame())(void)UiAdvanceAnimation(scale,{dt,1,true,false});
 						settled=moreFrame(dt);
 					}
 					expect(!fonts.FontAnimationsActive()&&std::abs(settled-expected)<0.00001&&moreFrame(0)==settled,
 						"reversed More opening has no font growth after the panel settles");
 					// 同一溢出按钮回到主栏时，不得沿用紧凑面板的静止字号覆盖。
 					scale.SetDirect(0.16);(void)moreFrame(duration);
-					ConfigureBarButtonVisualTargets(button,kind,duration,1,false);
+					ConfigureButtonVisualTargets(button,kind,duration,1,false);
 					button.name.size.SetDirect(button.name.size.tar);
 					expect(button.name.fontTargetSize<0&&std::abs(drawFrame(duration)-expected)<0.00001,
 						"moving a More button back to the main bar restores its ordinary font target");
@@ -596,7 +610,7 @@ namespace Inkeys::UI::Bar
 		owner.barButtonSet.Load();
 		// UpdateRendering 在 Pen 状态还会刷新粗细文字；离屏 fixture 不加载整套窗口控件。
 		owner.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay] =
-			std::make_shared<BarUiWordClass>(0.0,0.0,0.0,0.0,L"",13.0);
+			std::make_shared<UiWordClass>(0.0,0.0,0.0,0.0,L"",13.0);
 		// 直接覆盖生产 PositionUpdate 的策略门禁，不能让后续刷新重新按中轴覆盖空间模式。
 		{
 			const int savedDirection = Inkeys::config.UI.Bar.ExpandDirectionAdjustment.load();
@@ -606,7 +620,7 @@ namespace Inkeys::UI::Bar
 			const bool savedSide = owner.barState.widgetPosition.mainBar;
 			const bool savedPrimary = owner.barState.widgetPosition.primaryBar;
 			const auto savedWidth = owner.barWindow.w, savedHeight = owner.barWindow.h;
-			const auto mainButton = std::make_shared<BarUiSuperellipseClass>(800,500,80,80,10.0,1.0,std::nullopt,std::nullopt);
+			const auto mainButton = std::make_shared<UiSuperellipseClass>(800,500,80,80,10.0,1.0,std::nullopt,std::nullopt);
 			owner.superellipseMap[BarUISetSuperellipseEnum::MainButton] = mainButton;
 			// 早期 CLI 尚未启动交互/渲染，复用公开启动入口准备浮动状态。
 			(void)owner.InitializeStartupPlacement(Inkeys::UI::StartupPlacement::BottomLeftFloating);
@@ -654,8 +668,8 @@ namespace Inkeys::UI::Bar
 		const bool changedToSeparate=SetSelectAndClickThroughMode(1);
 		selectModeButton->name.AdvanceContentTransition(1.0,1.0);
 		expect(changedToSeparate && GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
-			&& pierceModeButton->IsVisible() && pierceModeButton->size==BarButtonSizeEnum::twoOne
-			&& freezeModeButton->size==BarButtonSizeEnum::twoOne
+			&& pierceModeButton->IsVisible() && pierceModeButton->size==ButtonSizeEnum::twoOne
+			&& freezeModeButton->size==ButtonSizeEnum::twoOne
 			&& selectModeButton->name.content.GetTar()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
 			"setting mode updates compact buttons while tool and empty content stay unchanged");
 		// 在工具状态不变时切语言，必须绕过旧styleKey缓存且保留按钮身份。
@@ -671,7 +685,7 @@ namespace Inkeys::UI::Bar
 			expect(selectModeButton->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.SelectClearLabel),
 				"old text fade cannot resurrect previous language after immediate switch");
 			expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
-				&& pierceModeButton->size==BarButtonSizeEnum::twoOne && freezeModeButton->size==BarButtonSizeEnum::twoOne,
+				&& pierceModeButton->size==ButtonSizeEnum::twoOne && freezeModeButton->size==ButtonSizeEnum::twoOne,
 				"live language preserves drawing mode and compact paired buttons");
 			expectStableButtons();
 		}
@@ -689,7 +703,7 @@ namespace Inkeys::UI::Bar
 			componentButtons.push_back(owner.barButtonSet.buttonList.Get(index));
 		const auto componentPierce=std::find(componentButtons.begin(),componentButtons.end(),pierceModeButton);
 		expect(pierceModeButton->IsVisible() && freezeModeButton->IsVisible()
-			&& pierceModeButton->size==BarButtonSizeEnum::twoOne && freezeModeButton->size==BarButtonSizeEnum::twoOne,
+			&& pierceModeButton->size==ButtonSizeEnum::twoOne && freezeModeButton->size==ButtonSizeEnum::twoOne,
 			"component reload retains Separate drawing Pierce and Freeze as twoOne");
 		expect(componentPierce!=componentButtons.end() && componentPierce+1!=componentButtons.end()
 			&& *(componentPierce+1)==freezeModeButton && std::count(componentButtons.begin(),componentButtons.end(),pierceModeButton)==1,
@@ -699,7 +713,7 @@ namespace Inkeys::UI::Bar
 		Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer=savedExplorer;
 		owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
 		expect(SetSelectAndClickThroughMode(0) && GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
-			&& !pierceModeButton->IsVisible() && freezeModeButton->size==BarButtonSizeEnum::twoTwo,
+			&& !pierceModeButton->IsVisible() && freezeModeButton->size==ButtonSizeEnum::twoTwo,
 			"combined setting immediately hides Pierce and enlarges Freeze");
 		// 直接执行生产 Pierce 回调，验证按钮切换身份和三类记忆工具恢复。
 		SetSelectAndClickThroughMode(1);
@@ -716,7 +730,7 @@ namespace Inkeys::UI::Bar
 			pierceModeButton->clickFunc();owner.UpdateRendering();expectStableButtons();
 			expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtClickThrough &&
 				StateModeTransitionRevision()==revision+1 && !Freeze::IsActive() &&
-				pierceModeButton->state->state==BarWidgetState::Selected,
+				pierceModeButton->state->state==WidgetState::Selected,
 				"production Pierce callback enters click-through and selects the same button");
 			pierceModeButton->clickFunc();owner.UpdateRendering();expectStableButtons();
 			const auto restored=GetStateModeSnapshot();
@@ -725,35 +739,35 @@ namespace Inkeys::UI::Bar
 			expect(restored.StateModeSelect==tool && restored.lastAnnotationMode==tool &&
 				restored.laserActive==annotation.laserActive && restored.Pen.ModeSelect==annotation.Pen.ModeSelect &&
 				restored.Shape.ModeSelect==annotation.Shape.ModeSelect && StateModeTransitionRevision()==revision+2 &&
-				!Freeze::IsActive() && pierceModeButton->state->state!=BarWidgetState::Selected &&
-				owner.barButtonSet.preset[(int)restoredPreset]->state->state==BarWidgetState::Selected,
+				!Freeze::IsActive() && pierceModeButton->state->state!=WidgetState::Selected &&
+				owner.barButtonSet.preset[(int)restoredPreset]->state->state==WidgetState::Selected,
 				"production Pierce callback restores the remembered tool and its selected button without Freeze");
 			pierceModeButton->clickFunc();owner.UpdateRendering();
 			expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtClickThrough &&
-				pierceModeButton->state->state==BarWidgetState::Selected,"same Pierce callback can reenter click-through");
+				pierceModeButton->state->state==WidgetState::Selected,"same Pierce callback can reenter click-through");
 			pierceModeButton->clickFunc();owner.UpdateRendering();
 			expect(GetStateModeSnapshot().StateModeSelect==tool && StateModeTransitionRevision()==revision+4 &&
 				!Freeze::IsActive(),"same Pierce callback can exit again with one revision per click");
 		}
 		SetSelectAndClickThroughMode(0);
 		ChangeStateModeToSelection();owner.UpdateRendering();
-		expect(clearModeButton->state->state==BarWidgetState::Disable,
+		expect(clearModeButton->state->state==WidgetState::Disable,
 			"empty Selection Clear uses unified disabled state");
 		ChangeStateModeToPen();owner.UpdateRendering();
-		expect(clearModeButton->state->state!=BarWidgetState::Disable,"empty drawing Clear can enter Selection");
+		expect(clearModeButton->state->state!=WidgetState::Disable,"empty drawing Clear can enter Selection");
 		SetSelectAndClickThroughMode(1);ChangeStateModeToClickThrough();owner.UpdateRendering();
-		expect(pierceModeButton->state->state==BarWidgetState::Selected &&
-			clearModeButton->state->state!=BarWidgetState::Disable,"Click-through highlight and empty Clear are active");
+		expect(pierceModeButton->state->state==WidgetState::Selected &&
+			clearModeButton->state->state!=WidgetState::Disable,"Click-through highlight and empty Clear are active");
 		owner.barButtonSet.ExecuteClearClick(false);owner.UpdateRendering();
 		expect(GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtSelection &&
-			clearModeButton->state->state==BarWidgetState::Disable && !pierceModeButton->IsVisible(),
+			clearModeButton->state->state==WidgetState::Disable && !pierceModeButton->IsVisible(),
 			"empty Click-through Clear enters Selection and removes hidden Pierce hit target");
 		SetPptPresentationActive(true);Freeze::SetPresentationActive(true);owner.UpdateRendering();
 		expect(!freezeModeButton->IsVisible() && !pierceModeButton->IsVisible(),
 			"PPT empty Selection hides both A2 interaction buttons");
 		ChangeStateModeToPen();owner.UpdateRendering();
 		expect(!freezeModeButton->IsVisible() && pierceModeButton->IsVisible() &&
-			pierceModeButton->size==BarButtonSizeEnum::twoTwo,"PPT Pierce fills hidden Freeze slot");
+			pierceModeButton->size==ButtonSizeEnum::twoTwo,"PPT Pierce fills hidden Freeze slot");
 		Freeze::SetPresentationActive(false);SetPptPresentationActive(false);
 		SetSelectAndClickThroughMode(0);ChangeStateModeToSelection();owner.UpdateRendering();
 		// 用真实两行按钮与位置动画检查 X 策略，隐藏锚点仍共用当前批次目标。
@@ -761,39 +775,39 @@ namespace Inkeys::UI::Bar
 		{
 			SetSelectAndClickThroughMode(1);ChangeStateModeToPen();owner.UpdateRendering();
 			const double targetX = ResolveBarMainIconX(340.0,380.0,NormalizeBarIconOrder(order),opensRight);
-			const BarUiCurveSpecClass curve{BarUiCurveEnum::EaseOutCubic,BarUiCurveEnum::EaseOutCubic,0.0,false};
+			const UiCurveSpecClass curve{UiCurveEnum::EaseOutCubic,UiCurveEnum::EaseOutCubic,0.0,false};
 			pierceModeButton->button.x.SetDirect(180.0);freezeModeButton->button.x.SetDirect(180.0);
 			pierceModeButton->button.y.SetDirect(21.25);freezeModeButton->button.y.SetDirect(58.75);
-			BarUiSetLayoutPositionTarget(pierceModeButton->button.x,targetX,BarUiDefaultOperationDur,true,curve);
-			BarUiSetLayoutPositionTarget(freezeModeButton->button.x,targetX,BarUiDefaultOperationDur,true,curve);
+			UiSetLayoutPositionTarget(pierceModeButton->button.x,targetX,UiDefaultOperationDur,true,curve);
+			UiSetLayoutPositionTarget(freezeModeButton->button.x,targetX,UiDefaultOperationDur,true,curve);
 			expect(pierceModeButton->button.x.val==180.0 && freezeModeButton->button.x.val==180.0,
 				"sorting retargets from current visible values instead of jumping");
 			for(int frame=0;frame<12;++frame)
 			{
-				const BarUiAnimationAdvanceContextClass tick{0.05,1,true,false};
-				BarUiAdvanceAnimation(pierceModeButton->button.x,tick);BarUiAdvanceAnimation(freezeModeButton->button.x,tick);
+				const UiAnimationAdvanceContextClass tick{0.05,1,true,false};
+				UiAdvanceAnimation(pierceModeButton->button.x,tick);UiAdvanceAnimation(freezeModeButton->button.x,tick);
 			}
 			expect(pierceModeButton->button.x.val==targetX && freezeModeButton->button.x.val==targetX
 				&& pierceModeButton->button.y.val<freezeModeButton->button.y.val,
 				"all horizontal policies keep Pierce above Freeze and their shared column");
 			SetSelectAndClickThroughMode(0);owner.UpdateRendering();
 			AnchorHiddenBarButton(owner.barButtonSet,false,BarButtonPresetEnum::Pierce,BarButtonPresetEnum::Freeze,
-				[&](BarUiValueClass& value,double target){BarUiSetLayoutPositionTarget(value,target,BarUiDefaultOperationDur,true,curve);});
+				[&](UiValueClass& value,double target){UiSetLayoutPositionTarget(value,target,UiDefaultOperationDur,true,curve);});
 			expect(!pierceModeButton->IsVisible() && pierceModeButton->button.x.tar==targetX,
 				"hidden Pierce retains the mirrored column without becoming a hit target");
 			expectStableButtons();
 		}
 		// 连续收窄/展开和 PPT 进出：隐藏按钮只改 hide，不能离开列表或保留右侧旧坐标。
-		const auto positionTarget=[](BarUiValueClass& value,double target)
-			{ value.SetTar(target,BarUiDefaultOperationDur); };
+		const auto positionTarget=[](UiValueClass& value,double target)
+			{ value.SetTar(target,UiDefaultOperationDur); };
 		const auto anchorPierce=[&]()
 			{ AnchorHiddenBarButton(owner.barButtonSet,false,BarButtonPresetEnum::Pierce,
 				BarButtonPresetEnum::Freeze,positionTarget); };
 		const auto advancePierce=[&](double dt)
 		{
-			const BarUiAnimationAdvanceContextClass frame{dt,1,true,false};
-			BarUiAdvanceAnimation(pierceModeButton->button.x,frame);
-			BarUiAdvanceAnimation(pierceModeButton->button.y,frame);
+			const UiAnimationAdvanceContextClass frame{dt,1,true,false};
+			UiAdvanceAnimation(pierceModeButton->button.x,frame);
+			UiAdvanceAnimation(pierceModeButton->button.y,frame);
 		};
 		for(int cycle=0;cycle<3;++cycle)
 		{
@@ -845,7 +859,7 @@ namespace Inkeys::UI::Bar
 				whiteboardAnchor->hide=savedWhiteboardHide;
 			}
 			SetSelectAndClickThroughMode(1);owner.UpdateRendering();expectStableButtons();
-			expect(pierceModeButton->IsVisible() && pierceModeButton->size==BarButtonSizeEnum::twoTwo,
+			expect(pierceModeButton->IsVisible() && pierceModeButton->size==ButtonSizeEnum::twoTwo,
 				"PPT reveals the same Pierce member in the full slot");
 			Freeze::SetPresentationActive(false);SetPptPresentationActive(false);
 		}
@@ -888,12 +902,12 @@ namespace Inkeys::UI::Bar
 				const bool selectionEmpty=tool==StateModeSelectEnum::IdtSelection && !content;
 				const bool pierceVisible=mode==1 && scene!=2 && !selectionEmpty;
 				expect(pierceModeButton->IsVisible()==pierceVisible && freezeModeButton->IsVisible()==(scene==0)
-					&& (!pierceVisible || pierceModeButton->size==(scene==1?BarButtonSizeEnum::twoTwo:BarButtonSizeEnum::twoOne))
-					&& (scene!=0 || freezeModeButton->size==(pierceVisible?BarButtonSizeEnum::twoOne:BarButtonSizeEnum::twoTwo)),
+					&& (!pierceVisible || pierceModeButton->size==(scene==1?ButtonSizeEnum::twoTwo:ButtonSizeEnum::twoOne))
+					&& (scene!=0 || freezeModeButton->size==(pierceVisible?ButtonSizeEnum::twoOne:ButtonSizeEnum::twoTwo)),
 					"component matrix keeps the workspace/mode/content A2 grids");
 				expect(owner.barButtonSet.preset[(int)BarButtonPresetEnum::Eraser]->IsVisible()==!(scene!=2 && selectionEmpty)
 					&& owner.barButtonSet.preset[(int)BarButtonPresetEnum::Geometry]->IsVisible()==!(scene!=2 && selectionEmpty)
-					&& (clearModeButton->state->state==BarWidgetState::Disable)==selectionEmpty,
+					&& (clearModeButton->state->state==WidgetState::Disable)==selectionEmpty,
 					"component matrix retains compact tools and Clear availability");
 				const auto more=owner.barButtonSet.GetMoreButtonSnapshot();
 				expect(owner.barButtonSet.tot==static_cast<int>(stableButtons.size())+std::min(count,2)
@@ -953,7 +967,7 @@ namespace Inkeys::UI::Bar
 			const auto stable=owner.barButtonSet.MainLayoutSnapshot();
 			auto* draw=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Draw];
 			const auto savedEmph=draw->state->emph.load();const auto savedHover=draw->hoverStage.load();
-			draw->state->emph=BarWidgetEmphasize::Pressed;draw->hoverStage=BarButtonHoverStageEnum::Showing;
+			draw->state->emph=WidgetEmphasize::Pressed;draw->hoverStage=ButtonHoverStageEnum::Showing;
 			draw->pressScale.SetTar(0.9,0.4);draw->name.color.SetTar(RGB(1,2,3),0.4);
 			expect(owner.barButtonSet.MainLayoutSnapshot()==stable,
 				"hover, press, color and animation values are absent from the layout fingerprint");
@@ -963,29 +977,29 @@ namespace Inkeys::UI::Bar
 			expect(owner.barButtonSet.MainLayoutSnapshot()!=stable,"equal-width member permutation changes the stable layout fingerprint");
 			owner.barButtonSet.buttonList.Swap(0,1);
 			// 模拟目标提交使用真实timeline/SetTar helper：早期可加入、晚期从当前值完整重开。
-			BarUiTimelineClass batch;batch.Restart(BarUiDefaultOperationDur);
+			UiTimelineClass batch;batch.Restart(UiDefaultOperationDur);
 			pierceModeButton->button.y.SetDirect(40.0);freezeModeButton->button.y.SetDirect(40.0);
 			freezeModeButton->button.h.SetDirect(70.0);
-			BarUiSetLayoutPositionTarget(pierceModeButton->button.y,21.25,batch.GetRemainingDuration(),true,BarButtonPressCurve());
-			BarUiSetLayoutPositionTarget(freezeModeButton->button.y,58.75,batch.GetRemainingDuration(),true,BarButtonPressCurve());
+			UiSetLayoutPositionTarget(pierceModeButton->button.y,21.25,batch.GetRemainingDuration(),true,ButtonPressCurve());
+			UiSetLayoutPositionTarget(freezeModeButton->button.y,58.75,batch.GetRemainingDuration(),true,ButtonPressCurve());
 			freezeModeButton->button.h.SetTar(32.5,batch.GetRemainingDuration());
-			const BarUiAnimationAdvanceContextClass zero{0.0,1,true,false};
-			BarUiAdvanceAnimation(freezeModeButton->button.h,zero);
+			const UiAnimationAdvanceContextClass zero{0.0,1,true,false};
+			UiAdvanceAnimation(freezeModeButton->button.h,zero);
 			expect(freezeModeButton->button.h.val==70.0 && batch.CanJoin(),"zero-time split targets retain current geometry and permit early batch join");
-			batch.Advance(BarUiDefaultOperationDur*0.75,1);
-			const BarUiAnimationAdvanceContextClass partial{BarUiDefaultOperationDur*0.75,1,true,false};
-			BarUiAdvanceAnimation(freezeModeButton->button.h,partial);
+			batch.Advance(UiDefaultOperationDur*0.75,1);
+			const UiAnimationAdvanceContextClass partial{UiDefaultOperationDur*0.75,1,true,false};
+			UiAdvanceAnimation(freezeModeButton->button.h,partial);
 			const double interruptedHeight=freezeModeButton->button.h.val;
 			expect(!batch.CanJoin(),"late main-layout update cannot join the old half-finished batch");
 			SetSelectAndClickThroughMode(0);owner.UpdateRendering();
-			batch.Restart(BarUiDefaultOperationDur);freezeModeButton->button.h.SetTar(70.0,batch.GetRemainingDuration());
+			batch.Restart(UiDefaultOperationDur);freezeModeButton->button.h.SetTar(70.0,batch.GetRemainingDuration());
 			expect(freezeModeButton->button.h.val==interruptedHeight,"late layout retarget starts at the displayed height");
 			const auto repeated=owner.barButtonSet.MainLayoutSnapshot();
 			for(int frame=0;frame<120;++frame)
 			{
 				owner.UpdateRendering();
-				const BarUiAnimationAdvanceContextClass tick{0.01,1,true,false};
-				BarUiAdvanceAnimation(freezeModeButton->button.h,tick);batch.Advance(0.01,1);
+				const UiAnimationAdvanceContextClass tick{0.01,1,true,false};
+				UiAdvanceAnimation(freezeModeButton->button.h,tick);batch.Advance(0.01,1);
 				selectModeButton->name.AdvanceContentTransition(0.01,1);
 			}
 			expect(owner.barButtonSet.MainLayoutSnapshot()==repeated && !batch.IsActive()
@@ -1079,7 +1093,7 @@ namespace Inkeys::UI::Bar
 					&& owner.barButtonSet.MainLayoutSnapshot()==protectedLayout,
 					"gray production command extends the hold without directly changing button geometry");
 				owner.UpdateRendering();
-				expect((redo?redoModeButton:undoModeButton)->state->state!=BarWidgetState::Disable,
+				expect((redo?redoModeButton:undoModeButton)->state->state!=WidgetState::Disable,
 					"gray protected history remains eligible for repeat-click feedback");
 				const auto refreshedDeadline=owner.recallChromeIdleDeadline;
 				owner.NoteRecallPopupDismissed();owner.ClearRecallForDrawing();owner.SettleRecallChromeForWorkspace();
@@ -1100,7 +1114,7 @@ namespace Inkeys::UI::Bar
 					&& owner.barButtonSet.MainLayoutSnapshot()==beforeExpiry,
 					"idle expiry settles state without a second effective-button write path");
 				owner.barButtonSet.UpdateMainPresentation(GetStateModeSnapshot());
-				expect(undoModeButton->IsVisible() && undoModeButton->size==BarButtonSizeEnum::twoTwo && !redoModeButton->IsVisible(),
+				expect(undoModeButton->IsVisible() && undoModeButton->size==ButtonSizeEnum::twoTwo && !redoModeButton->IsVisible(),
 					"the frame presentation entry applies the settled history grid before target scanning");
 			}
 			{
@@ -1109,7 +1123,7 @@ namespace Inkeys::UI::Bar
 			}
 			owner.NoteRecallHistoryAvailability(false,false);owner.UpdateRendering();
 			expect(owner.recallChrome.settlePending && owner.recallChromeIdleArmed
-				&& undoModeButton->size==BarButtonSizeEnum::twoOne && redoModeButton->size==BarButtonSizeEnum::twoOne,
+				&& undoModeButton->size==ButtonSizeEnum::twoOne && redoModeButton->size==ButtonSizeEnum::twoOne,
 				"availability-only layout changes also keep a wall-clock pending transition");
 			{
 				std::scoped_lock lock(owner.recallChromeMutex);
@@ -1117,30 +1131,30 @@ namespace Inkeys::UI::Bar
 			}
 			expect(owner.AdvanceRecallChromeIdle(0.0),"availability-only idle transition is settled without a clicked hold");
 			owner.UpdateRendering();
-			expect(undoModeButton->size==BarButtonSizeEnum::twoTwo && !redoModeButton->IsVisible(),
+			expect(undoModeButton->size==ButtonSizeEnum::twoTwo && !redoModeButton->IsVisible(),
 				"availability-only settled grid is applied by the same projection");
 		}
 		SetCurrentPageHasContent(false);SetSelectAndClickThroughMode(0);ChangeStateModeToSelection();owner.UpdateRendering();
 		SetContentStateUpdatesReady(false);
 		SetThemeStyleSource(&owner.barStyle);
-		auto root=std::make_shared<BarUiSuperellipseClass>(100,430,BarMainButtonWidthDip,BarMainButtonHeightDip,3.0,
-			BarButtonFrameThicknessDip,GetThemeColor(BarThemeColorEnum::Surface),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+		auto root=std::make_shared<UiSuperellipseClass>(100,430,BarMainButtonWidthDip,BarMainButtonHeightDip,3.0,
+			ButtonFrameThicknessDip,GetThemeColor(ThemeColorEnum::Surface),GetThemeColor(ThemeColorEnum::SurfaceFrame));
 		root->enable.Initialization(true);owner.superellipseMap[BarUISetSuperellipseEnum::MainButton]=root;
 		const int statusIndicatorFailures=owner.statusIndicator.RunOffscreenTest(owner);
 		expect(statusIndicatorFailures==0,"status indicator command/render/presented hit/Fan/progress production paths");
 		// 设备创建或绘制失败可能释放资源；上面的断言已报告失败，避免保存时解引用空指针。
-		if(owner.spec.GetDeviceContext()&&owner.spec.GetTargetBitmap())
+		if(owner.specTarget.DeviceContext()&&owner.specTarget.TargetBitmap())
 		{
 			std::filesystem::create_directories(L"Build/eraser-b/status-indicator");
-			expect(SUCCEEDED(SaveEraserTestPng(owner.spec.GetDeviceContext(),owner.spec.GetTargetBitmap(),
+			expect(SUCCEEDED(SaveEraserTestPng(owner.specTarget.DeviceContext(),owner.specTarget.TargetBitmap(),
 				L"Build/eraser-b/status-indicator/fan.png")),"status indicator Fan PNG");
 		}
-		auto main=std::make_shared<BarUiShapeClass>(230,0,BarDefaultMainBarLayoutWidthDip,BarMainBarHeightDip,
-			BarMainBarCornerRadiusDip,BarMainBarCornerRadiusDip,BarButtonFrameThicknessDip,
-			GetThemeColor(BarThemeColorEnum::Surface),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+		auto main=std::make_shared<UiShapeClass>(230,0,BarDefaultMainBarLayoutWidthDip,BarMainBarHeightDip,
+			BarMainBarCornerRadiusDip,BarMainBarCornerRadiusDip,ButtonFrameThicknessDip,
+			GetThemeColor(ThemeColorEnum::Surface),GetThemeColor(ThemeColorEnum::SurfaceFrame));
 		main->enable.Initialization(true);main->pct.SetDirect(BarMainBarFillOpacity);
 		main->framePct.emplace(BarMainBarFrameOpacity);main->frameLightPct.emplace(BarMainBarFrameOpacity);
-		main->frameRendering=BarUiFrameRenderingEnum::PointLight;owner.shapeMap[BarUISetShapeEnum::MainBar]=main;
+		main->frameRendering=UiFrameRenderingEnum::PointLight;owner.shapeMap[BarUISetShapeEnum::MainBar]=main;
 		// 真实Advance消费已捕获帧，即使锁外又发布空页Selection也不能混用下一帧门禁。
 		{
 			owner.barState.fold=false;owner.barState.drawAttribute=false;owner.barState.geometryAttribute=false;
@@ -1182,8 +1196,8 @@ namespace Inkeys::UI::Bar
 		}
 		stateMode.StateModeSelect=StateModeSelectEnum::IdtEraser;owner.barState.fold=false;
 		owner.barState.widgetPosition.mainBar=true;owner.barState.widgetPosition.primaryBar=false;
-		const auto metrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
-		const auto twoOneMetrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoOne);
+		const auto metrics=ResolveButtonVisualMetrics(ButtonVisualLayoutKind::StandardTwoTwo);
+		const auto twoOneMetrics=ResolveButtonVisualMetrics(ButtonVisualLayoutKind::StandardTwoOne);
 		const std::array presets{BarButtonPresetEnum::Select,BarButtonPresetEnum::Draw,BarButtonPresetEnum::Eraser,BarButtonPresetEnum::More,BarButtonPresetEnum::Setting};
 		const std::array<const char*,5> localizedPresetLabelKeys{
 			I18nKey.UI.Bar.MainButtons.SelectLabel,
@@ -1202,7 +1216,7 @@ namespace Inkeys::UI::Bar
 		for(size_t i=0;i<presets.size();++i)
 		{
 			auto* b=presets[i]==BarButtonPresetEnum::More?owner.barButtonSet.GetMoreButton():owner.barButtonSet.preset[static_cast<int>(presets[i])];
-			b->button.x.SetDirect(BarButtonGapDip+metrics.buttonWidthDip/2+i*BarDefaultButtonColumnStepDip);
+			b->button.x.SetDirect(ButtonGapDip+metrics.buttonWidthDip/2+i*BarDefaultButtonColumnStepDip);
 			b->button.y.SetDirect(BarMainBarHeightDip/2);b->button.w.SetDirect(metrics.buttonWidthDip);b->button.h.SetDirect(metrics.buttonHeightDip);
 			b->name.y.SetDirect(metrics.primaryOffsetYDip);b->name.w.SetDirect(metrics.primarySlotWidthDip);b->name.h.SetDirect(metrics.primarySlotHeightDip);b->name.size.SetDirect(metrics.primaryFontSizeDip);
 			b->icon.y.SetDirect(metrics.iconOffsetYDip);b->icon.SetWH(metrics.iconSizeDip,metrics.iconSizeDip);
@@ -1233,11 +1247,11 @@ namespace Inkeys::UI::Bar
 		for(const auto& language:Inkeys::Localization::Locales)
 		{
 			expect(I18n::load(1,L"JSON",language.code),"bar language loads for layout audit");
-			expect(owner.spec.RefreshLocalizedTypography(),"new locale revision refreshes typography without device recreation");
+			expect(owner.RefreshLocalizedTypography(),"new locale revision refreshes typography without device recreation");
 			owner.barButtonSet.RefreshLocalizedText();
 			expect(owner.barButtonSet.GetMoreButton()->name.content.GetVal()==IW(I18nKey.UI.Bar.MainButtons.MoreLabel),
 				"production label refresh updates More in place");
-			expect(!owner.spec.RefreshLocalizedTypography(),"consumed locale revision does not invalidate every frame");
+			expect(!owner.RefreshLocalizedTypography(),"consumed locale revision does not invalidate every frame");
 			updateLocalizedPresetLabels();
 			report << "[I18nLayout] " << language.codeUtf8 << '\n';
 			auto reportBounds = [&](const char* key, const wstring& text, double fontSize,
@@ -1279,7 +1293,7 @@ namespace Inkeys::UI::Bar
 				WhiteboardButtonStyleFixture style;
 				auto* button=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Whiteboard];
 				style.preset[(int)BarButtonPresetEnum::Whiteboard]=button;
-				BarUiSVGClass resumeIcon,closeIcon;
+				UiSVGClass resumeIcon,closeIcon;
 				resumeIcon.InitializationFromResource(L"UI",L"barResumeWhiteboard");
 				closeIcon.InitializationFromResource(L"UI",L"barCloseWhiteboard");
 				expect(!resumeIcon.svg.GetVal().empty() && !closeIcon.svg.GetVal().empty(),
@@ -1369,10 +1383,10 @@ namespace Inkeys::UI::Bar
 				expect(std::count(label.begin(),label.end(),L'\n')<=1,
 					"localized short labels keep the resource contract of at most two lines");
 				b->name.SetStringImmediate(label);b->TransitionContent(L"",label);
-				for(const auto kind:{BarButtonVisualLayoutKind::StandardTwoTwo,BarButtonVisualLayoutKind::StandardTwoOne})
+				for(const auto kind:{ButtonVisualLayoutKind::StandardTwoTwo,ButtonVisualLayoutKind::StandardTwoOne})
 				{
-					if(preset==BarButtonPresetEnum::Select && kind==BarButtonVisualLayoutKind::StandardTwoOne)continue;
-					const auto slot=ResolveBarButtonVisualMetrics(kind);
+					if(preset==BarButtonPresetEnum::Select && kind==ButtonVisualLayoutKind::StandardTwoOne)continue;
+					const auto slot=ResolveButtonVisualMetrics(kind);
 					const double fittedSize=owner.spec.FitButtonLabelFontSize(label,b->LabelFontSize(slot.primaryFontSizeDip),slot.primarySlotWidthDip,slot.primarySlotHeightDip);
 					const auto measured=owner.spec.MeasureText(label,fittedSize,DWRITE_FONT_WEIGHT_BOLD);
 					const bool fits=measured.width>0 && measured.width<=slot.primarySlotWidthDip+0.5f &&
@@ -1469,35 +1483,35 @@ namespace Inkeys::UI::Bar
 			const double opacityLabelWidth=owner.spec.MeasureText(IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel),13.0).width;
 			const double opacityValueWidth=owner.spec.MeasureText(L"100%",13.0).width;
 			const double footerRequiredWidth=(rgbLabelWidth+rgbValueWidth)*3+opacityLabelWidth+opacityValueWidth+4*3.0+2*6.0+10.0;
-			if(footerRequiredWidth>BarColorPickerPanelWidth)reportBounds(I18nKey.UI.Bar.ColorPicker.OpacityLabel,IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel),13.0,D2D1::SizeF(static_cast<float>(footerRequiredWidth),0),BarColorPickerPanelWidth,0,"color-footer");
-			expect(footerRequiredWidth<=BarColorPickerPanelWidth,"localized color footer keeps RGB and opacity columns separate");
+			if(footerRequiredWidth>ColorPickerPanelWidth)reportBounds(I18nKey.UI.Bar.ColorPicker.OpacityLabel,IW(I18nKey.UI.Bar.ColorPicker.OpacityLabel),13.0,D2D1::SizeF(static_cast<float>(footerRequiredWidth),0),ColorPickerPanelWidth,0,"color-footer");
+			expect(footerRequiredWidth<=ColorPickerPanelWidth,"localized color footer keeps RGB and opacity columns separate");
 
 			for(const double zoom:{0.65,1.0,1.5})
 			{
 				owner.barStyle.darkStyle=true;owner.barStyle.zoom=zoom;
 				const UINT width=static_cast<UINT>(700*zoom),height=static_cast<UINT>(245*zoom);
-				expect(SUCCEEDED(owner.spec.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),width,height)),"localized bar target setup");
-				owner.spec.SetFrameZoom(zoom);owner.spec.PrepareFrameLighting(1.0/60,{},static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
-				auto* dc=owner.spec.GetDeviceContext();dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());dc->Clear(D2D1::ColorF(0.13f,0.14f,0.16f,1));
-				main->fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));main->frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-				DrawBarBackgroundVisual(owner.spec,dc,*main,BarUiInheritClass(main->inhX,main->inhY));
+				expect(SUCCEEDED(owner.specTarget.Ensure(RenderPipeline::GetDeviceEpoch(),width,height)),"localized bar target setup");
+				owner.spec.SetFrameZoom(zoom);owner.PrepareFrameLighting(1.0/60,{}, ResolveMainBarFrameLightingInput(&owner,static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0));
+				auto* dc=owner.specTarget.DeviceContext();dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());dc->Clear(D2D1::ColorF(0.13f,0.14f,0.16f,1));
+				main->fill->SetDirect(GetThemeColor(ThemeColorEnum::Surface));main->frame->SetDirect(GetThemeColor(ThemeColorEnum::SurfaceFrame));
+				DrawBackgroundVisual(owner.spec,dc,*main,UiInheritClass(main->inhX,main->inhY));
 				for(const auto preset:presets)
 				{
 					auto* b=preset==BarButtonPresetEnum::More?owner.barButtonSet.GetMoreButton():owner.barButtonSet.preset[static_cast<int>(preset)];
-					b->name.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));b->icon.color1->SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
-					DrawBarButtonVisual(owner.spec,dc,*b,b->button.Inherit(BarUiInheritEnum::CenterFromTopLeft,*main));
+					b->name.color.SetDirect(GetThemeColor(ThemeColorEnum::TextPrimary));b->icon.color1->SetDirect(GetThemeColor(ThemeColorEnum::TextPrimary));
+					DrawButtonVisual(owner.spec,dc,*b,b->button.Inherit(UiInheritEnum::CenterFromTopLeft,*main));
 				}
 				auto drawAuditSurface=[&](double x,double y,double w,double h)
 				{
-					BarUiShapeClass surface(0,0,w,h,8,8,1,GetThemeColor(BarThemeColorEnum::Surface),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+					UiShapeClass surface(0,0,w,h,8,8,1,GetThemeColor(ThemeColorEnum::Surface),GetThemeColor(ThemeColorEnum::SurfaceFrame));
 					surface.enable.Initialization(true);surface.pct.SetDirect(0.96);surface.framePct.emplace(0.18);surface.frameLightPct.emplace(0);
-					owner.spec.Shape(dc,surface,BarUiInheritClass(x,y));
+					owner.spec.Shape(dc,surface,UiInheritClass(x,y));
 				};
 				auto drawAuditText=[&](const std::wstring& text,double x,double y,double w,double h,double size,DWRITE_FONT_WEIGHT weight=DWRITE_FONT_WEIGHT_NORMAL)
 				{
-					BarUiWordClass word(0,0,w,h,text,size,GetThemeColor(BarThemeColorEnum::TextPrimary));
+					UiWordClass word(0,0,w,h,text,size,GetThemeColor(ThemeColorEnum::TextPrimary));
 					word.enable.Initialization(true);word.pct.SetDirect(1);
-					owner.spec.Word(dc,word,BarUiInheritClass(x,y),weight,DWRITE_TEXT_ALIGNMENT_LEADING);
+					owner.spec.Word(dc,word,UiInheritClass(x,y),weight,DWRITE_TEXT_ALIGNMENT_LEADING);
 				};
 				const double annotationLeft=10,annotationTop=95;
 				drawAuditSurface(annotationLeft,annotationTop,annotationWidth,annotationHeight);
@@ -1516,10 +1530,10 @@ namespace Inkeys::UI::Bar
 					overflowTop+BarThicknessTooltipPadding+overflowTitle.height+BarThicknessTooltipLineGap,
 					overflowWidth-BarThicknessTooltipPadding*2,overflowBody.height,BarThicknessTooltipBodyFontSize);
 				const double footerLeft=390,footerTop=170,footerHeight=55,footerPadding=5,footerLabelGap=3,footerColumnGap=6;
-				drawAuditSurface(footerLeft,footerTop,BarColorPickerPanelWidth,footerHeight);
+				drawAuditSurface(footerLeft,footerTop,ColorPickerPanelWidth,footerHeight);
 				const double rgbColumnWidth=rgbLabelWidth+footerLabelGap+rgbValueWidth;
 				const double rX=footerLeft+footerPadding,gX=rX+rgbColumnWidth+footerColumnGap,bX=gX+rgbColumnWidth+footerColumnGap;
-				const double opacityX=footerLeft+BarColorPickerPanelWidth-footerPadding-opacityLabelWidth-footerLabelGap-opacityValueWidth;
+				const double opacityX=footerLeft+ColorPickerPanelWidth-footerPadding-opacityLabelWidth-footerLabelGap-opacityValueWidth;
 				const std::array<const char*,4> footerLabelKeys{I18nKey.UI.Bar.ColorPicker.RedChannelLabel,I18nKey.UI.Bar.ColorPicker.GreenChannelLabel,I18nKey.UI.Bar.ColorPicker.BlueChannelLabel,I18nKey.UI.Bar.ColorPicker.OpacityLabel};
 				const std::array<double,4> footerLabelX{rX,gX,bX,opacityX};
 				const std::array<const wchar_t*,4> footerValues{L"255",L"255",L"255",L"100%"};
@@ -1532,10 +1546,10 @@ namespace Inkeys::UI::Bar
 				}
 				expect(SUCCEEDED(dc->EndDraw()),"localized fixed bar renders");
 				const auto file=std::filesystem::path(L"Build/eraser-b/visuals")/(L"bar-i18n-"+std::wstring(language.code)+L"-"+std::to_wstring(static_cast<int>(zoom*100))+L".png");
-				expect(SUCCEEDED(SaveEraserTestPng(dc,owner.spec.GetTargetBitmap(),file)),"localized fixed bar PNG readback");
+				expect(SUCCEEDED(SaveEraserTestPng(dc,owner.specTarget.TargetBitmap(),file)),"localized fixed bar PNG readback");
 			}
 		}
-		expect(I18n::load(1,L"JSON",L"zh-CN"),"restore default test language");owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();
+		expect(I18n::load(1,L"JSON",L"zh-CN"),"restore default test language");owner.ConfigureLocalizedTypography();updateLocalizedPresetLabels();
 		const auto preferencesBeforeOpen=EraserPreferencesSnapshot();
 		auto* eraserButton=owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Eraser)];
 		stateMode.StateModeSelect=StateModeSelectEnum::IdtPen;
@@ -1553,7 +1567,7 @@ namespace Inkeys::UI::Bar
 			const UINT dpi=scenario<18?dpis[scenario/6]:192;
 			const double ui=scenario<18?scales[((scenario/2)+1)%3]:scenario==18?0.35:1.0,zoom=dpi/96.0*ui;
 			expect(I18n::load(1,L"JSON",scenario==19?L"en-US":scenario==20?L"zh-TW":L"zh-CN"),"bundled translations load");
-			owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();
+			owner.ConfigureLocalizedTypography();updateLocalizedPresetLabels();
 			BarUiEdgeLightingEnabled=scenario!=16;BarUiDynamicEdgeLightingEnabled=scenario!=17;
 			owner.barStyle.darkStyle=dark;owner.barStyle.zoom=zoom;
 			owner.barState.eraserAttribute=true;owner.barState.eraserSensitivityOpen=true;
@@ -1563,36 +1577,36 @@ namespace Inkeys::UI::Bar
 			Inkeys::config.Drawing.Eraser.Automatic=scenario!=2;
 			const UINT width=static_cast<UINT>(1000*zoom),height=static_cast<UINT>(620*zoom);
 			const auto epoch=RenderPipeline::GetDeviceEpoch();
-			expect(SUCCEEDED(owner.spec.EnsureDeviceResources(epoch,width,height)),"shared renderer resource setup");
-			owner.spec.SetFrameZoom(zoom);owner.spec.PrepareFrameLighting(1.0/60,{},static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
+			expect(SUCCEEDED(owner.specTarget.Ensure(epoch,width,height)),"shared renderer resource setup");
+			owner.spec.SetFrameZoom(zoom);owner.PrepareFrameLighting(1.0/60,{}, ResolveMainBarFrameLightingInput(&owner,static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0));
 			for(int f=0;f<90;++f)owner.eraserAttribute.Advance(owner,1.0/60,1,zoom,dpi,{0,0,static_cast<LONG>(width),static_cast<LONG>(height)},{0,0},0,0);
 			expect(!owner.eraserAttribute.Active(),"animation settles without polling");
 			owner.eraserAttribute.CommitPresented();const auto presentation=owner.eraserAttribute.PresentationSnapshot();
 			auto lighting=owner.spec.SnapshotFrameLighting();
 			lighting.cursorLight=D2D1::Point2F(static_cast<float>(EraserRectCenterX(presentation.geometry.automatic)*zoom),static_cast<float>(EraserRectCenterY(presentation.geometry.automatic)*zoom));
 			lighting.cursorRadius=static_cast<float>(240*zoom);lighting.cursorIntensity=scenario==17?0.0f:1.0f;lighting.cursorLightVisible=scenario!=17;
-			owner.spec.SetFrameLightingSnapshot(lighting);owner.spec.SetFrameCursorLightLocalGeometry(lighting.cursorLight,D2D1::SizeF(lighting.cursorRadius,lighting.cursorRadius));
-			auto* dc=owner.spec.GetDeviceContext();dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());
+			owner.spec.SetFrameLightingSnapshot(lighting, BarUiEdgeLightingEnabled);owner.spec.SetFrameCursorLightLocalGeometry(lighting.cursorLight,D2D1::SizeF(lighting.cursorRadius,lighting.cursorRadius));
+			auto* dc=owner.specTarget.DeviceContext();dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());
 			dc->Clear(dark?D2D1::ColorF(0.13f,0.14f,0.16f,1):D2D1::ColorF(0.91f,0.93f,0.95f,1));
 			owner.eraserAttribute.Draw(owner.spec,dc);
-			main->fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));main->frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-			DrawBarBackgroundVisual(owner.spec,dc,*main,BarUiInheritClass(main->inhX,main->inhY));
+			main->fill->SetDirect(GetThemeColor(ThemeColorEnum::Surface));main->frame->SetDirect(GetThemeColor(ThemeColorEnum::SurfaceFrame));
+			DrawBackgroundVisual(owner.spec,dc,*main,UiInheritClass(main->inhX,main->inhY));
 			for(const auto preset:presets)
 			{
 				auto* b=preset==BarButtonPresetEnum::More?owner.barButtonSet.GetMoreButton():owner.barButtonSet.preset[static_cast<int>(preset)];
-				b->name.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));b->icon.color1->SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
-				DrawBarButtonVisual(owner.spec,dc,*b,b->button.Inherit(BarUiInheritEnum::CenterFromTopLeft,*main));
+				b->name.color.SetDirect(GetThemeColor(ThemeColorEnum::TextPrimary));b->icon.color1->SetDirect(GetThemeColor(ThemeColorEnum::TextPrimary));
+				DrawButtonVisual(owner.spec,dc,*b,b->button.Inherit(UiInheritEnum::CenterFromTopLeft,*main));
 			}
 			expect(SUCCEEDED(dc->EndDraw()),"production panel renders successfully");
 			owner.eraserAttribute.CommitPresented();
 			const auto path=std::filesystem::path(L"Build/eraser-b/visuals")/(std::to_wstring(scenario)+(dark?L"-dark.png":L"-light.png"));
-			expect(SUCCEEDED(SaveEraserTestPng(dc,owner.spec.GetTargetBitmap(),path)),"PNG readback succeeds");
+			expect(SUCCEEDED(SaveEraserTestPng(dc,owner.specTarget.TargetBitmap(),path)),"PNG readback succeeds");
 			report<<"[EraserVisual] "<<path.string()<<" dpi="<<dpi<<" ui="<<ui<<'\n';
 			for(size_t i=0;i<3;++i)
 			{
 				const auto rect=presentation.geometry.previews[i];
 				expect(std::abs(rect.Width()*zoom-static_cast<int>(Inkeys::Drawing::Draw3::SpeedEraser::BaseSizePresets[i])*dpi/96.0)<0.001,"actual stable presented preview matches tool pixels");
-				const auto pixel=ReadEraserTestPixel(dc,owner.spec.GetTargetBitmap(),static_cast<UINT>(EraserRectCenterX(rect)*zoom),static_cast<UINT>(EraserRectCenterY(rect)*zoom));
+				const auto pixel=ReadEraserTestPixel(dc,owner.specTarget.TargetBitmap(),static_cast<UINT>(EraserRectCenterX(rect)*zoom),static_cast<UINT>(EraserRectCenterY(rect)*zoom));
 				expect(pixel[0]>=250 && pixel[1]>=250 && pixel[2]>=250,"Contact white remains opaque at all theme/DPI/UI scales");
 			}
 			expect(ERASER_GRIP_OPACITY==0.5f,"canvas Hover opacity remains unchanged");
@@ -1603,7 +1617,7 @@ namespace Inkeys::UI::Bar
 				input.anchor={anchor->button.inhX,anchor->button.inhY,anchor->button.inhX+anchor->button.w.val,anchor->button.inhY+anchor->button.h.val};
 				input.work={0,0,1000,620};const auto layout=ResolveEraserAttributeLayout(input);
 				const auto circle=layout.items[2];
-				const auto white=ReadEraserTestPixel(dc,owner.spec.GetTargetBitmap(),static_cast<UINT>((circle.left+circle.right)/2),static_cast<UINT>((circle.top+circle.bottom)/2));
+				const auto white=ReadEraserTestPixel(dc,owner.specTarget.TargetBitmap(),static_cast<UINT>((circle.left+circle.right)/2),static_cast<UINT>((circle.top+circle.bottom)/2));
 				expect(white[0]>=250 && white[1]>=250 && white[2]>=250,"stable preview uses opaque Contact white, not Hover alpha0.5");
 				auto click=[&](int id,bool cancel=false)
 				{
@@ -1653,14 +1667,14 @@ namespace Inkeys::UI::Bar
 		// 窄工作区保持生产正常布局并裁剪溢出，截图确认不会切入紧凑留白。
 		{
 			constexpr UINT narrowWidth=300,narrowHeight=620;
-			I18n::load(1,L"JSON",L"zh-CN");owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();owner.barStyle.darkStyle=true;owner.barStyle.zoom=1;
+			I18n::load(1,L"JSON",L"zh-CN");owner.ConfigureLocalizedTypography();updateLocalizedPresetLabels();owner.barStyle.darkStyle=true;owner.barStyle.zoom=1;
 			owner.barState.widgetPosition.mainBar=true;owner.barState.widgetPosition.primaryBar=false;
 			owner.barState.eraserAttribute=true;owner.barState.eraserSensitivityOpen=false;
 			Inkeys::config.Drawing.Eraser.Automatic=true;
 			root->x.SetDirect(-70);root->y.SetDirect(430);
 			const auto epoch=RenderPipeline::GetDeviceEpoch();
-			expect(SUCCEEDED(owner.spec.EnsureDeviceResources(epoch,narrowWidth,narrowHeight)),"narrow target setup");
-			owner.spec.SetFrameZoom(1);owner.spec.PrepareFrameLighting(1.0/60,{},static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0);
+			expect(SUCCEEDED(owner.specTarget.Ensure(epoch,narrowWidth,narrowHeight)),"narrow target setup");
+			owner.spec.SetFrameZoom(1);owner.PrepareFrameLighting(1.0/60,{}, ResolveMainBarFrameLightingInput(&owner,static_cast<int>(StateModeSelectEnum::IdtEraser),0,0,0));
 			for(int f=0;f<90;++f)owner.eraserAttribute.Advance(owner,1.0/60,1,1,96,{0,0,narrowWidth,narrowHeight},{0,0},0,0);
 			owner.eraserAttribute.CommitPresented();const auto narrow=owner.eraserAttribute.PresentationSnapshot();
 			const double narrowCircleEndGap=narrow.geometry.reversed
@@ -1676,56 +1690,56 @@ namespace Inkeys::UI::Bar
 				std::abs(narrow.geometry.items[0].left-narrow.geometry.dividers[0].right-EraserAttributeDividerGapDip)<0.001 &&
 				std::abs(narrow.geometry.dividers[1].left-narrow.geometry.items[0].right-EraserAttributeDividerGapDip)<0.001 &&
 				std::abs(narrowAutomaticGap-EraserAttributeDividerGapDip)<0.001 &&
-				std::abs(narrow.geometry.automatic.Width()-BarButtonTwoSideDip-EraserAttributeAutomaticArrowWidthDip)<0.001 &&
-				std::abs(narrow.geometry.items[4].Width()-BarButtonTwoSideDip)<0.001 &&
+				std::abs(narrow.geometry.automatic.Width()-ButtonTwoSideDip-EraserAttributeAutomaticArrowWidthDip)<0.001 &&
+				std::abs(narrow.geometry.items[4].Width()-ButtonTwoSideDip)<0.001 &&
 				std::abs(narrow.geometry.items[5].Width()-EraserAttributeAutomaticArrowWidthDip)<0.001,
 				"narrow work area clips the normal eraser layout without compacting normal gaps or controls");
 			auto lighting=owner.spec.SnapshotFrameLighting();
 			lighting.cursorLight={static_cast<float>(EraserRectCenterX(narrow.geometry.automatic)),static_cast<float>(EraserRectCenterY(narrow.geometry.automatic))};
 			lighting.cursorRadius=240;lighting.cursorIntensity=1;lighting.cursorLightVisible=true;
-			owner.spec.SetFrameLightingSnapshot(lighting);owner.spec.SetFrameCursorLightLocalGeometry(lighting.cursorLight,D2D1::SizeF(240,240));
-			auto* dc=owner.spec.GetDeviceContext();dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());dc->Clear(D2D1::ColorF(0.13f,0.14f,0.16f,1));
+			owner.spec.SetFrameLightingSnapshot(lighting, BarUiEdgeLightingEnabled);owner.spec.SetFrameCursorLightLocalGeometry(lighting.cursorLight,D2D1::SizeF(240,240));
+			auto* dc=owner.specTarget.DeviceContext();dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());dc->Clear(D2D1::ColorF(0.13f,0.14f,0.16f,1));
 			owner.eraserAttribute.Draw(owner.spec,dc);
-			main->fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));main->frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-			DrawBarBackgroundVisual(owner.spec,dc,*main,BarUiInheritClass(main->inhX,main->inhY));
+			main->fill->SetDirect(GetThemeColor(ThemeColorEnum::Surface));main->frame->SetDirect(GetThemeColor(ThemeColorEnum::SurfaceFrame));
+			DrawBackgroundVisual(owner.spec,dc,*main,UiInheritClass(main->inhX,main->inhY));
 			for(const auto preset:presets)
 			{
 				auto* b=preset==BarButtonPresetEnum::More?owner.barButtonSet.GetMoreButton():owner.barButtonSet.preset[static_cast<int>(preset)];
-				b->name.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));b->icon.color1->SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
-				DrawBarButtonVisual(owner.spec,dc,*b,b->button.Inherit(BarUiInheritEnum::CenterFromTopLeft,*main));
+				b->name.color.SetDirect(GetThemeColor(ThemeColorEnum::TextPrimary));b->icon.color1->SetDirect(GetThemeColor(ThemeColorEnum::TextPrimary));
+				DrawButtonVisual(owner.spec,dc,*b,b->button.Inherit(UiInheritEnum::CenterFromTopLeft,*main));
 			}
 			expect(SUCCEEDED(dc->EndDraw()),"narrow production panel renders successfully");owner.eraserAttribute.CommitPresented();
 			const std::filesystem::path narrowPath(L"Build/eraser-b/visuals/narrow-eraser-attribute.png");
-			expect(SUCCEEDED(SaveEraserTestPng(dc,owner.spec.GetTargetBitmap(),narrowPath)),"narrow PNG readback succeeds");
+			expect(SUCCEEDED(SaveEraserTestPng(dc,owner.specTarget.TargetBitmap(),narrowPath)),"narrow PNG readback succeeds");
 			report<<"[EraserVisual] "<<narrowPath.string()<<" width="<<narrowWidth<<" height="<<narrowHeight<<'\n';
 			root->x.SetDirect(100);
 		}
 		// 实际组件逐帧渲染：所有PNG与CSV都来自同一Advance/Draw/CommitPresented路径。
 		{
-			I18n::load(1,L"JSON",L"zh-CN");owner.spec.ConfigureLocalizedTypography();updateLocalizedPresetLabels();owner.barStyle.darkStyle=true;owner.barStyle.zoom=1;
-			BarUiEdgeLightingEnabled=true;BarUiDynamicEdgeLightingEnabled=true;BarUiAnimationEnabled=true;
+			I18n::load(1,L"JSON",L"zh-CN");owner.ConfigureLocalizedTypography();updateLocalizedPresetLabels();owner.barStyle.darkStyle=true;owner.barStyle.zoom=1;
+			BarUiEdgeLightingEnabled=true;BarUiDynamicEdgeLightingEnabled=true;UiAnimationEnabled=true;
 			root->y.SetDirect(430);owner.barState.widgetPosition.primaryBar=false;owner.barState.widgetPosition.mainBar=true;
-			const auto epoch=RenderPipeline::GetDeviceEpoch();expect(SUCCEEDED(owner.spec.EnsureDeviceResources(epoch,1000,620)),"animation target setup");
-			owner.spec.SetFrameZoom(1);auto* dc=owner.spec.GetDeviceContext();
+			const auto epoch=RenderPipeline::GetDeviceEpoch();expect(SUCCEEDED(owner.specTarget.Ensure(epoch,1000,620)),"animation target setup");
+			owner.spec.SetFrameZoom(1);auto* dc=owner.specTarget.DeviceContext();
 			std::filesystem::create_directories(L"Build/eraser-b/frames");
 			std::ofstream trace("Build/eraser-b/frames.csv");trace<<"case,frame,panel_scale,menu_scale,panel_alpha,menu_alpha,panel_x,panel_y,panel_w,panel_h,menu_x,menu_y,menu_w,menu_h,bounds_l,bounds_t,bounds_r,bounds_b\n";
 			auto tick=[&](const std::string& name,int f,double dt=1.0/60,bool save=false,
 				RECT workArea={0,0,1000,620},POINT origin={0,0},bool dragPlacementLocked=false,
-				const BarUiTimelineClass* parentTimeline=nullptr)
+				const UiTimelineClass* parentTimeline=nullptr)
 			{
-				owner.eraserAttribute.Advance(owner,dt,BarUiAnimationSpeedRate,1,96,workArea,origin,0,0,parentTimeline,dragPlacementLocked);
+				owner.eraserAttribute.Advance(owner,dt,UiAnimationSpeedRate,1,96,workArea,origin,0,0,parentTimeline,dragPlacementLocked);
 				auto light=owner.spec.SnapshotFrameLighting();light.primaryLight={330,470};light.primaryRadius=480;light.primaryLightVisible=true;
 				light.cursorLight={440,340};light.cursorRadius=240;light.cursorIntensity=1;light.cursorLightVisible=true;
-				owner.spec.SetFrameLightingSnapshot(light);owner.spec.SetFrameCursorLightLocalGeometry(light.cursorLight,D2D1::SizeF(240,240));
+				owner.spec.SetFrameLightingSnapshot(light, BarUiEdgeLightingEnabled);owner.spec.SetFrameCursorLightLocalGeometry(light.cursorLight,D2D1::SizeF(240,240));
 				dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());dc->Clear(D2D1::ColorF(0.13f,0.14f,0.16f,1));
 				owner.eraserAttribute.Draw(owner.spec,dc);
-				main->fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));main->frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
-				DrawBarBackgroundVisual(owner.spec,dc,*main,BarUiInheritClass(main->inhX,main->inhY));
+				main->fill->SetDirect(GetThemeColor(ThemeColorEnum::Surface));main->frame->SetDirect(GetThemeColor(ThemeColorEnum::SurfaceFrame));
+				DrawBackgroundVisual(owner.spec,dc,*main,UiInheritClass(main->inhX,main->inhY));
 				for(const auto preset:presets)
 				{
 					auto* b=preset==BarButtonPresetEnum::More?owner.barButtonSet.GetMoreButton():owner.barButtonSet.preset[static_cast<int>(preset)];
-					b->name.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));b->icon.color1->SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
-					DrawBarButtonVisual(owner.spec,dc,*b,b->button.Inherit(BarUiInheritEnum::CenterFromTopLeft,*main));
+					b->name.color.SetDirect(GetThemeColor(ThemeColorEnum::TextPrimary));b->icon.color1->SetDirect(GetThemeColor(ThemeColorEnum::TextPrimary));
+					DrawButtonVisual(owner.spec,dc,*b,b->button.Inherit(UiInheritEnum::CenterFromTopLeft,*main));
 				}
 				expect(SUCCEEDED(dc->EndDraw()),"animation frame draws without D2D error");owner.eraserAttribute.CommitPresented();
 				const auto s=owner.eraserAttribute.PresentationSnapshot();const auto b=owner.eraserAttribute.Bounds();
@@ -1735,7 +1749,7 @@ namespace Inkeys::UI::Bar
 				if(s.panelVisible)expect(covered(p),"Bounds covers presented shell including geometric overshoot");
 				if(s.menuVisible)expect(covered(m),"Bounds covers current child shell");
 				expect(s.panelOpacity>=0 && s.panelOpacity<=1 && s.menuOpacity>=0 && s.menuOpacity<=1,"rendered alpha bounded separately from geometry");
-				if(save)expect(SUCCEEDED(SaveEraserTestPng(dc,owner.spec.GetTargetBitmap(),std::filesystem::path(L"Build/eraser-b/frames")/(std::wstring(name.begin(),name.end())+L"-"+std::to_wstring(f)+L".png"))),"animation PNG readback");
+				if(save)expect(SUCCEEDED(SaveEraserTestPng(dc,owner.specTarget.TargetBitmap(),std::filesystem::path(L"Build/eraser-b/frames")/(std::wstring(name.begin(),name.end())+L"-"+std::to_wstring(f)+L".png"))),"animation PNG readback");
 				return s;
 			};
 			owner.eraserAttribute.Close(owner);for(int f=0;f<60;++f)tick("settle",f);
@@ -1746,7 +1760,7 @@ namespace Inkeys::UI::Bar
 				const auto s=tick("panel-open",f,1.0/60,true);openPeak=(std::max)(openPeak,s.panelPose.scale);
 				if(s.panelPose.scale>1.01 && s.geometry.panel.top+2<300)
 				{
-					const auto pixel=ReadEraserTestPixel(dc,owner.spec.GetTargetBitmap(),static_cast<UINT>(EraserRectCenterX(s.geometry.panel)),static_cast<UINT>(s.geometry.panel.top+2));
+					const auto pixel=ReadEraserTestPixel(dc,owner.specTarget.TargetBitmap(),static_cast<UINT>(EraserRectCenterX(s.geometry.panel)),static_cast<UINT>(s.geometry.panel.top+2));
 					mainOutsidePixel|=std::abs(static_cast<int>(pixel[0])-41)>2 || std::abs(static_cast<int>(pixel[1])-36)>2 || std::abs(static_cast<int>(pixel[2])-33)>2;
 				}
 				stable=s;
@@ -1762,15 +1776,15 @@ namespace Inkeys::UI::Bar
 					"direct drag does not snap the presented eraser panel side or position");
 			}
 			owner.barState.widgetPosition.mainBar=false;owner.barState.widgetPosition.primaryBar=true;root->y.SetDirect(140);
-			BarUiTimelineClass parentTimeline;parentTimeline.Restart(BarUiDefaultOperationDur);
-			parentTimeline.Advance(BarUiDefaultOperationDur/4,1);
+			UiTimelineClass parentTimeline;parentTimeline.Restart(UiDefaultOperationDur);
+			parentTimeline.Advance(UiDefaultOperationDur/4,1);
 			const auto release=tick("drag-release",0,0,true,{0,0,1000,620},{0,0},false,&parentTimeline);
 			const double absorbedY=EraserRectCenterY(release.geometry.anchor)-EraserRectCenterY(beforeDrag.geometry.anchor);
 			expect(release.geometry.below==beforeDrag.geometry.below && owner.eraserAttribute.Active() &&
 				std::abs(release.geometry.panel.top-beforeDrag.geometry.panel.top-absorbedY)<0.000001,
 				"release first frame rebases the old panel without a work-area clamp flash");
 			const int joinedSwitchFrames=static_cast<int>(std::ceil(parentTimeline.GetRemainingDuration()/(1.0/60)));
-			const int joinedCollapseFrames=static_cast<int>(std::ceil((BarUiDefaultOperationDur/4)/(1.0/60)));
+			const int joinedCollapseFrames=static_cast<int>(std::ceil((UiDefaultOperationDur/4)/(1.0/60)));
 			for(int f=0;f<joinedCollapseFrames;++f)tick("drag-release",f+1,1.0/60,f%3==0);
 			const auto switched=owner.eraserAttribute.PresentationSnapshot();
 			expect(switched.geometry.below && switched.geometry.reversed && owner.eraserAttribute.Active(),
@@ -1780,23 +1794,23 @@ namespace Inkeys::UI::Bar
 			expect(released.geometry.below && released.geometry.reversed && released.panelPose.scale==1,
 				"release side switch joins the draw-attribute parent batch and settles at the same deadline");
 			owner.barState.widgetPosition.mainBar=true;owner.barState.widgetPosition.primaryBar=false;root->y.SetDirect(430);
-			BarUiTimelineClass lateParentTimeline;lateParentTimeline.Restart(BarUiDefaultOperationDur);
-			lateParentTimeline.Advance(BarUiDefaultOperationDur*0.75,1);
+			UiTimelineClass lateParentTimeline;lateParentTimeline.Restart(UiDefaultOperationDur);
+			lateParentTimeline.Advance(UiDefaultOperationDur*0.75,1);
 			tick("drag-reset",0,0,true,{0,0,1000,620},{0,0},false,&lateParentTimeline);
 			const int lateParentFrames=static_cast<int>(std::ceil(lateParentTimeline.GetRemainingDuration()/(1.0/60)));
 			for(int f=0;f<lateParentFrames;++f)tick("drag-reset",f+1,1.0/60,f%3==0);
 			expect(owner.eraserAttribute.Active() && owner.eraserAttribute.PresentationSnapshot().geometry.below,
 				"side switch after the parent midpoint starts a full independent draw-attribute batch");
-			const int independentFrames=static_cast<int>(std::ceil(BarUiDefaultOperationDur/(1.0/60)));
+			const int independentFrames=static_cast<int>(std::ceil(UiDefaultOperationDur/(1.0/60)));
 			for(int f=lateParentFrames;f<independentFrames;++f)tick("drag-reset",f+1,1.0/60,f%3==0);
 			stable=owner.eraserAttribute.PresentationSnapshot();
 			expect(!stable.geometry.below && !stable.geometry.reversed && stable.panelPose.scale==1,
 				"drag test restores the original presented side before interaction coverage");
 			// RenderLoop先推进父时间线；即使该帧从中点前跨到中点后，仍应加入同一绘制属性批次。
 			owner.barState.widgetPosition.mainBar=false;owner.barState.widgetPosition.primaryBar=true;root->y.SetDirect(140);
-			BarUiTimelineClass crossingParentTimeline;crossingParentTimeline.Restart(BarUiDefaultOperationDur);
-			crossingParentTimeline.Advance(BarUiDefaultOperationDur*0.49,1);
-			crossingParentTimeline.Advance(1.0/60,BarUiAnimationSpeedRate);
+			UiTimelineClass crossingParentTimeline;crossingParentTimeline.Restart(UiDefaultOperationDur);
+			crossingParentTimeline.Advance(UiDefaultOperationDur*0.49,1);
+			crossingParentTimeline.Advance(1.0/60,UiAnimationSpeedRate);
 			const auto crossed=tick("crossing-join",0,1.0/60,true,{0,0,1000,620},{0,0},false,&crossingParentTimeline);
 			expect(crossed.geometry.below && crossed.geometry.reversed,
 				"parent frame crossing 50 percent keeps the eraser in the joined draw-attribute batch");
@@ -1827,7 +1841,7 @@ namespace Inkeys::UI::Bar
 				const auto s=tick("menu-open",f,1.0/60,true);menuOpenPeak=(std::max)(menuOpenPeak,s.menuPose.scale);
 				if(s.menuPose.scale>1.01 && s.geometry.menu.top+2<205)
 				{
-					const auto pixel=ReadEraserTestPixel(dc,owner.spec.GetTargetBitmap(),static_cast<UINT>(EraserRectCenterX(s.geometry.menu)),static_cast<UINT>(s.geometry.menu.top+2));
+					const auto pixel=ReadEraserTestPixel(dc,owner.specTarget.TargetBitmap(),static_cast<UINT>(EraserRectCenterX(s.geometry.menu)),static_cast<UINT>(s.geometry.menu.top+2));
 					menuOutsidePixel|=std::abs(static_cast<int>(pixel[0])-41)>2 || std::abs(static_cast<int>(pixel[1])-36)>2 || std::abs(static_cast<int>(pixel[2])-33)>2;
 				}
 			}
@@ -1873,45 +1887,45 @@ namespace Inkeys::UI::Bar
 			owner.barState.widgetPosition.mainBar=false;owner.barState.widgetPosition.primaryBar=true;
 			for(int f=0;f<65;++f){root->y.SetDirect(430-290*(std::min)(1.0,f/24.0));tick("side-swap",f,1.0/60,f%3==0);}
 			const auto reversed=owner.eraserAttribute.PresentationSnapshot();expect(reversed.geometry.reversed && reversed.geometry.below && reversed.panelPose.scale==1,"side swap settles with upright group order");
-			BarUiAnimationEnabled=false;owner.eraserAttribute.Close(owner);const auto disabled=tick("disabled-close",0,0,true);expect(!disabled.panelVisible && !disabled.menuVisible,"disabled animation closes immediately");
+			UiAnimationEnabled=false;owner.eraserAttribute.Close(owner);const auto disabled=tick("disabled-close",0,0,true);expect(!disabled.panelVisible && !disabled.menuVisible,"disabled animation closes immediately");
 			owner.barState.eraserAttribute=true;owner.barState.eraserSensitivityOpen=true;const auto direct=tick("disabled-open",0,0,true);expect(direct.panelPose.scale==1 && direct.menuPose.scale==1 && direct.panelOpacity==1,"disabled animation opens at true size");
-			BarUiAnimationEnabled=true;BarUiAnimationSpeedRate=2;owner.eraserAttribute.Close(owner);for(int f=0;f<15;++f)tick("double-speed-close",f);expect(!owner.eraserAttribute.PresentationSnapshot().panelVisible,"speed setting affects both surfaces");BarUiAnimationSpeedRate=1;
+			UiAnimationEnabled=true;UiAnimationSpeedRate=2;owner.eraserAttribute.Close(owner);for(int f=0;f<15;++f)tick("double-speed-close",f);expect(!owner.eraserAttribute.PresentationSnapshot().panelVisible,"speed setting affects both surfaces");UiAnimationSpeedRate=1;
 			report<<"[EraserFrames] panelOpenPeak="<<openPeak<<" menuOpenPeak="<<menuOpenPeak<<" panelClosePeak="<<closePeak<<" menuClosePeak="<<menuClosePeak<<" pixelOvershoot="<<mainOutsidePixel<<','<<menuOutsidePixel<<'\n';
 		}
 		// 新SVG在真实标准图标尺寸和三种状态下栅格化，不使用字体绘制A。
 		for(bool dark:{false,true})for(UINT dpi:{96u,144u,192u})for(double ui:{0.65,1.0,1.5})
 		{
 			owner.barStyle.darkStyle=dark;const double zoom=dpi/96.0*ui;
-			expect(SUCCEEDED(owner.spec.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),static_cast<UINT>(250*zoom),static_cast<UINT>(90*zoom))),"SVG state target setup");owner.spec.SetFrameZoom(zoom);
-			auto* dc=owner.spec.GetDeviceContext();dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());dc->Clear(dark?D2D1::ColorF(0.13f,0.14f,0.16f,1):D2D1::ColorF(0.91f,0.93f,0.95f,1));
+			expect(SUCCEEDED(owner.specTarget.Ensure(RenderPipeline::GetDeviceEpoch(),static_cast<UINT>(250*zoom),static_cast<UINT>(90*zoom))),"SVG state target setup");owner.spec.SetFrameZoom(zoom);
+			auto* dc=owner.specTarget.DeviceContext();dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());dc->Clear(dark?D2D1::ColorF(0.13f,0.14f,0.16f,1):D2D1::ColorF(0.91f,0.93f,0.95f,1));
 			for(int state=0;state<3;++state)
 			{
-				BarButtonClass button;button.hide=false;button.button.Initialization(0,0,BarButtonTwoSideDip,BarButtonTwoSideDip,BarButtonCornerRadiusDip,BarButtonCornerRadiusDip,BarButtonFrameThicknessDip,GetThemeColor(BarThemeColorEnum::PressedFill),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+				BarButtonClass button;button.hide=false;button.button.Initialization(0,0,ButtonTwoSideDip,ButtonTwoSideDip,ButtonCornerRadiusDip,ButtonCornerRadiusDip,ButtonFrameThicknessDip,GetThemeColor(ThemeColorEnum::PressedFill),GetThemeColor(ThemeColorEnum::SurfaceFrame));
 				button.button.enable.Initialization(true);button.button.framePct.emplace(0);button.button.frameLightPct.emplace(0);
-				button.icon.Initialization(0,metrics.iconOffsetYDip,GetThemeColor(BarThemeColorEnum::TextPrimary),std::nullopt);button.icon.InitializationFromResource(L"UI",L"barAutoEraser");button.icon.enable.Initialization(true);button.icon.SetWH(metrics.iconSizeDip,metrics.iconSizeDip);button.icon.w.SetDirect(button.icon.w.tar);button.icon.h.SetDirect(button.icon.h.tar);
-				button.name.Initialization(0,metrics.primaryOffsetYDip,metrics.primarySlotWidthDip,metrics.primarySlotHeightDip,state==0?L"常规":state==1?L"选中":L"禁用",metrics.primaryFontSizeDip,GetThemeColor(BarThemeColorEnum::TextPrimary));button.name.enable.Initialization(true);
-				RetargetBarButtonInteractionVisual(button,true,state!=2,state==1,0.0);
-				const BarUiAnimationAdvanceContextClass instant{0,1,false,true};BarUiAdvanceAnimation(button.button.pct,instant);BarUiAdvanceAnimation(*button.button.fill,instant);BarUiAdvanceAnimation(button.icon.pct,instant);BarUiAdvanceAnimation(*button.icon.color1,instant);BarUiAdvanceAnimation(button.name.pct,instant);BarUiAdvanceAnimation(button.name.color,instant);
-				DrawBarButtonVisual(owner.spec,dc,button,BarUiInheritClass(10+state*80,10));
+				button.icon.Initialization(0,metrics.iconOffsetYDip,GetThemeColor(ThemeColorEnum::TextPrimary),std::nullopt);button.icon.InitializationFromResource(L"UI",L"barAutoEraser");button.icon.enable.Initialization(true);button.icon.SetWH(metrics.iconSizeDip,metrics.iconSizeDip);button.icon.w.SetDirect(button.icon.w.tar);button.icon.h.SetDirect(button.icon.h.tar);
+				button.name.Initialization(0,metrics.primaryOffsetYDip,metrics.primarySlotWidthDip,metrics.primarySlotHeightDip,state==0?L"常规":state==1?L"选中":L"禁用",metrics.primaryFontSizeDip,GetThemeColor(ThemeColorEnum::TextPrimary));button.name.enable.Initialization(true);
+				RetargetButtonInteractionVisual(button,true,state!=2,state==1,0.0);
+				const UiAnimationAdvanceContextClass instant{0,1,false,true};UiAdvanceAnimation(button.button.pct,instant);UiAdvanceAnimation(*button.button.fill,instant);UiAdvanceAnimation(button.icon.pct,instant);UiAdvanceAnimation(*button.icon.color1,instant);UiAdvanceAnimation(button.name.pct,instant);UiAdvanceAnimation(button.name.color,instant);
+				DrawButtonVisual(owner.spec,dc,button,UiInheritClass(10+state*80,10));
 				expect(button.icon.cacheBitmap && button.icon.svg.GetVal().find(L"<text")==std::wstring::npos,"A icon rasterizes from path in normal/selected/disabled state");
 			}
 			expect(SUCCEEDED(dc->EndDraw()),"SVG states draw");
-			const auto file=std::filesystem::path(L"Build/eraser-b/visuals")/(L"icon-"+std::to_wstring(dpi)+L"-"+std::to_wstring(static_cast<int>(ui*100))+(dark?L"-dark.png":L"-light.png"));expect(SUCCEEDED(SaveEraserTestPng(dc,owner.spec.GetTargetBitmap(),file)),"icon states PNG");
+			const auto file=std::filesystem::path(L"Build/eraser-b/visuals")/(L"icon-"+std::to_wstring(dpi)+L"-"+std::to_wstring(static_cast<int>(ui*100))+(dark?L"-dark.png":L"-light.png"));expect(SUCCEEDED(SaveEraserTestPng(dc,owner.specTarget.TargetBitmap(),file)),"icon states PNG");
 		}
 		// B3只共用真实CacheBitmap/Svg/D2D离屏事务；不把数值observer组合称为主栏ULW。
 		{
 			constexpr UINT svgSize = 96;
 			constexpr std::uint32_t svgTag = 0x10000;
 			const auto epoch = RenderPipeline::GetDeviceEpoch();
-			BarUIRendering renderer(nullptr);
-			const HRESULT setup = renderer.EnsureDeviceResources(epoch, svgSize, svgSize);
-			auto* dc = renderer.GetDeviceContext();
+			UIRendering renderer; FrameTarget frameTarget{renderer};
+			const HRESULT setup = frameTarget.Ensure(epoch, svgSize, svgSize);
+			auto* dc = frameTarget.DeviceContext();
 			const bool deviceReady = SUCCEEDED(setup) && dc && epoch.generation != 0;
 			expect(deviceReady, "B300 SVG proof premise: real WARP/D2D epoch and 96x96 target");
 			if (deviceReady)
 			{
 				auto probe = std::make_unique<Ui3SvgProbe>(0xB301);
-				BarUiSVGClass svg;
+				UiSVGClass svg;
 				bool bound = false;
 				{
 					SvgObservationScope ownedInit(probe.get(), false, true);
@@ -1950,7 +1964,7 @@ namespace Inkeys::UI::Bar
 						for (unsigned i = 0; i < 4; ++i) target.viewportBits[i] = std::bit_cast<std::uint32_t>(i < 2 ? 0.0f : static_cast<float>(svgSize));
 						probe->BeginBackingWrite(dc, target);
 						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix());
-						if (options.outerClip) renderer.PushFrameDirtyClip(dc, clip);
+						if (options.outerClip) frameTarget.PushDirtyClip(dc, clip);
 						if (options.nested)
 						{
 							dc->PushAxisAlignedClip(options.nestedClip, D2D1_ANTIALIAS_MODE_ALIASED);
@@ -1962,11 +1976,11 @@ namespace Inkeys::UI::Bar
 						}
 						if (options.clear) { ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0, 0, 0, 0)); }
 						dc->SetTransform(options.transform);
-						submitted = options.paint && renderer.Svg(dc, svg, BarUiInheritClass(options.x, options.y));
+						submitted = options.paint && renderer.Svg(dc, svg, UiInheritClass(options.x, options.y));
 						if (options.unknownWrite) { ObserveUi3SvgUnknownWrite(dc); dc->Clear(D2D1::ColorF(0, 0, 0, 0)); }
 						dc->SetTransform(D2D1::IdentityMatrix());
 						if (options.nested) { ObserveUi3SvgClipPop(dc); dc->PopAxisAlignedClip(); }
-						if (options.outerClip) renderer.PopFrameDirtyClip(dc);
+						if (options.outerClip) frameTarget.PopDirtyClip(dc);
 						const auto proof = probe->FinishDrawing();
 						transactionOk = SUCCEEDED(dc->EndDraw());
 						probe->CompleteAttempt(transactionOk && options.commit);
@@ -1975,7 +1989,7 @@ namespace Inkeys::UI::Bar
 					const auto full = drawSvg(D2D1::RectF(0, 0, svgSize, svgSize), false);
 					const auto actual = probe->Observation(svgTag);
 					const auto counts = probe->CountersAfterOwnerStopped();
-					const auto pixelOff = ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 32, 32);
+					const auto pixelOff = ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 32, 32);
 					const bool cacheReady = transactionOk && submitted && svg.cacheBitmap && actual.used.ready && actual.used.semanticKnown
 						&& actual.used.valueRevision == 1 && actual.used.epoch == epoch.generation && actual.used.surfaceSerial == 1
 						&& actual.used.dpi == 96 && actual.used.pixelWidth == 32 && actual.used.pixelHeight == 32 && pixelOff[3] != 0;
@@ -2029,7 +2043,7 @@ namespace Inkeys::UI::Bar
 						&& probe->Observation(svgTag).coverage == Ui3SvgCoverage::Partial,
 						"B305 actual partial dirty clip cannot certify full SVG coverage");
 					(void)drawSvg(D2D1::RectF(0, 0, svgSize, svgSize), true);
-					const auto pixelOn = ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 32, 32);
+					const auto pixelOn = ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 32, 32);
 					const auto after = probe->CountersAfterOwnerStopped();
 					expect(transactionOk && pixelOff == pixelOn && counts.clockReads == 0 && after.clockReads > 0
 						&& after.lookupHit == 2 && after.createSuccess == 1 && after.uploadCalls == 1,
@@ -2075,7 +2089,7 @@ namespace Inkeys::UI::Bar
 					options.clear = true;
 					const auto hidden = drawSvg(fullClip, false);
 					expect(transactionOk && hidden.required == 1 && hidden.verified == 1 && probe->Observation(svgTag).use == Ui3SvgUse::HiddenExpected
-						&& ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 32, 32)[3] == 0,
+						&& ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 32, 32)[3] == 0,
 						"B318 real complete Clear certifies Hidden with old bounds");
 					options = {}; svg.enable.Initialization(true); svg.pct.SetDirect(1); (void)drawSvg(fullClip, false);
 					options.x = options.y = 44; options.clear = options.commit = false;
@@ -2083,9 +2097,9 @@ namespace Inkeys::UI::Bar
 					expect(transactionOk && probe->Observation(svgTag).use == Ui3SvgUse::Unverified, "B319 failed/deferred completion revokes staged SVG proof");
 					svg.enable.Initialization(false); svg.pct.SetDirect(0); options = {}; options.paint = false;
 					const auto oldOnly = drawSvg(D2D1::RectF(0, 0, 52, 52), false);
-					expect(transactionOk && oldOnly.verified == 0 && ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 60, 60)[3] != 0,
+					expect(transactionOk && oldOnly.verified == 0 && ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 60, 60)[3] != 0,
 						"B320 Clear of old bounds cannot hide new region written by failed attempt");
-					expect(drawSvg(fullClip, false).verified == 1 && ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 60, 60)[3] == 0,
+					expect(drawSvg(fullClip, false).verified == 1 && ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 60, 60)[3] == 0,
 						"B321 real full backing Clear repairs unknown Hidden lineage");
 					options = {}; svg.enable.Initialization(true); svg.pct.SetDirect(1);
 					const auto beforeColor = probe->CountersAfterOwnerStopped(); svg.color1->Initialization(RGB(40, 170, 90));
@@ -2103,15 +2117,15 @@ namespace Inkeys::UI::Bar
 					expect(drawSvg(fullClip, false).verified == 1 && probe->Observation(svgTag).used.pixelWidth == 40,
 						"B324 actual stable size follows original SVG raster size policy");
 					svg.w.SetDirect(32); svg.h.SetDirect(32);
-					const auto imageOffProof = drawSvg(fullClip, false); const auto imageOff = ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
-					const auto imageOnProof = drawSvg(fullClip, true); const auto imageOn = ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+					const auto imageOffProof = drawSvg(fullClip, false); const auto imageOff = ReadSvgProofPixels(dc, frameTarget.TargetBitmap());
+					const auto imageOnProof = drawSvg(fullClip, true); const auto imageOn = ReadSvgProofPixels(dc, frameTarget.TargetBitmap());
 					expect(imageOffProof.verified == 1 && imageOnProof.verified == 1 && imageOff.size() == svgSize * svgSize * 4 && imageOff == imageOn,
 						"B325 entire actual BGRA target is equal with instrumentation clocks on/off");
 					const auto nullBefore = probe->CountersAfterOwnerStopped();
 					{
 						SvgObservationScope absent(nullptr, true); Ui3SvgStageTimer timer(Ui3SvgStage::Parse);
 						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0,0,0,0));
-						(void)renderer.Svg(dc, svg, BarUiInheritClass(16,16)); expect(SUCCEEDED(dc->EndDraw()), "B326 default absent-scope actual draw succeeds");
+						(void)renderer.Svg(dc, svg, UiInheritClass(16,16)); expect(SUCCEEDED(dc->EndDraw()), "B326 default absent-scope actual draw succeeds");
 					}
 					expect(CurrentUi3SvgScope() == nullptr && probe->CountersAfterOwnerStopped().clockReads == nullBefore.clockReads
 						&& probe->CountersAfterOwnerStopped().drawSubmit == nullBefore.drawSubmit, "B326 null scope adds no observation clock or draw counter");
@@ -2159,9 +2173,9 @@ namespace Inkeys::UI::Bar
 						SvgStageTimingScope numeric(timing);
 						expect(CurrentUi3SvgScope() == nullptr, "N05 numeric-only real renderer keeps proof absent");
 						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); dc->Clear(D2D1::ColorF(0,0,0,0));
-						(void)renderer.Svg(dc, svg, BarUiInheritClass(16,16));
+						(void)renderer.Svg(dc, svg, UiInheritClass(16,16));
 						expect(SUCCEEDED(dc->EndDraw()), "N05 real numeric timing draw completes");
-						return ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+						return ReadSvgProofPixels(dc, frameTarget.TargetBitmap());
 					};
 					Ui3SvgStageTimings realTiming;
 					const auto numericOffPixels = renderNumeric(nullptr), numericOnPixels = renderNumeric(&realTiming);
@@ -2190,7 +2204,7 @@ namespace Inkeys::UI::Bar
 					{
 						SvgObservationScope scope(probe.get()); auto target = probe->Target(); target.frameAttemptSerial = ++attempt;
 						probe->BeginFrame(1,currentEpoch.generation,attempt); svg.ObserveFiniteRequirement(true); probe->BeginBackingWrite(dc,target);
-						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); renderer.PushFrameDirtyClip(dc,fullClip);
+						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); frameTarget.PushDirtyClip(dc,fullClip);
 						auto ReplayOutsideOldBounds = [&]()
 						{
 							ObserveUi3SvgUnknownWrite(dc);
@@ -2199,7 +2213,7 @@ namespace Inkeys::UI::Bar
 						if (unknownBeforeClear) ReplayOutsideOldBounds();
 						ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0,0,0,0));
 						if (!unknownBeforeClear) ReplayOutsideOldBounds();
-						renderer.PopFrameDirtyClip(dc); const auto resources = probe->FinishDrawing();
+						frameTarget.PopDirtyClip(dc); const auto resources = probe->FinishDrawing();
 						const bool ended = SUCCEEDED(dc->EndDraw()); probe->CompleteAttempt(ended);
 						expect(ended && resources.required == 1 && resources.verified == 0,
 							"H100 unknown-replay premise: actual source bitmap, D2D writes, unverified frame and successful completion");
@@ -2211,10 +2225,10 @@ namespace Inkeys::UI::Bar
 						"H100 seed premise: real successful SVG establishes old bounds");
 					svg.enable.Initialization(false); svg.pct.SetDirect(0); options.paint = false;
 					const bool replayed = unknownReplayFrame(false);
-					const auto outsideBefore = ReadEraserTestPixel(dc,renderer.GetTargetBitmap(),72,72);
+					const auto outsideBefore = ReadEraserTestPixel(dc,frameTarget.TargetBitmap(),72,72);
 					expect(replayed && outsideBefore[3] != 0, "H100 hostile replay exists outside old 14..50 bounds");
 					const auto hostileHidden = drawSvg(D2D1::RectF(0,0,52,52),false);
-					const auto outsideAfter = ReadEraserTestPixel(dc,renderer.GetTargetBitmap(),72,72);
+					const auto outsideAfter = ReadEraserTestPixel(dc,frameTarget.TargetBitmap(),72,72);
 					expect(transactionOk && outsideAfter[3] != 0, "H100 small old-bounds Clear leaves actual outside replay pixels");
 					if (replayed && outsideBefore[3] != 0 && transactionOk && outsideAfter[3] != 0)
 						expect(hostileHidden.verified == 0 && probe->Observation(svgTag).use != Ui3SvgUse::HiddenExpected,
@@ -2225,7 +2239,7 @@ namespace Inkeys::UI::Bar
 					const bool orderedClear = unknownReplayFrame(true);
 					const auto orderedHidden = drawSvg(D2D1::RectF(0,0,52,52),false);
 					expect(orderedClear && transactionOk && orderedHidden.verified == 1
-						&& ReadEraserTestPixel(dc,renderer.GetTargetBitmap(),72,72)[3] == 0,
+						&& ReadEraserTestPixel(dc,frameTarget.TargetBitmap(),72,72)[3] == 0,
 						"H102 last full Clear after unknown write restores Hidden lineage without stale outside pixels");
 					options = {}; svg.enable.Initialization(true); svg.pct.SetDirect(1); (void)drawSvg(fullClip,false);
 					{
@@ -2339,7 +2353,7 @@ namespace Inkeys::UI::Bar
 						"B335 DPI mismatch on reused bitmap remains unverified without extra upload");
 					options = {};
 					(void)drawSvg(fullClip, false);
-					BarUiSVGClass second;
+					UiSVGClass second;
 					{
 						SvgObservationScope owned(probe.get(), false, true);
 						second.Initialization(0,0,RGB(90,40,220),std::nullopt);
@@ -2354,10 +2368,10 @@ namespace Inkeys::UI::Bar
 						probe->BeginFrame(1, currentEpoch.generation, attempt);
 						svg.ObserveFiniteRequirement(true); second.ObserveFiniteRequirement(true);
 						probe->BeginBackingWrite(dc, target); dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix());
-						renderer.PushFrameDirtyClip(dc, fullClip); ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0,0,0,0));
-						const bool a = renderer.Svg(dc, svg, BarUiInheritClass(8,8));
-						const bool b = renderer.Svg(dc, second, BarUiInheritClass(overlaps ? 24 : 64, overlaps ? 24 : 64));
-						renderer.PopFrameDirtyClip(dc); const auto resource = probe->FinishDrawing();
+						frameTarget.PushDirtyClip(dc, fullClip); ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0,0,0,0));
+						const bool a = renderer.Svg(dc, svg, UiInheritClass(8,8));
+						const bool b = renderer.Svg(dc, second, UiInheritClass(overlaps ? 24 : 64, overlaps ? 24 : 64));
+						frameTarget.PopDirtyClip(dc); const auto resource = probe->FinishDrawing();
 						const bool ended = SUCCEEDED(dc->EndDraw()); probe->CompleteAttempt(ended);
 						expect(a && b && ended, "B336 real two-SVG draw/EndDraw premise"); return resource;
 					};
@@ -2371,7 +2385,7 @@ namespace Inkeys::UI::Bar
 					// B35：真实内嵌主logo的正常着色层叠必须完整证明；普通相交SVG/B337仍保守。
 					{
 						auto logos = std::make_unique<Ui3SvgProbe>(0xB350);
-						BarUiSVGClass baseLogo, inkLogo;
+						UiSVGClass baseLogo, inkLogo;
 						bool logosBound = false;
 						{
 							SvgObservationScope initialization(logos.get(), false, true);
@@ -2390,11 +2404,11 @@ namespace Inkeys::UI::Bar
 							target.dpi = 96; target.windowAlpha = 255; target.zoomBits = std::bit_cast<std::uint64_t>(1.0);
 							for (unsigned i = 0; i < 4; ++i) target.viewportBits[i] = std::bit_cast<std::uint32_t>(i < 2 ? 0.0f : static_cast<float>(svgSize));
 							if (observed) { logos->BeginFrame(1, currentEpoch.generation, logoAttempt); baseLogo.ObserveFiniteRequirement(true); inkLogo.ObserveFiniteRequirement(true); logos->BeginBackingWrite(dc, target); }
-							dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); renderer.PushFrameDirtyClip(dc, fullClip);
+							dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); frameTarget.PushDirtyClip(dc, fullClip);
 							ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0, 0, 0, 0));
 							const auto savedInk = inkLogo.cacheBitmap;
 							if (fault == 2 && observed) logos->DeclareMainLogoInkComposition(dc, &baseLogo, &inkLogo); // 底层还未提交，声明不可授权倒序。
-							const bool first = renderer.Svg(dc, fault == 2 ? inkLogo : baseLogo, BarUiInheritClass(16, 16));
+							const bool first = renderer.Svg(dc, fault == 2 ? inkLogo : baseLogo, UiInheritClass(16, 16));
 							if (fault == 3) { ObserveUi3SvgUnknownWrite(dc); dc->DrawBitmap(baseLogo.cacheBitmap.Get(), D2D1::RectF(72, 72, 88, 88), 1, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr); }
 							if (observed && fault != 1 && fault != 2) logos->DeclareMainLogoInkComposition(dc, fault == 8 ? &inkLogo : &baseLogo, &inkLogo);
 							if (fault == 4) inkLogo.cacheBitmap = baseLogo.cacheBitmap; // 真实错误bitmap对象，typed proof不能追认。
@@ -2412,18 +2426,18 @@ namespace Inkeys::UI::Bar
 								for (unsigned i = 0; i < 6; ++i) m[i] = std::bit_cast<std::uint32_t>(matrix[i]);
 								ObserveUi3SvgClipPush(dc, r, m);
 							}
-							const bool last = renderer.Svg(dc, fault == 2 ? baseLogo : inkLogo, BarUiInheritClass(16, 16));
+							const bool last = renderer.Svg(dc, fault == 2 ? baseLogo : inkLogo, UiInheritClass(16, 16));
 							if (fault == 6) { ObserveUi3SvgClipPop(dc); dc->PopAxisAlignedClip(); }
 							if (fault == 7) { ObserveUi3SvgUnknownWrite(dc); dc->DrawBitmap(baseLogo.cacheBitmap.Get(), D2D1::RectF(72, 72, 88, 88), 1, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr); }
 							if (fault == 4) inkLogo.cacheBitmap = savedInk;
 							inkLogo.angle.SetDirect(0);
-							renderer.PopFrameDirtyClip(dc); const auto resources = observed ? logos->FinishDrawing() : Ui3FiniteResourceProof{};
+							frameTarget.PopDirtyClip(dc); const auto resources = observed ? logos->FinishDrawing() : Ui3FiniteResourceProof{};
 							const bool ended = SUCCEEDED(dc->EndDraw()); if (observed) logos->CompleteAttempt(ended);
 							expect(first && last && ended, "B350 real logo pair DrawBitmap/EndDraw premise");
 							return resources;
 						};
-						const auto composed = paintLogos(0); const auto composedPixels = ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
-						(void)paintLogos(0, false); const auto ordinaryPixels = ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+						const auto composed = paintLogos(0); const auto composedPixels = ReadSvgProofPixels(dc, frameTarget.TargetBitmap());
+						(void)paintLogos(0, false); const auto ordinaryPixels = ReadSvgProofPixels(dc, frameTarget.TargetBitmap());
 						expect(composed.required == 2 && composed.verified == 2 && composed.failed == 0 && composed.unverified == 0
 							&& composedPixels.size() == svgSize * svgSize * 4 && composedPixels == ordinaryPixels,
 							"B351 declared actual logo composition proves both resources with identical entire ordinary BGRA");
@@ -2441,37 +2455,37 @@ namespace Inkeys::UI::Bar
 					}
 					// 纯Shape/Superellipse/CLIP文字真实同序写入：不相交保持SVG，相交覆盖必须拒证。
 					{
-						BarUIRendering pure(&owner); pure.ConfigureLocalizedTypography(); pure.SetFrameZoom(1);
+						UIRendering pure(MakeMainBarRenderingServices(&owner)); pure.ConfigureLocalizedTypography(); pure.SetFrameZoom(1);
 						options = {}; svg.enable.Initialization(true); svg.pct.SetDirect(1);
-						const auto untouched = drawSvg(fullClip, false); const auto originalPixel = ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 32, 32);
+						const auto untouched = drawSvg(fullClip, false); const auto originalPixel = ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 32, 32);
 						auto paintPure = [&](bool overlaps)
 						{
 							SvgObservationScope scope(probe.get()); auto target = probe->Target(); target.frameAttemptSerial = ++attempt;
 							probe->BeginFrame(1, currentEpoch.generation, attempt); svg.ObserveFiniteRequirement(true); probe->BeginBackingWrite(dc, target);
-							dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); renderer.PushFrameDirtyClip(dc, fullClip);
+							dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); frameTarget.PushDirtyClip(dc, fullClip);
 							ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0, 0, 0, 0));
-							BarUiShapeClass background(0, 0, 32, 32, 0, 0, 1, RGB(255, 255, 255), std::nullopt); background.enable.Initialization(true);
-							bool painted = pure.Shape(dc, background, BarUiInheritClass(56, 56));
-							painted = renderer.Svg(dc, svg, BarUiInheritClass(16, 16)) && painted;
-							BarUiWordClass word(0, 0, 28, 28, L"文", 14, RGB(20, 20, 20)); word.enable.Initialization(true);
-							painted = pure.Word(dc, word, BarUiInheritClass(60, 60)) && painted;
-							BarUiSuperellipseClass shape(0, 0, 28, 28, 3, 1, RGB(255, 255, 255), std::nullopt); shape.enable.Initialization(true);
-							painted = pure.Superellipse(dc, shape, BarUiInheritClass(overlaps ? 24 : 56, overlaps ? 24 : 56)) && painted;
-							renderer.PopFrameDirtyClip(dc); const auto resources = probe->FinishDrawing();
+							UiShapeClass background(0, 0, 32, 32, 0, 0, 1, RGB(255, 255, 255), std::nullopt); background.enable.Initialization(true);
+							bool painted = pure.Shape(dc, background, UiInheritClass(56, 56));
+							painted = renderer.Svg(dc, svg, UiInheritClass(16, 16)) && painted;
+							UiWordClass word(0, 0, 28, 28, L"文", 14, RGB(20, 20, 20)); word.enable.Initialization(true);
+							painted = pure.Word(dc, word, UiInheritClass(60, 60)) && painted;
+							UiSuperellipseClass shape(0, 0, 28, 28, 3, 1, RGB(255, 255, 255), std::nullopt); shape.enable.Initialization(true);
+							painted = pure.Superellipse(dc, shape, UiInheritClass(overlaps ? 24 : 56, overlaps ? 24 : 56)) && painted;
+							frameTarget.PopDirtyClip(dc); const auto resources = probe->FinishDrawing();
 							const bool ended = SUCCEEDED(dc->EndDraw()); probe->CompleteAttempt(ended);
 							expect(painted && ended, "B353 actual Shape/SVG/CLIP Word/Superellipse same-order D2D premise"); return resources;
 						};
 						expect(untouched.verified == 1 && paintPure(false).verified == 1
-							&& ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 32, 32) == originalPixel,
+							&& ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 32, 32) == originalPixel,
 							"B354 actual disjoint pure writes retain SVG proof and visible pixel");
 						const auto covered = paintPure(true);
 						expect(covered.verified == 0 && covered.firstUnverifiedReason == static_cast<unsigned>(Ui3SvgProofReason::Overwrite)
-							&& ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 32, 32) != originalPixel,
+							&& ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 32, 32) != originalPixel,
 							"B355 actual overlapping pure geometry remains rejected with visibly covered SVG");
 					}
 					// Hidden域外资格仅沿同epoch/surface的实际mapped写域，未知重放及失败事务不能绕过。
 					{
-						auto hiddenProbe = std::make_unique<Ui3SvgProbe>(0xB356); BarUiSVGClass offViewport;
+						auto hiddenProbe = std::make_unique<Ui3SvgProbe>(0xB356); UiSVGClass offViewport;
 						{
 							SvgObservationScope initialization(hiddenProbe.get(), false, true);
 							offViewport.Initialization(0, 0, RGB(220, 110, 40), std::nullopt);
@@ -2491,19 +2505,19 @@ namespace Inkeys::UI::Bar
 							hiddenProbe->BeginFrame(1, currentEpoch.generation, hiddenAttempt); offViewport.ObserveFiniteRequirement(true); hiddenProbe->BeginBackingWrite(dc, target);
 							dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix());
 							// negative保留当前viewport中的旧图，不把“已清除”误作“域外”证据。
-							renderer.PushFrameDirtyClip(dc, visible ? fullClip : mappedInside ? D2D1::RectF(32, 32, svgSize, svgSize) : D2D1::RectF(0, 0, 32, 32));
+							frameTarget.PushDirtyClip(dc, visible ? fullClip : mappedInside ? D2D1::RectF(32, 32, svgSize, svgSize) : D2D1::RectF(0, 0, 32, 32));
 							ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0, 0, 0, 0));
-							if (visible) { if (mappedInside) dc->SetTransform(D2D1::Matrix3x2F::Translation(-56, -56)); (void)renderer.Svg(dc, offViewport, BarUiInheritClass(64, 64)); }
+							if (visible) { if (mappedInside) dc->SetTransform(D2D1::Matrix3x2F::Translation(-56, -56)); (void)renderer.Svg(dc, offViewport, UiInheritClass(64, 64)); }
 							if (unknownReplay) { ObserveUi3SvgUnknownWrite(dc); dc->DrawBitmap(offViewport.cacheBitmap.Get(), D2D1::RectF(8, 8, 24, 24), 1, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr); }
-							dc->SetTransform(D2D1::IdentityMatrix()); renderer.PopFrameDirtyClip(dc); const auto resources = hiddenProbe->FinishDrawing();
+							dc->SetTransform(D2D1::IdentityMatrix()); frameTarget.PopDirtyClip(dc); const auto resources = hiddenProbe->FinishDrawing();
 							const bool ended = SUCCEEDED(dc->EndDraw()); hiddenProbe->CompleteAttempt(ended && committed);
 							expect(ended, "B356 actual viewport/clear/mapped SVG/EndDraw premise"); return resources;
 						};
-						expect(paintHidden(true).verified == 1 && ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 72, 72)[3] != 0, "B356 old full mapped paint established");
+						expect(paintHidden(true).verified == 1 && ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 72, 72)[3] != 0, "B356 old full mapped paint established");
 						const auto outside = paintHidden(false);
 						expect(outside.required == 1 && outside.verified == 1 && hiddenProbe->Observation(0x10002u).outsidePresentedViewport
-							&& !hiddenProbe->Observation(0x10002u).clearCoversOldBounds && ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 72, 72)[3] != 0
-							&& ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 16, 16)[3] == 0,
+							&& !hiddenProbe->Observation(0x10002u).clearCoversOldBounds && ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 72, 72)[3] != 0
+							&& ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 16, 16)[3] == 0,
 							"B357 known old SVG entirely outside actual viewport is proven absent there without claiming backing Clear");
 						// 不重新绘制SVG，直接把非零源viewport扩回保留旧像素；必须仍Require并拒绝Hidden。
 						const auto expanded = paintHidden(false, false, false, true, true);
@@ -2511,12 +2525,12 @@ namespace Inkeys::UI::Bar
 							&& hiddenProbe->NeedsHiddenProof(0x10002u) && hiddenProbe->Observation(0x10002u).use != Ui3SvgUse::HiddenExpected
 							&& std::bit_cast<float>(hiddenProbe->Target().viewportBits[0]) == 48.0f
 							&& std::bit_cast<float>(hiddenProbe->Target().viewportBits[1]) == 48.0f
-							&& ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 72, 72)[3] != 0,
+							&& ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 72, 72)[3] != 0,
 							"B362 outside success retains actual old paint: no repaint, source48,48 expansion requires and rejects still-visible old SVG");
 					// B363：沿用像素只在先前全覆盖提交、同内容/几何/透明度且本帧clip可知时允许。
 					{
 						auto retainedProbe = std::make_unique<Ui3SvgProbe>(0xB363);
-						BarUiSVGClass retainedSvg;
+						UiSVGClass retainedSvg;
 						{
 							SvgObservationScope initialization(retainedProbe.get(), false, true);
 							retainedSvg.Initialization(0, 0, RGB(220, 110, 40), std::nullopt);
@@ -2535,11 +2549,11 @@ namespace Inkeys::UI::Bar
 							for (unsigned i = 0; i < 4; ++i) target.viewportBits[i] = std::bit_cast<std::uint32_t>(i < 2 ? 0.0f : static_cast<float>(svgSize));
 							retainedProbe->BeginFrame(1, currentEpoch.generation, retainedAttempt);
 							retainedSvg.ObserveFiniteRequirement(true); retainedProbe->BeginBackingWrite(dc, target);
-							dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); renderer.PushFrameDirtyClip(dc, clip);
+							dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); frameTarget.PushDirtyClip(dc, clip);
 							ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0, 0, 0, 0));
-							const bool drawn = renderer.Svg(dc, retainedSvg, BarUiInheritClass(16, 16));
+							const bool drawn = renderer.Svg(dc, retainedSvg, UiInheritClass(16, 16));
 							if (unknownAfter) { ObserveUi3SvgUnknownWrite(dc); dc->DrawBitmap(retainedSvg.cacheBitmap.Get(), D2D1::RectF(20, 20, 44, 44), 1, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr); }
-							renderer.PopFrameDirtyClip(dc); const auto proof = retainedProbe->FinishDrawing();
+							frameTarget.PopDirtyClip(dc); const auto proof = retainedProbe->FinishDrawing();
 							const bool ended = SUCCEEDED(dc->EndDraw()); retainedProbe->CompleteAttempt(ended && commit);
 							expect(drawn && ended, "B363 actual same-bitmap D2D draw and EndDraw premise");
 							return proof;
@@ -2558,10 +2572,10 @@ namespace Inkeys::UI::Bar
 						const auto seeded = paintRetained(fullClip);
 						const auto seedObservation = retainedProbe->Observation(0x10003u);
 						reportRetained("seed", seeded);
-						const auto referencePixels = ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+						const auto referencePixels = ReadSvgProofPixels(dc, frameTarget.TargetBitmap());
 						const auto disjoint = paintRetained(D2D1::RectF(60, 60, 90, 90));
 						reportRetained("disjoint", disjoint);
-						const auto disjointPixels = ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+						const auto disjointPixels = ReadSvgProofPixels(dc, frameTarget.TargetBitmap());
 						const bool disjointPixelsSame = referencePixels.size() == svgSize * svgSize * 4 && disjointPixels == referencePixels;
 						report << "[Ui3B363Pixels] stage=disjoint same=" << disjointPixelsSame << " bytes=" << disjointPixels.size() << '\n';
 						expect(seeded.required == 1 && seeded.verified == 1 && seedObservation.use == Ui3SvgUse::DrawnVerified,
@@ -2573,7 +2587,7 @@ namespace Inkeys::UI::Bar
 							"B363 known disjoint dirty clip inherits only the exact previous full-coverage proof");
 						const auto partial = paintRetained(D2D1::RectF(32, 0, 60, svgSize));
 						reportRetained("partial", partial);
-						const auto partialPixels = ReadSvgProofPixels(dc, renderer.GetTargetBitmap());
+						const auto partialPixels = ReadSvgProofPixels(dc, frameTarget.TargetBitmap());
 						const bool partialPixelsSame = partialPixels == referencePixels;
 						report << "[Ui3B363Pixels] stage=partial same=" << partialPixelsSame << " bytes=" << partialPixels.size() << '\n';
 						expect(partialPixelsSame, "B363 same-bitmap partial redraw recomposes exact previously committed BGRA");
@@ -2619,9 +2633,9 @@ namespace Inkeys::UI::Bar
 						expect(candidate.svgProofComplete && completion == Ui3FiniteStatus::Pending && publication->CompletedRevision() == 0, "B358 actual staged outside proof cannot complete failed present transaction");
 						(void)paintHidden(true, true); const auto visibleOld = paintHidden(false, true);
 						expect(visibleOld.verified == 0 && !hiddenProbe->Observation(0x10002u).outsidePresentedViewport
-							&& ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 16, 16)[3] != 0, "B359 actual mapped old bounds in viewport remain unverified");
+							&& ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 16, 16)[3] != 0, "B359 actual mapped old bounds in viewport remain unverified");
 						(void)paintHidden(true); const auto replay = paintHidden(false, false, true);
-						expect(replay.verified == 0 && ReadEraserTestPixel(dc, renderer.GetTargetBitmap(), 16, 16)[3] != 0,
+						expect(replay.verified == 0 && ReadEraserTestPixel(dc, frameTarget.TargetBitmap(), 16, 16)[3] != 0,
 							"B360 actual unknown replay into viewport prevents outside Hidden qualification");
 						(void)paintHidden(true); const auto failedOutside = paintHidden(false, false, false, false);
 						const auto afterFailedOutside = paintHidden(false);
@@ -2640,7 +2654,7 @@ namespace Inkeys::UI::Bar
 					if (SUCCEEDED(nextHr))
 					{
 						{ SvgObservationScope reset(probe.get()); svg.ResetCache(); second.ResetCache(); }
-						nextHr = renderer.EnsureDeviceResources(nextEpoch, svgSize, svgSize); dc = renderer.GetDeviceContext();
+						nextHr = frameTarget.Ensure(nextEpoch, svgSize, svgSize); dc = frameTarget.DeviceContext();
 						expect(SUCCEEDED(nextHr) && dc, "B338 actual context/target recreate premise");
 						if (SUCCEEDED(nextHr) && dc)
 						{
@@ -2651,11 +2665,11 @@ namespace Inkeys::UI::Bar
 						}
 					}
 					// 未观察创建的真实旧cache不能由owned-tag绑定追認为known。
-					BarUiSVGClass oldCache;
+					UiSVGClass oldCache;
 					oldCache.Initialization(0,0,std::nullopt,std::nullopt);
 					oldCache.InitializationFromString(LR"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="red"/></svg>)SVG");
 					oldCache.w.SetDirect(20); oldCache.h.SetDirect(20); oldCache.enable.Initialization(true); oldCache.pct.SetDirect(1);
-					expect(oldCache.CacheBitmap(dc,20,20), "B339 real unobserved old-cache premise");
+					expect(oldCache.CacheBitmap(dc,20,20,renderer.GetDeviceGeneration()), "B339 real unobserved old-cache premise");
 					auto oldProbe = std::make_unique<Ui3SvgProbe>(0xB339);
 					{
 						SvgObservationScope owned(oldProbe.get(),false,true);
@@ -2665,15 +2679,15 @@ namespace Inkeys::UI::Bar
 					{
 						SvgObservationScope scope(oldProbe.get()); auto target = probe->Target(); target.frameAttemptSerial = 1;
 						oldProbe->BeginFrame(1,currentEpoch.generation,1); oldCache.ObserveFiniteRequirement(true); oldProbe->BeginBackingWrite(dc,target);
-						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); renderer.PushFrameDirtyClip(dc,fullClip);
-						ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0,0,0,0)); (void)renderer.Svg(dc,oldCache,BarUiInheritClass(16,16));
-						renderer.PopFrameDirtyClip(dc); const auto unknownOld = oldProbe->FinishDrawing(); const bool ended = SUCCEEDED(dc->EndDraw()); oldProbe->CompleteAttempt(ended);
+						dc->BeginDraw(); dc->SetTransform(D2D1::IdentityMatrix()); frameTarget.PushDirtyClip(dc,fullClip);
+						ObserveUi3SvgClear(dc); dc->Clear(D2D1::ColorF(0,0,0,0)); (void)renderer.Svg(dc,oldCache,UiInheritClass(16,16));
+						frameTarget.PopDirtyClip(dc); const auto unknownOld = oldProbe->FinishDrawing(); const bool ended = SUCCEEDED(dc->EndDraw()); oldProbe->CompleteAttempt(ended);
 						expect(ended && unknownOld.required == 1 && unknownOld.verified == 0 && unknownOld.firstUnverifiedReason != 0,
 							"B339 actual drawing of unknown old bitmap stays unverified");
 					}
 					{
 						auto capacityProbe = std::make_unique<Ui3SvgProbe>(0xB340);
-						auto objects = std::make_unique<std::array<BarUiSVGClass, Ui3SvgCapacity + 1>>();
+						auto objects = std::make_unique<std::array<UiSVGClass, Ui3SvgCapacity + 1>>();
 						SvgObservationScope owned(capacityProbe.get(),false,true);
 						bool first256 = true;
 						for (std::size_t i = 0; i < objects->size(); ++i)
@@ -2695,7 +2709,7 @@ namespace Inkeys::UI::Bar
 						<< " raster=" << counts.rasterCalls << " upload=" << counts.uploadCalls << " readyBytes=" << counts.logicalReadyBytes << '\n';
 				}
 			}
-			renderer.DiscardDeviceResources();
+			frameTarget.Discard();
 		}
 		// 在独立 Scheduler 回调中测生产遮罩提交，TLS 诊断只属于该回调。
 		{
@@ -2710,16 +2724,16 @@ namespace Inkeys::UI::Bar
 			const bool registered=started && scheduler.Register(RenderPipeline::Client::Bar,[&](const RenderPipeline::FrameContext&)
 				{
 					constexpr UINT width=512,height=256;
-					BarUIRendering probe(&owner);
-					BarUiShapeClass shape(0,0,210,90,16,16,2,std::nullopt,RGB(220,220,220));
+					UIRendering probe(MakeMainBarRenderingServices(&owner)); FrameTarget probeTarget{probe};
+					UiShapeClass shape(0,0,210,90,16,16,2,std::nullopt,RGB(220,220,220));
 					shape.enable.Initialization(true);shape.pct.SetDirect(1);
 					shape.framePct.emplace(0);shape.frameLightPct.emplace(1);
-					shape.frameRendering=BarUiFrameRenderingEnum::PointLight;
-					BarUiFrameLightingSnapshot light{};
+					shape.frameRendering=UiFrameRenderingEnum::PointLight;
+					UiFrameLightingSnapshot light{};
 					light.primaryLight=D2D1::Point2F(200,125);
 					light.primaryRadius=480;light.primaryLightVisible=true;
 					light.edgeLightingEnabled=true;
-					probe.SetFrameZoom(1);probe.SetFrameLightingSnapshot(light);
+					probe.SetFrameZoom(1);probe.SetFrameLightingSnapshot(light, BarUiEdgeLightingEnabled);
 					auto* diagnostic=RenderPipeline::CurrentFrameDiagnostics();
 					expect(diagnostic!=nullptr,"exact mask probe has production diagnostics");
 					const std::array cases{
@@ -2728,18 +2742,18 @@ namespace Inkeys::UI::Bar
 						std::pair{"fractional",D2D1::Matrix3x2F::Translation(32.5F,24.0F)}};
 					for(const auto& [name,transform]:cases)
 					{
-						probe.DiscardDeviceResources();
-						const HRESULT setup=probe.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),width,height);
+						probeTarget.Discard();
+						const HRESULT setup=probeTarget.Ensure(RenderPipeline::GetDeviceEpoch(),width,height);
 						expect(SUCCEEDED(setup),"exact mask probe target setup");
 						if(FAILED(setup))continue;
-						auto* dc=probe.GetDeviceContext();
+						auto* dc=probeTarget.DeviceContext();
 						auto drawFrame=[&]()
 							{
 								dc->BeginDraw();dc->SetTransform(transform);
 								dc->Clear(D2D1::ColorF(0.0F,0.0F,0.0F,0.0F));
-								probe.PushFrameDirtyClip(dc,D2D1::RectF(0,0,static_cast<FLOAT>(width),static_cast<FLOAT>(height)));
-								const bool drew=probe.Shape(dc,shape,BarUiInheritClass(100,80));
-								probe.PopFrameDirtyClip(dc);
+								probeTarget.PushDirtyClip(dc,D2D1::RectF(0,0,static_cast<FLOAT>(width),static_cast<FLOAT>(height)));
+								const bool drew=probe.Shape(dc,shape,UiInheritClass(100,80));
+								probeTarget.PopDirtyClip(dc);
 								const HRESULT hr=dc->EndDraw();probe.HandleFrameEndDrawResult(hr);
 								return drew && SUCCEEDED(hr);
 							};
@@ -2765,9 +2779,9 @@ namespace Inkeys::UI::Bar
 								<<(diagnostic?diagnostic->light.roundedParentCreate-beforeCreate:0)<<'\n';
 						}
 						ComPtr<ID2D1Bitmap1> readable;
-						const auto properties=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,probe.GetTargetBitmap()->GetPixelFormat());
+						const auto properties=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,probeTarget.TargetBitmap()->GetPixelFormat());
 						HRESULT hr=dc->CreateBitmap(D2D1::SizeU(width,height),nullptr,0,&properties,&readable);
-						if(SUCCEEDED(hr))hr=readable->CopyFromBitmap(nullptr,probe.GetTargetBitmap(),nullptr);
+						if(SUCCEEDED(hr))hr=readable->CopyFromBitmap(nullptr,probeTarget.TargetBitmap(),nullptr);
 						D2D1_MAPPED_RECT mapped{};if(SUCCEEDED(hr))hr=readable->Map(D2D1_MAP_OPTIONS_READ,&mapped);
 						expect(SUCCEEDED(hr),"exact mask BGRA readback");
 						if(SUCCEEDED(hr))
@@ -2778,26 +2792,26 @@ namespace Inkeys::UI::Bar
 						}
 					}
 					// 真实生产绘制验证共享光源快照，不能只检查 setter 回读值。
-					if(probe.GetDeviceContext())
+					if(probeTarget.DeviceContext())
 					{
-						auto* dc=probe.GetDeviceContext();
-						const auto alphaPixels=[&](const BarUiFrameLightingSnapshot& snapshot)
+						auto* dc=probeTarget.DeviceContext();
+						const auto alphaPixels=[&](const UiFrameLightingSnapshot& snapshot)
 						{
-							probe.SetFrameLightingSnapshot(snapshot);
+							probe.SetFrameLightingSnapshot(snapshot, BarUiEdgeLightingEnabled);
 							dc->SetTransform(D2D1::IdentityMatrix());
-							probe.BeginFrameDraw(dc,D2D1::RectF(0,0,width,height));
-							(void)probe.Shape(dc,shape,BarUiInheritClass(100,80));
-							probe.FinishFrameDrawCommands(dc);
+							probeTarget.BeginFrame(dc,D2D1::RectF(0,0,width,height));
+							(void)probe.Shape(dc,shape,UiInheritClass(100,80));
+							probeTarget.FinishDrawCommands(dc);
 							HDC source=nullptr;
-							HRESULT hr=probe.GetGdiInteropRenderTarget()->GetDC(D2D1_DC_INITIALIZE_MODE_COPY,&source);
-							if(SUCCEEDED(hr)) {const RECT unchanged{};hr=probe.GetGdiInteropRenderTarget()->ReleaseDC(&unchanged);}
-							const HRESULT end=probe.EndFrameDraw(dc);
+							HRESULT hr=probeTarget.GdiInteropRenderTarget()->GetDC(D2D1_DC_INITIALIZE_MODE_COPY,&source);
+							if(SUCCEEDED(hr)) {const RECT unchanged{};hr=probeTarget.GdiInteropRenderTarget()->ReleaseDC(&unchanged);}
+							const HRESULT end=probeTarget.EndFrame(dc);
 							if(SUCCEEDED(hr))hr=end;
 							ComPtr<ID2D1Bitmap1> readback;
 							const auto properties=D2D1::BitmapProperties1(D2D1_BITMAP_OPTIONS_CPU_READ|D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-								probe.GetTargetBitmap()->GetPixelFormat());
+								probeTarget.TargetBitmap()->GetPixelFormat());
 							if(SUCCEEDED(hr))hr=dc->CreateBitmap(D2D1::SizeU(width,height),nullptr,0,&properties,&readback);
-							if(SUCCEEDED(hr))hr=readback->CopyFromBitmap(nullptr,probe.GetTargetBitmap(),nullptr);
+							if(SUCCEEDED(hr))hr=readback->CopyFromBitmap(nullptr,probeTarget.TargetBitmap(),nullptr);
 							D2D1_MAPPED_RECT mapped{};if(SUCCEEDED(hr))hr=readback->Map(D2D1_MAP_OPTIONS_READ,&mapped);
 							expect(SUCCEEDED(hr),"shared lighting snapshot transaction and alpha readback");
 							std::size_t pixels=0;
@@ -2809,7 +2823,7 @@ namespace Inkeys::UI::Bar
 							}
 							return pixels;
 						};
-						BarUiFrameLightingSnapshot hidden{};hidden.primaryLight={200,125};hidden.primaryRadius=480;
+						UiFrameLightingSnapshot hidden{};hidden.primaryLight={200,125};hidden.primaryRadius=480;
 						hidden.primaryLightVisible=false;hidden.edgeLightingEnabled=true;
 						expect(alphaPixels(hidden)==0,"hidden primary light does not draw merely because its radius is retained");
 						auto cursor=hidden;cursor.primaryRadius=0;cursor.cursorLight={200,125};
@@ -2823,14 +2837,14 @@ namespace Inkeys::UI::Bar
 					// 真正的全帧与保留像素局部重绘比较：确保跳过发生，且不是同一裁剪路径自证。
 					{
 						constexpr UINT targetWidth=1024,targetHeight=512;
-						const auto buttonMetrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
+						const auto buttonMetrics=ResolveButtonVisualMetrics(ButtonVisualLayoutKind::StandardTwoTwo);
 						const auto initializeButton=[&](BarButtonClass& button,const wchar_t* label)
 						{
 							button.hide=false;
 							button.button.Initialization(0,0,70,70,4,4,1,RGB(45,85,110),RGB(220,230,240));
 							button.button.enable.Initialization(true);button.button.pct.SetDirect(0.65);
 							button.button.framePct.emplace(0.30);button.button.frameLightPct.emplace(1.0);
-							button.button.frameRendering=BarUiFrameRenderingEnum::PointLight;
+							button.button.frameRendering=UiFrameRenderingEnum::PointLight;
 							button.icon.Initialization(0,buttonMetrics.iconOffsetYDip,RGB(255,255,255),std::nullopt);
 							button.icon.InitializationFromString(LR"SVG(<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><path fill="#fff" d="M4 4H24V24H4Z"/></svg>)SVG");
 							button.icon.enable.Initialization(true);button.icon.pct.SetDirect(1);
@@ -2841,10 +2855,10 @@ namespace Inkeys::UI::Bar
 						};
 						for(const double zoom:{1.0,1.5,2.0})for(const UINT dpi:{96u,144u,192u})
 						{
-							BarUIRendering full(&owner),retained(&owner);
+							UIRendering full(MakeMainBarRenderingServices(&owner)),retained(MakeMainBarRenderingServices(&owner));FrameTarget fullTarget{full},retainedTarget{retained};
 							const auto epoch=RenderPipeline::GetDeviceEpoch();
-							const bool ready=SUCCEEDED(full.EnsureDeviceResources(epoch,targetWidth,targetHeight))
-								&&SUCCEEDED(retained.EnsureDeviceResources(epoch,targetWidth,targetHeight));
+							const bool ready=SUCCEEDED(fullTarget.Ensure(epoch,targetWidth,targetHeight))
+								&&SUCCEEDED(retainedTarget.Ensure(epoch,targetWidth,targetHeight));
 							expect(ready,"shared dirty cull production target setup");if(!ready)continue;
 							std::array<BarButtonClass,2> referenceButtons,partialButtons;
 							for(auto* buttons:{&referenceButtons,&partialButtons}){
@@ -2852,10 +2866,10 @@ namespace Inkeys::UI::Bar
 								for(auto& button:*buttons){button.pressScale.SetDirect(dpi==96?1.0:dpi==144?0.94:1.07);
 									button.icon.angle.SetDirect(17);button.icon.contentScale=1.08;button.name.contentScale=1.05;}
 							}
-							BarUiWordClass secondary;secondary.Initialization(0,31,50,13,L"/12",11,RGB(235,235,235));
+							UiWordClass secondary;secondary.Initialization(0,31,50,13,L"/12",11,RGB(235,235,235));
 							secondary.enable.Initialization(true);secondary.pct.SetDirect(1);
-							BarUiShapeClass sidePanel(0,0,76,76,7,7,1,RGB(25,30,36),RGB(200,210,220));
-							sidePanel.enable.Initialization(true);sidePanel.pct.SetDirect(0.85);sidePanel.frameRendering=BarUiFrameRenderingEnum::PointLight;
+							UiShapeClass sidePanel(0,0,76,76,7,7,1,RGB(25,30,36),RGB(200,210,220));
+							sidePanel.enable.Initialization(true);sidePanel.pct.SetDirect(0.85);sidePanel.frameRendering=UiFrameRenderingEnum::PointLight;
 							sidePanel.framePct.emplace(0.25);sidePanel.frameLightPct.emplace(1);
 							const auto popup=dpi==96?D2D1::Matrix3x2F::Identity():dpi==144
 								?D2D1::Matrix3x2F::Translation(24.5F,12.25F)
@@ -2870,64 +2884,64 @@ namespace Inkeys::UI::Bar
 								dirty.left=(std::min)(dirty.left,px);dirty.top=(std::min)(dirty.top,py);
 								dirty.right=(std::max)(dirty.right,px);dirty.bottom=(std::max)(dirty.bottom,py);
 							}
-							const auto draw=[&](BarUIRendering& renderer,std::array<BarButtonClass,2>& buttons,bool changed,const D2D1_RECT_F& clip)
+							const auto draw=[&](UIRendering& renderer,FrameTarget& frameTarget,std::array<BarButtonClass,2>& buttons,bool changed,const D2D1_RECT_F& clip)
 							{
-								auto* dc=renderer.GetDeviceContext();dc->SetDpi(static_cast<FLOAT>(dpi),static_cast<FLOAT>(dpi));
+								auto* dc=frameTarget.DeviceContext();dc->SetDpi(static_cast<FLOAT>(dpi),static_cast<FLOAT>(dpi));
 								dc->SetUnitMode(D2D1_UNIT_MODE_DIPS);dc->SetTransform(D2D1::IdentityMatrix());
 								renderer.SetFrameZoom(zoom);renderer.SetFrameDiffuseReferenceZoom(zoom*1.1);
 								renderer.SetFrameDiffuseMaskGeometryScale(1.06);
-								BarUiFrameLightingSnapshot lighting{};lighting.primaryLight={180,100};lighting.primaryRadius=480;
-								lighting.primaryLightVisible=true;lighting.edgeLightingEnabled=true;renderer.SetFrameLightingSnapshot(lighting);
+								UiFrameLightingSnapshot lighting{};lighting.primaryLight={180,100};lighting.primaryRadius=480;
+								lighting.primaryLightVisible=true;lighting.edgeLightingEnabled=true;renderer.SetFrameLightingSnapshot(lighting, BarUiEdgeLightingEnabled);
 								buttons[0].button.fill->SetDirect(changed?RGB(210,90,25):RGB(45,85,110));
 								buttons[0].name.SetStringImmediate(changed?L"Changed":L"Prev");
-								renderer.BeginFrameDraw(dc,clip);dc->SetTransform(popup);
+								frameTarget.BeginFrame(dc,clip);dc->SetTransform(popup);
 								renderer.PushPanelOpacity(dc,D2D1::RectF(0,0,230*static_cast<FLOAT>(zoom),90*static_cast<FLOAT>(zoom)),0.82);
-								(void)DrawBarBackgroundVisual(renderer,dc,sidePanel,BarUiInheritClass(147,7));
-								BarButtonDrawOptions options;options.secondary=&secondary;
-								(void)DrawBarButtonVisual(renderer,dc,buttons[0],BarUiInheritClass(10,10),options);
-								(void)DrawBarButtonVisual(renderer,dc,buttons[1],BarUiInheritClass(150,10),options);
-								dc->PopLayer();dc->SetTransform(D2D1::IdentityMatrix());renderer.FinishFrameDrawCommands(dc);
-								HDC source=nullptr;HRESULT hr=renderer.GetGdiInteropRenderTarget()->GetDC(D2D1_DC_INITIALIZE_MODE_COPY,&source);
-								if(SUCCEEDED(hr)){const RECT unchanged{};hr=renderer.GetGdiInteropRenderTarget()->ReleaseDC(&unchanged);}
-								const HRESULT end=renderer.EndFrameDraw(dc);return SUCCEEDED(hr)&&SUCCEEDED(end);
+								(void)DrawBackgroundVisual(renderer,dc,sidePanel,UiInheritClass(147,7));
+								ButtonDrawOptions options;options.secondary=&secondary;
+								(void)DrawButtonVisual(renderer,dc,buttons[0],UiInheritClass(10,10),options);
+								(void)DrawButtonVisual(renderer,dc,buttons[1],UiInheritClass(150,10),options);
+								dc->PopLayer();dc->SetTransform(D2D1::IdentityMatrix());frameTarget.FinishDrawCommands(dc);
+								HDC source=nullptr;HRESULT hr=frameTarget.GdiInteropRenderTarget()->GetDC(D2D1_DC_INITIALIZE_MODE_COPY,&source);
+								if(SUCCEEDED(hr)){const RECT unchanged{};hr=frameTarget.GdiInteropRenderTarget()->ReleaseDC(&unchanged);}
+								const HRESULT end=frameTarget.EndFrame(dc);return SUCCEEDED(hr)&&SUCCEEDED(end);
 							};
-							expect(draw(full,referenceButtons,false,fullClip)&&draw(retained,partialButtons,false,fullClip),"shared dirty cull seed full frames");
-							expect(draw(full,referenceButtons,true,fullClip),"shared dirty cull independent full reference");
-							const auto expected=ReadSvgProofPixels(full.GetDeviceContext(),full.GetTargetBitmap());
-							expect(draw(retained,partialButtons,true,dirty),"shared dirty cull retained partial transaction");
-							const auto actual=ReadSvgProofPixels(retained.GetDeviceContext(),retained.GetTargetBitmap());
+							expect(draw(full,fullTarget,referenceButtons,false,fullClip)&&draw(retained,retainedTarget,partialButtons,false,fullClip),"shared dirty cull seed full frames");
+							expect(draw(full,fullTarget,referenceButtons,true,fullClip),"shared dirty cull independent full reference");
+							const auto expected=ReadSvgProofPixels(fullTarget.DeviceContext(),fullTarget.TargetBitmap());
+							expect(draw(retained,retainedTarget,partialButtons,true,dirty),"shared dirty cull retained partial transaction");
+							const auto actual=ReadSvgProofPixels(retainedTarget.DeviceContext(),retainedTarget.TargetBitmap());
 							expect(!expected.empty()&&actual==expected,"shared dirty cull retains exact BGRA with DPI/zoom/press/popup/light/layer and secondary text");
 							expect(retained.GetFrameCulledDrawCount()>=2,"shared dirty cull really rejects standard button and independent panel draws");
 							expect(partialButtons[1].button.inhX==150&&partialButtons[1].button.inhY==10,"culled standard button still publishes current inherited hit geometry");
 							report<<"[Ui3DirtyCull] zoom="<<zoom<<" dpi="<<dpi<<" rejected="<<retained.GetFrameCulledDrawCount()<<" exactPixels="<<(actual==expected)<<'\n';
-							full.DiscardDeviceResources();retained.DiscardDeviceResources();
+							fullTarget.Discard();retainedTarget.Discard();
 						}
 						// 未知自定义内容可能超出按钮，必须实际执行；普通 glyph/shape 仍可各自裁剪。
-						BarUIRendering custom(&owner);const bool customReady=SUCCEEDED(custom.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),256,128));
+						UIRendering custom(MakeMainBarRenderingServices(&owner));FrameTarget customTarget{custom};const bool customReady=SUCCEEDED(customTarget.Ensure(RenderPipeline::GetDeviceEpoch(),256,128));
 						expect(customReady,"shared dirty cull custom path target");
 						if(customReady){
-							auto* dc=custom.GetDeviceContext();custom.SetFrameZoom(1);dc->SetTransform(D2D1::IdentityMatrix());
+							auto* dc=customTarget.DeviceContext();custom.SetFrameZoom(1);dc->SetTransform(D2D1::IdentityMatrix());
 							BarButtonClass button;initializeButton(button,L"Outside");unsigned calls=0;
-							BarButtonDrawOptions options;options.content=[&](BarUIRendering& renderer,ID2D1DeviceContext* context,BarButtonClass&,const BarButtonVisualInheritance&){
+							ButtonDrawOptions options;options.content=[&](UIRendering& renderer,ID2D1DeviceContext* context,ButtonClass&,const ButtonVisualInheritance&){
 								++calls;auto* brush=renderer.ContentSolidBrush(RGB(255,0,0));if(!brush)return false;
 								context->FillRectangle(D2D1::RectF(5,5,15,15),brush);return true;
 							};
-							custom.BeginFrameDraw(dc,D2D1::RectF(0,0,40,40));
-							(void)DrawBarButtonVisual(custom,dc,button,BarUiInheritClass(150,10),options);
-							custom.FinishFrameDrawCommands(dc);expect(SUCCEEDED(custom.EndFrameDraw(dc)),"shared dirty cull custom transaction");
-							const auto pixel=ReadEraserTestPixel(dc,custom.GetTargetBitmap(),10,10);
+							customTarget.BeginFrame(dc,D2D1::RectF(0,0,40,40));
+							(void)DrawButtonVisual(custom,dc,button,UiInheritClass(150,10),options);
+							customTarget.FinishDrawCommands(dc);expect(SUCCEEDED(customTarget.EndFrame(dc)),"shared dirty cull custom transaction");
+							const auto pixel=ReadEraserTestPixel(dc,customTarget.TargetBitmap(),10,10);
 							expect(calls==1&&pixel[2]>0&&pixel[3]>0,"unbounded custom callback is not rejected with button chrome");
 							expect(custom.ShouldDrawFrameBounds(dc,D2D1::RectF(1000,1000,1010,1010)),"no active dirty clip always preserves original draw path");
-							custom.BeginFrameDraw(dc,D2D1::RectF(0,0,40,40));
+							customTarget.BeginFrame(dc,D2D1::RectF(0,0,40,40));
 							const auto invalid=D2D1::RectF((std::numeric_limits<FLOAT>::quiet_NaN)(),0,10,10);
 							expect(custom.ShouldDrawFrameBounds(dc,invalid),"invalid bounds conservatively bypass rejection");
 							{auto finiteProbe=std::make_unique<Ui3SvgProbe>(0xB380);SvgObservationScope scope(finiteProbe.get());
 								expect(custom.ShouldDrawFrameBounds(dc,D2D1::RectF(1000,1000,1010,1010)),"finite SVG resource observation keeps original draw calls");}
-							custom.FinishFrameDrawCommands(dc);expect(SUCCEEDED(custom.EndFrameDraw(dc)),"shared dirty cull fallback transaction");
+							customTarget.FinishDrawCommands(dc);expect(SUCCEEDED(customTarget.EndFrame(dc)),"shared dirty cull fallback transaction");
 						}
-						custom.DiscardDeviceResources();
+						customTarget.Discard();
 					}
-					probe.DiscardDeviceResources();finished.store(true,std::memory_order_release);
+					probeTarget.Discard();finished.store(true,std::memory_order_release);
 					return RenderPipeline::FrameResult::Idle;
 				});
 			expect(registered,"exact mask diagnostic scheduler starts");
@@ -2960,6 +2974,14 @@ namespace Inkeys::UI::Bar
 			expect(SUCCEEDED(warpHr),"independent WARP/D2D epoch initializes");
 
 			BarPageSurface scene;
+			// 测试自持帧目标（声明在场景之后，先于场景析构）；Ensure 前先让场景清自有设备资源。
+			FrameTarget sceneTarget;
+			scene.BindFrameTarget(&sceneTarget);
+			const auto ensureScene=[&](const RenderPipeline::DeviceEpoch& epoch,UINT targetWidth,UINT targetHeight)
+			{
+				scene.PrepareDeviceGeneration(epoch.generation);
+				return sceneTarget.Ensure(epoch,targetWidth,targetHeight);
+			};
 			BarPageSurfaceContent content;
 			content.whiteboard=true;
 			content.currentPage=L"1";
@@ -2992,14 +3014,14 @@ namespace Inkeys::UI::Bar
 			auto drawPageSurface=[&](const RenderPipeline::DeviceEpoch& epoch,UINT targetWidth,
 				UINT targetHeight,std::vector<unsigned char>& pixels)
 			{
-				if(FAILED(scene.EnsureDeviceResources(epoch,targetWidth,targetHeight)))return false;
-				auto* context=scene.DeviceContext();
+				if(FAILED(ensureScene(epoch,targetWidth,targetHeight)))return false;
+				auto* context=sceneTarget.DeviceContext();
 				if(!context)return false;
-				scene.Renderer().BeginFrameDraw(context,D2D1::RectF(0,0,
+				sceneTarget.BeginFrame(context,D2D1::RectF(0,0,
 					static_cast<FLOAT>(targetWidth),static_cast<FLOAT>(targetHeight)));
 				const bool rendered=scene.Render(context,frameTime).rendered;
-				scene.Renderer().FinishFrameDrawCommands(context);
-				const HRESULT endDraw=scene.Renderer().EndFrameDraw(context);
+				sceneTarget.FinishDrawCommands(context);
+				const HRESULT endDraw=sceneTarget.EndFrame(context);
 				if(!rendered || FAILED(endDraw))return false;
 				ComPtr<ID2D1Image> image;
 				context->GetTarget(&image);
@@ -3046,7 +3068,7 @@ namespace Inkeys::UI::Bar
 						if(rendered&&sampleX<width&&sampleY<height)
 						{
 							const auto at=(static_cast<size_t>(sampleY)*width+sampleX)*4;
-							const auto expected=GetThemeColor(BarThemeColorEnum::Surface);
+							const auto expected=GetThemeColor(ThemeColorEnum::Surface);
 							// 分页常驻底板与主栏同一常驻透明度：Dark 0.80、Light 端更实。
 							const double residentOpacity=GetThemeResidentSurfaceOpacity(BarMainBarFillOpacity);
 							const auto premultiplied=[&](int channel){return static_cast<int>(std::lround(channel*residentOpacity));};
@@ -3077,23 +3099,23 @@ namespace Inkeys::UI::Bar
 										"PageSurface background follows the user resident opacity in Dark and Light");
 							}
 							// 主栏常驻表面：与生产初始化一致的 themeSurface + residentSurface 形状。
-							BarUiShapeClass mainBar(0.0,0.0,60.0,40.0,8.0,8.0,1.0,
-								GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::Surface),
-								GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::SurfaceFrame));
+							UiShapeClass mainBar(0.0,0.0,60.0,40.0,8.0,8.0,1.0,
+								GetThemeColor(ThemeModeEnum::Dark,ThemeColorEnum::Surface),
+								GetThemeColor(ThemeModeEnum::Dark,ThemeColorEnum::SurfaceFrame));
 							mainBar.enable.Initialization(true);mainBar.pct.SetDirect(BarMainBarFillOpacity);
 							mainBar.framePct.emplace(0.0);mainBar.themeSurface=true;mainBar.residentSurface=true;
-							mainBar.lightFillOpacityScale=BarThemeMaterial::LightResidentSurfaceOpacityScale;
+							mainBar.lightFillOpacityScale=ThemeMaterial::LightResidentSurfaceOpacityScale;
 							mainBar.lightMaterial=dark?0.0:1.0;
 							bool drewMainBar=false;std::vector<unsigned char> barPixels;
-							if(SUCCEEDED(scene.EnsureDeviceResources(epochA,width,height)))
-								if(auto* context=scene.DeviceContext())
+							if(SUCCEEDED(ensureScene(epochA,width,height)))
+								if(auto* context=sceneTarget.DeviceContext())
 								{
 									const D2D1_RECT_F all=D2D1::RectF(0,0,static_cast<FLOAT>(width),static_cast<FLOAT>(height));
-									scene.Renderer().BeginFrameDraw(context,all);
+									sceneTarget.BeginFrame(context,all);
 									context->Clear(D2D1::ColorF(0,0,0,0));
-									(void)scene.Renderer().Shape(context,mainBar,BarUiInheritClass(10.0,10.0));
-									scene.Renderer().FinishFrameDrawCommands(context);
-									if(SUCCEEDED(scene.Renderer().EndFrameDraw(context)))
+									(void)sceneTarget.BoundRenderer()->Shape(context,mainBar,UiInheritClass(10.0,10.0));
+									sceneTarget.FinishDrawCommands(context);
+									if(SUCCEEDED(sceneTarget.EndFrame(context)))
 									{
 										ComPtr<ID2D1Image> image;context->GetTarget(&image);ComPtr<ID2D1Bitmap1> target;
 										ComPtr<ID2D1Bitmap1> readable;
@@ -3125,7 +3147,7 @@ namespace Inkeys::UI::Bar
 					if(drewAfterRelease)
 					{
 						expect(afterRelease==baseline,"new epoch retains exact BGRA icon pixels");
-						expect(scene.EnsureDeviceResources(epochA,0,height)==E_INVALIDARG,
+						expect(ensureScene(epochA,0,height)==E_INVALIDARG,
 						"invalid target does not replace working epoch");
 						expect(drawPageSurface(epochB,width,height,preserved)
 						&& preserved==afterRelease,"failed setup preserves current PageSurface pixels");
@@ -3151,18 +3173,18 @@ namespace Inkeys::UI::Bar
 		failures += Inkeys::UI::PageControl::RunOffscreenTests();
 		// 主按钮展开/反向与点击脉冲：分开量CPU路径和完整离屏绘制，像素读取不计入计时。
 		{
-			struct PathProbe : BarUIRendering
+			struct PathProbe : UIRendering
 			{
-				using BarUIRendering::BarUIRendering;
-				using BarUIRendering::GetSuperellipseGeometry;
+				using UIRendering::UIRendering;
+				using UIRendering::GetSuperellipseGeometry;
 			};
 			const auto output=std::filesystem::path(L"Build/eraser-b/ui3-path");
 			std::filesystem::create_directories(output);
 			std::ofstream samples(output/L"measurements.csv");
 			samples<<"zoom,block,geometry_frames,geometry_mean_ms,draw_frames,draw_mean_ms,successful_draws\n";
 			std::array<std::array<double,2>,48> frames{};
-			BarUiValueClass exponent(3.0),size(BarMainButtonWidthDip);
-			const BarUiCurveSpecClass pulse{BarUiCurveEnum::EaseOutBack,BarUiCurveEnum::EaseInBack,0.0,false};
+			UiValueClass exponent(3.0),size(BarMainButtonWidthDip);
+			const UiCurveSpecClass pulse{UiCurveEnum::EaseOutBack,UiCurveEnum::EaseInBack,0.0,false};
 			for(size_t frame=0;frame<frames.size();++frame)
 			{
 				if(frame==0 || frame==12 || frame==24)
@@ -3170,35 +3192,35 @@ namespace Inkeys::UI::Bar
 					exponent.SetTar(frame==12?3.0:10.0,0.4);
 					size.SetTar(BarMainButtonWidthDip,0.4,BarMainButtonWidthDip*1.1,true,pulse);
 				}
-				const BarUiAnimationAdvanceContextClass advance{1.0/60.0,1.0,true,false};
-				BarUiAdvanceAnimation(exponent,advance);BarUiAdvanceAnimation(size,advance);
+				const UiAnimationAdvanceContextClass advance{1.0/60.0,1.0,true,false};
+				UiAdvanceAnimation(exponent,advance);UiAdvanceAnimation(size,advance);
 				frames[frame]={static_cast<double>(size.val),static_cast<double>(exponent.val)};
 			}
 			for(const double zoom:{1.0,1.5})
 			{
 				constexpr UINT width=256,height=192;
-				PathProbe renderer(&owner);
-				const HRESULT setup=renderer.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch(),width,height);
+				PathProbe renderer(MakeMainBarRenderingServices(&owner)); FrameTarget frameTarget{renderer};
+				const HRESULT setup=frameTarget.Ensure(RenderPipeline::GetDeviceEpoch(),width,height);
 				expect(SUCCEEDED(setup),"UI3 path benchmark target setup");
 				if(FAILED(setup))continue;
 				renderer.SetFrameZoom(zoom);
-				BarUiFrameLightingSnapshot light{};
+				UiFrameLightingSnapshot light{};
 				light.primaryLight=D2D1::Point2F(105,85);light.primaryRadius=480;
 				light.primaryLightVisible=true;light.edgeLightingEnabled=true;
-				renderer.SetFrameLightingSnapshot(light);
-				BarUiSuperellipseClass shape(0,0,BarMainButtonWidthDip,BarMainButtonHeightDip,
-					3.0,BarButtonFrameThicknessDip,RGB(245,245,245),RGB(200,200,200));
+				renderer.SetFrameLightingSnapshot(light, BarUiEdgeLightingEnabled);
+				UiSuperellipseClass shape(0,0,BarMainButtonWidthDip,BarMainButtonHeightDip,
+					3.0,ButtonFrameThicknessDip,RGB(245,245,245),RGB(200,200,200));
 				shape.enable.Initialization(true);shape.framePct.emplace(0.4);
-				shape.frameRendering=BarUiFrameRenderingEnum::PointLight;
-				auto* dc=renderer.GetDeviceContext();
+				shape.frameRendering=UiFrameRenderingEnum::PointLight;
+				auto* dc=frameTarget.DeviceContext();
 				auto drawFrame=[&](const std::array<double,2>& values)
 				{
 					shape.w.SetDirect(values[0]);shape.h.SetDirect(values[0]);shape.n->SetDirect(values[1]);
 					dc->BeginDraw();dc->SetTransform(D2D1::IdentityMatrix());
 					dc->Clear(D2D1::ColorF(0,0,0,0));
-					renderer.PushFrameDirtyClip(dc,D2D1::RectF(0,0,width,height));
-					const bool drew=renderer.Superellipse(dc,shape,BarUiInheritClass(40,32));
-					renderer.PopFrameDirtyClip(dc);
+					frameTarget.PushDirtyClip(dc,D2D1::RectF(0,0,width,height));
+					const bool drew=renderer.Superellipse(dc,shape,UiInheritClass(40,32));
+					frameTarget.PopDirtyClip(dc);
 					const HRESULT hr=dc->EndDraw();renderer.HandleFrameEndDrawResult(hr);
 					return drew && SUCCEEDED(hr);
 				};
@@ -3226,15 +3248,15 @@ namespace Inkeys::UI::Bar
 				for(const auto& frame:frames)
 				{
 					expect(drawFrame(frame),"UI3 path snapshot draws");
-					const auto data=ReadSvgProofPixels(dc,renderer.GetTargetBitmap());
+					const auto data=ReadSvgProofPixels(dc,frameTarget.TargetBitmap());
 					expect(data.size()==width*height*4,"UI3 path full BGRA readback");
 					pixels.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.size()));
 				}
 				expect(samples.good() && pixels.good(),"UI3 path benchmark output saved");
-				renderer.DiscardDeviceResources();
+				frameTarget.Discard();
 			}
 		}
-		owner.spec.DiscardDeviceResources();RenderPipeline::Shutdown();CoUninitialize();
+		owner.specTarget.Discard();RenderPipeline::Shutdown();CoUninitialize();
 		report<<"[EraserVisual] failures="<<failures<<'\n';return failures?1:0;
 	}
 }

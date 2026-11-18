@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -6,6 +6,8 @@ module;
 #include <windows.h>
 
 #include <d2d1_1.h>
+// import 后的普通头会使用 D2D 1.3；系统声明先在全局模块片段解析。
+#include <d2d1_3.h>
 #include <d2d1helper.h>
 #include <dxgi.h>
 #include <wrl/client.h>
@@ -22,11 +24,19 @@ module;
 #include <mutex>
 #include <thread>
 
-#include "../StartupPlacement.h"
-#include "StartupPreview.Effects.Drawing.h"
+// 本模块接口的全局片段已声明该枚举；这里同样在全局片段包含，避免 import 之后的头重复定义。
+#include "../StartupPreview.Effect.h"
 
 module Inkeys.UI.StartupPreview;
 import Inkeys.UI.RenderPipeline;
+import Inkeys.UI.UI3.Material;
+import Inkeys.UI.UI3.Superellipse;
+import Inkeys.UI.StartupPlacement;
+
+using namespace Inkeys::UI::UI3;
+
+// 模块依赖先导入；普通头仍保留全局模块归属。
+#include "StartupPreview.Effects.Drawing.h"
 
 #pragma comment(lib, "dxguid.lib")
 

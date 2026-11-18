@@ -9,12 +9,12 @@
 #include <string_view>
 #include <vector>
 
-import Inkeys.UI.Bar.FramePacing;
+import Inkeys.UI.UI3.FramePacing;
+
+using namespace Inkeys::UI::UI3;
 
 namespace
 {
-	using namespace Inkeys::UI::Bar;
-
 	constexpr std::array RemainingWaitBucketsMs{
 		0.25, 0.5, 1.0, 1.5, 1.9, 2.0, 2.1, 4.0, 8.0, 12.0, 16.0,
 	};
@@ -541,11 +541,11 @@ int RunFramePacingTests(bool benchmark)
 	TestOneSecondFrameRate();
 	TestDebugFrameSleepLatch();
 	// 真实timer接缝拒绝非法等待，正常路径不依赖系统timeBeginPeriod或忙等尾段。
-	Check(!Inkeys::UI::Bar::TryWaitForRemainingFrameTime(0.0) && !Inkeys::UI::Bar::TryWaitForRemainingFrameTime(-1.0)
-		&& !Inkeys::UI::Bar::TryWaitForRemainingFrameTime((std::numeric_limits<double>::infinity)())
-		&& !Inkeys::UI::Bar::TryWaitForRemainingFrameTime((std::numeric_limits<double>::quiet_NaN)()),
+	Check(!Inkeys::UI::UI3::TryWaitForRemainingFrameTime(0.0) && !Inkeys::UI::UI3::TryWaitForRemainingFrameTime(-1.0)
+		&& !Inkeys::UI::UI3::TryWaitForRemainingFrameTime((std::numeric_limits<double>::infinity)())
+		&& !Inkeys::UI::UI3::TryWaitForRemainingFrameTime((std::numeric_limits<double>::quiet_NaN)()),
 		"scheduler timer rejects zero, negative and non-finite waits");
-	Check(Inkeys::UI::Bar::TryWaitForRemainingFrameTime(1.0), "scheduler uses actual high-resolution or compatible waitable timer");
+	Check(Inkeys::UI::UI3::TryWaitForRemainingFrameTime(1.0), "scheduler uses actual high-resolution or compatible waitable timer");
 	TestPoliciesAndMeasurements();
 	if (benchmark) RunFramePacingBenchmarks();
 	return failureCount;

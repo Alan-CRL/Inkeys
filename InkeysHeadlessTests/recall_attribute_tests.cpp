@@ -1,4 +1,4 @@
-#include <algorithm>
+﻿#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -8,8 +8,10 @@
 
 import Inkeys.UI.Bar.RecallAttributeMotion;
 import Inkeys.UI.Bar.RecallChrome;
-import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.UI3.Animation;
 import Inkeys.UI.Bar.Metrics;
+
+using namespace Inkeys::UI::UI3;
 
 int RunRecallAttributeTests()
 {
@@ -29,11 +31,11 @@ int RunRecallAttributeTests()
 		input.anchor = {650, 425, 720, 495};
 		input.below = true;
 		const auto layout = ResolveRecallAttributeLayout(input);
-		const double width = RecallAttributeStandardGapDip + BarButtonTwoSideDip + RecallAttributeStandardGapDip;
+		const double width = RecallAttributeStandardGapDip + ButtonTwoSideDip + RecallAttributeStandardGapDip;
 		expect(std::abs(layout.panel.Width() - width) < 0.001, "single redo panel is 5+70+5 DIP wide");
 		expect(std::abs(layout.panel.Height() - input.main.Height()) < 0.001, "panel height matches the main bar");
-		expect(std::abs(layout.items[0].Width() - BarButtonTwoSideDip) < 0.001
-			&& std::abs(layout.items[0].Height() - BarButtonTwoSideDip) < 0.001,
+		expect(std::abs(layout.items[0].Width() - ButtonTwoSideDip) < 0.001
+			&& std::abs(layout.items[0].Height() - ButtonTwoSideDip) < 0.001,
 			"redo slot is the shared 70x70 button");
 		expect(std::abs(centerX(layout.items[0]) - centerX(input.anchor)) < 0.001,
 			"redo stays anchored to the recall entry");
@@ -74,8 +76,8 @@ int RunRecallAttributeTests()
 
 	{
 		RecallSurfaceMotion motion;
-		BarUiAnimationAdvanceContextClass frame{1.0 / 60, 1, true, false};
-		motion.Retarget(true, BarUiDefaultOperationDur);
+		UiAnimationAdvanceContextClass frame{1.0 / 60, 1, true, false};
+		motion.Retarget(true, UiDefaultOperationDur);
 		double openingPeak = 0;
 		for (int i = 0; i < 24; ++i)
 		{
@@ -85,7 +87,7 @@ int RunRecallAttributeTests()
 		}
 		expect(openingPeak > 1.01 && motion.Geometry() == 1 && !motion.Active(),
 			"opening uses the shared 0.4s Back curve and settles on the frame boundary");
-		motion.Retarget(false, BarUiDefaultOperationDur);
+		motion.Retarget(false, UiDefaultOperationDur);
 		double closingPeak = 0;
 		for (int i = 0; i < 24; ++i)
 		{
@@ -95,22 +97,22 @@ int RunRecallAttributeTests()
 		}
 		expect(closingPeak > 1.01 && !motion.Visible() && !motion.Active(),
 			"closing rebounds then retires inside the same 0.4s batch");
-		motion.Retarget(true, BarUiDefaultOperationDur);
+		motion.Retarget(true, UiDefaultOperationDur);
 		for (int i = 0; i < 7; ++i) motion.Advance(frame);
 		const double before = motion.Geometry();
-		motion.Retarget(false, BarUiDefaultOperationDur);
+		motion.Retarget(false, UiDefaultOperationDur);
 		motion.Advance({0, 1, true, false});
 		expect(motion.Geometry() == before, "mid-animation reversal keeps the current pose");
-		motion.Retarget(true, BarUiDefaultOperationDur);
+		motion.Retarget(true, UiDefaultOperationDur);
 		motion.Advance({0, 1, false, false});
 		expect(motion.Geometry() == 1 && motion.Opacity() == 1 && !motion.Active(),
 			"disabled animation settles immediately");
-		BarUiTimelineClass parent;
-		parent.Restart(BarUiDefaultOperationDur);
+		UiTimelineClass parent;
+		parent.Restart(UiDefaultOperationDur);
 		parent.Advance(0.1, 1);
 		motion.Retarget(false, 0);
 		motion.Advance({0, 1, false, false});
-		motion.Retarget(true, BarUiDefaultOperationDur, &parent);
+		motion.Retarget(true, UiDefaultOperationDur, &parent);
 		expect(std::abs(motion.Timeline().GetRemainingDuration() - 0.3) < 0.001,
 			"popup joins the parent timeline during its first half");
 		const RecallAttributeRect panel{200, 300, 280, 380};
@@ -325,13 +327,13 @@ int RunRecallAttributeTests()
 	}
 	{
 		// 四类主栏按钮和历史弹窗共用透明度，用真实动画覆盖反向和重复目标收敛。
-		BarUiPctClass opacity(1.0);
-		const auto advance = [&] { return BarUiAdvanceAnimation(opacity, { 0.05, 1, true, false }); };
-		const auto target = [&](bool enabled) { opacity.SetTar(enabled ? 1.0 : BarButtonDisabledContentOpacity); };
+		UiPctClass opacity(1.0);
+		const auto advance = [&] { return UiAdvanceAnimation(opacity, { 0.05, 1, true, false }); };
+		const auto target = [&](bool enabled) { opacity.SetTar(enabled ? 1.0 : ButtonDisabledContentOpacity); };
 		target(false);
 		advance();
-		expect(opacity.tar == BarButtonDisabledContentOpacity && opacity.val < 1.0
-			&& opacity.val > BarButtonDisabledContentOpacity, "disabled animation has a real intermediate opacity");
+		expect(opacity.tar == ButtonDisabledContentOpacity && opacity.val < 1.0
+			&& opacity.val > ButtonDisabledContentOpacity, "disabled animation has a real intermediate opacity");
 		const auto middle = opacity.val.load();
 		target(true);
 		expect(opacity.val == middle && opacity.startV == middle && opacity.tar == 1.0,
@@ -339,7 +341,7 @@ int RunRecallAttributeTests()
 		for (int frame = 0; frame < 10; ++frame) { target(true); advance(); }
 		expect(opacity.val == 1.0 && opacity.IsSame(), "repeated enabled targets converge to full opacity");
 		for (int frame = 0; frame < 10; ++frame) { target(false); advance(); }
-		expect(opacity.val == BarButtonDisabledContentOpacity && opacity.IsSame(),
+		expect(opacity.val == ButtonDisabledContentOpacity && opacity.IsSame(),
 			"repeated disabled targets converge to unified gray without animation resets");
 	}
 
@@ -385,11 +387,11 @@ int RunRecallAttributeTests()
 				"popup command identity commits its matching SVG and label together without showing the previous action");
 			auto compactAdvance = advance;
 			std::erase_if(compactAdvance, [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; });
-			expect(compactAdvance.find("RetargetBarButtonInteractionVisual(b,presented,commandEnabled,false") != std::string::npos
+			expect(compactAdvance.find("RetargetButtonInteractionVisual(b,presented,commandEnabled,false") != std::string::npos
 				&& advance.find("ResolveRecallCommandContentColor") == std::string::npos,
 				"popup uses the same theme and disabled opacity as Clear and Freeze");
 			// 内容推进已移入经过运行时测试的公共按钮函数，属性面板只负责传入当帧上下文。
-			expect(compactAdvance.find("AdvanceBarButtonVisual(b,buttonFrame)") != std::string::npos
+			expect(compactAdvance.find("AdvanceButtonVisual(b,buttonFrame)") != std::string::npos
 				&& compactAdvance.find("changed_|=advanced.changed;active_|=advanced.active") != std::string::npos,
 				"production popup delegates content advancement and continued frames to the shared button runtime");
 		}
@@ -448,7 +450,7 @@ int RunRecallAttributeTests()
 			&& rendering.find("AnchorHiddenButton(BarButtonPresetEnum::Pierce, BarButtonPresetEnum::Freeze)")!=std::string::npos,
 			"production main-bar layout advances the shared Pierce-to-Freeze hidden anchor");
 		// 验证实际内容入口的提交/缓存链，防止目标正确但绘制仍消费旧 val。
-		std::ifstream uiFile(source.parent_path() / "Bar.UI.cpp", std::ios::binary);
+		std::ifstream uiFile(source.parent_path().parent_path() / "UI3" / "UI3.Primitive.cpp", std::ios::binary);
 		const std::string ui((std::istreambuf_iterator<char>(uiFile)), {});
 		expect(!ui.empty(), "production SVG and Word source is available for its commit contract");
 		const auto section = [&](const char* start, const char* next)
@@ -458,15 +460,15 @@ int RunRecallAttributeTests()
 			const auto last = ui.find(next, first);
 			return last == std::string::npos ? std::string{} : ui.substr(first, last - first);
 		};
-		const auto svgImmediate = section("void BarUiSVGClass::InitializationFromString(", "void BarUiSVGClass::InitializationFromResource(");
-		const auto svgCommit = section("void BarUiSVGClass::ApplyContentDirect(", "bool BarUiSVGClass::CacheBitmap(");
-		const auto wordImmediate = section("bool BarUiWordClass::SetStringImmediate(", "bool BarUiWordClass::AdvanceContentTransition(");
+		const auto svgImmediate = section("void UiSVGClass::InitializationFromString(", "void UiSVGClass::InitializationFromResource(");
+		const auto svgCommit = section("void UiSVGClass::ApplyContentDirect(", "bool UiSVGClass::CacheBitmap(");
+		const auto wordImmediate = section("bool UiWordClass::SetStringImmediate(", "bool UiWordClass::AdvanceContentTransition(");
 		expect(svgImmediate.find("CancelContentTransition()") != std::string::npos
 			&& svgImmediate.find("ApplyContentDirect(valT)") != std::string::npos
 			&& svgCommit.find("svg.Initialization(valT)") != std::string::npos
 			&& svgCommit.find("ResetCache()") != std::string::npos,
 			"production immediate SVG cancels stale keyframes, commits the rendered value and invalidates its old bitmap");
-		expect(wordImmediate.find("ApplyBarImmediateContentUpdate(") != std::string::npos
+		expect(wordImmediate.find("ApplyImmediateContentUpdate(") != std::string::npos
 			&& wordImmediate.find("content.Initialization(contentT)") != std::string::npos
 			&& wordImmediate.find("transitionContent.Initialization(contentT)") != std::string::npos,
 			"production immediate Word shares the tested transaction and commits both rendered and pending strings");

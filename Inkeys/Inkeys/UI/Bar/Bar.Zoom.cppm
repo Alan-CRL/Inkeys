@@ -1,7 +1,11 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
-#include "../StartupPlacement.h"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <algorithm>
+#include <cmath>
 
 export module Inkeys.UI.Bar:Zoom;
 
@@ -11,6 +15,9 @@ import :Atomic;
 import Inkeys.Other.Config;
 import Inkeys.Display;
 import Inkeys.UI.PageControl;
+import Inkeys.UI.StartupPlacement;
+
+using namespace Inkeys::UI::UI3;
 
 namespace
 {
@@ -34,14 +41,14 @@ namespace
 		return clamp(floor(configZoom * 100.0) / 100.0, BarConfigZoomMin, BarConfigZoomMax);
 	}
 
-	shared_ptr<BarUiSuperellipseClass> GetMainButton(BarUISetClass& barUISet)
+	shared_ptr<UiSuperellipseClass> GetMainButton(BarUISetClass& barUISet)
 	{
 		auto it = barUISet.superellipseMap.find(BarUISetSuperellipseEnum::MainButton);
 		if (it == barUISet.superellipseMap.end()) return nullptr;
 		return it->second;
 	}
 
-	shared_ptr<BarUiShapeClass> GetMainBar(BarUISetClass& barUISet)
+	shared_ptr<UiShapeClass> GetMainBar(BarUISetClass& barUISet)
 	{
 		auto it = barUISet.shapeMap.find(BarUISetShapeEnum::MainBar);
 		if (it == barUISet.shapeMap.end()) return nullptr;
@@ -74,7 +81,7 @@ namespace
 		barUISet.barStyle.zoom = barUISet.barStyle.uiBaseZoom.load() * barUISet.barStyle.configZoom.load();
 	}
 
-	void SetMainButtonPosition(BarUiSuperellipseClass& mainButton, double x, double y)
+	void SetMainButtonPosition(UiSuperellipseClass& mainButton, double x, double y)
 	{
 		mainButton.x.SetDirect(x);
 		mainButton.y.SetDirect(y);

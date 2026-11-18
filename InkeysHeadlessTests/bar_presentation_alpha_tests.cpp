@@ -1,8 +1,10 @@
-#include "../Inkeys/Inkeys/UI/Bar/Bar.PresentationAlpha.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.PresentDecision.h"
+﻿#include <Windows.h>
 
 #include <array>
 #include <iostream>
+
+import Inkeys.UI.Bar.PresentationAlpha;
+import Inkeys.UI.Bar.PresentDecision;
 
 namespace
 {

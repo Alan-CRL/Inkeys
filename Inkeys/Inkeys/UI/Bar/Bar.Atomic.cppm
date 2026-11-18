@@ -4,11 +4,13 @@
 
 export module Inkeys.UI.Bar:Atomic;
 
-import Inkeys.UI.Bar.WakeSignal;
+import Inkeys.UI.UI3.WakeSignal;
+
+using namespace Inkeys::UI::UI3;
 
 export namespace BarAtomic
 {
-	Inkeys::UI::Bar::WakeSignal wait;
+	Inkeys::UI::UI3::WakeSignal wait;
 
 	// 此标识表示 UI 将不检查是否变动，而持续渲染
 	IdtAtomic<bool> sustainFlag = false;

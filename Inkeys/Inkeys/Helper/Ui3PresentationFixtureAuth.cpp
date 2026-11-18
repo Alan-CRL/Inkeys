@@ -1,7 +1,16 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#ifndef INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+#define INKEYS_ENABLE_UI3_PRESENTATION_HARNESS 1
+#endif
 #include "Ui3PresentationFixtureAuth.h"
+#include <Windows.h>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <type_traits>
 #include <shellapi.h>
 #include <cwchar>
 
@@ -29,6 +38,9 @@
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 import Inkeys.UI.RenderPipeline;
 #endif
+import Inkeys.UI.UI3.PresentationProbe;
+
+using namespace Inkeys::UI::UI3;
 
 namespace Inkeys::UI::Bar
 {
@@ -204,7 +216,7 @@ namespace Inkeys::UI::Bar
 				|| input.sourceVersion != Ui3FixtureSourceVersion || !(input.nonceLo | input.nonceHi)
 				|| input.expectedSteps != Ui3FixtureExpectedSteps
 				|| input.trajectoryCount != (input.scene == 1 ? 433u : 435u)) return false;
-			const auto source = GetCompiledUi3FixtureSourceV1(static_cast<Ui3FiniteScene>(input.scene));
+			const auto source = GetCompiledUi3FixtureSourceV1(input.scene);
 			return source.sourceVersion == input.sourceVersion && source.trajectoryCount == input.trajectoryCount
 				&& source.expectedSteps == input.expectedSteps && source.sourceHash != 0 && source.sourceHash == input.sourceHash;
 		}
@@ -552,7 +564,7 @@ namespace Inkeys::UI::Bar
 			view.value = MapViewOfFile(mapping.value, FILE_MAP_WRITE, 0, 0, sizeof(Ui3FixturePacketV1));
 			if (!view.value) return false;
 			auto* packet = static_cast<Ui3FixturePacketV1*>(view.value);
-			const auto source = GetCompiledUi3FixtureSourceV1(static_cast<Ui3FiniteScene>(options.scene));
+			const auto source = GetCompiledUi3FixtureSourceV1(options.scene);
 			*packet = {};
 			packet->magic = Ui3FixtureMagic; packet->version = 1; packet->bytes = sizeof(*packet); packet->purpose = Ui3FixturePurpose;
 			packet->scene = options.scene; packet->capture = options.capture; packet->capacity = options.capacity; packet->round = options.round;

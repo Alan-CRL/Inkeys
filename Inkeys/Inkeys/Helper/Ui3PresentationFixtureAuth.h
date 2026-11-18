@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // 独立算法测试保持原行为；产品工程始终显式定义为 0 或 1。
 #ifndef INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
@@ -15,7 +15,6 @@
 
 namespace Inkeys::UI::Bar
 {
-	enum class Ui3FiniteScene : std::uint32_t;
 	inline constexpr std::uint32_t Ui3FixtureMagic = 0x1430FB21;
 	inline constexpr std::uint32_t Ui3FixturePurpose = 0x55493301;
 	inline constexpr std::uint32_t Ui3FixtureSourceVersion = 1;
@@ -108,9 +107,9 @@ namespace Inkeys::UI::Bar
 	// Main必须最早调用；已识别、坏内部参数和授权child均直接返回，绝不进入普通初始化。
 	bool TryRunUi3PresentationFixtureEarly(LPCWSTR fullCommandLine, int& exitCode) noexcept;
 
-	// 后续Bar F的普通链接依赖；头放在module global fragment，不能写成功stub。
+	// 普通链接依赖使用场景底层值，使授权头不依赖模块类型，不能写成功stub。
 	// hash来自真实immutable 64B表，显式LE/FNV1a64编码表、版本/scene/count/steps/clock period。
-	Ui3FixtureSourceDescriptorV1 GetCompiledUi3FixtureSourceV1(Ui3FiniteScene) noexcept;
+	Ui3FixtureSourceDescriptorV1 GetCompiledUi3FixtureSourceV1(std::uint32_t scene) noexcept;
 	// 返回前必须真join source/Interact/Render/Window并发布Sealed；未能停止须保留capability到死亡。
 	// bootstrap核实际finite/SVG/source全部fixed bytes<=4MiB，capture-off时间输出为null。
 	int RunAuthorizedPresentationFixture(const Ui3FixtureAuthorization&) noexcept;

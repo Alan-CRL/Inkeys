@@ -1,54 +1,36 @@
-﻿export module Inkeys.UI.Bar.Metrics;
+﻿module;
+
+export module Inkeys.UI.Bar.Metrics;
+
+export import Inkeys.UI.UI3.Metrics;
+
+using namespace Inkeys::UI::UI3;
 
 export
 {
-	// 标准按钮网格与 MainBar 外框共用的 UI3 单一尺寸来源。
-	inline constexpr double BarButtonGapDip = 5.0;
-	inline constexpr double BarButtonOneSideDip = 32.5;
-	inline constexpr double BarButtonTwoSideDip =
-		BarButtonOneSideDip * 2.0 + BarButtonGapDip;
 	// 旧 compact 视觉保留，当前统一使用标准 2×2；几何和绘制必须消费同一开关。
 	inline constexpr bool BarPptCompactPaginationEnabled = false;
-	inline constexpr double BarPaginationDragHandleSlotDip = BarButtonGapDip * 2.0;
+	inline constexpr double BarPaginationDragHandleSlotDip = ButtonGapDip * 2.0;
 	inline constexpr double BarPptCompactLongSideDip =
-		BarPaginationDragHandleSlotDip + BarButtonOneSideDip * 2.0
-		+ BarButtonTwoSideDip + BarButtonGapDip * 4.0;
+		BarPaginationDragHandleSlotDip + ButtonOneSideDip * 2.0
+		+ ButtonTwoSideDip + ButtonGapDip * 4.0;
 	inline constexpr double BarPptCompactShortSideDip =
-		BarButtonOneSideDip + BarButtonGapDip * 2.0;
+		ButtonOneSideDip + ButtonGapDip * 2.0;
 	inline constexpr double BarPptPaginationLongSideDip =
 		BarPptCompactPaginationEnabled ? BarPptCompactLongSideDip
-		: BarPaginationDragHandleSlotDip + BarButtonTwoSideDip * 3.0 + BarButtonGapDip * 4.0;
+		: BarPaginationDragHandleSlotDip + ButtonTwoSideDip * 3.0 + ButtonGapDip * 4.0;
 	inline constexpr double BarPptPaginationShortSideDip =
 		BarPptCompactPaginationEnabled ? BarPptCompactShortSideDip
-		: BarButtonTwoSideDip + BarButtonGapDip * 2.0;
+		: ButtonTwoSideDip + ButtonGapDip * 2.0;
 	inline constexpr double BarWhiteboardPaginationWidthDip =
-		BarButtonTwoSideDip * 3.0 + BarButtonGapDip * 4.0;
+		ButtonTwoSideDip * 3.0 + ButtonGapDip * 4.0;
 	inline constexpr double BarWhiteboardPaginationLeftWidthDip =
-		BarWhiteboardPaginationWidthDip + BarButtonTwoSideDip + BarButtonGapDip;
+		BarWhiteboardPaginationWidthDip + ButtonTwoSideDip + ButtonGapDip;
 	inline constexpr double BarWhiteboardPaginationHeightDip =
-		BarButtonTwoSideDip + BarButtonGapDip * 2.0;
-	inline constexpr double BarButtonCornerRadiusDip = 4.0;
-	inline constexpr double BarButtonFrameThicknessDip = 1.0;
-	inline constexpr double BarButtonTwoTwoIconSizeDip = 28.0;
-	inline constexpr double BarButtonTwoTwoIconOffsetYDip = -10.0;
-	inline constexpr double BarButtonTwoTwoLabelOffsetYDip = 20.0;
-	inline constexpr double BarButtonTwoTwoLabelHeightDip = 25.0;
-	inline constexpr double BarButtonTwoTwoLabelFontSizeDip = 13.0;
-	inline constexpr double BarButtonPressScale = 0.95;
-	inline constexpr double BarButtonPressedOpacity = 0.10;
-	inline constexpr double BarButtonHoverOpacity = 0.18;
-	inline constexpr double BarButtonDisabledContentOpacity = 0.30;
-	inline constexpr double BarButtonPressedLightOpacity = 0.5;
-	inline constexpr double BarButtonCursorLightIntensity = 0.30;
-	inline constexpr double BarButtonLightCursorLightIntensity = 0.40;
-	inline constexpr double BarButtonHoverTransitionDuration = 0.24;
-	inline constexpr double BarButtonHoverFadeDurationSeconds = 5.0;
-	inline constexpr double BarButtonDefaultOperationDurationSeconds = 0.4;
+		ButtonTwoSideDip + ButtonGapDip * 2.0;
 	inline constexpr double BarMainBarWidthDip = 80.0;
 	inline constexpr double BarMainBarHeightDip = 80.0;
 	inline constexpr double BarMainBarCornerRadiusDip = 8.0;
-	inline constexpr unsigned char BarDarkSurfaceColorChannel = 24;
-	inline constexpr unsigned char BarDarkSurfaceFrameColorChannel = 255;
 	inline constexpr double BarMainBarFillOpacity = 0.8;
 	inline constexpr double BarMainBarFrameOpacity = 0.18;
 
@@ -58,7 +40,7 @@ export
 	inline constexpr double BarMainButtonCollapsedFillOpacity = 0.6;
 	inline constexpr double BarMainButtonToMainBarGapDip = 10.0;
 	inline constexpr double BarDefaultButtonColumnStepDip =
-		BarButtonTwoSideDip + BarButtonGapDip;
+		ButtonTwoSideDip + ButtonGapDip;
 	// 默认展开布局：A1 的 Select/Draw/Clean 三列，More 一列，A2 的
 	// Whiteboard/Freeze 上下共用一列；Divider 只收束列，不增加宽度。
 	inline constexpr unsigned BarDefaultA1ColumnCount = 3;
@@ -69,7 +51,7 @@ export
 		+ BarDefaultA2ColumnCount;
 	// CalculateButtonLayoutWidth 从左侧 5 DIP 起步：5 + 5 * 75 = 380。
 	inline constexpr double BarDefaultMainBarLayoutWidthDip =
-		BarButtonGapDip
+		ButtonGapDip
 		+ static_cast<double>(BarDefaultMainBarColumnCount)
 			* BarDefaultButtonColumnStepDip;
 	inline constexpr double BarDefaultStartupPreviewTotalWidthDip =
@@ -82,7 +64,6 @@ export
 		BarMainButtonWidthDip;
 	inline constexpr double StartupPreviewCachedWidthMaximumDip = 4096.0;
 
-	static_assert(BarButtonTwoSideDip == 70.0);
 	static_assert(BarDefaultButtonColumnStepDip == 75.0);
 	static_assert(BarDefaultMainBarColumnCount == 5);
 	static_assert(BarDefaultMainBarLayoutWidthDip == 380.0);
@@ -117,8 +98,8 @@ export namespace Inkeys::UI::Bar
 	[[nodiscard]] constexpr BarPptStandardPaginationGeometry
 		ResolveBarPptStandardPaginationGeometry(bool vertical, bool right) noexcept
 	{
-		constexpr double gap = BarButtonGapDip;
-		constexpr double side = BarButtonTwoSideDip;
+		constexpr double gap = ButtonGapDip;
+		constexpr double side = ButtonTwoSideDip;
 		constexpr double slot = BarPaginationDragHandleSlotDip;
 		if (vertical)
 		{
@@ -146,135 +127,4 @@ export namespace Inkeys::UI::Bar
 		};
 	}
 
-	// 标准按钮内部几何只在这里解析，主栏与分页不得各写一份偏移。
-	enum class BarButtonVisualLayoutKind : unsigned char
-	{
-		Custom,
-		StandardOneOne,
-		StandardTwoOne,
-		StandardFourOne,
-		StandardTwoTwo,
-		PageHorizontal,
-		PageVertical,
-		PageTwoTwo,
-	};
-
-	struct BarButtonVisualMetrics
-	{
-		double buttonWidthDip = 0.0;
-		double buttonHeightDip = 0.0;
-		double iconSizeDip = 0.0;
-		double iconOffsetXDip = 0.0;
-		double iconOffsetYDip = 0.0;
-		double primaryFontSizeDip = 0.0;
-		double primaryOffsetXDip = 0.0;
-		double primaryOffsetYDip = 0.0;
-		double primarySlotWidthDip = 0.0;
-		double primarySlotHeightDip = 0.0;
-		double secondaryFontSizeDip = 0.0;
-		double secondaryOffsetXDip = 0.0;
-		double secondaryOffsetYDip = 0.0;
-		double secondarySlotWidthDip = 0.0;
-		double secondarySlotHeightDip = 0.0;
-	};
-
-	struct BarButtonVisualPoint
-	{
-		double x = 0.0;
-		double y = 0.0;
-	};
-
-	// 子内容始终以调用方给出的按钮左上角为父级，不能读取历史 inh 缓存。
-	[[nodiscard]] constexpr BarButtonVisualPoint
-		ResolveBarButtonChildTopLeft(double parentX, double parentY,
-			double parentWidth, double parentHeight,
-			double childOffsetX, double childOffsetY,
-			double childWidth, double childHeight) noexcept
-	{
-		return {
-			parentX + parentWidth / 2.0 + childOffsetX - childWidth / 2.0,
-			parentY + parentHeight / 2.0 + childOffsetY - childHeight / 2.0,
-		};
-	}
-
-	[[nodiscard]] inline BarButtonVisualMetrics ResolveBarButtonVisualMetrics(
-		BarButtonVisualLayoutKind layoutKind) noexcept
-	{
-		BarButtonVisualMetrics result;
-		switch (layoutKind)
-		{
-		case BarButtonVisualLayoutKind::StandardOneOne:
-			result.buttonWidthDip = BarButtonOneSideDip;
-			result.buttonHeightDip = BarButtonOneSideDip;
-			result.iconSizeDip = 20.0;
-			break;
-		case BarButtonVisualLayoutKind::StandardTwoOne:
-			result.buttonWidthDip = BarButtonTwoSideDip;
-			result.buttonHeightDip = BarButtonOneSideDip;
-			result.iconSizeDip = 18.0;
-			result.iconOffsetXDip = -21.0;
-			result.primaryFontSizeDip = 12.0;
-			result.primaryOffsetXDip = 11.5;
-			result.primarySlotWidthDip = 37.0;
-			result.primarySlotHeightDip = BarButtonOneSideDip;
-			break;
-		case BarButtonVisualLayoutKind::StandardFourOne:
-			// 白板操作行按产品规范固定 140 DIP，沿用单行按钮的字号和图标。
-			result.buttonWidthDip = 140.0;
-			result.buttonHeightDip = BarButtonOneSideDip;
-			result.iconSizeDip = 18.0;
-			result.iconOffsetXDip = -56.0;
-			result.primaryFontSizeDip = 12.0;
-			result.primaryOffsetXDip = 11.5;
-			result.primarySlotWidthDip = 107.0;
-			result.primarySlotHeightDip = BarButtonOneSideDip;
-			break;
-		case BarButtonVisualLayoutKind::StandardTwoTwo:
-			result.buttonWidthDip = BarButtonTwoSideDip;
-			result.buttonHeightDip = BarButtonTwoSideDip;
-			result.iconSizeDip = BarButtonTwoTwoIconSizeDip;
-			result.iconOffsetYDip = BarButtonTwoTwoIconOffsetYDip;
-			result.primaryFontSizeDip = BarButtonTwoTwoLabelFontSizeDip;
-			result.primaryOffsetYDip = BarButtonTwoTwoLabelOffsetYDip;
-			result.primarySlotWidthDip = BarButtonTwoSideDip;
-			result.primarySlotHeightDip = BarButtonTwoTwoLabelHeightDip;
-			break;
-		case BarButtonVisualLayoutKind::PageHorizontal:
-			result.buttonWidthDip = BarButtonTwoSideDip;
-			result.buttonHeightDip = BarButtonOneSideDip;
-			result.primaryFontSizeDip = 15.0;
-			result.primarySlotHeightDip = 18.0;
-			result.secondaryFontSizeDip = 13.0;
-			result.secondarySlotHeightDip = 18.0;
-			break;
-		case BarButtonVisualLayoutKind::PageVertical:
-			result.buttonWidthDip = BarButtonOneSideDip;
-			result.buttonHeightDip = BarButtonTwoSideDip;
-			result.primaryFontSizeDip = 15.0;
-			result.primaryOffsetYDip = -10.0;
-			result.primarySlotWidthDip = BarButtonOneSideDip;
-			result.primarySlotHeightDip = 18.0;
-			result.secondaryFontSizeDip = 13.0;
-			result.secondaryOffsetYDip = 10.0;
-			result.secondarySlotWidthDip = BarButtonOneSideDip;
-			result.secondarySlotHeightDip = 18.0;
-			break;
-		case BarButtonVisualLayoutKind::PageTwoTwo:
-			result.buttonWidthDip = BarButtonTwoSideDip;
-			result.buttonHeightDip = BarButtonTwoSideDip;
-			result.primaryFontSizeDip = BarButtonTwoTwoIconSizeDip;
-			result.primaryOffsetYDip = BarButtonTwoTwoIconOffsetYDip;
-			result.primarySlotWidthDip = BarButtonTwoSideDip;
-			result.primarySlotHeightDip = BarButtonTwoTwoIconSizeDip;
-			result.secondaryFontSizeDip = BarButtonTwoTwoLabelFontSizeDip;
-			result.secondaryOffsetYDip = BarButtonTwoTwoLabelOffsetYDip;
-			result.secondarySlotWidthDip = BarButtonTwoSideDip;
-			result.secondarySlotHeightDip = BarButtonTwoTwoLabelHeightDip;
-			break;
-		case BarButtonVisualLayoutKind::Custom:
-		default:
-			break;
-		}
-		return result;
-	}
 }

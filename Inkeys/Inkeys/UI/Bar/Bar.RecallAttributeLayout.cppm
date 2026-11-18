@@ -1,10 +1,12 @@
-module;
+﻿module;
 #include <algorithm>
 #include <array>
 #include <cmath>
 
 export module Inkeys.UI.Bar.RecallAttributeLayout;
 export import Inkeys.UI.Bar.Metrics;
+
+using namespace Inkeys::UI::UI3;
 
 export namespace Inkeys::UI::Bar
 {
@@ -67,7 +69,7 @@ export namespace Inkeys::UI::Bar
 	{
 		RecallAttributeLayout r; r.anchor = input.anchor; r.work = input.work;
 		const double height = input.main.Height() > 0 ? input.main.Height() : BarMainBarHeightDip;
-		const double button = BarButtonTwoSideDip;
+		const double button = ButtonTwoSideDip;
 		const double gap = RecallAttributeStandardGapDip;
 		// 单按钮面板：左右各 5 DIP 留白，自然宽 80，与主栏高一致。
 		const double naturalWidth = gap + button + gap;

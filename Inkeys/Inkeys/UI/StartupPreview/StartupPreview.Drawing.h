@@ -1,8 +1,16 @@
-#pragma once
+﻿#pragma once
 
-#include "../Superellipse.Geometry.h"
-#include "../StartupPlacement.h"
+// 使用前须 import Inkeys.UI.UI3.Superellipse 与 Inkeys.UI.StartupPlacement;
+
+// 保留普通头及其系统依赖的全局模块归属，允许在 import 后包含。
+extern "C++"
+{
 #include <array>
+#include <algorithm>
+#include <cmath>
+#include <d2d1_1.h>
+#include <d2d1helper.h>
+#include <wrl/client.h>
 
 namespace Inkeys::UI::StartupPreview::Drawing
 {
@@ -18,7 +26,7 @@ namespace Inkeys::UI::StartupPreview::Drawing
 			Microsoft::WRL::ComPtr<ID2D1PathGeometry> path;
 			// 只对窗口包络舍入；按钮主体保留80DIP，并与正式按钮在整数bounds中心重合。
 			const float extent = 80.f * scale;
-			HRESULT result = CreateSuperellipsePath(factory, extent, extent, 3.f,
+			HRESULT result = Inkeys::UI::UI3::CreateSuperellipsePath(factory, extent, extent, 3.f,
 				std::clamp(static_cast<int>(extent / 4.f), 24, 128), &path);
 			if (FAILED(result)) return result;
 			Microsoft::WRL::ComPtr<ID2D1TransformedGeometry> translated;
@@ -176,4 +184,5 @@ namespace Inkeys::UI::StartupPreview::Drawing
 			&bounds, &bounds);
 		context->SetAntialiasMode(previous);
 	}
+}
 }

@@ -1,8 +1,10 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 
 export module Inkeys.UI.Bar:State;
+
+export import Inkeys.UI.UI3;
 
 enum class ThicknessViewMode : int
 {
@@ -82,18 +84,7 @@ public:
 		IdtAtomic<bool> thicknessOverflowHintPresent = false;
 		// 简易颜色选择器：输入线程串行改色，渲染线程只读取这些轻量状态。
 		IdtAtomic<bool> colorPickerOpen = false;
-		IdtAtomic<bool> colorPickerDarkTone = true; // 默认暗色系
-		IdtAtomic<bool> colorPickerTonePress = false;
-		IdtAtomic<bool> colorPickerClosePress = false;
-		IdtAtomic<bool> colorPickerMarkerVisible = false;
-		IdtAtomic<float> colorPickerMarkerX = 0.0f;
-		IdtAtomic<float> colorPickerMarkerY = 0.0f;
-		IdtAtomic<bool> colorPickerPointerPressed = false;
 		IdtAtomic<bool> colorPickerPointerCapture = false;
-		IdtAtomic<bool> colorPickerHoldHintActive = false;
-		IdtAtomic<bool> colorPickerHoldLocked = false;
-		IdtAtomic<float> colorPickerHoldProgress = 0.0f;
-		IdtAtomic<float> colorPickerPointerY = 0.0f;
 	}drawAttributeBar;
 
 	struct
@@ -119,17 +110,14 @@ public:
 	void ThicknessDisplayUpdate();
 	void ThicknessDisplayUpdate(double penWidth);
 };
-class BarStyleClass
+class BarStyleClass : public Inkeys::UI::UI3::ThemeStyleState
 {
 public:
 	// 窗口线程只发布目标，实际主题由串行渲染线程在帧首应用。
 	std::atomic<bool> requestedDarkStyle = true;
-	IdtAtomic<bool> darkStyle = true;
 	// 常驻表面透明度百分比：背景 0 表示跟随主题默认；同样由渲染线程在帧首应用。
 	std::atomic<int> requestedBackgroundOpacity = 0;
 	std::atomic<int> requestedContentOpacity = 100;
-	IdtAtomic<int> backgroundOpacity = 0;
-	IdtAtomic<int> contentOpacity = 100;
 	IdtAtomic<double> dpiZoom = 1.0;
 	// UI 基准独立于真实 DPI，画笔尺寸仍只使用 dpiZoom。
 	IdtAtomic<double> uiBaseZoom = 1.0;
@@ -140,15 +128,3 @@ public:
 
 // ---
 
-enum class BarWidgetState : int
-{
-	None,
-	Disable, // 禁用
-	Selected // 选中
-};
-enum class BarWidgetEmphasize : int
-{
-	None,
-	Hover, // 悬停（废弃）
-	Pressed, // 按下
-};

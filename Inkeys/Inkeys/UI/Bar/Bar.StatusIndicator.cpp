@@ -1,13 +1,13 @@
-module;
+﻿module;
 #include "../../../IdtMain.h"
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
-#include "Bar.StatusIndicator.h"
-#include "Bar.InteractionWorker.h"
-#include "Bar.BottomDock.h"
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <atomic>
+#include <optional>
 #include <cstdio>
-#include "Bar.ThemeMaterial.h"
-#include "../Superellipse.Geometry.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -15,12 +15,25 @@ module;
 #include <deque>
 #include <random>
 
+#include <cstdint>
+#include <d2d1_1.h>
+#include <d2d1helper.h>
+#include <wrl/client.h>
+#include <vector>
+
 module Inkeys.UI.Bar;
 import :Main;
 import :Theme;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.Setting;
 import Inkeys.Net.Update;
+import Inkeys.UI.UI3.Material;
+import Inkeys.UI.UI3.Superellipse;
+import Inkeys.UI.Bar.BottomDock;
+import Inkeys.UI.Bar.StatusIndicatorModel;
+import Inkeys.UI.UI3.Interaction;
+
+using namespace Inkeys::UI::UI3;
 
 using namespace Inkeys::UI::Bar;
 using Microsoft::WRL::ComPtr;
@@ -77,7 +90,7 @@ namespace
 		}
 	}
 	// 光晕、点光漫反射与描边抗锯齿的外扩（DIP）。
-	double GlowOutsetDip() noexcept { return BarRenderingAttribute::pointLightDiffuseExtraWidth+2; }
+	double GlowOutsetDip() noexcept { return RenderingAttribute::pointLightDiffuseExtraWidth+2; }
 	bool HitRoundedRect(const StatusIndicatorRect& r,double radius,double x,double y,double pad) noexcept
 	{
 		const StatusIndicatorRect hit=OutsetStatusIndicatorRect(r,pad);
@@ -172,11 +185,11 @@ bool BarStatusIndicatorPanel::Advance(BarUISetClass& owner,double dt,double spee
 	}
 	std::erase_if(simulated_,[&](const auto& p){return !model_.Find(p.first);});
 	changed_|=model_.SetDrawingActive(drawing);
-	changed_|=model_.Advance(now,dt,speed,BarUiAnimationEnabled);
+	changed_|=model_.Advance(now,dt,speed,UiAnimationEnabled);
 	// 倒转跟随主栏所在半屏；拖动中锁存，松手后锚点以弹簧换边。
 	if(!dragLocked)belowTarget_=static_cast<bool>(owner.barState.widgetPosition.primaryBar);
 	if(!orientationInitialized_){orientation_.Snap(belowTarget_?1.0:0.0);orientationInitialized_=true;changed_=true;}
-	const bool orientationChanged=orientation_.Advance(belowTarget_?1.0:0.0,dt*speed,BarUiAnimationEnabled,StatusIndicatorSprings::Orientation);
+	const bool orientationChanged=orientation_.Advance(belowTarget_?1.0:0.0,dt*speed,UiAnimationEnabled,StatusIndicatorSprings::Orientation);
 	changed_|=orientationChanged;
 	feedbackActive_=orientationChanged;
 	for(const auto& entry:model_.Entries())
@@ -187,15 +200,15 @@ bool BarStatusIndicatorPanel::Advance(BarUISetClass& owner,double dt,double spee
 		const bool over=hovered_==entry.spec.key,pressed=pressed_==entry.spec.key;
 		if(hover.entered!=over)
 		{
-			if(over)StartBarButtonHoverVisual(&hover.pct,&hover.fill,&hover.stage);
-			else StopBarButtonHoverVisual(&hover.pct,&hover.fill,&hover.stage,pressed,false);
+			if(over)Inkeys::UI::UI3::StartButtonHoverVisual(&hover.pct,&hover.fill,&hover.stage);
+			else Inkeys::UI::UI3::StopButtonHoverVisual(&hover.pct,&hover.fill,&hover.stage,pressed,false);
 			hover.entered=over;changed_=true;
 		}
-		if(hover.stage!=BarButtonHoverStageEnum::None)changed_|=UpdateBarButtonHoverVisual(hover.pct,&hover.fill,hover.stage,true,!pressed,BarButtonHoverFadeDurationSeconds);
-		p->second.SetTar(pressed?BarButtonPressScale:1,BarUiDefaultOperationDur,std::nullopt,false,pressed?BarButtonPressCurve():BarButtonReleaseCurve());
-		const BarUiAnimationAdvanceContextClass context{dt,speed,static_cast<bool>(BarUiAnimationEnabled),false};
-		const auto hAdvance=BarUiAdvanceAnimation(hover.pct,context),pAdvance=BarUiAdvanceAnimation(p->second,context);
-		const auto fillAdvance=BarUiAdvanceAnimation(hover.fill,context);
+		if(hover.stage!=ButtonHoverStageEnum::None)changed_|=UpdateButtonHoverVisual(hover.pct,&hover.fill,hover.stage,true,!pressed,ButtonHoverFadeDurationSeconds);
+		p->second.SetTar(pressed?ButtonPressScale:1,UiDefaultOperationDur,std::nullopt,false,pressed?ButtonPressCurve():ButtonReleaseCurve());
+		const UiAnimationAdvanceContextClass context{dt,speed,static_cast<bool>(UiAnimationEnabled),false};
+		const auto hAdvance=UiAdvanceAnimation(hover.pct,context),pAdvance=UiAdvanceAnimation(p->second,context);
+		const auto fillAdvance=UiAdvanceAnimation(hover.fill,context);
 		changed_|=hAdvance.changed||pAdvance.changed||fillAdvance.changed;
 		feedbackActive_|=hAdvance.active||pAdvance.active||fillAdvance.active;
 	}
@@ -327,7 +340,7 @@ bool BarStatusIndicatorPanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 	return hit||result.previousPressed||result.pressed;
 }
 
-void BarStatusIndicatorPanel::DrawStroke(BarUIRendering& renderer,ID2D1DeviceContext* context,ID2D1Geometry* geometry,
+void BarStatusIndicatorPanel::DrawStroke(UIRendering& renderer,ID2D1DeviceContext* context,ID2D1Geometry* geometry,
 	COLORREF color,double opacity,double material,int variant)
 {
 	if(!geometry||opacity<=0)return;
@@ -348,15 +361,15 @@ void BarStatusIndicatorPanel::DrawStroke(BarUIRendering& renderer,ID2D1DeviceCon
 			context->SetAntialiasMode(antialias);
 		}
 	}
-	const auto theme=BarThemeMaterial::Resolve(material,color,color);
-	if(!renderer.DrawPointLightFrame(context,color,theme,BarUiFrameLightColorEnum::Frame,true,1,-1,opacity,opacity,width,nullptr,geometry,variant))
+	const auto theme=ThemeMaterial::Resolve(material,color,color);
+	if(!renderer.DrawPointLightFrame(context,color,theme,UiFrameLightColorEnum::Frame,true,1,-1,opacity,opacity,width,nullptr,geometry,variant))
 	{
 		brush_->SetColor(D2D1::ColorF(GetRValue(color)/255.f,GetGValue(color)/255.f,GetBValue(color)/255.f,static_cast<FLOAT>(std::clamp(opacity,0.0,1.0))));
 		context->DrawGeometry(geometry,brush_.Get(),width,renderer.GetRoundStrokeStyle());
 	}
 }
 
-void BarStatusIndicatorPanel::DrawRing(BarUIRendering& renderer,ID2D1DeviceContext* context,const BarUiSuperellipseClass& main,double material,double content)
+void BarStatusIndicatorPanel::DrawRing(UIRendering& renderer,ID2D1DeviceContext* context,const UiSuperellipseClass& main,double material,double content)
 {
 	if(std::none_of(layout_.rings.begin(),layout_.rings.end(),[](const auto& ring){return ring.opacity>0;}))return;
 	const double width=main.w.val*zoom_,height=main.h.val*zoom_,n=main.n->val;
@@ -365,7 +378,7 @@ void BarStatusIndicatorPanel::DrawRing(BarUIRendering& renderer,ID2D1DeviceConte
 	if(!ringGeometry_||ringKey_!=key)
 	{
 		ringGeometry_.Reset();
-		if(FAILED(Inkeys::UI::CreateSuperellipsePath(factory.Get(),static_cast<FLOAT>(width),static_cast<FLOAT>(height),static_cast<FLOAT>(n),128,&ringGeometry_)))ringGeometry_.Reset();
+		if(FAILED(Inkeys::UI::UI3::CreateSuperellipsePath(factory.Get(),static_cast<FLOAT>(width),static_cast<FLOAT>(height),static_cast<FLOAT>(n),128,&ringGeometry_)))ringGeometry_.Reset();
 		ringKey_=key;
 	}
 	if(!ringGeometry_)return;
@@ -403,7 +416,7 @@ void BarStatusIndicatorPanel::DrawRing(BarUIRendering& renderer,ID2D1DeviceConte
 	}
 }
 
-void BarStatusIndicatorPanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* context,const BarUiSuperellipseClass& main,double lightMaterial)
+void BarStatusIndicatorPanel::Draw(UIRendering& renderer,ID2D1DeviceContext* context,const UiSuperellipseClass& main,double lightMaterial)
 {
 	if(!context)return;
 	if(!initialized_)
@@ -421,10 +434,10 @@ void BarStatusIndicatorPanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 		brush_.Reset();ringGeometry_.Reset();for(auto& icon:icons_)icon.ResetCache();deviceGeneration_=renderer.GetDeviceGeneration();
 	}
 	if(!brush_&&FAILED(context->CreateSolidColorBrush(D2D1::ColorF(1,1,1,1),&brush_)))return;
-	const double material=BarThemeMaterial::ClampWeight(lightMaterial);
+	const double material=ThemeMaterial::ClampWeight(lightMaterial);
 	// 强调色边框/图标/文字均属常驻内容：跟随用户内容透明度与 PPT 闲置淡化。
 	const double residentContent=GetThemeResidentContentOpacity();
-	const double content=BarThemeMaterial::ResolveIdleOpacity(residentContent,BarThemeMaterial::IdleContentOpacity,renderer.residentIdleFade);
+	const double content=ThemeMaterial::ResolveIdleOpacity(residentContent,ThemeMaterial::IdleContentOpacity,renderer.GetResidentIdleFade());
 	DrawRing(renderer,context,main,material,content);
 	if(layout_.entries.empty())return;
 
@@ -438,7 +451,7 @@ void BarStatusIndicatorPanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 	std::vector<ComPtr<ID2D1RoundedRectangleGeometry>> shapes(layout_.entries.size());
 	for(std::size_t i=0;i<layout_.entries.size();++i)factory->CreateRoundedRectangleGeometry(rounded(layout_.entries[i]),&shapes[i]);
 	const FLOAT glow=static_cast<FLOAT>(GlowOutsetDip()*zoom_);
-	const COLORREF surface=GetThemeColor(BarThemeModeEnum::Dark,BarThemeColorEnum::Surface);
+	const COLORREF surface=GetThemeColor(ThemeModeEnum::Dark,ThemeColorEnum::Surface);
 	for(std::size_t i=0;i<layout_.entries.size();++i)
 	{
 		const auto& item=layout_.entries[i];
@@ -467,11 +480,11 @@ void BarStatusIndicatorPanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 		if(scale!=1)context->SetTransform(D2D1::Matrix3x2F::Scale(static_cast<FLOAT>(scale),static_cast<FLOAT>(scale),center)*original);
 
 		// 表面：主栏同源材质（背景透明度、闲置淡化、浅色缩放由常驻表面规则统一处理）。
-		BarUiShapeClass shape(0,0,item.bounds.Width(),item.bounds.Height(),item.radius,item.radius,std::nullopt,surface,std::nullopt);
+		UiShapeClass shape(0,0,item.bounds.Width(),item.bounds.Height(),item.radius,item.radius,std::nullopt,surface,std::nullopt);
 		shape.enable.Initialization(true);shape.pct.Initialization(BarMainBarFillOpacity);
 		shape.themeSurface=true;shape.residentSurface=true;shape.lightMaterial=material;
-		shape.lightFillOpacityScale=BarThemeMaterial::LightResidentSurfaceOpacityScale;
-		renderer.Shape(context,shape,BarUiInheritClass(item.bounds.left,item.bounds.top),nullptr,false);
+		shape.lightFillOpacityScale=ThemeMaterial::LightResidentSurfaceOpacityScale;
+		renderer.Shape(context,shape,UiInheritClass(item.bounds.left,item.bounds.top),nullptr,false);
 		// 悬停/按压同主栏按钮：表面内高亮填充，不用描边或光影。
 		if(const auto hover=hover_.find(item.key);hover!=hover_.end()&&hover->second.pct.val>0)
 		{
@@ -481,9 +494,9 @@ void BarStatusIndicatorPanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 		}
 		const auto accent=Accent(StatusIndicatorColor::Display(item.accentArgb,material));
 		// 1 DIP 强调色边框，与主栏边框同粗细，点光规则同主栏。
-		const auto frameMaterial=BarThemeMaterial::Resolve(material,surface,accent);
+		const auto frameMaterial=ThemeMaterial::Resolve(material,surface,accent);
 		const double frameOpacity=.9*content;
-		if(!renderer.DrawPointLightFrame(context,accent,frameMaterial,BarUiFrameLightColorEnum::Frame,true,1,-1,
+		if(!renderer.DrawPointLightFrame(context,accent,frameMaterial,UiFrameLightColorEnum::Frame,true,1,-1,
 			frameOpacity,frameOpacity,static_cast<FLOAT>(StatusIndicatorStyle::FrameWidth*zoom_),&rr,nullptr))
 		{
 			brush_->SetColor(D2D1::ColorF(GetRValue(accent)/255.f,GetGValue(accent)/255.f,GetBValue(accent)/255.f,static_cast<FLOAT>(frameOpacity)));
@@ -491,9 +504,9 @@ void BarStatusIndicatorPanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 		}
 		auto& icon=icons_[static_cast<std::size_t>(item.icon)];
 		icon.w.SetDirect(item.iconSize);icon.h.SetDirect(item.iconSize);icon.color1->SetDirect(accent);icon.pct.SetDirect(1);
-		BarUIRendering::FontTargetScope fontTarget(renderer,press==press_.end()?1.0:static_cast<double>(press->second.tar));
+		UIRendering::FontTargetScope fontTarget(renderer,press==press_.end()?1.0:static_cast<double>(press->second.tar));
 		renderer.SetResidentContentOpacity(residentContent);
-		renderer.Svg(context,icon,BarUiInheritClass(item.iconCenterX-item.iconSize/2,item.iconCenterY-item.iconSize/2));
+		renderer.Svg(context,icon,UiInheritClass(item.iconCenterX-item.iconSize/2,item.iconCenterY-item.iconSize/2));
 		if(item.shape==StatusIndicatorShape::Capsule&&item.textOpacity>.002&&item.textClip.Width()>.5)
 		{
 			// 文字裁入胶囊内侧圆角，滚动时两端线性渐隐，不留矩形切口。
@@ -520,7 +533,7 @@ void BarStatusIndicatorPanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 			word.SetStringImmediate(text);word.color.SetDirect(accent);word.pct.SetDirect(item.textOpacity);
 			word.w.SetDirect((std::max)(entry->textWidth*item.textScale+4.0,item.textClip.Width()));word.h.SetDirect(item.bounds.Height());
 			word.size.SetDirect(StatusIndicatorStyle::TextSize*item.textScale);word.fontTargetSize=StatusIndicatorStyle::TextSize;
-			renderer.Word(context,word,BarUiInheritClass(item.textX,item.bounds.top),DWRITE_FONT_WEIGHT_BOLD,DWRITE_TEXT_ALIGNMENT_LEADING);
+			renderer.Word(context,word,UiInheritClass(item.textX,item.bounds.top),DWRITE_FONT_WEIGHT_BOLD,DWRITE_TEXT_ALIGNMENT_LEADING);
 			context->PopLayer();
 		}
 		renderer.SetResidentContentOpacity(1);
@@ -536,7 +549,7 @@ int BarStatusIndicatorPanel::RunOffscreenTest(BarUISetClass& owner)
 	int failures=0;
 	int assertion=0;
 	const auto check=[&](bool condition){++assertion;if(!condition){++failures;std::fprintf(stderr,"[StatusIndicator] FAIL assertion %d\n",assertion);}};
-	const bool previousAnimation=BarUiAnimationEnabled;BarUiAnimationEnabled=false;
+	const bool previousAnimation=UiAnimationEnabled;UiAnimationEnabled=false;
 	const auto root=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
 	StatusIndicatorSpec first;first.key=0xDA00000000000001ULL;first.text=L"放映模式";first.accentArgb=0xFFC43E1C;first.icon=StatusIndicatorIcon::Slideshow;
 	auto second=first;second.key++;second.text=L"A very long status message to exercise scrolling";second.accentArgb=0xFF2EA043;second.icon=StatusIndicatorIcon::NewVersion;
@@ -593,15 +606,15 @@ int BarStatusIndicatorPanel::RunOffscreenTest(BarUISetClass& owner)
 	Advance(owner,1,1,1,true,false);layout();check(std::none_of(layout_.rings.begin(),layout_.rings.end(),[](const auto& ring){return ring.opacity>0;}));
 	Advance(owner,1,1,1,false,false);layout();CommitPresented();
 	auto& renderer=owner.spec;renderer.SetFrameZoom(1);
-	const auto ready=renderer.EnsureDeviceResources(Inkeys::UI::RenderPipeline::GetDeviceEpoch(),800,800);
+	const auto ready=owner.specTarget.Ensure(Inkeys::UI::RenderPipeline::GetDeviceEpoch(),800,800);
 	check(SUCCEEDED(ready));
 	if(SUCCEEDED(ready))
 	{
-		auto* context=renderer.GetDeviceContext();
+		auto* context=owner.specTarget.DeviceContext();
 		const auto draw=[&]()
 		{
 			context->BeginDraw();context->SetTransform(D2D1::Matrix3x2F::Identity());context->Clear(D2D1::ColorF(0,0,0,0));
-			renderer.Superellipse(context,*root,BarUiInheritClass(root->x.val-root->w.val/2,root->y.val-root->h.val/2));
+			renderer.Superellipse(context,*root,UiInheritClass(root->x.val-root->w.val/2,root->y.val-root->h.val/2));
 			Draw(renderer,context,*root,0);
 			const auto result=context->EndDraw();check(SUCCEEDED(result));renderer.HandleFrameEndDrawResult(result);
 		};
@@ -626,6 +639,6 @@ int BarStatusIndicatorPanel::RunOffscreenTest(BarUISetClass& owner)
 	{std::lock_guard lock(presentedMutex_);presented_={};}
 	{std::lock_guard lock(commandsMutex);commands.clear();}
 	countSnapshot.store(0);debugCountSnapshot.store(0);deadlineTicks_.store(0);
-	BarUiAnimationEnabled=previousAnimation;
+	UiAnimationEnabled=previousAnimation;
 	return failures;
 }

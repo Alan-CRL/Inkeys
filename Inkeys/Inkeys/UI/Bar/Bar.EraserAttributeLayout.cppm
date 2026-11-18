@@ -7,6 +7,8 @@
 export module Inkeys.UI.Bar.EraserAttributeLayout;
 export import Inkeys.UI.Bar.Metrics;
 
+using namespace Inkeys::UI::UI3;
+
 export namespace Inkeys::UI::Bar
 {
 	struct EraserAttributeRect
@@ -112,7 +114,7 @@ export namespace Inkeys::UI::Bar
 		const double dpi=std::isfinite(input.dpiScale) && input.dpiScale>0?input.dpiScale:1;
 		r.shape=input.shape;r.previewCornerRadius=6*dpi/zoom;
 		const double height=input.main.Height()>0?input.main.Height():BarMainBarHeightDip;
-		const double button=BarButtonTwoSideDip,arrow=EraserAttributeAutomaticArrowWidthDip;
+		const double button=ButtonTwoSideDip,arrow=EraserAttributeAutomaticArrowWidthDip;
 		const double autoWidth=button+arrow,available=(std::max)(1.0,input.work.Width());
 		DisplayScale display;display.dipPerPixelX=display.dipPerPixelY=static_cast<float>(1/dpi);
 		double diameters=0;
@@ -122,7 +124,7 @@ export namespace Inkeys::UI::Bar
 			r.previewDiameters[i]=DiameterToCanvasPx(input.diametersDip[i],display)/zoom;
 			diameters+=Inkeys::Drawing::Draw3::ResolveEraserHalfSize(input.shape,static_cast<float>(r.previewDiameters[i]/2)).x*2;
 		}
-		const double stroke=BarButtonFrameThicknessDip;
+		const double stroke=ButtonFrameThicknessDip;
 		// 所有工作区均使用正常留白；极窄时只裁剪面板，不进入紧凑布局。
 		const double gap=EraserAttributeStandardGapDip,circleGap=EraserAttributeCircleGapDip;
 		const double circleSide=diameters+circleGap*4;
@@ -146,7 +148,7 @@ export namespace Inkeys::UI::Bar
 		const double cy=y+height/2,bh=button;
 		const double clearLeft=idealX+leftSide+stroke+dgap;
 		r.items[0]={clearLeft,cy-bh/2,clearLeft+button,cy+bh/2};
-		const double dh=button-BarButtonGapDip*4;
+		const double dh=button-ButtonGapDip*4;
 		r.dividers[0]={idealX+leftSide,cy-dh/2,idealX+leftSide+stroke,cy+dh/2};
 		r.dividers[1]={r.items[0].right+dgap,cy-dh/2,r.items[0].right+dgap+stroke,cy+dh/2};
 		const double leftStart=idealX,rightStart=r.dividers[1].right;
@@ -166,8 +168,8 @@ export namespace Inkeys::UI::Bar
 			const double lower=i==0?circleStart:(r.previews[i-1].right+circle.left)/2;
 			const double upper=i==2?circleEnd:(circle.right+r.previews[i+1].left)/2;
 			r.previewClips[i]=IntersectEraserRect({lower,y,upper,y+height},r.panel);
-			r.items[i+1]=IntersectEraserRect({circle.left-BarButtonGapDip,circle.top-BarButtonGapDip,
-				circle.right+BarButtonGapDip,circle.bottom+BarButtonGapDip},r.previewClips[i]);
+			r.items[i+1]=IntersectEraserRect({circle.left-ButtonGapDip,circle.top-ButtonGapDip,
+				circle.right+ButtonGapDip,circle.bottom+ButtonGapDip},r.previewClips[i]);
 		}
 		// 分割线侧留主栏同款 dgap；面板外缘侧保持标准 gap。
 		const double ax=autoStart+(r.reversed?gap:dgap);
@@ -178,8 +180,8 @@ export namespace Inkeys::UI::Bar
 		// 内部分割线与主栏分割线使用同一高度并保持垂直居中。
 		r.automaticDivider={ax+button-stroke/2,r.dividers[0].top,
 			ax+button+stroke/2,r.dividers[0].bottom};
-		const double menuWidth=(std::min)(available,button*2+BarButtonOneSideDip+BarButtonGapDip*2);
-		const double row=BarButtonOneSideDip,padding=BarButtonGapDip*2,mg=BarButtonGapDip;
+		const double menuWidth=(std::min)(available,button*2+ButtonOneSideDip+ButtonGapDip*2);
+		const double row=ButtonOneSideDip,padding=ButtonGapDip*2,mg=ButtonGapDip;
 		const double menuHeight=row*2+padding*2+mg;
 		r.menuBelow=input.lockedMenuSide<0?r.below:input.lockedMenuSide!=0;
 		if(input.lockedMenuSide<0)

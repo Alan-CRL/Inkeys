@@ -1,3 +1,4 @@
+﻿#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.HapticRequest.h"
 #include "../Inkeys/Inkeys/Input/UiPointerInput.h"
 #include "../Inkeys/Inkeys/Input/UiTouchRouting.h"
 #include "../Inkeys/Inkeys/Input/UiPointerDiagnostics.h"
@@ -8,12 +9,12 @@
 #include <vector>
 
 namespace { std::string uiDiagnosticText; bool uiDiagnosticProviderReadable=false; }
-#include "../Inkeys/Inkeys/UI/Bar/Bar.Haptics.h"
 #include "../Inkeys/Inkeys/Window/Window.MessageDispatch.h"
 
 #include <iostream>
 
 import Inkeys.Message;
+import Inkeys.UI.Bar.Haptics;
 
 namespace
 {
@@ -1791,11 +1792,11 @@ int RunUiPointerTests()
         {
             Haptic::AcceptedClickScope callback(pen);
             Haptic::RejectButtonAction();
-            check(!Haptic::buttonActionAccepted, "Haptic business rejection suppresses callback feedback");
-            { Haptic::AcceptedClickScope nested({}); check(Haptic::buttonActionAccepted, "Haptic callback has fresh decision"); }
-            check(!Haptic::buttonActionAccepted, "Haptic nested callback restores outer rejection");
+            check(!Haptic::IsButtonActionAccepted(), "Haptic business rejection suppresses callback feedback");
+            { Haptic::AcceptedClickScope nested({}); check(Haptic::IsButtonActionAccepted(), "Haptic callback has fresh decision"); }
+            check(!Haptic::IsButtonActionAccepted(), "Haptic nested callback restores outer rejection");
         }
-        check(!Haptic::acceptedClick && Haptic::buttonActionAccepted, "Haptic scope does not leak into programmatic callback");
+        check(!Haptic::GetAcceptedClick() && Haptic::IsButtonActionAccepted(), "Haptic scope does not leak into programmatic callback");
     }
     {
         namespace Diag=Inkeys::Input::UiPointer::Diagnostics;

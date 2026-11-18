@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include <chrono>
 #include <cstdint>
@@ -6,6 +6,8 @@ module;
 export module Inkeys.UI.StartupPreview.State;
 
 import Inkeys.UI.Bar.Metrics;
+
+using namespace Inkeys::UI::UI3;
 
 export namespace Inkeys::UI::StartupPreview
 {

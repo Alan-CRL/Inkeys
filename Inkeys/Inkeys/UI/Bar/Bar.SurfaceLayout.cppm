@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -14,6 +14,8 @@ module;
 export module Inkeys.UI.Bar.SurfaceLayout;
 
 export import Inkeys.UI.Bar.Metrics;
+
+using namespace Inkeys::UI::UI3;
 
 export namespace Inkeys::UI::Bar
 {
@@ -61,10 +63,10 @@ export namespace Inkeys::UI::Bar
 	{
 		RECT screenBounds{};
 		float dpiScale = 1.0F;
-		double edgeMarginDip = BarButtonGapDip;
-		double bottomMarginDip = BarButtonGapDip;
-		double itemSizeDip = BarButtonTwoSideDip;
-		double gapDip = BarButtonGapDip;
+		double edgeMarginDip = ButtonGapDip;
+		double bottomMarginDip = ButtonGapDip;
+		double itemSizeDip = ButtonTwoSideDip;
+		double gapDip = ButtonGapDip;
 		BarSurfaceHorizontalAnchor anchor = BarSurfaceHorizontalAnchor::Left;
 	};
 
@@ -98,10 +100,10 @@ export namespace Inkeys::UI::Bar
 		};
 		result.dpiScale = std::isfinite(group.dpiScale) && group.dpiScale > 0.0F
 			? (std::clamp)(group.dpiScale, 0.5F, 4.0F) : 1.0F;
-		const double edgeDip = normalizeDip(group.edgeMarginDip, BarButtonGapDip);
-		const double bottomDip = normalizeDip(group.bottomMarginDip, BarButtonGapDip);
-		const double itemDip = normalizeDip(group.itemSizeDip, BarButtonTwoSideDip);
-		const double gapDip = normalizeDip(group.gapDip, BarButtonGapDip);
+		const double edgeDip = normalizeDip(group.edgeMarginDip, ButtonGapDip);
+		const double bottomDip = normalizeDip(group.bottomMarginDip, ButtonGapDip);
+		const double itemDip = normalizeDip(group.itemSizeDip, ButtonTwoSideDip);
+		const double gapDip = normalizeDip(group.gapDip, ButtonGapDip);
 		result.widthDip = edgeDip * 2.0
 			+ itemDip * static_cast<double>(widgetCount)
 			+ gapDip * static_cast<double>(widgetCount - 1);

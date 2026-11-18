@@ -1,8 +1,13 @@
-#include "../Inkeys/Inkeys/UI/Bar/Bar.Haptics.h"
+﻿#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.HapticRequest.h"
 #include <iostream>
 #include <string_view>
 
 import Inkeys.Drawing.Draw3.haptic_feedback;
+import Inkeys.UI.Bar.Haptics;
 
 int RunDraw3HapticTests()
 {
@@ -92,9 +97,9 @@ int RunDraw3HapticTests()
 	check(tokens.BindDown(touch, sample.point, 1031) != second, "held press keeps slot after queue clear");
 	{
 		BH::AcceptedClickScope scope(held);
-		check(BH::acceptedClick == held, "real callback has scoped source");
+		check(BH::GetAcceptedClick() == held, "real callback has scoped source");
 	}
-	check(!BH::acceptedClick, "programmatic callback has no source");
+	check(!BH::GetAcceptedClick(), "programmatic callback has no source");
 
 	// 窗口线程先收到 Up/Leave 时，业务与绘制线程仍可稍后确认这次点击。
 	for (const bool leaveBeforeTouchUp : { false, true })

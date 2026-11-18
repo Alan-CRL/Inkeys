@@ -256,6 +256,9 @@
     <Filter Include="Modules\Inkeys\UI\Bar">
       <UniqueIdentifier>{56be2dfa-0003-4904-8ed4-aac871d769c8}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Modules\Inkeys\UI\UI3">
+      <UniqueIdentifier>{ba6c3952-770a-4569-b2d1-1e6f0a5e6df2}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Modules\Inkeys\UI\Freeze">
       <UniqueIdentifier>{f1b4b267-6b02-4b38-a951-7f9dfb4f30d4}</UniqueIdentifier>
     </Filter>
@@ -294,15 +297,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentationAlpha.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.ThemeMaterial.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.LogoAppearance.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
     <ClInclude Include="Inkeys\UI\Whiteboard\Whiteboard.Theme.h">
       <Filter>Modules\Inkeys\UI\Whiteboard</Filter>
     </ClInclude>
@@ -345,18 +339,6 @@
     <ClInclude Include="IdtAtomic.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.BottomDock.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.A2.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapse.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.AutoCollapseInteraction.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
     <ClInclude Include="Inkeys\Input\MouseHook.Transport.h">
       <Filter>Modules\Inkeys\Input</Filter>
     </ClInclude>
@@ -369,20 +351,8 @@
     <ClInclude Include="Inkeys\Business\PptSessionToken.h">
       <Filter>Modules\Inkeys\Business</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.DirtyRegion.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.DisplayTransition.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.I18nFormat.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
     <ClInclude Include="Inkeys\UI\RenderPipeline\RenderPipeline.Diagnostics.h">
       <Filter>Modules\Inkeys\UI\RenderPipeline</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentDecision.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="additional\hashlib++\hashlibpp.h">
       <Filter>头文件\Additional\hashlib++</Filter>
@@ -507,9 +477,6 @@
     <ClInclude Include="IdtMain.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.InteractionWorker.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
     <ClInclude Include="Inkeys\Input\UiPointerInput.h">
       <Filter>Modules\Inkeys\Input</Filter>
     </ClInclude>
@@ -560,12 +527,6 @@
     </ClInclude>
     <ClInclude Include="Inkeys\Helper\SecRandom.PipeIo.h">
       <Filter>Modules\Inkeys\Helper</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.PresentationProbe.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.Presentation.Source.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="IdtOther.h">
       <Filter>头文件</Filter>
@@ -669,9 +630,6 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HapticRequest.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.Haptics.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.RtsStartup.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
@@ -707,30 +665,6 @@
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Shortcut.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.KeyboardShortcuts.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.ButtonFrameRing.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.FontSize.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.MainLayoutPolicy.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.PageLoadingIndicator.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.ShapeGesture.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.StatusIndicator.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Bar\Bar.WindowGeometry.h">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Net\UpdatePathSafety.h">
       <Filter>Modules\Inkeys\Net</Filter>
@@ -1845,13 +1779,7 @@
     <ClInclude Include="Inkeys\UI\Ppt\Ppt.Recovery.h">
       <Filter>Modules\Inkeys\UI\Ppt</Filter>
     </ClInclude>
-    <ClInclude Include="Inkeys\UI\StartupPlacement.h">
-      <Filter>Modules\Inkeys\UI</Filter>
-    </ClInclude>
     <ClInclude Include="Inkeys\UI\StartupPreview.Effect.h">
-      <Filter>Modules\Inkeys\UI</Filter>
-    </ClInclude>
-    <ClInclude Include="Inkeys\UI\Superellipse.Geometry.h">
       <Filter>Modules\Inkeys\UI</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\UI\StartupPreview\StartupPreview.Drawing.h">
@@ -2150,20 +2078,65 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Atomic.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Animation.cpp">
+    <ClCompile Include="Inkeys\UI\UI3\UI3.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Theme.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Theme.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Metrics.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.PenPreviewMotion.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Animation.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Animation.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.FramePacing.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Animation.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.FramePacing.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.ToggleClickCoalescer.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.WakeSignal.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.WakeSignal.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Material.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.DirtyRegion.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Superellipse.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.LoadingIndicator.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Interaction.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Interaction.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Progress.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Progress.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.FrameRing.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.PresentationProbe.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Button.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
@@ -2192,8 +2165,8 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Format.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Format.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Initialization.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
@@ -2217,6 +2190,12 @@
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.GeometryAttribute.Test.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Golden.Test.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Host.Test.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp">
@@ -2246,10 +2225,10 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Main.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.PresentationProbe.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.PresentationProbe.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Presentation.Source.cpp">
+    <ClCompile Include="Inkeys\UI\Bar\Bar.PresentationSource.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Presentation.Test.cpp">
@@ -2261,14 +2240,68 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.RenderLoop.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cpp">
+    <ClCompile Include="Inkeys\UI\Bar\Bar.PenPreviewRendering.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.Rendering.cppm">
+    <ClCompile Include="Inkeys\UI\Bar\Bar.PenPreviewRendering.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.RenderingAttribute.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Button.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.List.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Panel.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Panel.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.PanelStack.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.ListLayout.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.ListLayout.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.ColorPicker.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.ColorPicker.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Button.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Lighting.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Lighting.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Renderer.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Renderer.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Host.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Host.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.HostInput.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.HostInput.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Envelope.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.State.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
@@ -2279,13 +2312,61 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Theme.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cpp">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Primitive.cpp">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
     </ClCompile>
-    <ClCompile Include="Inkeys\UI\Bar\Bar.UI.cppm">
-      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.Primitive.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Zoom.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.LogoAppearance.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.BottomDock.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.AutoCollapse.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.MainLayoutPolicy.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.DisplayTransition.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.WindowGeometry.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.PresentDecision.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.PresentationAlpha.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.PresentationSource.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.A2.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.I18nFormat.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Haptics.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.Haptics.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.ShapeGesture.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.StatusIndicatorModel.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.KeyboardShortcuts.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Freeze\Freeze.cppm">
@@ -2317,6 +2398,9 @@
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.Widgets.cppm">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\StartupPlacement.cppm">
+      <Filter>Modules\Inkeys\UI</Filter>
     </ClCompile>
     <ClCompile Include="Launch\IdtLaunchState.cpp">
       <Filter>源文件\Launch</Filter>

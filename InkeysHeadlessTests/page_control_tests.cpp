@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
@@ -11,24 +11,28 @@
 #include <limits>
 #include <string_view>
 
-#include "../Inkeys/Inkeys/UI/Bar/Bar.A2.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.PageLoadingIndicator.h"
 #include "../Inkeys/Inkeys/Input/UiPointerInput.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.BottomDock.h"
+
+#include <cstdint>
 
 import Inkeys.UI.PageControl;
 import Inkeys.UI.Bar.Metrics;
 import Inkeys.UI.Bar.SurfaceLayout;
 import Inkeys.UI.Ppt;
-import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.UI3.Animation;
+import Inkeys.UI.UI3.LoadingIndicator;
+import Inkeys.UI.Bar.BottomDock;
+import Inkeys.UI.Bar.A2;
+
+using namespace Inkeys::UI::UI3;
 
 namespace {
 int TestPageLoadingRingClock()
 {
-    using namespace std::chrono_literals;using Inkeys::UI::Bar::PageLoadingIndicator;using Inkeys::UI::Bar::PageLoadState;
+    using namespace std::chrono_literals;using Inkeys::UI::UI3::PageLoadingIndicator;using Inkeys::UI::UI3::PageLoadState;
     PageLoadingIndicator state;const auto begin=PageLoadingIndicator::Time{}+10s;int failures=0;
     const auto expect=[&](bool value,const char* message){if(!value){++failures;std::cerr<<"FAIL "<<message<<'\n';}};
-    const auto curve=+[](bool entering,double t){return BarUiApplyCurve(entering?BarUiCurveEnum::EaseOutCubic:BarUiCurveEnum::EaseInCubic,t);};
+    const auto curve=+[](bool entering,double t){return UiApplyCurve(entering?UiCurveEnum::EaseOutCubic:UiCurveEnum::EaseInCubic,t);};
     constexpr auto Loading=PageLoadState::Loading,None=PageLoadState::None,Retry=PageLoadState::RetryableFailed,Final=PageLoadState::FinalFailed;
     const auto step=[&](auto now,PageLoadState load,double dt=0,bool animations=true,std::uint64_t session=7,bool visible=true){state.Advance(now,session,visible,load,dt,1,animations,curve);};
     step(begin,Loading);expect(state.WakeDeadline()==begin+500ms&&!state.NeedsFrames(true)&&!state.reached,"delay idles with exact monotonic deadline");
@@ -60,7 +64,7 @@ int TestPageLoadingRingClock()
     state.Reset();step(begin+30s,Retry);for(int i=0;i<8;++i)step(begin+30500ms+i*50ms,Retry,.05);expect(state.Ring()==0&&state.Dim()==1&&state.reached,"retryable failure opens the gate without a ring");
     // 非线性环：弧长在[MinArc,~0.7]内伸缩，起点与头部在1ms内的位移有界（无跳变），静态弧固定。
     {
-        using Inkeys::UI::Bar::PageLoadingArcAt;namespace Style=Inkeys::UI::Bar::PageLoadingStyle;
+        using Inkeys::UI::UI3::PageLoadingArcAt;namespace Style=Inkeys::UI::UI3::PageLoadingStyle;
         double minimum=1,maximum=0,worst=0;auto previous=PageLoadingArcAt(0,true);
         const auto wrapped=[](double delta){delta-=std::floor(delta);return delta>.5?1-delta:delta;};
         for(int i=1;i<=14000;++i){
@@ -73,7 +77,7 @@ int TestPageLoadingRingClock()
         expect(worst<.01,"ring head and tail move continuously");
         const auto fixed=PageLoadingArcAt(5,false);expect(fixed.start==0&&fixed.length==Style::StaticArc,"disabled animation uses the fixed arc");
     }
-    Inkeys::UI::Bar::PageLoadingDeadline deadlineWake;bool due=false;
+    Inkeys::UI::UI3::PageLoadingDeadline deadlineWake;bool due=false;
     deadlineWake.Publish(begin+500ms);expect(deadlineWake.Consume(begin+499ms,due)==begin+500ms&&!due,"worker does not consume a future deadline");
     deadlineWake.Publish(begin+2s);expect(deadlineWake.Consume(begin+500ms,due)==begin+2s&&!due,"replaced deadline cannot wake on the old expiry");
     deadlineWake.Publish(PageLoadingIndicator::Time::max());expect(deadlineWake.Consume(begin+3s,due)==PageLoadingIndicator::Time::max()&&!due,"cancelled deadline cannot resurrect");
@@ -108,19 +112,19 @@ namespace
 	LONG VisibleBodyBottom(const ResolvedSurfaceLayout& layout, double heightDip) noexcept
 	{
 		return layout.logicalBounds.top + static_cast<LONG>(std::ceil(
-			(heightDip + BarButtonFrameThicknessDip / 2.0) * layout.scale));
+			(heightDip + ButtonFrameThicknessDip / 2.0) * layout.scale));
 	}
 
 	void TestSharedButtonInheritance()
 	{
 		using namespace Inkeys::UI::Bar;
-		const auto icon = ResolveBarButtonChildTopLeft(
+		const auto icon = ResolveButtonChildTopLeft(
 			100.0, 200.0, 70.0, 70.0,
 			0.0, -10.0, 28.0, 28.0);
-		const auto primary = ResolveBarButtonChildTopLeft(
+		const auto primary = ResolveButtonChildTopLeft(
 			100.0, 200.0, 70.0, 70.0,
 			0.0, 20.0, 70.0, 25.0);
-		const auto secondary = ResolveBarButtonChildTopLeft(
+		const auto secondary = ResolveButtonChildTopLeft(
 			100.0, 200.0, 70.0, 70.0,
 			6.0, 0.0, 20.0, 18.0);
 		auto Near = [](double left, double right)
@@ -369,8 +373,8 @@ namespace
 			"legacy geometry remains available while the production compact path is disabled");
 		for(const auto surface:{Surface::BottomLeft,Surface::BottomRight,Surface::MiddleLeft,Surface::MiddleRight}){
 			const auto buttons=ResolvePptWidgetContracts(surface);
-			for(std::size_t id=1;id<buttons.size();++id)Check(buttons[id].bounds.right-buttons[id].bounds.left==BarButtonTwoSideDip
-				&&buttons[id].bounds.bottom-buttons[id].bounds.top==BarButtonTwoSideDip,
+			for(std::size_t id=1;id<buttons.size();++id)Check(buttons[id].bounds.right-buttons[id].bounds.left==ButtonTwoSideDip
+				&&buttons[id].bounds.bottom-buttons[id].bounds.top==ButtonTwoSideDip,
 				"every PPT direction and page button occupies the standard two by two square");
 		}
 		const auto pptPrevious = ResolveDirectionContentPolicy(

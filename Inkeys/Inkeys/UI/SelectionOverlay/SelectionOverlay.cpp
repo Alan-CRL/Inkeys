@@ -1,4 +1,4 @@
-module;
+﻿module;
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -9,11 +9,19 @@ module;
 #include <atomic>
 #include <algorithm>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <vector>
 #include <cstdio>
-#include "../Bar/Bar.InteractionWorker.h"
+#include "../../Log/Log.h"
+#include <condition_variable>
+#include <coroutine>
+#include <cstdint>
+#include <deque>
+#include <exception>
+#include <optional>
+#include <utility>
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 module Inkeys.UI.SelectionOverlay;
@@ -23,6 +31,8 @@ import Inkeys.Display;
 import Inkeys.Message;
 import Inkeys.Window;
 
+// 输入表面注册/事件已迁入 Inkeys.UI.UI3:HostInput；本文件沿用 Bar:: 限定名（迁移垫片，S7 统一改名时移除）。
+
 namespace Inkeys::UI::SelectionOverlay
 {
 	namespace
@@ -30,6 +40,10 @@ namespace Inkeys::UI::SelectionOverlay
 		using namespace Inkeys::UI::RenderPipeline;
 		using Inkeys::Window::WindowRole;
 		std::shared_ptr<Bar::ShapeEditorSurface> scene;
+		// 帧目标与帧事务由本宿主持有并驱动；场景只在 Acquire 到 Release 之间绑定它，资源只在渲染线程使用。
+		Inkeys::UI::UI3::FrameTarget frameTarget;
+		// 帧事务失败/恢复日志闩锁，只在渲染线程使用。
+		Inkeys::UI::UI3::FrameTransactionLogState presentLog;
 		std::atomic_bool running=false;
 		std::atomic_uint64_t lifecycle=0;
 		std::mutex lifecycleMutex;
@@ -74,7 +88,14 @@ namespace Inkeys::UI::SelectionOverlay
 			if(next.construction||next.object!=barRefreshKey.object||next.construction!=barRefreshKey.construction||next.session!=barRefreshKey.session)
 				RenderPipeline::Request(Client::Bar);
 			barRefreshKey=next;
-			Bar::WakeInteractionWorker();
+			UI3::WakeInteractionWorker();
+		}
+		// 宿主绑定/解绑自己持有的帧目标，各记一条日志。
+		void BindSceneTarget(Bar::ShapeEditorSurface& content,bool bind)
+		{
+			content.BindFrameTarget(bind?&frameTarget:nullptr);
+			Inkeys::Log::TryFormat(Inkeys::Log::Level::Info,Inkeys::Log::Module::SelectionOverlay,
+				"frame target {}: role=selection-overlay, kind=GDI-compatible",bind?"bound":"unbound");
 		}
 		FrameResult Render(const FrameContext& frame)
 		{
@@ -103,16 +124,21 @@ namespace Inkeys::UI::SelectionOverlay
 			const RECT bounds=target->Bounds();
 			// 快照、布局、动画与光照均未变化时不重复回读/ULW；窗口与命中沿用上次成功帧。
 			if(!target->NeedsPresent())return target->AnimationActive()?FrameResult::Continue:FrameResult::Idle;
-			const HRESULT resource=target->EnsureDeviceResources(frame.epoch);
+			// 先清场景自有设备资源，再按本帧外框确保帧目标（至少 1 像素）。
+			target->PrepareDeviceGeneration(frame.epoch.generation);
+			const HRESULT resource=frameTarget.Ensure(frame.epoch,(std::max)(1L,bounds.right-bounds.left),(std::max)(1L,bounds.bottom-bounds.top));
 			if(FAILED(resource))return resource==D2DERR_RECREATE_TARGET?FrameResult::DeviceLost:FrameResult::Retry;
-				const HRESULT present = target->Present([hwnd](const UPDATELAYEREDWINDOWINFO& info){return UpdateLayeredWindowIndirect(hwnd,&info);});
+				// 帧目标由本宿主持有；呈现事务与离屏测试共用 Bar::PresentShapeEditorFrame，提交端为 ULW。
+				const HRESULT present = Bar::PresentShapeEditorFrame(*target,frameTarget,
+					[hwnd](const UPDATELAYEREDWINDOWINFO& info){return UpdateLayeredWindowIndirect(hwnd,&info);},
+					&presentLog,"selection-overlay");
 			if (present == D2DERR_RECREATE_TARGET) { target->ReleaseDeviceResources(); return FrameResult::DeviceLost; }
 			if (FAILED(present)) return FrameResult::Retry;
 			// 窗口外框和输入真值在完整ULW事务成功后一起提交，失败继续沿用旧帧。
 			if(!service.SetBounds(WindowRole::SelectionOverlay,bounds)||!service.Show(WindowRole::SelectionOverlay))return FrameResult::Retry;
 			target->CommitPresented();return target->AnimationActive()?FrameResult::Continue:FrameResult::Idle;
 		}
-		void Input(const Bar::SurfaceInputEvent& e,void*)
+		void Input(const UI3::SurfaceInputEvent& e,void*)
 		{
 			const auto target=std::atomic_load(&scene);
 			if(!running.load()||!target||e.generation!=lifecycle.load())return;
@@ -132,7 +158,7 @@ namespace Inkeys::UI::SelectionOverlay
 			{
 				const auto epoch=snapshot->finishedEditingEntryEpoch;const auto workspace=snapshot->finishedEditingWorkspace;
 				// 发布回调只唤醒 worker；状态恢复离开 Draw3 发布锁后才排入业务队列。
-				if(Bar::QueueInteractionComponentAction([workspace,epoch]{RestoreToolAfterShapeEditing(workspace,epoch);}))
+				if(UI3::QueueInteractionComponentAction([workspace,epoch]{RestoreToolAfterShapeEditing(workspace,epoch);}))
 				{finishedSession=snapshot->finishedEditingSession;finishedEpoch=epoch;}
 				else restorePending=true;
 			}
@@ -144,7 +170,7 @@ namespace Inkeys::UI::SelectionOverlay
 			if(toolbar<=now)Request();
 			return (std::min)({prediction,toolbar>now?toolbar:std::chrono::steady_clock::time_point::max(),Bar::RetryShapeUiIntents(now),restorePending?now+std::chrono::milliseconds(8):std::chrono::steady_clock::time_point::max()});
 		}
-		void Cancel(const Bar::SurfaceInputEvent& e,void*)
+		void Cancel(const UI3::SurfaceInputEvent& e,void*)
 		{
 			const auto target=std::atomic_load(&scene);
 			if(target)target->CancelPointer();if(e.window)PostMessageW(e.window,ReleaseCaptureMessage,static_cast<WPARAM>(e.captureTicket),0);Request();
@@ -157,7 +183,7 @@ namespace Inkeys::UI::SelectionOverlay
 		}
 		void CancelNative(HWND hwnd,UINT reason=WM_CANCELMODE)
 		{
-			if(nativeTicket){Bar::SurfaceInputEvent e;e.window=hwnd;e.message=reason;e.generation=lifecycle.load();e.captureTicket=nativeTicket;(void)Bar::SubmitSurfaceInput(e);}
+			if(nativeTicket){UI3::SurfaceInputEvent e;e.window=hwnd;e.message=reason;e.generation=lifecycle.load();e.captureTicket=nativeTicket;(void)UI3::SubmitSurfaceInput(e);}
 			ReleaseNative(hwnd);
 		}
 		bool ContactNative(HWND hwnd,UINT message,POINT point,NativeKind kind,std::uint64_t source,std::uint32_t id)
@@ -184,11 +210,11 @@ namespace Inkeys::UI::SelectionOverlay
 				nativeRouting.Begin(kind,source,id,body);
 			}
 			else if(found==nativeRouting.contacts.end()||nativeRouting.kind!=kind)return false;
-			Bar::SurfaceInputEvent e;e.window=hwnd;e.message=message;e.screenPoint=point;e.generation=lifecycle.load();
+			UI3::SurfaceInputEvent e;e.window=hwnd;e.message=message;e.screenPoint=point;e.generation=lifecycle.load();
 			e.contactSource=source;e.contactId=id;e.touch=kind==NativeKind::Touch;e.pen=kind==NativeKind::TouchPen||kind==NativeKind::PointerPen;
 			e.inputSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 			e.captureTicket=nativeTicket;e.captureOwned=true;e.preserveMoveSamples=nativeRouting.preserveTrajectory;e.presentedRevision=target->PresentedGeneration();
-			if(!Bar::SubmitSurfaceInput(e)){CancelNative(hwnd);return false;}
+			if(!UI3::SubmitSurfaceInput(e)){CancelNative(hwnd);return false;}
 			if(up)
 			{
 				const bool last=nativeRouting.End(source,id);
@@ -241,10 +267,10 @@ namespace Inkeys::UI::SelectionOverlay
 			}
 			if(message==WM_MOUSEMOVE||message==WM_MOUSELEAVE||message==WM_MOUSEWHEEL)
 			{
-				Bar::SurfaceInputEvent e;e.window=hwnd;e.message=message;e.wParam=wp;e.lParam=lp;e.generation=lifecycle.load();
+				UI3::SurfaceInputEvent e;e.window=hwnd;e.message=message;e.wParam=wp;e.lParam=lp;e.generation=lifecycle.load();
 				e.screenPoint={GET_X_LPARAM(lp),GET_Y_LPARAM(lp)};if(message!=WM_MOUSEWHEEL)ClientToScreen(hwnd,&e.screenPoint);
 				e.inputSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-				if(target)e.presentedRevision=target->PresentedGeneration();(void)Bar::SubmitSurfaceInput(e);return 0;
+				if(target)e.presentedRevision=target->PresentedGeneration();(void)UI3::SubmitSurfaceInput(e);return 0;
 			}
 			return DefWindowProcW(hwnd,message,wp,lp);
 		}
@@ -289,11 +315,13 @@ namespace Inkeys::UI::SelectionOverlay
 	bool Acquire()
 	{
 		std::scoped_lock lock(lifecycleMutex);if(running.load())return true;
-		std::atomic_store(&scene,std::make_shared<Bar::ShapeEditorSurface>());const auto generation=lifecycle.fetch_add(1)+1;
+		const auto created=std::make_shared<Bar::ShapeEditorSurface>();std::atomic_store(&scene,created);const auto generation=lifecycle.fetch_add(1)+1;
 		const auto hwnd=Window::GetService().Handle(WindowRole::SelectionOverlay);
-		if(!hwnd||!Bar::RegisterInteractionSurface(hwnd,generation,Input,Tick,Cancel,nullptr))return false;
+		if(!hwnd||!UI3::RegisterInteractionSurface(hwnd,generation,Input,Tick,Cancel,nullptr))return false;
 		running=true;
-		if(!RenderPipeline::Register(Client::SelectionOverlay,Render)){running=false;Bar::UnregisterInteractionSurface(hwnd);(void)Bar::DrainInteractionSurfaceCallbacks();std::atomic_store(&scene,std::shared_ptr<Bar::ShapeEditorSurface>{});return false;}
+		// 渲染回调注册之前绑定帧目标；更早的失败分支不绑定，被替换的旧场景不会留下悬空绑定。
+		BindSceneTarget(*created,true);
+		if(!RenderPipeline::Register(Client::SelectionOverlay,Render)){running=false;UI3::UnregisterInteractionSurface(hwnd);(void)UI3::DrainInteractionSurfaceCallbacks();BindSceneTarget(*created,false);std::atomic_store(&scene,std::shared_ptr<Bar::ShapeEditorSurface>{});return false;}
 		Inkeys::Drawing::Draw3::SetShapeUiRefreshCallback(Refresh,nullptr);
 		displaySubscription=Inkeys::Display::Subscribe([](auto){Request();});Request();return true;
 	}
@@ -301,8 +329,11 @@ namespace Inkeys::UI::SelectionOverlay
 	{
 		std::scoped_lock lock(lifecycleMutex);if(!running.exchange(false))return;
 		Inkeys::Drawing::Draw3::SetShapeUiRefreshCallback(nullptr,nullptr);displaySubscription.Reset();
-		RenderPipeline::Unregister(Client::SelectionOverlay);const HWND hwnd=Window::GetService().Handle(WindowRole::SelectionOverlay);Bar::UnregisterInteractionSurface(hwnd);
-		(void)Bar::DrainInteractionSurfaceCallbacks();if(const auto target=std::atomic_load(&scene))target->CancelPointer();Bar::ClearShapeUiIntents();(void)Window::GetService().Hide(WindowRole::SelectionOverlay);std::atomic_store(&scene,std::shared_ptr<Bar::ShapeEditorSurface>{});
+		RenderPipeline::Unregister(Client::SelectionOverlay);const HWND hwnd=Window::GetService().Handle(WindowRole::SelectionOverlay);UI3::UnregisterInteractionSurface(hwnd);
+		(void)UI3::DrainInteractionSurfaceCallbacks();const auto target=std::atomic_load(&scene);if(target)target->CancelPointer();Bar::ClearShapeUiIntents();(void)Window::GetService().Hide(WindowRole::SelectionOverlay);
+		// 渲染回调已注销：帧目标原先随场景一起销毁，现在由宿主丢弃资源并解绑后才放下场景。
+		if(target){frameTarget.Discard();BindSceneTarget(*target,false);}
+		std::atomic_store(&scene,std::shared_ptr<Bar::ShapeEditorSurface>{});
 	}
 	void NotifyStateChanged() noexcept {Request();}
 }

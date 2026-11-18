@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -26,6 +26,7 @@ module;
 #include <vector>
 
 #include "../../../IdtFreezeFrame.h"
+#include "../../Log/Log.h"
 #include "Whiteboard.Theme.h"
 #include "Whiteboard.BackgroundState.h"
 #include "Whiteboard.PatternFollow.h"
@@ -75,6 +76,10 @@ namespace Inkeys::UI::Whiteboard
 		std::uint64_t pageGeneration = 0;
 		std::mutex backgroundRenderMutex;
 		Scene backgroundScene;
+		// 背景帧目标由白板宿主持有并驱动（声明在场景之后，先于场景析构）；Initialize 绑定、Shutdown 解绑。
+		Inkeys::UI::UI3::FrameTarget backgroundTarget;
+		// 帧事务首次失败/恢复的日志闩锁。
+		Inkeys::UI::UI3::FrameTransactionLogState backgroundPresentLog;
 		RECT configuredBackgroundScreen{};
 		float configuredBackgroundScale = 0.0F;
 		Inkeys::Display::Subscription displaySubscription;
@@ -233,6 +238,14 @@ namespace Inkeys::UI::Whiteboard
 		{
 			return hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET
 				|| hr == DXGI_ERROR_DRIVER_INTERNAL_ERROR;
+		}
+
+		// 白板背景宿主绑定/解绑自己持有的帧目标，各记一条日志。
+		void BindBackgroundTarget(bool bind)
+		{
+			backgroundScene.BindFrameTarget(bind ? &backgroundTarget : nullptr);
+			Inkeys::Log::TryFormat(Inkeys::Log::Level::Info, Inkeys::Log::Module::Whiteboard,
+				"frame target {}: role=whiteboard-background, kind=GDI-compatible", bind ? "bound" : "unbound");
 		}
 
 		void ReleaseInactiveBackgroundResources()
@@ -427,15 +440,17 @@ namespace Inkeys::UI::Whiteboard
 			const RECT presentation = backgroundScene.PresentationBounds();
 			const UINT width = static_cast<UINT>(presentation.right - presentation.left);
 			const UINT height = static_cast<UINT>(presentation.bottom - presentation.top);
-			const auto previousTarget = backgroundScene.Renderer().GetTargetBitmapSize();
-			const bool resourcesRecreated = backgroundScene.Renderer().GetDeviceGeneration() != frameContext.epoch.generation
+			const auto previousTarget = backgroundTarget.PixelSize();
+			const bool resourcesRecreated = backgroundTarget.DeviceGeneration() != frameContext.epoch.generation
 				|| previousTarget.width != width || previousTarget.height != height;
 			if (resourcesRecreated)
 			{
 				backgroundState.Invalidate();
 				DiscardBackgroundSubmission();
 			}
-			const HRESULT resourceHr = backgroundScene.EnsureDeviceResources(frameContext.epoch, width, height);
+			// 设备代次将变化时先清场景自有设备资源，再确保帧目标（先后与原场景资源入口一致）。
+			backgroundScene.PrepareDeviceGeneration(frameContext.epoch.generation);
+			const HRESULT resourceHr = backgroundTarget.Ensure(frameContext.epoch, width, height);
 			if (FAILED(resourceHr)) return IsDeviceLost(resourceHr) ? FrameResult::DeviceLost : FrameResult::Retry;
 			if (backgroundSubmission && (!backgroundState.FrameCurrent(backgroundSubmission->frame)
 				|| backgroundSubmission->deviceGeneration != frameContext.epoch.generation
@@ -532,24 +547,23 @@ namespace Inkeys::UI::Whiteboard
 			auto nativeLease = service.TryAcquirePresentationLease(WindowRole::Freeze);
 			if (!nativeLease) return FrameResult::Retry;
 			std::uint64_t presentationRevision = 0;
-			auto* rawContext = backgroundScene.DeviceContext();
-			auto* rawGdi = backgroundScene.GdiInteropRenderTarget();
+			auto* rawContext = backgroundTarget.DeviceContext();
+			auto* rawGdi = backgroundTarget.GdiInteropRenderTarget();
 			if (!rawContext || !rawGdi) return FrameResult::Retry;
+			// GDI interop 由帧事务在整个提交期间持有。
 			ComPtr<ID2D1DeviceContext> context(rawContext);
-			ComPtr<ID2D1GdiInteropRenderTarget> gdi(rawGdi);
-			// 与主栏/分页采用同一绘制事务；先裁剪，成功呈现后才消费脏区。
-			backgroundScene.Renderer().BeginFrameDraw(context.Get(), D2D1::RectF(
+			// 与主栏/分页采用同一帧事务；先裁剪，成功呈现后才消费脏区。
+			Inkeys::UI::UI3::FrameTransaction transaction(backgroundTarget, D2D1::RectF(
 				static_cast<FLOAT>(frameDamage.left), static_cast<FLOAT>(frameDamage.top),
 				static_cast<FLOAT>(frameDamage.right), static_cast<FLOAT>(frameDamage.bottom)));
 			(void)backgroundScene.Render(context.Get(), frameContext.frameTime);
-			backgroundScene.Renderer().FinishFrameDrawCommands(context.Get());
-			HDC source = nullptr;
-			HRESULT getDcHr = gdi->GetDC(
-				D2D1_DC_INITIALIZE_MODE_COPY, &source);
-			HRESULT releaseDcHr = S_OK;
+			transaction.FinishDrawCommands();
 			bool presented = false;
-			if (SUCCEEDED(getDcHr) && source)
+			// 提交端：把源 DC 交给 Freeze 表面提交；提交后仍须确认表面身份未被替换。
+			const auto submitPixels = [&](const Inkeys::UI::UI3::FramePresentSource& pixels)
+				-> Inkeys::UI::UI3::FramePresentOutcome
 			{
+				const HDC source = pixels.sourceDc;
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
 				if (hiddenBackgroundCapture) hiddenBackgroundCapture(source, static_cast<int>(width), static_cast<int>(height));
 #endif
@@ -576,11 +590,15 @@ namespace Inkeys::UI::Whiteboard
 				if (pixelsApplied) presentationRevision = nativeLease.PixelsChanged(WindowRole::Freeze);
 				presented = pixelsApplied && !surfaceReplaced();
 				if (destinationDc) ReleaseDC(nullptr, destinationDc);
-				const RECT gdiModifiedRect{};
-				releaseDcHr = gdi->ReleaseDC(&gdiModifiedRect);
-			}
-			else if (SUCCEEDED(getDcHr)) getDcHr = E_FAIL;
-			const HRESULT endDrawHr = backgroundScene.Renderer().EndFrameDraw(context.Get());
+				return { presented, ERROR_SUCCESS };
+			};
+			// GetDC(COPY) → 提交端 → ReleaseDC(空修改矩形) → EndDraw；std::ref 避免渲染线程逐帧堆分配。
+			const Inkeys::UI::UI3::FrameTransactionResult submitted = transaction.Commit(std::ref(submitPixels));
+			backgroundPresentLog.Report("whiteboard-background", submitted);
+			// 保持本宿主原有口径：GetDC 成功却没有 DC 记 E_FAIL；未执行 ReleaseDC 记 S_OK。
+			const HRESULT getDcHr = submitted.sourceDcMissing ? E_FAIL : submitted.getDc;
+			const HRESULT releaseDcHr = submitted.releaseDcAttempted ? submitted.releaseDc : S_OK;
+			const HRESULT endDrawHr = submitted.endDraw;
 			if (IsDeviceLost(getDcHr) || IsDeviceLost(releaseDcHr)
 				|| IsDeviceLost(endDrawHr))
 			{
@@ -681,6 +699,8 @@ namespace Inkeys::UI::Whiteboard
 		hiddenBackgroundPixelCount = 0; hiddenBackgroundHoldReceipt = false;
 		backgroundState.Reset(); backgroundSubmission.reset(); backgroundNativeRevision.store(0);
 		configuredBackgroundScreen = {}; configuredBackgroundScale = 0;
+		// 夹具不经过 Initialize：与生产一样先把宿主帧目标绑定到背景场景。
+		BindBackgroundTarget(true);
 		const auto epoch = Inkeys::UI::RenderPipeline::GetDeviceEpoch();
 		auto Step = [&](std::uint64_t deviceGeneration = 0)
 		{
@@ -710,7 +730,7 @@ namespace Inkeys::UI::Whiteboard
 		hiddenBackgroundHoldReceipt = false;
 		Check(Until([&] { return BackgroundPrepared(101); }), "full matching owner receipt prepares first background");
 		Check(!BackgroundMatchesActive(true, 101), "prepared hidden pixels cannot masquerade as final visible background");
-		Check(backgroundScene.Renderer().GetTargetBitmapSize().width > 0 && backgroundScene.DeviceContext(),
+		Check(backgroundTarget.PixelSize().width > 0 && backgroundTarget.DeviceContext(),
 			"prepared background owns real WARP target resources");
 		Check(service.Show(WindowRole::Freeze) && Until([&] { return BackgroundMatchesActive(true, 101); })
 			&& hiddenBackgroundPixelCount == firstPixels,
@@ -726,14 +746,14 @@ namespace Inkeys::UI::Whiteboard
 			std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - hideStarted).count());
 		Check(!BackgroundMatchesActive(false, 102) && hiddenBackgroundPixelCount == firstPixels,
 			"owner-held inactive callbacks neither repaint nor acknowledge queued Hide");
-		Check(backgroundScene.Renderer().GetTargetBitmapSize().width > 0,
+		Check(backgroundTarget.PixelSize().width > 0,
 			"pending Hide keeps target until real owner retirement");
 		if (releaseOwner) releaseOwner();
 		Check(Until([&] { return BackgroundMatchesActive(false, 102); }), "real Hide receipt completes inactive ACK");
-		Check(backgroundScene.Renderer().GetTargetBitmapSize().width == 0 && !backgroundScene.DeviceContext(),
+		Check(backgroundTarget.PixelSize().width == 0 && !backgroundTarget.DeviceContext(),
 			"real inactive ACK releases the full-screen target and private context");
 		for (unsigned repeat = 0; repeat < 8; ++repeat) (void)Step();
-		Check(backgroundScene.Renderer().GetTargetBitmapSize().width == 0
+		Check(backgroundTarget.PixelSize().width == 0
 			&& hiddenBackgroundPixelCount == firstPixels,
 			"inactive callbacks do not rebuild pixels after retirement");
 		Check(Inkeys::UI::RenderPipeline::GetDeviceEpoch().d3dDevice.Get() == epoch.d3dDevice.Get(),
@@ -742,7 +762,7 @@ namespace Inkeys::UI::Whiteboard
 		Check(backgroundState.Publish(true, 103), "reentry request is accepted");
 		hiddenBackgroundHoldReceipt = true;
 		Check(Until([&] { return backgroundSubmission && backgroundSubmission->nativeRevision; }), "reentry publishes pixels before delayed ACK");
-		Check(backgroundScene.Renderer().GetTargetBitmapSize().width > 0
+		Check(backgroundTarget.PixelSize().width > 0
 			&& hiddenBackgroundPixelCount > firstPixels,
 			"reentry rebuilds a real target and submits fresh pixels before ready");
 		const auto retiredFrame = backgroundSubmission ? backgroundSubmission->frame : WhiteboardDetail::BackgroundState::Frame{};
@@ -1177,11 +1197,12 @@ namespace Inkeys::UI::Whiteboard
 			&& !backgroundState.FrameCurrent(oldDeviceFrame), "device generation discards old pixel candidate before acknowledging rebuilt resources");
 		Check(backgroundState.Publish(false, 105), "final cleanup request is accepted");
 		Check(Until([&] { return BackgroundMatchesActive(false, 105); }), "final native Hide retires shared Freeze ownership");
-		Check(backgroundScene.Renderer().GetTargetBitmapSize().width == 0 && !backgroundScene.DeviceContext(),
+		Check(backgroundTarget.PixelSize().width == 0 && !backgroundTarget.DeviceContext(),
 			"final Hide returns all background target resources");
 		CancelBackgroundCandidate(); DiscardBackgroundSubmission();
 		(void)service.Hide(WindowRole::Freeze);
 		backgroundScene.Reset(); backgroundState.Reset();
+		BindBackgroundTarget(false);
 		configuredBackgroundScreen = {}; configuredBackgroundScale = 0;
 		renderedBackgroundTarget.store({});
 		{ std::scoped_lock pageLock(pageStateMutex); themeRgb = 0x123B32; themePattern = 0; }
@@ -1225,9 +1246,18 @@ namespace Inkeys::UI::Whiteboard
 			std::move(callbacks.closeWhiteboard),
 			std::move(callbacks.changeTheme),
 		});
+		// 渲染回调注册之前绑定宿主帧目标；注册失败时解绑。
+		{
+			std::scoped_lock renderLock(backgroundRenderMutex);
+			BindBackgroundTarget(true);
+		}
 		if (!Inkeys::UI::RenderPipeline::Register(
 			Client::WhiteboardFreeze, RenderBackground))
 		{
+			{
+				std::scoped_lock renderLock(backgroundRenderMutex);
+				BindBackgroundTarget(false);
+			}
 			Inkeys::UI::PageControl::SetWhiteboardCallbacks({});
 			Inkeys::UI::PageControl::Release();
 			initialized.store(false, std::memory_order_release);
@@ -1266,6 +1296,8 @@ namespace Inkeys::UI::Whiteboard
 			DiscardBackgroundSubmission();
 			backgroundScene.Reset();
 			backgroundScene.ReleaseDeviceResources();
+			// 目标资源已丢弃；宿主退休时解除帧目标与场景的绑定。
+			BindBackgroundTarget(false);
 		}
 		backgroundState.Reset();
 		Inkeys::UI::PageControl::SetWhiteboardCallbacks({});

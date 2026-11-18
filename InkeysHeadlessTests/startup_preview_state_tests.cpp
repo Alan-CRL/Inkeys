@@ -1,12 +1,11 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
 #include <d3d11.h>
 #include <d2d1_1.h>
 #include <wrl/client.h>
-#include "../Inkeys/Inkeys/UI/StartupPlacement.h"
-#include "../Inkeys/Inkeys/UI/StartupPreview/StartupPreview.Effects.Drawing.h"
+#include <cstdint>
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "d2d1.lib")
@@ -29,6 +28,13 @@
 import Inkeys.Display;
 import Inkeys.Other.Config;
 import Inkeys.UI.StartupPreview;
+import Inkeys.UI.UI3.Material;
+import Inkeys.UI.UI3.Superellipse;
+import Inkeys.UI.StartupPlacement;
+
+using namespace Inkeys::UI::UI3;
+
+#include "../Inkeys/Inkeys/UI/StartupPreview/StartupPreview.Effects.Drawing.h"
 
 // Config 生产模块通过 IdtMain.h 引用该路径；headless fixture 将其限定到临时目录。
 std::wstring globalPath;

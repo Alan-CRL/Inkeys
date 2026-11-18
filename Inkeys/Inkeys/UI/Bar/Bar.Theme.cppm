@@ -1,8 +1,6 @@
-module;
+﻿module;
 
 #include <windows.h>
-#include <atomic>
-#include "Bar.ThemeMaterial.h"
 
 #ifndef RGBA
 #define RGBA(r, g, b, a) (COLORREF)(((b) << 16) | ((g) << 8) | (r) | ((a) << 24))
@@ -10,36 +8,11 @@ module;
 
 export module Inkeys.UI.Bar:Theme;
 
-import :State;
+export import Inkeys.UI.UI3;
 import Inkeys.UI.Bar.Metrics;
-import Inkeys.UI.RenderPipeline;
+import Inkeys.UI.UI3.Material;
 
-// Bar 主题模式，当前先只区分深浅色。
-export enum class BarThemeModeEnum : int
-{
-	Dark,
-	Light,
-};
-
-// Bar 常用角色色，避免绘制逻辑里散落具体 RGB。
-export enum class BarThemeColorEnum : int
-{
-	Surface,
-	SurfaceFrame,
-	TextPrimary,
-	Accent,
-	PressedFill,
-	SubtleFill,
-	SwatchFrame,
-	DockTarget,
-	IconPrimary,
-	SelectedFill,
-	Divider,
-	EdgeLight,
-	ShadowKey,
-	ShadowAmbient,
-	TopHighlight,
-};
+using namespace Inkeys::UI::UI3;
 
 // 画笔颜色预设，保持当前色块顺序和值不变。
 export enum class BarThemePresetColorEnum : int
@@ -57,155 +30,8 @@ export enum class BarThemePresetColorEnum : int
 	ColorSelect11,
 };
 
-COLORREF ApplyBarThemeAlpha(COLORREF color, int alpha)
-{
-	if (alpha < 0) alpha = 0;
-	if (alpha > 255) alpha = 255;
-
-	return RGBA(GetRValue(color), GetGValue(color), GetBValue(color), alpha);
-}
-
-COLORREF GetBarThemeBaseColor(BarThemeModeEnum mode, BarThemeColorEnum color)
-{
-	if (mode == BarThemeModeEnum::Light)
-	{
-		using Role = BarThemeMaterial::ColorRole;
-		switch (color)
-		{
-		case BarThemeColorEnum::Surface: return BarThemeMaterial::LightColor(Role::Surface);
-		case BarThemeColorEnum::SurfaceFrame: return BarThemeMaterial::LightColor(Role::SurfaceFrame);
-		case BarThemeColorEnum::IconPrimary: return BarThemeMaterial::LightColor(Role::IconPrimary);
-		case BarThemeColorEnum::TextPrimary: return BarThemeMaterial::LightColor(Role::TextPrimary);
-		case BarThemeColorEnum::Accent: return BarThemeMaterial::LightColor(Role::Accent);
-		case BarThemeColorEnum::SelectedFill: return BarThemeMaterial::LightColor(Role::SelectedFill);
-		case BarThemeColorEnum::PressedFill: return BarThemeMaterial::LightColor(Role::PressedFill);
-		case BarThemeColorEnum::SubtleFill: return BarThemeMaterial::LightColor(Role::SubtleFill);
-		case BarThemeColorEnum::SwatchFrame: return BarThemeMaterial::LightColor(Role::SwatchFrame);
-		case BarThemeColorEnum::Divider: return BarThemeMaterial::LightColor(Role::Divider);
-		case BarThemeColorEnum::EdgeLight: return BarThemeMaterial::LightColor(Role::EdgeLight);
-		case BarThemeColorEnum::ShadowKey: return BarThemeMaterial::LightColor(Role::ShadowKey);
-		case BarThemeColorEnum::ShadowAmbient: return BarThemeMaterial::LightColor(Role::ShadowAmbient);
-		case BarThemeColorEnum::TopHighlight: return BarThemeMaterial::LightColor(Role::TopHighlight);
-		case BarThemeColorEnum::DockTarget: return BarThemeMaterial::LightColor(Role::DockTarget);
-		default: return BarThemeMaterial::LightColor(Role::TextPrimary);
-		}
-	}
-
-	switch (color)
-	{
-	case BarThemeColorEnum::Surface: return RGB(BarDarkSurfaceColorChannel,
-		BarDarkSurfaceColorChannel, BarDarkSurfaceColorChannel);
-	// 色块边框在深色端沿用表面边框色，保持原观感。
-	case BarThemeColorEnum::SwatchFrame:
-	case BarThemeColorEnum::Divider:
-	case BarThemeColorEnum::EdgeLight:
-	case BarThemeColorEnum::SurfaceFrame: return RGB(
-		BarDarkSurfaceFrameColorChannel, BarDarkSurfaceFrameColorChannel,
-		BarDarkSurfaceFrameColorChannel);
-	case BarThemeColorEnum::IconPrimary:
-	case BarThemeColorEnum::TopHighlight:
-	case BarThemeColorEnum::TextPrimary: return RGB(255, 255, 255);
-	case BarThemeColorEnum::SelectedFill:
-	case BarThemeColorEnum::Accent: return RGB(88, 255, 236);
-	case BarThemeColorEnum::PressedFill: return RGB(127, 127, 127);
-	case BarThemeColorEnum::SubtleFill: return RGB(127, 127, 127);
-	case BarThemeColorEnum::DockTarget: return RGB(76, 158, 255);
-	case BarThemeColorEnum::ShadowKey:
-	case BarThemeColorEnum::ShadowAmbient: return RGB(BarDarkSurfaceColorChannel,
-		BarDarkSurfaceColorChannel, BarDarkSurfaceColorChannel);
-	default: return RGB(255, 255, 255);
-	}
-}
-
-BarStyleClass* currentBarThemeStyle = nullptr;
-
-export BarThemeModeEnum GetThemeMode(bool darkStyle)
-{
-	return darkStyle ? BarThemeModeEnum::Dark : BarThemeModeEnum::Light;
-}
-
-void SetThemeStyleSource(BarStyleClass* style)
-{
-	currentBarThemeStyle = style;
-}
-
-export COLORREF GetThemeColor(BarThemeModeEnum mode, BarThemeColorEnum color, int alpha = 255)
-{
-	return ApplyBarThemeAlpha(GetBarThemeBaseColor(mode, color), alpha);
-}
-
-export COLORREF GetThemeColor(bool darkStyle, BarThemeColorEnum color, int alpha = 255)
-{
-	return GetThemeColor(GetThemeMode(darkStyle), color, alpha);
-}
-
-export COLORREF GetThemeColor(BarThemeColorEnum color, int alpha = 255)
-{
-	// 默认浅色；绑定样式后由当前 Bar 状态实时决定。
-	if (!currentBarThemeStyle) return GetThemeColor(BarThemeModeEnum::Light, color, alpha);
-
-	// 主题与透明度由主栏帧首落地；此处只在已应用值变化时唤醒独立编辑层。
-	// 显式Dark/Light端点查询不走此钩子，避免材质混色误报主题切换。
-	static std::atomic<int> applied{-1};
-	const bool dark = currentBarThemeStyle->darkStyle;
-	const int background = currentBarThemeStyle->backgroundOpacity;
-	const int content = currentBarThemeStyle->contentOpacity;
-	const int key = (dark ? 0x10000 : 0) | ((background & 0xFF) << 8) | (content & 0xFF);
-	if (applied.exchange(key, std::memory_order_relaxed) != key)
-		Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::SelectionOverlay);
-	return GetThemeColor(dark, color, alpha);
-}
-
-static_assert(BarThemeMaterial::ResidentBaseFillOpacity == BarMainBarFillOpacity,
+static_assert(ThemeMaterial::ResidentBaseFillOpacity == BarMainBarFillOpacity,
 	"resident opacity policy and main bar metric must share the Dark baseline");
-
-// 用户设置的常驻背景绝对透明度（0~1）；0 表示跟随主题默认。读取渲染线程已应用的值。
-export double GetThemeResidentBackgroundOpacityOverride()
-{
-	return currentBarThemeStyle
-		? static_cast<double>(currentBarThemeStyle->backgroundOpacity) / 100.0 : 0.0;
-}
-
-// 设置页显示与重置用的主题默认常驻背景透明度：Dark 0.80、Light 0.88。
-export double GetThemeDefaultResidentBackgroundOpacity(bool darkStyle)
-{
-	return BarThemeMaterial::DefaultResidentFillOpacity(darkStyle ? 0.0 : 1.0);
-}
-
-// 常驻内容（主栏/主按钮/分页上的图标与文字）透明度倍率，弹出面板不使用。
-export double GetThemeResidentContentOpacity()
-{
-	return currentBarThemeStyle
-		? static_cast<double>(currentBarThemeStyle->contentOpacity) / 100.0 : 1.0;
-}
-
-// 常驻表面（主栏、分页）的填充透明度；浅色端更实以免在深色背景上发灰，弹出面板不使用此函数。
-export double GetThemeResidentSurfaceOpacity(double darkOpacity)
-{
-	const bool darkStyle = currentBarThemeStyle ? static_cast<bool>(currentBarThemeStyle->darkStyle) : false;
-	return darkOpacity * BarThemeMaterial::ResidentFillOpacityScale(darkStyle ? 0.0 : 1.0,
-		BarThemeMaterial::LightResidentSurfaceOpacityScale, GetThemeResidentBackgroundOpacityOverride());
-}
-
-// 不经材质系统的独立表面（橡皮、撤销、分页）用它取得与材质表面一致的边框透明度。
-export double GetThemeSurfaceFrameOpacity(double darkOpacity)
-{
-	const bool darkStyle = currentBarThemeStyle ? static_cast<bool>(currentBarThemeStyle->darkStyle) : false;
-	return BarThemeMaterial::FrameOpacity(darkStyle ? 0.0 : 1.0, darkOpacity);
-}
-
-// 不经主栏材质动画的客户端（分页）取当前主题端点：Dark 0、Light 1。
-export double GetThemeLightWeight()
-{
-	const bool darkStyle = currentBarThemeStyle ? static_cast<bool>(currentBarThemeStyle->darkStyle) : false;
-	return darkStyle ? 0.0 : 1.0;
-}
-
-export double GetThemeDisabledContentOpacity()
-{
-	const bool darkStyle = currentBarThemeStyle ? static_cast<bool>(currentBarThemeStyle->darkStyle) : false;
-	return BarThemeMaterial::DisabledContentOpacity(darkStyle ? 0.0 : 1.0);
-}
 
 export COLORREF GetPresetColor(BarThemePresetColorEnum preset, int alpha = 255)
 {
@@ -227,5 +53,5 @@ export COLORREF GetPresetColor(BarThemePresetColorEnum preset, int alpha = 255)
 	default: break;
 	}
 
-	return ApplyBarThemeAlpha(color, alpha);
+	return ApplyThemeAlpha(color, alpha);
 }

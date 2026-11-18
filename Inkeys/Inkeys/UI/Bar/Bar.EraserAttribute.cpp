@@ -16,6 +16,8 @@ import :Main;
 import :Theme;
 import Inkeys.UI.Setting;
 
+using namespace Inkeys::UI::UI3;
+
 using namespace Inkeys::UI::Bar;
 using namespace Inkeys::Drawing::Draw3::SpeedEraser;
 extern const double BarUiDividerRadius;
@@ -33,7 +35,7 @@ namespace
 		double collapse=0,expand=0;
 	};
 	EraserSideSwitchDurations ResolveEraserSideSwitchDurations(
-		double duration,const BarUiTimelineClass* parent,double dt,double speed) noexcept
+		double duration,const UiTimelineClass* parent,double dt,double speed) noexcept
 	{
 		duration=std::isfinite(duration) && duration>0?duration:0;
 		if(parent)
@@ -61,10 +63,10 @@ namespace
 		return {static_cast<LONG>(floor(r.left*zoom))-outset,static_cast<LONG>(floor(r.top*zoom))-outset,
 			static_cast<LONG>(ceil(r.right*zoom))+outset,static_cast<LONG>(ceil(r.bottom*zoom))+outset};
 	}
-	void Place(BarUiShapeClass& shape,EraserAttributeRect r)
+	void Place(UiShapeClass& shape,EraserAttributeRect r)
 	{
 		shape.x.SetDirect(r.left);shape.y.SetDirect(r.top);shape.w.SetDirect(r.Width());shape.h.SetDirect(r.Height());
-		shape.UpInh(BarUiInheritClass(r.left,r.top));
+		shape.UpInh(UiInheritClass(r.left,r.top));
 	}
 	COLORREF EraserOutlineColor() noexcept
 	{ const auto c=static_cast<BYTE>(std::lround(ERASER_GRIP_OUTLINE_CHANNEL*255));return RGB(c,c,c); }
@@ -92,29 +94,30 @@ namespace
 void BarEraserAttributePanel::Initialize()
 {
 	if(initialized_)return;
+	panel_.BindFrame(surface_);menuPanel_.BindFrame(menu_);
 	for(auto* shape:{&surface_,&menu_})
 	{
-		shape->Initialization(0,0,0,0,BarMainBarCornerRadiusDip,BarMainBarCornerRadiusDip,BarButtonFrameThicknessDip,
-			GetThemeColor(BarThemeColorEnum::Surface),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+		shape->Initialization(0,0,0,0,BarMainBarCornerRadiusDip,BarMainBarCornerRadiusDip,ButtonFrameThicknessDip,
+			GetThemeColor(ThemeColorEnum::Surface),GetThemeColor(ThemeColorEnum::SurfaceFrame));
 		shape->enable.Initialization(true);shape->pct.SetDirect(BarDrawAttributeSurfaceOpacity);
 		shape->framePct.emplace(GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));shape->frameLightPct.emplace(BarMainBarFrameOpacity);
-		shape->frameRendering=BarUiFrameRenderingEnum::PointLight;shape->frameLightColor=BarUiFrameLightColorEnum::PenWhenDrawing;
+		shape->frameRendering=UiFrameRenderingEnum::PointLight;shape->frameLightColor=UiFrameLightColorEnum::PenWhenDrawing;
 	}
-	const auto metrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
+	const auto metrics=ResolveButtonVisualMetrics(ButtonVisualLayoutKind::StandardTwoTwo);
 	for(int i:buttonVisuals)
 	{
-		auto& b=buttons_[i];b.hide=false;b.size=BarButtonSizeEnum::twoTwo;
-		b.button.Initialization(0,0,0,0,BarButtonCornerRadiusDip,BarButtonCornerRadiusDip,BarButtonFrameThicknessDip,
-			GetThemeColor(BarThemeColorEnum::PressedFill),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+		auto& b=buttons_[i];b.hide=false;b.size=ButtonSizeEnum::twoTwo;
+		b.button.Initialization(0,0,0,0,ButtonCornerRadiusDip,ButtonCornerRadiusDip,ButtonFrameThicknessDip,
+			GetThemeColor(ThemeColorEnum::PressedFill),GetThemeColor(ThemeColorEnum::SurfaceFrame));
 		b.button.enable.Initialization(true);b.button.pct.SetDirect(0);
 		b.button.framePct.emplace(0);b.button.frameLightPct.emplace(0);
-		b.button.frameRendering=BarUiFrameRenderingEnum::PointLight;b.button.frameLightColor=BarUiFrameLightColorEnum::Frame;
-		b.button.framePrimaryLightEnabled=false;b.button.frameCursorLightIntensityScale=BarButtonCursorLightIntensity;
+		b.button.frameRendering=UiFrameRenderingEnum::PointLight;b.button.frameLightColor=UiFrameLightColorEnum::Frame;
+		b.button.framePrimaryLightEnabled=false;b.button.frameCursorLightIntensityScale=ButtonCursorLightIntensity;
 		const bool large=i==0 || i==4 || i==10;const auto label=ButtonLabel(i);
 		b.name.Initialization(0,0,metrics.primarySlotWidthDip,metrics.primarySlotHeightDip,label,metrics.primaryFontSizeDip,
-			GetThemeColor(BarThemeColorEnum::TextPrimary));
+			GetThemeColor(ThemeColorEnum::TextPrimary));
 		b.name.enable.Initialization(!label.empty());b.name.pct.SetDirect(1);
-		b.icon.Initialization(0,0,GetThemeColor(BarThemeColorEnum::TextPrimary),std::nullopt);
+		b.icon.Initialization(0,0,GetThemeColor(ThemeColorEnum::TextPrimary),std::nullopt);
 		b.icon.enable.Initialization(large || i==9);b.icon.pct.SetDirect(1);
 		// 面板图标显式映射：清空画布沿用主栏垃圾桶，自动粗细、手掌橡皮、笔速橡皮设置用专属资源。
 		const wchar_t* iconResource=i==0?L"barClean":i==4?L"barAutoEraser":i==10?L"barPalmEraser":i==9?L"barEraserSpeedSetting":nullptr;
@@ -127,50 +130,50 @@ void BarEraserAttributePanel::Initialize()
 		auto& circle=circles_[i];
 		circle.Initialization(0,0,1,1,0.5,0.5,1,std::nullopt,EraserOutlineColor());
 		circle.enable.Initialization(true);circle.pct.SetDirect(0);circle.framePct.emplace(0);circle.frameLightPct.emplace(0);
-		circle.frameRendering=BarUiFrameRenderingEnum::PointLight;circle.frameLightColor=BarUiFrameLightColorEnum::Frame;
-		circle.frameCursorLightIntensityScale=BarButtonCursorLightIntensity;
+		circle.frameRendering=UiFrameRenderingEnum::PointLight;circle.frameLightColor=UiFrameLightColorEnum::Frame;
+		circle.frameCursorLightIntensityScale=ButtonCursorLightIntensity;
 		auto& ring=circleSelectionRings_[i];
 		ring.Initialization(0,0,1,1,0.5,0.5,EraserSizeSelectionThicknessDip,std::nullopt,
-			GetThemeColor(BarThemeColorEnum::Accent));
+			GetThemeColor(ThemeColorEnum::Accent));
 		ring.enable.Initialization(true);ring.pct.SetDirect(0);ring.framePct.emplace(0);ring.frameLightPct.emplace(0);
-		ring.frameRendering=BarUiFrameRenderingEnum::PointLight;ring.frameLightColor=BarUiFrameLightColorEnum::Frame;
-		ring.framePrimaryLightEnabled=false;ring.frameCursorLightIntensityScale=BarButtonCursorLightIntensity;
+		ring.frameRendering=UiFrameRenderingEnum::PointLight;ring.frameLightColor=UiFrameLightColorEnum::Frame;
+		ring.framePrimaryLightEnabled=false;ring.frameCursorLightIntensityScale=ButtonCursorLightIntensity;
 		circleSelection_[i].Initialization(0);circleHover_[i].Initialization(0);circlePress_[i].Initialization(1);
 	}
 	for(auto& d:dividers_)
 	{
-		d.Initialization(0,0,1,1,BarUiDividerRadius,BarUiDividerRadius,BarButtonFrameThicknessDip,
-			GetThemeColor(BarThemeColorEnum::SurfaceFrame),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+		d.Initialization(0,0,1,1,BarUiDividerRadius,BarUiDividerRadius,ButtonFrameThicknessDip,
+			GetThemeColor(ThemeColorEnum::SurfaceFrame),GetThemeColor(ThemeColorEnum::SurfaceFrame));
 		d.enable.Initialization(true);d.pct.SetDirect(0.30);d.framePct.emplace(0);d.frameLightPct.emplace(1);
-		d.frameRendering=BarUiFrameRenderingEnum::PointLight;d.framePrimaryLightEnabled=false;d.frameCursorLightIntensityScale=BarUiDividerCursorLightIntensity;
+		d.frameRendering=UiFrameRenderingEnum::PointLight;d.framePrimaryLightEnabled=false;d.frameCursorLightIntensityScale=BarUiDividerCursorLightIntensity;
 	}
-	automaticDivider_.Initialization(0,0,1,1,BarUiDividerRadius,BarUiDividerRadius,BarButtonFrameThicknessDip,
-		GetThemeColor(BarThemeColorEnum::SurfaceFrame),GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+	automaticDivider_.Initialization(0,0,1,1,BarUiDividerRadius,BarUiDividerRadius,ButtonFrameThicknessDip,
+		GetThemeColor(ThemeColorEnum::SurfaceFrame),GetThemeColor(ThemeColorEnum::SurfaceFrame));
 	automaticDivider_.enable.Initialization(true);automaticDivider_.pct.SetDirect(0.30);
 	automaticDivider_.framePct.emplace(0);automaticDivider_.frameLightPct.emplace(0);
-	automaticDivider_.frameRendering=BarUiFrameRenderingEnum::PointLight;
-	automaticDivider_.frameLightColor=BarUiFrameLightColorEnum::Frame;
+	automaticDivider_.frameRendering=UiFrameRenderingEnum::PointLight;
+	automaticDivider_.frameLightColor=UiFrameLightColorEnum::Frame;
 	automaticDivider_.framePrimaryLightEnabled=false;
 	automaticDivider_.frameCursorLightIntensityScale=BarUiDividerCursorLightIntensity;
-	automaticArrow_.Initialization(0,0,GetThemeColor(BarThemeColorEnum::TextPrimary),std::nullopt);
+	automaticArrow_.Initialization(0,0,GetThemeColor(ThemeColorEnum::TextPrimary),std::nullopt);
 	automaticArrow_.InitializationFromResource(L"UI",L"barThicknessAdjust");
 	automaticArrow_.SetWH(EraserAutomaticArrowSizeDip,EraserAutomaticArrowSizeDip);
 	automaticArrow_.enable.Initialization(true);automaticArrow_.pct.SetDirect(1);
-	title_.Initialization(0,0,0,BarButtonOneSideDip,L"灵敏度",BarButtonTwoTwoLabelFontSizeDip,GetThemeColor(BarThemeColorEnum::TextPrimary));
+	title_.Initialization(0,0,0,ButtonOneSideDip,L"灵敏度",ButtonTwoTwoLabelFontSizeDip,GetThemeColor(ThemeColorEnum::TextPrimary));
 	title_.enable.Initialization(true);title_.pct.SetDirect(1);
 	initialized_=true;
 }
 
-void BarEraserAttributePanel::ConfigureSurface(BarUiShapeClass& surface,EraserAttributeRect rect,double scale)
+void BarEraserAttributePanel::ConfigureSurface(UiShapeClass& surface,EraserAttributeRect rect,double scale)
 {
 	Place(surface,rect);surface.rw->SetDirect(BarMainBarCornerRadiusDip*scale);surface.rh->SetDirect(BarMainBarCornerRadiusDip*scale);
-	surface.ft->SetDirect(BarButtonFrameThicknessDip*scale);
-	surface.fill->SetDirect(GetThemeColor(BarThemeColorEnum::Surface));surface.frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+	surface.ft->SetDirect(ButtonFrameThicknessDip*scale);
+	surface.fill->SetDirect(GetThemeColor(ThemeColorEnum::Surface));surface.frame->SetDirect(GetThemeColor(ThemeColorEnum::SurfaceFrame));
 	surface.framePct->SetDirect(GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
 }
 
 bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double speed,double zoom,UINT dpi,
-	RECT workArea,POINT origin,double rigidX,double rigidY,const BarUiTimelineClass* parentTimeline,
+	RECT workArea,POINT origin,double rigidX,double rigidY,const UiTimelineClass* parentTimeline,
 	bool dragPlacementLocked,std::optional<bool> eraserSelected)
 {
 	Initialize();changed_=false;active_=false;
@@ -182,12 +185,14 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	if(shouldClose)Close(owner);
 	const bool open=owner.barState.eraserAttribute;if(!open)owner.barState.eraserSensitivityOpen=false;
 	const bool menuOpen=owner.barState.eraserSensitivityOpen;
-	const BarUiAnimationAdvanceContextClass context{dt,speed,static_cast<bool>(BarUiAnimationEnabled),false};
-	auto advance=[&](auto& value){const auto result=BarUiAdvanceAnimation(value,context);changed_|=result.changed;active_|=result.active;};
+	panel_.SetExternalState(open,panelMotion_.Geometry(),panelMotion_.Opacity());
+	menuPanel_.SetExternalState(menuOpen,menuMotion_.Geometry(),menuMotion_.Opacity());
+	const UiAnimationAdvanceContextClass context{dt,speed,static_cast<bool>(UiAnimationEnabled),false};
+	auto advance=[&](auto& value){const auto result=UiAdvanceAnimation(value,context);changed_|=result.changed;active_|=result.active;};
 	auto root=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
-	root->UpInh(BarUiInheritClass(root->x.val-root->w.val/2,root->y.val-root->h.val/2));
-	auto main=owner.shapeMap[BarUISetShapeEnum::MainBar];main->Inherit(BarUiInheritEnum::Center,*root);
-	auto anchor=owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Eraser)];anchor->button.Inherit(BarUiInheritEnum::CenterFromTopLeft,*main);
+	root->UpInh(UiInheritClass(root->x.val-root->w.val/2,root->y.val-root->h.val/2));
+	auto main=owner.shapeMap[BarUISetShapeEnum::MainBar];main->Inherit(UiInheritEnum::Center,*root);
+	auto anchor=owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Eraser)];anchor->button.Inherit(UiInheritEnum::CenterFromTopLeft,*main);
 	const auto preferences=EraserPreferencesSnapshot();
 	EraserAttributeLayoutInput currentInput;currentInput.shape=preferences.shape;
 	currentInput.main={main->inhX,main->inhY,main->inhX+main->w.val,main->inhY+main->h.val};
@@ -217,15 +222,15 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	if(releasedDragPlacement)releaseSwitchLayoutLocked_=switching;
 	else if(!switching)releaseSwitchLayoutLocked_=false;
 	const bool beginSideSwitch=switching && !sideSwitchActive_;
-	double panelDuration=static_cast<double>(BarUiDefaultOperationDur);
+	double panelDuration=static_cast<double>(UiDefaultOperationDur);
 	if(beginSideSwitch)
 	{
-		const auto durations=ResolveEraserSideSwitchDurations(BarUiDefaultOperationDur,parentTimeline,dt,speed);
+		const auto durations=ResolveEraserSideSwitchDurations(UiDefaultOperationDur,parentTimeline,dt,speed);
 		panelDuration=durations.collapse;sideSwitchExpandDuration_=durations.expand;
 		sideSwitchActive_=true;
 	}
 	else if(!switching)sideSwitchActive_=false;
-	const BarUiTimelineClass* panelParent=switching?nullptr:parentTimeline;
+	const UiTimelineClass* panelParent=switching?nullptr:parentTimeline;
 	changed_|=panelMotion_.Retarget(open && !switching,panelDuration,panelParent);
 	changed_|=menuMotion_.Retarget(menuOpen && !switching,panelDuration,&panelMotion_.Timeline());
 	double sideSwitchCarryDt=0;
@@ -294,13 +299,13 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	changed_|=palmEnabled!=palmEnabled_;palmEnabled_=palmEnabled;
 	changed_|=automatic!=automatic_ || selectedSize_!=static_cast<int>(preferences.baseSize) || sensitivity_!=static_cast<int>(preferences.sensitivity);
 	automatic_=automatic;selectedSize_=static_cast<int>(preferences.baseSize);sensitivity_=static_cast<int>(preferences.sensitivity);
-	changed_|=surface_.fill->val!=GetThemeColor(BarThemeColorEnum::Surface);
+	changed_|=surface_.fill->val!=GetThemeColor(ThemeColorEnum::Surface);
 	ConfigureSurface(surface_,g.panel,frame_.panelPose.scale);ConfigureSurface(menu_,g.menu,frame_.menuPose.scale);
-	const auto metrics=ResolveBarButtonVisualMetrics(BarButtonVisualLayoutKind::StandardTwoTwo);
+	const auto metrics=ResolveButtonVisualMetrics(ButtonVisualLayoutKind::StandardTwoTwo);
 	const int requestedHover=ButtonVisual(hovered_.load());
 	if(appliedHover_!=requestedHover){
-		if(appliedHover_>=0)StopBarButtonHoverVisual(buttons_[appliedHover_],false);
-		if(requestedHover>=0)StartBarButtonHoverVisual(buttons_[requestedHover]);
+		if(appliedHover_>=0)StopButtonHoverVisual(buttons_[appliedHover_],false);
+		if(requestedHover>=0)StartButtonHoverVisual(buttons_[requestedHover]);
 		appliedHover_=requestedHover;changed_=true;
 	}
 	for(int i:buttonVisuals)
@@ -309,33 +314,33 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		const bool selected=(i==4 && automatic_==AutomaticState::On) || (i==10 && palmEnabled_) || (i>=6 && i<=8 && sensitivity_==i-6);
 		const bool presented=IsPanelButton(i)?frame_.panelVisible:frame_.menuVisible;
 		const double scale=IsPanelButton(i)?frame_.panelPose.scale:frame_.menuPose.scale;
-		b.state->state=selected?BarWidgetState::Selected:BarWidgetState::None;
-		SetBarButtonPressedVisual(b,ButtonVisual(pressed_)==i);
+		b.state->state=selected?WidgetState::Selected:WidgetState::None;
+		SetButtonPressedVisual(b,ButtonVisual(pressed_)==i);
 
-		RetargetBarButtonInteractionVisual(b,presented,true,selected,BarButtonHoverTransitionDuration,
-			std::nullopt,true,std::nullopt,GetThemeColor(selected?BarThemeColorEnum::Accent:BarThemeColorEnum::SurfaceFrame));
+		RetargetButtonInteractionVisual(b,presented,true,selected,ButtonHoverTransitionDuration,
+			std::nullopt,true,std::nullopt,GetThemeColor(selected?ThemeColorEnum::Accent:ThemeColorEnum::SurfaceFrame));
 		Place(b.button,i==4?g.automatic:g.items[i]);
-		b.button.rw->SetDirect(BarButtonCornerRadiusDip*scale);b.button.rh->SetDirect(BarButtonCornerRadiusDip*scale);b.button.ft->SetDirect(BarButtonFrameThicknessDip*scale);
+		b.button.rw->SetDirect(ButtonCornerRadiusDip*scale);b.button.rh->SetDirect(ButtonCornerRadiusDip*scale);b.button.ft->SetDirect(ButtonFrameThicknessDip*scale);
 		const bool large=i==0 || i==4 || i==10;
 		const double offset=i==4?-EraserAttributeAutomaticArrowWidthDip/2:0;
 		b.icon.x.SetDirect(offset*scale);b.icon.y.SetDirect(large?metrics.iconOffsetYDip*scale:0);b.icon.contentScale=scale;
 		b.name.x.SetDirect(offset*scale);b.name.y.SetDirect(large?metrics.primaryOffsetYDip*scale:0);
 		b.name.w.SetDirect(large?metrics.primarySlotWidthDip*scale:static_cast<double>(b.button.w.val));b.name.h.SetDirect(metrics.primarySlotHeightDip*scale);b.name.size.SetDirect(metrics.primaryFontSizeDip*scale);
 		b.name.fontTargetSize=metrics.primaryFontSizeDip*(IsPanelButton(i)?panelFrame.targetPose.scale:menuFrame.targetPose.scale);
-		BarButtonAnimationContext buttonFrame;
-		buttonFrame.dtSeconds=dt;buttonFrame.speedRate=speed;buttonFrame.animationEnabled=BarUiAnimationEnabled;
+		ButtonAnimationContext buttonFrame;
+		buttonFrame.dtSeconds=dt;buttonFrame.speedRate=speed;buttonFrame.animationEnabled=UiAnimationEnabled;
 		buttonFrame.visible=presented;buttonFrame.hoverAllowed=!selected;
-		const auto advanced=AdvanceBarButtonVisual(b,buttonFrame);
+		const auto advanced=AdvanceButtonVisual(b,buttonFrame);
 		changed_|=advanced.changed;active_|=advanced.active;
 	}
 	for(size_t i=0;i<3;++i)
 	{
 		const bool selected=selectedSize_==static_cast<int>(BaseSizePresets[i]);
-		circleSelection_[i].SetTar(selected?1:0,BarButtonHoverTransitionDuration);
-		circleHover_[i].SetTar(hovered_==static_cast<int>(i+1)?1:0,BarButtonHoverTransitionDuration);
+		circleSelection_[i].SetTar(selected?1:0,ButtonHoverTransitionDuration);
+		circleHover_[i].SetTar(hovered_==static_cast<int>(i+1)?1:0,ButtonHoverTransitionDuration);
 		const bool pressed=pressed_==static_cast<int>(i+1);
-		circlePress_[i].SetTar(pressed?BarButtonPressScale:1.0,BarUiDefaultOperationDur,
-			std::nullopt,false,pressed?BarButtonPressCurve():BarButtonReleaseCurve());
+		circlePress_[i].SetTar(pressed?ButtonPressScale:1.0,UiDefaultOperationDur,
+			std::nullopt,false,pressed?ButtonPressCurve():ButtonReleaseCurve());
 		advance(circleSelection_[i]);advance(circleHover_[i]);advance(circlePress_[i]);
 		auto& circle=circles_[i];const auto rect=g.previews[i];
 		const double thickness=rect.Width()*ERASER_GRIP_OUTLINE_RATIO;
@@ -352,18 +357,18 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 		const double ringCorner=g.shape==Inkeys::Drawing::Draw3::EraserShape::Circle?ring.w.val/2:corner+ringInset;
 		ring.rw->SetDirect(ringCorner);ring.rh->SetDirect(ringCorner);
 		ring.ft->SetDirect(EraserSizeSelectionThicknessDip*frame_.panelPose.scale);
-		ring.frame->SetDirect(GetThemeColor(BarThemeColorEnum::Accent));
+		ring.frame->SetDirect(GetThemeColor(ThemeColorEnum::Accent));
 		ring.pct.SetDirect(circleSelection_[i].val);ring.framePct->SetDirect(circleSelection_[i].val);
 		ring.frameLightPct->SetDirect(circleSelection_[i].val);
 	}
 	for(size_t i=0;i<dividers_.size();++i)
 	{
-		auto& d=dividers_[i];Place(d,g.dividers[i]);d.ft->SetDirect(BarButtonFrameThicknessDip*frame_.panelPose.scale);
+		auto& d=dividers_[i];Place(d,g.dividers[i]);d.ft->SetDirect(ButtonFrameThicknessDip*frame_.panelPose.scale);
 		d.rw->SetDirect(BarUiDividerRadius*frame_.panelPose.scale);d.rh->SetDirect(BarUiDividerRadius*frame_.panelPose.scale);
-		d.fill->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));d.frame->SetDirect(GetThemeColor(BarThemeColorEnum::SurfaceFrame));
+		d.fill->SetDirect(GetThemeColor(ThemeColorEnum::SurfaceFrame));d.frame->SetDirect(GetThemeColor(ThemeColorEnum::SurfaceFrame));
 	}
 	Place(automaticDivider_,g.automaticDivider);
-	automaticDivider_.ft->SetDirect(BarButtonFrameThicknessDip*frame_.panelPose.scale);
+	automaticDivider_.ft->SetDirect(ButtonFrameThicknessDip*frame_.panelPose.scale);
 	automaticDivider_.rw->SetDirect(BarUiDividerRadius*frame_.panelPose.scale);
 	automaticDivider_.rh->SetDirect(BarUiDividerRadius*frame_.panelPose.scale);
 	const auto automaticFrame=static_cast<COLORREF>(buttons_[4].button.frame->val);
@@ -373,20 +378,21 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	automaticArrow_.x.SetDirect(EraserRectCenterX(arrowRect)-arrowSize/2);
 	automaticArrow_.y.SetDirect(EraserRectCenterY(arrowRect)-arrowSize/2);
 	automaticArrow_.w.SetDirect(arrowSize);automaticArrow_.h.SetDirect(arrowSize);
-	automaticArrow_.color1->SetTar(GetThemeColor(automatic_==AutomaticState::On?BarThemeColorEnum::Accent:BarThemeColorEnum::TextPrimary));
+	automaticArrow_.color1->SetTar(GetThemeColor(automatic_==AutomaticState::On?ThemeColorEnum::Accent:ThemeColorEnum::TextPrimary));
 	const double collapsedAngle=g.menuBelow?180.0:0.0;
-	automaticArrow_.angle.SetTar(menuOpen?180.0-collapsedAngle:collapsedAngle,BarUiDefaultOperationDur);
-	automaticArrow_.pct.SetTar(frame_.panelVisible?1.0:0.0,BarButtonHoverTransitionDuration);
+	automaticArrow_.angle.SetTar(menuOpen?180.0-collapsedAngle:collapsedAngle,UiDefaultOperationDur);
+	automaticArrow_.pct.SetTar(frame_.panelVisible?1.0:0.0,ButtonHoverTransitionDuration);
 	advance(*automaticArrow_.color1);advance(automaticArrow_.angle);advance(automaticArrow_.pct);
 	const auto& texts=I18nKey.UI.Bar.EraserAttributes;
 	changed_|=title_.SetStringImmediate(I18n::getWOr(texts.SensitivityLabel,L"灵敏度"));
-	title_.w.SetDirect(g.menuTitle.Width());title_.h.SetDirect(g.menuTitle.Height());title_.size.SetDirect(BarButtonTwoTwoLabelFontSizeDip*frame_.menuPose.scale);
-	title_.fontTargetSize=BarButtonTwoTwoLabelFontSizeDip*menuFrame.targetPose.scale;
-	title_.color.SetDirect(GetThemeColor(BarThemeColorEnum::TextPrimary));
+	title_.w.SetDirect(g.menuTitle.Width());title_.h.SetDirect(g.menuTitle.Height());title_.size.SetDirect(ButtonTwoTwoLabelFontSizeDip*frame_.menuPose.scale);
+	title_.fontTargetSize=ButtonTwoTwoLabelFontSizeDip*menuFrame.targetPose.scale;
+	title_.color.SetDirect(GetThemeColor(ThemeColorEnum::TextPrimary));
+	UpdatePanelFrame(open,menuOpen);
 	return changed_ || active_;
 }
 
-void BarEraserAttributePanel::DrawPreview(BarUIRendering& renderer,ID2D1DeviceContext* context,size_t index)
+void BarEraserAttributePanel::DrawPreview(UIRendering& renderer,ID2D1DeviceContext* context,size_t index)
 {
 	using namespace Inkeys::Drawing::Draw3;
 	const auto& g=frame_.geometry;const auto rect=g.previews[index];
@@ -396,7 +402,7 @@ void BarEraserAttributePanel::DrawPreview(BarUIRendering& renderer,ID2D1DeviceCo
 	const float press=static_cast<float>(circlePress_[index].val);
 	if(std::abs(press-1.0f)>0.000001f)
 		context->SetTransform(D2D1::Matrix3x2F::Scale(press,press,center)*originalTransform);
-	auto& ring=circleSelectionRings_[index];renderer.Shape(context,ring,BarUiInheritClass(ring.inhX,ring.inhY));
+	auto& ring=circleSelectionRings_[index];renderer.Shape(context,ring,UiInheritClass(ring.inhX,ring.inhY));
 	const auto half=ResolveEraserHalfSize(g.shape,previewDiametersPx_[index]/2);
 	if(!previewBitmapAttempted_[index])
 	{
@@ -424,12 +430,12 @@ void BarEraserAttributePanel::DrawPreview(BarUIRendering& renderer,ID2D1DeviceCo
 		context->DrawBitmap(previewBitmaps_[index].Get(),destination,1,D2D1_INTERPOLATION_MODE_LINEAR);
 	}
 	// 仅叠加原有 PointLight 轮廓，填充和静态描边由缓存位图负责。
-	auto& hover=circles_[index];renderer.Shape(context,hover,BarUiInheritClass(hover.inhX,hover.inhY));
+	auto& hover=circles_[index];renderer.Shape(context,hover,UiInheritClass(hover.inhX,hover.inhY));
 	if(std::abs(press-1.0f)>0.000001f)context->SetTransform(originalTransform);
 	context->PopAxisAlignedClip();
 }
 
-void BarEraserAttributePanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* context)
+void BarEraserAttributePanel::Draw(UIRendering& renderer,ID2D1DeviceContext* context)
 {
 	if(!initialized_ || !frame_.panelVisible)return;
 	if(deviceGeneration_!=renderer.GetDeviceGeneration())
@@ -438,13 +444,12 @@ void BarEraserAttributePanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 		automaticArrow_.ResetCache();for(int i:buttonVisuals)buttons_[i].icon.ResetCache();deviceGeneration_=renderer.GetDeviceGeneration();
 	}
 	const auto& g=frame_.geometry;
-	auto drawSurface=[&](BarUiShapeClass& s){DrawBarBackgroundVisual(renderer,context,s,BarUiInheritClass(s.inhX,s.inhY));};
-	auto drawButton=[&](int i){auto& b=buttons_[i];DrawBarButtonVisual(renderer,context,b,BarUiInheritClass(b.button.inhX,b.button.inhY));};
-	renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.panel,zoom_),frame_.panelOpacity);renderer.SetFrameDiffuseMaskGeometryScale(1/frame_.panelPose.scale);drawSurface(surface_);
-	context->PushAxisAlignedClip(PixelRect(g.panel,zoom_),D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+	auto drawButton=[&](int i){auto& b=buttons_[i];DrawButtonVisual(renderer,context,b,UiInheritClass(b.button.inhX,b.button.inhY));};
+	renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.panel,zoom_),panel_.Opacity());renderer.SetFrameDiffuseMaskGeometryScale(1/frame_.panelPose.scale);
+	panel_.DrawFrame(renderer,context,{surface_.inhX,surface_.inhY},nullptr,false,PixelRect(g.panel,zoom_));
 	drawButton(0);drawButton(4);drawButton(10);
 	for(size_t i=0;i<3;++i)DrawPreview(renderer,context,i);
-	for(auto& d:dividers_)renderer.Shape(context,d,BarUiInheritClass(d.inhX,d.inhY));
+	for(auto& d:dividers_)renderer.Shape(context,d,UiInheritClass(d.inhX,d.inhY));
 	// 内部分割线和箭头跟随整个90×70按钮围绕同一中心缩放。
 	const auto whole=PixelRect(g.automatic,zoom_);
 	const float press=static_cast<float>(buttons_[4].pressScale.val);
@@ -452,35 +457,45 @@ void BarEraserAttributePanel::Draw(BarUIRendering& renderer,ID2D1DeviceContext* 
 	D2D1_MATRIX_3X2_F originalTransform{};context->GetTransform(&originalTransform);
 	if(std::abs(press-1.0f)>0.000001f)
 		context->SetTransform(D2D1::Matrix3x2F::Scale(press,press,D2D1::Point2F(ax,ay))*originalTransform);
-	renderer.Shape(context,automaticDivider_,BarUiInheritClass(automaticDivider_.inhX,automaticDivider_.inhY));
-	renderer.Svg(context,automaticArrow_,BarUiInheritClass(automaticArrow_.x.val,automaticArrow_.y.val));
+	renderer.Shape(context,automaticDivider_,UiInheritClass(automaticDivider_.inhX,automaticDivider_.inhY));
+	renderer.Svg(context,automaticArrow_,UiInheritClass(automaticArrow_.x.val,automaticArrow_.y.val));
 	if(std::abs(press-1.0f)>0.000001f)context->SetTransform(originalTransform);
 	context->PopAxisAlignedClip();context->PopLayer();renderer.SetFrameDiffuseMaskGeometryScale(1);
 	if(frame_.menuVisible)
 	{
-		renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.menu,zoom_),frame_.menuOpacity);renderer.SetFrameDiffuseMaskGeometryScale(1/frame_.menuPose.scale);drawSurface(menu_);
-		context->PushAxisAlignedClip(PixelRect(g.menu,zoom_),D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-		renderer.Word(context,title_,BarUiInheritClass(g.menuTitle.left,g.menuTitle.top),DWRITE_FONT_WEIGHT_BOLD,DWRITE_TEXT_ALIGNMENT_LEADING);
+		renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.menu,zoom_),menuPanel_.Opacity());renderer.SetFrameDiffuseMaskGeometryScale(1/frame_.menuPose.scale);
+		menuPanel_.DrawFrame(renderer,context,{menu_.inhX,menu_.inhY},nullptr,false,PixelRect(g.menu,zoom_));
+		renderer.Word(context,title_,UiInheritClass(g.menuTitle.left,g.menuTitle.top),DWRITE_FONT_WEIGHT_BOLD,DWRITE_TEXT_ALIGNMENT_LEADING);
 		for(int i:{6,7,8,9})drawButton(i);
 		context->PopAxisAlignedClip();context->PopLayer();renderer.SetFrameDiffuseMaskGeometryScale(1);
 	}
 }
 
-RECT BarEraserAttributePanel::Bounds() const
+void BarEraserAttributePanel::UpdatePanelFrame(bool open,bool menuOpen)
 {
-	RECT result{};if(!frame_.panelVisible)return result;
+	panel_.SetExternalState(open,panelMotion_.Geometry(),frame_.panelOpacity);
+	menuPanel_.SetExternalState(menuOpen,menuMotion_.Geometry(),frame_.menuOpacity);
 	auto bounds=[&](EraserAttributeRect rect,double scale)
 	{
-		const int padding=static_cast<int>(ceil((BarButtonFrameThicknessDip*scale+BarRenderingAttribute::pointLightDiffuseExtraWidth)*zoom_))+BarRenderingAttribute::dirtyAntialiasPadding;
+		const int padding=static_cast<int>(ceil((ButtonFrameThicknessDip*scale+RenderingAttribute::pointLightDiffuseExtraWidth)*zoom_))+RenderingAttribute::dirtyAntialiasPadding;
 		return IntegerRect(rect,zoom_,padding);
 	};
-	result=bounds(frame_.geometry.panel,frame_.panelPose.scale);
-	if(frame_.menuVisible)BarRenderingAttribute::UnionRectInPlace(result,bounds(frame_.geometry.menu,frame_.menuPose.scale));
+	const auto set=[&](Panel& panel,EraserAttributeRect r,double scale,bool visible){
+		const double radius=BarMainBarCornerRadiusDip*scale;
+		panel.SetCandidate(bounds(r,scale),{{r.left,r.top,r.right,r.bottom},radius,radius,PanelHitGeometry::RoundedWithPixelTolerance,zoom_},visible);
+	};
+	set(panel_,frame_.geometry.panel,frame_.panelPose.scale,frame_.panelVisible);
+	set(menuPanel_,frame_.geometry.menu,frame_.menuPose.scale,frame_.menuVisible);
+}
+RECT BarEraserAttributePanel::Bounds() const
+{
+	RECT result=panel_.CandidateBounds();if(!frame_.panelVisible)return result;
+	if(frame_.menuVisible)RenderingAttribute::UnionRectInPlace(result,menuPanel_.CandidateBounds());
 	return result;
 }
 void BarEraserAttributePanel::CommitPresented()
 {
-	std::scoped_lock lock(presentationMutex_);presented_=frame_;
+	std::scoped_lock lock(presentationMutex_);presented_=frame_;panel_.CommitPresented();menuPanel_.CommitPresented();
 }
 EraserAttributePresentation BarEraserAttributePanel::PresentationSnapshot() const
 {
@@ -488,8 +503,8 @@ EraserAttributePresentation BarEraserAttributePanel::PresentationSnapshot() cons
 }
 std::array<RECT,3> BarEraserAttributePanel::PresentedRegions() const
 {
-	std::scoped_lock lock(presentationMutex_);const auto& f=presented_;
-	return {f.panelVisible?IntegerRect(f.geometry.panel,f.zoom):RECT{},f.menuVisible?IntegerRect(f.geometry.menu,f.zoom):RECT{},RECT{}};
+	std::scoped_lock lock(presentationMutex_);
+	return {panel_.PresentedInteractionBounds(),menuPanel_.PresentedInteractionBounds(),RECT{}};
 }
 void BarEraserAttributePanel::Close(BarUISetClass& owner)
 {
@@ -537,17 +552,17 @@ bool BarEraserAttributePanel::ResetPointerFeedback()
 bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& message,bool cancelled,bool contactPointer,bool* accepted)
 {
 	if(accepted)*accepted=false;
-	const auto f=PresentationSnapshot();
+	EraserAttributePresentation f;PanelFrame panelFrame,menuFrame;
+	{std::scoped_lock lock(presentationMutex_);f=presented_;panelFrame=panel_.Presented();menuFrame=menuPanel_.Presented();}
 	if(cancelled){const bool owned=ResetPointerFeedback();if(owned)owner.UpdateRendering(false);return owned;}
 	if(!f.panelVisible && pressed_<0)return false;
 	const auto& geometry=f.geometry;const double x=message.x/f.zoom,y=message.y/f.zoom;
-	auto contains=[&](EraserAttributeRect rect,double scale)
-	{
-		return rect.Width()>0 && rect.Height()>0 && BarUiRoundedRectContainsPoint(message.x,message.y,f.zoom,rect.left,rect.top,
-			rect.Width(),rect.Height(),BarMainBarCornerRadiusDip*scale,BarMainBarCornerRadiusDip*scale);
-	};
-	const bool overMenu=f.menuVisible && contains(geometry.menu,f.menuPose.scale);
-	const bool inside=overMenu || (f.panelVisible && contains(geometry.panel,f.panelPose.scale));
+	const auto front=owner.panelStack.FrontPanelIf([&](const PanelStackEntry& entry){
+		if(entry.id==static_cast<PanelId>(BarPanelId::EraserMenu))return menuFrame.OwnsPoint(message.x,message.y);
+		return entry.id==static_cast<PanelId>(BarPanelId::EraserAttribute)&&panelFrame.OwnsPoint(message.x,message.y);
+	});
+	const bool overMenu=front==static_cast<PanelId>(BarPanelId::EraserMenu);
+	const bool inside=front.has_value();
 	int hit=-1;
 	if(inside)
 	{
@@ -559,7 +574,7 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 			if(IsSize(i))
 			{
 				const auto circle=geometry.previews[i-1];
-				if(!EraserAttributePreviewContains(circle,geometry.shape,geometry.previewCornerRadius,BarButtonGapDip*f.panelPose.scale,x,y))continue;
+				if(!EraserAttributePreviewContains(circle,geometry.shape,geometry.previewCornerRadius,ButtonGapDip*f.panelPose.scale,x,y))continue;
 			}
 			hit=i;break;
 		}

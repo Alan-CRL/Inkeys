@@ -1,8 +1,8 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include "../Inkeys/IdtConfiguration.h"
-#include "../Inkeys/Inkeys/UI/Bar/Bar.AutoCollapse.h"
+#include <Windows.h>
 
 #include <filesystem>
 #include <fstream>
@@ -10,6 +10,7 @@
 #include <limits>
 
 import Inkeys.Other.Config;
+import Inkeys.UI.Bar.AutoCollapse;
 
 namespace
 {

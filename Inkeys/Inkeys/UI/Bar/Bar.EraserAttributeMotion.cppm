@@ -5,7 +5,9 @@
 
 export module Inkeys.UI.Bar.EraserAttributeMotion;
 export import Inkeys.UI.Bar.EraserAttributeLayout;
-import Inkeys.UI.Bar.Animation;
+import Inkeys.UI.UI3.Animation;
+
+using namespace Inkeys::UI::UI3;
 
 export namespace Inkeys::UI::Bar
 {
@@ -42,7 +44,7 @@ export namespace Inkeys::UI::Bar
 		double compactWidth, std::optional<EraserAttributeRect> parentPanel=std::nullopt,
 		std::optional<EraserAttributeRect> parentAnchor=std::nullopt) noexcept
 	{
-		const auto range=BarUiGetCurveExtrema(BarUiCurveEnum::EaseOutBack);
+		const auto range=UiGetCurveExtrema(UiCurveEnum::EaseOutBack);
 		const double phases[]={0.0,1.0,range.maximum,1.0-range.maximum};
 		EraserAttributeRect envelope=panel;
 		for(const double child:phases) for(const double parent:phases) {
@@ -58,22 +60,22 @@ export namespace Inkeys::UI::Bar
 	class BarAttributePanelMotion
 	{
 	public:
-		bool Retarget(bool open,double duration,const BarUiTimelineClass* parent=nullptr)
+		bool Retarget(bool open,double duration,const UiTimelineClass* parent=nullptr)
 		{
 			if(open==requested_)return false;
 			requested_=open;double phase=0;
 			if(parent && parent->CanJoin()){duration=parent->GetRemainingDuration();phase=parent->GetProgress();}
-			const auto geometry=open?BarUiCurveEnum::EaseOutBack:BarUiCurveEnum::EaseInBack;
-			const auto opacity=open?BarUiCurveEnum::EaseOutSine:BarUiCurveEnum::EaseInSine;
+			const auto geometry=open?UiCurveEnum::EaseOutBack:UiCurveEnum::EaseInBack;
+			const auto opacity=open?UiCurveEnum::EaseOutSine:UiCurveEnum::EaseInSine;
 			geometry_.SetTar(open?1:0,duration,std::nullopt,false,{geometry,geometry,phase,phase>0});
 			opacity_.SetTar(open?1:0,duration,std::nullopt,false,{opacity,opacity,phase,phase>0});
 			timeline_.Restart(duration);return true;
 		}
-		bool Advance(const BarUiAnimationAdvanceContextClass& context)
+		bool Advance(const UiAnimationAdvanceContextClass& context)
 		{
 			// 同一帧内反向只改目标；底层把dt<=0当作立即完成，此处保留当前姿态。
 			if(context.animationEnabled && !context.forceReplace && timeline_.IsActive() && (!std::isfinite(context.dtSeconds) || context.dtSeconds<=0))return true;
-			const auto g=BarUiAdvanceAnimation(geometry_,context),a=BarUiAdvanceAnimation(opacity_,context);
+			const auto g=UiAdvanceAnimation(geometry_,context),a=UiAdvanceAnimation(opacity_,context);
 			if(!context.animationEnabled)timeline_.Restart(0);else timeline_.Advance(context.dtSeconds,context.speedRate);
 			// 默认时长恰好落在整帧边界时消除浮点尾差，确保换边中点和绘制属性落在同一帧。
 			if(timeline_.IsActive() && timeline_.GetRemainingDuration()<=0.000000001)
@@ -88,12 +90,12 @@ export namespace Inkeys::UI::Bar
 		double Geometry() const noexcept { return geometry_.val; }
 		double TargetGeometry() const noexcept { return geometry_.tar; }
 		double Opacity() const noexcept { return (std::clamp)(static_cast<double>(opacity_.val),0.0,1.0); }
-		const BarUiTimelineClass& Timeline() const noexcept { return timeline_; }
+		const UiTimelineClass& Timeline() const noexcept { return timeline_; }
 	private:
 		bool requested_=false;
-		BarUiValueClass geometry_{0.0};
-		BarUiPctClass opacity_{0.0};
-		BarUiTimelineClass timeline_;
+		UiValueClass geometry_{0.0};
+		UiPctClass opacity_{0.0};
+		UiTimelineClass timeline_;
 	};
 	using EraserSurfaceMotion = BarAttributePanelMotion;
 	struct BarAttributePanelFrame
