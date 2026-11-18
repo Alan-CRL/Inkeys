@@ -17,7 +17,7 @@
 
 ## 模块导出与独立纯接口
 
-`【直接确认】` 当前 ARM64 MSVC 下，跨 interface partition 返回导出类时，纯接口中的前置声明也必须保持同一导出身份，例如 `export class BarUIRendering;`。仅在 Rendering 分区导出完整类、再由 Main 转导入，不能修正 Scene 中未导出的前置声明：外部消费者仍可能收到 `C2027` 未完成类型。前置声明可独立编译，不要求 Headless 工程引入完整渲染实现。修改这类边界时，用同工具链的最小模块探针确认，不能为了验证把纯测试接口改成完整主栏依赖。
+`【直接确认】` 当前 ARM64 MSVC 下，**同一模块**的 interface partition 之间前置声明一个导出类时，前置声明必须保持同一导出身份，例如 `UI3.Renderer.cppm` 里的 `export class PanelPoseScope;`（完整定义在 `:Panel`）、`Bar.Main.cppm` 里的 `export class BarUISetClass;`。漏掉 `export` 时，外部消费者经根模块拿到的是另一个未完成类型，报 `C2027`。这只适用于同一模块的分区之间；**跨模块不得前置声明**对方拥有的类型，需要就 `import` 对方（见下文「module 与传统头文件边界」）。修改这类边界时，用同工具链的最小模块探针确认，不能为了验证把纯测试接口改成完整主栏依赖。
 
 ## 当前命名观察
 
@@ -30,13 +30,19 @@
 | 传统类型后缀 | 部分使用 `Class`、`Struct`、`Enum` | `StrokeImageClass`、`SetListStruct` |
 | 共享状态 | camelCase、PascalCase 与历史名称并存 | `offSignal`、`TouchList`、`useMouseInput` |
 
-`【历史/兼容】` `ActivateSildeShowWindow`、`D2DStarup` 等拼写已经进入调用点或 COM 接口。除非任务明确覆盖全部引用及兼容产物，不要顺手改名；它们也不是新名称的推荐拼法。UI3 按钮文件与类型现已统一为 `Bar.Button.cpp` / `BarButton*`，新增引用不得恢复旧名称。
+`【历史/兼容】` `ActivateSildeShowWindow`、`D2DStarup` 等拼写已经进入调用点或 COM 接口。除非任务明确覆盖全部引用及兼容产物，不要顺手改名；它们也不是新名称的推荐拼法。标准按钮的通用部分在 `UI3.Button.*`（`ButtonClass`、`Button*` 常量与入口，不带 `Bar` 前缀），产品按钮元数据与主栏缺省值包装在 `Bar.Button.*`（`BarButtonClass`、`BarButtonListClass`）；新增引用不得恢复迁移前的旧名称。
 
-`【合理推断，不是强制全仓规范】` 在已有 module 目录内新增同领域文件时，优先沿用相邻 module 名和目录结构。是否要求所有未来代码迁入 C++ module，仓库没有给出政策，属于 `【待确认】`。
+`【合理推断，不是强制全仓规范】` 在已有 module 目录内新增同领域文件时，优先沿用相邻 module 名和目录结构。`【直接确认】` `Inkeys/Inkeys/` 下的新代码按下一节的头文件判定标准写成 module；传统 `Idt*` 文件不为此迁移。
 
 ## module 与传统头文件边界
 
 - `【直接确认】` module 接口单元使用 `.cppm`，需要分离实现时可见同目录 `.cpp`；具体项目项由 `Inkeys/Inkeys.vcxproj` 登记。
+- `【直接确认】` **头文件判定标准**（2026-11-17 起，`Inkeys/Inkeys/` 下适用）：含类或函数定义的写成 `.cppm`（需要实现体时加 `.cpp`）；只起引用作用的（纯宏、纯前置包含）可以保留 `.h`。`.cppm` 的全局模块片段（`module;` 与 `export module` 之间）内可以 `#include` 传统头与第三方头。
+- `【直接确认】` **独立模块与分区的选用**：不依赖 D2D 设备运行时状态、不依赖 `IdtMain.h`、可能被测试工程或其他领域单独导入的叶子能力写成独立模块（`Inkeys.UI.UI3.<Name>`、`Inkeys.UI.Bar.<Name>`）；被 `InkeysHeadlessTests` 消费的东西必须是独立模块。彼此需要对方完整类型、只作为整体使用的重型运行时写成分区（`Inkeys.UI.UI3:<Name>`）：接口侧单向依赖，反向依赖放进实现单元；根模块 `export import` 全部分区。
+- `【直接确认】` 不得在一个模块里前置声明另一个模块拥有的类型；需要对方类型就 `import` 对方。同一模块的分区之间需要前置声明时，声明必须带与定义相同的导出身份（见上文「模块导出与独立纯接口」）。
+- `【直接确认】` 预处理效果不能导出：`NOMINMAX`、`min`/`max` 的保存恢复只在写它的翻译单元内有效，各消费者自行处理；模块内部统一写 `(std::min)` / `(std::max)`。
+- `【直接确认】` 「依赖模块符号的普通头，在 import 之后再 include」不可靠（同一头在接口与实现单元各包含一次会重复定义），这类头一律转成模块。导出分区的全局片段若带进含默认 `operator<=>` 的头，所有导入方都需要 `<compare>`：不需要对外的内容放进实现单元或内部分区。
+- `【直接确认】` 新符号避开 Windows SDK 已有名字（实例：`GestureRecognizer` 与 SDK 类型撞名，改为 `PointerGestureRecognizer`）。
 - `【直接确认】` `IdtMain.h` 是传统汇聚头，包含多种 Windows/图形依赖并声明大量跨模块状态。
 - `【合理推断】` 新独立能力不应无理由新增对 `IdtMain.h` 的依赖；但现有 module 已经依赖它，不能把该建议误写成当前代码全都遵守的规则。
 - `【直接确认；AGENTS.md】` 改动 module import/export 或工程项后，应从完整 `InkeysRepo.sln` 验证，而不是单独构建 vcxproj。
@@ -46,6 +52,7 @@
 
 - `【直接确认；AGENTS.md】` 关键步骤和写法使用简短中文注释；不要求逐行解释。
 - `【直接确认；AGENTS.md】` 保留原文件编码和换行。
+- `【直接确认】` 新建或被改动的 `.cpp` / `.cppm` / `.h` 一律 UTF-8 **带 BOM** + CRLF；原本无 BOM 的源文件在被修改时补上 BOM。未被修改的文件不为统一格式而改动；`.vcxproj`、`.filters`、`.sln` 与 Markdown 保持各自现有格式。
 - `【直接确认】` `Inkeys/Inkeys.vcxproj` 启用 `/utf-8`；根 `.gitattributes` 仅包含 GitHub Linguist 的 C++ 识别设置，没有统一 EOL 规则。
 - `【合理推断】` 延续目标文件的缩进、花括号和 include/import 排列，避免功能改动附带整文件格式化。
 - `【合理推断】` 非直观线程切换、兼容回退和资源所有权值得在局部写“为什么/谁释放”；这不是要求给历史代码补齐所有注释。

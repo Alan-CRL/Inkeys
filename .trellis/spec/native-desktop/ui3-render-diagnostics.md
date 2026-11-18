@@ -42,7 +42,7 @@ std::optional<RawCaptureReport> TakeRawCapture() noexcept;
 - 默认健康汇总关闭。异常或恢复聚合最多每秒尝试输出一次；sink 返回 false、拒绝入队或抛异常也消耗本次限频额度，并保留未被接收的聚合。
 - 异常后进入 idle 时只为待输出诊断设置到期等待；到期可以发日志，不得制造任何客户端渲染请求。没有待输出诊断时沿用原来的无限 idle 等待。
 - 不为诊断增加退出等待；Stop 仅尝试已到期的记录。因此立刻终止进程时，仍处冷却时间内的尾部记录不保证落盘。
-- sink 在调度器内部锁外执行。产品日志桥复用现有 file sink/thread pool，诊断专用 async logger 使用 `discard_new` 避免阻塞渲染；不改变普通 IDTLogger 的溢出策略或共享格式，不新增日志线程。
+- sink 在调度器内部锁外执行。产品日志桥（`IdtMain.cpp`）把聚合行交给统一日志服务的非阻塞入口 `Inkeys::Log::TryWrite`：拿不到锁或缓冲不足即丢弃并计数，不阻塞渲染；不新增日志线程，不改变统一日志的行格式与溢出策略（见 [errors-logging-and-resources.md](errors-logging-and-resources.md)）。
 - mask 的 hit/miss/create/failure 描述实际查询/创建边界；创建耗时只在 miss 时采样。`slices` 是实际 FillOpacityMask 提交次数（含 exact 烘焙和整图单次绘制），不是 Gaussian 创建数；空片/零透明度跳过不计。
 - exact fallback 原因只用于观察；拆分原因不能改变条件求值结果、缓存预算、失败 latch 或绘制质量。
 

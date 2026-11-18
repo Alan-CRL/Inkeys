@@ -10,9 +10,9 @@
 - 同组 NoUpload bool：`IdleFadeBottomPair=true`、`IdleFadeMiddlePair=true`、`IdleFadeMainBar=false`，缺值或非法类型回到各自默认。
 - `PptState` 发布 `idleFadeSeconds` 与上述三范围；`ReadPptIdleFadeSnapshot()` 返回主栏需要的场次/可见性/时长/是否启用。
 - `ResolvePptIdleFade(input)`：已有超时/交互/外部翻页纯策略；`PptMainIdleFadeState::Update()` 对主栏固定不传外部翻页。
-- `BarThemeMaterial::ResolveIdleOpacity(normal, ceiling, progress)`；固定 `IdleBackgroundOpacity=0.30`、`IdleContentOpacity=0.60`。
+- `ThemeMaterial::ResolveIdleOpacity(normal, ceiling, progress)`；固定 `IdleBackgroundOpacity=0.30`、`IdleContentOpacity=0.60`。
 - `BarPageSurface::SetIdleFade(dimmed,duration)` 与 `SetOpacity(value,duration)` 分离；后者仅承载显隐。
-- `BarUIRendering::SetResidentIdleFade(progress)` 为局部绘制通道，正常 progress=0；离开常驻对象绘制段必须恢复默认。
+- `UIRendering::SetResidentIdleFade(progress)` 为局部绘制通道，正常 progress=0；离开常驻对象绘制段必须恢复默认。
 
 ## 3. Contracts
 
@@ -45,7 +45,7 @@ PPT 联动的 `RenderPptIdleFadeRow` 让时长与复选项共用一张 SettingRo
 
 | 条件 | 结果 |
 | --- | --- |
-| B=0.80/0.88、C=1 | 闲置至 0.30/0.60，恢复精确回正常 |
+| B=0.80/0.92、C=1 | 闲置至 0.30/0.60，恢复精确回正常 |
 | 正常值等于/低于上限 | 不反向加深，不二次相乘 |
 | 外部翻页 | 分页按原规则淡化；主栏期限/目标不变 |
 | 任一主栏附属面板或其收起退场仍在 | 主栏保持正常，最后结束后开始全新期限 |

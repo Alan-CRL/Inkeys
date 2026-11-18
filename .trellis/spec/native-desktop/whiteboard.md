@@ -56,10 +56,10 @@
 
 ### 共享计算、输入与渲染防回归
 - Main/MainMore/PPT/白板分页分别拥有稳定的 BarButtonListClass；主栏每批消费稳定 Snapshot，分页仅在拓扑/尺寸目标变化时重算并缓存列表布局与隐藏优先顺序，正常热帧不逐帧复制列表；主栏、分组网格和分页单行使用同一 ResolveBarButtonListLayout。固定属性/More/主题继续保留明确字段或数组，不建通用节点图或动态注册表。
-- 标准按钮共用 ConfigureBarButtonVisualTargets、AdvanceBarButtonVisual、PrepareBarButtonVisualInheritance、DrawBarButtonVisual 和公共命中。Draw/Geometry 的固定 shape/SVG/Word 通过非拥有引用视图使用相同组件函数。特殊页码/主题只替换内容，不能重写按压、悬停、字体槽或另一份动画推进。
+- 标准按钮共用 ConfigureButtonVisualTargets、AdvanceButtonVisual、PrepareButtonVisualInheritance、DrawButtonVisual 和公共命中。Draw/Geometry 的固定 shape/SVG/Word 通过非拥有引用视图使用相同组件函数。特殊页码/主题只替换内容，不能重写按压、悬停、字体槽或另一份动画推进。
 - 固定面板共用 BarAttributePanelMotion、ResolveBarAttributePanelFrame；不保留 popupClock/parentPanel/BuildWidgets。每批消费同一 frameTime，同目标同时间重复 Advance/Render 不再次推进。内容更新不重开运动或延长输入锁；同布局的页码和主题只更新对应数据及脏区，保留现有几何动画，不能以零时长配置把转换提前跳到终态。
 - 每个目标独立持有 renderer/context/bitmap/cache，显式消费字体、倍率、光照和设备代次；不得构造完整 BarUISetClass 充当分页 renderer owner。分组透明度采用共享有界 PushPanelOpacity，不能对子按钮逐个创建覆盖整幅目标的透明层。
-- BeginFrameDraw 必须在 Clear 和实际 draw 前设置脏区裁剪；FinishFrameDrawCommands 在 GetDC 前清空 clip/layer，GetDC/ReleaseDC/EndFrameDraw 与主栏同一事务。高水位只保留容量，实际提交、命中、dirty 和光源映射使用同帧当前包络。
+- `UI3::FrameTransaction` 在 Clear 和实际 draw 前设置脏区裁剪；`FinishDrawCommands` 在 GetDC 前清空 clip/layer，GetDC/ReleaseDC/EndDraw 与主栏使用同一事务实现。高水位只保留容量，实际提交、命中、dirty 和光源映射使用同帧当前包络。
 - 预览底色、边框、圆角和反馈复用 renderer 的 Shape/按钮能力，纹理仅绘制内容；不再维护 ThemeDrawingResources 及自有圆角裁剪缓存。一个属性每帧只有一个最终目标，禁止标准图标尺寸或 opacity 先写默认值再覆盖造成永久重定向。
 - 成功完成绘制/GDI/提交/必要窗口交接后才发布命中与几何、消费 dirty；失败保留旧已呈现快照和待绘制状态。PPT 成对拖动/布局 revision/pagePresented 门禁保持。
 - 一个主栏交互 worker 公平处理全部目标；手势等待采用非阻塞续接，WndProc 仅标准化/入队和即时原生捕获。Move 可合并但不能跨 Down/Up/Cancel；fixture 来源保留精确队列出处。输入发布反馈、render 独占视觉对象；长按计时不在 render 执行业务。对话框和保存采用异步结果或原服务队列。退出显式唤醒邮箱；生产 Hook 的100ms租约收包不请求渲染，离屏 worker 静置只等待邮箱或手势期限。

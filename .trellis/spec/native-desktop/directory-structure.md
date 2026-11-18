@@ -50,7 +50,8 @@
 | Inkeys/Idt*.cpp、Inkeys/Idt*.h | 传统主程序子系统。修改现有 Idt 功能时优先留在其现有文件对中，不为风格统一做无关迁移；**不得新增 Idt\* 文件**，Draw2 时代的 IdtDrawpad/IdtFloating/IdtRts/IdtWindow/IdtHistoricalDrawpad 等已删除 |
 | Inkeys/IdtMain.cpp、IdtMain.h | wWinMain、启动编排、共享声明和大量传统依赖的中心 |
 | Inkeys/Inkeys/ | C++20 module 根目录，按领域分区（Business、Conv、Display、Drawing、Graphics、Helper、Input、Load、Message、Net、Other、Startup、Text、UI、Window）。**新增功能采用 `.cppm`（接口）+ `.cpp`（实现单元）结构**放入对应领域目录，同步登记主工程与直接编译它的测试工程及两者 filters |
-| Inkeys/Inkeys/UI/Bar/ | Inkeys3 悬浮栏的状态、主题、布局、动画、渲染属性和入口；是否为发布默认待确认 |
+| Inkeys/Inkeys/UI/UI3/ | 通用自绘 UI 的四层实现（基础绘制与动效、基础控件、序列与面板、宿主与呈现），模块 `Inkeys.UI.UI3` 及其分区与独立子模块；不得依赖 `UI/Bar/`、`IdtMain.h`、`IdtState.h`。分层与宿主合同见 [ui3-layers.md](ui3-layers.md) |
+| Inkeys/Inkeys/UI/Bar/ | Inkeys3 悬浮栏产品层：主栏状态、产品主题与布局政策、主栏/More/属性面板/翻页场景/形状编辑的内容组织、渲染循环与交互入口；通用图元、绘制器、按钮、面板、帧事务与输入接入来自 `UI/UI3/` |
 | Inkeys/Inkeys/UI/Setting/ | Dear ImGui 设置界面、DX11 后端和自定义控件 |
 | Inkeys/Launch/ | 启动状态相关代码 |
 | Inkeys/SuperTop/ | UIAccess/置顶辅助相关代码和 token 声明 |
@@ -68,6 +69,7 @@
 - Inkeys.Other.Config：Inkeys/Inkeys/Other/Other.Config.cppm 和 .cpp；
 - Inkeys.Net.Update：Inkeys/Inkeys/Net/Net.Update.cppm 和实现文件；
 - Inkeys.UI.Bar 及分区：Inkeys/Inkeys/UI/Bar/Bar*.cppm、Bar*.cpp；
+- Inkeys.UI.UI3：Inkeys/Inkeys/UI/UI3/UI3*.cppm、UI3*.cpp。根接口 `UI3.cppm` 只做聚合：`export import :Primitive;` 等全部分区，加 `export import Inkeys.UI.UI3.Animation;` 等全部独立子模块；消费者 `import Inkeys.UI.UI3;` 即可，测试工程按需只导入独立子模块。工程 filter 为 `Modules\Inkeys\UI\UI3`；
 - Inkeys.UI.Setting：Inkeys/Inkeys/UI/Setting/Setting*.cppm、Setting*.cpp。
 
 **【合理推断】** 若任务在既有 module 体系内新增相邻模块，Inkeys.领域.功能 与对应领域目录是最保守的默认形式。它来自上述重复模式，不是维护者已确认的全仓迁移规则；跨领域或替代 Idt* 的设计需另行确认。新增文件仍需按 Inkeys.vcxproj 的实际 module 项写法登记。

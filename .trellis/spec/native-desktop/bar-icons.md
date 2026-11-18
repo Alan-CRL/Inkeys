@@ -7,8 +7,8 @@
 ## 2. Signatures
 
 - 资源登记：`Inkeys/Inkeys.rc` 中 `NAME  UI  "src\UI\name.svg"`（名称大写），并在 `Inkeys.vcxproj`/`.filters` 以 `<None Include="src\UI\name.svg" />` 跟踪。
-- 加载：`BarUiSVGClass::InitializationFromResource(L"UI", L"name")`（返回 void，失败时 `svg.GetVal()` 为空）；状态切换 `BarButtonClass::TransitionContent(L"name", label, immediate)`。
-- 着色：`Bar.UI.cpp` 加载时把 `rgba(10,0,7,0)` 替换为 color1、`rgba(9,0,2,0)` 替换为 color2；color1 由 `RetargetBarFixedButtonVisual` 在 IconPrimary/Accent 间切换。
+- 加载：`UiSVGClass::InitializationFromResource(L"UI", L"name")`（返回 void，失败时 `svg.GetVal()` 为空）；状态切换 `BarButtonClass::TransitionContent(L"name", label, immediate)`。
+- 着色：`Bar.UI.cpp` 加载时把 `rgba(10,0,7,0)` 替换为 color1、`rgba(9,0,2,0)` 替换为 color2；color1 由 `RetargetFixedButtonVisual` 在 IconPrimary/Accent 间切换。
 - 设计源：`.trellis/tasks/archive/**/11-03-bar-icon-redesign/research/icon_build.py` + `icon_lib.py`（shapely 几何，常量 `LINE=2.5`、`GAP=1.5`）；校验 `lint_icons.py <文件或目录>`；预览 `preview_build.py <Inkeys/src> <research>` 生成 `icon-preview.html`。
 
 ## 3. Contracts

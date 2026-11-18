@@ -17,6 +17,7 @@
 - [whiteboard.md](whiteboard.md)：白板初版菜单、每页主题、UInk分页存储与底栏恢复合同。
 - [canvas-pan.md](canvas-pan.md)：白板导航事件顺序、可靠释放、向量惯性与独立诊断开关。
 - [canvas-pan-release-quality.md](canvas-pan-release-quality.md)：释放支持、Touch空间进展/停止年龄、boost与呈现速度分工。
+- [ui3-layers.md](ui3-layers.md)：UI3 四层责任、`UI/UI3/` 模块表、依赖方向、帧目标/帧事务/输入接入的宿主合同、产品层引用约定与 UI3 日志规则。
 - [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。
 - [input-and-ink.md](input-and-ink.md)：RTS、鼠标归一化、多点触控、墨迹合成和历史记录。
 - [ui-pointer-session.md](ui-pointer-session.md)：Bar/PPT 私有 Raw Mouse、WM_TOUCH 来源会话、窗口外拖动与取消合同。

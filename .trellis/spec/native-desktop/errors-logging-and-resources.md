@@ -57,7 +57,8 @@ std::wstring Directory();
 - 行格式：`[YYYY-MM-DD HH:MM:SS.mmm][LEVEL][Module][T线程ID][通道] 正文`；多行正文逐行补完整标头；截断（单条 > 16 KiB，退回 UTF-8 字符边界）末行追加 ` ...[truncated]`。正文中的结构化标签（`[PptPerf]`、`[PptGate]`、`[UI3Diag]` 等 key=value）由脚本解析，不得删改；手写模块前缀（如 `[主线程][IdtMain]`）不得再出现，模块由 `Module` 表达。
 - 会话头（纯文本，文件最前）：时间与时区、edition/version、`build=Release|Dev`（按 `IDT_RELEASE`，项目 Debug 配置不定义 `_DEBUG`）、架构、系统版本、pid、userId、路径、启动状态；`ApplyConfig` 再写一行不受阈值影响的 `session.config threshold=… channels=… retention.days=… retention.maxMB=…`。
 - 同步：两块 2 MiB 静态缓冲，SRWLock 只保护容量检查与 memcpy；唯一写线程交换缓冲后在锁外经 `spdlog::sinks::basic_file_sink_st` 写文件。Debug/Info 只用前 75%，Warn+ 可用全部。Warn+ 立即落盘，其余距上次落盘 1 s 内落盘。
-- 热路径（Draw3 绘制/输入线程、RTS 回调、WndProc、窗口 owner、UI3 渲染回调）只能用 `TryWrite`/`TryFormat`/`Trace`/`DiagnosticOutput`：拿不到锁或空间不足即丢弃计数，下一批开头写 `dropped debug=… info=…` 行。
+- 热路径（Draw3 绘制/输入线程、RTS 回调、WndProc、窗口 owner、UI3 渲染回调、UI3 输入 owner）只能用 `TryWrite`/`TryFormat`/`Trace`/`DiagnosticOutput`：拿不到锁或空间不足即丢弃计数，下一批开头写 `dropped debug=… info=…` 行。
+- `Inkeys/Inkeys/UI/UI3/` 内的代码无法预知调用线程，一律只用 `TryFormat`/`TryWrite`，Module 固定为 `UI3`；不做逐帧日志，失败类事件经闩锁后每设备代次或每次状态边沿记录一次。事件、级别与频率表见 [ui3-layers.md](ui3-layers.md) §6。
 - 阈值：Critical 永远写入；`Off` 只关闭普通分级日志，会话头、`session.config`、Critical 与已开启通道仍写入。6 个调试开关（`Experimental.Inkeys3.ConsoleOutput.*`，需重启）与非 Release 的 `INKEYS_DRAW3_WIN7_DIAGNOSTICS` 合成通道掩码，通道记录不受阈值过滤。
 - 启动顺序：`Start` 早于读配置（之前的日志进入缓冲不丢）；清理必须等 `ApplyConfig` 取得真实 `Application.Logging` 参数后由写线程执行，否则用户的“永不清理”会被默认 7 天误删。
 - 清理：只匹配本规范文件名；排除当前文件；先删超过天数（0=永不）的，再按最旧优先删到目录总量不超过上限（0=无限制）；删除失败只记 Debug。

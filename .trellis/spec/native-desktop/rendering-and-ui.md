@@ -38,16 +38,16 @@
 
 ## `Inkeys.UI.Bar`
 
-`【直接确认】` `Inkeys/Inkeys/UI/Bar/` 按 `Bar.State`、`Bar.Atomic`、`Bar.Animation`、`Bar.Theme`、`Bar.UI`、`Bar.RenderingAttribute`、`Bar.Button`、`Bar.Layout`、`Bar.Rendering`、`Bar.RenderLoop`、`Bar.Interaction`、`Bar.Initialization`、`Bar.Main`、`Bar.Zoom`、`Bar.Format` 等文件拆分状态、主题、布局/动画、渲染、交互和窗口初始化逻辑。
+`【直接确认】` `Inkeys/Inkeys/UI/Bar/` 是悬浮栏产品层：`Bar.State`、`Bar.Atomic`、`Bar.Theme`（产品主题来源）、`Bar.Button`（产品按钮元数据与主栏缺省值包装）、`Bar.Layout`、`Bar.RenderLoop`、`Bar.Interaction`、`Bar.Initialization`、`Bar.Main`、`Bar.Zoom`、`Bar.Scene`（翻页与形状编辑场景）等文件组织主栏状态、内容与业务动作。通用的动画值、图元、主题状态、文字格式、内容绘制器、标准按钮、列表、面板、光照、取色器、帧目标/帧事务与输入接入已迁到 `Inkeys/Inkeys/UI/UI3/`（模块 `Inkeys.UI.UI3`），分层与宿主合同见 [ui3-layers.md](ui3-layers.md)。
 
-`Bar.RenderLoop.cpp::BarUISetClass::Rendering` 把 Bar 注册为共享 UI3 调度器客户端。Bar 从共享 D2D device 创建自己的 device context 和 GDI-compatible、BGRA premultiplied target bitmap；单帧入口经 `ID2D1GdiInteropRenderTarget::GetDC` 和 `UpdateLayeredWindowIndirect` 提交计算出的脏区，idle 等待与最多 60 FPS 节拍由共享调度器统一负责。
+`Bar.RenderLoop.cpp::BarUISetClass::Rendering` 把 Bar 注册为共享 UI3 调度器客户端。Bar 持有一个 GDI 兼容形态的 `UI3::FrameTarget`（从共享 D2D device 创建 device context 和 BGRA premultiplied target bitmap）；单帧入口经 `UI3::FrameTransaction` 完成 `GetDC` → `UpdateLayeredWindowIndirect` → `ReleaseDC` → `EndDraw` 并提交计算出的脏区，idle 等待与最多 60 FPS 节拍由共享调度器统一负责。主栏内容绘制集中在 `BarRenderLoopCoordinator::DrawMainBarContent`，它只依赖传入的绘制器、设备上下文与 `FrameCoordinateMapping`。
 
 ### 公共按钮、固定面板与多目标事务
 
-- 主栏 Main/MainMore 与分页分别持有 `BarButtonListClass`；通过稳定 `Snapshot`、`ResolveBarButtonListLayout`（Main/GroupedGrid/SingleRow）、`ConfigureBarButtonVisualTargets`、`AdvanceBarButtonVisual` 和 `DrawBarButtonVisual` 消费同一套生产能力。固定属性保留字段/数组，使用 `BarButtonVisualParts` 和固定按钮 helper；不引入通用节点树。
+- 主栏 Main/MainMore 与分页分别持有 `BarButtonListClass`；通过稳定 `Snapshot`、`ResolveBarButtonListLayout`（Main/GroupedGrid/SingleRow）、`ConfigureButtonVisualTargets`、`AdvanceButtonVisual` 和 `DrawButtonVisual` 消费同一套生产能力。固定属性保留字段/数组，使用 `ButtonVisualParts` 和固定按钮 helper；不引入通用节点树。
 - `BarAttributePanelMotion`、`ResolveBarAttributePanelFrame` 管理既有属性与白板两个面板的目标、回弹及父级继承；同批次使用 `FrameContext::frameTime`，同一按钮每帧只推进一次。Idle 后首帧 dt=0，后续沿共享 `FrameAnimationClock` 推进。同布局的页码/主题更新只处理对应字段、缓存测量与脏区，不重新设置其余按钮或重置进行中的布局目标；同透明度目标保持幂等，显式零时长仍可完成未结束的运动。
-- `BarUIRenderingServices` 显式提供字体与必要状态，分页 renderer 不构造伪 `BarUISetClass`。每个目标保留独立 context/bitmap/SVG/字体缓存，共享设备 epoch。固定面板透明度使用有界 `PushPanelOpacity`，不为每个子按钮叠整幅透明层。
-- `BeginFrameDraw` 在 Clear/绘制前设置 dirty clip；`FinishFrameDrawCommands` 在 GetDC 前退出裁剪；GetDC、ULW、ReleaseDC、`EndFrameDraw` 及必要 HWND 几何交接全部成功后才消费 damage、发布命中和映射。资源/容量重建必须完整重画当前 viewport，不能沿旧局部脏区向空位图提交全窗。
+- `UIRenderingServices` 显式提供字体与必要状态，分页 renderer 不构造伪 `BarUISetClass`。每个目标保留独立 context/bitmap/SVG/字体缓存，共享设备 epoch。固定面板透明度使用有界 `PushPanelOpacity`，不为每个子按钮叠整幅透明层。
+- `FrameTransaction` 构造时在 Clear/绘制前设置 dirty clip；`FinishDrawCommands` 在 GetDC 前退出裁剪；GetDC、ULW、ReleaseDC、EndDraw（`FrameTransactionResult::PixelsCommitted()`）及必要 HWND 几何交接全部成功后才消费 damage、发布命中和映射。资源/容量重建必须完整重画当前 viewport，不能沿旧局部脏区向空位图提交全窗。
 - 公共 Shape/Word/标准按钮可以在当前设备脏区之外保守跳过绘制；范围必须包含当前变换、缩放、按压及光效边缘。未知自定义内容、无效范围和需要完整 SVG 验证的路径保留原调用。真实部分/完整 BGRA 对照与生产 cull 计数必须同时证明正确性和实际生效。
 - backing capacity 可以保留历史峰值；菜单关闭后 drawClip、清理和提交按当前实际区域裁剪。稳定帧不持续唤醒，不重复创建 SVG/字体/圆角资源。光照通知只唤醒受到旧/新光源影响的目标，订阅者销毁与通知采样必须共用生命周期保护。
 - 既有主栏交互 worker 统一消费主栏及分页有界 FIFO。Move 可相邻合并，Down/Up/Cancel 保序；捕获身份含窗口/指针/按钮。手势等待为可续接状态，不运行嵌套阻塞泵。输入只发布反馈，动画由 render owner 应用；COM、文件和确认对话框走业务续接。
@@ -58,7 +58,7 @@
 
 ### 定格状态机合同
 
-`Inkeys.UI.Freeze` 是定格业务状态的唯一所有者。普通绘制、选择和工具按钮切换不清除或恢复定格；独立ClickThrough与Freeze互斥，进入穿透关闭定格；再次点击穿透按钮保留墨迹并恢复记住的Pen/Shape/Eraser，定格继续关闭。穿透时点定格则恢复记忆工具后开启定格，不恢复旧定格状态。PPT或Whiteboard进入时关闭并标记不可用；不可用定格按钮从主栏隐藏，退出工作区只恢复可用性，不恢复进入前状态。合并式/分离式的尺寸与显隐见[选择与穿透合同](configuration-i18n-and-assets.md#选择与穿透操作模式合同)。主栏Clear空页且已Selection时使用同一 `Disable` 和 `BarButtonDisabledContentOpacity`，不参与悬停/按压/点击；空页仍在绘制或穿透工具时保持可点击以进入Selection。
+`Inkeys.UI.Freeze` 是定格业务状态的唯一所有者。普通绘制、选择和工具按钮切换不清除或恢复定格；独立ClickThrough与Freeze互斥，进入穿透关闭定格；再次点击穿透按钮保留墨迹并恢复记住的Pen/Shape/Eraser，定格继续关闭。穿透时点定格则恢复记忆工具后开启定格，不恢复旧定格状态。PPT或Whiteboard进入时关闭并标记不可用；不可用定格按钮从主栏隐藏，退出工作区只恢复可用性，不恢复进入前状态。合并式/分离式的尺寸与显隐见[选择与穿透合同](configuration-i18n-and-assets.md#选择与穿透操作模式合同)。主栏Clear空页且已Selection时使用同一 `Disable` 和 `ButtonDisabledContentOpacity`，不参与悬停/按压/点击；空页仍在绘制或穿透工具时保持可点击以进入Selection。
 
 以下仅是对现有 Bar 的 `【合理推断】` 修改约束，不适用于所有窗口：
 
@@ -94,10 +94,10 @@ RecallChromeState ApplyRecallChromeCommandResult(RecallChromeState state,
     bool redo, RecallHistoryAvailability clickAvailability, bool accepted) noexcept;
 bool RecallChromeNeedsIdleRestart(RecallChromeState before, RecallChromeState after) noexcept;
 RecallChromeView ResolveRecallChrome(RecallChromeState state, bool compactSelection = false) noexcept;
-// 历史按钮复用 RetargetBarButtonInteractionVisual 的主题与统一禁用透明度。
+// 历史按钮复用 RetargetButtonInteractionVisual 的主题与统一禁用透明度。
 ~~~
 
-`BarUISetClass` 的 `NoteRecallHistoryAvailability`、`PollRecallChromeIdleTimer`、`AdvanceRecallChromeIdle` 和既有 `ArmRecallChromeIdleDeadline/Timer` 负责发布与唤醒；`RetargetBarButtonInteractionVisual` 可接收 `std::optional<COLORREF>` 最终内容颜色，省略时保留原主题行为。
+`BarUISetClass` 的 `NoteRecallHistoryAvailability`、`PollRecallChromeIdleTimer`、`AdvanceRecallChromeIdle` 和既有 `ArmRecallChromeIdleDeadline/Timer` 负责发布与唤醒；`RetargetButtonInteractionVisual` 可接收 `std::optional<COLORREF>` 最终内容颜色，省略时保留原主题行为。
 
 #### 3. Contracts
 
@@ -110,7 +110,7 @@ RecallChromeView ResolveRecallChrome(RecallChromeState state, bool compactSelect
 - 期限使用 `steady_clock`，主栏 idle 时以既有 `WM_TIMER` 唤醒；有 hold 和无 hold pending 都须被唤醒。不得累加会在 idle 停止的动画 dt 来判定 3 秒。
 - 禁用或发布失败不发送成功点击反馈；若已有待调整布局，点击仍延长保护，保持关闭面板的关闭状态。无 pending 时无效点击不启动新交互。
 - 主栏 Redo 时属性按钮必须为 Undo，反向对称；属性按钮不在主栏注册表，必须自行推进 icon/name 的 `AdvanceContentTransition` 并保持续帧。身份切换以已有 `InitializationFromResource`（SVG val/tar 同步、取消旧内容动画、缓存失效）和 `SetStringImmediate` 同帧提交显示及 preset，避免旧内容与新动作混配。同身份普通内容更新继续使用原动画。
-- 主栏 Undo/Redo 与弹窗历史按钮的不可用效果统一使用主题 `TextPrimary` 和 主题禁用透明度（Dark `BarButtonDisabledContentOpacity=0.30`、Light `0.45`，经 `GetThemeDisabledContentOpacity()` 解析），与 Clear/Freeze 相同；可用性仅从当前透明度双向过渡，保护时序、点击决策与布局不变。各尺寸分支与交互 helper 每帧提交同一最终目标，不能先回到完整透明度再降低。
+- 主栏 Undo/Redo 与弹窗历史按钮的不可用效果统一使用主题 `TextPrimary` 和 主题禁用透明度（Dark `ButtonDisabledContentOpacity=0.30`、Light `0.45`，经 `GetThemeDisabledContentOpacity()` 解析），与 Clear/Freeze 相同；可用性仅从当前透明度双向过渡，保护时序、点击决策与布局不变。各尺寸分支与交互 helper 每帧提交同一最终目标，不能先回到完整透明度再降低。
 
 #### 4. Validation & Error Matrix
 
@@ -158,7 +158,7 @@ public:
 
 - 动画时钟使用单调时钟；`Tick()` 对非有限值或负值返回 `0`，并将活动帧 `dt` 限制到 `[0, 0.05]` 秒。
 - Bar 回调确认无可见工作并返回 `Idle` 前调用 `SuspendForIdle()`；下次实际回调的 `Tick()` 先记录原始间隔用于诊断，但动画 `dt=0`，再下一帧按实际间隔推进。共享 Scheduler 统一等待，不能把其他客户端的回调当成 Bar 动画帧。
-- `BarUiAdvanceAnimation` 对合法活动 Value/Color/Pct 的 `dt=0` 保留当前值、目标和活动状态；显式 `forceReplace`、Once、无效数据及关闭动画的即时替换仍优先。SVG/Word 内容关键帧在动画开启且 `dt=0` 时保留目标，在动画关闭时即使 `dt=0` 也要同帧提交目标，不能留一帧旧内容。
+- `UiAdvanceAnimation` 对合法活动 Value/Color/Pct 的 `dt=0` 保留当前值、目标和活动状态；显式 `forceReplace`、Once、无效数据及关闭动画的即时替换仍优先。SVG/Word 内容关键帧在动画开启且 `dt=0` 时保留目标，在动画关闭时即使 `dt=0` 也要同帧提交目标，不能留一帧旧内容。
 - present/device 失败的 `WaitUntilGenerationChange()` 退避、普通 60 FPS pacing 和连续动画帧不得 rebase，否则会冻结或缩短仍需推进的动画。
 
 #### 4. Validation & Error Matrix
@@ -309,33 +309,33 @@ if (offSignal) return FrameResult::Idle;
 `【直接确认】` Bar 层提供 Main Bar 与 PageControl 共同消费的边界：
 
 ~~~cpp
-BarButtonVisualMetrics ResolveBarButtonVisualMetrics(
-    BarButtonVisualLayoutKind) noexcept;
-BarButtonVisualPoint ResolveBarButtonChildTopLeft(
+ButtonVisualMetrics ResolveButtonVisualMetrics(
+    ButtonVisualLayoutKind) noexcept;
+ButtonVisualPoint ResolveButtonChildTopLeft(
     double parentX, double parentY,
     double parentWidth, double parentHeight,
     double childOffsetX, double childOffsetY,
     double childWidth, double childHeight) noexcept;
-BarButtonVisualInheritance PrepareBarButtonVisualInheritance(
-    BarButtonClass&, const BarUiInheritClass&,
-    BarUiWordClass* secondary = nullptr) noexcept;
-bool StartBarButtonHoverVisual(BarButtonClass&) noexcept;
-bool StopBarButtonHoverVisual(
+ButtonVisualInheritance PrepareButtonVisualInheritance(
+    BarButtonClass&, const UiInheritClass&,
+    UiWordClass* secondary = nullptr) noexcept;
+bool StartButtonHoverVisual(BarButtonClass&) noexcept;
+bool StopButtonHoverVisual(
     BarButtonClass&, bool immediate, bool preserveVisual = false) noexcept;
-bool UpdateBarButtonHoverVisual(
+bool UpdateButtonHoverVisual(
     BarButtonClass&, bool visible, bool hoverAllowed,
     double fadeDurationSeconds) noexcept;
-void SetBarButtonPressedVisual(BarButtonClass&, bool pressed) noexcept;
-void RetargetBarButtonInteractionVisual(
+void SetButtonPressedVisual(BarButtonClass&, bool pressed) noexcept;
+void RetargetButtonInteractionVisual(
     BarButtonClass&, bool visible, bool enabled, bool selected,
     double durationSeconds) noexcept;
-bool DrawBarButtonVisual(
-    BarUIRendering&, ID2D1DeviceContext*, BarButtonClass&,
-    const BarUiInheritClass&, const BarButtonDrawOptions& = {});
-bool DrawBarBackgroundVisual(
-    BarUIRendering&, ID2D1DeviceContext*, BarUiShapeClass&,
-    const BarUiInheritClass&, RECT* targetRect = nullptr, bool clip = false);
-bool BarUiRoundedRectContainsPoint(
+bool DrawButtonVisual(
+    UIRendering&, ID2D1DeviceContext*, BarButtonClass&,
+    const UiInheritClass&, const ButtonDrawOptions& = {});
+bool DrawBackgroundVisual(
+    UIRendering&, ID2D1DeviceContext*, UiShapeClass&,
+    const UiInheritClass&, RECT* targetRect = nullptr, bool clip = false);
+bool UiRoundedRectContainsPoint(
     int mx, int my, double zoom, double leftDip, double topDip,
     double widthDip, double heightDip, double radiusXDip,
     double radiusYDip, double epsilon = 1e-6) noexcept;
@@ -435,12 +435,12 @@ constexpr bool IsPptDirectionActionRepeatable(
 #### 3. Contracts
 
 - Main Bar 必须先迁移到共享 Bar 按钮入口，随后 PageControl 才能接入。若 Main Bar 仍使用 RenderLoop/Interaction 局部算法而 PageControl 单独使用新 helper，仍是两套实现。
-- 每个分页 HWND 独立持有 D2D target/`BarUIRendering`、Previous/Page/Next `BarButtonClass` 和输入状态；独立资源是正确边界，不允许复制按钮行为。Bottom 的 Previous/Page/Next/More 实例及列表成员跨 `PptCompact/WhiteboardExpanded` 稳定，More 使用共享隐藏布局与绘制层级收拢到 Next 下方并渐隐，不能清空目标矩形；退场不命中且反向重入续接当前呈现值。Middle 只切 `Hidden/PptCompact`。
+- 每个分页 HWND 独立持有 D2D target/`UIRendering`、Previous/Page/Next `BarButtonClass` 和输入状态；独立资源是正确边界，不允许复制按钮行为。Bottom 的 Previous/Page/Next/More 实例及列表成员跨 `PptCompact/WhiteboardExpanded` 稳定，More 使用共享隐藏布局与绘制层级收拢到 Next 下方并渐隐，不能清空目标矩形；退场不命中且反向重入续接当前呈现值。Middle 只切 `Hidden/PptCompact`。
 - `BarPageSurface` 只保存每窗分页列表、固定属性数组、PPT-only DragHandle 和公共指针状态的路由；不得保留动态 Widget 构建或独立视觉算法。标准按钮内部位置、hover/press、内容转换、draw、圆角 hit 和动画值调用上述 Bar 入口，适配器只把共享结果映射到本窗 damage/present。
 - 分页标准按钮的 SVG/PNG 位图与 renderer 字体/遮罩缓存按目标及设备代次持有，不构造完整主栏 owner。显式 `ReleaseDeviceResources()` 与成功的 epoch/target 隐式重建须清理相应设备资源；创建失败保留旧资源和待绘制 damage。只有内容、尺寸、颜色或设备域变化才重建对应资源，普通帧不得反复失效。
 - PPT 横纵分页默认统一使用白板同源的 `70x70 DIP` `2x2` 按钮：Bottom主体 `240x80 DIP`，Middle主体 `80x240 DIP`，保留 `10 DIP` Drag slot及 `5 DIP` 外边距/按钮间距。标准按钮尺寸与槽位来自共享 Bar 尺寸源；当前可见项及 Drag 槽的列表布局共同决定按钮目标和背景目标宽度，背景与按钮使用同一布局批次推进。分页仅在拓扑/尺寸目标变化时重算列表并缓存隐藏优先顺序；PageControl 通过非分配几何读取跟随背景当前尺寸，不维护独立宽高动画；`BarPptCompactPaginationEnabled=false` 禁用原32.5DIP路径，原紧凑布局、字体与分支继续保留。Drag 是 divider lane，与相邻 Arrow 直接相接、不增加第三个间距。Whiteboard 主体左侧 `305x80 DIP`（Previous/Page/Next/More）、右侧 `230x80 DIP`（Previous/Page/Next）；左侧菜单另按当前动画向上扩展同一 HWND 包络。
-- 分页背景的主题、圆角、边框、第一/第三光源、draw 与 dirty 直接复用 Main Bar 背景实现；PageControl 只提供子控件联合外框目标。外框必须读取 `BarMainBarCornerRadiusDip`，按钮必须读取 `BarButtonCornerRadiusDip`，边框和内边距也读取主栏单一来源（当前为 `8/4/1/5 DIP`）；禁止 PageControl 镜像常量。分页外框和 Main Bar 外框都保持背景 Shape 默认 `frameCursorLightIntensityScale = 1.0`，不得误用按钮的 `BarButtonCursorLightIntensity`。第三光源必须消费 Main Bar 发布的同一屏幕坐标、半径、强度和可见性快照；Surface 不得从本地 `WM_MOUSEMOVE` 创建淡入/淡出状态。
-- `DrawBarButtonVisual` 的显式 `inherit` 是按钮父坐标唯一真值。入口必须先同步 `button.inhX/inhY`，再通过 `ResolveBarButtonChildTopLeft` 解析 SVG、主文字和次文字；Main Bar dirty 与最终 draw 调用同一继承准备入口。禁止读取默认或上一帧父缓存后再把显式 `inherit` 只用于背景 Shape。
+- 分页背景的主题、圆角、边框、第一/第三光源、draw 与 dirty 直接复用 Main Bar 背景实现；PageControl 只提供子控件联合外框目标。外框必须读取 `BarMainBarCornerRadiusDip`，按钮必须读取 `ButtonCornerRadiusDip`，边框和内边距也读取主栏单一来源（当前为 `8/4/1/5 DIP`）；禁止 PageControl 镜像常量。分页外框和 Main Bar 外框都保持背景 Shape 默认 `frameCursorLightIntensityScale = 1.0`，不得误用按钮的 `ButtonCursorLightIntensity`。第三光源必须消费 Main Bar 发布的同一屏幕坐标、半径、强度和可见性快照；Surface 不得从本地 `WM_MOUSEMOVE` 创建淡入/淡出状态。
+- `DrawButtonVisual` 的显式 `inherit` 是按钮父坐标唯一真值。入口必须先同步 `button.inhX/inhY`，再通过 `ResolveButtonChildTopLeft` 解析 SVG、主文字和次文字；Main Bar dirty 与最终 draw 调用同一继承准备入口。禁止读取默认或上一帧父缓存后再把显式 `inherit` 只用于背景 Shape。
 - 四个 PageControl HWND 与 Bar HWND 共同构成第三光源的实际消息接收窗口集合。真实鼠标进入分页 HWND 时只通知 Main Bar 激活既有状态机；离开时由 Main Bar 根据 `WindowFromPoint` 决定 `Inside/Grace`。Raw Input 和 5 秒 timer 始终以 Bar HWND 为 owner；分页只发布成功呈现的屏幕边界用于 240px 邻域裁剪，隐藏或提交失败不得发布假边界。
 - Page 在三种形态中是同一实例。PPT横纵分页与Whiteboard默认均使用 `PageTwoTwo` 标准 `2x2` 双行槽；原紧凑横向整体测量及竖向页码分支保留，由同一紧凑开关禁用。PPT 当前页或总页为负数时显示 `-`/`/-`，Bottom/Middle 分别限制显示到 `9999/999`。禁止分页专用绝对 offset。`BarPageSurfaceContent::kind` 显式区分普通数字与状态，不能按本地化文案猜测。只有旧、新内容均为数字时才使用公共即时更新，取消旧文字 transition 并同帧替换主/次字符串；PPT失败类 recovery 与 Whiteboard `switching` 是状态内容（Recovering进行中保留Numeric和页码角标），后者主槽显示本地化 `Loading`、次槽复用 `Wait`。数字与状态之间及不同状态之间，主/次文字都调用共享 `TransitionToString`，支持中点前后打断、同目标幂等和禁用动画同帧提交；后续数字→数字更新必须取消旧中点回写。初次 Configure 仍直接初始化。PPT/WB 模式变化中的文字槽、字号与按钮几何仍按共享动画从当前值连续重定向，不能因替换字符串而跳到终态。PPT Page 在系统拖动阈值内短按并仍命中时调用既有 `ViewShow` 打开预览，Whiteboard Page 保持 no-op；两者都使用标准 hover/press。Arrow/Add SVG 与语义标签继续使用共享内容转换，不得因即时数字策略被关闭动画。
 - 共享 `ButtonPointerState` 在带屏幕坐标的 Up 后清除 pressed/hover 并记录抑制锚点；同屏幕坐标或无坐标的后续 Move 不恢复 hover，真实坐标变化后按当前命中重算。Down、Leave、Cancel、Reset 清除旧抑制；PageControl 的生产 Down/Move/Up 只传入事件屏幕点，PPT 长按、拖动、场次/页面身份与业务回调仍由 PageControl 所有。pressed 的 `pressScale` 释放继续经 `UpdateFeedback` 与共享交互视觉推进，不另设分页视觉状态。
@@ -522,7 +522,7 @@ constexpr bool IsPptDirectionActionRepeatable(
 - `ppt_ui_tests` 必须直接调用生产 `ResolvePageStateForPublication`，覆盖有效 ready 页、结束页、未知态、非法零页、结束页恢复但 Draw3 未 ready、恢复 ready；PageControl headless 再覆盖稳定实例 ID、横/竖页码测量、背景合同、普通 Arrow SVG 身份不变、Arrow/Add 与 Arrow/EndShow 同批中点转换目标及四 surface 资源/角度矩阵、`PreviousPage/NextPage/EndShow` 动作解析、EndShow 不可重复、DragHandle 时序、首次渐显、反向重入和有限退场。
 - 输入矩阵覆盖 PPT DragHandle/Page/非箭头背景 drag、Arrow 拒绝 drag、系统阈值、Page 预览、long-press/wheel/persist，以及 Whiteboard 对 drag/wheel/long-press/persist 的负向断言和普通 click/tap 正向断言。长按测试必须覆盖 delay `0..3`、speed `0/31` 和越界限制、默认回退 `500ms/约33ms`、Down 立即一次、首次 deadline 前无重复、deadline 到达后一次、后续 interval、`34ms` 在 60 FPS 下保留计划相位、落后一个 interval 时跳过积压、配置关闭与移出/Up/cancel 停止；静态确认每次有效 Arrow Down 只快照一次 SPI、不存在 keyboard/wheel 合成 press，并确认有效 PPT Down 调用非阻塞 `RequestPromotePptWindow`。触摸纯测试覆盖 primary、无 primary fallback、多指忽略、活动 id 替换 cancel、新 id Move/Up、替换后旧 fallback Up 被忽略和 cancel 清理；静态确认同批先保序处理 primary、四窗注册触摸、禁用边缘/Tablet 手势且兼容 mouse 副本仍被过滤。拖动提交仲裁必须断言 publication 不自动请求 pair、纯平移由 candidate logical bounds 与稳定 outset 生成绝对 target，并可注入一次呈现锁竞争，确认 fallback 显式请求 pair且只保存最新候选；还要覆盖两窗 commit、第二窗失败的第一窗回滚、松手 ownership，以及进入 `ConfigureSurface/PresentScene` 前和窗口提交后的两道 stale revision gate。
 - 生命周期 headless 必须让 Hidden→Visible 在没有任何 Bar/光源外部请求时推进到 deadline 后一帧，断言 deadline 活跃期间续帧且输入锁定、到期自行 Idle/解锁；源码审查初始 Hidden 使用直接透明度 `0` 而不是未消费的零时长动画 target。
-- Animation headless 通过生产共用 `ApplyBarImmediateContentUpdate` 覆盖旧 content transition 取消、current/target/pending 同事务替换及取消后不发生旧关键帧回写；实际离屏回归确认模式切换同一时间戳页码 glyph 区域不跳变，后续几何连续推进，Arrow/Add 仍走公共内容转换。
+- Animation headless 通过生产共用 `ApplyImmediateContentUpdate` 覆盖旧 content transition 取消、current/target/pending 同事务替换及取消后不发生旧关键帧回写；实际离屏回归确认模式切换同一时间戳页码 glyph 区域不跳变，后续几何连续推进，Arrow/Add 仍走公共内容转换。
 - Draw3 headless 通过 Host 实际持有的 `HostRuntimeRevisionSignal` 覆盖 current page/page count 变化推进 revision、唤醒 waiter、稳定值不唤醒及 stop 释放等待；源码审查两个 document observer 都调用该入口。放映期 native 有界 16ms 观测缓存状态、旧 DLL 兼容路径 50ms；正常页及独立 EndScreen 都等待 Draw3 成功 Present 和同目标 UI 回执，`-1` 仅是显示哨兵。
 - PageControl 输入测试覆盖圆角背景门禁策略；背景命中必须读取最近成功呈现的不可变快照，并区分主体与退场 popup。Window Service capture 撤销包含四个 PageControl 角色，原生释放由窗口 owner 按精确票据执行，不在呈现锁内释放。
 - 碰撞覆盖手动 pair 最近可行位置、bottom 优先/middle 回退、极小屏运行时 scale、输入/保存快照不变，并静态断言无 Bar obstacle 参数/查询/通知。
@@ -540,12 +540,12 @@ widget.icon.SetWH(18.0, 18.0);
 ppt = ResolveRuntimePageControlLayout(monitor, dpi, ppt, whiteboard, &barBounds);
 
 // Correct：surface 只给目标/事件，Main Bar 与 PageControl 调用同一 Bar 运行时。
-const auto metrics = ResolveBarButtonVisualMetrics(layoutKind);
-StartBarButtonHoverVisual(button);
-SetBarButtonPressedVisual(button, pressed);
-RetargetBarButtonInteractionVisual(
+const auto metrics = ResolveButtonVisualMetrics(layoutKind);
+StartButtonHoverVisual(button);
+SetButtonPressedVisual(button, pressed);
+RetargetButtonInteractionVisual(
     button, visible, enabled, selected, durationSeconds);
-DrawBarButtonVisual(renderer, context, button, inherit, drawOptions);
+DrawButtonVisual(renderer, context, button, inherit, drawOptions);
 ppt = ResolveRuntimePageControlLayout(monitor, dpi, ppt);
 
 // Wrong：Surface 从本地鼠标消息创建第三光源，离窗后失去全局坐标和 5 秒期限。
@@ -613,33 +613,33 @@ default: callback = pptCallbacks.previousPage; break;
 #### 2. Signatures
 
 ~~~cpp
-using BarDirtyVisualKey = std::uint64_t;
+using DirtyVisualKey = std::uint64_t;
 
-class BarDirtyRegionTracker
+class DirtyRegionTracker
 {
 public:
 	void BeginFrame(const RECT& windowBounds);
-	void Observe(BarDirtyVisualKey key, const RECT& currentBounds);
-	void MarkChanged(BarDirtyVisualKey key);
-	bool ShouldObserve(BarDirtyVisualKey key) const noexcept;
-	bool HasOnlyChangedKeys(BarDirtyVisualKey first,
-		BarDirtyVisualKey second) const noexcept;
+	void Observe(DirtyVisualKey key, const RECT& currentBounds);
+	void MarkChanged(DirtyVisualKey key);
+	bool ShouldObserve(DirtyVisualKey key) const noexcept;
+	bool HasOnlyChangedKeys(DirtyVisualKey first,
+		DirtyVisualKey second) const noexcept;
 	RECT ResolveDamage(bool requireFallback);
 	void CommitPresented();
 	void RetainForRetry(bool forceFullDamage);
 };
 
-RECT ResolveBarLightBorderDamage(
+RECT ResolveLightBorderDamage(
 	const RECT& outerBounds,
 	const RECT& contentBounds,
 	const RECT& lightInfluenceBounds) noexcept;
 
-RECT ResolveBarScaledDirtyBounds(
+RECT ResolveScaledDirtyBounds(
 	double left, double top, double right, double bottom,
 	double pivotX, double pivotY, double scale, double zoom,
 	LONG padding) noexcept;
 
-BarDebugDamageResolution ResolveBarDebugDamage(
+DebugDamageResolution ResolveDebugDamage(
 	const RECT& businessDamage,
 	const RECT& previousTextBounds,
 	const RECT& previousFrameBounds,
@@ -726,7 +726,7 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 
 - 标准 Shape/SVG/PNG/Word 使用稳定对象键记录边界；父布局、粗细/色板/弹窗等自绘内容使用稳定功能组键。变化项的 damage 是上次成功呈现边界与本帧边界的并集，覆盖移动、缩放、出现和消失；所有 damage 最终合并、裁剪为一个 `RECT`。
 - 每帧顺序固定为：推进动画并 `MarkChanged` → 完成继承布局并 `Observe` 当前边界 → 完整预测 viewport → 最终 capacity → `ResolveDamage` → 加入调试文字和红/绿/蓝框旧新边界 → 用同一 `presentDamage` 约束 D2D clip/Clear 与稳定映射帧的 `UPDATELAYEREDWINDOWINFO::prcDirty`。首次呈现，或 `pptSrc`、`psize`、target capacity、device generation 任一字段相对上次成功 tuple 改变时，必须清除完整候选 HWND 范围并令 `prcDirty=nullptr` 执行整窗替换；viewport 相对 committed anchor 的解释变化必须与 present-mapping tracker 合并为同一个 `forceFullWindowReplacement`，同一布尔值控制业务/调试 damage、`presentDirty` 和 `prcDirty`。只有两类映射都稳定的帧允许局部 dirty。呈现失败后必须重画完整候选窗口；映射稳定时可以提交覆盖整窗的 client dirty，映射变化时仍必须 `prcDirty=nullptr`。居中重排改变主按钮根节点时，capacityOrigin 与 viewport 可以同向平移而保持 source/size 数值不变；该类真实布局移动仍必须整窗替换，清除被新缓冲区原点重新解释的旧右端像素。纯直移吸收继续沿用既有成功快照重基准并复用容量；用本帧稳定居中根节点实际派生变化标识触发此项整窗替换，不能把普通直拖误判为居中重排。
-- `BarUiAdvanceAnimation` 的 `changed || active` 必须标记所属控件或功能组。直接拖动、保持环、色板/粗细自绘等绕过标准动画的路径必须显式标脏；存在非调试呈现请求却没有分类 damage 时必须回退全窗口。
+- `UiAdvanceAnimation` 的 `changed || active` 必须标记所属控件或功能组。直接拖动、保持环、色板/粗细自绘等绕过标准动画的路径必须显式标脏；存在非调试呈现请求却没有分类 damage 时必须回退全窗口。
 - 主光和鼠标光必须独立报告变化，静止的一路不得因另一路移动而被标脏。每路先计算包含径向半径、`pointLightDiffuseExtraWidth * zoom` Gaussian 外扩和抗锯齿余量的影响矩形，再只与实际可见 `PointLight` 边框的上/下/左/右影响带求交；光圈内部没有边框像素贡献的区域不得进入 damage。关闭光影时当前边界为空，旧边界仍参与清除。
 - 空 presentDirty 的整窗清绘兜底只扩大绘制/提交范围，不得在选择性 Observe 结束后补设 tracker 全脏；否则 CommitPresented 会遗失未观察对象的成功边界，下一局部帧无法清旧。真正的全观察校准须在观察前请求 full，失败重试沿既有 RetainForRetry(true) 处理。
 - Tracker 为稳定视觉键复用记录，并复用变化键/观察键容器；普通帧只通过 `ShouldObserve()` 采集变化项、所需功能组和光源的边界，成功后只推进本帧实际观察记录。全可见内容边界只在首帧、DPI/容量纪元、顶层外框动画、整栏拖动和最终 idle 帧重算，普通 hover/按压/光影帧复用缓存。禁止逐帧清空并重建哈希节点、复制完整快照，或为动态缩窗在普通高频帧遍历全部 SVG/PNG/Word 内容。
@@ -817,7 +817,7 @@ else
 dirty = GetWeigetRect(previewNumber); // inhX/inhY 仍为 0
 
 // Correct：复用实际绘制的 pivot/scale 解析呈现边界。
-dirty = ResolveBarScaledDirtyBounds(
+dirty = ResolveScaledDirtyBounds(
 	left, top, right, bottom, pivotX, pivotY, scale, zoom, padding);
 ~~~
 
@@ -861,7 +861,7 @@ if (averages.updated)
 
 修改 `BarPageSurface::PublishSharedLighting`、光照到局部 damage 的映射或分页订阅时适用。目标是光源与窗口无交集时不唤醒窗口，同时保留擦除旧光的必要帧。
 
-- `SetSharedLightingSubscribed(bool)` 管理目标订阅；`PublishSharedLighting(const BarSurfaceSharedLighting&)` 保存全局最新值与 revision。注册、移动、Reset 和销毁使用同一注册表锁，锁外只调用复制的 hooks，不能保留裸 impl 指针。
+- `SetSharedLightingSubscribed(bool)` 管理目标订阅；`PublishSharedLighting(const SurfaceSharedLighting&)` 保存全局最新值与 revision。注册、移动、Reset 和销毁使用同一注册表锁，锁外只调用复制的 hooks，不能保留裸 impl 指针。
 - `Impl::NeedsLightingUpdate(before, after)` 使用最近成功呈现的可见面板和倍率，检测旧/新 primary/cursor 范围与真实边缘 damage 的交集；已有业务 dirty 不属于本次光照贡献。只有相关变化才收集 hooks，不因其他目标动画唤醒远处目标。
 - Render owner 在共享帧 Advance 中应用最新光照。cursor damage 取旧/新贡献并集；移出、隐藏或强度归零仍擦旧光。mapping/primary 变化按公共规则重绘，同时更新 cursor 历史范围。
 - 布局、业务、动画 Continue、设备重建和失败 Retry 保持各自请求；光照过滤不提前消费失败 damage。无 damage 的稳定回调不执行 GetDC/提交。
@@ -1142,7 +1142,7 @@ DeviceEpoch GetDeviceEpoch();
 SharedAssets GetSharedAssets();
 HRESULT PrepareBackend(Backend backend);
 bool CommitPreparedBackend() noexcept;
-void BarUIRendering::SetFrameDiffuseMaskGeometryScale(double scale);
+void UIRendering::SetFrameDiffuseMaskGeometryScale(double scale);
 ~~~
 
 每个 epoch 至少发布 `backend`、单调递增的 `generation`、实际 `featureLevel`、`ID3D11Device`、可选 `ID3D11Device1`、immediate context、DXGI factory/device 与 `ID2D1Device`。
@@ -1417,15 +1417,15 @@ desiredCursorLightVisible = edgeLightingEnabled && dynamicEdgeLightingEnabled
 
 ### UI3 按钮边框光影约定
 
-按钮未选中时通常保持背景透明，但仍可能需要显示鼠标第三光源。此时不得复用按钮本体 `pct` 作为边框光影透明度；应使用 `BarUiShapeClass::frameLightPct` 独立控制光影，保持 `framePct = 0`，并配置：
+按钮未选中时通常保持背景透明，但仍可能需要显示鼠标第三光源。此时不得复用按钮本体 `pct` 作为边框光影透明度；应使用 `UiShapeClass::frameLightPct` 独立控制光影，保持 `framePct = 0`，并配置：
 
 ~~~cpp
-shape.frameRendering = BarUiFrameRenderingEnum::PointLight;
+shape.frameRendering = UiFrameRenderingEnum::PointLight;
 shape.framePrimaryLightEnabled = false;
 shape.frameCursorLightIntensityScale = buttonIntensity;
 ~~~
 
-按钮的 `buttonIntensity` 应由颜色边框的第三光源强度按产品要求折算；本项目当前按钮使用色块边框强度的一半。按下时同时缩放按钮和 PointLight 边框，并降低 `frameLightPct`；PointLight 的 Gaussian 漫反射继续由 `BarRenderingAttribute::pointLightDiffuseExtraWidth` 覆盖脏区。
+按钮的 `buttonIntensity` 应由颜色边框的第三光源强度按产品要求折算；本项目当前按钮使用色块边框强度的一半。按下时同时缩放按钮和 PointLight 边框，并降低 `frameLightPct`；PointLight 的 Gaussian 漫反射继续由 `RenderingAttribute::pointLightDiffuseExtraWidth` 覆盖脏区。
 
 错误做法是把 `frameLightPct` 绑定到按钮本体 `pct`，这会让未选中按钮的透明背景同时隐藏其光影；正确做法是让 `Shape()` 在本体 `pct == 0` 且 `frameLightPct > 0` 时仅绘制 PointLight 边框。
 
@@ -1548,7 +1548,7 @@ DrawCore(coreBrush);
 
 ### UI3 动画批次加入与关键帧中点
 
-`【直接确认；设计约定】` `BarUiTimelineClass::CanJoin(double maxProgress = 0.5)` 是主栏布局变化和绘制属性加入主栏批次的统一判断入口；无效参数同样回退到 `0.5`，边界判断为 `GetProgress() <= maxProgress`。
+`【直接确认；设计约定】` `UiTimelineClass::CanJoin(double maxProgress = 0.5)` 是主栏布局变化和绘制属性加入主栏批次的统一判断入口；无效参数同样回退到 `0.5`，边界判断为 `GetProgress() <= maxProgress`。
 
 | 线性时间轴进度 | 契约 |
 | --- | --- |
@@ -2091,7 +2091,7 @@ spec.messageCallback = [](HWND, UINT message, WPARAM, LPARAM) {
 
 低级鼠标 Hook 必须在创建 Hook 的受管 `std::jthread` 中卸载。停止端设置事件，Hook 线程用 `MsgWaitForMultipleObjectsEx` 同时等待事件和消息，不得使用 detached thread 或只依赖 `PostThreadMessage(WM_QUIT)`。
 
-`BarUiSVGClass` 的原始尺寸 `rW/rH` 必须默认初始化为 `0.0`。默认构造或资源解析失败后，单边 `SetWH` 应稳定返回失败，不能读取未初始化尺寸来推导宽高。
+`UiSVGClass` 的原始尺寸 `rW/rH` 必须默认初始化为 `0.0`。默认构造或资源解析失败后，单边 `SetWH` 应稳定返回失败，不能读取未初始化尺寸来推导宽高。
 
 Bar、PPT 与 Setting 共享 RenderPipeline device epoch 和调度线程；Bar/PPT 不得共享 per-window device context/target/ULW，Setting 仍独占 ImGui DX11 swap-chain/RTV/SRV。Draw2 的 `DibSurface` 仍是独立生命周期，不能套用共享 D2D target 规则。
 
@@ -2460,16 +2460,16 @@ void SyncDraw3State() {
 - 分类布局按可见子集重解析，placements按按钮身份映射到目录槽。尺寸、位置和分段选中态沿0.4s共享动画，主栏timeline前半程CanJoin，之后重开完整批次；新分类项在自己的目标处淡入，旧项锚定退场，不从零坐标飞入。正常工作区宽492.5 DIP，网格高常规220/立体70/坐标与函数145 DIP，固定区含分段行为91 DIP；参数行另加43.5 DIP。少于6项宽回落到属性行392 DIP。
 - 参数行按「构造方式/边数 | 辅助开关」排列，分割线沿主栏Divider。Center用于圆/正多边形/圆弧/扇形，Foci用于椭圆，Diagonals用于矩形/平行四边形/菱形/梯形；无构造参数时只放开关。图标型OneOne按钮，Selected表示开启，提示及呈现快照的accessibleNames使用i18n。默认圆Center、椭圆Foci开启，其余关闭；GetShapeAuxiliary/SetShapeAuxiliaryIfRevision逐位记忆，只作用下一笔，不发布对象编辑命令。面板继续使用弹出材质，不应用resident opacity。
 - 复用既有异步memory适配，控件点击不得同步磁盘写入阻塞UI3 worker。CLI离屏fixture隔离偏好路径，验证完整生产主栏子树及真实像素/呈现hit，不能只测试新面板的独立绘制。
-- Geometry主栏长标签仍使用原70 DIP槽，仅该按钮按当前/待切换目标文字测宽调整字号；透明中点换字前须完成缩小，不得每帧先发默认字号再覆盖目标。`BarUiWordClass::TargetContent()`在同一content timeline锁中只读目标；三语完整主栏测试逐帧验证字宽。Shape帧公共光源颜色取同帧图形颜色，Pen保留原Brush记忆槽。
+- Geometry主栏长标签仍使用原70 DIP槽，仅该按钮按当前/待切换目标文字测宽调整字号；透明中点换字前须完成缩小，不得每帧先发默认字号再覆盖目标。`UiWordClass::TargetContent()`在同一content timeline锁中只读目标；三语完整主栏测试逐帧验证字宽。Shape帧公共光源颜色取同帧图形颜色，Pen保留原Brush记忆槽。
 
 - 按用户修正：图形粗细只保留原斜向、无数字的三档按钮，无精调三角/滑块；线型也用斜向图标。关闭旁不加颜色入口，不借用DrawAttribute/Slider/FineDial/ColorPicker子树；类别持有独立list并使用图形自己的GeometryGrid排列，不套用More的GroupedGrid及关闭栏尺寸；按钮复用UI3公共配置、绘制、推进与呈现命中能力。
-- 图形底部属性区独立持有attributeList_，按样式/分隔线/线型/分隔线/粗细解析SingleRow目标；业务显隐与退场绘制分离，局部横坐标通过共享BarUiAdvanceAnimation推进，不逐帧SetDirect覆盖重排动画。底行锚定当前panel.bottom - 5 DIP - buttonHeight；布局及父高度动画中底部净距都保持5 DIP（fit/面板pose缩放后乘相同scale）。隐藏目标立即禁用输入，但保留当前透明度直至退场结束；自定义粗细内容也消费共享当前opacity。属性/参数行在位置或显隐透明度未稳定时禁用本行新命中，hover/press反馈不纳入此门禁；Tab/箭头跳过disabled项，Enter/Space同样验证已呈现hit资格。命中只发布成功呈现的当前矩形。
+- 图形底部属性区独立持有attributeList_，按样式/分隔线/线型/分隔线/粗细解析SingleRow目标；业务显隐与退场绘制分离，局部横坐标通过共享UiAdvanceAnimation推进，不逐帧SetDirect覆盖重排动画。底行锚定当前panel.bottom - 5 DIP - buttonHeight；布局及父高度动画中底部净距都保持5 DIP（fit/面板pose缩放后乘相同scale）。隐藏目标立即禁用输入，但保留当前透明度直至退场结束；自定义粗细内容也消费共享当前opacity。属性/参数行在位置或显隐透明度未稳定时禁用本行新命中，hover/press反馈不纳入此门禁；Tab/箭头跳过disabled项，Enter/Space同样验证已呈现hit资格。命中只发布成功呈现的当前矩形。
 
 ## 后续图形主栏目录与局部滚动（A 方案）
 
 - `ShapeCategoryCatalog()` 是 Bar 层只读目录，35类各有稳定UI键、标签、SVG和category；20类带真实PresetKind。未实现项用空映射，不扩业务枚举、几何或保存格式。Geometry*派生64个控件（35目录+2圆模式+10边数+3辅助+3样式+4线型+3粗细+关闭+3分段）。圆角矩形仅移除目录入口，枚举值3和ExpandPreset、旧文件渲染/编辑兼容保留；旧工具状态由GetShapeToolSpec回退为Rectangle。
 - 禁用项仍走共享标准按钮 Configure/Retarget/Advance/Draw，以公共 0.30 内容透明度显示。state、visual enabled、press/hover、hit、键盘与 Execute 资格同源；完全裁剪外的 hit 同时不可见、不可用。面板内部的禁用区域仍消费指针，避免落到画布。
-- 类别list按最多六列排列；正常空间完整显示当前分类的3/1/2行，小空间仅类别区使用裁剪视口和共享 `BarUiValueClass` 滚动。根据同帧主栏上下可用侧决定展开区，至少保留一行；更极小空间才 fit。参数、独立属性 list 和关闭不随类别滚动，底部仍为 5 DIP × pose/fit scale。拖栏锁冻结侧向/位置跟随，不冻结已经变化的面板宽高；slots/clip 从同帧实际 panel 派生。
+- 类别list按最多六列排列；正常空间完整显示当前分类的3/1/2行，小空间仅类别区使用裁剪视口和共享 `UiValueClass` 滚动。根据同帧主栏上下可用侧决定展开区，至少保留一行；更极小空间才 fit。参数、独立属性 list 和关闭不随类别滚动，底部仍为 5 DIP × pose/fit scale。拖栏锁冻结侧向/位置跟随，不冻结已经变化的面板宽高；slots/clip 从同帧实际 panel 派生。
 - 滚轮沿现有消息入队链，滚动条有 32.5 DIP 触控热区；键盘跳过禁用项并将真实类别滚入视口。worker 只发布原子滚动意图，唯一 render owner 推进共享动画；禁止新增滚动线程、独立时钟或逐帧重载 SVG/测字。
 - Draw 的 categoryClip 与已成功呈现 hit 的裁剪区相同。滚动未稳或请求尚未成功呈现时禁止类别动作，参数/属性沿各自门禁；不能用旧成功快照接收新滚动位置的点击。thumb 拖动在失捕、取消、revision/工作区/轨道/倍率变化时结束，失败呈现保留原快照。工作区事实必须进入同批呈现快照与 changed 判定：即使轨道位置恰好不变，工作区变化也应在下一次成功提交后使旧拖动失效，不能只比较几何结果。
 - 新增 25 份 SVG 各自嵌入名称型 UI 资源，沿用 24×24、2.6 主描边与主题语义色；反比例/双曲线、正弦/余弦须有可辨的独立轮廓。无新增设置项。验收使用生产 ULW 源像素与空白负例、视口/滚动/禁用动作回放，不能仅靠目录计数或 XML 通过。
@@ -2591,8 +2591,8 @@ UI3主栏、属性面板及共用Bar renderer的PPT/白板分页文字适用；�
 ### 2. Signatures
 
 - `Experimental.Inkeys3.UI3.AllowFractionalFontSize: IdtAtomic<bool> = false`，main.json、严格bool、NoUpload，key/默认不变。
-- `BarUiFontCorrectionClass::Resolve(targetPixels, allowFractional, frame, context, duration)`：固定状态中的连续修正动画。
-- `BarUIRendering::BeginFontFrame(time, context, targetZoom)`、`FontAnimationsActive()`：共享帧推进与有限续帧。
+- `UiFontCorrectionClass::Resolve(targetPixels, allowFractional, frame, context, duration)`：固定状态中的连续修正动画。
+- `UIRendering::BeginFontFrame(time, context, targetZoom)`、`FontAnimationsActive()`：共享帧推进与有限续帧。
 - `ResolveWordFontSize(context, word, currentSize, nominalTarget)`、`SetFontTargetZoom/Scale`、`FontTargetScope`：当前绘制轨迹与静止目标元数据分离。
 - `BarPageSurface::SetFontTargetScale(double)`：接收PageControl缩放动画最终倍率。
 - Word保留原始`size.val/tar`；`fontTargetSize`仅为逐帧派生SetDirect路径提供独立名义目标，`fontCorrection`由render owner持有。
@@ -2762,7 +2762,7 @@ Correct：发布后保留 pending，非阻塞读取完整匹配回执；仅最�
 ### 3. Contracts
 - **页码槽状态表**（左=当前页码槽，右=原 `/N` 槽）：白板/PPT 翻页等待=左页码不变、右 `Wait`，加载环+整窗口变浅；PPT `Recovering`=右 `Recovering`，同上；失败类可重试=左原因词、右 `Retry`，页码按钮可点且不变浅、无环，上/下一页不可点并变浅；失败类不可重试（终态）=左页码不变、右原因词，环退场，整窗口保持变浅且不可点。`Loading` 文案已删除。
 - **500ms 门控**：`deadline=now+500ms`；文字切换、变浅、环都在 `reached` 之后才发生；回到 `None` 立即关门并清 deadline；`Loading→FinalFailed` 等非 `None` 间切换不重置 deadline。变浅（180ms/140ms 曲线）与环淡入淡出各自轨道；文字到点直接 `TransitionToString`，纯页码间仍 Immediate。可重试失败的页码按钮在 `reached` 之前保持不可点。上/下一页在 `recovery.kind!=None` 时命中即锁（`interactive=false`），视觉变浅仍等门控。
-- **变浅**：视觉 enabled 由 `LoadingDimmed(id)` 决定（Loading/终态=全部按钮；可重试失败=仅不可点的上/下一页）；命中仍用 `interactive/enabled`，二者独立。通用禁用变浅只覆盖图标与主文字，`pageTotal` 由 Scene 独立持有，必须在 `AdvanceBarButtonVisual` 前用 `GetThemeDisabledContentOpacity()` 同口径 `pct.SetTar`，否则 `/N` 或状态词不变浅。
+- **变浅**：视觉 enabled 由 `LoadingDimmed(id)` 决定（Loading/终态=全部按钮；可重试失败=仅不可点的上/下一页）；命中仍用 `interactive/enabled`，二者独立。通用禁用变浅只覆盖图标与主文字，`pageTotal` 由 Scene 独立持有，必须在 `AdvanceButtonVisual` 前用 `GetThemeDisabledContentOpacity()` 同口径 `pct.SetTar`，否则 `/N` 或状态词不变浅。
 - **环几何**：沿页码按钮边框内侧的圆角矩形（内缩=边框厚度+间隙+半线宽，中心线圆角直接取按钮 `rw`（与按钮圆角一致，放不下才收小）），起点顶边中点顺时针；线宽 2.5DIP、无轨道、`IconPrimary`、圆角端帽。用缓存 `ID2D1PathGeometry` + 每帧自定义 dash（`dashes={(L-W)/W,(P-(L-W))/W}`，`dashOffset=(P-start*P)/W`）描边，圆角端帽向两端各延伸半个线宽故弧长扣除一个线宽；尺寸/圆角变化重建路径，设备丢失/新一段失败时 `ResetRingResources`。
 - **非线性运动**：`PageLoadingArcAt` 以头部先行/尾部追赶的 in-out 缓动配合每周期 0.3 圈的基础旋转，弧长在 `MinArc=.10` 与约 .6 周长之间伸缩；仅 `ring>0` 且动画开启时推进 `phase`，退场后保留，设备资源重建不影响相位；全局动画关闭用固定弧（长 .25，起点 0）。
 - 装饰资源失败只跳过环，不影响数字/状态/业务；`NeedsFrames` 稳定（终态失败/可重试失败/静态环）后必须能 Idle；到期仍由原子 deadline + `WakeInteractionWorker`。
@@ -2806,6 +2806,7 @@ UI3 主按钮的状态胶囊、停靠方块轨道、同心弧展开、指示环/
 - 仅最前展开项计真实 3s，队尾不偷跑计时；动画关闭/速率仅影响过渡。v2 外形全部为主栏材质圆角矩形：胶囊同“底栏模式”指示器（高 30、圆角 6、13 DIP 粗体、左侧 18 DIP 图标、宽上限 160），竖直中心压在主按钮上边框（倒转压下边框）；停靠方块 18 DIP/圆角 4，中心落在超椭圆边框右端；同心弧方块 28 DIP 紧挨、以正上/正下对称。测量与绘制使用同一字体，长文在 3s 内滚完并两端渐隐。
 - 环为单通道：可读队首独占其真实 3s，颜色为队首 accent，自身 progress.active 时显示实时进度段，否则显示普通环；队列空后恢复可见、未退场的进行中进度，多进度沿用 idleProgress，直到该周期结束再选择另一项。绘制模式目标为空、双层淡出但保留状态。进度逐条目持有，后台 display 也持续平滑追随 target，同周期单调不减、回零被吸收、失败结束周期但条目保留。确认完成时仅当前目标源的可见层正在显示该进度才满环停留 ProgressCompleteLinger（3s）；后台完成或停留中被新队首接走立即 active=false，未确认完成的 100% 段继续呼吸。普通环/进度段/颜色/owner 切换统一用 rings[0] 旧层淡出（RingOut=.20s）、rings[1] 新层延迟 RingGap=.12s×旧层剩余 opacity 后淡入（RingIn=.30s），短暂重叠、逐层保留原色与独立 breathStart，禁止颜色插值；快速换主只保留更显眼的一层淡出，animations=false 直接切换。淡出层冻结 argb/value，条目删除仍能画完；Advance 先进度后环，使完成周期在让位当帧结束。模拟下载逐项推进各自周期，绘制模式只影响环目标。
 - 停靠方块夹在不含指示器贡献的 baseBounds（着陆轻弹短暂探出时计 overflow）；胶囊、飞行中方块与同心弧允许越界，`reserveBounds` 从首帧预留出现回弹峰值、飞行弧线与选中胶囊包络，并遵守既有 viewport/capacity/dirty 事务，收起尾段清除旧像素。
+- `【用户确认 2026-11-18】` 小图标态（停靠方块压在主按钮边框上的常驻态）**不得影响窗口大小**：窗口按不含指示器贡献的 baseBounds 定尺寸，`OverflowBounds()` 在稳态为空，不并入 `visibleContentBounds`。它的脏区（`Bounds()`，含光晕外扩 `GlowOutsetDip`）可以越出窗口边缘，越出部分由窗口裁掉，这是正确行为，不能为了让脏区完全落在窗口内而把窗口上沿抬高。窗口上沿只在多步形状步骤栏或“底栏模式”提示栏出现时抬高；胶囊、飞行中方块与同心弧的临时越界预留按上一条处理。
 - 收起为弹簧驱动：morph 收进图标 → 延迟 0.1s 后 flight 沿三次贝塞尔先向内（正常向下、倒转向上）离开展开胶囊区域，内侧横移后竖直回到槽 0；层级只在方块完全离开胶囊区域（`FlightPath::clearAt`）时从胶囊之上切到胶囊之下，往返对称，弧上方块同处胶囊之下，任何过渡都不允许相交时换层。新状态发布时立即收回重新展开胶囊或同心弧（`DismissSelection`）；越过 0.97 才着陆占槽（其余方块此刻才让位）并轻弹。延迟在帧内到期只推进剩余时间，几何与帧率无关。单个停靠方块点击按逆过程就地重新展开，再点/点外部/3s 收回；新版本方块仍执行动作。
 - 组合成：上层外形以几何遮罩遮挡下层，整项 opacity（停靠 0.5、出现/退场）用一次 PushLayer 合成；禁止逐元素半透明叠加或“看不见就不画”。表面走 themeSurface+residentSurface（用户背景透明度、PPT 闲置淡化），强调色边框/图标/文字乘常驻内容透明度；强调色按材质在 OKLCH 中校正明度。环/进度环 1.5 DIP，仅开启光影时有强调色几何预模糊光晕。
 - Fan 内注销/过滤/驱逐持久状态时，先冻结旧弧容量与各项槽位并启动收起，归零后再释放；不能先用新数量重算离散角度而瞬移。普通圆形轨道继续使用实时补位弹簧。
@@ -2827,7 +2828,7 @@ UI3 主按钮的状态胶囊、停靠方块轨道、同心弧展开、指示环/
 
 ### 5. Good / Base / Bad Cases
 - Good：设置页只入队，渲染 owner 在同帧更新布局/dirty，完整成功后发布命中。
-- Base：没有状态时不扩大窗口、不维持动画帧。
+- Base：没有状态时不扩大窗口、不维持动画帧；只有小图标（停靠方块）时同样不扩大窗口，脏区越出窗口边缘由窗口裁掉。
 - Bad：设置线程改模型；以布局候选提前确认命中；给多个 key 每帧写单个进度状态；把 snapStack 留在已隐藏条目上。
 
 ### 6. Tests Required

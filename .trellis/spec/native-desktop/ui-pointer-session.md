@@ -22,7 +22,7 @@
 ### 原有入口与可选补充
 
 - Bar 原生鼠标 Down/Move/Up 通过按值 SharedInputEnvelope 进入共享交互 worker，窗口线程固化完整屏幕点、消息时间与原生按压代次，并以值型 MouseGesture 保存 Down 当时的来源准入快照；交互线程只接纳仍有效的快照，不能让排队 Down 跨已结束的 Touch/Pen 接管复活。Bar 业务归属和 Raw claim 只在共享 worker 推进。普通按钮不申请 Raw 会话。PageControl 在 HWND owner 归一化来源、代次和原生采样，再将带精确 captureTicket 的 SurfaceInputEvent 投递同一 worker；业务回调不等待 Raw Down。
-- `MouseGesture::Begin` 接受非零原生代次的 Down，立即取得业务归属，与 Raw 是否注册、是否收到/匹配 Down 无关。`AcceptNative` 的有效 Up 可以结束点击或拖动。不得在共享邮箱入队或消费层无条件丢弃原生 Up。
+- `MouseGesture::Begin` 接受非零原生代次的 Down，立即取得业务归属，与 Raw 是否注册、是否收到/匹配 Down 无关。`AcceptNative` 的有效 Up 可以结束点击或拖动。不得在共享邮箱入队或消费层无条件丢弃原生 Up。共享邮箱、表面注册表与泵位于 `Inkeys.UI.UI3:HostInput`：主栏消息在其中是不透明载荷，合并与准入由主栏回调在邮箱锁内判定，派发、续接、取消与溢出处理经主栏登记的 `MainContentHandler` 回到 `Bar.Interaction.cpp`。
 - 只在连续交互入口准备可选 `MouseChannel`。主按钮、Page/背景与粗细浮窗等仍按各自原有阈值判定实际拖动；候选阶段可以用 Raw Move 提供越界轨迹，`BeginDrag()` 之前的 Raw Up 不能提交点击、折叠或翻页。已在 Down 开始连续改值的选色板/预设拖选、直接 FineDial 等按原语义进入连续操作。
 - Raw Down 只建立补充身份，不再次执行业务 Down。接受的 Raw 样本通过 `Latest()` 保留原生业务代次/设备/触点身份。客户端必须依据接受后的 Kind、坐标与时间执行业务，Cancel 不得沿用原消息的 WM_LBUTTONUP 提交；实际拖动中比最近移动更旧的 Up 仍结束会话，但位置与时间不回退。
 - 实际拖动的有效原生 Up 与 Raw Up 只能结束一次；结束后忽略迟到终态。旧按压的原生代次和 Raw 身份不得完成下一次按下。结束只退休本会话，不全局 Clear 后续消息。
