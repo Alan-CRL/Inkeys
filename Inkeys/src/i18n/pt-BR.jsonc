@@ -1052,6 +1052,11 @@
         "N": "Ativar espera no modo waitable",
         "E": "No Windows 8.1 e versões posteriores, evita a latência causada pelo acúmulo de quadros."
       },
+      "UlwAsyncReadback":
+      {
+        "N": "Leitura assíncrona no modo ULW",
+        "E": "Em sistemas que exibem por ULW, como o Windows 7, permite que o cálculo da CPU e o desenho da GPU ocorram ao mesmo tempo e envia os quadros no ritmo de atualização da tela, reduzindo travamentos e latência."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Não limitar o movimento do mouse à taxa de quadros do desenho ao desenhar",

@@ -76,6 +76,8 @@ int RunPalmEraserTests();
 int RunCanvasDebugTests();
 int RunDraw3CanvasPanTests();
 int RunDraw3FrameLatencyGateTests();
+int RunDraw3UlwReadbackPacingTests();
+int RunDraw3CompositionClockTests();
 int RunPenWidthTests();
 int RunEraserAttributeTests();
 int RunRecallAttributeTests();
@@ -1739,6 +1741,8 @@ int main(int argc, char** argv)
 	bool canvasDebugOnly = false;
 	bool canvasPanOnly = false;
 	bool frameLatencyGateOnly = false;
+	bool ulwReadbackPacingOnly = false;
+	bool compositionClockOnly = false;
 	bool settingEraserDemoOnly = false;
 	bool draw3ContactBenchmark = false;
 	bool runWindowTests = true;
@@ -1764,6 +1768,8 @@ int main(int argc, char** argv)
 		canvasDebugOnly |= argument == "--canvas-debug-only";
 		canvasPanOnly |= argument == "--canvas-pan-only";
 		frameLatencyGateOnly |= argument == "--frame-latency-gate-only";
+		ulwReadbackPacingOnly |= argument == "--ulw-readback-pacing-only";
+		compositionClockOnly |= argument == "--composition-clock-only";
 		settingEraserDemoOnly |= argument == "--setting-eraser-demo-only";
 		draw3ContactBenchmark |= argument == "--draw3-contact-benchmark";
 		messageBoxFirstFrameChild |= argument == "--message-box-first-frame-child";
@@ -1817,6 +1823,8 @@ int main(int argc, char** argv)
 	if (canvasDebugOnly) return RunCanvasDebugTests() == 0 ? 0 : 1;
 	if (canvasPanOnly) return RunDraw3CanvasPanTests() == 0 ? 0 : 1;
 	if (frameLatencyGateOnly) return RunDraw3FrameLatencyGateTests() == 0 ? 0 : 1;
+	if (ulwReadbackPacingOnly) return RunDraw3UlwReadbackPacingTests() == 0 ? 0 : 1;
+	if (compositionClockOnly) return RunDraw3CompositionClockTests() == 0 ? 0 : 1;
 	if (settingEraserDemoOnly)
 	{
 		const int settings = RunSettingDesignTests(false, true), demo = RunSettingEraserDemoTests();
@@ -1892,6 +1900,8 @@ int main(int argc, char** argv)
 	failureCount += RunCanvasDebugTests();
 	failureCount += RunDraw3CanvasPanTests();
 	failureCount += RunDraw3FrameLatencyGateTests();
+	failureCount += RunDraw3UlwReadbackPacingTests();
+	failureCount += RunDraw3CompositionClockTests();
 	failureCount += RunPenWidthTests();
 	failureCount += RunEraserAttributeTests();
 	failureCount += RunRecallAttributeTests();

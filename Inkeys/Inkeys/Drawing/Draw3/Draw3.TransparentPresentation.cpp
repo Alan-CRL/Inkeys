@@ -1,12 +1,14 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
 #include "Draw3.DiagnosticOutput.h"
+#include "Draw3.CompositionClock.h"
 #include "Draw3.FrameLatencyGate.h"
 #include "Draw3.Presentation.h"
+#include "Draw3.UlwReadbackPacing.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdint>
@@ -23,11 +25,21 @@ module;
 #include <iomanip>
 #include <string>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <vector>
 #include <windows.h>
 #include <wrl/client.h>
+
+// ULW 逐行复制的单遍 SIMD 内核：ARM64 用 NEON，x86/x64 用 SSE2（v143 x86 默认 /arch:SSE2）。
+#if defined(_M_ARM64)
+#include <arm_neon.h>
+#define INKEYS_ULW_COPY_NEON 1
+#elif defined(_M_X64) || defined(_M_IX86)
+#include <emmintrin.h>
+#define INKEYS_ULW_COPY_SSE2 1
+#endif
 
 #include "../../Helper/FailedCleanupDeadline.h"
 
@@ -177,6 +189,36 @@ namespace Inkeys::Drawing::Draw3
 			bool fullFrameAllZeroAlpha = false;
 		};
 
+		bool IsEmptyUlwRect(RECT rect) noexcept
+		{
+			return rect.left >= rect.right || rect.top >= rect.bottom;
+		}
+
+		RECT ClipUlwRect(RECT rect, RECT bounds) noexcept
+		{
+			return RECT{ std::max(bounds.left, rect.left), std::max(bounds.top, rect.top),
+				std::min(bounds.right, rect.right), std::min(bounds.bottom, rect.bottom) };
+		}
+
+		RECT UnionUlwRect(RECT first, RECT second) noexcept
+		{
+			if (IsEmptyUlwRect(first)) return second;
+			if (IsEmptyUlwRect(second)) return first;
+			return RECT{ std::min(first.left, second.left), std::min(first.top, second.top),
+				std::max(first.right, second.right), std::max(first.bottom, second.bottom) };
+		}
+
+		// 主画布异步读回每次调用时由 Impl 提供的帧时序与合成时钟。
+		struct UlwFrameTiming
+		{
+			double nowMs = 0.0;
+			double frameStartMs = 0.0;  // 0 = 帧循环外
+			double frameIntervalMs = 1000.0 / 120.0;
+			double refreshMs = kFrameLatencyDefaultRefreshMs;
+			bool aligned = false;       // DWM 合成、对齐开启、即时模式且时钟有效
+			const CompositionClock* clock = nullptr;
+		};
+
 		struct UlwPixelStatistics
 		{
 			size_t alphaNonzero = 0;
@@ -222,7 +264,86 @@ namespace Inkeys::Drawing::Draw3
 			return static_cast<BYTE>(alpha + ((255u - alpha) + 127u) / 255u);
 		}
 
-		template <bool InspectPixels = false, typename AfterCopy>
+#if defined(INKEYS_ULW_COPY_NEON) || defined(INKEYS_ULW_COPY_SSE2)
+		constexpr bool kUlwSimdCopyAvailable = true;
+#else
+		constexpr bool kUlwSimdCopyAvailable = false;
+#endif
+
+		// 单遍处理一行：复制到 DIB 的同时累计源 alpha 是否全零、按需补命中底层 alpha、检查最终像素预乘合法性。
+		// 命中底层公式等价于 α ≤ 127 ? α + 1 : α；结果与标量两遍版本逐字节一致。
+		inline void CopyUlwRowSinglePass(const BYTE* source, BYTE* destination, size_t pixelCount,
+			bool applyPrimaryHitUnderlay, bool& anySourceAlpha, bool& premultipliedAlphaValid) noexcept
+		{
+			size_t x = 0;
+#if defined(INKEYS_ULW_COPY_NEON)
+			// 每次 16 字节 = 4 个 BGRA 像素；脏区 left 与 RowPitch 都可能让地址不对齐，使用非对齐读写。
+			static constexpr std::uint8_t alphaLanes[16] = { 3, 3, 3, 3, 7, 7, 7, 7, 11, 11, 11, 11, 15, 15, 15, 15 };
+			const uint8x16_t broadcastAlpha = vld1q_u8(alphaLanes);
+			const uint8x16_t alphaOnly = vreinterpretq_u8_u32(vdupq_n_u32(0xFF000000u));
+			const uint8x16_t alphaOne = vreinterpretq_u8_u32(vdupq_n_u32(0x01000000u));
+			const int8x16_t signedZero = vdupq_n_s8(0);
+			uint8x16_t sourceAlphaBits = vdupq_n_u8(0);
+			uint8x16_t invalidBits = vdupq_n_u8(0);
+			for (; x + 4 <= pixelCount; x += 4)
+			{
+				uint8x16_t pixels = vld1q_u8(source + x * 4);
+				sourceAlphaBits = vorrq_u8(sourceAlphaBits, vandq_u8(pixels, alphaOnly));
+				if (applyPrimaryHitUnderlay)
+				{
+					// α ≤ 127 ⇔ 按有符号字节 ≥ 0；掩码只保留 α 通道的 +1，结果最大 128 不会溢出。
+					const uint8x16_t lowAlpha = vcgeq_s8(vreinterpretq_s8_u8(pixels), signedZero);
+					pixels = vaddq_u8(pixels, vandq_u8(lowAlpha, alphaOne));
+				}
+				// 把最终 α 复制到四个通道：max(像素, α) == α 当且仅当 B、G、R ≤ α。
+				const uint8x16_t alpha = vqtbl1q_u8(pixels, broadcastAlpha);
+				invalidBits = vorrq_u8(invalidBits, veorq_u8(vmaxq_u8(pixels, alpha), alpha));
+				vst1q_u8(destination + x * 4, pixels);
+			}
+			anySourceAlpha = anySourceAlpha || vmaxvq_u8(sourceAlphaBits) != 0;
+			premultipliedAlphaValid = premultipliedAlphaValid && vmaxvq_u8(invalidBits) == 0;
+#elif defined(INKEYS_ULW_COPY_SSE2)
+			const __m128i alphaOnly = _mm_set1_epi32(static_cast<int>(0xFF000000u));
+			const __m128i alphaOne = _mm_set1_epi32(0x01000000);
+			const __m128i minusOne = _mm_set1_epi32(-1);
+			const __m128i zero = _mm_setzero_si128();
+			__m128i sourceAlphaBits = zero;
+			__m128i invalidBits = zero;
+			for (; x + 4 <= pixelCount; x += 4)
+			{
+				__m128i pixels = _mm_loadu_si128(reinterpret_cast<const __m128i*>(source + x * 4));
+				sourceAlphaBits = _mm_or_si128(sourceAlphaBits, _mm_and_si128(pixels, alphaOnly));
+				if (applyPrimaryHitUnderlay)
+				{
+					// α ≤ 127 ⇔ 按有符号字节 > -1；掩码只保留 α 通道的 +1，结果最大 128 不会溢出。
+					const __m128i lowAlpha = _mm_cmpgt_epi8(pixels, minusOne);
+					pixels = _mm_add_epi8(pixels, _mm_and_si128(lowAlpha, alphaOne));
+				}
+				// SSE2 没有字节重排：用移位把 α 复制到四个通道，再用 max(像素, α) == α 判断预乘。
+				__m128i alpha = _mm_srli_epi32(pixels, 24);
+				alpha = _mm_or_si128(alpha, _mm_slli_epi32(alpha, 8));
+				alpha = _mm_or_si128(alpha, _mm_slli_epi32(alpha, 16));
+				invalidBits = _mm_or_si128(invalidBits, _mm_xor_si128(_mm_max_epu8(pixels, alpha), alpha));
+				_mm_storeu_si128(reinterpret_cast<__m128i*>(destination + x * 4), pixels);
+			}
+			anySourceAlpha = anySourceAlpha || _mm_movemask_epi8(_mm_cmpeq_epi8(sourceAlphaBits, zero)) != 0xFFFF;
+			premultipliedAlphaValid = premultipliedAlphaValid && _mm_movemask_epi8(_mm_cmpeq_epi8(invalidBits, zero)) == 0xFFFF;
+#endif
+			// 行尾不足 4 像素（或无 SIMD 的平台）走标量。
+			for (; x < pixelCount; ++x)
+			{
+				const BYTE* sourcePixel = source + x * 4;
+				BYTE* pixel = destination + x * 4;
+				std::memcpy(pixel, sourcePixel, 4);
+				anySourceAlpha = anySourceAlpha || sourcePixel[3] != 0;
+				if (applyPrimaryHitUnderlay) pixel[3] = ComposePrimaryHitUnderlayAlpha(sourcePixel[3]);
+				premultipliedAlphaValid = premultipliedAlphaValid &&
+					pixel[0] <= pixel[3] && pixel[1] <= pixel[3] && pixel[2] <= pixel[3];
+			}
+		}
+
+		// ScalarOnly=true 保留原两遍标量实现，供基准与逐字节对照；像素诊断采样帧也走标量。
+		template <bool InspectPixels = false, bool ScalarOnly = false, typename AfterCopy>
 		UlwDirtyCopyResult CopyAndInspectUlwDirtyRows(const BYTE* mapped, size_t rowPitch,
 			BYTE* dib, int dibWidth, int dibHeight, RECT dirty, bool presentFull,
 			bool applyPrimaryHitUnderlay, AfterCopy afterCopy, UlwPixelDiagnostic* diagnostic = nullptr)
@@ -234,6 +355,21 @@ namespace Inkeys::Drawing::Draw3
 			BYTE* destination = dib + static_cast<size_t>(dirty.top) *
 				static_cast<size_t>(dibWidth) * 4 + static_cast<size_t>(dirty.left) * 4;
 			UlwDirtyCopyResult result;
+			if constexpr (!InspectPixels && !ScalarOnly && kUlwSimdCopyAvailable)
+			{
+				bool anySourceAlpha = false;
+				bool premultipliedAlphaValid = true;
+				for (LONG y = dirty.top; y < dirty.bottom; ++y)
+				{
+					const size_t row = static_cast<size_t>(y - dirty.top);
+					CopyUlwRowSinglePass(source + row * rowPitch,
+						destination + row * static_cast<size_t>(dibWidth) * 4, pixelCount,
+						applyPrimaryHitUnderlay, anySourceAlpha, premultipliedAlphaValid);
+				}
+				result.allZeroAlpha = !anySourceAlpha;
+				result.premultipliedAlphaValid = premultipliedAlphaValid;
+			}
+			else // 诊断采样帧与标量基准：原两遍实现（memcpy 后逐像素检查）。
 			for (LONG y = dirty.top; y < dirty.bottom; ++y)
 			{
 				const size_t row = static_cast<size_t>(y - dirty.top);
@@ -308,6 +444,83 @@ namespace Inkeys::Drawing::Draw3
 			BLENDFUNCTION lastBlend{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
 			DWORD lastUpdateFlags = ULW_ALPHA;
 
+			// ===== 异步读回（仅主画布，design §5）=====
+			// 最终纹理只有一张：GPU 按命令顺序执行，“拷贝 N 到槽”先于“画第 N+1 帧”完成，后续改写不影响已入队的拷贝。
+			// DIB 持久，各次提交按顺序只写自己的脏区，所以每个槽只需包含本次提交的脏区。
+			enum class CompletionPoint : std::uint8_t { Sync, FrameStart, Backpressure, Present, FrameEnd, BeforeIdle };
+			struct Commit
+			{
+				bool active = false;
+				int slot = 0;
+				RECT dirty{};
+				bool presentFull = false;
+				double issuedMs = 0.0;   // 拷贝入队时刻
+				double contentMs = 0.0;  // 本次提交包含的最早一帧写入纹理的时刻（节流合并时早于 issuedMs）
+				double deadlineMs = 0.0; // 对齐时瞄准的截止，0 = 未对齐
+			};
+			struct Completion
+			{
+				bool ok = true;
+				bool notReady = false;
+				double mapWaitMs = 0.0;
+				double rowsMs = 0.0;
+				double ulwMs = 0.0;
+			};
+			struct IssueResult
+			{
+				bool ok = true;
+				double waitedMs = 0.0;      // 本次调用中全部阻塞 Map 的时长（背压 + 立即完成）
+				double currentWaitMs = 0.0; // 立即完成本次提交时的阻塞时长
+			};
+			struct PipelineSummary
+			{
+				double startMs = 0.0;
+				std::uint32_t immediate = 0, deferred = 0, probeHit = 0, backpressure = 0, frameEnd = 0, beforeIdle = 0, skipped = 0, commits = 0;
+				double mapWaitSumMs = 0.0, mapWaitMaxMs = 0.0, lagSumMs = 0.0, lagMaxMs = 0.0, rowsSumMs = 0.0, ulwSumMs = 0.0;
+				std::uint32_t alignedCommits = 0, lateCount = 0;
+				double leadSumMs = 0.0, leadMinMs = 0.0;
+			};
+			bool asyncFused = false; // 探测出现非“仍在绘制”的错误或第二个槽建不出来：改走同步，由 Impl 记为会话级熔断
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingTextureAlt; // 第二个 Staging 槽，仅异步时创建
+			Commit pending;
+			RECT accumulatedDirty{};
+			bool hasAccumulated = false;
+			double accumulatedSinceMs = 0.0;
+			UlwReadbackPacing pacing;
+			UlwCommitPlanner planner;
+			PipelineSummary pipelineSummary;
+
+			ID3D11Texture2D* SlotTexture(int slot) const noexcept
+			{
+				return slot == 0 ? stagingTexture.Get() : stagingTextureAlt.Get();
+			}
+
+			void ClearAccumulated() noexcept
+			{
+				hasAccumulated = false;
+				accumulatedDirty = {};
+				accumulatedSinceMs = 0.0;
+			}
+
+			// 丢弃待完成提交与累计脏区（不 Map，设备可能已移除）：DIB 缺了这些内容，下一次必须整帧读回。
+			void DiscardPipeline() noexcept
+			{
+				if (pending.active || hasAccumulated) needsFullReadback = true;
+				pending = {};
+				ClearAccumulated();
+				planner.ForgetLastCommit();
+			}
+
+			void Fail(const char* stage, RECT dirty, bool presentFull, DWORD error = ERROR_SUCCESS, HRESULT hresult = S_OK)
+			{
+				if (presentFailureLogged) return;
+				DiagnosticOutput::Line(DiagnosticOutput::OutError) << "[Draw3Diag][ulw] stage=" << stage
+					<< " result=failed hresult=0x" << std::hex
+					<< static_cast<unsigned long>(hresult) << std::dec << std::endl;
+				LogPresentEvent("failure", dirty, presentFull, error, hresult);
+				presentFailureLogged = true;
+			}
+
 			void LogPresentEvent(const char* eventName, RECT dirty, bool presentFull,
 				DWORD error = ERROR_SUCCESS, HRESULT hresult = S_OK)
 			{
@@ -352,7 +565,7 @@ namespace Inkeys::Drawing::Draw3
 
 			void LogPixelDiagnostic(const UlwPixelDiagnostic& pixels, ULONGLONG tick,
 				RECT dirty, bool presentFull, BOOL updated, DWORD error,
-				ULONGLONG copyMapMs, ULONGLONG rowsMs, ULONGLONG ulwMs)
+				double copyMapMs, double mapWaitMs, const char* point, ULONGLONG rowsMs, ULONGLONG ulwMs)
 			{
 				// 仅 Draw3 调试开关开启时采样：写入日志 Draw3 通道。
 				DiagnosticOutput::Line line(DiagnosticOutput::Target{ DiagnosticOutput::Stream::Output, Inkeys::Log::Channel::Draw3 });
@@ -362,7 +575,8 @@ namespace Inkeys::Drawing::Draw3
 					<< dirty.right << "," << dirty.bottom << ") full=" << (presentFull ? 1 : 0)
 					<< " dirtyParameter=" << (presentFull || forceFullUlwUpdate ? "null" : "rect")
 					<< " fullUpdateOverride=" << (forceFullUlwUpdate ? 1 : 0)
-					<< " copy_map_ms=" << copyMapMs << " rows_ms=" << rowsMs << " ulw_ms=" << ulwMs
+					<< " copy_map_ms=" << copyMapMs << " map_wait_ms=" << mapWaitMs << " point=" << point
+					<< " rows_ms=" << rowsMs << " ulw_ms=" << ulwMs
 					<< " api=" << (updated ? "success" : "failed") << " error=" << error
 					<< " underlay=" << (applyPrimaryHitUnderlay ? 1 : 0) << " pixels=" << pixels.pixelCount;
 				const auto writeStatistics = [&](const char* name, const UlwPixelStatistics& stats)
@@ -408,13 +622,16 @@ namespace Inkeys::Drawing::Draw3
 			std::uint64_t ReadbackPayloadBytes() const noexcept
 			{
 				return (stagingTexture ? static_cast<std::uint64_t>(stagingWidth) * stagingHeight * 4 : 0) +
+					(stagingTextureAlt ? static_cast<std::uint64_t>(stagingWidth) * stagingHeight * 4 : 0) +
 					(dibBits ? static_cast<std::uint64_t>(dibWidth) * dibHeight * 4 : 0);
 			}
 
 			void ReleaseReadbackResources() noexcept
 			{
+				DiscardPipeline();
 				ReleaseDib();
 				stagingTexture.Reset();
+				stagingTextureAlt.Reset();
 				stagingWidth = stagingHeight = 0;
 				// HWND 的已提交画面和真实观察仍有效；下一次读回必须完整填充新 DIB。
 				needsFullReadback = true;
@@ -435,6 +652,10 @@ namespace Inkeys::Drawing::Draw3
 				pixelDiagnosticLogged = false;
 				forceFullUlwUpdate = false;
 				lastPixelDiagnosticTick = 0;
+				asyncFused = false;
+				pacing.Reset();
+				planner.Reset();
+				pipelineSummary = {};
 			}
 
 			bool CreateStagingTexture(UINT width, UINT height)
@@ -467,6 +688,34 @@ namespace Inkeys::Drawing::Draw3
 				return true;
 			}
 
+			// 按最终纹理尺寸准备 Staging；尺寸变化时旧槽内容作废。dualSlot 时补建第二个槽，失败则熔断为同步读回。
+			bool EnsureStagingSlots(UINT width, UINT height, bool dualSlot)
+			{
+				if (!stagingTexture || stagingWidth != width || stagingHeight != height)
+				{
+					DiscardPipeline();
+					stagingTextureAlt.Reset();
+					needsFullReadback = true;
+					committedFullFrameClean = false;
+				}
+				if (!CreateStagingTexture(width, height)) return false;
+				if (!dualSlot || stagingTextureAlt) return true;
+				D3D11_TEXTURE2D_DESC description = {};
+				stagingTexture->GetDesc(&description);
+				const HRESULT createResult = device->CreateTexture2D(&description, nullptr,
+					stagingTextureAlt.ReleaseAndGetAddressOf());
+				if (FAILED(createResult))
+				{
+					stagingTextureAlt.Reset();
+					if (!asyncFused)
+						DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "[Draw3Diag][ulw-pipeline] role=" << diagnosticRole
+							<< " second staging slot unavailable size=" << width << "x" << height << " hresult=0x" << std::hex
+							<< static_cast<unsigned long>(createResult) << std::dec << "; fall back to synchronous readback." << std::endl;
+					asyncFused = true;
+				}
+				return true;
+			}
+
 			bool EnsureWindowDib()
 			{
 				RECT clientRect = {};
@@ -476,6 +725,7 @@ namespace Inkeys::Drawing::Draw3
 				if (width <= 0 || height <= 0) return false;
 				if (memoryDC && dibBitmap && dibBits && dibWidth == width && dibHeight == height) return true;
 
+				DiscardPipeline(); // 待完成提交写的是旧 DIB，重建后整帧读回。
 				ReleaseDib();
 				needsFullReadback = true;
 				committedFullFrameClean = false;
@@ -528,83 +778,127 @@ namespace Inkeys::Drawing::Draw3
 
 			bool Resize(UINT width, UINT height)
 			{
+				// Resize 时丢弃待完成提交与累计脏区（不 Map），下一帧整帧读回。
+				DiscardPipeline();
+				if (stagingWidth != width || stagingHeight != height) stagingTextureAlt.Reset();
 				return CreateStagingTexture(width, height) && EnsureWindowDib();
 			}
 
-			bool Present(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull)
+			enum class FramePrepare : std::uint8_t { Failed, Ready };
+
+			// 校验资源、按需重建 Staging/DIB 并裁剪脏区。Resize 可与本帧交错：范围同时受最终纹理、Staging 和 DIB 限制。
+			FramePrepare PrepareFrame(ID3D11Texture2D* finalTexture, RECT& dirty, bool& presentFull, bool dualSlot, RECT& copyBounds)
 			{
-				lastObservation = {};
-				lastObservation.ulw = true;
-				lastObservation.usedDirtyRect = !presentFull && !forceFullUlwUpdate;
-				const auto fail = [&](const char* stage, DWORD error = ERROR_SUCCESS,
-					HRESULT hresult = S_OK)
-				{
-					if (!presentFailureLogged)
-					{
-						DiagnosticOutput::Line(DiagnosticOutput::OutError) << "[Draw3Diag][ulw] stage=" << stage
-							<< " result=failed hresult=0x" << std::hex
-							<< static_cast<unsigned long>(hresult) << std::dec << std::endl;
-						LogPresentEvent("failure", dirty, presentFull, error, hresult);
-						presentFailureLogged = true;
-					}
-					return false;
-				};
 				if (!context || !device || !finalTexture)
-					return fail("resource");
+				{
+					Fail("resource", dirty, presentFull);
+					return FramePrepare::Failed;
+				}
 				D3D11_TEXTURE2D_DESC finalDescription = {};
 				finalTexture->GetDesc(&finalDescription);
-				if (!stagingTexture || stagingWidth != finalDescription.Width ||
-					stagingHeight != finalDescription.Height)
+				if (!EnsureStagingSlots(finalDescription.Width, finalDescription.Height, dualSlot))
 				{
-					needsFullReadback = true;
-					committedFullFrameClean = false;
-					if (!CreateStagingTexture(finalDescription.Width, finalDescription.Height))
-						return fail("staging");
+					Fail("staging", dirty, presentFull);
+					return FramePrepare::Failed;
 				}
 				if (!EnsureWindowDib())
 				{
 					const DWORD error = GetLastError();
-					return fail("window-dib", error,
+					Fail("window-dib", dirty, presentFull, error,
 						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
+					return FramePrepare::Failed;
 				}
 				// 回收/尺寸重建后不能局部填充一张新 DIB，也不能沿用旧空白证明。
 				if (needsFullReadback) presentFull = true;
-				lastObservation.usedDirtyRect = !presentFull && !forceFullUlwUpdate;
 				finalTextureWidth = finalDescription.Width;
 				finalTextureHeight = finalDescription.Height;
-				// Resize 可与本帧交错：拷贝范围必须同时受 GPU 两端纹理和当前 DIB 限制。
 				const LONG copyWidth = std::min({ static_cast<LONG>(stagingWidth), static_cast<LONG>(dibWidth),
 					static_cast<LONG>(finalDescription.Width) });
 				const LONG copyHeight = std::min({ static_cast<LONG>(stagingHeight), static_cast<LONG>(dibHeight),
 					static_cast<LONG>(finalDescription.Height) });
-				if (copyWidth <= 0 || copyHeight <= 0) return fail("empty-size");
-				if (presentFull) dirty = RECT{ 0, 0, copyWidth, copyHeight }; // 全量呈现时忽略传入脏区。
-				dirty.left = std::max(0L, dirty.left);
-				dirty.top = std::max(0L, dirty.top);
-				dirty.right = std::min(copyWidth, dirty.right);
-				dirty.bottom = std::min(copyHeight, dirty.bottom);
-				if (dirty.left >= dirty.right || dirty.top >= dirty.bottom)
+				if (copyWidth <= 0 || copyHeight <= 0)
 				{
-					if (!presentSuccessLogged)
-					{
-						LogPresentEvent("success-empty", dirty, presentFull);
-						presentSuccessLogged = true;
-					}
-					presentFailureLogged = false;
-					return true;
+					Fail("empty-size", dirty, presentFull);
+					return FramePrepare::Failed;
 				}
+				copyBounds = RECT{ 0, 0, copyWidth, copyHeight };
+				if (presentFull) dirty = copyBounds; // 全量呈现时忽略传入脏区。
+				dirty = ClipUlwRect(dirty, copyBounds);
+				return FramePrepare::Ready;
+			}
 
-				D3D11_BOX sourceRegion = {
+			void LogEmptySuccess(RECT dirty, bool presentFull)
+			{
+				if (!presentSuccessLogged)
+				{
+					LogPresentEvent("success-empty", dirty, presentFull);
+					presentSuccessLogged = true;
+				}
+				presentFailureLogged = false;
+			}
+
+			void IssueCopy(ID3D11Texture2D* finalTexture, int slot, RECT dirty) noexcept
+			{
+				const D3D11_BOX sourceRegion = {
 					static_cast<UINT>(dirty.left), static_cast<UINT>(dirty.top), 0,
 					static_cast<UINT>(dirty.right), static_cast<UINT>(dirty.bottom), 1
 				};
+				context->CopySubresourceRegion(SlotTexture(slot), 0, static_cast<UINT>(dirty.left),
+					static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion); // 只把脏区从最终纹理拷到可读纹理。
+			}
+
+			static const char* CompletionPointName(CompletionPoint point) noexcept
+			{
+				switch (point)
+				{
+				case CompletionPoint::FrameStart: return "C1";
+				case CompletionPoint::Backpressure: return "C2";
+				case CompletionPoint::Present: return "present";
+				case CompletionPoint::FrameEnd: return "frame-end";
+				case CompletionPoint::BeforeIdle: return "C3";
+				default: return "sync";
+				}
+			}
+
+			// 读回 slot 中的脏区，逐行复制到 DIB 并调用 UpdateLayeredWindowIndirect。
+			// wait=false 只探测一次（DO_NOT_WAIT）：GPU 未完成时返回 notReady，什么也不做；不轮询、不自旋。
+			Completion CompleteCommit(int slot, RECT dirty, bool presentFull, bool wait, CompletionPoint point, double issuedMs)
+			{
+				Completion completion;
+				ID3D11Texture2D* staging = SlotTexture(slot);
+				if (!staging)
+				{
+					completion.ok = false;
+					Fail("staging-slot", dirty, presentFull);
+					return completion;
+				}
 				const bool diagnosticsEnabled = StartupEnvironmentDiagnosticsEnabled();
-				const ULONGLONG copyStartedTick = diagnosticsEnabled ? GetTickCount64() : 0;
-				context->CopySubresourceRegion(stagingTexture.Get(), 0, static_cast<UINT>(dirty.left),
-					static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion); // 只把脏区从 GPU backbuffer 拷到可读纹理。
 				D3D11_MAPPED_SUBRESOURCE mapped = {};
-				const HRESULT mapResult = context->Map(stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
-				if (FAILED(mapResult)) return fail("map", ERROR_SUCCESS, mapResult);
+				const double mapStartedMs = QpcMilliseconds();
+				HRESULT mapResult = context->Map(staging, 0, D3D11_MAP_READ, wait ? 0 : D3D11_MAP_FLAG_DO_NOT_WAIT, &mapped);
+				if (!wait && mapResult == DXGI_ERROR_WAS_STILL_DRAWING)
+				{
+					completion.notReady = true;
+					return completion;
+				}
+				if (!wait && FAILED(mapResult) && SUCCEEDED(device->GetDeviceRemovedReason()))
+				{
+					// 探测出现“仍在绘制”以外的错误但设备未移除：本会话改走同步读回，这一次改用阻塞 Map 完成。
+					if (!asyncFused)
+						DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "[Draw3Diag][ulw-pipeline] role=" << diagnosticRole
+							<< " Map(DO_NOT_WAIT) failed hresult=0x" << std::hex << static_cast<unsigned long>(mapResult)
+							<< std::dec << "; fall back to synchronous readback for this session." << std::endl;
+					asyncFused = true;
+					mapResult = context->Map(staging, 0, D3D11_MAP_READ, 0, &mapped);
+				}
+				const double mappedMs = QpcMilliseconds();
+				completion.mapWaitMs = mappedMs - mapStartedMs;
+				if (FAILED(mapResult))
+				{
+					completion.ok = false;
+					Fail("map", dirty, presentFull, ERROR_SUCCESS, mapResult);
+					return completion;
+				}
 				const ULONGLONG diagnosticTick = diagnosticsEnabled ? GetTickCount64() : 0;
 				const bool inspectPixels = diagnosticsEnabled &&
 					(!pixelDiagnosticLogged || diagnosticTick - lastPixelDiagnosticTick >= 1000);
@@ -615,19 +909,23 @@ namespace Inkeys::Drawing::Draw3
 					return CopyAndInspectUlwDirtyRows<InspectPixels>(
 						static_cast<const BYTE*>(mapped.pData), mapped.RowPitch,
 						static_cast<BYTE*>(dibBits), dibWidth, dibHeight, dirty, presentFull,
-						applyPrimaryHitUnderlay, [&] { context->Unmap(stagingTexture.Get(), 0); },
+						applyPrimaryHitUnderlay, [&] { context->Unmap(staging, 0); },
 						InspectPixels ? &*pixels : nullptr);
 				};
-				// 非采样帧使用原扫描的模板实例，不执行任何诊断像素统计。
+				// 非采样帧使用单遍 SIMD 实例，不执行任何诊断像素统计；采样帧走标量诊断实例。
 				const UlwDirtyCopyResult copyResult = inspectPixels ?
 					copyRows.operator()<true>() : copyRows.operator()<false>();
+				const double rowsFinishedMs = QpcMilliseconds();
+				completion.rowsMs = rowsFinishedMs - mappedMs;
 				const ULONGLONG rowsFinishedTick = inspectPixels ? GetTickCount64() : 0;
 				if (inspectPixels)
 				{
 					pixelDiagnosticLogged = true;
 					lastPixelDiagnosticTick = diagnosticTick;
 				}
-				lastObservation.premultipliedAlphaValid = copyResult.premultipliedAlphaValid;
+				// 一次 Present 内可能完成多次提交（背压 + 本帧）：预乘失败累计，其余取最近一次。
+				lastObservation.usedDirtyRect = lastObservation.usedDirtyRect || (!presentFull && !forceFullUlwUpdate);
+				lastObservation.premultipliedAlphaValid = lastObservation.premultipliedAlphaValid && copyResult.premultipliedAlphaValid;
 				lastObservation.updatedRegionAllZeroAlpha = copyResult.allZeroAlpha;
 				lastObservation.fullFrameAllZeroAlpha = copyResult.fullFrameAllZeroAlpha;
 
@@ -635,8 +933,10 @@ namespace Inkeys::Drawing::Draw3
 				if (!GetWindowRect(window, &windowRect))
 				{
 					const DWORD error = GetLastError();
-					return fail("window-rect", error,
+					completion.ok = false;
+					Fail("window-rect", dirty, presentFull, error,
 						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
+					return completion;
 				}
 				POINT destinationPoint = { windowRect.left, windowRect.top };
 				SIZE destinationSize = { dibWidth, dibHeight };
@@ -659,12 +959,16 @@ namespace Inkeys::Drawing::Draw3
 				const ULONGLONG ulwStartedTick = inspectPixels ? GetTickCount64() : 0;
 				const BOOL updated = UpdateLayeredWindowIndirect(window, &update);
 				const DWORD error = updated ? ERROR_SUCCESS : GetLastError(); // 日志前锁存本次 API 错误。
+				completion.ulwMs = QpcMilliseconds() - rowsFinishedMs;
 				if (inspectPixels) LogPixelDiagnostic(*pixels, diagnosticTick, dirty, presentFull, updated, error,
-					diagnosticTick - copyStartedTick, rowsFinishedTick - diagnosticTick, GetTickCount64() - ulwStartedTick);
+					mappedMs - issuedMs, completion.mapWaitMs, CompletionPointName(point),
+					rowsFinishedTick - diagnosticTick, GetTickCount64() - ulwStartedTick);
 				if (!updated)
 				{
-					return fail("UpdateLayeredWindowIndirect", error,
+					completion.ok = false;
+					Fail("UpdateLayeredWindowIndirect", dirty, presentFull, error,
 						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
+					return completion;
 				}
 				if (!presentSuccessLogged || presentFailureLogged)
 				{
@@ -675,7 +979,261 @@ namespace Inkeys::Drawing::Draw3
 				if (presentFull) committedFullFrameClean = copyResult.fullFrameAllZeroAlpha;
 				else if (!copyResult.allZeroAlpha) committedFullFrameClean = false;
 				presentFailureLogged = false;
+				return completion;
+			}
+
+			// 同步读回（辅助输出、异步关闭或熔断）：保持原流程，单 Staging，拷贝后阻塞 Map，每帧提交。
+			bool Present(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull)
+			{
+				lastObservation = {};
+				lastObservation.ulw = true;
+				lastObservation.usedDirtyRect = !presentFull && !forceFullUlwUpdate;
+				RECT copyBounds = {};
+				if (PrepareFrame(finalTexture, dirty, presentFull, false, copyBounds) == FramePrepare::Failed) return false;
+				lastObservation.usedDirtyRect = !presentFull && !forceFullUlwUpdate;
+				if (IsEmptyUlwRect(dirty))
+				{
+					LogEmptySuccess(dirty, presentFull);
+					return true;
+				}
+				const double issuedMs = QpcMilliseconds();
+				IssueCopy(finalTexture, 0, dirty);
+				return CompleteCommit(0, dirty, presentFull, true, CompletionPoint::Sync, issuedMs).ok;
+			}
+
+			// 完成待完成提交；wait=false 只探测一次。完成（成功或失败）后清除 pending，失败时下一次整帧读回。
+			// measureCommit：只有入队后当场完成的普通提交才计入提交耗时估计。整帧提交（Resize、清屏、输出交接）
+			// 远慢于平时，延后完成的提交又跨了一帧，计入会把估计撑大，之后十余次提交的对齐时机都会偏离截止。
+			Completion CompletePending(bool wait, CompletionPoint point, bool measureCommit = false)
+			{
+				if (!pending.active) return {};
+				const Completion completion = CompleteCommit(pending.slot, pending.dirty, pending.presentFull,
+					wait, point, pending.issuedMs);
+				if (completion.notReady) return completion;
+				const Commit done = pending;
+				pending = {};
+				if (!completion.ok)
+				{
+					needsFullReadback = true;
+					return completion;
+				}
+				const double finishedMs = QpcMilliseconds();
+				if (measureCommit && !done.presentFull) planner.OnCommitCompleted(finishedMs - done.issuedMs);
+				PipelineSummary& summary = pipelineSummary;
+				switch (point)
+				{
+				case CompletionPoint::FrameStart: ++summary.probeHit; break;
+				case CompletionPoint::Backpressure: ++summary.backpressure; break;
+				case CompletionPoint::BeforeIdle: ++summary.beforeIdle; break;
+				case CompletionPoint::FrameEnd: ++summary.frameEnd; break;
+				default: ++summary.immediate; break;
+				}
+				++summary.commits;
+				summary.mapWaitSumMs += completion.mapWaitMs;
+				summary.mapWaitMaxMs = (std::max)(summary.mapWaitMaxMs, completion.mapWaitMs);
+				// commitLag：本次提交包含的最早一帧写入纹理到 ULW 返回，即“Present 回执”之后实际上屏还晚多久。
+				const double lagMs = finishedMs - done.contentMs;
+				summary.lagSumMs += lagMs;
+				summary.lagMaxMs = (std::max)(summary.lagMaxMs, lagMs);
+				summary.rowsSumMs += completion.rowsMs;
+				summary.ulwSumMs += completion.ulwMs;
+				if (done.deadlineMs > 0.0)
+				{
+					// lead = 截止 − 实际提交结束，正为提前；ULW 拿不到“是否赶上合成”的系统回执，只能看预测。
+					const double leadMs = done.deadlineMs - finishedMs;
+					summary.leadMinMs = summary.alignedCommits == 0 ? leadMs : (std::min)(summary.leadMinMs, leadMs);
+					++summary.alignedCommits;
+					summary.leadSumMs += leadMs;
+					if (leadMs < 0.0) ++summary.lateCount;
+				}
+				return completion;
+			}
+
+			// 拷出一次提交：入队拷贝并 Flush（否则命令可能留在缓冲区，帧开头探测永远不就绪）；
+			// 上一次提交仍待完成时先阻塞完成它（C2 背压：DIB 按顺序写入，CPU 最多领先一帧）；completeNow 时立即完成本次。
+			IssueResult IssueCommit(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull, double contentMs,
+				double deadlineMs, bool completeNow, CompletionPoint completePoint, double nowMs, double refreshMs, bool forced)
+			{
+				IssueResult result;
+				const int slot = pending.active ? (pending.slot ^ 1) : 0;
+				IssueCopy(finalTexture, slot, dirty);
+				context->Flush();
+				const Commit issued{ true, slot, dirty, presentFull, nowMs, contentMs, deadlineMs };
+				ClearAccumulated();
+				planner.OnCommitIssued(nowMs, deadlineMs, refreshMs, forced);
+				if (pending.active)
+				{
+					const Completion previous = CompletePending(true, CompletionPoint::Backpressure);
+					result.waitedMs += previous.mapWaitMs;
+					if (!previous.ok)
+					{
+						needsFullReadback = true; // 本次拷贝随之作废，下一次整帧读回。
+						result.ok = false;
+						return result;
+					}
+				}
+				pending = issued;
+				if (!completeNow)
+				{
+					++pipelineSummary.deferred;
+					return result;
+				}
+				const Completion current = CompletePending(true, completePoint, true);
+				result.waitedMs += current.mapWaitMs;
+				result.currentWaitMs = current.mapWaitMs;
+				result.ok = current.ok;
+				return result;
+			}
+
+			// 异步读回的 Present（主画布）：本帧照常画进纹理后，先判定是否拷出（节流/对齐），再拷贝入队、背压、按模式完成。
+			// 返回成功 = 本帧已进入提交流程且此前完成的提交都成功（与 DComp Present1 同口径：已提交，不等于已上屏）。
+			bool PresentAsync(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull,
+				const UlwFrameTiming& timing, double& waitedMs)
+			{
+				lastObservation = {};
+				lastObservation.ulw = true;
+				RECT copyBounds = {};
+				if (PrepareFrame(finalTexture, dirty, presentFull, true, copyBounds) == FramePrepare::Failed) return false;
+				if (asyncFused)
+				{
+					// 熔断（第二个槽建不出来等）：先完成残留提交，再把累计脏区并入本帧走同步路径。
+					const Completion previous = CompletePending(true, CompletionPoint::Present);
+					waitedMs += previous.mapWaitMs;
+					if (!previous.ok) return false;
+					if (hasAccumulated && !presentFull) dirty = UnionUlwRect(dirty, ClipUlwRect(accumulatedDirty, copyBounds));
+					ClearAccumulated();
+					stagingTextureAlt.Reset(); // 同步路径只用一个槽，释放第二个槽的显存
+					return Present(finalTexture, dirty, presentFull);
+				}
+				RECT merged = dirty;
+				double contentMs = timing.nowMs;
+				if (presentFull) ClearAccumulated();
+				else if (hasAccumulated)
+				{
+					merged = UnionUlwRect(merged, ClipUlwRect(accumulatedDirty, copyBounds));
+					contentMs = accumulatedSinceMs;
+				}
+				if (IsEmptyUlwRect(merged))
+				{
+					LogEmptySuccess(merged, presentFull);
+					return true;
+				}
+				UlwCommitDecision decision = planner.Decide(timing.nowMs, timing.frameIntervalMs, timing.refreshMs,
+					timing.aligned, *timing.clock);
+				if (!presentFull && !decision.commit)
+				{
+					// 本帧照常画进纹理，只把脏区并入累计矩形，留给本周期最后赶得上的一帧（或进入空闲前）一起读回。
+					if (!hasAccumulated) accumulatedSinceMs = timing.nowMs;
+					accumulatedDirty = merged;
+					hasAccumulated = true;
+					++pipelineSummary.skipped;
+					return true;
+				}
+				if (timing.frameStartMs > 0.0) planner.OnFrameWorkMeasured(timing.nowMs - timing.frameStartMs);
+				// 整帧（Resize、恢复、输出交接、清屏等）不延后：调用方依赖它立即上屏。
+				const bool completeNow = presentFull || pacing.ShouldCompleteAtFrameEnd(false, timing.nowMs);
+				const IssueResult issued = IssueCommit(finalTexture, merged, presentFull, contentMs,
+					decision.deadlineMs, completeNow, CompletionPoint::Present, timing.nowMs, timing.refreshMs, presentFull);
+				waitedMs += issued.waitedMs;
+				if (!issued.ok) return false;
+				if (completeNow && !presentFull && timing.frameStartMs > 0.0)
+					LogPacingTransition(pacing.OnFrameMeasured(QpcMilliseconds() - timing.frameStartMs,
+						timing.frameIntervalMs, issued.currentWaitMs, timing.nowMs));
 				return true;
+			}
+
+			// C1 帧开头：有待完成提交时探测一次（不等待）。累计脏区不在这里拷出：此时纹理还是上一帧的内容，
+			// 拷出会占用本周期，挤掉本帧更新的内容（见 ServiceFrameEnd）。熔断后残留的累计脏区直接同步收尾。
+			bool ServiceFrameStart(ID3D11Texture2D* finalTexture, const UlwFrameTiming& timing, double& waitedMs)
+			{
+				if (pending.active)
+				{
+					const Completion probe = CompletePending(asyncFused, CompletionPoint::FrameStart);
+					waitedMs += probe.mapWaitMs;
+					if (!probe.ok) return false;
+				}
+				if (!asyncFused || !hasAccumulated || !finalTexture) return true;
+				const IssueResult issued = IssueCommit(finalTexture, accumulatedDirty, false, accumulatedSinceMs,
+					0.0, true, CompletionPoint::FrameStart, timing.nowMs, timing.refreshMs, true);
+				waitedMs += issued.waitedMs;
+				return issued.ok;
+			}
+
+			// 固定帧截止等待前（帧尾）：累计脏区到点就拷出。此时纹理已含本帧最新内容；
+			// 笔停在原地不再产生脏区时，也能在一个刷新周期内把最后内容提交上屏。
+			bool ServiceFrameEnd(ID3D11Texture2D* finalTexture, const UlwFrameTiming& timing, double& waitedMs)
+			{
+				if (!hasAccumulated || !finalTexture) return true;
+				const UlwCommitDecision decision = planner.Decide(timing.nowMs, timing.frameIntervalMs, timing.refreshMs,
+					timing.aligned, *timing.clock);
+				if (!decision.commit && !asyncFused) return true;
+				const bool completeNow = asyncFused || pacing.ShouldCompleteAtFrameEnd(false, timing.nowMs);
+				const IssueResult issued = IssueCommit(finalTexture, accumulatedDirty, false, accumulatedSinceMs,
+					decision.deadlineMs, completeNow, CompletionPoint::FrameEnd, timing.nowMs, timing.refreshMs, !decision.commit);
+				waitedMs += issued.waitedMs;
+				if (!issued.ok) return false;
+				// 与 Present 同口径反馈本帧耗时：只经帧尾提交时，即时模式的慢帧仍计数、流水模式的试验帧仍被评估。
+				if (completeNow && !asyncFused && timing.frameStartMs > 0.0)
+					LogPacingTransition(pacing.OnFrameMeasured(QpcMilliseconds() - timing.frameStartMs,
+						timing.frameIntervalMs, issued.currentWaitMs, timing.nowMs));
+				return true;
+			}
+
+			// C3 进入空闲等待前：阻塞完成待完成提交并拷出累计脏区，保证停笔后最后一帧上屏。
+			// textureValid=false（本帧光栅失败，最终纹理可能已被部分覆写）时只完成已冻结在槽里的提交，
+			// 累计脏区留给重建后的整帧（整帧会清空累计脏区）。
+			bool CompleteBeforeIdle(ID3D11Texture2D* finalTexture, double nowMs, double& waitedMs, bool textureValid = true)
+			{
+				if (textureValid && hasAccumulated && finalTexture)
+				{
+					const IssueResult issued = IssueCommit(finalTexture, accumulatedDirty, false, accumulatedSinceMs,
+						0.0, true, CompletionPoint::BeforeIdle, nowMs, 0.0, true);
+					waitedMs += issued.waitedMs;
+					return issued.ok;
+				}
+				if (textureValid) ClearAccumulated();
+				const Completion completion = CompletePending(true, CompletionPoint::BeforeIdle);
+				waitedMs += completion.mapWaitMs;
+				return completion.ok;
+			}
+
+			void LogPacingTransition(UlwReadbackTransition transition)
+			{
+				if (transition == UlwReadbackTransition::None) return;
+				DiagnosticOutput::Line() << "[Draw3Diag][ulw-pipeline] role=" << diagnosticRole << " mode="
+					<< (transition == UlwReadbackTransition::EnteredPipelined ? "pipelined reason=gpu-bound" : "immediate reason=trial-fast")
+					<< std::endl;
+			}
+
+			// 约每秒汇总一次（Debug 级别，默认不输出），不逐帧记录。
+			void MaybeLogPipelineSummary(double nowMs, double periodMs, bool aligned)
+			{
+				PipelineSummary& summary = pipelineSummary;
+				if (summary.startMs <= 0.0)
+				{
+					summary.startMs = nowMs;
+					return;
+				}
+				if (nowMs - summary.startMs < 1000.0) return;
+				const std::uint32_t commits = summary.commits;
+				DiagnosticOutput::Line() << "[Draw3Diag][ulw-pipeline] mode="
+					<< (pacing.Mode() == UlwReadbackMode::Pipelined ? "pipelined" : "immediate")
+					<< " immediate=" << summary.immediate << " deferred=" << summary.deferred
+					<< " probeHit=" << summary.probeHit << " backpressure=" << summary.backpressure
+					<< " frameEnd=" << summary.frameEnd << " beforeIdle=" << summary.beforeIdle << " skipped=" << summary.skipped
+					<< " mapWaitAvgMs=" << (commits ? summary.mapWaitSumMs / commits : 0.0)
+					<< " mapWaitMaxMs=" << summary.mapWaitMaxMs
+					<< " commitLagAvgMs=" << (commits ? summary.lagSumMs / commits : 0.0)
+					<< " commitLagMaxMs=" << summary.lagMaxMs
+					<< " rowsAvgMs=" << (commits ? summary.rowsSumMs / commits : 0.0)
+					<< " ulwAvgMs=" << (commits ? summary.ulwSumMs / commits : 0.0) << std::endl;
+				if (aligned || summary.alignedCommits)
+					DiagnosticOutput::Line() << "[Draw3Diag][ulw-align] aligned=" << summary.alignedCommits
+						<< " periodMs=" << periodMs << " marginMs=" << kCompositionDeadlineMarginMs
+						<< " leadAvgMs=" << (summary.alignedCommits ? summary.leadSumMs / summary.alignedCommits : 0.0)
+						<< " leadMinMs=" << summary.leadMinMs << " lateCount=" << summary.lateCount << std::endl;
+				summary = {};
+				summary.startMs = nowMs;
 			}
 		};
 
@@ -857,8 +1415,122 @@ namespace Inkeys::Drawing::Draw3
 		struct FrameLatencySummary
 		{
 			double startMs = 0.0, waitSumMs = 0.0, waitMaxMs = 0.0;
-			std::uint32_t acquired = 0, timeouts = 0;
+			std::uint32_t acquired = 0, timeouts = 0, repaid = 0, repayTimeouts = 0;
 		} frameLatencySummary;
+		// ULW 异步读回与 DWM 合成时钟（design §5.10/§5.11）。熔断只在本会话有效，Shutdown 清除。
+		bool ulwAsyncFused = false;
+		bool dwmComposing = false;
+		double ulwRefreshMs = kFrameLatencyDefaultRefreshMs;
+		const char* ulwRefreshSource = "default";
+		CompositionClock compositionClock;
+		double ulwFrameStartMs = 0.0;
+		double ulwFrameIntervalMs = 1000.0 / 120.0;
+		bool ulwTimingAligned = false;
+		const char* ulwAlignReason = nullptr; // 上一次记录的对齐状态，变化时记一行
+
+		bool UlwAsyncActive() const noexcept
+		{
+			return IsUlwMode(activeMode) && options.enableUlwAsyncReadback && !ulwAsyncFused &&
+				requestedOutputTarget == TransparentOutputTarget::PrimaryDrawpad;
+		}
+
+		void SyncUlwFuse() noexcept
+		{
+			if (!primaryUlwPresenter.asyncFused || ulwAsyncFused) return;
+			ulwAsyncFused = true;
+			DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "[Draw3Diag][ulw-pipeline] async readback tripped; "
+				"using synchronous readback for the rest of this session." << std::endl;
+		}
+
+		static CompositionTimingSample SampleCompositionTiming() noexcept
+		{
+			// Win8.1 起 hwnd 必须为空；空值在 Win7 上表示整个桌面合成的时序。
+			CompositionTimingSample sample;
+			DWM_TIMING_INFO timing = {};
+			timing.cbSize = sizeof(timing);
+			LARGE_INTEGER frequency = {};
+			if (FAILED(DwmGetCompositionTimingInfo(nullptr, &timing)) ||
+				!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0) return sample;
+			const double ticksToMs = 1000.0 / static_cast<double>(frequency.QuadPart);
+			sample.valid = true;
+			sample.vblankMs = static_cast<double>(timing.qpcVBlank) * ticksToMs; // 与 QpcMilliseconds 同一时间基准
+			sample.periodMs = static_cast<double>(timing.qpcRefreshPeriod) * ticksToMs;
+			return sample;
+		}
+
+		// 启动、DWM 合成状态变化与 Resize 时检测 DWM 是否在合成，刷新间隔来源 DWM → 显示器 → 60 Hz。
+		void RefreshUlwCompositionState(const char* reason) noexcept
+		{
+			if (!IsUlwMode(activeMode)) return;
+			BOOL enabled = FALSE;
+			dwmComposing = SUCCEEDED(DwmIsCompositionEnabled(&enabled)) && enabled;
+			ulwRefreshMs = 0.0;
+			ulwRefreshSource = "default";
+			if (dwmComposing)
+			{
+				const CompositionTimingSample sample = SampleCompositionTiming();
+				if (sample.valid && sample.periodMs >= kCompositionClockMinPeriodMs &&
+					sample.periodMs <= kCompositionClockMaxPeriodMs)
+				{
+					ulwRefreshMs = sample.periodMs;
+					ulwRefreshSource = "dwm";
+				}
+			}
+			if (ulwRefreshMs <= 0.0 && primaryWindow)
+			{
+				// DWM 未合成（Win7 Basic/经典主题/DWM 未运行）时 GDI 直接画屏，用窗口所在显示器的刷新率节流。
+				MONITORINFOEXW monitor = {};
+				monitor.cbSize = sizeof(monitor);
+				DEVMODEW mode = {};
+				mode.dmSize = sizeof(mode);
+				const HMONITOR handle = MonitorFromWindow(primaryWindow, MONITOR_DEFAULTTONEAREST);
+				if (handle && GetMonitorInfoW(handle, &monitor) &&
+					EnumDisplaySettingsW(monitor.szDevice, ENUM_CURRENT_SETTINGS, &mode) &&
+					mode.dmDisplayFrequency > 1 && mode.dmDisplayFrequency < 1000)
+				{
+					ulwRefreshMs = 1000.0 / static_cast<double>(mode.dmDisplayFrequency);
+					ulwRefreshSource = "display";
+				}
+			}
+			if (ulwRefreshMs <= 0.0) ulwRefreshMs = kFrameLatencyDefaultRefreshMs;
+			compositionClock.Invalidate();
+			DiagnosticOutput::Line() << "[Draw3Diag][ulw-dwm] reason=" << reason
+				<< " composing=" << (dwmComposing ? 1 : 0)
+				<< " refreshMs=" << ulwRefreshMs << " source=" << ulwRefreshSource
+				<< " asyncReadback=" << (options.enableUlwAsyncReadback && !ulwAsyncFused ? 1 : 0)
+				<< " align=" << (options.enableUlwCompositionAlign ? 1 : 0) << std::endl;
+		}
+
+		// 每次异步读回调用前组装帧时序；合成时钟约每 250 ms 重读一次，不逐帧调用 DWM。
+		UlwFrameTiming MakeUlwTiming(double nowMs) noexcept
+		{
+			if (dwmComposing && compositionClock.NeedsRefresh(nowMs))
+				compositionClock.Update(SampleCompositionTiming(), nowMs);
+			UlwFrameTiming timing;
+			timing.nowMs = nowMs;
+			timing.frameStartMs = ulwFrameStartMs;
+			timing.frameIntervalMs = ulwFrameIntervalMs;
+			timing.refreshMs = compositionClock.Valid() ? compositionClock.PeriodMs() : ulwRefreshMs;
+			timing.clock = &compositionClock;
+			const char* reason = "aligned";
+			if (!options.enableUlwCompositionAlign) reason = "disabled";
+			else if (!dwmComposing) reason = "not-composing";
+			else if (!compositionClock.Valid()) reason = "clock-invalid";
+			else if (primaryUlwPresenter.pacing.Mode() == UlwReadbackMode::Pipelined) reason = "pipelined";
+			else if (ClassifyCompositionCadence(timing.frameIntervalMs, timing.refreshMs) ==
+				CompositionCadence::CommitEveryFrame) reason = "non-divisor";
+			timing.aligned = std::strcmp(reason, "aligned") == 0;
+			ulwTimingAligned = timing.aligned;
+			if (!ulwAlignReason || std::strcmp(reason, ulwAlignReason) != 0)
+			{
+				// 对齐启停各记一行；非约数预设建议改为刷新率或其约数。
+				ulwAlignReason = reason;
+				DiagnosticOutput::Line() << "[Draw3Diag][ulw-align] aligned=" << (timing.aligned ? 1 : 0)
+					<< " reason=" << reason << " frameIntervalMs=" << timing.frameIntervalMs
+					<< " refreshMs=" << timing.refreshMs << std::endl;
+			}
+			return timing;
+		}
 
 		~Impl() { CloseFrameLatencyHandle(); }
 
@@ -892,6 +1564,8 @@ namespace Inkeys::Drawing::Draw3
 			FrameLatencySummary& summary = frameLatencySummary;
 			if (result.outcome == FrameLatencyWaitOutcome::Signaled) ++summary.acquired;
 			else ++summary.timeouts;
+			if (result.debtRepaid) ++summary.repaid;
+			if (result.debtRepayTimedOut) ++summary.repayTimeouts;
 			summary.waitSumMs += result.waitedMs;
 			summary.waitMaxMs = (std::max)(summary.waitMaxMs, result.waitedMs);
 			const double nowMs = QpcMilliseconds();
@@ -902,6 +1576,9 @@ namespace Inkeys::Drawing::Draw3
 				const std::uint32_t waits = summary.acquired + summary.timeouts;
 				DiagnosticOutput::Line() << "[Draw3Diag][latency] acquired=" << summary.acquired
 					<< " timeouts=" << summary.timeouts
+					<< " repaid=" << summary.repaid << " repayTimeouts=" << summary.repayTimeouts
+					<< " debt=" << frameLatencyGate.Debt()
+					<< " debtOverflowTotal=" << frameLatencyGate.TotalDebtOverflows()
 					<< " waitAvgMs=" << (waits ? summary.waitSumMs / waits : 0.0)
 					<< " waitMaxMs=" << summary.waitMaxMs
 					<< " timeoutMs=" << result.timeoutMs
@@ -977,7 +1654,18 @@ namespace Inkeys::Drawing::Draw3
 				text << "图形状态：" << state << "\n" << deviceInformation;
 				DXGI_SWAP_CHAIN_DESC1 description{};
 				const HRESULT result = swapChain ? swapChain->GetDesc1(&description) : E_NOINTERFACE;
-				if (SUCCEEDED(result))
+				if (IsUlwMode(activeMode) && !swapChain && renderer && renderer->backBufferTexture)
+				{
+					// ULW 不建交换链：最终目标是独立纹理，经 Staging 读回到 DIB 交给 UpdateLayeredWindow。
+					D3D11_TEXTURE2D_DESC finalDescription{};
+					renderer->backBufferTexture->GetDesc(&finalDescription);
+					text << "主画布呈现：UpdateLayeredWindow (ULW)\n辅助前置表面：UpdateLayeredWindow (ULW)\n最终目标：独立纹理 "
+						<< finalDescription.Width << "×" << finalDescription.Height << " BGRA8\n读回模式："
+						<< (options.enableUlwAsyncReadback && !ulwAsyncFused ? "异步（自适应，最多领先一帧）" : "同步")
+						<< "\nDWM 合成：" << (dwmComposing ? "开启" : "关闭") << "  刷新间隔：" << std::fixed
+						<< std::setprecision(2) << ulwRefreshMs << " ms（来源：" << ulwRefreshSource << "）\n";
+				}
+				else if (SUCCEEDED(result))
 				{
 					text << "主画布呈现：" << (IsDirectCompositionMode(activeMode) ? "DirectComposition" : "UpdateLayeredWindow (ULW)")
 						<< "\n辅助前置表面：UpdateLayeredWindow (ULW)\n交换链类型：" << (IsDirectCompositionMode(activeMode) ? "Composition" : "HWND")
@@ -1244,7 +1932,8 @@ namespace Inkeys::Drawing::Draw3
 					<< std::dec << " lastError=" << initializeError << std::endl;
 				return false;
 			}
-			if (!CreateSwapChain(mode))
+			// ULW 不建交换链（design §4）：Draw3 直接画到独立纹理，renderer 走离屏分支；ULW 从不 Present，交换链只会闲置一张缓冲。
+			if (!IsUlwMode(mode) && !CreateSwapChain(mode))
 			{
 				const DWORD initializeError = GetLastError();
 				beginFailure();
@@ -1252,9 +1941,13 @@ namespace Inkeys::Drawing::Draw3
 					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
-			// DComp 和 ULW 都输出实际 swapchain 描述，包含普通回退的 flags/effect/size。
-			LogSwapChainRuntimeDescription(TransparentPresentModeName(mode),
-				swapChain.Get(), "Draw3 created");
+			// DComp 输出实际 swapchain 描述，包含普通回退的 flags/effect/size。
+			if (swapChain)
+				LogSwapChainRuntimeDescription(TransparentPresentModeName(mode),
+					swapChain.Get(), "Draw3 created");
+			else
+				DiagnosticOutput::Line() << "Draw3 created " << TransparentPresentModeName(mode)
+					<< " without swapchain: final target is an offscreen texture " << width << "x" << height << "." << std::endl;
 
 			// 传递实际创建后端，不用适配器名称或 vendor 猜测 WARP。
 			if (!renderer->Init(graphics->device.Get(), graphics->context.Get(), swapChain.Get(), width, height,
@@ -1275,6 +1968,7 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 			DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "Active transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
+			RefreshUlwCompositionState("initialize");
 			return true;
 		}
 
@@ -1325,6 +2019,10 @@ namespace Inkeys::Drawing::Draw3
 		impl_->ReleaseAttempt();
 		impl_->frameLatencyGate = {}; // 熔断只在本会话有效。
 		impl_->frameLatencyTargetMs = 1000.0 / 120.0;
+		impl_->ulwAsyncFused = false;
+		impl_->ulwAlignReason = nullptr;
+		impl_->ulwTimingAligned = false;
+		impl_->ulwFrameStartMs = 0.0;
 		impl_->primaryWindow = nullptr;
 		impl_->selectionWindow = nullptr;
 		impl_->graphics = nullptr;
@@ -1427,6 +2125,17 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (impl_->requestedOutputTarget == target)
 			return impl_->requestedOutputRevision;
+		if (target != TransparentOutputTarget::PrimaryDrawpad && IsUlwMode(impl_->activeMode) &&
+			!impl_->recoveryPending && impl_->renderer)
+		{
+			// 切到辅助输出前先完成主画布的待完成读回并拷出累计脏区，主窗隐藏前停在最新画面。
+			// 失败时已安排恢复，帧循环随后在恢复检查中处理；待恢复时不 Map（设备可能已移除）。
+			double waitedMs = 0.0;
+			if (!impl_->primaryUlwPresenter.CompleteBeforeIdle(
+				impl_->renderer->backBufferTexture.Get(), QpcMilliseconds(), waitedMs))
+				impl_->SetFailure(E_FAIL);
+			impl_->SyncUlwFuse();
+		}
 		impl_->requestedOutputTarget = target;
 		if (++impl_->requestedOutputRevision == 0)
 			++impl_->requestedOutputRevision;
@@ -1547,6 +2256,8 @@ namespace Inkeys::Drawing::Draw3
 			// 辅助完整帧会按真实纹理/窗口尺寸重建，Resize 不把闲置大缓冲建回来。
 			impl_->selectionUlwPresenter.ReleaseReadbackResources();
 			impl_->selectionUlwPresenter.committedFullFrameClean = false;
+			// 窗口可能移到另一台显示器：重新检测刷新间隔，合成时钟下一次立即重读。
+			impl_->RefreshUlwCompositionState("resize");
 		}
 		if (!succeeded) impl_->SetFailure(E_FAIL);
 		else impl_->PublishInformation(false, "就绪");
@@ -1567,9 +2278,21 @@ namespace Inkeys::Drawing::Draw3
 		}
 		else if (IsUlwMode(impl_->activeMode))
 		{
-			succeeded = impl_->primaryUlwPresenter.Present(
+			UlwDirtyRectPresenter& presenter = impl_->primaryUlwPresenter;
+			// 熔断后残留的待完成提交/累计脏区仍经异步入口收尾（内部改走同步），不能被同步路径跳过。
+			if (impl_->UlwAsyncActive() || presenter.pending.active || presenter.hasAccumulated)
+			{
+				// 异步读回：Present 内的背压与即时完成的阻塞 Map 经帧外补等通道计入等待（design §5.7）。
+				const UlwFrameTiming timing = impl_->MakeUlwTiming(QpcMilliseconds());
+				double waitedMs = 0.0;
+				succeeded = presenter.PresentAsync(impl_->renderer->backBufferTexture.Get(), dirty, presentFull, timing, waitedMs);
+				impl_->presentLatencyWait.waitedMs += waitedMs;
+				impl_->SyncUlwFuse();
+				presenter.MaybeLogPipelineSummary(timing.nowMs, timing.refreshMs, timing.aligned);
+			}
+			else succeeded = presenter.Present(
 				impl_->renderer->backBufferTexture.Get(), dirty, presentFull); // ULW 需要 CPU 读回并调用 UpdateLayeredWindow。
-			impl_->lastObservation = impl_->primaryUlwPresenter.lastObservation;
+			impl_->lastObservation = presenter.lastObservation;
 			if (succeeded) impl_->dcompHandoffBarrier.Cancel();
 			else impl_->SetFailure(E_FAIL);
 		}
@@ -1707,8 +2430,74 @@ namespace Inkeys::Drawing::Draw3
 		bool succeeded = true;
 		if (IsDwmBlurBehindMode(impl_->activeMode)) succeeded = impl_->dwmBlurPresenter.Update();
 		if (IsDwmBlurBehind2Mode(impl_->activeMode)) succeeded = impl_->dwmExtendedPresenter.Update();
+		impl_->RefreshUlwCompositionState("composition-changed"); // WM_DWMCOMPOSITIONCHANGED / DPI 变化
 		if (!succeeded) impl_->SetFailure(E_FAIL);
 		return succeeded;
+	}
+
+	UlwFrameReport TransparentPresentationController::BeginUlwFrame(double frameStartMs, double targetFrameMs)
+	{
+		UlwFrameReport report;
+		if (!impl_) return report;
+		if (std::isfinite(targetFrameMs) && targetFrameMs > 0.0) impl_->ulwFrameIntervalMs = targetFrameMs;
+		impl_->ulwFrameStartMs = frameStartMs;
+		UlwDirtyRectPresenter& presenter = impl_->primaryUlwPresenter;
+		if (!IsUlwMode(impl_->activeMode) || impl_->recoveryPending || !impl_->renderer ||
+			impl_->requestedOutputTarget != TransparentOutputTarget::PrimaryDrawpad ||
+			(!presenter.pending.active && !presenter.hasAccumulated)) return report;
+		const UlwFrameTiming timing = impl_->MakeUlwTiming(QpcMilliseconds());
+		report.failed = !presenter.ServiceFrameStart(impl_->renderer->backBufferTexture.Get(), timing, report.waitedMs);
+		impl_->SyncUlwFuse();
+		if (report.failed) impl_->SetFailure(E_FAIL);
+		presenter.MaybeLogPipelineSummary(timing.nowMs, timing.refreshMs, timing.aligned);
+		return report;
+	}
+
+	void TransparentPresentationController::DiscardUlwAccumulated() noexcept
+	{
+		if (!impl_) return;
+		UlwDirtyRectPresenter& presenter = impl_->primaryUlwPresenter;
+		if (!presenter.hasAccumulated) return;
+		// 不 Map、不拷贝：最终纹理可能已被失败帧部分覆写。已冻结在槽里的提交仍有效，照常完成。
+		presenter.ClearAccumulated();
+		presenter.needsFullReadback = true;
+	}
+
+	UlwFrameReport TransparentPresentationController::ServiceUlwBeforeFrameWait()
+	{
+		UlwFrameReport report;
+		if (!impl_) return report;
+		UlwDirtyRectPresenter& presenter = impl_->primaryUlwPresenter;
+		if (!IsUlwMode(impl_->activeMode) || impl_->recoveryPending || !impl_->renderer ||
+			impl_->requestedOutputTarget != TransparentOutputTarget::PrimaryDrawpad || !presenter.hasAccumulated) return report;
+		const UlwFrameTiming timing = impl_->MakeUlwTiming(QpcMilliseconds());
+		report.failed = !presenter.ServiceFrameEnd(impl_->renderer->backBufferTexture.Get(), timing, report.waitedMs);
+		impl_->SyncUlwFuse();
+		if (report.failed) impl_->SetFailure(E_FAIL);
+		return report;
+	}
+
+	UlwFrameReport TransparentPresentationController::CompleteUlwBeforeIdle(bool textureValid)
+	{
+		UlwFrameReport report;
+		if (!impl_) return report;
+		impl_->ulwFrameStartMs = 0.0; // 空闲期间的帧外 Present 不计入帧工作耗时
+		UlwDirtyRectPresenter& presenter = impl_->primaryUlwPresenter;
+		if (!IsUlwMode(impl_->activeMode) || impl_->recoveryPending || !impl_->renderer ||
+			(!presenter.pending.active && !presenter.hasAccumulated)) return report;
+		report.failed = !presenter.CompleteBeforeIdle(impl_->renderer->backBufferTexture.Get(),
+			QpcMilliseconds(), report.waitedMs, textureValid);
+		impl_->SyncUlwFuse();
+		if (report.failed) impl_->SetFailure(E_FAIL);
+		return report;
+	}
+
+	double TransparentPresentationController::UlwFramePhaseAdjustMs(double frameStartMs) const
+	{
+		// 只调整固定帧截止等待的目标；打断式唤醒（Down/Up 等）仍立即返回，不等对齐。
+		if (!impl_ || !impl_->UlwAsyncActive() || !impl_->ulwTimingAligned || impl_->recoveryPending) return 0.0;
+		return impl_->primaryUlwPresenter.planner.PhaseAdjustMs(frameStartMs + impl_->ulwFrameIntervalMs,
+			impl_->ulwFrameIntervalMs, impl_->compositionClock);
 	}
 
 	void TransparentPresentationController::MarkRuntimeFailure(HRESULT result) noexcept
@@ -1927,6 +2716,64 @@ namespace Inkeys::Drawing::Draw3
 			}
 			std::fputs("UlwDirtyCopyBenchmark pixel_diagnostics=PASS cases=8\n", stdout);
 
+			// 单遍 SIMD 与原两遍标量逐字节对照：随机像素（含 α=0/127/128/255 与非法预乘）、各种宽度/起点/行尾、主画布与辅助两种。
+			{
+				std::uint32_t seed = 0x13579BDFu;
+				const auto nextRandom = [&seed]() noexcept
+				{
+					seed = seed * 1664525u + 1013904223u;
+					return seed >> 8;
+				};
+				size_t cases = 0;
+				for (int width = 1; width <= 37; ++width)
+				{
+					for (int left = 0; left <= 5; ++left)
+					{
+						for (bool underlay : { false, true })
+						{
+							for (int flavor = 0; flavor < 3; ++flavor)
+							{
+								const int dibWidth = left + width + 3;
+								constexpr int rows = 3;
+								const size_t rowPitch = static_cast<size_t>(dibWidth) * 4 + 4 * (flavor + 1);
+								std::vector<BYTE> source(rowPitch * rows);
+								for (size_t offset = 0; offset < source.size(); offset += 4)
+								{
+									static constexpr BYTE edgeAlphas[] = { 0, 1, 126, 127, 128, 129, 254, 255 };
+									const std::uint32_t random = nextRandom();
+									// flavor 0：全透明；1：合法预乘；2：随机（含非法预乘）。
+									const BYTE alpha = flavor == 0 ? 0 : (random & 1) ? edgeAlphas[(random >> 1) & 7] : static_cast<BYTE>(random >> 4);
+									source[offset + 3] = alpha;
+									for (size_t channel = 0; channel < 3; ++channel)
+									{
+										const BYTE value = static_cast<BYTE>(nextRandom());
+										source[offset + channel] = flavor == 2 ? value : (alpha ? static_cast<BYTE>(value % (alpha + 1)) : 0);
+									}
+								}
+								std::vector<BYTE> simdDib(static_cast<size_t>(dibWidth) * rows * 4, 0x5A);
+								std::vector<BYTE> scalarDib = simdDib;
+								const RECT dirty{ left, 0, left + width, rows };
+								const UlwDirtyCopyResult simd = CopyAndInspectUlwDirtyRows(source.data(), rowPitch,
+									simdDib.data(), dibWidth, rows, dirty, false, underlay, [] {});
+								const UlwDirtyCopyResult scalar = CopyAndInspectUlwDirtyRows<false, true>(source.data(), rowPitch,
+									scalarDib.data(), dibWidth, rows, dirty, false, underlay, [] {});
+								if (simdDib != scalarDib || simd.allZeroAlpha != scalar.allZeroAlpha ||
+									simd.premultipliedAlphaValid != scalar.premultipliedAlphaValid ||
+									simd.fullFrameAllZeroAlpha != scalar.fullFrameAllZeroAlpha)
+								{
+									std::fprintf(stderr, "UlwDirtyCopyBenchmark simd/scalar mismatch width=%d left=%d underlay=%d flavor=%d\n",
+										width, left, underlay ? 1 : 0, flavor);
+									return 1;
+								}
+								++cases;
+							}
+						}
+					}
+				}
+				std::fprintf(stdout, "UlwDirtyCopyBenchmark simd_equivalence=PASS cases=%zu simd=%d\n",
+					cases, kUlwSimdCopyAvailable ? 1 : 0);
+			}
+
 			enum class PixelPattern { Mixed, Transparent, Half, InvalidAlpha };
 			struct Scenario
 			{
@@ -1962,7 +2809,7 @@ namespace Inkeys::Drawing::Draw3
 			LARGE_INTEGER frequency = {};
 			if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0) return 1;
 			std::fprintf(stdout,
-				"UlwDirtyCopyBenchmark variant=separate_dib_scan metric=cpu_copy_plus_alpha_scan sample=single_call warmup_blocks=%d measured_blocks=%d qpc_frequency=%lld\n",
+				"UlwDirtyCopyBenchmark variants=simd_single_pass,scalar_two_pass metric=cpu_copy_plus_alpha_scan sample=single_call warmup_blocks=%d measured_blocks=%d qpc_frequency=%lld\n",
 				warmupBlocks, measuredBlocks, static_cast<long long>(frequency.QuadPart));
 
 			for (const Scenario& scenario : scenarios)
@@ -2018,45 +2865,63 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 
-				for (int block = 0; block < warmupBlocks + measuredBlocks; ++block)
+				// 两种实现各测一遍：simd_single_pass 为生产路径，scalar_two_pass 为原两遍标量（基准与回退）。
+				for (const bool scalarVariant : { false, true })
 				{
-					std::copy(initial.begin(), initial.end(), dib.begin());
-					UlwDirtyCopyResult result;
-					ULONG64 startCycles = 0;
-					ULONG64 stopCycles = 0;
-					bool cyclesAvailable = QueryThreadCycleTime(GetCurrentThread(), &startCycles) != FALSE;
-					LARGE_INTEGER start = {};
-					LARGE_INTEGER stop = {};
-					if (!QueryPerformanceCounter(&start)) return 1;
-					result = CopyAndInspectUlwDirtyRows(source.data(), rowPitch, dib.data(),
-						scenario.width, scenario.height, scenario.dirty, scenario.presentFull,
-						scenario.applyPrimaryHitUnderlay, [] {});
-					if (!QueryPerformanceCounter(&stop)) return 1;
-					cyclesAvailable = cyclesAvailable &&
-						QueryThreadCycleTime(GetCurrentThread(), &stopCycles) != FALSE;
-					if (result.allZeroAlpha != scenario.allZeroAlpha ||
-						result.premultipliedAlphaValid != scenario.premultipliedAlphaValid ||
-						result.fullFrameAllZeroAlpha != scenario.fullFrameAllZeroAlpha ||
-						std::memcmp(dib.data(), expected.data(), dib.size()) != 0)
+					const char* variantName = scalarVariant ? "scalar_two_pass" : "simd_single_pass";
+					long long totalTicks = 0;
+					long long minimumTicks = (std::numeric_limits<long long>::max)();
+					for (int block = 0; block < warmupBlocks + measuredBlocks; ++block)
 					{
-						std::fprintf(stderr, "UlwDirtyCopyBenchmark mismatch scenario=%s block=%d\n",
-							scenario.name, block);
-						return 1;
+						std::copy(initial.begin(), initial.end(), dib.begin());
+						UlwDirtyCopyResult result;
+						ULONG64 startCycles = 0;
+						ULONG64 stopCycles = 0;
+						bool cyclesAvailable = QueryThreadCycleTime(GetCurrentThread(), &startCycles) != FALSE;
+						LARGE_INTEGER start = {};
+						LARGE_INTEGER stop = {};
+						if (!QueryPerformanceCounter(&start)) return 1;
+						result = scalarVariant
+							? CopyAndInspectUlwDirtyRows<false, true>(source.data(), rowPitch, dib.data(),
+								scenario.width, scenario.height, scenario.dirty, scenario.presentFull,
+								scenario.applyPrimaryHitUnderlay, [] {})
+							: CopyAndInspectUlwDirtyRows(source.data(), rowPitch, dib.data(),
+								scenario.width, scenario.height, scenario.dirty, scenario.presentFull,
+								scenario.applyPrimaryHitUnderlay, [] {});
+						if (!QueryPerformanceCounter(&stop)) return 1;
+						cyclesAvailable = cyclesAvailable &&
+							QueryThreadCycleTime(GetCurrentThread(), &stopCycles) != FALSE;
+						if (result.allZeroAlpha != scenario.allZeroAlpha ||
+							result.premultipliedAlphaValid != scenario.premultipliedAlphaValid ||
+							result.fullFrameAllZeroAlpha != scenario.fullFrameAllZeroAlpha ||
+							std::memcmp(dib.data(), expected.data(), dib.size()) != 0)
+						{
+							std::fprintf(stderr, "UlwDirtyCopyBenchmark mismatch scenario=%s variant=%s block=%d\n",
+								scenario.name, variantName, block);
+							return 1;
+						}
+						if (block < warmupBlocks) continue;
+						const long long ticks = static_cast<long long>(stop.QuadPart - start.QuadPart);
+						totalTicks += ticks;
+						minimumTicks = (std::min)(minimumTicks, ticks);
+						std::uint64_t hash = 14695981039346656037ull;
+						for (BYTE value : dib) hash = (hash ^ value) * 1099511628211ull;
+						for (BYTE flag : { static_cast<BYTE>(result.allZeroAlpha),
+							static_cast<BYTE>(result.premultipliedAlphaValid),
+							static_cast<BYTE>(result.fullFrameAllZeroAlpha) })
+							hash = (hash ^ flag) * 1099511628211ull;
+						std::fprintf(stdout,
+							"UlwDirtyCopyBenchmark scenario=%s variant=%s block=%d iterations=1 qpc_ticks=%lld cycles_available=%d thread_cycles=%llu hash=%016llx all_zero=%d premul_valid=%d full_zero=%d\n",
+							scenario.name, variantName, block - warmupBlocks + 1,
+							ticks, cyclesAvailable ? 1 : 0,
+							static_cast<unsigned long long>(cyclesAvailable ? stopCycles - startCycles : 0),
+							static_cast<unsigned long long>(hash), result.allZeroAlpha ? 1 : 0,
+							result.premultipliedAlphaValid ? 1 : 0, result.fullFrameAllZeroAlpha ? 1 : 0);
 					}
-					if (block < warmupBlocks) continue;
-					std::uint64_t hash = 14695981039346656037ull;
-					for (BYTE value : dib) hash = (hash ^ value) * 1099511628211ull;
-					for (BYTE flag : { static_cast<BYTE>(result.allZeroAlpha),
-						static_cast<BYTE>(result.premultipliedAlphaValid),
-						static_cast<BYTE>(result.fullFrameAllZeroAlpha) })
-						hash = (hash ^ flag) * 1099511628211ull;
-					std::fprintf(stdout,
-						"UlwDirtyCopyBenchmark scenario=%s block=%d iterations=1 qpc_ticks=%lld cycles_available=%d thread_cycles=%llu hash=%016llx all_zero=%d premul_valid=%d full_zero=%d\n",
-						scenario.name, block - warmupBlocks + 1,
-						static_cast<long long>(stop.QuadPart - start.QuadPart), cyclesAvailable ? 1 : 0,
-						static_cast<unsigned long long>(cyclesAvailable ? stopCycles - startCycles : 0),
-						static_cast<unsigned long long>(hash), result.allZeroAlpha ? 1 : 0,
-						result.premultipliedAlphaValid ? 1 : 0, result.fullFrameAllZeroAlpha ? 1 : 0);
+					const double ticksToMicroseconds = 1000000.0 / static_cast<double>(frequency.QuadPart);
+					std::fprintf(stdout, "UlwDirtyCopyBenchmark summary scenario=%s variant=%s avg_us=%.2f min_us=%.2f\n",
+						scenario.name, variantName, static_cast<double>(totalTicks) / measuredBlocks * ticksToMicroseconds,
+						static_cast<double>(minimumTicks) * ticksToMicroseconds);
 				}
 			}
 			std::fflush(stdout);
@@ -2072,5 +2937,177 @@ namespace Inkeys::Drawing::Draw3
 			std::fputs("UlwDirtyCopyBenchmark unknown exception\n", stderr);
 			return 2;
 		}
+	}
+
+	int RunUlwPipelineSelfTest() noexcept
+	{
+		// 双槽异步读回的 DIB 逐字节对照：同一张最终纹理，异步 presenter 与同步 presenter 各自读回，
+		// 全部完成后两张 DIB 必须相同。窗口是从不显示的分层弹出窗，测试结束即销毁，不需要人工操作。
+		HWND window = nullptr;
+		const wchar_t* className = L"InkeysUlwPipelineSelfTest";
+		const HINSTANCE instance = GetModuleHandleW(nullptr);
+		int failures = 0;
+		const auto check = [&](bool condition, const char* name)
+		{
+			if (!condition) { ++failures; std::fprintf(stderr, "[UlwPipeline] FAIL %s\n", name); }
+			return condition;
+		};
+		try
+		{
+			Microsoft::WRL::ComPtr<ID3D11Device> device;
+			Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+			constexpr D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
+			D3D_FEATURE_LEVEL level = {};
+			if (!check(SUCCEEDED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+				levels, ARRAYSIZE(levels), D3D11_SDK_VERSION, device.GetAddressOf(), &level, context.GetAddressOf())), "WARP device"))
+				return 1;
+			WNDCLASSEXW windowClass = { sizeof(windowClass) };
+			windowClass.lpfnWndProc = DefWindowProcW;
+			windowClass.hInstance = instance;
+			windowClass.lpszClassName = className;
+			RegisterClassExW(&windowClass);
+			constexpr int width = 64;
+			constexpr int height = 48;
+			window = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, className, L"", WS_POPUP,
+				-32000, -32000, width, height, nullptr, nullptr, instance, nullptr);
+			if (!check(window != nullptr, "hidden layered window")) return 1;
+
+			D3D11_TEXTURE2D_DESC finalDescription = {};
+			finalDescription.Width = width;
+			finalDescription.Height = height;
+			finalDescription.MipLevels = 1;
+			finalDescription.ArraySize = 1;
+			finalDescription.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+			finalDescription.SampleDesc.Count = 1;
+			finalDescription.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> finalTexture;
+			if (!check(SUCCEEDED(device->CreateTexture2D(&finalDescription, nullptr, finalTexture.GetAddressOf())), "final texture"))
+				return 1;
+
+			std::uint32_t seed = 0x2468ACE1u;
+			const auto nextRandom = [&seed]() noexcept { seed = seed * 1664525u + 1013904223u; return seed >> 8; };
+			// 往最终纹理的 rect 写入随机预乘像素，模拟一帧合成。
+			const auto drawFrame = [&](RECT rect)
+			{
+				const size_t rowPitch = static_cast<size_t>(rect.right - rect.left) * 4;
+				std::vector<BYTE> pixels(rowPitch * static_cast<size_t>(rect.bottom - rect.top));
+				for (size_t offset = 0; offset < pixels.size(); offset += 4)
+				{
+					const BYTE alpha = static_cast<BYTE>(nextRandom());
+					pixels[offset + 3] = alpha;
+					for (size_t channel = 0; channel < 3; ++channel)
+						pixels[offset + channel] = static_cast<BYTE>(nextRandom() % (static_cast<std::uint32_t>(alpha) + 1));
+				}
+				const D3D11_BOX box = { static_cast<UINT>(rect.left), static_cast<UINT>(rect.top), 0,
+					static_cast<UINT>(rect.right), static_cast<UINT>(rect.bottom), 1 };
+				context->UpdateSubresource(finalTexture.Get(), 0, &box, pixels.data(), static_cast<UINT>(rowPitch), 0);
+			};
+			const auto randomRect = [&]()
+			{
+				const LONG left = static_cast<LONG>(nextRandom() % (width - 1));
+				const LONG top = static_cast<LONG>(nextRandom() % (height - 1));
+				const LONG right = left + 1 + static_cast<LONG>(nextRandom() % (width - left));
+				const LONG bottom = top + 1 + static_cast<LONG>(nextRandom() % (height - top));
+				return RECT{ left, top, (std::min)(right, static_cast<LONG>(width)), (std::min)(bottom, static_cast<LONG>(height)) };
+			};
+
+			CompositionClock invalidClock;
+			const auto runScenario = [&](const char* name, double frameIntervalMs, bool forcePipelined, int frames,
+				bool resizeMidway, bool expectSkips)
+			{
+				UlwDirtyRectPresenter asyncPresenter;
+				UlwDirtyRectPresenter syncPresenter;
+				asyncPresenter.diagnosticRole = syncPresenter.diagnosticRole = "SelfTest";
+				asyncPresenter.applyPrimaryHitUnderlay = syncPresenter.applyPrimaryHitUnderlay = true;
+				if (!check(asyncPresenter.Initialize(window, device.Get(), context.Get(), width, height) &&
+					syncPresenter.Initialize(window, device.Get(), context.Get(), width, height), name)) return;
+				if (forcePipelined)
+					for (int sample = 0; sample < 3; ++sample)
+						asyncPresenter.pacing.OnFrameMeasured(frameIntervalMs * 3.0, frameIntervalMs, frameIntervalMs, 0.0);
+				check(!forcePipelined || asyncPresenter.pacing.Mode() == UlwReadbackMode::Pipelined, "scenario entered pipelined");
+				drawFrame(RECT{ 0, 0, width, height });
+				double nowMs = 1000.0;
+				std::uint32_t skippedBefore = 0;
+				bool ok = true;
+				for (int frame = 0; frame < frames && ok; ++frame)
+				{
+					// 第一帧整帧；之后随机脏区（相邻帧常重叠，验证双槽按顺序写 DIB）。
+					const bool full = frame == 0;
+					const RECT dirty = full ? RECT{ 0, 0, width, height } : randomRect();
+					UlwFrameTiming timing;
+					timing.nowMs = nowMs;
+					timing.frameStartMs = nowMs - 0.5;
+					timing.frameIntervalMs = frameIntervalMs;
+					timing.refreshMs = 1000.0 / 60.0;
+					timing.clock = &invalidClock;
+					double waitedMs = 0.0;
+					// C1 在本帧绘制之前：探测上一帧、到点拷出累计脏区。
+					if (frame % 5 == 4) ok = asyncPresenter.ServiceFrameStart(finalTexture.Get(), timing, waitedMs);
+					if (!full) drawFrame(dirty);
+					ok = ok && asyncPresenter.PresentAsync(finalTexture.Get(), dirty, full, timing, waitedMs);
+					ok = ok && syncPresenter.Present(finalTexture.Get(), dirty, full);
+					// 帧尾（固定帧截止等待前，晚于 Present 约 0.6 帧）：累计脏区到点拷出。
+					if (frame % 3 == 2)
+					{
+						UlwFrameTiming frameEnd = timing;
+						frameEnd.nowMs += frameIntervalMs * 0.6;
+						ok = ok && asyncPresenter.ServiceFrameEnd(finalTexture.Get(), frameEnd, waitedMs);
+					}
+					skippedBefore += asyncPresenter.pipelineSummary.skipped;
+					asyncPresenter.pipelineSummary.skipped = 0;
+					if (resizeMidway && frame == frames / 2)
+					{
+						// Resize 丢弃待完成提交与累计脏区，下一次 Present 必须整帧读回。
+						ok = ok && asyncPresenter.Resize(width, height);
+						check(!asyncPresenter.pending.active && !asyncPresenter.hasAccumulated && asyncPresenter.needsFullReadback,
+							"resize discards pipeline and requests full readback");
+					}
+					nowMs += frameIntervalMs;
+				}
+				check(ok, name);
+				double waitedMs = 0.0;
+				check(asyncPresenter.CompleteBeforeIdle(finalTexture.Get(), nowMs, waitedMs), "complete before idle");
+				check(!asyncPresenter.pending.active && !asyncPresenter.hasAccumulated, "idle leaves nothing pending");
+				check(!expectSkips || skippedBefore > 0, "throttle skipped frames");
+				// 节流场景必须真的经帧尾拷出过累计脏区，否则帧尾路径没有被 DIB 对照覆盖。
+				// 流水模式下帧尾拷出会延后，由 C1/C2 完成并计入那两处，这里只对即时模式断言。
+				check(!expectSkips || forcePipelined || asyncPresenter.pipelineSummary.frameEnd > 0,
+					"throttle scenario exercised frame-end flush");
+				// 路径断言：流水场景必须真的走到延后与背压，否则这次 DIB 对照没有覆盖异步顺序。
+				check(!forcePipelined || (asyncPresenter.pipelineSummary.deferred > 0 &&
+					asyncPresenter.pipelineSummary.backpressure > 0), "pipelined scenario exercised deferred and backpressure");
+				const size_t dibBytes = static_cast<size_t>(width) * height * 4;
+				const bool same = asyncPresenter.dibBits && syncPresenter.dibBits &&
+					std::memcmp(asyncPresenter.dibBits, syncPresenter.dibBits, dibBytes) == 0;
+				if (!check(same, "async DIB equals synchronous DIB"))
+					std::fprintf(stderr, "[UlwPipeline] scenario=%s DIB mismatch\n", name);
+				std::fprintf(stdout, "UlwPipeline scenario=%s frames=%d skipped=%u deferred=%u backpressure=%u probeHit=%u immediate=%u frameEnd=%u beforeIdle=%u pass=%d\n",
+					name, frames, skippedBefore, asyncPresenter.pipelineSummary.deferred, asyncPresenter.pipelineSummary.backpressure,
+					asyncPresenter.pipelineSummary.probeHit, asyncPresenter.pipelineSummary.immediate,
+					asyncPresenter.pipelineSummary.frameEnd, asyncPresenter.pipelineSummary.beforeIdle, same ? 1 : 0);
+				asyncPresenter.Reset();
+				syncPresenter.Reset();
+			};
+			runScenario("immediate_60", 1000.0 / 60.0, false, 40, false, false);
+			runScenario("pipelined_60", 1000.0 / 60.0, true, 60, false, false);
+			runScenario("throttle_240", 1000.0 / 240.0, false, 80, false, true);
+			runScenario("pipelined_throttle_240", 1000.0 / 240.0, true, 80, false, true);
+			runScenario("pipelined_resize", 1000.0 / 60.0, true, 40, true, false);
+		}
+		catch (const std::exception& error)
+		{
+			std::fprintf(stderr, "[UlwPipeline] exception: %s\n", error.what());
+			failures += 1;
+		}
+		catch (...)
+		{
+			std::fputs("[UlwPipeline] unknown exception\n", stderr);
+			failures += 1;
+		}
+		if (window) DestroyWindow(window);
+		UnregisterClassW(className, instance);
+		std::fprintf(stdout, "UlwPipeline failures=%d\n", failures);
+		std::fflush(stdout);
+		return failures == 0 ? 0 : 1;
 	}
 }

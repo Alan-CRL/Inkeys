@@ -1052,6 +1052,11 @@
         "N": "waitable 模式下啟用等待",
         "E": "在 Windows 8.1 及以上系統中，防止畫面格堆積造成的延遲。"
       },
+      "UlwAsyncReadback":
+      {
+        "N": "ULW 模式下非同步讀回",
+        "E": "在 Windows 7 等使用 ULW 呈現的系統上，讓 CPU 運算與 GPU 繪製同時進行，並按顯示器刷新時機提交畫面，減少卡頓與延遲。"
+      },
       "UnthrottledMouseMove":
       {
         "N": "繪畫時滑鼠移動不受畫布幀率限制",

@@ -1052,6 +1052,11 @@
         "N": "Activer l’attente en mode waitable",
         "E": "Sous Windows 8.1 et versions ultérieures, évite la latence due à l’accumulation d’images."
       },
+      "UlwAsyncReadback":
+      {
+        "N": "Relecture asynchrone en mode ULW",
+        "E": "Sur les systèmes qui affichent via ULW, comme Windows 7, permet au calcul CPU et au dessin GPU de se dérouler en parallèle et soumet les images au rythme de rafraîchissement de l'écran, pour réduire les saccades et la latence."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Ne pas limiter les mouvements de la souris à la fréquence d’images du canevas pendant le dessin",

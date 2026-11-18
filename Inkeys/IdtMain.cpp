@@ -1,4 +1,4 @@
-/*
+﻿/*
  * @file		IdtMain.cpp
  * @brief		智绘教项目中心源文件
  * @note		用于初始化智绘教并调用相关模块
@@ -2095,6 +2095,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		L"--draw3-ulw-copy-benchmark", -1, TRUE) == CSTR_EQUAL)
 		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunUlwDirtyCopyBenchmark(); });
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
+		L"--draw3-ulw-pipeline-test", -1, TRUE) == CSTR_EQUAL)
+		return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunUlwPipelineSelfTest(); });
+	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
 		L"--page-control-hidden-test", -1, TRUE) == CSTR_EQUAL)
 		return Inkeys::UI::PageControl::RunHiddenWindowTests();
 	if (lpCmdLine && CompareStringOrdinal(lpCmdLine, -1,
@@ -3917,6 +3920,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			configOnce.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 		draw3StartOptions.enableWaitableWait =
 			configOnce.Experimental.Inkeys3.Draw3.EnableWaitableWait;
+		draw3StartOptions.enableUlwAsyncReadback =
+			configOnce.Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback;
+		draw3StartOptions.enableUlwCompositionAlign =
+			configOnce.Experimental.Inkeys3.Draw3.UlwCompositionAlign;
 		const auto whiteboardDefault = config.Drawing.Whiteboard.DefaultTheme.load();
 		draw3StartOptions.whiteboardDefaultTheme = { whiteboardDefault.backgroundRgb,
 			static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(whiteboardDefault.pattern) };

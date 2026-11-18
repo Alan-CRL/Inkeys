@@ -15481,6 +15481,7 @@ namespace Inkeys::Drawing::Draw3
 				presentation_.MarkRuntimeFailure(E_FAIL);
 				graphicsRecoveryPending_ = true;
 			}
+			presentation_.DiscardUlwAccumulated(); // 合成失败可能已部分覆写最终纹理，ULW 累计脏区不能再读回
 			window_.RequestFullPresent();
 			return; // 合成未完成时不把透明空帧提交给窗口。
 		}
@@ -15515,6 +15516,7 @@ namespace Inkeys::Drawing::Draw3
 				presentation_.MarkRuntimeFailure(E_FAIL);
 				graphicsRecoveryPending_ = true;
 			}
+			presentation_.DiscardUlwAccumulated(); // 合成失败可能已部分覆写最终纹理，ULW 累计脏区不能再读回
 			window_.RequestFullPresent();
 			return;
 		}
@@ -18715,6 +18717,27 @@ namespace Inkeys::Drawing::Draw3
 			return penSample.valid && penSample.inContact && !penFeedbackSuppressed &&
 				!window_.TouchPanActive() && !suppressPenUntilRelease;
 		};
+		// C3：进入任何空闲等待前，阻塞完成 ULW 异步读回的待完成帧并拷出被节流累计的脏区，保证停笔后最后一帧上屏。
+		// 其余模式立即返回。失败时已安排恢复：请求整帧唤醒下一帧，由帧开头的恢复流程处理。
+		auto completeUlwBeforeIdle = [&](bool textureValid = true) -> bool
+		{
+			const UlwFrameReport report = presentation_.CompleteUlwBeforeIdle(textureValid);
+			frameLatencyWaitMs_ += report.waitedMs;
+			if (!report.failed) return true;
+			graphicsRecoveryPending_ = presentation_.RecoveryPending();
+			window_.RequestFullPresent();
+			return false;
+		};
+		// 固定帧截止等待前：ULW 被节流累计的脏区到点就拷出（纹理已含本帧最新内容）。放在计算本帧工作耗时之前，
+		// 拷出的耗时由帧预算吸收，其中阻塞 Map 计入等待。失败时同 C3 处理。
+		auto serviceUlwBeforeFrameWait = [&]()
+		{
+			const UlwFrameReport report = presentation_.ServiceUlwBeforeFrameWait();
+			frameLatencyWaitMs_ += report.waitedMs;
+			if (!report.failed) return;
+			graphicsRecoveryPending_ = presentation_.RecoveryPending();
+			window_.RequestFullPresent();
+		};
 		auto buildDrawingCursorVisuals = [&]()
 		{
 			currentCursorVisuals.clear();
@@ -21521,6 +21544,8 @@ namespace Inkeys::Drawing::Draw3
 			if (outputTargetChanged)
 			{
 				presentation_.SetOutputTarget(expectedOutputTarget);
+				// 切走前 ULW 主画布收尾失败时呈现器已安排恢复：合入本帧恢复标志，紧随其后的恢复分支处理。
+				if (presentation_.RecoveryPending()) graphicsRecoveryPending_ = true;
 				appliedSelectionMode = selectionMode;
 				auxiliaryCleanVerificationPending = selectionUsesAuxiliary;
 			}
@@ -21780,6 +21805,20 @@ namespace Inkeys::Drawing::Draw3
 				{
 					// 熔断已安排恢复：下一轮在帧开头重建为不带 waitable 标志的交换链并整帧重放。
 					graphicsRecoveryPending_ = presentation_.RecoveryPending();
+					continue;
+				}
+			}
+			{
+				// C1：ULW 异步读回时探测上一帧是否就绪（不等待），被节流累计的脏区到点时拷出提交。
+				// 其中的阻塞 Map（流水模式熔断后或即时模式拷出累计脏区）计入等待，不计入工作耗时。
+				const UlwFrameReport ulwFrame = presentation_.BeginUlwFrame(
+					frameStartMs, 1000.0 / configuration_.timingProfile.target_fps);
+				frameLatencyWaitMs_ += ulwFrame.waitedMs;
+				if (metricsState_) metricsState_->frame.latencyWaitMs += ulwFrame.waitedMs;
+				if (ulwFrame.failed)
+				{
+					graphicsRecoveryPending_ = presentation_.RecoveryPending();
+					window_.RequestFullPresent();
 					continue;
 				}
 			}
@@ -22212,6 +22251,8 @@ namespace Inkeys::Drawing::Draw3
 				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty) &&
 				!compositionMaintenance.empty())
 			{
+				// 后台预建前先让 ULW 最后一帧上屏，不让它排在大量 tile 之后。
+				if (!completeUlwBeforeIdle()) continue;
 				// 每个 tile 之间先检查输入，避免后台预建拉长下一笔 Down 的排队时间。
 				if (tryConsumeOneIngress(record))
 				{
@@ -22243,6 +22284,7 @@ namespace Inkeys::Drawing::Draw3
 				!speedEraserHoverAnimating && !shapePreviewSlot.held &&
 				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty))
 			{
+				if (!completeUlwBeforeIdle()) continue; // idle/Hold 等待前 ULW 最后一帧必须上屏。
 				if (metrics_) metrics_->BeginIdle(frameStartMs);
 				if (metricsState_) metricsState_->Finish(); // idle/Hold等待不能混入render wall。
 				lastActiveFrameStartMs = 0.0;
@@ -23539,6 +23581,8 @@ namespace Inkeys::Drawing::Draw3
 				}
 				// CPU 点和文档仍为权威；未完成的 GPU 帧不能作为可见回执。
 				activeLayerRebuildPending = true;
+				// ULW 被节流累计的脏区若在之后读回，会拿到部分覆写的最终纹理：丢弃并改为下一次整帧读回。
+				presentation_.DiscardUlwAccumulated();
 				consecutiveRasterFailures = std::min(consecutiveRasterFailures + 1, 3u);
 				const HRESULT deviceReason = renderer_.device
 					? renderer_.device->GetDeviceRemovedReason() : E_FAIL;
@@ -23681,6 +23725,8 @@ namespace Inkeys::Drawing::Draw3
 			if (rasterSubmissionFailed && (active.empty() || eraserIdle))
 			{
 				// 错误帧无 Present；idle 时等待真实唤醒或有限重试间隔，避免无限满速循环。
+				// 光栅失败帧可能已部分覆写最终纹理：只完成已冻结在槽里的提交，累计脏区交给重建后的整帧。
+				completeUlwBeforeIdle(false);
 				const uint64_t wakeGeneration = input_.CaptureWakeGeneration();
 				// 设备已移除时下一帧尽快重建，普通反复 Map 错误才用较长退避。
 				if (!input_.HasPendingWork())
@@ -23688,13 +23734,15 @@ namespace Inkeys::Drawing::Draw3
 			}
 			else if (hasPhysicalContactAfterFrame && !eraserIdle)
 			{
+				if (!rasterSubmissionFailed) serviceUlwBeforeFrameWait(); // 光栅失败帧的最终纹理不可读回
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
 				if (metrics_ && frameHadActiveContact)
 					metrics_->RecordActiveFrame(frameStartMs, (std::max)(0.0, workMs - frameLatencyWaitMs_),
 						lastPresentDurationMs_, lastPresentSucceeded_);
 				const double remainingFrameBudgetMs =
 					1000.0 / configuration_.timingProfile.target_fps - workMs;
-				input_.WaitForFrameDeadline(remainingFrameBudgetMs);
+				// DWM 合成对齐（ULW）：微调下一帧开始相位，使提交恰好落在合成截止之前；其余模式为 0。
+				input_.WaitForFrameDeadline(remainingFrameBudgetMs + presentation_.UlwFramePhaseAdjustMs(frameStartMs));
 				size_t committedCount = 0;
 				size_t realPointCount = 0;
 				size_t predictedPointCount = 0;
@@ -23717,23 +23765,27 @@ namespace Inkeys::Drawing::Draw3
 				laserLifecycle.phase == LaserTrailPhase::Fade ||
 				laserParticleSnapshot.hasActive)
 			{
+				if (!rasterSubmissionFailed) serviceUlwBeforeFrameWait(); // 光栅失败帧的最终纹理不可读回
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
 				const double remainingFrameBudgetMs =
 					1000.0 / configuration_.timingProfile.target_fps - workMs;
-				input_.WaitForFrameDeadline(remainingFrameBudgetMs);
+				input_.WaitForFrameDeadline(remainingFrameBudgetMs + presentation_.UlwFramePhaseAdjustMs(frameStartMs));
 				lastActiveFrameStartMs = frameStartMs;
 			}
 			else if (active.empty() && cursorContactPacingActive())
 			{
 				// 无活动笔画但光标仍处于接触（输入被拒收、不出墨）：接触中的移动只发节拍唤醒，
 				// 这里按预设帧间隔等待，每个帧间隔最多一帧光标；按下/抬起仍以打断式唤醒立即返回。
+				if (!rasterSubmissionFailed) serviceUlwBeforeFrameWait(); // 光栅失败帧的最终纹理不可读回
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
-				input_.WaitForFrameDeadline(1000.0 / configuration_.timingProfile.target_fps - workMs);
+				input_.WaitForFrameDeadline(1000.0 / configuration_.timingProfile.target_fps - workMs +
+					presentation_.UlwFramePhaseAdjustMs(frameStartMs));
 				lastActiveFrameStartMs = 0.0;
 			}
 			else if (!active.empty())
 			{
 				lastActiveFrameStartMs = 0.0;
+				completeUlwBeforeIdle(!rasterSubmissionFailed); // 掌触/续接/橡皮期限等待与空闲唤醒前，ULW 最后一帧必须上屏。
 				int64_t nearestDeadlineQpc = (std::numeric_limits<int64_t>::max)();
 				for (const RuntimeStroke* runtime : active)
 				{

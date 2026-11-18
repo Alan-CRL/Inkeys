@@ -62,6 +62,18 @@ export namespace Inkeys::Drawing::Draw3
 		bool enableZhaoxinCompatibility = true;
 		// 仅对取得帧延迟句柄的 DComp waitable 交换链生效；关闭时保留标志但不等待。
 		bool enableWaitableWait = true;
+		// ULW 主画布异步读回（最多领先一帧）、提交不超过刷新率；关闭 = 同步读回、不节流、不对齐。
+		bool enableUlwAsyncReadback = true;
+		// 异步读回开启且 DWM 合成时，ULW 提交对齐合成时机；无界面配置键，用于实机开/关对照。
+		bool enableUlwCompositionAlign = true;
+	};
+
+	// ULW 异步读回在帧开头/空闲前的完成结果：阻塞 Map 计入等待而非工作耗时。
+	struct UlwFrameReport
+	{
+		double waitedMs = 0.0;
+		// 完成失败已安排恢复：调用方请求整帧并在下一帧走恢复流程。
+		bool failed = false;
 	};
 
 	enum class FrameLatencyWaitState : std::uint8_t
@@ -100,6 +112,8 @@ export namespace Inkeys::Drawing::Draw3
 	bool ShouldPreconfigureNoRedirectionBitmap();
 	// 只测生产 ULW 的 CPU 脏区拷贝与 alpha 检查，不创建窗口或 GPU 资源。
 	int RunUlwDirtyCopyBenchmark() noexcept;
+	// 双槽异步读回自测：WARP 设备 + 从不显示的分层窗，对照异步与同步 presenter 的 DIB（流水、节流、Resize 丢弃）。
+	int RunUlwPipelineSelfTest() noexcept;
 
 	// 统一管理交换链、透明模式初始化、回退、缩放和呈现。
 	class TransparentPresentationController
@@ -130,7 +144,21 @@ export namespace Inkeys::Drawing::Draw3
 		// 超时不是错误，本帧照常呈现；返回 Tripped 时已安排恢复（重建为不带 waitable 标志的交换链）。
 		FrameLatencyWaitReport PrepareFrameLatency(double targetFrameMs, bool countsTowardTrip);
 		// 取走帧循环外 Present 前补等的结果，供调用方从 Present 耗时中扣除并记入指标。
+		// ULW 异步读回在 Present 内的阻塞 Map（背压与即时完成）也经此计入等待。
 		FrameLatencyWaitReport ConsumePresentLatencyWait() noexcept;
+		// C1 帧开头（恢复/Resize 之后、读输入之前）：主画布 ULW 异步读回时探测上一帧是否就绪（不等待）。
+		// 其余模式立即返回。
+		UlwFrameReport BeginUlwFrame(double frameStartMs, double targetFrameMs);
+		// 固定帧截止等待前（帧尾）：被节流累计的脏区到点时拷出提交（纹理已含本帧最新内容）。其余模式立即返回。
+		UlwFrameReport ServiceUlwBeforeFrameWait();
+		// 本帧光栅失败（最终纹理可能被部分覆写）：丢弃被节流累计的脏区并要求下一次整帧读回，
+		// 之后任何收尾（输出切换、熔断、空闲前）都不会读回失败纹理。已冻结在槽里的提交不受影响。
+		void DiscardUlwAccumulated() noexcept;
+		// C3 进入空闲等待前：阻塞完成待完成读回并拷出累计脏区，保证停笔后最后一帧上屏。
+		// textureValid=false（本帧光栅失败，最终纹理可能被部分覆写）时只完成已冻结的提交，累计脏区留给重建后的整帧。
+		UlwFrameReport CompleteUlwBeforeIdle(bool textureValid = true);
+		// 固定帧截止等待前：DWM 合成对齐且预设等于刷新率或为其约数时，下一帧开始的建议调整量（毫秒，正=多等）。
+		double UlwFramePhaseAdjustMs(double frameStartMs) const;
 		// 在 DWM 合成状态变化后刷新玻璃效果。
 		bool RefreshAfterCompositionChanged();
 		// Resize 等外部图形操作失败后，记录当前设备状态并安排恢复。
@@ -153,7 +181,7 @@ export namespace Inkeys::Drawing::Draw3
 			std::uint64_t outputRevision, std::uint64_t contentRevision) noexcept;
 		// 返回当前模式是否通过 GPU/DWM 读取 backbuffer alpha。
 		bool IsGpuTransparentComposition() const;
-		// 返回当前交换链供渲染器缩放使用。
+		// 返回当前交换链供渲染器缩放使用；ULW 模式不建交换链，返回空（最终目标是独立纹理）。
 		IDXGISwapChain1* SwapChain() const;
 
 	private:

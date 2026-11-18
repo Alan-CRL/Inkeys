@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 集成约定"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "统一日志级别与热路径非阻塞"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "配置项与 i18n 同步"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Win7 兼容与构建"}
+{"file": ".trellis/tasks/11-17-win7-ulw-presentation/research/presentation-pipeline-current.md", "reason": "呈现链路现状"}

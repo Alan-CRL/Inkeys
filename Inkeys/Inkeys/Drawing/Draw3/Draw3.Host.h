@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Draw3.Bridge.h"
 #include "Draw3.Recovery.h"
@@ -282,6 +282,10 @@ namespace Inkeys::Drawing::Draw3
 		bool enableZhaoxinCompatibility = true;
 		// DComp waitable 交换链是否在帧开头等待帧延迟句柄；关闭时保留标志但不等待。
 		bool enableWaitableWait = true;
+		// ULW 主画布异步读回（最多领先一帧、提交不超过刷新率）；关闭 = 同步读回。
+		bool enableUlwAsyncReadback = true;
+		// 异步读回时对齐 DWM 合成时机提交；无界面配置键，用于实机开/关对照。
+		bool enableUlwCompositionAlign = true;
 		int frameRate = 120; // 仅在启动时选择画布模型参数组。
 	};
 

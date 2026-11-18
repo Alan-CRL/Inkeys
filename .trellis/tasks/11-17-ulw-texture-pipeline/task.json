@@ -3,7 +3,7 @@
   "name": "ulw-texture-pipeline",
   "title": "第2步-B ULW 独立纹理与 CPU/GPU 重叠",
   "description": "ULW 回退路径改用独立 ID3D11Texture2D 作最终目标，并把 GPU 读回与 ULW 提交改为不阻塞绘制线程的流水线（最多领先一帧），保持画布调试与 Win7 兼容",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

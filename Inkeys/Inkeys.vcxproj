@@ -529,6 +529,8 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.EraserCursor.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PalmEraser.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.FrameLatencyGate.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.UlwReadbackPacing.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CompositionClock.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HiddenWindowTest.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.ShapeRendererTests.h" />

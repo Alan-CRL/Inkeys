@@ -1052,6 +1052,11 @@
         "N": "Warten im Waitable-Modus aktivieren",
         "E": "Verhindert unter Windows 8.1 und höher Verzögerungen durch aufgestaute Frames."
       },
+      "UlwAsyncReadback":
+      {
+        "N": "Asynchrones Zurücklesen im ULW-Modus",
+        "E": "Lässt auf Systemen mit ULW-Darstellung wie Windows 7 CPU-Berechnung und GPU-Zeichnen gleichzeitig laufen und übergibt Bilder im Takt der Bildschirmaktualisierung, um Ruckeln und Verzögerung zu verringern."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Mausbewegung beim Zeichnen nicht an die Bildrate der Zeichenfläche binden",

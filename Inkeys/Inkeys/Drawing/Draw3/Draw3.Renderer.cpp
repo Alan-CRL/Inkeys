@@ -577,9 +577,10 @@ namespace Inkeys::Drawing::Draw3
 
 	bool InkRenderer::Resize(IDXGISwapChain1* swapChain, UINT width, UINT height)
 	{
-		if (!swapChain || width == 0 || height == 0) return false;
+		if (width == 0 || height == 0) return false;
 		DXGI_SWAP_CHAIN_DESC1 swapChainDescription = {};
-		if (FAILED(swapChain->GetDesc1(&swapChainDescription))) return false;
+		// ULW 与无窗口测试没有交换链，最终目标是独立纹理：跳过 GetDesc1/ResizeBuffers，其余保留逻辑相同。
+		if (swapChain && FAILED(swapChain->GetDesc1(&swapChainDescription))) return false;
 
 		const UINT oldWidth = static_cast<UINT>(viewportWidth);
 		const UINT oldHeight = static_cast<UINT>(viewportHeight);
@@ -592,7 +593,7 @@ namespace Inkeys::Drawing::Draw3
 		ReleaseSizeDependentResources();
 
 		// waitable swapchain 在部分驱动上要求 resize 时原样保留 BufferCount/Format/Flags。
-		if (FAILED(swapChain->ResizeBuffers(swapChainDescription.BufferCount, width, height,
+		if (swapChain && FAILED(swapChain->ResizeBuffers(swapChainDescription.BufferCount, width, height,
 			swapChainDescription.Format, swapChainDescription.Flags))) return false;
 		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
 		if (oldLaserCompositedTexture && EnsureLaserResources(width, height) && restoreLaserIncremental)
@@ -968,6 +969,70 @@ namespace Inkeys::Drawing::Draw3
 			renderer.ReleaseLaserResources();
 			check(renderer.Resize(swapChain.Get(), 32, 48) && renderer.LaserResourceBytes() == 0,
 				"released resize stays without Laser");
+			{
+				// ULW 无交换链：最终目标是独立纹理，Resize 同样保留 L2/L1 交集并重建最终纹理。
+				InkRenderer offscreen;
+				if (check(offscreen.Init(testDevice.Get(), testContext.Get(), nullptr, 64, 64,
+					D3D_DRIVER_TYPE_WARP, true), "offscreen renderer initialization"))
+				{
+					offscreen.ClearRTV(offscreen.layerL2RTV.Get(), DirectX::XMFLOAT4(0.25f, 0.5f, 0.75f, 1.0f));
+					offscreen.ClearOperatorLayer(offscreen.layerL1);
+					offscreen.ClearOperatorLayer(offscreen.layerL0);
+					offscreen.SetOperatorTarget(offscreen.layerL1);
+					check(offscreen.DrawStroke(pen, DirectX::XMFLOAT4(1, 0, 0, 1)) == 0, "offscreen L1 stroke");
+					// retain 层是 R16_FLOAT（每像素 2 字节），按实际像素字节数读回逐行比较。
+					const auto readRows = [&](ID3D11Texture2D* texture, size_t bytesPerPixel)
+					{
+						std::vector<unsigned char> result;
+						if (!texture) return result;
+						D3D11_TEXTURE2D_DESC readDescription = {};
+						texture->GetDesc(&readDescription);
+						readDescription.Usage = D3D11_USAGE_STAGING;
+						readDescription.BindFlags = 0;
+						readDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+						Microsoft::WRL::ComPtr<ID3D11Texture2D> readback;
+						if (FAILED(testDevice->CreateTexture2D(&readDescription, nullptr, readback.GetAddressOf()))) return result;
+						testContext->OMSetRenderTargets(0, nullptr, nullptr);
+						testContext->CopyResource(readback.Get(), texture);
+						D3D11_MAPPED_SUBRESOURCE mapped = {};
+						if (FAILED(testContext->Map(readback.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return result;
+						const size_t rowBytes = static_cast<size_t>(readDescription.Width) * bytesPerPixel;
+						result.resize(rowBytes * readDescription.Height);
+						for (UINT row = 0; row < readDescription.Height; ++row)
+							std::memcpy(result.data() + row * rowBytes,
+								static_cast<const unsigned char*>(mapped.pData) + static_cast<size_t>(row) * mapped.RowPitch, rowBytes);
+						testContext->Unmap(readback.Get(), 0);
+						return result;
+					};
+					const auto beforeL2 = readRows(offscreen.layerL2Texture.Get(), 4);
+					const auto beforeL1Add = readRows(offscreen.layerL1.addTexture.Get(), 4);
+					const auto beforeL1Retain = readRows(offscreen.layerL1.retainTexture.Get(), 2);
+					check(std::any_of(beforeL1Add.begin(), beforeL1Add.end(), [](unsigned char value) { return value != 0; }),
+						"offscreen stroke wrote real L1 pixels");
+					ID3D11Texture2D* oldFinal = offscreen.backBufferTexture.Get();
+					check(offscreen.Resize(nullptr, 96, 80), "offscreen resize without swapchain");
+					D3D11_TEXTURE2D_DESC finalDescription = {};
+					if (offscreen.backBufferTexture) offscreen.backBufferTexture->GetDesc(&finalDescription);
+					check(offscreen.backBufferTexture && offscreen.backBufferTexture.Get() != oldFinal &&
+						finalDescription.Width == 96 && finalDescription.Height == 80 &&
+						(finalDescription.BindFlags & D3D11_BIND_SHADER_RESOURCE) != 0 && offscreen.backBufferRTV,
+						"offscreen final texture rebuilt at new size");
+					const auto keepsIntersection = [&](const std::vector<unsigned char>& before, ID3D11Texture2D* texture,
+						size_t bytesPerPixel)
+					{
+						const auto after = readRows(texture, bytesPerPixel);
+						bool same = before.size() == 64 * 64 * bytesPerPixel && after.size() == 96 * 80 * bytesPerPixel;
+						for (size_t row = 0; same && row < 64; ++row)
+							same = std::memcmp(before.data() + row * 64 * bytesPerPixel,
+								after.data() + row * 96 * bytesPerPixel, 64 * bytesPerPixel) == 0;
+						return same;
+					};
+					check(keepsIntersection(beforeL2, offscreen.layerL2Texture.Get(), 4), "offscreen resize preserves L2 intersection");
+					check(keepsIntersection(beforeL1Add, offscreen.layerL1.addTexture.Get(), 4), "offscreen resize preserves L1 add intersection");
+					check(keepsIntersection(beforeL1Retain, offscreen.layerL1.retainTexture.Get(), 2), "offscreen resize preserves L1 retain intersection");
+					offscreen.ReleaseResources();
+				}
+			}
 			renderer.ReleaseResources();
 			Microsoft::WRL::ComPtr<ID3D11Device> recoveredDevice;
 			Microsoft::WRL::ComPtr<ID3D11DeviceContext> recoveredContext;

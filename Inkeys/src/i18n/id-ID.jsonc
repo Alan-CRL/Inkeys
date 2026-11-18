@@ -1052,6 +1052,11 @@
         "N": "Aktifkan penantian dalam mode waitable",
         "E": "Pada Windows 8.1 dan yang lebih baru, mencegah latensi akibat penumpukan frame."
       },
+      "UlwAsyncReadback":
+      {
+        "N": "Pembacaan balik asinkron dalam mode ULW",
+        "E": "Pada sistem yang menampilkan melalui ULW, seperti Windows 7, memungkinkan perhitungan CPU dan penggambaran GPU berjalan bersamaan serta mengirim bingkai sesuai waktu penyegaran layar, sehingga mengurangi patah-patah dan latensi."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Jangan batasi gerakan mouse ke laju bingkai kanvas saat menggambar",

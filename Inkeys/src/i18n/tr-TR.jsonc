@@ -1052,6 +1052,11 @@
         "N": "Waitable modunda beklemeyi etkinleştir",
         "E": "Windows 8.1 ve sonraki sürümlerde, biriken karelerin neden olduğu gecikmeyi önler."
       },
+      "UlwAsyncReadback":
+      {
+        "N": "ULW modunda eşzamansız geri okuma",
+        "E": "Windows 7 gibi ULW ile görüntüleyen sistemlerde CPU hesaplamasının ve GPU çiziminin aynı anda ilerlemesini sağlar ve kareleri ekran yenileme zamanlamasına göre gönderir; takılmayı ve gecikmeyi azaltır."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Çizim sırasında fare hareketini tuval kare hızıyla sınırlama",

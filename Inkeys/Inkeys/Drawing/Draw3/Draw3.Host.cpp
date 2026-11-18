@@ -1,4 +1,4 @@
-#include "Draw3.DiagnosticOutput.h"
+﻿#include "Draw3.DiagnosticOutput.h"
 #include "Draw3.Host.h"
 #include "Draw3.PresentationState.h"
 #include "Draw3.HapticDiagnostics.h"
@@ -2219,6 +2219,8 @@ namespace Inkeys::Drawing::Draw3
 						presentationOptions.enableHardwareAcceleration = startOptions.enableHardwareAcceleration;
 						presentationOptions.enableZhaoxinCompatibility = startOptions.enableZhaoxinCompatibility;
 						presentationOptions.enableWaitableWait = startOptions.enableWaitableWait;
+						presentationOptions.enableUlwAsyncReadback = startOptions.enableUlwAsyncReadback;
+						presentationOptions.enableUlwCompositionAlign = startOptions.enableUlwCompositionAlign;
 						graphicsInitialized = presentation.Initialize(windowHandle,
 							presentationWindowHandle, graphics, renderer,
 							static_cast<UINT>((std::max)(1, size.width)),

@@ -58,6 +58,14 @@ namespace
 				[this] { return nowMs; },
 				[this](std::uint32_t timeoutMs) { return Wait(timeoutMs); });
 		}
+
+		// 已提交但 GPU 尚未完成的帧数（在途帧）。
+		int InFlight() const
+		{
+			int count = 0;
+			for (const double release : releases) if (release > nowMs) ++count;
+			return count;
+		}
 	};
 
 	bool Near(double actual, double expected, double tolerance = 1e-6)
@@ -249,6 +257,99 @@ int RunDraw3FrameLatencyGateTests()
 		gate.Reset();
 		expect(!gate.Enabled() && !gate.TokenHeld() && !gate.Tripped(), "reset clears token without tripping");
 		expect(gate.Enable() && gate.NeedsWaitBeforePresent(), "re-enabled gate waits on the new handle");
+	}
+
+	// 欠账记账：只有没拿到名额且 Present1 成功才记一笔。
+	{
+		FrameLatencyGate gate; LatencySemaphore semaphore;
+		gate.Enable();
+		(void)semaphore.Acquire(gate);
+		semaphore.Present(); gate.OnPresentCalled(true);
+		expect(gate.Debt() == 0, "present with token adds no debt");
+		semaphore.available = 0; semaphore.releases.clear();
+		const auto result = semaphore.Acquire(gate);
+		expect(result.outcome == FrameLatencyWaitOutcome::TimedOut, "debt setup times out");
+		gate.OnPresentCalled(false);
+		expect(gate.Debt() == 0, "failed present without token adds no debt");
+		gate.OnPresentCalled(true);
+		expect(gate.Debt() == 1, "successful present without token adds debt");
+	}
+
+	// GPU 抖动导致超时：之后逐帧补等还清欠账，在途帧回到 1，不再永久多压一帧。
+	{
+		FrameLatencyGate gate; LatencySemaphore semaphore;
+		semaphore.gpuFrameMs = 30.0; // 慢于初始超时 25 ms，开头必然超时
+		gate.Enable();
+		int maxLateInFlight = 0; bool repaid = false;
+		for (int frame = 0; frame < 100; ++frame)
+		{
+			const auto result = semaphore.Acquire(gate);
+			repaid |= result.debtRepaid;
+			semaphore.nowMs += 2.0;
+			semaphore.Present();
+			gate.OnPresentCalled(true);
+			if (frame >= 20) maxLateInFlight = (std::max)(maxLateInFlight, semaphore.InFlight());
+		}
+		expect(gate.TotalTimeouts() > 0 && repaid, "jitter timeout creates debt that is repaid");
+		expect(gate.Debt() == 0, "debt is fully repaid");
+		expect(gate.TotalDebtOverflows() == 0, "jitter debt stays within the cap");
+		expect(maxLateInFlight <= 1, "repaid debt keeps one frame in flight");
+	}
+
+	// 空闲后：残留欠账对应的信号已积在句柄里，下一笔第一帧补等立即返回，不额外等待也不突发排队。
+	{
+		FrameLatencyGate gate; LatencySemaphore semaphore;
+		semaphore.gpuFrameMs = 30.0;
+		gate.Enable();
+		(void)semaphore.Acquire(gate);
+		semaphore.Present(); gate.OnPresentCalled(true);
+		expect(semaphore.Acquire(gate).outcome == FrameLatencyWaitOutcome::TimedOut, "idle setup times out");
+		semaphore.Present(); gate.OnPresentCalled(true);
+		expect(gate.Debt() == 1, "idle setup leaves one debt");
+		semaphore.nowMs += 5000.0;
+		const auto result = semaphore.Acquire(gate);
+		expect(result.outcome == FrameLatencyWaitOutcome::Signaled && result.debtRepaid && result.waitedMs == 0.0,
+			"debt after idle is repaid without waiting");
+		expect(gate.Debt() == 0, "stroke after idle starts without debt");
+	}
+
+	// 开画布时 GPU 已很慢（每帧 60 ms，初始超时只有 25 ms）：超时后放宽，几次内适应，欠账不溢出、最终还清。
+	{
+		FrameLatencyGate gate; LatencySemaphore semaphore;
+		semaphore.gpuFrameMs = 60.0;
+		gate.Enable();
+		int maxLateInFlight = 0;
+		for (int frame = 0; frame < 60; ++frame)
+		{
+			(void)semaphore.Acquire(gate);
+			semaphore.nowMs += 2.0;
+			semaphore.Present();
+			gate.OnPresentCalled(true);
+			if (frame >= 20) maxLateInFlight = (std::max)(maxLateInFlight, semaphore.InFlight());
+		}
+		expect(gate.TotalTimeouts() > 0 && gate.TotalTimeouts() <= 3, "slow start adapts after a few timeouts");
+		expect(gate.TotalDebtOverflows() == 0 && gate.Debt() == 0, "slow start debt stays within cap and is repaid");
+		expect(maxLateInFlight <= 1, "slow start returns to one frame in flight");
+	}
+
+	// 信号丢失：欠账封顶，补等不会发生（没等到本帧名额就不还账）；Reset 清零。
+	{
+		FrameLatencyGate gate; LatencySemaphore semaphore;
+		gate.Enable();
+		semaphore.available = 0;
+		semaphore.signalLost = true;
+		bool repayAttempted = false;
+		for (int index = 0; index < 10; ++index)
+		{
+			const auto result = semaphore.Acquire(gate, FrameLatencyTimeoutPolicy::Exclude);
+			repayAttempted |= result.debtRepaid || result.debtRepayTimedOut;
+			semaphore.Present(); gate.OnPresentCalled(true);
+			semaphore.nowMs += 2.0;
+		}
+		expect(gate.Debt() == kFrameLatencyMaxDebt && !repayAttempted, "lost signal caps debt without repay waits");
+		expect(gate.TotalDebtOverflows() == 10 - kFrameLatencyMaxDebt, "presents beyond the debt cap are counted as overflow");
+		gate.Reset();
+		expect(gate.Debt() == 0 && gate.TotalDebtOverflows() == 10 - kFrameLatencyMaxDebt, "reset clears debt but keeps overflow total");
 	}
 
 	std::cout << "[FrameLatencyGate] failures=" << failures << '\n';

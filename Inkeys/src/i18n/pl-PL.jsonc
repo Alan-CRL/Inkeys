@@ -1052,6 +1052,11 @@
         "N": "Włącz oczekiwanie w trybie waitable",
         "E": "W systemie Windows 8.1 i nowszych zapobiega opóźnieniom spowodowanym kolejkowaniem klatek."
       },
+      "UlwAsyncReadback":
+      {
+        "N": "Asynchroniczny odczyt zwrotny w trybie ULW",
+        "E": "W systemach wyświetlających przez ULW, takich jak Windows 7, pozwala obliczeniom CPU i rysowaniu GPU przebiegać jednocześnie oraz przesyła klatki w rytmie odświeżania ekranu, zmniejszając zacinanie i opóźnienie."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Nie ograniczaj ruchu myszy do liczby klatek płótna podczas rysowania",

@@ -1052,6 +1052,11 @@
         "N": "Enable waiting in waitable mode",
         "E": "On Windows 8.1 and later, prevents latency caused by queued frames."
       },
+      "UlwAsyncReadback":
+      {
+        "N": "Asynchronous readback in ULW mode",
+        "E": "On systems that present through ULW, such as Windows 7, lets CPU work overlap GPU drawing and submits frames in step with the display refresh, reducing stutter and latency."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Don't limit mouse movement to the canvas frame rate while drawing",

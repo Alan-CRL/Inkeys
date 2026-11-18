@@ -22,12 +22,16 @@ namespace Inkeys::Drawing::Draw3
 	inline constexpr double kFrameLatencyIntervalEmaAlpha = 0.25;
 	inline constexpr std::uint32_t kFrameLatencyTripTimeouts = 8;
 	inline constexpr double kFrameLatencyTripMinimumMs = 1000.0;
+	// 欠账上限：信号真的不来（隐藏、交接等）时欠账不无限增长，补等最多拖慢一帧。
+	inline constexpr std::uint32_t kFrameLatencyMaxDebt = 2;
 
 	struct FrameLatencyWaitResult
 	{
 		FrameLatencyWaitOutcome outcome = FrameLatencyWaitOutcome::Disabled;
-		double waitedMs = 0.0;
+		double waitedMs = 0.0; // 含补等耗时
 		double timeoutMs = 0.0;
+		bool debtRepaid = false;        // 本次额外等到一次信号，还掉一笔欠账
+		bool debtRepayTimedOut = false; // 补等超时，欠账保留
 	};
 
 	class FrameLatencyGate
@@ -50,6 +54,7 @@ namespace Inkeys::Drawing::Draw3
 			waitAttempted_ = false;
 			waitFailed_ = false;
 			hasLastAcquire_ = false;
+			debt_ = 0;
 			consecutiveTimeouts_ = 0;
 			streakStartMs_ = 0.0;
 			lastTimeoutEndMs_ = 0.0;
@@ -65,6 +70,8 @@ namespace Inkeys::Drawing::Draw3
 		double SignalIntervalEmaMs() const noexcept { return signalIntervalEmaMs_; }
 		std::uint64_t TotalAcquired() const noexcept { return totalAcquired_; }
 		std::uint64_t TotalTimeouts() const noexcept { return totalTimeouts_; }
+		std::uint32_t Debt() const noexcept { return debt_; }
+		std::uint64_t TotalDebtOverflows() const noexcept { return totalDebtOverflows_; }
 
 		// clamp(1.5 × max(预设帧间隔, 刷新间隔, 信号间隔 EMA), 4, 200)。
 		// GPU 慢时信号间隔变长，超时随之放宽，等待照常成功而不是越排越多。
@@ -118,10 +125,31 @@ namespace Inkeys::Drawing::Draw3
 				}
 				lastAcquireMs_ = endMs;
 				hasLastAcquire_ = true;
+				if (debt_ > 0)
+				{
+					// 还账：此前有帧没拿到名额就 Present，队列多压了一帧。拿到本帧名额后再多等一次信号，
+					// 每帧最多还一笔，逐帧把在途帧数收回到上限。空闲后对应信号已积在句柄里，补等立即返回。
+					// 补等成功不进入信号间隔估计、不计入超时与熔断；补等超时同样抬高估计，只保留欠账，本帧照常 Present。
+					const double repayStartMs = nowMs();
+					const FrameLatencySignal repay = wait(static_cast<std::uint32_t>(std::ceil(result.timeoutMs)));
+					const double repayWaitedMs = nowMs() - repayStartMs;
+					if (std::isfinite(repayWaitedMs) && repayWaitedMs > 0.0) result.waitedMs += repayWaitedMs;
+					if (repay == FrameLatencySignal::Signaled)
+					{
+						--debt_;
+						result.debtRepaid = true;
+					}
+					else
+					{
+						result.debtRepayTimedOut = true;
+						RaiseIntervalAfterTimeout(result.timeoutMs);
+					}
+				}
 				break;
 			case FrameLatencySignal::TimedOut:
 				result.outcome = FrameLatencyWaitOutcome::TimedOut;
 				++totalTimeouts_;
+				RaiseIntervalAfterTimeout(result.timeoutMs);
 				if (policy == FrameLatencyTimeoutPolicy::Count)
 				{
 					if (consecutiveTimeouts_ == 0) streakStartMs_ = startMs;
@@ -143,6 +171,13 @@ namespace Inkeys::Drawing::Draw3
 		void OnPresentCalled(bool succeeded) noexcept
 		{
 			waitAttempted_ = false;
+			// waitable 交换链的 Present 不阻塞：没拿到名额（超时）也成功 Present，队列就多一帧，记为欠账。
+			// 已到上限时只计溢出次数（会话累计），用于实测确认上限是否够用。
+			if (succeeded && enabled_ && !tokenHeld_)
+			{
+				if (debt_ < kFrameLatencyMaxDebt) ++debt_;
+				else ++totalDebtOverflows_;
+			}
 			if (succeeded) tokenHeld_ = false;
 		}
 
@@ -169,9 +204,19 @@ namespace Inkeys::Drawing::Draw3
 			enabled_ = false;
 			tokenHeld_ = false;
 			waitAttempted_ = false;
+			debt_ = 0;
 		}
 
 	private:
+		// 超时说明信号间隔至少有这么长：把间隔估计抬到本次超时值，下一次超时随之放宽 1.5 倍。
+		// 原先只在等到信号时才更新估计，GPU 慢时开头会连续超时几十次，欠账溢出上限后无法还清，队列持续积压。
+		// 等到信号后照常按 EMA 回落，超时放宽只影响信号迟迟不来时的等待上限，不增加正常帧的等待。
+		void RaiseIntervalAfterTimeout(double timeoutMs) noexcept
+		{
+			if (std::isfinite(timeoutMs) && timeoutMs > signalIntervalEmaMs_)
+				signalIntervalEmaMs_ = (std::min)(timeoutMs, kFrameLatencyMaximumTimeoutMs);
+		}
+
 		bool enabled_ = false;
 		bool tokenHeld_ = false;
 		bool waitAttempted_ = false;
@@ -180,11 +225,13 @@ namespace Inkeys::Drawing::Draw3
 		bool tripped_ = false;
 		FrameLatencyTripReason tripReason_ = FrameLatencyTripReason::None;
 		std::uint32_t consecutiveTimeouts_ = 0;
+		std::uint32_t debt_ = 0; // 没拿到名额就成功 Present 的次数（上限 kFrameLatencyMaxDebt）
 		double streakStartMs_ = 0.0;
 		double lastTimeoutEndMs_ = 0.0;
 		double lastAcquireMs_ = 0.0;
 		double signalIntervalEmaMs_ = 0.0;
 		std::uint64_t totalAcquired_ = 0;
 		std::uint64_t totalTimeouts_ = 0;
+		std::uint64_t totalDebtOverflows_ = 0; // 欠账已满仍无名额 Present 的次数，不随 Reset 清零
 	};
 }

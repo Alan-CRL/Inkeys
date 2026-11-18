@@ -1052,6 +1052,11 @@
         "N": "Activează așteptarea în modul waitable",
         "E": "Pe Windows 8.1 și versiunile ulterioare, previne latența cauzată de acumularea cadrelor."
       },
+      "UlwAsyncReadback":
+      {
+        "N": "Citire asincronă în modul ULW",
+        "E": "Pe sistemele care afișează prin ULW, precum Windows 7, permite calculului CPU și desenării GPU să se desfășoare simultan și trimite cadrele în ritmul reîmprospătării ecranului, reducând sacadarea și latența."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Nu limita mișcarea mouse-ului la rata de cadre a pânzei în timpul desenării",

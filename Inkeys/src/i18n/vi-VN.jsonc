@@ -1052,6 +1052,11 @@
         "N": "Bật chờ trong chế độ waitable",
         "E": "Trên Windows 8.1 trở lên, ngăn độ trễ do dồn khung hình."
       },
+      "UlwAsyncReadback":
+      {
+        "N": "Đọc ngược bất đồng bộ ở chế độ ULW",
+        "E": "Trên các hệ thống hiển thị qua ULW như Windows 7, cho phép CPU tính toán và GPU vẽ cùng lúc, đồng thời gửi khung hình theo nhịp làm mới của màn hình để giảm giật và độ trễ."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Không giới hạn chuyển động chuột theo tốc độ khung hình trang vẽ khi vẽ",

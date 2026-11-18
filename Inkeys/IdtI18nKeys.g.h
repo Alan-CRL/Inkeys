@@ -1055,6 +1055,11 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/Performance/WaitableWait/N";
                 const char* E = "SettingsUI/Performance/WaitableWait/E";
             } WaitableWait{};
+            struct Node__SettingsUI__Performance__UlwAsyncReadback
+            {
+                const char* N = "SettingsUI/Performance/UlwAsyncReadback/N";
+                const char* E = "SettingsUI/Performance/UlwAsyncReadback/E";
+            } UlwAsyncReadback{};
             struct Node__SettingsUI__Performance__UnthrottledMouseMove
             {
                 const char* N = "SettingsUI/Performance/UnthrottledMouseMove/N";

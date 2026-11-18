@@ -2366,6 +2366,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool EnableHardwareAcceleration = Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
 				bool EnableZhaoxinCompatibility = Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 				bool EnableWaitableWait = Inkeys::config.Experimental.Inkeys3.Draw3.EnableWaitableWait;
+				bool EnableUlwAsyncReadback = Inkeys::config.Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback;
 				Inkeys::UI::Setting::StartupPreviewPreference StartupPreviewPreferenceState{
 					Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable };
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
@@ -4665,6 +4666,12 @@ SettingSessionCoroutine RunSettingSession()
 						IA(I18nKey.SettingsUI.Performance.WaitableWait.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableWaitableWait, IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
 					{
 						Inkeys::config.Experimental.Inkeys3.Draw3.EnableWaitableWait = Experimental.Inkeys3.EnableWaitableWait;
+						QueueConfigWrite();
+					}
+					if (Design::ToggleRow("##draw3-ulw-async-readback", IA(I18nKey.SettingsUI.Performance.UlwAsyncReadback.N).c_str(),
+						IA(I18nKey.SettingsUI.Performance.UlwAsyncReadback.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableUlwAsyncReadback, IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
+					{
+						Inkeys::config.Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback = Experimental.Inkeys3.EnableUlwAsyncReadback;
 						QueueConfigWrite();
 					}
 					{

@@ -1052,6 +1052,11 @@
         "N": "Abilita l'attesa in modalità waitable",
         "E": "In Windows 8.1 e versioni successive, evita la latenza causata dall'accumulo di fotogrammi."
       },
+      "UlwAsyncReadback":
+      {
+        "N": "Rilettura asincrona in modalità ULW",
+        "E": "Sui sistemi che visualizzano tramite ULW, come Windows 7, consente al calcolo della CPU e al disegno della GPU di procedere in parallelo e invia i fotogrammi al ritmo di aggiornamento dello schermo, riducendo scatti e latenza."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Non limitare il movimento del mouse alla frequenza della tela durante il disegno",

@@ -231,6 +231,8 @@
 	<ClCompile Include="canvas_debug_tests.cpp" />
 	<ClCompile Include="draw3_canvas_pan_tests.cpp" />
 	<ClCompile Include="draw3_frame_latency_gate_tests.cpp" />
+	<ClCompile Include="draw3_ulw_readback_pacing_tests.cpp" />
+	<ClCompile Include="draw3_composition_clock_tests.cpp" />
 	<ClCompile Include="pen_width_tests.cpp" />
 	<ClCompile Include="eraser_attribute_tests.cpp" />
 	<ClCompile Include="recall_attribute_tests.cpp" />
