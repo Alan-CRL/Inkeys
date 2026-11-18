@@ -29,6 +29,7 @@
 | Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback | true | 下次启动（`configOnce` 快照）；只影响主画布 ULW：关闭 = 同步读回、不节流、不对齐（独立纹理与 SIMD 复制仍保留） |
 | Experimental.Inkeys3.Draw3.UlwCompositionAlign | true，无界面 | 下次启动；异步读回开启时是否对齐 DWM 合成时机提交，仅供实机开/关对照 |
 | Experimental.Inkeys3.Draw3.UnthrottledMouseMoveWhileDrawing | false | 即时：设置页写配置后必须调用 `SyncDraw3State()`，经 `CursorSettings` bit 44 下发到窗口线程 |
+| Drawing.DevicePerformanceRecording | true | 即时：设置页写配置后直接调用 `Host::SetDevicePerformanceRecording`（不经 SyncDraw3State），启动时在 Host 创建绘制线程前下发；关闭后帧内不统计、不写盘 |
 
 - UI 下拉顺序是精准/快速/关闭，必须显式映射为 2/1/0。快速模式追至最近输入位置，不外推未来；普通说明描述效果，不暴露实现类名。
 - 新笔锁存预测和尾修正，同笔 Move、Up、等待断触续接后固化均读旧值；成功接续保留旧 modeler 和锁存值，新独立笔才读新偏好。
@@ -136,3 +137,14 @@ Correct：绘制与复制复用同一局部完整字符串；只在user点击标
 ## 白板拖动惯性（多设备漫游）
 
 “绘制 → 通用”在预测设置之后、橡皮组之前新增“白板拖动惯性”，使用现有 ToggleRow + InlineCheckboxes 五类输入。总开关默认开、鼠标/笔尾默认关、触控板/触摸/笔默认开；父关闭收起但保留子偏好，子项可全关。设置Changed及启动经Host同代快照发布，owner应用，只有真实变化唤醒；热禁停对应coast而不取消held跟手，重新开启不复活旧速度。2026-11-12起PTP扩展暂时停用，触控板子项仅保留偏好，不代表当前设备能力；本轮不为停用另改UI或文案。完整字段/线程/输入/验证合同见 [canvas-pan.md](canvas-pan.md)，不要添加重启生效说明或新二级页。
+
+## 性能页设备性能看板（2026-11-18）
+
+- 位置：性能页 `PageHeader` 之后、第一个 `SectionHeader` 之前。`Setting.PerformanceDashboard.h/.cpp` 采用 Input/Events 模式，不依赖 Host；`Setting.cpp` 读取 `ProductHost().DevicePerformanceSnapshot(revision, report)`（版本未变不复制）、`Drawing.FrameRate` 与 `Drawing.DevicePerformanceRecording`，并传入 `navigationDelta`、动画开关和动画速率。
+- 卡片前调用 `PageContentStart()`；卡片后不另加节间距。背景不用 `ChannelsSplit`：先画背景，内容画完后按真实高度平移背景下半部顶点。数字、条形、底色、箭头统一用 `NavigationTween`（颜色是固定起点到目标的 0→1 插值），不用 `AnimateColorU32`。
+- 卡片内开关用 `ToggleAction` 手动布局，不用 `ToggleRow`（会画出卡中卡）。清除按钮为两段式，3 s 内再点生效。窄窗口下放不下的状态标签不画。
+- `Palette::performanceFill/performanceAccent[5]`（无数据/充裕/适中/偏紧/超载）：绿、黄、红底色与 notice 一致，Acrylic 下与 heroFill 一样设为 alpha 179，“无数据”底色运行时取 `card`。
+- 统计窗口为最近 7 个使用日，按实际生效的设置签名分开（帧率、设备、呈现模式、实际 waitable、ULW 异步读回与对齐、兆芯兼容实际生效值）。当前签名没有数据时显示最近签名的数据，并标注“设置变更前”。
+- 帧率建议：“升高”不超过不大于显示器刷新率的最大预设档（2 Hz 容差）；高于刷新率时说明“不会更流畅，但墨迹更精确平滑”。“重启后生效”只比较配置值与当前会话帧率。
+- 文案数字模板用 `{0}` 占位符，格式化包 try/catch，模板登记在 `IdtTest::RunI18nLocaleTests`。文案中不用 “—”“…”（字形检查）。
+- 计数与写盘合同见 `draw3-integration.md`“设备性能看板计数与移交”。

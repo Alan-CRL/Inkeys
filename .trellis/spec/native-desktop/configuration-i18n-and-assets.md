@@ -9,6 +9,7 @@
 | `Inkeys.Other.Config` | `Inkeys/Inkeys/Other/Other.Config.cppm/.cpp`；全局 `Inkeys::config` / `configOnce`；`globalPath + L"Inkeys\\Config\\main.json"` | **唯一**用户配置。所有新字段只能加入 `INKEYS_CONFIG_SCHEMA` |
 | Inkeys2 的 `opt\deploy.json`、`opt\pptcom_configuration.json` | 已删除 | 不读取、不迁移、不清理，也不创建 `opt` 目录 |
 | `Inkeys\Memory\memory.json` | `IdtConfiguration.cpp::GetMemory/SetMemory` | 已弃用，暂未处理，不得新增用途 |
+| `Inkeys\Memory\device-performance.json`（统计数据，不是配置） | `Draw3.DevicePerformanceLedger`，路径由 IdtMain 用程序目录拼出，经 `HostStartOptions::devicePerformancePath` 传入 | 设备性能看板的本机统计，不经 Config、不上传；坏文件改名 `.bad`。用户开关仍在 main.json：`Drawing.DevicePerformanceRecording` |
 | `DesktopDrawpadBlocker\interaction_configuration.json` | `CaptureDdbInteractionJson` | 外部 DDB 进程读取的交换文件，内容由 `config.PlugIn.DesktopDrawpadBlocker` 与运行时 `ddbInteractionSetList`（版本、哈希、模式、宿主路径）生成；未来另行迁移 |
 
 - `【直接确认】` 新字段规则：在 schema 中声明默认值；需要范围校验的整数在 `Other.Config.cpp` 的读取钩子里按路径校验，越界回默认值；依赖运行环境的缺省（系统语言、程序架构）用哨兵值（`-1` / 空串）表示未确定，在 `IdtMain` 启动迁移后补齐。

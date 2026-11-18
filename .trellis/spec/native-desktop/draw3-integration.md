@@ -669,3 +669,48 @@ Good：关闭产品准入后，合法 Stop 仍到 owner并确认。Base：普通
 分类正反例加真实隐藏 Host 的 StopProduct 返回后证明（SF48）。只检查 ProductRunning=false 或功能断言完成，不能证明资源已经安全停止。
 ### Wrong vs Correct
 错误：放行所有导航消息或延长超时掩盖丢消息。正确：只放行精确 Stop，保持 owner 身份和失败保护。
+
+
+## Scenario: 设备性能看板计数与移交（2026-11-18）
+
+### 1. Scope / Trigger
+修改 Draw3 帧尾、空闲等待分支、呈现器生效状态、Host 启停顺序，或 `Draw3.DevicePerformance*` 文件时应用。看板只读这里产生的统计，不额外采样。
+
+### 2. Signatures
+- `Draw3.DevicePerformanceModel.h`：`Dimension`、`ToolDimensionMask(int drawingTool)`、`Tally::Add(mask, workMs, budgetMs)`、`Signature`/`NormalizeSignature`、`MergeTally`/`MergeStore`、`BuildReport`、`Advise(overall, measuredFps, configuredFps, refreshHz, sessionFps)`。纯逻辑，无 Windows 依赖。
+- `Draw3.DevicePerformanceJson.h`：`SerializeStore` / `ParseStore`（jsoncpp，字符串进出）。
+- `DevicePerformanceLedger`（`Draw3.DevicePerformanceLedger.h/.cpp`）：`Start(path)`、`Stop()`、`SetCurrentSignature`、`MarkBusy()`、`Submit(signature, counters)`、`SetDisplayRefreshHz`、`SetRecordingEnabled`、`Clear`、`Snapshot(knownRevision, out)`。
+- `TransparentPresentationController::EffectiveState()`、`InkRenderer::UsesZhaoxinCompatibleUpload()`：签名只读主画布实际生效状态。
+- `Host::DevicePerformanceSnapshot / SetDevicePerformanceRecording / ClearDevicePerformance`；`HostStartOptions::devicePerformancePath`（空 = 只在内存记录）。
+
+### 3. Contracts
+- 帧内只做固定计数器加法：无锁、无分配、无 I/O。工作耗时与画布调试同口径：`max(0, 帧耗时 - frameLatencyWaitMs_)`。
+- 计数帧：本帧成功上屏，且不是画布调试板自刷新帧、不是一次性重帧（设备恢复、合成变化、Resize、共享层重建、画布命令出队，用帧内局部标志判断）、不是 `outputTargetChanged`、不是 `selectionUsesAuxiliary`（桌面/PPT 选择模式辅助输出），画布调试可视化未开启，记录开关开启，且维度掩码非空。
+- **不得排除 `selectionMode`**：白板移动模式就是选择模式，漫游只在其中发生。**不得用 `forceFullPresent` 作为排除条件**：每个平移帧都强制全帧。
+- 维度掩码在 `if (hasEndedStroke)` 之前、结束的笔画移出 `active` 之前计算，跳过 `palmObservationOnly` 与 `cancelled`。Pan 位取 `navigationInProgress || canvasPan.Active()`；激光 `Hold/Fade` 补 Laser 位。多工具同帧各维度都计，总体只计一次。
+- 签名每个计数帧比较一次。变化时把旧签名的段拷进第二个预分配槽，空闲时再移交并调用 `SetCurrentSignature`，帧内不调用任何加锁接口。
+- 移交只在循环顶部真正空闲分支 `completeUlwBeforeIdle()` 成功之后，以及 Run 正常退出收尾处。异常退出路径丢弃在途统计。
+- 写盘：一段的第一个计数帧 `MarkBusy()`（原子写，同时返回当前清除代次，存为本段代次），`Submit` 清除忙碌标志，并在账本锁内复查：记录已关闭或段代次与当前清除代次不同（段内点过“清除数据”）时整段丢弃。写盘线程只在不忙碌、记录开启且距上次写盘 ≥ 30 s 时写，Stop 时写最后一次（记录关闭时也不写）。原子写复用 `PptSettings::WriteAtomically`。
+- Host：账本在 `autoSave.Start` 之后、绘制线程创建之前启动。Stop 在每条路径的绘制线程 `join` 之后调用，含 3 条启动失败路径和 Stop 早退分支，Stop 幂等。DComp 失败后会以 ULW 重启 Host，同一路径不重读文件。
+- 刷新率由 `Host::Impl::PumpDisplayScale` 对画布所在显示器调用 `EnumDisplaySettingsW` 取显示模式频率，不用 DWM 实时周期，也不用呈现层的 `ulwRefreshMs`。
+
+### 4. Validation & Error Matrix
+| 条件 | 必须行为 |
+| --- | --- |
+| 记录关闭 | 帧内不算掩码、不累加；移交时丢弃在途段；写盘线程不写；坏文件不改名 |
+| 加载时文件存在但读不出 | 本会话禁止写盘（不能用新数据覆盖历史）；下次重新加载时重新判定 |
+| 坏文件且记录开启 | 改名 `.bad` 后从空开始；改名失败则本会话禁止写盘 |
+| Start 后、加载完成前清除 | 加载结果按 Start 时固定的代次作废 |
+| 账本已停止后清除（关机时设置页晚于 Host） | 在调用线程同步删除文件 |
+| 运行中熔断、回退或转 WARP | 新签名自然生效，旧段保留在旧签名下 |
+
+### 5. Good / Base / Bad Cases
+- Good：白板移动模式拖动画布，漫游维度有数据；激光抬笔淡出期间计入激光。
+- Base：画布调试只开数据板时照常计数，只有板子自刷新的帧不计。
+- Bad：帧尾检查 `graphicsRecoveryPending_`（到帧尾已被清零）；在帧尾从 `active` 取掩码（抬笔帧已被移除）；帧内调用 `Submit`。
+
+### 6. Tests Required
+`InkeysHeadlessTests --device-performance-only`：映射、累加、签名规范化、日桶淘汰、报告回退、建议矩阵（含 59/119/239 Hz 容差、重启提示比较当前会话）、JSON 往返/坏文件/单桶非法，以及账本文件级场景（坏文件 `.bad`、Stop 落盘、重载合并、同路径重启不翻倍、清除删文件、记录关闭时坏文件不动且不被覆盖）。帧尾计数条件没有无窗口整循环测试，需要实机验证。
+
+### 7. Wrong vs Correct
+错误：签名变化时在帧尾直接 `Submit` 旧段。正确：拷入第二个槽，空闲时移交。
