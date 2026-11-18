@@ -2,7 +2,7 @@
 
 ## 一句话状态
 
-第2步已拆为 A / B / C 三个子任务。**A（DComp waitable）规划完成，等待用户指示开工**；B、C 只有 PRD。仓库未改任何代码，Trellis 文档均未提交（用户未授权 commit）。
+第2步已拆为 A / B / C 三个子任务（另加 A2）。**以文末“恢复指引（2026-11-18）”为准：A、A2 已完成归档，下一项为 B。** 以下为历史记录。
 
 ## 环境与协作约定
 
@@ -69,7 +69,19 @@
 
 ## 进展（2026-11-17 夜，阶段 A2 实现完成，以此为准）
 
-- A2 `11-17-cursor-frame-pacing` 已 `task.py start`（in_progress），代码全部完成，**未提交**。开工核对（Codex）发现 3 处与设计不符，用户“按建议继续”：D1 拒收触摸走新观察通道；D2 兼容鼠标 `CursorHeld()`；D3 手掌拒收的笔/鼠标光标也跟随。详见 A2 `design.md` §10 与 `research/startup-verification-20261117.md`。
+- A2 `11-17-cursor-frame-pacing` 已 `task.py start`（in_progress），代码全部完成，已提交 `696cc4f1`（未 push，任务保持 in_progress）。开工核对（Codex）发现 3 处与设计不符，用户“按建议继续”：D1 拒收触摸走新观察通道；D2 兼容鼠标 `CursorHeld()`；D3 手掌拒收的笔/鼠标光标也跟随。详见 A2 `design.md` §10 与 `research/startup-verification-20261117.md`。
 - 实现要点：`ContactInputCoordinator::PublishPacedWake`（不打断帧尾等待）；窗口侧鼠标/笔按下期间纯移动改发节拍唤醒（新选项开启时鼠标恢复打断式）；帧尾新增 `active.empty() && cursorContactPacingActive()` 节流分支；拒收触摸登记表（带工作区，进入选择模式/切换工作区即退休）；`CursorSettings` bit44 + `Experimental.Inkeys3.Draw3.UnthrottledMouseMoveWhileDrawing`（默认关，`SyncDraw3State` 即时下发，性能页 waitable 之后，20 语言已译）；压力工具 `Scripts/Start-StressLoad.cmd/.ps1` + `Scripts/StressLoad/StressLoad.cpp`（GPU 时间戳计时、超 500 ms 降档、设备异常停止 GPU 部分）。
 - 验证：Debug|ARM64 构建通过；`Inkeys.exe --draw3-control-fence-test` 通过（含新增窗口侧节拍唤醒检查）；新增 contact/mouse 单测；Codex 只读审阅无 P0/P1，4 条 P2 + 1 条 P3 已全部修复。帧尾分支没有整循环测试，需用户实机验证。
 - 待办：用户实机测试（30/120 FPS 鼠标书写帧率、准入阻塞/关闭多指拒收光标、新选项开关、压力工具下高帧率书写）→ 通过后更新规范（`draw3-cursors.md`、`input-and-ink.md`、`settings-performance-and-drawing.md`）→ 经授权提交。之后阶段 B。
+
+## 恢复指引（2026-11-18，阶段 A / A2 收尾，以此为准）
+
+- **阶段 A、A2 已完成并归档**：代码 `0c8a7337`（A）、`696cc4f1`（A2）；用户 2026-11-18 实机验证通过（重启后 30 FPS 书写每秒约 20–30 帧，选项开关按预期）。规范已写入：
+  - `draw3-integration.md`“Scenario: DComp waitable 帧延迟等待与熔断”；
+  - `draw3-cursors.md`“Scenario: 绘制时光标跟随画布帧率”；
+  - `input-and-ink.md`“Scenario: 节拍唤醒与被观察的拒收接触”；
+  - `settings-performance-and-drawing.md` 两个新配置键与“渲染与兼容”节顺序。
+- 子任务目录已移到 `.trellis/tasks/archive/2026-11/`（`11-17-dcomp-waitable-latency`、`11-17-cursor-frame-pacing`），其 `research/`（含 `field-test-20261117.md` §6 阶段 B 完成方式取舍）随之移动。
+- 实测经验：画布帧率 `Drawing.FrameRate` 只在启动时生效，改档后必须重启再测；`[Draw3Diag][latency] acquired=` 每秒计数可直接当实际出帧率读。
+- **下一项：阶段 B `11-17-ulw-texture-pipeline`**（只有 PRD，status=planning），由下一次对话开始。先读本文件“关键事实”、父任务 `research/presentation-pipeline-current.md` §4–§6 与归档的 `field-test-20261117.md` §6，再与用户确定完成方式后写 design/implement。之后阶段 C `11-17-perf-dashboard`（PRD 中对 A/B 的口径前提：等待耗时不计入工作耗时，A 已满足）。
+- 分支 `refactoring/draw` 均未 push。

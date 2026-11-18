@@ -8,13 +8,13 @@
 
 ## 2. Signatures
 
-- `Draw3.CursorSettings.h`：`CursorStyle { None=0, Arrow=1, Pen=2, HighlightPen=3, Dot=4, HighlightDot=5 }`（界面名：无光标/鼠标/画笔/画笔（高亮）/小圆点/小圆点（高亮））、`CursorDevice { Mouse, Touch, ScreenPen, Tablet }`、`CursorSettings{mouse,touch,screenPen,tablet,injectedMouseAsTablet,dotHideOnContact,penOpacity,highlightPenFillOpacity,dotOpacity,highlightDotFillOpacity}`（默认 Arrow/None/Dot/HighlightDot/false/ScreenPen/50/50/25/50）、`IsCursorStyleValueValid/RestoreCursorStyle/RestoreDeviceCursorStyle/LegacyCursorStyle`、`CursorStyleToItemIndex/FromItemIndex/ItemCount`（设置页下拉索引，触摸含“无光标”首项）、`DefaultCursorOpacityPercent/NormalizeCursorOpacityPercent/CursorOpacityPercent`、`PackCursorSettings/UnpackCursorSettings`（`uint64_t`：低位 mouse3|touch3|screenPen3|tablet3|injected1|valid1|dotHide2 不变，有效位仍为 bit13，四种百分比从 bit16 起各占 7 位）与 `kCursor*Dip` 共用常量（渲染与设置页预览共用，避免漂移）。“小圆点”即随笔宽的圆形预览（旧“圆形”）；“鼠标”对鼠标是真实系统光标，对其它设备是 Draw3 自绘的同形状箭头。
+- `Draw3.CursorSettings.h`：`CursorStyle { None=0, Arrow=1, Pen=2, HighlightPen=3, Dot=4, HighlightDot=5 }`（界面名：无光标/鼠标/画笔/画笔（高亮）/小圆点/小圆点（高亮））、`CursorDevice { Mouse, Touch, ScreenPen, Tablet }`、`CursorSettings{mouse,touch,screenPen,tablet,injectedMouseAsTablet,dotHideOnContact,penOpacity,highlightPenFillOpacity,dotOpacity,highlightDotFillOpacity}`（默认 Arrow/None/Dot/HighlightDot/false/ScreenPen/50/50/25/50）、`IsCursorStyleValueValid/RestoreCursorStyle/RestoreDeviceCursorStyle/LegacyCursorStyle`、`CursorStyleToItemIndex/FromItemIndex/ItemCount`（设置页下拉索引，触摸含“无光标”首项）、`DefaultCursorOpacityPercent/NormalizeCursorOpacityPercent/CursorOpacityPercent`、`PackCursorSettings/UnpackCursorSettings`（`uint64_t`：低位 mouse3|touch3|screenPen3|tablet3|injected1|valid1|dotHide2 不变，有效位仍为 bit13，四种百分比从 bit16 起各占 7 位，bit44 为 `unthrottledMouseMoveWhileDrawing`）与 `kCursor*Dip` 共用常量（渲染与设置页预览共用，避免漂移）。“小圆点”即随笔宽的圆形预览（旧“圆形”）；“鼠标”对鼠标是真实系统光标，对其它设备是 Draw3 自绘的同形状箭头。
 - `DotCursorHideMode{Off=0,ScreenPen=1,Tablet=2,Both=3}`、`RestoreDotCursorHideMode(int)`、`ShouldHideDotCursorOnContact(CursorDevice,CursorStyle,DotCursorHideMode)`：只对两种 Dot 样式与命中的笔设备返回隐藏；非法整数还原为 ScreenPen。
 - `Bridge::ProductState::cursorSettings` 是纯值快照；`Bridge::ResolveMouseCursorStyleForTool(Tool,CursorStyle)` 给出当前工具的有效鼠标样式（软/硬笔取所选，荧光笔固定为应用预览，其余回 Arrow），`Bridge::ResolveCursorSettingsForTool(Tool,CursorSettings)` 按值生成有效快照且只改 mouse；原始选择不得被该临时结果覆盖。
 - `DrawingController::SetCursorSettings(const CursorSettings&) noexcept` 只由 Host owner 消费；`ResolvePrimaryDrawingCursorVisual(..., const CursorSettings* productSettings=nullptr, bool penIconAllowed=false, float dpiScale=1.0f)` 在显式接入后应用产品规则（`penIconAllowed` 仅对软/硬笔为真，同时门控设备样式）；`MakeTouchPenDrawingCursorVisual(x,y,appearance,CursorStyle,dpi)` 生成逐接触触摸光标。
 - `ShouldHideSystemDrawingCursor(..., bool mouseSampleIsTablet=false, bool canvasPanMode=false)`：白板移动模式的Pen/Mouse及驱动注入数位板交还默认系统光标；Touch和无真实鼠标接管的活动Touch Pan仍隐藏，默认false保留普通绘制策略。Window实际应用与诊断必须传同一`CanvasPanMode()`。
 - `FilterMouseCursorMessage(const MouseCursorMessageFilterInput&) noexcept`的输入携带当前持久`pointerAuthority`（默认Unknown）；Window RTS光标分支从既有`cursorOwner_`读取，不新增计时/归属状态。
-- `DrawingCursorShape::{PenIcon,Arrow}`、`DrawingCursorAppearance::{outlineOpacity,centerOffsetX,centerOffsetY}` 保留既有shader/dirty合同；GPU type 21=笔形、22=自绘箭头（共用 type 4–6 的 quad/覆盖率路径，12×19 DIP 参考盒、射线奇偶内外判断）。`WindowController::RequestDrawingCursorRender() noexcept` 只发合并请求和wake，不操作HWND/GPU。
+- `DrawingCursorShape::{PenIcon,Arrow}`、`DrawingCursorAppearance::{outlineOpacity,centerOffsetX,centerOffsetY}` 保留既有shader/dirty合同；GPU type 21=笔形、22=自绘箭头（共用 type 4–6 的 quad/覆盖率路径，12×19 DIP 参考盒、射线奇偶内外判断）。`WindowController::RequestDrawingCursorRender() noexcept` 只发合并请求和wake，不操作HWND/GPU；`RequestDrawingCursorRenderPaced() noexcept` 置位同一合并标志但只发节拍唤醒（见文末“绘制时光标跟随画布帧率”）。
 
 ## 3. Contracts
 
@@ -183,3 +183,57 @@ Wrong：RTS 回调栅格化，或 `Sample * opacity` 后再次乘 alpha。Correc
 - 手掌橡皮：`Drawing.PalmEraser.Shape`（`IdtAtomic<int>`，-1 跟随默认 / 0..2 形状，非法回落 -1）→ `PalmEraser::Settings::shape`；`PromotePalmRuntime` 用 `PalmEraser::ResolveShape` 覆盖笔划形状（跟随时保留 Down 锁存），光标随笔划形状。手掌页：“适用工具”在“精细控制”内、“边擦边写”上方；末尾“橡皮光标”分类为 i 信息块（明暗/纹样跟随光标页）+ 形状卡（跟随默认 + 三形状预览，跟随项预览默认形状）。屏蔽范围随生效形状（圆形 r+max(0.15r,4px)，矩形/正方形各轴外扩 max(0.15h,4px)），手掌大小自定义见 palm-eraser.md。
 - `Draw3.EraserCursor.h` 会被包含 `<windows.h>` 的 UI 代码引用：其中一律写 `(std::min)(...)` / `(std::max)(...)`，否则 `min/max` 宏导致 C2589。
 - 测试：`--config-boundary-test`；`InkeysHeadlessTests --no-window --setting-eraser-only`（含橡皮光标卡 20 语/缩放/浅深/窄宽）；`--draw3-renderer-upload-test`；全量 `--no-window`。
+
+## Scenario: 绘制时光标跟随画布帧率（2026-11-17）
+
+### 1. Scope / Trigger
+
+修改鼠标/笔光标样本发布后的唤醒条件、帧尾等待分支、拒收接触的光标显示或 `UnthrottledMouseMoveWhileDrawing` 选项时适用。来源任务 `11-17-cursor-frame-pacing`（提交 `696cc4f1`，用户 2026-11-18 实机 30 FPS 重启后验证：按住鼠标书写每秒约 20–30 帧，选项开关按预期）。唤醒与观察通道的输入层合同见 `input-and-ink.md`“节拍唤醒与被观察的拒收接触”。
+
+### 2. Signatures
+
+- `WindowController::RequestDrawingCursorRenderPaced() noexcept`：置位同一 `drawingCursorRenderRequested` 合并标志 + `ContactInputCoordinator::PublishPacedWake()`。
+- `WindowController::SetUnthrottledMouseMoveWhileDrawing(bool) noexcept`，成员 `std::atomic<bool> unthrottledMouseMoveWhileDrawing_`（窗口线程读）。
+- `CursorSettings::unthrottledMouseMoveWhileDrawing`（bit44，默认 false）；`DrawingController::SetCursorSettings` 转发到窗口。
+- `MouseInputState::CursorHeld() = Active() || (admissionHeldButtons_ & physicalButtons_) != 0`：兼容鼠标在准入拒收后仍按住视为光标接触；选择隔离不计入。
+- Controller 内部：`registerRejectedTouchCursor` / `refreshRejectedTouchCursors` / `cursorContactPacingActive`，登记表 `rejectedTouchCursors{handle,tool,visualStyle,position,workspace}`。
+
+### 3. Contracts
+
+- **唤醒分级**：`stateChanged`（valid/inContact 变化）与悬停（未按下且非移动模式）仍用打断式 `RequestDrawingCursorRender`；**按下且非移动模式的纯位置变化**改用 `RequestDrawingCursorRenderPaced`。鼠标在选项开启时恢复打断式；笔不受选项影响。移动模式行为不变（见 `canvas-pan.md`）。
+- **帧尾节流分支**：位于物理接触、漫游/动画分支之后，`!active.empty()` 之前，条件 `active.empty() && cursorContactPacingActive()`，动作 `WaitForFrameDeadline(1000/target_fps − workMs)`。节拍唤醒不打断该等待，所以每个帧间隔最多出一帧光标；光标不动时回到空闲等待，不空转出帧。必须要求“无物理接触笔画”，否则会绕过橡皮 F3 idle 交接。
+- `cursorContactPacingActive`：选择模式或移动模式为 false；拒收触摸登记表非空为 true；否则鼠标信箱 `valid && inContact`，或笔信箱 `valid && inContact && !suppressed && !TouchPanActive && !suppressPenUntilRelease`（沿用现有抑制，不扩大）。
+- **拒收后的光标**：准入阻塞（`!ContactAdmitted`）与关闭多指（`RejectIndependentTouch`）丢弃的 Pen/HardPen/Eraser 触摸登记观察，按帧率跟随、不出墨；橡皮用基础固定直径，笔仅在 `cursorSettings.touch != None` 时显示。手掌邻近拒收、平移抑制、选择模式、兼容消息抑制不登记。手掌拒收的笔/鼠标光标靠信箱照常跟随（D3），不记录拒收原因。
+- **登记表退休**：进入选择模式全部清空；工作区变化的条目丢弃；`TryReadObservedContact` 为 Ended 时移除，Retry 保留本帧旧位置。登记表变化本身算一次光标渲染请求。
+- **选项**：默认关；设置页改动调用 `SyncDraw3State()`，经 `PumpBridgeState`→`SetCursorSettings`→窗口原子量即时生效，不需重启。关闭时鼠标笔迹采样率随之降为预设帧率（用户已接受）。
+- 热路径不新增日志、锁或分配；画布帧率仍只在启动时选定（改档必须重启后再验证）。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需结果 |
+|---|---|
+| 30 FPS，按住鼠标快速书写，选项关 | 出帧约 30/s，笔迹连续 |
+| 同上，选项开 | 恢复逐移动刷新，帧率明显升高；关掉即回落 |
+| 鼠标悬停移动 | 打断式，光标即时跟随（不变） |
+| 落笔/抬笔、valid 变化 | 仍打断帧尾等待 |
+| 准入阻塞或关闭多指时的触摸 | 光标按帧率跟随，无墨迹；抬起后消失 |
+| 拒收期间进入选择模式/切换工作区 | 拒收光标立即消失 |
+| 按住不动 | 不持续出帧 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：书写中光标位置变化只置标志 + 节拍唤醒，由已有活动帧按帧率读取。
+- Base：悬停、移动模式、状态变化的唤醒与改动前一致。
+- Bad：按下期间逐移动打断 `WaitForFrameDeadline`（冲到数百帧）；节流分支不检查 `active.empty()`；拒收触摸重新创建运行时笔画来显示光标。
+
+### 6. Tests Required
+
+- `RunCanvasPanProductionProbe`（`--draw3-control-fence-test`）：按下的 Pen/Mouse 位置变化发节拍唤醒、不递增帧唤醒代次；1000 次移动合并为 1 个控制标记；选项开启恢复打断式；悬停仍打断。
+- `draw3_mouse_input_tests.cpp` `TestAdmissionRejectedCursorHeld`；观察通道单测见 `input-and-ink.md`。
+- 帧尾节流分支没有整循环测试，必须实机验证（重启后在 30/120 FPS 下书写），可用 `Scripts/Start-StressLoad.cmd` 制造 CPU/GPU 负载。
+
+### 7. Wrong vs Correct
+
+Wrong：`if (!CanvasPanMode() || stateChanged) RequestDrawingCursorRender();`（按下书写时每次移动都打断帧节拍）。
+
+Correct：`stateChanged`/悬停 → `RequestDrawingCursorRender()`；按下纯移动 → 选项开（仅鼠标）则 `RequestDrawingCursorRender()`，否则 `RequestDrawingCursorRenderPaced()`；帧尾 `active.empty() && cursorContactPacingActive()` 时按帧截止等待。

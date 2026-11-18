@@ -522,6 +522,57 @@ input.Recycle(oldHandle);
 input.DiscardUntilTerminal(oldHandle);
 ~~~
 
+## Scenario: 节拍唤醒与被观察的拒收接触（2026-11-17）
+
+### 1. Scope / Trigger
+
+修改 `ContactInputCoordinator` 的控制唤醒、`SignalWake`、Quarantined 记录上的 Move，或让被拒收接触继续提供位置时适用。来源任务 `11-17-cursor-frame-pacing`（提交 `696cc4f1`）；产品行为见 `draw3-cursors.md`“绘制时光标跟随画布帧率”。
+
+### 2. Signatures
+
+- `PublishControlWake(bool interruptFrame = true)`（Impl）；公开 `bool PublishPacedWake() noexcept` = `PublishControlWake(false)`。
+- `void ObserveDiscardedContactCursor(ContactHandle) noexcept`；`ObservedContactRead TryReadObservedContact(ContactHandle, ContactSnapshot&) const noexcept`，`ObservedContactRead { Live, Retry, Ended }`。
+- `ContactRecord::cursorObservedGeneration_`（`IdtAtomic<uint64_t>`），经 `ContactRecordAccess::{CursorObservedGeneration,SetCursorObservedGeneration}` 访问；setter 为只前进的 CAS。
+
+### 3. Contracts
+
+- **两种唤醒**：打断式（默认）递增 `frameWakeGeneration`，让进行中的 `WaitForFrameDeadline` 提前返回；节拍式不递增它。两者都递增 `wakeGeneration`（`WaitForWake`、橡皮 F3 idle 等待依赖它）、`SetEvent`，并经 `controlWakePending` 去重入队一个控制标记（唤醒空闲 `WaitDequeue`）。已有待处理标记时打断式唤醒仍照常打断，不丢事件。控制标记在活动帧中按稳定态记账处理，无墨迹提交或 GPU 工作。
+- **观察通道**：拒收方在 `DiscardUntilTerminal` 之后对需要显示光标的接触调用 `ObserveDiscardedContactCursor`，把当前 generation 写入观察标记。Quarantined 且观察代次匹配的 `PublishMove` 只更新快照、**仍返回 false**（不进墨迹、不计为生产 Move），并发节拍唤醒。未被观察的 Quarantined Move 行为不变。
+- `TryReadObservedContact`：route 不是 `MakeProducerRoute(generation, Quarantined)` → Ended（终态、Free、同址新代次都算）；读快照失败或读取期间 route 变化 → Retry；否则 Live。`TryReadSnapshot` 继续拒绝 Quarantined，观察读取只能走这个接口。
+- 观察标记只前进：旧 handle 的迟到 observe 不能覆盖较新的观察，也不能让同址新代次的活记录被当作观察记录。终态回收沿用 Contact Closing 合同，观察不延长记录生命周期。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需结果 |
+|---|---|
+| 节拍唤醒时帧尾正在 `WaitForFrameDeadline` | 不提前返回；空闲 `WaitDequeue`/`WaitForWake` 被唤醒 |
+| 节拍与打断唤醒混合 | 打断照常生效，标记仍只有一个 |
+| 1000 次节拍唤醒未消费 | 合并为 1 个控制标记 |
+| 被观察 Quarantined 的 Move | 快照更新，返回 false，节拍唤醒 |
+| 未被观察的 Quarantined Move | 返回 false，快照不变 |
+| 物理 Up/Cancel 后读取 | Ended，记录按原合同回收 |
+| 旧 handle 对复用的活记录/较新观察调用 observe | 无效，不影响新代次 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：拒收触摸 → Discard → Observe → 每帧 `TryReadObservedContact` 取位置画光标 → 终态后 Ended 移除。
+- Base：不调用 Observe 的拒收路径与改动前完全一致。
+- Bad：为显示光标让 Quarantined Move 返回 true、或让 `TryReadSnapshot` 接受 Quarantined；用打断式唤醒发布被观察的 Move。
+
+### 6. Tests Required
+
+- `InkeysHeadlessTests/draw3_contact_tests.cpp`：`TestPacedControlWake`（节拍不打断帧尾等待但唤醒空闲等待、混合唤醒、标记去重）与 `TestObservedDiscardedContactCursor`（被观察 Move 只更新位置、单个节拍标记、不打断帧预算、不产生墨迹 Down、终态后 Ended、未观察不变、旧 handle 对复用活记录与较新观察无效；Retry 分支只有代码审查，无确定性单测）。
+- `Inkeys.exe --draw3-control-fence-test` 的窗口侧节拍唤醒检查；完整 `InkeysHeadlessTests.exe --no-window`。
+
+### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：被拒收的接触要显示光标，就把它当作仍在生产的笔画。
+if (quarantined) { PublishSnapshot(...); return true; }
+// Correct：只对显式观察的代次更新快照，返回 false，只发节拍唤醒。
+if (observedQuarantine) { PublishSnapshot(...); UnlockWriter(); (void)PublishControlWake(false); return false; }
+~~~
+
 ## Scenario: Win7 GPU 透明读回分界诊断
 
 ### 1. Scope / Trigger

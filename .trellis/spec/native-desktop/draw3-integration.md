@@ -472,6 +472,60 @@ Wrong：`Present1(...) == S_OK -> observer.presented(success) -> ShowWindow(prim
 
 Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`；Laser 用 `LaserTrailExpiredThisFrame(frameInitial, finalAfterInput)` 驱动最终清理，首次过期预先保留 dirty。
 
+## Scenario: DComp waitable 帧延迟等待与熔断（2026-11-17）
+
+### 1. Scope / Trigger
+
+修改 DComp 交换链创建标志、帧循环开头的等待点、`PresentSwapChain`、帧延迟熔断/恢复、`EnableWaitableWait` 开关或相关运行指标时适用。来源任务 `11-17-dcomp-waitable-latency`（提交 `0c8a7337`，用户实机 120Hz/预设120、60Hz/预设240 通过）。
+
+### 2. Signatures
+
+- `Draw3.FrameLatencyGate.h`：纯状态机 `FrameLatencyGate`（不依赖 D3D），`Acquire(targetFrameMs, refreshMs, FrameLatencyTimeoutPolicy{Count,Exclude,Neutral}, nowMs, wait)`、`OnPresentCalled(bool succeeded)`、`NeedsWaitBeforePresent()`、`ShouldTrip()`、`Trip()`；常量 `kFrameLatencyTimeoutScale=1.5`、超时下/上限 4/200 ms、`kFrameLatencyTripTimeouts=8`、`kFrameLatencyTripMinimumMs=1000`。
+- `TransparentPresentationController::PrepareFrameLatency(targetFrameMs, countsTowardTrip) -> FrameLatencyWaitReport` 与 `ConsumePresentLatencyWait()`。
+- 配置 `Experimental.Inkeys3.Draw3.EnableWaitableWait`（默认 true，启动快照）经 `HostStartOptions.enableWaitableWait` → `TransparentPresentationOptions` 传入。
+
+### 3. Contracts
+
+- **令牌语义**：未持有令牌才等一次；`Signaled` 持有令牌，只有实际调用且成功的 `Present1` 消耗。空裁剪矩形不调用 `Present1`、`Present1` 失败、`DwmFlush` 失败都不消耗。
+- **等待点**：主循环在设备恢复/Resize 处理之后、导航 Drain 与输入批次之前调用 `PrepareFrameLatency`；帧循环外的 Present（清屏、整画布）在 `PresentSwapChain` 内按 `NeedsWaitBeforePresent()` 补等，策略 `Neutral`（不计数也不打断连续计数）。
+- **超时仍 Present**：超时不是错误，本帧照常合成与 `Present1`，最坏退化为无等待的现状；启动首帧初始句柄已发信号。
+- **自适应超时** `clamp(1.5 × max(预设帧间隔, DWM 刷新间隔, 信号间隔 EMA), 4, 200) ms`。EMA 只吸收不超过 200 ms 的获取间隔（更长的是空闲，不是合成节奏）；刷新间隔取 `DwmGetCompositionTimingInfo`，失败按 16.7 ms。
+- **只在可能失效时熔断**：`Count` 策略下连续超时 ≥ 8 且连续区间 ≥ 1000 ms，或句柄等待本身失败（`WaitFailed`）。任何一次成功获取都清零连续计数，GPU 慢不会熔断。窗口隐藏/最小化、交接屏障 pending、`recoveryPending`、非主画布输出（SelectionUlw/ULW）、工作区交接/加载未决时为 `Exclude` 或直接不等待。
+- **熔断后**：本会话不再尝试 waitable，经现有 `RecoverFromRuntimeFailure` 重建为同模式、不带 waitable 标志的 FLIP，仍由设备级 `SetMaximumFrameLatency(1)` 限流；新会话复位。
+- **开关关闭** = 保留 waitable 交换链但不等待（A/B 与排障用）；Win8.0（waitable 创建失败）、ULW、Win7 路径不新增任何应用侧等待。
+- **口径**：等待耗时计入帧预算（等得越久帧尾睡得越少），但**不计入工作耗时**——画布调试的无限制帧率/负载与 `RecordActiveFrame` 的 `workMs` 都扣除；运行指标单列 `latencyWaitMs`/`latencyWaitState` 与会话计数 `latencyWait.timeouts/tripped`。
+- **诊断**仅 Debug 级 `[Draw3Diag][latency]`：创建时启用/禁用/跳过原因与 `refreshMs/timeoutMs`，约每秒一行汇总（acquired、timeouts、平均/最大等待、timeoutMs、signalIntervalMs），熔断一行。不逐帧输出。
+- 实测（SyncInterval 0）：句柄约 1 ms 内回补，正常情况几乎零等待；waitable 只在 GPU/合成吃紧时把排队压回一帧。`acquired` 每秒计数可直接读作实际出帧率。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 必需结果 |
+|---|---|
+| 句柄已发信号 | 立即返回，令牌持有直到成功 Present |
+| GPU 慢、信号迟到 | 超时随 EMA 放宽，等待成功，不熔断 |
+| 窗口隐藏/最小化/交接/加载期间超时 | 只计统计，打断连续计数，不熔断 |
+| 信号持续缺失 ≥ 8 次且 ≥ 1 s，或等待失败 | 熔断，重建不带标志的 FLIP，本会话不再尝试 |
+| Present 失败或空裁剪 | 令牌保留，下一帧不重复等待 |
+| 开关关 / Win8.0 / ULW / Win7 | 不等待，行为与改动前一致 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：主循环帧首等待 → 读输入 → 合成 → `Present1` 成功消耗令牌；设备严重吃紧时 `acquired` 下降但 `timeouts=0`。
+- Base：正常负载下每帧等待 < 0.1 ms，帧率由预设帧率决定。
+- Bad：把超时当失败跳过 Present；在帧中途直接换交换链；把隐藏期超时计入熔断；把等待耗时算进负载百分比。
+
+### 6. Tests Required
+
+- `InkeysHeadlessTests/draw3_frame_latency_gate_tests.cpp`（`RunDraw3FrameLatencyGateTests`）：禁用不等、首获令牌、令牌消耗规则、自适应超时、EMA 空闲过滤、三种超时策略、熔断阈值、等待失败熔断。
+- 完整 Solution `Debug|ARM64` 构建，`InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-control-fence-test`。
+- 熔断路径没有故障注入开关，单纯加压不会触发；真实熔断只能代码审查 + 状态机单测证明。
+
+### 7. Wrong vs Correct
+
+Wrong：`if (WaitForSingleObjectEx(handle, timeout) == WAIT_TIMEOUT) return /*跳过本帧*/;` 或在 `PresentSwapChain` 无条件等待。
+
+Correct：`PrepareFrameLatency(1000/target_fps, countable)` 在帧首有界等待一次，超时照常 Present；帧循环外的 Present 只在 `NeedsWaitBeforePresent()` 时以 `Neutral` 补等。
+
 ## 来源任务与验证状态
 
 - 源任务历史统一保存到 `.trellis/tasks/archive/2026-08/draw3-source/`；其中 `active/` 保留源快照的 `in_progress` 状态但不进入目标 active task 列表，原 2026-07/08 归档按月份保留。
