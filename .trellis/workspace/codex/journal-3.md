@@ -662,3 +662,26 @@ Migrated live deploy.json/pptcom_configuration.json fields into Inkeys::Config w
 ### Status
 
 [OK] **Completed**
+
+
+## Session 193: UI3 自动脏区提交与任务归档
+<!-- trellis-session: v=2 fp=40e90cbfc6042ae8 -->
+
+**Date**: 2026-11-19
+**Task**: UI3 自动脏区提交与任务归档
+**Branch**: `refactoring/drawpad-ui`
+
+### Summary
+
+用户确认 11-18 UI3 自动脏区实机检查通过（脏区与居中吸底窗口跳变均已解决）。提交前在 v10n+109c66e2 组合状态复跑：构建 0 错误、Headless 退出码 0、host 38/0、golden 35/0、属性脏区测试 0 越界 0 不一致（动画帧 206 未分类 0）、居中 PASS、底栏吸附全部通过（原 28 条 PPT/白板既有失败已由 109c66e2 消除）。提交代码与规范后归档 11-18 与 11-16-ui3-layered-encapsulation；中期重构总任务保留。后续另开任务：脏区调试中的帧率显示。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `24f7eee7` | feat(ui3): derive dirty regions automatically from a visual registry |
+| `dbd3b850` | docs(spec): record UI3 visual dirty registry contracts |
+
+### Status
+
+[OK] **Completed**
