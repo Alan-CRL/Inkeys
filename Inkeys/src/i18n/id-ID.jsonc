@@ -1052,6 +1052,14 @@
         "N": "Rantai pertukaran kanvas desktop",
         "E": "UpdateLayeredWindow tidak mendukung rantai pertukaran."
       },
+      "CompositionAlign":
+      {
+        "N": "Sinkronisasi waktu komposisi desktop",
+        "Always": "Selalu",
+        "Off": "Nonaktif",
+        "UlwOnly": "Hanya UpdateLayeredWindow",
+        "DcompOnly": "Hanya DirectComposition"
+      },
       "WaitableWait":
       {
         "N": "Aktifkan penantian dalam mode waitable",

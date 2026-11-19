@@ -20,7 +20,7 @@
 | B | `11-17-ulw-texture-pipeline` ULW 独立纹理、CPU/GPU 重叠与合成时机对齐 | 已完成并归档（2026-11-18，本机强制 ULW 实机认可；Win7 实测并入 D 之后） | 独立纹理作最终目标 + 自适应异步读回（最多领先一帧）+ 提交不超过刷新率 + DWM 合成时机对齐（原 E 的 ULW 部分）+ 单遍 SIMD 复制 + DWM 状态检测 |
 | C | `11-17-perf-dashboard` 性能页设备性能看板 | 规划完成待审阅（2026-11-18） | 逐帧累加 → 空闲移交 → 按设置签名×日分桶写 `Inkeys/Memory` JSON → 性能页顶部看板（最近 7 个使用日、四档配色、帧率建议、可展开 6 维度明细） |
 | D | `11-19-win7-dwm-presentation` Win7 DWM 呈现路径 | 实现已归档；Win7 SP1 + KB2670838 的 x86/x64 动态背景、残影、FLIP 稳定性及回退交接待实机补测 | 实现 Win7 DWM 透明呈现路径（像素留在显存、不回读），DWM 未合成时回退 ULW；复用 B 的 DWM 状态检测与合成时钟模型 |
-| E | （未建）DComp 合成时机对齐 | 规划预告（ULW 部分已并入 B） | DComp 帧相位对齐合成时机（Win8+ 用 `IDCompositionDevice::GetFrameStatistics` 的下次合成时间与合成频率），需与 A 的 waitable 等待顺序、超时/熔断计数及动态刷新率协调，单独 A/B；复用 B 的合成时钟模型，阶段 D 也可能使用 |
+| E | `11-19-dcomp-composition-timing` DComp 合成时机对齐 | 已完成，本机实测通过，端到端延迟收益未量化（ULW 部分已并入 B） | DComp 帧相位对齐合成时机（Win8+ 用 `IDCompositionDevice::GetFrameStatistics` 的下次合成时间与合成频率），需与 A 的 waitable 等待顺序、超时/熔断计数及动态刷新率协调，单独 A/B；复用 B 的合成时钟模型，阶段 D 也可能使用 |
 
 交接说明见 `handoff.md`（上下文压缩后从这里恢复）。
 

@@ -1052,6 +1052,14 @@
         "N": "Cadeia de troca da tela da área de trabalho",
         "E": "UpdateLayeredWindow não oferece suporte a cadeias de troca."
       },
+      "CompositionAlign":
+      {
+        "N": "Sincronização com a composição da área de trabalho",
+        "Always": "Sempre",
+        "Off": "Desativada",
+        "UlwOnly": "Somente UpdateLayeredWindow",
+        "DcompOnly": "Somente DirectComposition"
+      },
       "WaitableWait":
       {
         "N": "Ativar espera no modo waitable",

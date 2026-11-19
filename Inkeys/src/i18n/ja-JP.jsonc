@@ -1052,6 +1052,14 @@
         "N": "デスクトップキャンバスのスワップチェーン",
         "E": "UpdateLayeredWindow はスワップチェーンに対応していません。"
       },
+      "CompositionAlign":
+      {
+        "N": "デスクトップ合成のタイミング調整",
+        "Always": "常に有効",
+        "Off": "オフ",
+        "UlwOnly": "UpdateLayeredWindow のみ",
+        "DcompOnly": "DirectComposition のみ"
+      },
       "WaitableWait":
       {
         "N": "waitable モードで待機を有効にする",

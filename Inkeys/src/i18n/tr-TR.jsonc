@@ -1052,6 +1052,14 @@
         "N": "Masaüstü tuvali takas zinciri",
         "E": "UpdateLayeredWindow takas zincirlerini desteklemez."
       },
+      "CompositionAlign":
+      {
+        "N": "Masaüstü birleştirme zamanlamasıyla eşitleme",
+        "Always": "Her zaman",
+        "Off": "Kapalı",
+        "UlwOnly": "Yalnızca UpdateLayeredWindow",
+        "DcompOnly": "Yalnızca DirectComposition"
+      },
       "WaitableWait":
       {
         "N": "Waitable modunda beklemeyi etkinleştir",

@@ -540,7 +540,7 @@ Correct：`PrepareFrameLatency(1000/target_fps, countable)` 在帧首有界等�
 
 - `TransparentPresentationController`：`BeginUlwFrame(frameStartMs, targetFrameMs)`（C1 帧开头探测）、`ServiceUlwBeforeFrameWait()`（帧尾累计脏区拷出）、`CompleteUlwBeforeIdle(textureValid)`（C3 空闲前）、`DiscardUlwAccumulated()`（光栅失败帧）、`UlwFramePhaseAdjustMs(frameStartMs)`（相位微调），均返回 `UlwFrameReport{waitedMs, failed}`；ULW 下 `SwapChain()` 返回空。
 - 纯逻辑头：`Draw3.UlwReadbackPacing.h`（即时/流水自适应：连续 3 帧超预算且 Map 等待 ≥ 帧间隔 25% 进流水；每 500 ms 试一帧即时，≤ 帧间隔 90% 回即时）、`Draw3.CompositionClock.h`（`CompositionClock` 每 250 ms 重读 DWM 时序，`CommitDurationEstimator` 取 EMA 与最近 16 次最大值，`UlwCommitPlanner`、`ClassifyCompositionCadence`）。
-- 配置 `Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback`（默认 true，界面开关）、`Experimental.Inkeys3.Draw3.UlwCompositionAlign`（默认 true，无界面），启动快照经 `HostStartOptions` → `TransparentPresentationOptions`。
+- 配置 `Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback`（默认 true，界面开关）、`Experimental.Inkeys3.Draw3.UlwCompositionAlign`（默认 true，与 DcompCompositionAlign 共用性能页选择项），启动快照经 `HostStartOptions` → `TransparentPresentationOptions`。
 
 ### 3. Contracts
 

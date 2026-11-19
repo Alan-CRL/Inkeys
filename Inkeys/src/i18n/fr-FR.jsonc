@@ -1052,6 +1052,14 @@
         "N": "Chaîne d’échange du canevas du bureau",
         "E": "UpdateLayeredWindow ne prend pas en charge les chaînes d’échange."
       },
+      "CompositionAlign":
+      {
+        "N": "Synchronisation avec la composition du bureau",
+        "Always": "Toujours",
+        "Off": "Désactivée",
+        "UlwOnly": "UpdateLayeredWindow uniquement",
+        "DcompOnly": "DirectComposition uniquement"
+      },
       "WaitableWait":
       {
         "N": "Activer l’attente en mode waitable",

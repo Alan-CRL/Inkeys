@@ -1052,6 +1052,14 @@
         "N": "Цепочка обмена холста рабочего стола",
         "E": "UpdateLayeredWindow не поддерживает цепочки обмена."
       },
+      "CompositionAlign":
+      {
+        "N": "Синхронизация с композицией рабочего стола",
+        "Always": "Всегда",
+        "Off": "Выключено",
+        "UlwOnly": "Только UpdateLayeredWindow",
+        "DcompOnly": "Только DirectComposition"
+      },
       "WaitableWait":
       {
         "N": "Включить ожидание в режиме waitable",

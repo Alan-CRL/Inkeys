@@ -1052,6 +1052,14 @@
         "N": "Łańcuch wymiany płótna pulpitu",
         "E": "UpdateLayeredWindow nie obsługuje łańcuchów wymiany."
       },
+      "CompositionAlign":
+      {
+        "N": "Synchronizacja z kompozycją pulpitu",
+        "Always": "Zawsze",
+        "Off": "Wyłączona",
+        "UlwOnly": "Tylko UpdateLayeredWindow",
+        "DcompOnly": "Tylko DirectComposition"
+      },
       "WaitableWait":
       {
         "N": "Włącz oczekiwanie w trybie waitable",

@@ -1052,6 +1052,14 @@
         "N": "Desktop canvas swap chain",
         "E": "UpdateLayeredWindow does not support swap chains."
       },
+      "CompositionAlign":
+      {
+        "N": "Desktop composition timing alignment",
+        "Always": "Always",
+        "Off": "Off",
+        "UlwOnly": "UpdateLayeredWindow only",
+        "DcompOnly": "DirectComposition only"
+      },
       "WaitableWait":
       {
         "N": "Enable waiting in waitable mode",

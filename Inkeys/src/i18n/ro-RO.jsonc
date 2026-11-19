@@ -1052,6 +1052,14 @@
         "N": "Lanțul de schimb al pânzei de pe desktop",
         "E": "UpdateLayeredWindow nu acceptă lanțuri de schimb."
       },
+      "CompositionAlign":
+      {
+        "N": "Sincronizare cu compoziția desktopului",
+        "Always": "Întotdeauna",
+        "Off": "Dezactivată",
+        "UlwOnly": "Doar UpdateLayeredWindow",
+        "DcompOnly": "Doar DirectComposition"
+      },
       "WaitableWait":
       {
         "N": "Activează așteptarea în modul waitable",

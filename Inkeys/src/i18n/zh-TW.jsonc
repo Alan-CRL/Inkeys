@@ -1052,6 +1052,14 @@
         "N": "桌面畫布交換鏈",
         "E": "UpdateLayeredWindow 不支援使用交換鏈。"
       },
+      "CompositionAlign":
+      {
+        "N": "對齊桌面合成時機",
+        "Always": "一律",
+        "Off": "關閉",
+        "UlwOnly": "僅 UpdateLayeredWindow",
+        "DcompOnly": "僅 DirectComposition"
+      },
       "WaitableWait":
       {
         "N": "waitable 模式下啟用等待",

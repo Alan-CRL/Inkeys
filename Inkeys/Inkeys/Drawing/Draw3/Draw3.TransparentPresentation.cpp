@@ -1265,6 +1265,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			HWND window = nullptr;
 			HMODULE dcompModule = nullptr;
+			CompositionClock phaseClock;
 			Microsoft::WRL::ComPtr<IDCompositionDevice> compositionDevice;
 			Microsoft::WRL::ComPtr<IDCompositionTarget> compositionTarget;
 			Microsoft::WRL::ComPtr<IDCompositionVisual> rootVisual;
@@ -1277,6 +1278,7 @@ namespace Inkeys::Drawing::Draw3
 
 			bool Reset()
 			{
+				phaseClock = {};
 				if (compositionTarget)
 					(void)compositionTarget->SetRoot(nullptr);
 				if (compositionDevice)
@@ -2102,7 +2104,8 @@ namespace Inkeys::Drawing::Draw3
 					<< " lastError=" << initializeError << std::endl;
 				return false;
 			}
-			DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "Active transparent present mode: " << TransparentPresentModeName(mode) << std::endl;
+			DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "Active transparent present mode: " << TransparentPresentModeName(mode)
+				<< " ulwAlignSetting=" << options.enableUlwCompositionAlign << " dcompAlignSetting=" << options.enableDcompCompositionAlign << std::endl;
 			RefreshUlwCompositionState("initialize");
 			return true;
 		}
@@ -2465,6 +2468,7 @@ namespace Inkeys::Drawing::Draw3
 			impl_->selectionUlwPresenter.ReleaseReadbackResources();
 			impl_->selectionUlwPresenter.committedFullFrameClean = false;
 			// 窗口可能移到另一台显示器：重新检测刷新间隔，合成时钟下一次立即重读。
+			impl_->directCompositionPresenter.phaseClock.Invalidate();
 			impl_->RefreshUlwCompositionState("resize");
 		}
 		if (!succeeded) impl_->SetFailure(IsDwmBlurBehindMode(impl_->activeMode) ? impl_->fallbackResult : E_FAIL);
@@ -2646,6 +2650,7 @@ namespace Inkeys::Drawing::Draw3
 		bool succeeded = true;
 		if (IsDwmBlurBehindMode(impl_->activeMode)) succeeded = impl_->UpdateWin7Dwm();
 		if (IsDwmBlurBehind2Mode(impl_->activeMode)) succeeded = impl_->dwmExtendedPresenter.Update();
+		impl_->directCompositionPresenter.phaseClock.Invalidate();
 		impl_->RefreshUlwCompositionState("composition-changed"); // WM_DWMCOMPOSITIONCHANGED / DPI 变化
 		if (!succeeded) impl_->SetFailure(IsDwmBlurBehindMode(impl_->activeMode) ? impl_->fallbackResult : E_FAIL);
 		return succeeded;
@@ -2740,10 +2745,37 @@ namespace Inkeys::Drawing::Draw3
 		return impl.displayTiming;
 	}
 
-	double TransparentPresentationController::UlwFramePhaseAdjustMs(double frameStartMs) const
+	double TransparentPresentationController::FramePhaseAdjustMs(double frameStartMs, double intervalMs, double workMs)
 	{
 		// 只调整固定帧截止等待的目标；打断式唤醒（Down/Up 等）仍立即返回，不等对齐。
-		if (!impl_ || !impl_->UlwAsyncActive() || !impl_->ulwTimingAligned || impl_->recoveryPending) return 0.0;
+		if (!impl_ || impl_->recoveryPending) return 0.0;
+		if (IsDirectCompositionMode(impl_->activeMode))
+		{
+			auto& presenter = impl_->directCompositionPresenter;
+			if (!impl_->options.enableDcompCompositionAlign || !presenter.compositionDevice ||
+				impl_->requestedOutputTarget != TransparentOutputTarget::PrimaryDrawpad) return 0.0;
+			auto& clock = presenter.phaseClock;
+			if (clock.NeedsRefresh(frameStartMs))
+			{
+				DCOMPOSITION_FRAME_STATISTICS stats = {};
+				CompositionTimingSample sample = {};
+				const HRESULT statsResult = presenter.compositionDevice->GetFrameStatistics(&stats);
+				if (SUCCEEDED(statsResult))
+					sample = DcompTimingSample(stats.nextEstimatedFrameTime.QuadPart, stats.currentTime.QuadPart,
+						stats.timeFrequency.QuadPart, stats.currentCompositionRate.Numerator, stats.currentCompositionRate.Denominator);
+				// 失败仅让时钟本轮失效，下一采样周期再试，与 waitable 的超时/熔断分开。
+				clock.Update(sample, frameStartMs);
+				const double shiftMs = DcompPhaseAdjustMs(frameStartMs + intervalMs, intervalMs, workMs, clock);
+				// 仅在重读时序时记录样本，便于对照开关状态和实际修正量。
+				DiagnosticOutput::Line() << "[Draw3Diag][dcomp-align] valid=" << clock.Valid() << " hr=" << statsResult
+					<< " periodMs=" << clock.PeriodMs() << " frameIntervalMs=" << intervalMs << " shiftMs=" << shiftMs << std::endl;
+				// 等待接口接收相对时长，采样占用的帧预算必须扣除，即使本次统计无效。
+				const double elapsedAfterWorkMs = (std::max)(0.0, QpcMilliseconds() - (frameStartMs + workMs));
+				return shiftMs - elapsedAfterWorkMs;
+			}
+			return DcompPhaseAdjustMs(frameStartMs + intervalMs, intervalMs, workMs, clock);
+		}
+		if (!impl_->UlwAsyncActive() || !impl_->ulwTimingAligned) return 0.0;
 		return impl_->primaryUlwPresenter.planner.PhaseAdjustMs(frameStartMs + impl_->ulwFrameIntervalMs,
 			impl_->ulwFrameIntervalMs, impl_->compositionClock);
 	}

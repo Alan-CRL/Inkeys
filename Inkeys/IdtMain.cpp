@@ -3943,6 +3943,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			configOnce.Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback;
 		draw3StartOptions.enableUlwCompositionAlign =
 			configOnce.Experimental.Inkeys3.Draw3.UlwCompositionAlign;
+		draw3StartOptions.enableDcompCompositionAlign =
+			configOnce.Experimental.Inkeys3.Draw3.DcompCompositionAlign;
 		const auto whiteboardDefault = config.Drawing.Whiteboard.DefaultTheme.load();
 		draw3StartOptions.whiteboardDefaultTheme = { whiteboardDefault.backgroundRgb,
 			static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(whiteboardDefault.pattern) };

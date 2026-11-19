@@ -84,6 +84,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool enableUlwAsyncReadback = true;
 		// 异步读回开启且 DWM 合成时，ULW 提交对齐合成时机；无界面配置键，用于实机开/关对照。
 		bool enableUlwCompositionAlign = true;
+		bool enableDcompCompositionAlign = true;
 	};
 
 	// ULW 异步读回在帧开头/空闲前的完成结果：阻塞 Map 计入等待而非工作耗时。
@@ -179,8 +180,8 @@ export namespace Inkeys::Drawing::Draw3
 		// C3 进入空闲等待前：阻塞完成待完成读回并拷出累计脏区，保证停笔后最后一帧上屏。
 		// textureValid=false（本帧光栅失败，最终纹理可能被部分覆写）时只完成已冻结的提交，累计脏区留给重建后的整帧。
 		UlwFrameReport CompleteUlwBeforeIdle(bool textureValid = true);
-		// 固定帧截止等待前：DWM 合成对齐且预设等于刷新率或为其约数时，下一帧开始的建议调整量（毫秒，正=多等）。
-		double UlwFramePhaseAdjustMs(double frameStartMs) const;
+		// 连续绘制帧尾：当前呈现后端根据合成时钟建议的下帧起点调整量（毫秒，正=多等）。
+		double FramePhaseAdjustMs(double frameStartMs, double intervalMs, double workMs);
 		// 在 DWM 合成状态变化后刷新玻璃效果。
 		bool RefreshAfterCompositionChanged();
 		// Resize 等外部图形操作失败后，记录当前设备状态并安排恢复。

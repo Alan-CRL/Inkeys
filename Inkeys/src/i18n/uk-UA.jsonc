@@ -1052,6 +1052,14 @@
         "N": "Ланцюжок обміну полотна робочого стола",
         "E": "UpdateLayeredWindow не підтримує ланцюжки обміну."
       },
+      "CompositionAlign":
+      {
+        "N": "Синхронізація з композицією робочого стола",
+        "Always": "Завжди",
+        "Off": "Вимкнено",
+        "UlwOnly": "Лише UpdateLayeredWindow",
+        "DcompOnly": "Лише DirectComposition"
+      },
       "WaitableWait":
       {
         "N": "Увімкнути очікування в режимі waitable",

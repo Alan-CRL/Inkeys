@@ -4707,6 +4707,20 @@ SettingSessionCoroutine RunSettingSession()
 						draw3Config.SwapChainMode = swapChain;
 						QueueConfigWrite();
 					}
+					const bool ulwAlign = draw3Config.UlwCompositionAlign.load();
+					const bool dcompAlign = draw3Config.DcompCompositionAlign.load();
+					// 四档沿用两个后端原有配置，保留已保存的独立偏好。
+					int alignment = ulwAlign ? (dcompAlign ? 0 : 2) : (dcompAlign ? 3 : 1);
+					const auto& alignText = renderingText.CompositionAlign;
+					if (Design::ComboRow("##draw3-composition-align", IA(alignText.N).c_str(),
+						nullptr, "\ue7f4", alignment,
+						{ IA(alignText.Always), IA(alignText.Off), IA(alignText.UlwOnly), IA(alignText.DcompOnly) },
+						IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
+					{
+						draw3Config.UlwCompositionAlign = alignment == 0 || alignment == 2;
+						draw3Config.DcompCompositionAlign = alignment == 0 || alignment == 3;
+						QueueConfigWrite();
+					}
 					if (Design::ToggleRow("##draw3-waitable-wait", IA(I18nKey.SettingsUI.Performance.WaitableWait.N).c_str(),
 						IA(I18nKey.SettingsUI.Performance.WaitableWait.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableWaitableWait, IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
 					{

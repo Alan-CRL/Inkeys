@@ -2261,6 +2261,7 @@ namespace Inkeys::Drawing::Draw3
 						presentationOptions.enableWaitableWait = startOptions.enableWaitableWait;
 						presentationOptions.enableUlwAsyncReadback = startOptions.enableUlwAsyncReadback;
 						presentationOptions.enableUlwCompositionAlign = startOptions.enableUlwCompositionAlign;
+						presentationOptions.enableDcompCompositionAlign = startOptions.enableDcompCompositionAlign;
 						startupStage = "TransparentPresentationController::Initialize";
 						graphicsInitialized = presentation.Initialize(windowHandle,
 							presentationWindowHandle, graphics, renderer,

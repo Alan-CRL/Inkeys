@@ -1052,6 +1052,14 @@
         "N": "Cadena de intercambio del lienzo de escritorio",
         "E": "UpdateLayeredWindow no admite cadenas de intercambio."
       },
+      "CompositionAlign":
+      {
+        "N": "Sincronización con la composición del escritorio",
+        "Always": "Siempre",
+        "Off": "Desactivada",
+        "UlwOnly": "Solo UpdateLayeredWindow",
+        "DcompOnly": "Solo DirectComposition"
+      },
       "WaitableWait":
       {
         "N": "Activar la espera en modo waitable",

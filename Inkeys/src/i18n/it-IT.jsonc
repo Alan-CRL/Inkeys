@@ -1052,6 +1052,14 @@
         "N": "Catena di scambio della tela del desktop",
         "E": "UpdateLayeredWindow non supporta le catene di scambio."
       },
+      "CompositionAlign":
+      {
+        "N": "Sincronizzazione con la composizione del desktop",
+        "Always": "Sempre",
+        "Off": "Disattivata",
+        "UlwOnly": "Solo UpdateLayeredWindow",
+        "DcompOnly": "Solo DirectComposition"
+      },
       "WaitableWait":
       {
         "N": "Abilita l'attesa in modalità waitable",

@@ -585,6 +585,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableWaitableWait, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableUlwAsyncReadback, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, UlwCompositionAlign, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DcompCompositionAlign, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, UnthrottledMouseMoveWhileDrawing, false) \
 			) \
 			GROUP(ConsoleOutput, \

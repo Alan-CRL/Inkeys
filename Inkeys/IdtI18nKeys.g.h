@@ -1055,6 +1055,14 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/Performance/SwapChainMode/N";
                 const char* E = "SettingsUI/Performance/SwapChainMode/E";
             } SwapChainMode{};
+            struct Node__SettingsUI__Performance__CompositionAlign
+            {
+                const char* N = "SettingsUI/Performance/CompositionAlign/N";
+                const char* Always = "SettingsUI/Performance/CompositionAlign/Always";
+                const char* Off = "SettingsUI/Performance/CompositionAlign/Off";
+                const char* UlwOnly = "SettingsUI/Performance/CompositionAlign/UlwOnly";
+                const char* DcompOnly = "SettingsUI/Performance/CompositionAlign/DcompOnly";
+            } CompositionAlign{};
             struct Node__SettingsUI__Performance__WaitableWait
             {
                 const char* N = "SettingsUI/Performance/WaitableWait/N";

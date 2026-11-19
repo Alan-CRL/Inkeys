@@ -293,6 +293,7 @@ namespace Inkeys::Drawing::Draw3
 		bool enableUlwAsyncReadback = true;
 		// 异步读回时对齐 DWM 合成时机提交；无界面配置键，用于实机开/关对照。
 		bool enableUlwCompositionAlign = true;
+		bool enableDcompCompositionAlign = true;
 		int frameRate = 120; // 仅在启动时选择画布模型参数组。
 	};
 

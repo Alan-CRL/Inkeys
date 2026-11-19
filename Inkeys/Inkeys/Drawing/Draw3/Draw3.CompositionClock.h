@@ -137,6 +137,37 @@ namespace Inkeys::Drawing::Draw3
 			? CompositionCadence::PhaseLock : CompositionCadence::CommitEveryFrame;
 	}
 
+	inline CompositionTimingSample DcompTimingSample(std::int64_t nextTicks, std::int64_t currentTicks,
+		std::int64_t frequency, std::uint32_t numerator, std::uint32_t denominator) noexcept
+	{
+		if (frequency <= 0 || currentTicks <= 0 || nextTicks <= currentTicks || !numerator || !denominator) return {};
+		const double periodMs = 1000.0 * denominator / numerator;
+		if (periodMs < kCompositionClockMinPeriodMs || periodMs > kCompositionClockMaxPeriodMs) return {};
+		return { true, static_cast<double>(nextTicks) * (1000.0 / frequency), periodMs };
+	}
+
+	inline double DcompPhaseAdjustMs(double plannedNextStartMs, double intervalMs, double workMs,
+		const CompositionClock& clock) noexcept
+	{
+		if (!clock.Valid() || !std::isfinite(plannedNextStartMs) || !std::isfinite(intervalMs) ||
+			!std::isfinite(workMs) || intervalMs <= 0.0 || workMs < 0.0 || workMs >= intervalMs) return 0.0;
+		const double periodMs = clock.PeriodMs();
+		double slotMs = periodMs;
+		if (intervalMs < periodMs)
+		{
+			// 高帧率在一次刷新内保留多个等距子帧，只微调其相位。
+			const double ratio = periodMs / intervalMs;
+			const double slots = std::round(ratio);
+			if (std::abs(ratio - slots) > kCompositionDivisorTolerance) return 0.0;
+			slotMs /= slots;
+		}
+		else if (ClassifyCompositionCadence(intervalMs, periodMs) != CompositionCadence::PhaseLock) return 0.0;
+		const double finishMs = plannedNextStartMs + workMs;
+		const double shiftMs = std::remainder(clock.DeadlineAtOrAfter(finishMs) - finishMs, slotMs);
+		const double limitMs = intervalMs * kCompositionPhaseStepRatio;
+		return std::clamp(shiftMs, -limitMs, limitMs);
+	}
+
 	struct UlwCommitDecision
 	{
 		bool commit = true;

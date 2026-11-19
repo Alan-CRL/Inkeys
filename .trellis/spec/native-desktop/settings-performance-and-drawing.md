@@ -29,7 +29,8 @@
 | Experimental.Inkeys3.Draw3.SwapChainMode | 0；FLIP/SEQUENTIAL = 0/1 | 下次启动；DirectComposition 与 Win7Dwm 均尝试所选交换链，ULW 使用离屏纹理 |
 | Experimental.Inkeys3.Draw3.EnableWaitableWait | true | 下次启动（`configOnce` 快照），只控制是否等待帧延迟句柄，不改交换链类型 |
 | Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback | true | 下次启动（`configOnce` 快照）；只影响主画布 ULW：关闭 = 同步读回、不节流、不对齐（独立纹理与 SIMD 复制仍保留） |
-| Experimental.Inkeys3.Draw3.UlwCompositionAlign | true，无界面 | 下次启动；异步读回开启时是否对齐 DWM 合成时机提交，仅供实机开/关对照 |
+| Experimental.Inkeys3.Draw3.UlwCompositionAlign | true，性能页合成对齐下拉框 | 下次启动；异步读回开启时是否对齐 DWM 合成时机提交，与 DComp 键共同表示始终、关闭或仅指定后端 |
+| Experimental.Inkeys3.Draw3.DcompCompositionAlign | true，性能页合成对齐下拉框 | 下次启动；DComp 主画布连续绘制时按预计合成时刻微调下一帧起点，独立于 waitable 开关，改动通过 i 提示下次启动生效 |
 | Experimental.Inkeys3.Draw3.UnthrottledMouseMoveWhileDrawing | false | 即时：设置页写配置后必须调用 `SyncDraw3State()`，经 `CursorSettings` bit 44 下发到窗口线程 |
 | Drawing.DevicePerformanceRecording | true | 即时：设置页写配置后直接调用 `Host::SetDevicePerformanceRecording`（不经 SyncDraw3State），启动时在 Host 创建绘制线程前下发；关闭后帧内不统计、不写盘 |
 

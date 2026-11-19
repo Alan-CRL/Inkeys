@@ -1052,6 +1052,14 @@
         "N": "Swapchain der Desktop-Zeichenfläche",
         "E": "UpdateLayeredWindow unterstützt keine Swapchains."
       },
+      "CompositionAlign":
+      {
+        "N": "Zeitliche Abstimmung mit der Desktopkomposition",
+        "Always": "Immer",
+        "Off": "Aus",
+        "UlwOnly": "Nur UpdateLayeredWindow",
+        "DcompOnly": "Nur DirectComposition"
+      },
       "WaitableWait":
       {
         "N": "Warten im Waitable-Modus aktivieren",

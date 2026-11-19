@@ -1052,6 +1052,14 @@
         "N": "Chuỗi hoán đổi của khung vẽ trên màn hình nền",
         "E": "UpdateLayeredWindow không hỗ trợ chuỗi hoán đổi."
       },
+      "CompositionAlign":
+      {
+        "N": "Đồng bộ thời điểm tổng hợp màn hình",
+        "Always": "Luôn bật",
+        "Off": "Tắt",
+        "UlwOnly": "Chỉ UpdateLayeredWindow",
+        "DcompOnly": "Chỉ DirectComposition"
+      },
       "WaitableWait":
       {
         "N": "Bật chờ trong chế độ waitable",

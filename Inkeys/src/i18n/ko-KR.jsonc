@@ -1052,6 +1052,14 @@
         "N": "데스크톱 캔버스 스왑 체인",
         "E": "UpdateLayeredWindow는 스왑 체인을 지원하지 않습니다."
       },
+      "CompositionAlign":
+      {
+        "N": "데스크톱 합성 타이밍 맞춤",
+        "Always": "항상",
+        "Off": "끄기",
+        "UlwOnly": "UpdateLayeredWindow만",
+        "DcompOnly": "DirectComposition만"
+      },
       "WaitableWait":
       {
         "N": "waitable 모드에서 대기 사용",

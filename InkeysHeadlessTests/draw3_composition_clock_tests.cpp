@@ -250,6 +250,55 @@ int RunDraw3CompositionClockTests()
 		expect(Near(planner.PhaseAdjustMs(0.0, interval, CompositionClock{}), 0.0), "invalid clock never shifts");
 	}
 
+	// 合成统计使用自身 QPC 频率；分数刷新率不可截断为整数。
+	{
+		const auto sample = DcompTimingSample(1015000, 1000000, 1000000, 60000, 1001);
+		expect(sample.valid && Near(sample.vblankMs, 1015.0) && Near(sample.periodMs, 1001.0 / 60.0),
+			"DComp statistics convert QPC and fractional refresh");
+		expect(!DcompTimingSample(999, 1000, 1000, 60, 1).valid &&
+			!DcompTimingSample(1015, 1000, 0, 60, 1).valid &&
+			!DcompTimingSample(1015, 1000, 1000, 0, 1).valid &&
+			!DcompTimingSample(1015, 1000, 1000, 60, 0).valid, "invalid DComp statistics rejected");
+	}
+
+	// 连续运行同一时钟，覆盖动态刷新率双向切换以及每刷新周期绘制两帧。
+	{
+		struct Cadence { double fps; double hz; };
+		constexpr Cadence cases[] = { {60, 60}, {120, 120}, {240, 120}, {60, 60} };
+		CompositionClock clock;
+		double start = 1.0;
+		constexpr double workMs = 0.75;
+		for (const auto rate : cases)
+		{
+			const double interval = 1000.0 / rate.fps;
+			const double period = 1000.0 / rate.hz;
+			const double anchor = start + 3.0;
+			clock.Update({true, anchor, period}, start);
+			const double initial = start;
+			bool bounded = true;
+			for (int frame = 0; frame < 120; ++frame)
+			{
+				const double shift = DcompPhaseAdjustMs(start + interval, interval, workMs, clock);
+				bounded = bounded && std::abs(shift) <= kCompositionPhaseStepRatio * interval + 1e-9;
+				start += interval + shift;
+			}
+			const double finish = start + workMs + kCompositionDeadlineMarginMs;
+			expect(bounded && std::abs(std::remainder(finish - anchor, interval)) < 0.05,
+				"DComp start converges to the display phase with bounded adjustment");
+			expect(std::abs(start - initial - 120 * interval) < interval, "DComp retains the configured cadence");
+		}
+		expect(Near(DcompPhaseAdjustMs(start, 1000.0 / 75.0, workMs, clock), 0.0),
+			"non-harmonic DComp pacing preserves the original deadline");
+		expect(Near(DcompPhaseAdjustMs(start, kPeriod60, kPeriod60 + 0.1, clock), 0.0),
+			"over-budget work never adds a DComp wait");
+		clock.Update({}, start);
+		expect(Near(DcompPhaseAdjustMs(start, kPeriod60, workMs, clock), 0.0), "failed read restores original frame budget");
+		clock = MakeClock(start, kPeriod60);
+		clock = {};
+		expect(clock.NeedsRefresh(start) && Near(DcompPhaseAdjustMs(start, kPeriod60, workMs, clock), 0.0),
+			"device reset drops the old DComp timing sample");
+	}
+
 	std::cout << "[CompositionClock] failures=" << failures << '\n';
 	return failures;
 }

@@ -647,6 +647,19 @@ int RunConfigMetadataTests()
 		writeModeDocument(document);
 		check(presentationConfig.ReadAll() && draw3.PresentationMode.load() == 0 && draw3.SwapChainMode.load() == 0,
 			"fresh presentation settings default to automatic and FLIP");
+		check(draw3.DcompCompositionAlign.load() && draw3.UlwCompositionAlign.load(),
+			"missing composition alignment settings default to always");
+		for (const bool dcomp : { false, true })
+		{
+			for (const bool ulw : { false, true })
+			{
+				fields["DcompCompositionAlign"] = dcomp;
+				fields["UlwCompositionAlign"] = ulw;
+				writeModeDocument(document);
+				check(presentationConfig.ReadAll() && draw3.DcompCompositionAlign.load() == dcomp &&
+					draw3.UlwCompositionAlign.load() == ulw, "saved composition alignment combination is preserved");
+			}
+		}
 		for (const bool legacy : { true, false })
 		{
 			fields["EnableDirectComposition"] = legacy;

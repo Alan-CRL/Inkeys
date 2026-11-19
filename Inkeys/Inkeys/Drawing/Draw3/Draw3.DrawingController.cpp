@@ -23915,6 +23915,14 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (metrics_ && !hasPhysicalContactAfterFrame)
 				metrics_->EndActiveFrameSequence();
+			// 共用可打断的帧尾等待；呈现后端只调整目标时刻。
+			const auto waitForPacedFrame = [&](double workMs)
+			{
+				const double intervalMs = 1000.0 / configuration_.timingProfile.target_fps;
+				markPendingFramePaced(frameStartMs + workMs);
+				const double adjustMs = presentation_.FramePhaseAdjustMs(frameStartMs, intervalMs, workMs);
+				input_.WaitForFrameDeadline(intervalMs - workMs + adjustMs);
+			};
 			const bool eraserIdle = EraserContactsIdle(active, navigationActive, mouseVisualSeconds);
 			if (rasterSubmissionFailed && (active.empty() || eraserIdle))
 			{
@@ -23933,11 +23941,7 @@ namespace Inkeys::Drawing::Draw3
 				if (metrics_ && frameHadActiveContact)
 					metrics_->RecordActiveFrame(frameStartMs, (std::max)(0.0, workMs - frameLatencyWaitMs_),
 						lastPresentDurationMs_, lastPresentSucceeded_);
-				const double remainingFrameBudgetMs =
-					1000.0 / configuration_.timingProfile.target_fps - workMs;
-				markPendingFramePaced(frameStartMs + workMs);
-				// DWM 合成对齐（ULW）：微调下一帧开始相位，使提交恰好落在合成截止之前；其余模式为 0。
-				input_.WaitForFrameDeadline(remainingFrameBudgetMs + presentation_.UlwFramePhaseAdjustMs(frameStartMs));
+				waitForPacedFrame(workMs);
 				size_t committedCount = 0;
 				size_t realPointCount = 0;
 				size_t predictedPointCount = 0;
@@ -23962,10 +23966,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (!rasterSubmissionFailed) serviceUlwBeforeFrameWait(); // 光栅失败帧的最终纹理不可读回
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
-				const double remainingFrameBudgetMs =
-					1000.0 / configuration_.timingProfile.target_fps - workMs;
-				markPendingFramePaced(frameStartMs + workMs);
-				input_.WaitForFrameDeadline(remainingFrameBudgetMs + presentation_.UlwFramePhaseAdjustMs(frameStartMs));
+				waitForPacedFrame(workMs);
 				lastActiveFrameStartMs = frameStartMs;
 			}
 			else if (active.empty() && cursorContactPacingActive())
@@ -23974,9 +23975,7 @@ namespace Inkeys::Drawing::Draw3
 				// 这里按预设帧间隔等待，每个帧间隔最多一帧光标；按下/抬起仍以打断式唤醒立即返回。
 				if (!rasterSubmissionFailed) serviceUlwBeforeFrameWait(); // 光栅失败帧的最终纹理不可读回
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
-				markPendingFramePaced(frameStartMs + workMs);
-				input_.WaitForFrameDeadline(1000.0 / configuration_.timingProfile.target_fps - workMs +
-					presentation_.UlwFramePhaseAdjustMs(frameStartMs));
+				waitForPacedFrame(workMs);
 				lastActiveFrameStartMs = 0.0;
 			}
 			else if (!active.empty())
