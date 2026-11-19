@@ -1617,6 +1617,10 @@ int RunBarBottomDockTests()
 		ResolveBarBottomDockHorizontalMapping(10.0, 110.0, true, 20.0),
 		compressed, 1.5), RECT{ 40, 30, 140, 90 }),
 		"main grip keeps its horizontal size while composing vertical jelly");
+	Check(RectEquals(TransformBarBottomDockGripRect(
+		RECT{}, ResolveBarBottomDockHorizontalMapping(10.0, 110.0, true, 0.25),
+		ResolveBarBottomDockVerticalMapping(0.0, 80.0, 0.25), 2.0), RECT{}),
+		"empty grip bounds stay empty under fractional two-axis mapping");
 	Check(Near(UnmapBarBottomDockGripPixelX(
 		90.0, ResolveBarBottomDockHorizontalMapping(
 			10.0, 110.0, true, 20.0), 1.5), 60.0),

@@ -1442,6 +1442,9 @@ export namespace Inkeys::UI::Bar
 		const BarBottomDockVerticalMapping& verticalMapping,
 		double zoom) noexcept
 	{
+		// 避免回弹的亚像素坐标经取整后把空边界变成一个像素。
+		if (bounds.right <= bounds.left || bounds.bottom <= bounds.top)
+			return {};
 		zoom = NormalizeBarBottomDockZoom(zoom);
 		const double xOffset = horizontalMapping.rigidGripTranslationXDip * zoom;
 		const double top = MapBarBottomDockBodyPixelY(
