@@ -708,3 +708,26 @@ Migrated live deploy.json/pptcom_configuration.json fields into Inkeys::Config w
 ### Status
 
 [OK] **Completed**
+
+
+## Session 197: 修复主栏宽度意外拉伸/压缩
+<!-- trellis-session: v=2 fp=b749601a594c456b -->
+
+**Date**: 2026-11-19
+**Task**: 修复主栏宽度意外拉伸/压缩
+**Branch**: `refactoring/drawpad-ui`
+
+### Summary
+
+定位并修复主栏在缩放倍率、DPI 与场景切换时被底栏水平果冻映射拉伸/压缩：像素级交接仅限手势、程序性根动画期间远端刚性跟随、居中远端取主栏自身远端；补场景接管防重播种与交接帧外框重收集。新增 scaleX/端点/窗口覆盖回归，UI3 居中与底栏过渡自检全过；Codex Sol High+Fast 只读审查 1 个 P1 与测试漏洞已修，另 1 个 P1 反证未复现作防御保留；用户实机验证通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `83e41105` | fix(bar): keep the main bar rigid on programmatic zoom, display and scene moves |
+| `c2470ae3` | docs(spec): record gesture-only horizontal jelly handoff contract |
+
+### Status
+
+[OK] **Completed**
