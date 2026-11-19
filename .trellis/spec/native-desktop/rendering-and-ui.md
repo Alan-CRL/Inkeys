@@ -645,7 +645,12 @@ DebugDamageResolution ResolveDebugDamage(
 	const RECT& previousFrameBounds,
 	const RECT& currentTextBounds,
 	bool debugEnabled,
-	bool finalIdleFrame = false) noexcept;
+	bool finalIdleFrame = false,
+	const RECT& clip = {}) noexcept;   // 返回 frameTarget、frame（实际画出的框）、presentDamage
+
+DebugFrameRect ResolveDebugFrameRect(   // 裁到 clip；任一边 < DebugFrameMinimumSide(8px) 时以中心外扩并平移回 clip
+	const RECT& target, const RECT& clip,
+	FLOAT inset = DebugDirtyFrameInset) noexcept;
 
 BarWindowCapacityDecision ResolveBarWindowCapacity(
 	SIZE currentSize,
@@ -724,9 +729,9 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 
 #### 3. Contracts
 
-- 标准 Shape/SVG/PNG/Word 使用稳定对象键记录边界；父布局、粗细/色板/弹窗等自绘内容使用稳定功能组键。变化项的 damage 是上次成功呈现边界与本帧边界的并集，覆盖移动、缩放、出现和消失；所有 damage 最终合并、裁剪为一个 `RECT`。
-- 每帧顺序固定为：推进动画并 `MarkChanged` → 完成继承布局并 `Observe` 当前边界 → 完整预测 viewport → 最终 capacity → `ResolveDamage` → 加入调试文字和红/绿/蓝框旧新边界 → 用同一 `presentDamage` 约束 D2D clip/Clear 与稳定映射帧的 `UPDATELAYEREDWINDOWINFO::prcDirty`。首次呈现，或 `pptSrc`、`psize`、target capacity、device generation 任一字段相对上次成功 tuple 改变时，必须清除完整候选 HWND 范围并令 `prcDirty=nullptr` 执行整窗替换；viewport 相对 committed anchor 的解释变化必须与 present-mapping tracker 合并为同一个 `forceFullWindowReplacement`，同一布尔值控制业务/调试 damage、`presentDirty` 和 `prcDirty`。只有两类映射都稳定的帧允许局部 dirty。呈现失败后必须重画完整候选窗口；映射稳定时可以提交覆盖整窗的 client dirty，映射变化时仍必须 `prcDirty=nullptr`。居中重排改变主按钮根节点时，capacityOrigin 与 viewport 可以同向平移而保持 source/size 数值不变；该类真实布局移动仍必须整窗替换，清除被新缓冲区原点重新解释的旧右端像素。纯直移吸收继续沿用既有成功快照重基准并复用容量；用本帧稳定居中根节点实际派生变化标识触发此项整窗替换，不能把普通直拖误判为居中重排。
-- `UiAdvanceAnimation` 的 `changed || active` 必须标记所属控件或功能组。直接拖动、保持环、色板/粗细自绘等绕过标准动画的路径必须显式标脏；存在非调试呈现请求却没有分类 damage 时必须回退全窗口。
+- 主栏底、主按钮、Logo、More、主栏/More 按钮、绘制属性（含取色器）、形状/橡皮/撤回属性面板与翻页控件的业务 damage 由「UI3 自动脏区登记表合同」（下节）按对象/绘制块比较本帧绘制状态与已确认呈现状态得出，并以 `IncludeDamage` 并入 tracker。`DirtyRegionTracker` 只保留主光/鼠标光键、状态指示器与底栏吸附指示的组件整体键（布局在呈现阶段才确定）、整栏直接拖动的功能组键、旧几何条键与「已由登记表处理」的分类键 `PanelMembers`。变化项的 damage 是上次成功呈现边界与本帧边界的并集，覆盖移动、缩放、出现和消失；所有 damage 最终合并、裁剪为一个 `RECT`。
+- 每帧顺序固定为：推进动画（登记表负责的对象只登记分类键）→ 全部推进（含 PPT 闲置淡化）之后准备登记表 → 呈现分类 → `BeginFrame` 后 `IncludeDamage` 并入登记表 damage → 完成继承布局并 `Observe` 光影与组件键当前边界 → 完整预测 viewport → 最终 capacity → `ResolveDamage` → 加入调试文字和红/绿/蓝框旧新边界 → 用同一 `presentDamage` 约束 D2D clip/Clear 与稳定映射帧的 `UPDATELAYEREDWINDOWINFO::prcDirty`。首次呈现，或 `pptSrc`、`psize`、target capacity、device generation 任一字段相对上次成功 tuple 改变时，必须清除完整候选 HWND 范围并令 `prcDirty=nullptr` 执行整窗替换；viewport 相对 committed anchor 的解释变化必须与 present-mapping tracker 合并为同一个 `forceFullWindowReplacement`，同一布尔值控制业务/调试 damage、`presentDirty` 和 `prcDirty`。只有两类映射都稳定的帧允许局部 dirty。呈现失败后必须重画完整候选窗口；映射稳定时可以提交覆盖整窗的 client dirty，映射变化时仍必须 `prcDirty=nullptr`。居中重排改变主按钮根节点时，capacityOrigin 与 viewport 可以同向平移而保持 source/size 数值不变；该类真实布局移动仍必须整窗替换，清除被新缓冲区原点重新解释的旧右端像素。纯直移吸收继续沿用既有成功快照重基准并复用容量；用本帧稳定居中根节点实际派生变化标识触发此项整窗替换，不能把普通直拖误判为居中重排。
+- `UiAdvanceAnimation` 的 `changed || active` 必须登记分类：登记表负责的对象登记 `PanelMembers`（像素范围由登记表给出），其余组件登记各自键。登记表采样即覆盖直接写值、保持环、色板/粗细自绘等绕过标准动画的变化；登记表准备后有成员变化即构成呈现需求。存在非调试呈现请求却没有分类 damage 时必须回退全窗口；需求已分类而登记表确认像素未变时只提交 1 像素保活脏区。
 - 主光和鼠标光必须独立报告变化，静止的一路不得因另一路移动而被标脏。每路先计算包含径向半径、`pointLightDiffuseExtraWidth * zoom` Gaussian 外扩和抗锯齿余量的影响矩形，再只与实际可见 `PointLight` 边框的上/下/左/右影响带求交；光圈内部没有边框像素贡献的区域不得进入 damage。关闭光影时当前边界为空，旧边界仍参与清除。
 - 空 presentDirty 的整窗清绘兜底只扩大绘制/提交范围，不得在选择性 Observe 结束后补设 tracker 全脏；否则 CommitPresented 会遗失未观察对象的成功边界，下一局部帧无法清旧。真正的全观察校准须在观察前请求 full，失败重试沿既有 RetainForRetry(true) 处理。
 - Tracker 为稳定视觉键复用记录，并复用变化键/观察键容器；普通帧只通过 `ShouldObserve()` 采集变化项、所需功能组和光源的边界，成功后只推进本帧实际观察记录。全可见内容边界只在首帧、DPI/容量纪元、顶层外框动画、整栏拖动和最终 idle 帧重算，普通 hover/按压/光影帧复用缓存。禁止逐帧清空并重建哈希节点、复制完整快照，或为动态缩窗在普通高频帧遍历全部 SVG/PNG/Word 内容。
@@ -734,6 +739,7 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 - 容量以实际可见/在途内容和完整current/稳定预测viewport为依据，不为未打开的全部属性和More面板预留整套最大高度。横向保留既有对称安全预约及边距，但其主栏Back宽度上界须来自整段实际曲线极值，不能把已过冲的current再乘启发系数逐帧追扩。纵向结合完整viewport与真实displayCenterY驱动段的未来锚点reach，不能只读已SetDirect的当前root。先独立求所需容量，再按displayCapacityZoom/frameZoom预留目标倍率并max历史容量，禁止对历史容量重复乘倍率。仅独立planned高度真实突破历史时，可一次加两侧viewportPadding作为分数像素取整/边缘余量；不能逐帧对历史容量再加padding。fixed drag/release映射、实际source包含及整窗替换不变。
 - 已知居中root布局改变时，在任何Observe前请求全观察；晚期才确定的纯target容量/source映射改变只扩大实际paint/ULW到完整viewport，不晚置tracker全量校准而清掉未Observe稳定对象的成功bounds。资源或呈现失败仍保留RequireFullDirtyRetry，下一帧在观察前进入全量恢复；完整新bitmap不能只画旧局部dirty。
 - 除主栏固定手势的一次 Down 预留外，只有可改变顶层外框的动画批次才在首帧扩展 viewport 并保留保守扫掠包络；批次内不缩放，最终 idle 帧只收缩一次。普通 hover、按压、帧率文字和光影不得将 HWND 扩到整个容量。完整 predicted envelope 与既有 committed viewport 先参与候选 viewport，再将该完整范围传给 `ResolveBarWindowCapacity(..., requiredViewport)`，最后 `EnsureDeviceResources` 并按最终 origin 重算 source。GetDC 前以 `IsBarWindowSourceContained` 校验 source 非负、size 为正、source+size 位于实际 bitmap 内，使用宽整数避免加法溢出；无效时保留全脏及成功快照并沿既有资源失败退避重算，禁止钳 source 后提交裁剪帧。提示的 Back/描边/Gaussian/AA 完整包络同时须包含于 viewport。
+- 居中吸底的预测包络（V10 实机：居中展开绘制面板时窗口约多 340 px）：主栏偏移与宽由布局同一次 `SetTar`、同时长同曲线推进，主栏变宽时根节点反向移动、主栏中心几乎不动。不能把根、偏移、宽度当独立区间求极值再相加。同相时（无中点关键帧，正在推进的 `mainButton->w/ft`、`mainBar->x/w/ft` 的 `activeCurve/progress/dur/timelineStartProgress/continueTimelinePhase` 全同，描边非负，且本帧推进阶段实际按居中摆放了根节点 `bottomDockCenteredRootApplied`），用 `ResolveBarBottomDockCenteredPoseRange` 在共同进度 f∈[min(0,曲线最小), max(1,曲线最大)] 上逐姿态求根、主栏中心、主栏左缘的精确极值（端点 + 左右缘 min/max 切换点），覆盖 `mainButtonX/mainBarX/mainBarLeft`；否则保留 `ResolveBarBottomDockCenteredRootRange` 的独立区间。More 面板锚在栏端的 More 按钮，收紧后其父范围要补半个宽度变化量。Wrong：`AddRanges(rootRange, offsetRange)` 再 `SubtractHalfRange(center, widthRange)`（极值不可能同时出现）。测试：Headless `bar_bottom_dock_tests` 覆盖同相展开主栏中心不变、偏移穿过主按钮（切换点）带过冲与逐点采样一致、反向 f 范围无效。
 - 粗细 Slider/FineDial 连续手势的完整交互域必须复用 `GetBarThicknessSliderRange(currentPenMode, dpiZoom).max`，在按下/捕获首帧按最大端滑块位置计算完整 Preview Popup。包络同时覆盖 DPI 换算后的最大圆、数字从圆外迁入圆内的最宽 Surface、Slider/FineDial 两个目标位置、Popup Back 极值，以及实际可见描边、PointLight `pointLightDiffuseExtraWidth` 和抗锯齿外扩；捕获、拖动与 FineDial 物理期间保持该预约，候选粗细逐帧增长不得再次 resize。
 - Popup 已可见时，粗细快捷按钮或切换笔型产生的程序化动画必须在首个变化帧按 `drawAttributePenThickness.tar`、滑块归一化目标和 FineDial 目标位置预留紧致包络，并覆盖当前到目标的动画段、数字内外迁移与 Popup 回弹；不得等动画结束后才按实际内容追扩，也不得因此退化为预留当前笔型完整量程。
 - 绘制使用布局坐标，D2D 帧 transform 统一平移 `-capacityOrigin`；ULW 在同一次调用中提交 `pptDst/psize/pptSrc/prcDirty`。Bar 原生鼠标消息必须在窗口线程入队时就用当次 Win32 消息的屏幕位置固化为 monitor-local layout 坐标，然后丢弃 HiMsg 默认 client 副本；触摸/原生消息必须保留采样时的完整屏幕位置；Raw Input 私有样本和计时器重新命中通过统一入口转换到同一 layout 空间。禁止在交互线程出队时再读取新 viewport 解释旧 client 坐标，否则 resize 恰好夹在入队/出队之间时会出现一次命中跳变。
@@ -742,8 +748,8 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 - 只有 `GetDC → UpdateLayeredWindowIndirect → ReleaseDC → EndDraw` 全部成功才可推进业务 damage、viewport controller、mapping tuple、交互命中边界和调试覆盖快照；失败时保留请求并强制下一帧全脏。ULW 已成功但后续阶段失败时，真实 HWND 已经改变，但任何内部呈现快照仍不推进，下帧继续按旧成功 tuple 判定整窗替换并重新对齐。输入消息已在窗口线程入队时固化为 layout 坐标，不依赖异步 viewport 快照发布。`directWindowDragMutex` 必须覆盖 ULW、EndDraw 到成功窗口边界、direct translation 与底栏快照发布；交互侧不能在 resize 已发生但缓存仍旧时使用旧边界 `SetWindowPos`。ULW 成功而后续阶段失败时，旧成功快照保留，但其窗口位置不可用于直移，直至完整恢复呈现成功。
 - `Experimental.Inkeys3.UI3.Debug.Enable` 同时控制脏区框和 HWND 框；活动帧 damage 用红框，idle 前最后一帧将上一帧红框原位改为绿框，本次候选 HWND 包络用蓝框；蓝框属于位图内容，不能代替真实 `GetWindowRect` 证据。`Debug.ShowFrameRate` 只在前者开启时控制下方帧率文字；文字不得显示“休眠”，也不得单独形成持续呈现需求或维持 60 FPS。
 - FPS 文字只随真实 UI、光影、一次性刷新和失败重试帧进入 damage。真实活动结束后由 `DebugFrameSleepLatch` 请求唯一最终帧，用于收缩 viewport 和把旧红框重绘为绿框；完整呈现事务成功后关闭锁存，失败或租约跳帧继续保留，直至下一次真实活动重新武装。两项帧率按同一个完整 1 秒桶锁存，一秒内文字数值不变；实际值只统计成功呈现帧，并在 idle 后恢复真实活动时重建桶，禁止把 idle 等待计入墙钟分母。无限制值以同批有效帧数除以进入 60 FPS pacing 等待前累计的工作时长；只有帧率锁等待被排除。
-- 红/绿框在业务 damage 解析后生成；蓝框跟随 candidate viewport。绿框使用上次成功呈现的红框边界，不重新扩大 damage。蓝框的旧新边界只在 viewport 或调试开关变化时进入 damage，稳定帧不得因蓝框而每帧全窗刷新。关闭任一覆盖层时，用成功呈现的旧快照清除遗留像素。
-- 使用显式 D2D pivot/scale 变换绘制的内容，damage 必须用同一变换解析实际呈现边界；仅在绘制阶段调用 `Inherit` 的子视觉必须在 dirty 采集前同步同一继承关系。功能组不能只依赖根面板兜底：凡是动画中可能越过根边界的子视觉，都要在 `ResolveDamage()` 前按实际绘制层级同步；Main/More 注册按钮固定为 `button ← MainBar`、`icon/name ← button`。同步只在对应功能组需要观察时执行，纯光源帧不得为此遍历图标和文字。禁止直接读取未参与本帧绘制的默认或上一帧 `inhX/inhY`；绘制后的 `state.current` 更新也不能补救已经用于 Clear/D2D/ULW 的本帧 dirty。
+- 红/绿框在**本帧最终业务刷新范围**确定后生成：整窗替换、1px 保活、空 damage 整窗兜底、alpha-only 整窗都先定下 `framePresent`，红框标记它（∪ 帧率文字）——每次 ULW 都有红框或绿框，且框反映本帧真正重画的范围，而不是兜底之前的业务脏区。框按 candidate viewport/窗口裁剪并保证最小可见边长 8px（保活像素、细条也可见），实际画出的 `frame.bounds` 并入本帧提交区并记为“上一帧框”，下一帧并入提交区擦除。调试关闭时提交区与业务 damage 行为不变。蓝框跟随 candidate viewport。绿框使用上次成功呈现的框边界（最终空闲帧无新范围时不保活、不整窗兜底，只重涂旧框），不重新扩大 damage。翻页宿主在调试开启且最终绿框尚未成功提交前不得走“无 damage 早退”，否则最后一帧红框会留在屏幕上。脏区调试开关在设置页运行时切换必须同时通知主栏（`Bar::SetDebugOptions`）与翻页控件（`Ppt::SetDebugEnabled`），与启动路径一致。开关切换（含开启）时两宿主都登记一次整窗覆盖层刷新并重新武装最终帧锁存：静止时这次刷新帧就是绿色最终帧，快速关开不会停在红框；整窗替换与刷新帧的框标记整窗。翻页回执按覆盖层修订号（每次切换递增）消费刷新标记与锁存，在途旧帧回执只记账实际上屏边界，不能吞掉切换后的刷新；直移确认快路在刷新未完成或绿帧未提交时不得直接休眠。调试模式下主栏还有两条只诊断、不改行为的边沿日志：`[ViewportOversize]`（窗口任一边越出可见内容 ∪ 吸附提示包络 240 DIP 以上）与 `[FullWindowPresent]`（成功提交的帧从局部转为整窗时，记整窗原因位、未分类来源位、各阶段范围、已标记键与登记表变化项；边沿只随成功提交推进）。已知限制：窗口任一边 ≤5px 时框不可见；固定手势表面越屏时保活框可能落在屏外。蓝框的旧新边界只在 viewport 或调试开关变化时进入 damage，稳定帧不得因蓝框而每帧全窗刷新。关闭任一覆盖层时，用成功呈现的旧快照清除遗留像素。
+- 使用显式 D2D pivot/scale 变换绘制的内容，damage 必须用同一变换解析实际呈现边界；仅在绘制阶段调用 `Inherit` 的子视觉必须在 dirty 采集前同步同一继承关系。功能组不能只依赖根面板兜底：凡是动画中可能越过根边界的子视觉，都要在 `ResolveDamage()` 前按实际绘制层级同步；Main/More 注册按钮固定为 `button ← MainBar`、`icon/name ← button`。登记表采样不得读取绘制阶段才更新的继承位置：沿继承链纯计算（绘制属性、Logo、背景提示），或在准备时以绘制同算法先写入（主栏/More/翻页按钮 `PrepareButtonVisualInheritance`、绘制属性反馈底板几何、翻页拖柄矩形），绘制时以相同输入重写同值。禁止直接读取未参与本帧绘制的默认或上一帧 `inhX/inhY`；绘制后的 `state.current` 更新也不能补救已经用于 Clear/D2D/ULW 的本帧 dirty。
 
 #### 4. Validation & Error Matrix
 
@@ -783,7 +789,7 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 
 #### 6. Tests Required
 
-- Headless 覆盖首次全脏、单键变化、旧/新并集、出现/消失、多键合并、窗口裁剪、提交后推进、跳帧保留、失败全脏、未分类回退、调试文字/红/绿框关闭清除，以及光圈位于内部无边框交集、单边/拐角交集和稳定记录复用。
+- Headless 覆盖首次全脏、单键变化、旧/新并集、出现/消失、多键合并、窗口裁剪、提交后推进、跳帧保留、失败全脏、未分类回退、调试文字/红/绿框关闭清除、调试框最小可见尺寸（保活像素贴窗口角、细条只扩短边、越窗裁剪、窗口外不画、提交区覆盖实际画出的框、绿框沿用上一帧框），以及光圈位于内部无边框交集、单边/拐角交集和稳定记录复用。
 - Headless 覆盖 client/layout/surface 坐标往返、动画批次扩展/中间帧不 resize/idle 一次收缩、普通 hover 不预留整容量、整栏拖动保持尺寸、容量突破扩容，以及 `pptSrc + psize` 始终位于 target 内。另覆盖居中根移动但 source/size 不变时完整擦除旧缓冲区尾部、纯直移吸收排除重复清除，以及 ULW 成功/后续失败时的直移门禁；呈现锁到成功快照发布的完整范围由源码审查和构建验证。
 - Headless 覆盖首次 tuple、viewport、source、window size、target capacity 和 device generation 变化均选择整窗替换，稳定 tuple 选择局部 dirty；失败候选不得推进成功 tuple，成功重试后才允许局部 dirty。
 - Headless 覆盖显式 pivot/scale 变换后的实际矩形和隐藏 `scale=0` 空边界，断言结果不回落到默认原点。
@@ -855,6 +861,116 @@ const auto averages = frameRate.Tick(frameWorkEnd - frameWorkStart, frameEnd);
 if (averages.updated)
 	UpdateDebugText(averages.actualFramesPerSecond,
 		averages.unlimitedFramesPerSecond);
+~~~
+
+### UI3 自动脏区登记表合同
+
+#### 1. Scope / Trigger
+
+新增或修改主栏、More、绘制属性（含取色器）、形状/橡皮/撤回属性面板、翻页控件中任何会被绘制的对象、自绘内容或其采样输入时适用；新增一种绘制块时必须同时登记，否则其像素变化不会进入 damage。
+
+#### 2. Signatures
+
+~~~cpp
+// Inkeys.UI.UI3.VisualDirty（独立模块）
+struct VisualSample { bool visible; RECT bounds; VisualStateWriter state; };
+struct VisualGroupSample { bool visible; VisualStateWriter state; };
+using VisualSampler = std::function<void(VisualSample&)>;
+using VisualGroupSampler = std::function<void(VisualGroupSample&)>;
+struct VisualAttempt
+{
+	std::uint64_t serial; RECT damage; std::size_t changedCount;
+	std::vector<std::string> changedNames; // 仅 SetRecordChanged(true)
+	bool changedSincePrevious;              // 与上一次准备（无未确认候选时与已提交快照）相比
+	bool HasDamage() const noexcept;
+};
+class VisualDirtyRegistry
+{
+public:
+	VisualGroupId AddGroup(VisualGroupSampler sampler, VisualGroupId parent = {});
+	VisualId Add(VisualGroupId group, VisualSampler sampler, std::string debugName = {});
+	void Remove(VisualId id);              // 墓碑：已提交与已送出候选的旧包络
+	void RemoveGroup(VisualGroupId id);
+	VisualAttempt Prepare();               // 采样全部组与对象，旧∪新 damage
+	VisualPurityReport VerifyPurity();     // 绘制后重新采样，检查绘制期写入
+	bool Commit(std::uint64_t serial);     // 成功呈现/回执确认后推进已提交快照
+	void TranslateCommitted(LONG dx, LONG dy);
+	void InvalidateCommitted();
+};
+// Inkeys.UI.UI3:VisualDirtySampler（L2 分区）
+bool IsVisuallyDrawn(const UiShapeClass&/UiSuperellipseClass&/UiSVGClass&/UiPNGClass&/UiWordClass&) noexcept;
+void WriteVisualState(VisualStateWriter&, const <图元>&, bool position = true);
+VisualSampler MakeButtonVisualSampler(ButtonClass&, VisualSamplerContext, const UiWordClass* secondary = nullptr);
+VisualSampler MakeFixedButtonVisualSampler(const ButtonVisualParts&, VisualSamplerContext);
+VisualSampler ColorPicker::MakeVisualSampler(VisualSamplerContext) const;
+~~~
+
+#### 3. Contracts
+
+- 登记单位是**一个绘制块**：包络 = 该块全部像素的外接范围（含边框、点光外扩、抗锯齿、按压回弹 `GrowForPress`、文字 `contentScale>1` 放大）；状态 = 该块全部绘制输入（几何、颜色、透明度、内容版本 `ValRevision()`/`contentRevision`、按压、部件显隐、自绘参数）。按共享载体在绘制循环里逐槽改写的内容（扩展箭头、三档数字）按输入采样，不能按对象登记。
+- 组表达实际绘制作用域：位姿、透明度层、裁剪、映射类别（主栏 Body/Grip/Rigid、翻页姿态与 presentation 原点）、常驻淡化/内容透明度。组状态变化使组内全部成员变化；组不可见时成员按不可见处理（与绘制门槛一致）。
+- 采样只读、可重复：不得写对象；绘制阶段才写入的派生值须在准备时以同一公式先写入，或在采样器内纯计算。测试打开时 `VerifyPurity()` 必须为 0。
+- 主栏：登记表在 `AdvanceAnimationsAndDeriveLayout` 全部推进之后、`PrepareLightingAndDemand` 之前准备；有 damage 时登记 `PanelMembers` 并构成呈现需求；`BeginFrame` 之后 `IncludeDamage`；成功呈现后 `Commit(attempt.serial)`；`TranslateCommitted` 与 tracker 重基准同步。失败恢复（`RetainForRetry(true)`、整窗替换、容量/设备变化）不由登记表负责，摘要相等不能取消这些重画。
+- 主栏字号修正（V10 实机：按下按钮瞬间整窗）：按钮按压会以按压目标缩放作为字号修正目标（`ButtonDrawTransform` 的 `FontTargetScope`），标签的 `UiFontCorrectionClass` 随按压播放。宿主只在 `UIRendering::UncoveredFontAnimationsActive()` 为真时整幅兜底（未分类 + `RequireVisualRetry`）；只有已登记修正在进行时只 `AddDemand({true,false,false})`，脏区由登记表比较修正值得出。「已登记」的合同：主栏在 `state.visualPanels.Prepare()` 外包 `UiFontCorrectionClass::RegistryFrameScope(state.spec.FontFrameSerial())`，`WriteVisualState(word)` 在作用域内记下本字号帧序号；`RegistryCovered(frame)` 要求本字号帧被登记**且**本字号帧确实推进了修正值——零步长帧、同序号重入时修正未动，仍按未登记整幅，避免外层按钮裁剪后修正停在中途。作用域外的采样（纯度检查、翻页准备、测试）写 0，不登记；`Reset()` 清除。`FontAnimationsActive()` 语义不变（任一修正进行中），翻页仍按它整幅。Wrong：字号修正进行中一律整幅（按压期间每帧整窗）。Wrong：采样即永久置位、绘制时消费（过期记号会让别处或未登记的修正逃过兜底）。测试：属性脏区测试的开动画自然帧步骤 `n.anim.*`（主栏按钮、几何面板指针 Down/Up）必须零未分类帧且收敛后逐字节对照，否则返回 9；离屏关闭动画的步骤测不到这条路径。
+- 翻页：每个 `BarPageSurface` 一个登记表，坐标为该场景 presentation 客户区像素。准备放在 `Advance` 末尾与同时间戳短路路径、`ConfigurePagination`、`SetBounds` 之后；`Render()` 内的推进不再准备（裁剪已按此前的准备确定）。登记表 damage（相对已确认快照）每次都裁到客户区并入场景 `damage`；`changedSincePrevious` 为真或并入使 damage 扩大时递增 `damageRevision`——已确认 A、候选 B 待回执时回到 A，旧候选也必须失效，B 的回执之后补画范围仍会出现。`CapturePresentationCandidate` 记录本次准备序号，`CommitPresentationCandidate(serial, inputEnabled, pixelsSubmitted)` 只在 `pixelsSubmitted` 时提交被捕获的那次（隐藏或无像素候选只确认窗口与输入），`CommitPresented` 提交最近一次。字号修正系数在绘制时才推进（被裁剪拒绘的按钮不推进），修正动画进行中仍整幅，待字号解析前移到裁剪之前再交给登记表。布局、缩放、原点、字号策略、常驻透明度、背景模式、设备与生命周期、presentation 变化仍走整幅；主光整幅、鼠标光边带不变。
+- 候选：未确认候选最多 4 个；与最近一个未确认候选完全相同的准备复用其序号、不占新槽；被淘汰候选的包络累计保留。被淘汰的候选之后才确认时作废已提交快照，并把已提交、未确认与被淘汰候选的包络全部转为墓碑（屏幕可能停在其中任一状态），下一次准备按「全部旧包络 ∪ 当前可见包络」重画，移走或消失的对象也能擦除。
+- 光影脏区算法与输入不变；登记表只负责业务 damage。窗口尺寸/容量继续使用原范围与预测策略，不以登记表 damage 代替。
+
+#### 4. Validation & Error Matrix
+
+| 条件 | 必须行为 |
+| --- | --- |
+| 对象状态或包络变化 | damage 含已提交包络 ∪ 本帧包络 |
+| 状态未变（重复写同值） | 无 damage；主栏需求已分类时 1 像素保活 |
+| 出现 / 消失（含组隐藏） | 本帧包络 / 已提交包络 |
+| 注销（含已送出未确认的候选） | 墓碑擦除已提交与已送出包络，直到成功呈现 |
+| 呈现失败 | 不 Commit；下一次准备继续与旧已提交快照比较 |
+| 旧回执、重复回执 | 拒绝；不推进快照 |
+| 候选被淘汰后才确认 | 作废已提交快照，全部旧包络转墓碑，下一次准备擦除旧包络并重画全部可见对象 |
+| 已确认 A、候选 B 待回执时回到 A | 旧候选失效（`damageRevision` 递增）；B 的回执后补画范围仍在 |
+| 隐藏或无像素候选的回执 | 只确认窗口与输入，不推进登记表快照 |
+| 绘制阶段写入已采样字段 | 纯度检查报告对应对象名（测试硬失败） |
+| 等待回执期间同一包络内又有变化 | `changedSincePrevious` 为真，翻页递增修订号并重画 |
+
+#### 5. Good / Base / Bad Cases
+
+- Good：悬停橡皮/形状面板按钮只刷新该按钮（原为整块面板）；取色器 Tone 切换只刷新取色器面板；翻页按钮悬停只刷新该按钮。
+- Base：面板开合、主栏移动、底栏果冻形变时登记表给出组内全部成员的旧∪新，与整组刷新范围相当。
+- Bad：在绘制代码里才 `Inherit` 子视觉，采样器读取 `inhX`——采到上一帧位置，纯度检查报告，移动时漏刷旧位置。
+- Bad：新增绘制块只画不登记——像素变化不进入 damage，局部帧保留旧像素（终审实例：笔型登记少了激光按钮；粗细保持环进度由交互线程写入而未入采样）。
+- Bad：组合登记（一个登记项覆盖多个子按钮/自绘块）只采样了底板、分隔线等「外框」部件，漏了子按钮自身的悬停/选中底板（`pct`/`fill`/`frame`）、子图标颜色与绘制时直接读取的输入——只改这些字段的悬停没有 damage、根本不呈现（V10 实机：粗细三档预设悬停无效果、无红框；后续又补激光外壳色、拨盘激活锚点与大圆高对比数字的实时预设值）。组合登记必须逐项对照绘制代码读取的每个字段；绘制时回写的值（数字内容/颜色、拨盘实时宽度）不采样，改为采样其输入或在准备时锁存。
+- Bad：采样读取由其他线程随时写入、绘制时再读一次的值——准备与绘制看到不同的值。应在准备时锁存本帧值（粗细保持环进度、精调拨盘候选标志与有效值），采样与绘制共用；绘制若还要回写共享值，回写前再确认实时状态，不覆盖交互线程的写入。
+
+#### 6. Tests Required
+
+- Headless `--visual-dirty-only`（`InkeysHeadlessTests/visual_dirty_tests.cpp`）：直接写值/移动/同值、出现/消失、失败重试、延迟与陈旧回执、组传播、墓碑、重基准、纯度与易变字节、规范化与作废、`changedSincePrevious` 与候选去重。
+- `Inkeys.exe --ui3-attribute-dirty-test`：动画阶段逐帧整幅读回，像素变化 ⊆ 生产 damage（登记表 ∪ 光影，返回 7）、纯度为 0（返回 8）；自然帧阶段（动画关闭）每个交互的局部保留画面逐字节等于整幅重画、变化必须触发呈现（返回 6），覆盖橡皮（含菜单）、形状、绘制属性（色块、笔型、取色器）、主栏按钮、More 浮层按钮与关闭键。
+- 翻页内置检查（`--bar-eraser-offscreen-test` 中的 `[PageControlUI3]`）：加载环四面 × 三倍率 × 两方向、逐按钮悬停/按下/取消/离开的局部 = 整幅对照；旧回执、捕获后失效保留。
+- golden 35 场景逐字节一致；第二宿主、橡皮、图形属性、底栏吸附与基线一致。
+
+#### 7. Wrong vs Correct
+
+~~~cpp
+// Wrong：推进时手写对象键或整组键，绘制块的包络/输入靠宿主记忆，漏写即漏刷或整块刷新。
+ChangeValue(state.drawAttributeThicknessSliderNormalized, false, drawAttributeGroupKey);
+tracker.Observe(drawAttributeGroupKey, wholePanelBounds);
+
+// Correct：绘制块登记一次，每帧采样输入与包络；推进只登记分类键。
+registry.Add(group, [&](VisualSample& out) {
+	out.visible = IsVisuallyDrawn(region);
+	out.bounds = Map(GrowForPress(RegionEnvelope(), press));
+	out.state.Real(sliderNormalized); /* …该块全部输入… */
+}, "draw.thickness");
+ChangeValue(state.drawAttributeThicknessSliderNormalized, false, registryDirtyKey);
+~~~
+
+~~~cpp
+// Wrong：翻页回执确认时重新采样或提交最新准备，捕获后的变化被当作已呈现。
+surface.CommitPresentationCandidate(serial); visuals.Commit(visuals.Prepare().serial);
+
+// Correct：捕获时记录本次准备序号，回执只提交被捕获（实际绘制）的那一次。
+capturedVisualSerial = preparedVisualSerial;   // CapturePresentationCandidate
+visuals.Commit(capturedVisualSerial);          // CommitPresentationCandidate
 ~~~
 
 ### UI3 共享鼠标光照通知贡献合同

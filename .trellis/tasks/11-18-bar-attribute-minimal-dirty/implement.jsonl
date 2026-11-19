@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "UI3 基于变化的脏区事务合同、PageControl 与 Bar 按钮单一来源合同、状态指示器窗口约定"}
+{"file": ".trellis/spec/native-desktop/ui3-layers.md", "reason": "UI3 四层分层与产品层约定，新增接口放置位置"}
+{"file": ".trellis/spec/native-desktop/ui3-render-diagnostics.md", "reason": "脏区调试显示与渲染诊断"}
+{"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "橡皮属性面板成员与交互"}
+{"file": ".trellis/spec/native-desktop/shapes.md", "reason": "形状属性面板成员与交互"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "模块、BOM+CRLF、前置声明约定"}
+{"file": ".trellis/tasks/11-18-bar-attribute-minimal-dirty/research/codex-d1-investigate.md", "reason": "Codex 前期调查：现状、控件清单、方案对比"}
+{"file": ".trellis/tasks/11-18-bar-attribute-minimal-dirty/research/codex-d2-architecture.md", "reason": "Codex 统一架构可行性调查：帧流程、图元状态清单、自绘清单、可删代码、翻页结构、API 草案"}
+{"file": ".trellis/tasks/11-18-bar-attribute-minimal-dirty/research/codex-v0-startcheck.md", "reason": "Codex 开工核对：设计合同缺口与修订依据"}

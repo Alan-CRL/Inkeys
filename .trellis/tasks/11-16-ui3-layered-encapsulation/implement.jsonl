@@ -1,0 +1,17 @@
+{"file": ".trellis/spec/native-desktop/index.md", "reason": "主程序规范索引与实施前决策门"}
+{"file": ".trellis/spec/native-desktop/directory-structure.md", "reason": "文件归属、vcxproj 与 filters 登记规则、cppm+cpp 结构"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "模块与头文件边界、导出前置声明身份、编码与命名"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "UI3 呈现事务、脏区、命中快照、原生回执等硬约束"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "统一日志服务合同与热路径日志限制"}
+{"file": ".trellis/spec/native-desktop/ui3-render-diagnostics.md", "reason": "UI3 诊断聚合与无窗口验证边界"}
+{"file": ".trellis/spec/native-desktop/ui-pointer-session.md", "reason": "原生输入、捕获票据与取消合同"}
+{"file": ".trellis/spec/native-desktop/bar-theme-material.md", "reason": "主题颜色角色、材质与阴影范围"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64 构建命令与 Win7 兼容约束"}
+{"file": ".trellis/tasks/11-16-ui3-layered-encapsulation/research/layer1-primitives-rendering.md", "reason": "第一层现状：图元、绘制器、主题与对主栏的依赖点"}
+{"file": ".trellis/tasks/11-16-ui3-layered-encapsulation/research/layer2-3-controls-panels.md", "reason": "第二三层现状：按钮入口、手工控件清单、面板、光照、两套取色器对比"}
+{"file": ".trellis/tasks/11-16-ui3-layered-encapsulation/research/layer4-host-presentation.md", "reason": "第四层现状：三条呈现路径、目标资源、输入接入、测试入口"}
+{"file": ".trellis/tasks/11-16-ui3-layered-encapsulation/research/headers-modules-build.md", "reason": "头文件分类与全部 includer、模块依赖图、工程登记、日志现状"}
+{"file": ".trellis/spec/native-desktop/bar-icons.md", "reason": "按钮 SVG 图标着色与资源映射"}
+{"file": ".trellis/spec/native-desktop/shapes.md", "reason": "形状编辑与样式提交合同（样式栏取色器相关）"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板翻页与主题菜单合同"}
+{"file": ".trellis/spec/native-desktop/startup-preview.md", "reason": "启动预览对主栏尺寸与材质的依赖"}

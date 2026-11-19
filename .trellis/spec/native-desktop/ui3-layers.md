@@ -40,6 +40,7 @@
 | `Inkeys.UI.UI3.Metrics` | 通用控件的间距、圆角、描边、图标与文字槽、按压/hover/禁用/光效/时长常量 |
 | `Inkeys.UI.UI3.Material` | 颜色与透明度数学、材质解析、边缘光 |
 | `Inkeys.UI.UI3.DirtyRegion` | 脏区跟踪、调试包络 |
+| `Inkeys.UI.UI3.VisualDirty` | 视觉脏区登记表：对象/组登记、逐帧采样比较、候选提交与淘汰、墓碑、重基准、绘制纯度检查（合同见 `rendering-and-ui.md`「UI3 自动脏区登记表合同」） |
 | `Inkeys.UI.UI3.Superellipse` | 超椭圆路径 |
 | `Inkeys.UI.UI3.LoadingIndicator`、`Inkeys.UI.UI3.FrameRing` | 等待/失败动效状态；沿圆角外框的进度环 |
 | `Inkeys.UI.UI3.Interaction` | `InteractionTask`、`InteractionMailbox`、`ButtonPointerState`、`PointerGestureRecognizer` |
@@ -56,6 +57,7 @@
 | `:Primitive`、`:Format`、`:Theme`、`:Envelope` | L1 | 图元、DWrite 格式缓存、主题（产品绑定主题状态来源 `SetThemeStyleSource`，UI3 查询时实时读取；状态变化在查询路径上经边沿闩锁通知订阅者）、图元可视包络 |
 | `:Renderer` | L1 | 内容绘制器 `UIRendering`：设备相关缓存与内容绘制；不拥有目标、不 Begin/End |
 | `:Button` | L2 | `ButtonClass` 与标准按钮的配置、推进、命中、绘制入口；固定按钮入口与扩展内容合同 |
+| `:VisualDirtySampler` | L2 | 标准图元、按钮、固定按钮的登记表采样器与可见性门槛（与绘制门槛一致） |
 | `:List` | L3 | `ButtonListOf` 容器 |
 | `:Panel` | L3 | `Panel`：外框、开合、候选/已呈现范围、留白阻挡 |
 | `:Lighting` | L3 | 光照状态机、共享光照发布与订阅、指针通知 |
