@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 193
+- **Total Sessions**: 195
 - **Last Active**: 2026-11-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~687 | Active |
+| `journal-3.md` | ~710 | Active |
 | `journal-2.md` | ~2054 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 195 | 2026-11-19 | 脏区调试帧率显示改造 | `72a430db`, `11c5212d` | `refactoring/drawpad-ui` |
 | 193 | 2026-11-19 | UI3 自动脏区提交与任务归档 | `24f7eee7`, `dbd3b850` | `refactoring/drawpad-ui` |
 | 192 | 2026-11-16 | Inkeys3 中期重构第0步：统一日志系统重构 | `cfe8329d`, `f8990ad6` | `refactoring/drawpad-ui` |
 | 191 | 2026-11-16 | PR #274 审阅修正：去除旧配置兼容与统一保存入口 | `6e6fa6ef`, `a0bfb1f5`, `6da5b204`, `0cedeb8a`, `a6c3c87e`, `3518132b` | `chore/setting-item` |

@@ -685,3 +685,26 @@ Migrated live deploy.json/pptcom_configuration.json fields into Inkeys::Config w
 ### Status
 
 [OK] **Completed**
+
+
+## Session 195: 脏区调试帧率显示改造
+<!-- trellis-session: v=2 fp=0735f61107fc7f9a -->
+
+**Date**: 2026-11-19
+**Task**: 脏区调试帧率显示改造
+**Branch**: `refactoring/drawpad-ui`
+
+### Summary
+
+子任务 11-19-debug-frame-rate-display：显示帧率缺省改为关；新增 UI3 InstantFrameRate，帧率改为逐帧实时值（相邻呈现间隔与本帧工作耗时，休眠恢复丢弃上一帧时刻）；文字与 10 个刷新指示点整体居中于主栏底板（含收起与底栏吸附 Body 映射），平时红色、休眠前最终帧随绿框变绿，指示点按成功呈现序号轮转隐藏一个。验证：构建 0 错误、Headless 0、host 38/0、golden 35/0、属性脏区 0/0/0；用户实机确认通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `72a430db` | feat(bar): show per-frame FPS and a refresh indicator in the dirty debug overlay |
+| `11c5212d` | docs(spec): record per-frame FPS and refresh indicator contracts |
+
+### Status
+
+[OK] **Completed**
