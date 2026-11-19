@@ -343,6 +343,11 @@ using Inkeys::UI::UI3::ResolveDebugFrameColor;
 using Inkeys::UI::UI3::DebugFrameWidth;
 using Inkeys::UI::UI3::DebugDirtyFrameInset;
 using Inkeys::UI::UI3::DebugWindowFrameInset;
+// 帧率文字下方的刷新指示点：每个成功呈现的帧轮流隐藏一个（DIP）。
+constexpr int DebugFrameIndicatorCount = 10;
+constexpr double DebugFrameIndicatorDiameterDip = 4.0;
+constexpr double DebugFrameIndicatorPitchDip = 8.0;
+constexpr double DebugFrameIndicatorGapDip = 2.0;
 using Inkeys::UI::UI3::ResolveLightBorderDamage;
 using Inkeys::UI::UI3::ResolveScaledDirtyBounds;
 using Inkeys::UI::Bar::AdvanceBarBottomDockSpring;
@@ -730,6 +735,8 @@ struct BarRenderLoopState
 	bool fontRegistryOnlyPending = false;
 	Inkeys::UI::UI3::DebugFrameSleepLatch debugFrameSleepLatch;
 	bool frameRateSamplePending = false;
+	// 帧率指示点：成功呈现的帧数（开关切换清零）；绘制时隐藏第 serial % 10 个点，重试帧不推进。
+	unsigned long long debugFrameIndicatorSerial = 0;
 	bool unclassifiedDamagePending = false;
 	unsigned long long presentAttemptFrameSerial = 0;
 	Inkeys::UI::UI3::Ui3FiniteObserver* finiteObserver = nullptr;
@@ -923,7 +930,7 @@ struct BarRenderLoopState
 	double mainButtonLogoBaseW = mainButtonLogo->w.tar;
 	double mainButtonLogoBaseH = mainButtonLogo->h.tar;
 	unsigned long long handledMainButtonPulseSerial = 0;
-	Inkeys::UI::UI3::OneSecondFrameRate frameRate;
+	Inkeys::UI::UI3::InstantFrameRate frameRate;
 	wstring fps = IW(I18nKey.UI.Bar.Diagnostics.FrameRateUnavailable);
 };
 
@@ -8023,6 +8030,8 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 		// 开关边界重新武装最终帧锁存：没有活动时这次刷新帧就是绿色最终帧，不能停在红框。
 		(void)state.debugFrameSleepLatch.Update(false, false);
 		state.debugViewportOversizeLogged = false;
+		// 重新开启时指示点从第 1 个开始轮转。
+		state.debugFrameIndicatorSerial = 0;
 	}
 	const bool retryingNonSleepVisual = state.presentDecision.HasPendingVisual()
 		&& !state.debugFrameSleepLatch.IsPending();
@@ -8037,8 +8046,8 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 	if (debugFrameRateEnabled && hasActiveRendering
 		&& state.debugFrameSleepLatch.IsPresented())
 	{
-		// 从真正 idle 恢复时重建统计桶，避免把休眠时间算入实际帧率。
-		state.frameRate.Reset(state.frameWorkStart);
+		// 从真正 idle 恢复时丢弃上一帧时刻，避免把休眠时间算作一帧间隔。
+		state.frameRate.Reset();
 	}
 	const bool finalIdleFramePending = state.debugFrameSleepLatch.Update(
 		true, hasActiveRendering);
@@ -11400,43 +11409,50 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 
 		D2D1_RECT_F debugTextLayoutRect{};
 		RECT currentDebugTextBounds{};
-		const bool debugTextAlignToLeft = state.mainBarLayoutSide;
+		// 帧率指示点：文字下方 10 个圆点的中心行（像素），与文字同一锚点。
+		double debugIndicatorCenterX = 0.0;
+		double debugIndicatorCenterY = 0.0;
 		if (debugFrameRateEnabled)
 		{
-			double debugTextX = mainButton->inhX;
-			double debugTextY = mainButton->inhY + mainButton->GetH();
+			// 文字 + 指示点整体居中于主栏底板（收起时底板宽 80、居中于主按钮且透明，几何仍可作锚点），
+			// 底栏吸附时按 Body 映射取形变后的中心；文字本身不随形变。
+			RECT anchorBounds = mainBar
+				? TransformBottomDockBounds(RenderingAttribute::GetWeigetRect(*mainBar, frameZoom),
+					BottomDockBoundsTransform::Body)
+				: TransformBottomDockBounds(RenderingAttribute::GetWeigetRect(*mainButton, frameZoom),
+					BottomDockBoundsTransform::Grip);
+			const double anchorX = (static_cast<double>(anchorBounds.left) + anchorBounds.right) / 2.0;
+			const double anchorY = (static_cast<double>(anchorBounds.top) + anchorBounds.bottom) / 2.0;
 			const D2D1_SIZE_F debugTextSize = state.spec.MeasureText(
 				state.fps, 12.0, DWRITE_FONT_WEIGHT_NORMAL);
-			const double availableWidthDip = max(
-				1.0, static_cast<double>(state.barWindow.w) / frameZoom);
-			const double availableHeightDip = max(
-				1.0, static_cast<double>(state.barWindow.h) / frameZoom);
-			const double debugTextWidth = min(
-				availableWidthDip,
-				max(1.0, ceil(static_cast<double>(debugTextSize.width)) + 8.0));
-			const double debugTextHeight = min(
-				availableHeightDip,
-				max(20.0, ceil(static_cast<double>(debugTextSize.height))));
-			// 下方空间不足时翻到主按钮上方，最后仍钳制在当前显示器内。
-			if (debugTextY + debugTextHeight > availableHeightDip)
-				debugTextY = mainButton->inhY - debugTextHeight;
-			debugTextY = clamp(debugTextY, 0.0,
-				max(0.0, availableHeightDip - debugTextHeight));
-			double debugTextLeft = debugTextAlignToLeft
-				? debugTextX : debugTextX + mainButton->GetW() - debugTextWidth;
-			debugTextLeft = clamp(debugTextLeft, 0.0,
-				max(0.0, availableWidthDip - debugTextWidth));
-			double debugTextRight = debugTextLeft + debugTextWidth;
+			const double availableWidth = max(1.0, static_cast<double>(state.barWindow.w));
+			const double availableHeight = max(1.0, static_cast<double>(state.barWindow.h));
+			const double textWidth = min(availableWidth,
+				max(1.0, ceil(static_cast<double>(debugTextSize.width)) + 8.0) * frameZoom);
+			const double textHeight = max(1.0, ceil(static_cast<double>(debugTextSize.height))) * frameZoom;
+			const double indicatorWidth = (DebugFrameIndicatorCount - 1) * DebugFrameIndicatorPitchDip * frameZoom
+				+ DebugFrameIndicatorDiameterDip * frameZoom;
+			const double indicatorHeight = (DebugFrameIndicatorGapDip + DebugFrameIndicatorDiameterDip) * frameZoom;
+			const double blockWidth = min(availableWidth, max(textWidth, indicatorWidth));
+			const double blockHeight = min(availableHeight, textHeight + indicatorHeight);
+			// 整体中心对准锚点，越出显示器时整体平移回可用范围。
+			const double blockLeft = clamp(anchorX - blockWidth / 2.0, 0.0, max(0.0, availableWidth - blockWidth));
+			const double blockTop = clamp(anchorY - blockHeight / 2.0, 0.0, max(0.0, availableHeight - blockHeight));
+			const double centerX = blockLeft + blockWidth / 2.0;
 			debugTextLayoutRect = D2D1::RectF(
-				static_cast<FLOAT>(debugTextLeft * frameZoom),
-				static_cast<FLOAT>(debugTextY * frameZoom),
-				static_cast<FLOAT>(debugTextRight * frameZoom),
-				static_cast<FLOAT>((debugTextY + debugTextHeight) * frameZoom));
+				static_cast<FLOAT>(centerX - textWidth / 2.0),
+				static_cast<FLOAT>(blockTop),
+				static_cast<FLOAT>(centerX + textWidth / 2.0),
+				static_cast<FLOAT>(blockTop + textHeight));
+			debugIndicatorCenterX = centerX;
+			debugIndicatorCenterY = blockTop + textHeight
+				+ (DebugFrameIndicatorGapDip + DebugFrameIndicatorDiameterDip / 2.0) * frameZoom;
+			// 包络覆盖文字与指示点，外扩 1px 容纳抗锯齿。
 			currentDebugTextBounds = RECT(
-				static_cast<LONG>(debugTextLayoutRect.left),
-				static_cast<LONG>(debugTextLayoutRect.top),
-				static_cast<LONG>(debugTextLayoutRect.right),
-				static_cast<LONG>(debugTextLayoutRect.bottom));
+				static_cast<LONG>(floor(blockLeft)) - 1,
+				static_cast<LONG>(floor(blockTop)) - 1,
+				static_cast<LONG>(ceil(blockLeft + blockWidth)) + 1,
+				static_cast<LONG>(ceil(blockTop + blockHeight)) + 1);
 		}
 		RECT currentContentBounds = visibleContentBounds;
 		if (debugFrameRateEnabled)
@@ -12397,7 +12413,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		DrawMainBarContent(state, state.spec, barDeviceContext, contentMapping, contentFrame,
 			state.finiteSvgProbe);
 
-		// 帧率文字只随真实渲染重绘；最终 idle 帧保持上一帧文字不变。
+		// 帧率文字与指示点每个成功呈现的帧都重绘（包络已并入本帧提交区）；
+		// 颜色与红/绿框一致：休眠前最终帧为绿，其余为红。
 		if (debugFrameRateEnabled)
 		{
 			FLOAT tarZoom = static_cast<FLOAT>(frameZoom);
@@ -12412,23 +12429,16 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				DWRITE_FONT_STYLE_NORMAL,
 				DWRITE_FONT_STRETCH_NORMAL,
 				state.spec.GetTextLocale(),
-				debugTextAlignToLeft
-					? DWRITE_TEXT_ALIGNMENT_LEADING
-					: DWRITE_TEXT_ALIGNMENT_TRAILING,
+				DWRITE_TEXT_ALIGNMENT_CENTER,
 				DWRITE_PARAGRAPH_ALIGNMENT_NEAR // 指定段落顶部对齐
 			);
 
 			// 3. 创建画刷
 			ID2D1SolidColorBrush* pBrush =
-				state.spec.GetFrameSolidColorBrush(
-					barDeviceContext, RGB(255, 255, 255), 0.5);
+				state.spec.GetFrameSolidColorBrush(barDeviceContext,
+					ResolveDebugFrameColor(state.debugFrameSleepLatch.IsPending()), 1.0);
 
-			RECT tmp = RECT(
-				static_cast<LONG>(debugTextLayoutRect.left),
-				static_cast<LONG>(debugTextLayoutRect.top),
-				static_cast<LONG>(debugTextLayoutRect.right),
-				static_cast<LONG>(debugTextLayoutRect.bottom));
-			RenderingAttribute::UnionRectInPlace(state.current, tmp);
+			RenderingAttribute::UnionRectInPlace(state.current, currentDebugTextBounds);
 
 			// 5. 绘制文本
 			if (pBrush && pTextFormat) (Inkeys::UI::UI3::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawTextW(
@@ -12439,6 +12449,22 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				pBrush,                    // brush
 				D2D1_DRAW_TEXT_OPTIONS_NONE
 			);
+
+			// 6. 指示点：本帧（提交前序号 serial）隐藏第 serial % 10 个，第 1 帧隐藏第 1 个。
+			const int hiddenIndicator = static_cast<int>(
+				state.debugFrameIndicatorSerial % DebugFrameIndicatorCount);
+			const FLOAT indicatorRadius = static_cast<FLOAT>(DebugFrameIndicatorDiameterDip / 2.0 * frameZoom);
+			for (int i = 0; pBrush && i < DebugFrameIndicatorCount; ++i)
+			{
+				if (i == hiddenIndicator) continue;
+				const double offset = (i - (DebugFrameIndicatorCount - 1) / 2.0)
+					* DebugFrameIndicatorPitchDip * frameZoom;
+				const D2D1_ELLIPSE indicator = D2D1::Ellipse(D2D1::Point2F(
+					static_cast<FLOAT>(debugIndicatorCenterX + offset),
+					static_cast<FLOAT>(debugIndicatorCenterY)), indicatorRadius, indicatorRadius);
+				(Inkeys::UI::UI3::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->FillEllipse(
+					&indicator, pBrush);
+			}
 		}
 
 		if (debugModeEnabled)
@@ -13027,6 +13053,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			state.debugOverlayRefreshPending = false;
 			(void)state.debugFrameSleepLatch.CommitPresented();
 			state.frameRateSamplePending = debugFrameRateEnabled;
+			if (debugFrameRateEnabled)
+				++state.debugFrameIndicatorSerial;
 			state.unclassifiedDamagePending = false;
 			state.debugUnclassifiedSource = 0;
 			if (state.finiteObserver)
@@ -13125,19 +13153,19 @@ void BarRenderLoopCoordinator::PaceFrame(
 		&& BarUiDebugFrameRateEnabled;
 	if (debugFrameRateEnabled && state.frameRateSamplePending)
 	{
-		const auto averages = state.frameRate.Tick(activeFrameTime, frameEnd);
-		if (averages.updated)
-		{
-			state.fps = Inkeys::UI::Bar::Detail::FormatFrameRateText(
+		// 每个成功呈现的帧都刷新文字（实时值，不再平均）；下一帧绘制时显示。
+		const auto sample = state.frameRate.Tick(activeFrameTime, frameEnd);
+		state.fps = sample.valid
+			? Inkeys::UI::Bar::Detail::FormatFrameRateText(
 				IW(I18nKey.UI.Bar.Diagnostics.FrameRateFormat),
-				averages.actualFramesPerSecond,
-				averages.unlimitedFramesPerSecond,
-				IW(I18nKey.UI.Bar.Diagnostics.FrameRateUnavailable));
-		}
+				sample.actualFramesPerSecond,
+				sample.unlimitedFramesPerSecond,
+				IW(I18nKey.UI.Bar.Diagnostics.FrameRateUnavailable))
+			: IW(I18nKey.UI.Bar.Diagnostics.FrameRateUnavailable);
 	}
 	else if (!debugFrameRateEnabled)
 	{
-		state.frameRate.Reset(frameEnd);
+		state.frameRate.Reset();
 		state.fps = IW(I18nKey.UI.Bar.Diagnostics.FrameRateUnavailable);
 	}
 	state.frameRateSamplePending = false;

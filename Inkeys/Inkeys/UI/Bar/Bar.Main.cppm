@@ -69,7 +69,7 @@ using namespace Inkeys::UI::UI3;
 IdtAtomic<bool> BarUiEdgeLightingEnabled = true;
 IdtAtomic<bool> BarUiDynamicEdgeLightingEnabled = true;
 IdtAtomic<bool> BarUiDebugModeEnabled = false;
-IdtAtomic<bool> BarUiDebugFrameRateEnabled = true;
+IdtAtomic<bool> BarUiDebugFrameRateEnabled = false;
 
 // ====================
 // 窗口

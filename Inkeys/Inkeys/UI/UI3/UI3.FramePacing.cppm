@@ -224,6 +224,55 @@ export namespace Inkeys::UI::UI3
 		double publishedUnlimited_ = 0.0;
 	};
 
+	struct InstantFrameRateSample
+	{
+		double actualFramesPerSecond = 0.0;
+		double unlimitedFramesPerSecond = 0.0;
+		// 实际帧率需要上一帧的结束时刻；首帧、Reset 之后或时间戳不单调时无效。
+		bool valid = false;
+	};
+
+	// 逐帧实时帧率：实际帧率取相邻两次 Tick 的间隔，无限制帧率取本帧工作耗时（排除 pacing 等待）。
+	class InstantFrameRate
+	{
+	public:
+		using Clock = std::chrono::steady_clock;
+
+		InstantFrameRateSample Tick(
+			Clock::duration activeFrameTime,
+			Clock::time_point now = Clock::now()) noexcept
+		{
+			InstantFrameRateSample result{};
+			const double activeSeconds =
+				std::chrono::duration<double>(activeFrameTime).count();
+			if (activeSeconds > 0.0 && std::isfinite(activeSeconds))
+				result.unlimitedFramesPerSecond = 1.0 / activeSeconds;
+			if (hasLastTick_ && now > lastTick_)
+			{
+				const double intervalSeconds =
+					std::chrono::duration<double>(now - lastTick_).count();
+				if (intervalSeconds > 0.0 && std::isfinite(intervalSeconds))
+				{
+					result.actualFramesPerSecond = 1.0 / intervalSeconds;
+					result.valid = true;
+				}
+			}
+			lastTick_ = now;
+			hasLastTick_ = true;
+			return result;
+		}
+
+		// 休眠恢复或关闭显示时调用：休眠时长不能算作一帧间隔。
+		void Reset() noexcept
+		{
+			hasLastTick_ = false;
+		}
+
+	private:
+		Clock::time_point lastTick_{};
+		bool hasLastTick_ = false;
+	};
+
 	// 真实渲染结束后只补一个最终提交，用于收窗和调试末帧，不能反向维持循环。
 	class DebugFrameSleepLatch
 	{

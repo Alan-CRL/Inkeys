@@ -597,7 +597,7 @@ GROUP(UI, \
 				) \
 				GROUP(Debug, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, false) \
-					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowFrameRate, true) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ShowFrameRate, false) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DelayWaitingOperations, false) \
 				) \
 				GROUP(EdgeLighting, \

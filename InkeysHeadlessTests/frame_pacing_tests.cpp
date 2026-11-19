@@ -122,6 +122,39 @@ namespace
 			"one-second FPS reset clears the published values");
 	}
 
+	void TestInstantFrameRate()
+	{
+		using Clock = InstantFrameRate::Clock;
+		const auto start = Clock::time_point{};
+		InstantFrameRate frameRate;
+		auto value = frameRate.Tick(std::chrono::milliseconds(4), start);
+		Check(!value.valid && Near(value.unlimitedFramesPerSecond, 250.0),
+			"instant FPS has no interval on the first frame but reports work time");
+		value = frameRate.Tick(std::chrono::milliseconds(5),
+			start + std::chrono::milliseconds(20));
+		Check(value.valid && Near(value.actualFramesPerSecond, 50.0)
+			&& Near(value.unlimitedFramesPerSecond, 200.0),
+			"instant FPS uses the latest frame interval and work time");
+		value = frameRate.Tick(std::chrono::milliseconds(10),
+			start + std::chrono::milliseconds(30));
+		Check(value.valid && Near(value.actualFramesPerSecond, 100.0)
+			&& Near(value.unlimitedFramesPerSecond, 100.0),
+			"instant FPS changes every frame instead of averaging");
+		value = frameRate.Tick(Clock::duration::zero(),
+			start + std::chrono::milliseconds(25));
+		Check(!value.valid && value.unlimitedFramesPerSecond == 0.0,
+			"instant FPS rejects non-monotonic timestamps and zero work time");
+		value = frameRate.Tick(std::chrono::milliseconds(10),
+			start + std::chrono::milliseconds(35));
+		Check(value.valid && Near(value.actualFramesPerSecond, 100.0),
+			"instant FPS recovers from the timestamp after a rejected sample");
+		frameRate.Reset();
+		value = frameRate.Tick(std::chrono::milliseconds(10),
+			start + std::chrono::seconds(10));
+		Check(!value.valid,
+			"instant FPS reset excludes the idle gap from the next frame");
+	}
+
 	void TestDebugFrameSleepLatch()
 	{
 		DebugFrameSleepLatch latch;
@@ -539,6 +572,7 @@ int RunFramePacingTests(bool benchmark)
 	failureCount = 0;
 	TestAnimationFrameClockRebase();
 	TestOneSecondFrameRate();
+	TestInstantFrameRate();
 	TestDebugFrameSleepLatch();
 	// 真实timer接缝拒绝非法等待，正常路径不依赖系统timeBeginPeriod或忙等尾段。
 	Check(!Inkeys::UI::UI3::TryWaitForRemainingFrameTime(0.0) && !Inkeys::UI::UI3::TryWaitForRemainingFrameTime(-1.0)
