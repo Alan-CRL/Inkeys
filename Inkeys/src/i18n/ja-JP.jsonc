@@ -1042,10 +1042,15 @@
         "E": "手書き中のキャンバスの更新頻度を調整します。高くすると筆跡が滑らかになりますが、リソース使用量が増えます。"
       },
       "RenderingSection": "描画処理と互換性",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "DirectCompositionを優先",
-        "E": "対応するデバイスではシステムの合成機能でキャンバスを表示し、利用できない場合は互換方式に自動で切り替えます。"
+        "N": "デスクトップキャンバスの透過表示方式",
+        "Automatic": "自動"
+      },
+      "SwapChainMode":
+      {
+        "N": "デスクトップキャンバスのスワップチェーン",
+        "E": "UpdateLayeredWindow はスワップチェーンに対応していません。"
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "診断ログ出力",
       "CanvasInformation": "キャンバスの初期化情報",
+      "PresentationFallback": "デスクトップキャンバスの代替表示方式",
+      "SwapChainFallback": "デスクトップキャンバスの代替スワップチェーン",
       "DisplayInformation": "ディスプレイと EDID"
     },
     "Update":

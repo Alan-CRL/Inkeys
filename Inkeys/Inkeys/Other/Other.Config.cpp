@@ -589,9 +589,32 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 		void HandleValue(const char* name, T& value, const T& defaultValue, bool canReadFromDocument, Inkeys::ConfigUploadMode, const char*)
 		{
 			if (!canReadFromDocument && !includeWriteOnly) return;
-			if (!IsSelectedValuePath(JoinPath(groupPath, name), selectedPaths)) return;
+			const auto path = JoinPath(groupPath, name);
+			if (!IsSelectedValuePath(path, selectedPaths)) return;
 
 			const Json::Value* jsonValue = TryGetValueAtPath(root, groupPath, name);
+			if constexpr (std::is_same_v<T, IdtAtomic<int>>)
+			{
+				if (path == "Experimental.Inkeys3.Draw3.PresentationMode" || path == "Experimental.Inkeys3.Draw3.SwapChainMode")
+				{
+					const bool presentation = path == "Experimental.Inkeys3.Draw3.PresentationMode";
+					const int maximum = presentation ? static_cast<int>(Inkeys::Draw3PresentationPreference::Ulw)
+						: static_cast<int>(Inkeys::Draw3SwapChainPreference::Sequential);
+					if (jsonValue)
+					{
+						const int candidate = ReadNarrowInt(*jsonValue);
+						value = candidate >= 0 && candidate <= maximum ? candidate : defaultValue.load();
+					}
+					else if (presentation)
+					{
+						// 旧开关关闭代表固定 ULW；已有新键（即使值无效）时优先使用新合同。
+						const auto* legacy = TryGetValueAtPath(root, groupPath, "EnableDirectComposition");
+						if (legacy && legacy->isBool() && !legacy->asBool())
+							value = static_cast<int>(Inkeys::Draw3PresentationPreference::Ulw);
+					}
+					return;
+				}
+			}
 			if (!jsonValue) return;
 
 			if constexpr (std::is_same_v<T, IdtAtomic<int>>)
@@ -637,7 +660,6 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					}
 				}
 
-				const auto path = JoinPath(groupPath, name);
 				if (path == "Experimental.Inkeys3.UI3.StartupPreview.Effect")
 				{
 					// 先验整数类型及宽度，禁止浮点/布尔或超宽整数被窄化成有效效果。
@@ -1095,6 +1117,7 @@ namespace Inkeys
 
 		Json::Value outputRoot = autoCleanEnabled ? Json::Value(Json::objectValue) : baseRoot;
 		OverlayDocument(outputRoot);
+		outputRoot["Experimental"]["Inkeys3"]["Draw3"].removeMember("EnableDirectComposition");
 		// 边缘已改为输入设备固定策略；即使保留未知键，也不再写回已退役的三个开关。
 		auto& cursorNode = outputRoot["Drawing"]["Cursor"];
 		cursorNode.removeMember("MouseHighlightEdge");

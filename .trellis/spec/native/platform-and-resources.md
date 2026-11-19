@@ -1,6 +1,6 @@
 # Platform and Resources
 
-> 本层主要描述独立 inkStrokeModelerTest/draw3 demo 的历史路径；已集成 Inkeys 主产品的首发选择合同以 native-desktop/draw3-integration.md 为准：仅 DComp/ULW，两种 DWM 透明模式禁用，ULW 自 2026-11-18 起不建交换链（独立纹理 + 异步读回）；用户在 Win7 SP1+仅 KB2670838 实测可用的 FLIP_SEQUENTIAL 保留为阶段 D 的兼容依据。
+> 本层主要描述独立 inkStrokeModelerTest/draw3 demo 的历史路径；已集成 Inkeys 主产品的首发选择合同以 native-desktop/draw3-integration.md 为准：自动仅 DComp/ULW，第一版 Win7Dwm 需手选且通过 Aero 条件检查，ULW 自 2026-11-18 起不建交换链（独立纹理 + 异步读回）；用户在 Win7 SP1+仅 KB2670838 实测可用的 FLIP_SEQUENTIAL 保留为阶段 D 的兼容依据。
 
 ## Compatibility Target Versus Verified Behavior
 

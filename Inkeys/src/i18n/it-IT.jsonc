@@ -1042,10 +1042,15 @@
         "E": "Regola la frequenza di aggiornamento della tela durante la scrittura. Valori più alti rendono i tratti più fluidi ma usano più risorse."
       },
       "RenderingSection": "Rendering e compatibilità",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "Preferisci DirectComposition",
-        "E": "Usa la composizione di sistema per mostrare la tela sui dispositivi supportati, passando automaticamente alla modalità compatibile se non disponibile."
+        "N": "Metodo di trasparenza della tela del desktop",
+        "Automatic": "Automatico"
+      },
+      "SwapChainMode":
+      {
+        "N": "Catena di scambio della tela del desktop",
+        "E": "UpdateLayeredWindow non supporta le catene di scambio."
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "Output del registro diagnostico",
       "CanvasInformation": "Informazioni di inizializzazione della tela",
+      "PresentationFallback": "Metodo di presentazione alternativo della tela del desktop",
+      "SwapChainFallback": "Catena di scambio alternativa della tela del desktop",
       "DisplayInformation": "Schermi ed EDID"
     },
     "Update":

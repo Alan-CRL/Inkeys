@@ -1042,10 +1042,15 @@
         "E": "Ajustează frecvența actualizării pânzei în timpul scrierii. Ratele mai mari pot face cerneala mai fluidă, dar consumă mai multe resurse."
       },
       "RenderingSection": "Randare și compatibilitate",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "Preferă DirectComposition",
-        "E": "Folosește compoziția sistemului pentru afișarea pânzei pe dispozitive compatibile; dacă nu este disponibilă, trece automat la modul de compatibilitate."
+        "N": "Metoda de transparență a pânzei de pe desktop",
+        "Automatic": "Automat"
+      },
+      "SwapChainMode":
+      {
+        "N": "Lanțul de schimb al pânzei de pe desktop",
+        "E": "UpdateLayeredWindow nu acceptă lanțuri de schimb."
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "Jurnal de diagnosticare",
       "CanvasInformation": "Informații despre inițializarea pânzei",
+      "PresentationFallback": "Metodă de prezentare de rezervă pentru pânza de pe desktop",
+      "SwapChainFallback": "Lanț de schimb de rezervă pentru pânza de pe desktop",
       "DisplayInformation": "Monitoare și EDID"
     },
     "Update":

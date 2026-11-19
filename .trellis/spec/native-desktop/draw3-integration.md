@@ -104,7 +104,7 @@ Wrong：只等 RtsReady/首帧后刷新；Correct：每代窗口准备失败直�
 
 - 主 Drawpad 固定不带选择语义的 `WS_EX_TRANSPARENT`；只有 `ShouldPreconfigureNoRedirectionBitmap()` 能力探测通过时才在创建前预置 `WS_EX_NOREDIRECTIONBITMAP`，随后按主 presenter 模式切换 `WS_EX_NOREDIRECTIONBITMAP`/`WS_EX_LAYERED`。
 - `DrawpadPresentation` 出生即固定包含 `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`，运行期不得清除或借其承载输入。
-- DComp 清除 `WS_EX_LAYERED`；ULW 设置 `WS_EX_LAYERED` 并清除 `WS_EX_NOREDIRECTIONBITMAP`。两种 DWM 实现属于禁用的历史路径。
+- DComp 清除 `WS_EX_LAYERED`；ULW 设置 `WS_EX_LAYERED` 并清除 `WS_EX_NOREDIRECTIONBITMAP`。手选 Win7Dwm 使用普通重定向 HWND 和小区域 blur-behind，整窗扩展玻璃保持禁用。
 - ULW 必须提交 premultiplied-alpha、top-down 32-bit DIB 和 dirty rect；未绘制像素的 alpha 为零，禁止整窗不透明更新遮挡下层窗口。
 
 Windows 对创建时带 `WS_EX_NOREDIRECTIONBITMAP` 且已经绑定过 DComp target 的主 HWND 可能拒绝后续清除该位（`ERROR_INVALID_PARAMETER`）。Window Service 必须写后读取并核对真实样式。若产品 DComp 启动失败，必须在首帧显示和 Setting 初始化前停止 Draw3 与整条隐藏窗口链，再顺序重建 legacy-compatible 主 Drawpad 及其 presentation-only 前置表面；新 Host 禁用 DComp 并只尝试 ULW。两个主 Drawpad generation 不得同时存在，但同一 generation 必须包含长期待命的 presentation-only 前置表面。
@@ -418,7 +418,7 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 以下首发选路合同来自 2026-09-27 用户决定；H0 源码仍含 DWM 自动/强制路径。本次工作区已在源码中禁止该选择，但隐藏 HWND、Win7 与运行期设备故障尚未实测，不能把静态选路当作透明呈现 PASS。
 
 - Draw3 自己创建 D3D11.1 device/context（默认 hardware-first/WARP-fallback，硬件加速启动偏好关闭时直接 WARP）、DXGI factory、swap chain 和 presenter，不注册 `Inkeys.UI.RenderPipeline` client，也不共享其 device epoch。
-- 首发正式 presenter 模式顺序为 DComp -> ULW；DwmBlurBehind2 与 DwmBlurBehind 在自动回退和强制模式中均不可选。每次失败都销毁该模式的 swap chain/presenter 状态后再降级。DComp 在创建前通过能力探测决定是否预置 `WS_EX_NOREDIRECTIONBITMAP`；legacy 重建 Host 明确跳过 DComp。ULW 不创建交换链（2026-11-18 起）：Draw3 直接画到一张独立 BGRA8 纹理（RT|SRV），经 Staging 读回到 premultiplied top-down 32-bit DIB 后提交，保持 `1/255` CPU alpha 边界和 dirty rect，透明像素 alpha 必须保持零；读回流水线合同见“ULW 独立纹理、异步读回与合成对齐”。
+- 自动 presenter 顺序为 DComp -> ULW。仅手选第一版 Win7Dwm 时检查 Win7 SP1、合成和透明着色；其 HWND 链默认 FLIP_SEQUENTIAL/2，创建失败可试 SEQUENTIAL/1。显式 SEQUENTIAL 直接建单缓冲链。Win7Dwm 跳过 waitable，明确失败转 ULW。每次失败都销毁该模式的 swap chain/presenter 状态后再降级。DComp 在创建前通过能力探测决定是否预置 `WS_EX_NOREDIRECTIONBITMAP`；legacy 重建 Host 明确跳过 DComp。ULW 不创建交换链（2026-11-18 起）：Draw3 直接画到一张独立 BGRA8 纹理（RT|SRV），经 Staging 读回到 premultiplied top-down 32-bit DIB 后提交，保持 `1/255` CPU alpha 边界和 dirty rect，透明像素 alpha 必须保持零；读回流水线合同见“ULW 独立纹理、异步读回与合成对齐”。
 - 用户已在 Win7 SP1 且仅安装 KB2670838 的环境实测 `FLIP_SEQUENTIAL` 可用；微软通用 DXGI swap effect 文档写 Win8 起支持，与该实测相冲突。ULW 已不再使用交换链，该实测保留为阶段 D（Win7 DWM GPU 呈现）选用 FLIP 的兼容依据，不添加 bitblt 或 swap effect 降级。设备/驱动、Hardware FL11.0 与无 FL11.0 时的 WARP、ULW 成功 Present 仍须逐格复验；文档冲突不能替代本轮真机证据。
 - 主 presenter 与辅助 ULW target 共用 renderer/final backbuffer，每帧只向请求目标提交；辅助初始化失败即 Host 启动失败，运行期失败必须重建并全量重试，不回退到主窗穿透。DComp退休使用共享有界等待，超时或已有退休在途时禁止第二worker及后续模式初始化；迟到完成只清理旧状态。样式可清除时才在原HWND降级ULW；否则运行期进入受保护故障退出，不在运行期停止Window Service或重建窗口链——Bar/PPT/Setting/白板等UI客户端在初始化时绑定HWND，整链重建会让它们持有已销毁的窗口。完整legacy窗口链重建只允许发生在启动期UI客户端初始化之前。
 - 只允许一个绑定主 Drawpad 的选定输入 producer（RTS 或 Win32Mouse）；Draw2 RTS 不得初始化或重复发布。退出顺序为关闭绘制准入并预约最终保存 -> 停止并排空选定 producer -> 唤醒绘制线程并执行最终保存屏障 -> 释放双 presenter/device -> Window Service 销毁两窗。

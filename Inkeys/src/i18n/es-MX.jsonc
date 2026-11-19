@@ -1042,10 +1042,15 @@
         "E": "Ajustar la frecuencia de actualización del lienzo al escribir. Las frecuencias altas pueden suavizar el trazo, pero usan más recursos."
       },
       "RenderingSection": "Renderizado y compatibilidad",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "Priorizar DirectComposition",
-        "E": "Usar la composición del sistema para mostrar el lienzo en dispositivos compatibles, con un modo alternativo automático si no está disponible."
+        "N": "Método de transparencia del lienzo de escritorio",
+        "Automatic": "Automático"
+      },
+      "SwapChainMode":
+      {
+        "N": "Cadena de intercambio del lienzo de escritorio",
+        "E": "UpdateLayeredWindow no admite cadenas de intercambio."
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "Salida del registro de diagnóstico",
       "CanvasInformation": "Información de inicialización del lienzo",
+      "PresentationFallback": "Método de presentación alternativo del lienzo de escritorio",
+      "SwapChainFallback": "Cadena de intercambio alternativa del lienzo de escritorio",
       "DisplayInformation": "Pantallas y EDID"
     },
     "Update":

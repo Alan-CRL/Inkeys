@@ -1042,10 +1042,15 @@
         "E": "Yazarken tuvalin yenilenme sıklığını ayarlayın. Yüksek kare hızları mürekkebi akıcı kılarken daha fazla kaynak kullanabilir."
       },
       "RenderingSection": "İşleme ve uyumluluk",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "DirectComposition'ı tercih et",
-        "E": "Desteklenen cihazlarda tuvali göstermek için sistem birleştirmesini kullanın; kullanılamıyorsa uyumluluk yöntemine otomatik geçilir."
+        "N": "Masaüstü tuvali saydam sunum yöntemi",
+        "Automatic": "Otomatik"
+      },
+      "SwapChainMode":
+      {
+        "N": "Masaüstü tuvali takas zinciri",
+        "E": "UpdateLayeredWindow takas zincirlerini desteklemez."
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "Tanılama günlüğü çıktısı",
       "CanvasInformation": "Tuval başlatma bilgisi",
+      "PresentationFallback": "Masaüstü tuvali yedek sunum yöntemi",
+      "SwapChainFallback": "Masaüstü tuvali yedek takas zinciri",
       "DisplayInformation": "Ekranlar ve EDID"
     },
     "Update":

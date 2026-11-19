@@ -1042,10 +1042,15 @@
         "E": "Adjust how often the canvas updates while writing. Higher frame rates can make ink smoother while using more resources."
       },
       "RenderingSection": "Rendering and compatibility",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "Prefer DirectComposition",
-        "E": "Use system composition to display the canvas on supported devices, with automatic compatibility fallback when unavailable."
+        "N": "Desktop canvas transparency method",
+        "Automatic": "Automatic"
+      },
+      "SwapChainMode":
+      {
+        "N": "Desktop canvas swap chain",
+        "E": "UpdateLayeredWindow does not support swap chains."
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "Diagnostic log output",
       "CanvasInformation": "Canvas initialisation information",
+      "PresentationFallback": "Desktop canvas presentation fallback",
+      "SwapChainFallback": "Desktop canvas swap chain fallback",
       "DisplayInformation": "Displays and EDID"
     },
     "Update":

@@ -1042,10 +1042,15 @@
         "E": "Dostosuj częstotliwość odświeżania płótna podczas pisania. Wyższa liczba klatek może zapewnić płynniejsze ślady, ale zwiększa zużycie zasobów."
       },
       "RenderingSection": "Renderowanie i zgodność",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "Preferuj DirectComposition",
-        "E": "Używaj kompozycji systemowej do wyświetlania płótna na obsługiwanych urządzeniach; gdy jest niedostępna, automatycznie użyj trybu zgodności."
+        "N": "Metoda przezroczystego wyświetlania płótna pulpitu",
+        "Automatic": "Automatyczny"
+      },
+      "SwapChainMode":
+      {
+        "N": "Łańcuch wymiany płótna pulpitu",
+        "E": "UpdateLayeredWindow nie obsługuje łańcuchów wymiany."
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "Dziennik diagnostyczny",
       "CanvasInformation": "Informacje o inicjalizacji płótna",
+      "PresentationFallback": "Zastępcza metoda wyświetlania płótna pulpitu",
+      "SwapChainFallback": "Zastępczy łańcuch wymiany płótna pulpitu",
       "DisplayInformation": "Ekrany i EDID"
     },
     "Update":

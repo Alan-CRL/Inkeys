@@ -1042,10 +1042,15 @@
         "E": "필기 중 캔버스의 새로 고침 빈도를 조정합니다. 높이면 필기가 부드러워지지만 리소스 사용량이 늘어납니다."
       },
       "RenderingSection": "렌더링 및 호환성",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "DirectComposition 우선 사용",
-        "E": "지원되는 장치에서 시스템 합성 기능으로 캔버스를 표시합니다. 사용할 수 없으면 호환 방식으로 자동 전환합니다."
+        "N": "데스크톱 캔버스 투명 표시 방식",
+        "Automatic": "자동"
+      },
+      "SwapChainMode":
+      {
+        "N": "데스크톱 캔버스 스왑 체인",
+        "E": "UpdateLayeredWindow는 스왑 체인을 지원하지 않습니다."
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "진단 로그 출력",
       "CanvasInformation": "캔버스 초기화 정보",
+      "PresentationFallback": "데스크톱 캔버스 대체 표시 방식",
+      "SwapChainFallback": "데스크톱 캔버스 대체 스왑 체인",
       "DisplayInformation": "디스플레이 및 EDID"
     },
     "Update":

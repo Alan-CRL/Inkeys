@@ -53,6 +53,9 @@ export namespace Inkeys
 		return percent > ResidentOpacityMaximumPercent ? ResidentOpacityMaximumPercent : percent;
 	}
 
+	enum class Draw3PresentationPreference { Automatic, DirectComposition, Win7Dwm, Ulw };
+	enum class Draw3SwapChainPreference { Flip, Sequential };
+
 	enum class ConfigUploadMode
 	{
 		NoUpload,
@@ -575,7 +578,8 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnectTouch, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnectPenTail, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
-				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableDirectComposition, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PresentationMode, static_cast<int>(Draw3PresentationPreference::Automatic)) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SwapChainMode, static_cast<int>(Draw3SwapChainPreference::Flip)) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableHardwareAcceleration, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableZhaoxinCompatibility, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableWaitableWait, true) \

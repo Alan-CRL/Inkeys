@@ -386,7 +386,20 @@ int RunDraw3DevicePerformanceTests()
 			MakeCounters(DimensionBit(Dimension::Eraser), 30, 9.0, 8.33));
 		MergeTally(store, ulw, MakeDate(2026, 11, 18), 1763450000,
 			MakeCounters(DimensionBit(Dimension::Laser), 20, 4.0, 16.67));
+		// 按实际后端和交换链分别落桶，既有 DComp FLIP / ULW 键仍可继续读取。
+		Signature chainSignature = DCompSignature();
+		for (Presentation chain : { Presentation::Win7DwmFlip, Presentation::Win7DwmSequential, Presentation::DCompSequential })
+		{
+			chainSignature.presentation = chain;
+			MergeTally(store, chainSignature, MakeDate(2026, 11, 18), 1763450000,
+				MakeCounters(DimensionBit(Dimension::Writing), 12, 2.0, 8.33));
+		}
+		expect(store.records.size() == 5, "effective swap chains occupy separate buckets");
 		const std::string text = SerializeStore(store);
+		expect(text.find("fps120-hardware-win7dwm-flip-zx0") != std::string::npos &&
+			text.find("fps120-hardware-win7dwm-sequential-zx0") != std::string::npos &&
+			text.find("fps120-hardware-dcomp-sequential-zx0") != std::string::npos,
+			"effective chain keys ignore irrelevant backend switches");
 		Store parsed;
 		std::size_t dropped = 99;
 		expect(ParseStore(text, parsed, &dropped) == ParseResult::Ok && dropped == 0, "roundtrip parses");
@@ -409,7 +422,7 @@ int RunDraw3DevicePerformanceTests()
 		expect(text.find("fps120-hardware-dcomp-wait1-zx0") != std::string::npos, "readable key written");
 
 		Store untouched = store;
-		expect(ParseStore("{ not json", untouched) == ParseResult::Malformed && untouched.records.size() == 2,
+		expect(ParseStore("{ not json", untouched) == ParseResult::Malformed && untouched.records.size() == store.records.size(),
 			"malformed text fails without touching output");
 		expect(ParseStore("[]", untouched) == ParseResult::Malformed, "non-object root fails");
 		expect(ParseStore(R"({"schema":"other","version":4,"signatures":[]})", untouched) == ParseResult::WrongSchema,

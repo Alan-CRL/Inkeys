@@ -1042,10 +1042,15 @@
         "E": "Điều chỉnh tần suất làm mới trang vẽ khi viết. Tốc độ khung hình cao hơn giúp nét mượt hơn nhưng dùng nhiều tài nguyên hơn."
       },
       "RenderingSection": "Kết xuất và tương thích",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "Ưu tiên DirectComposition",
-        "E": "Dùng cơ chế tổng hợp của hệ thống để hiển thị trang vẽ trên thiết bị hỗ trợ, tự chuyển sang cách tương thích khi không khả dụng."
+        "N": "Phương thức hiển thị trong suốt của khung vẽ trên màn hình nền",
+        "Automatic": "Tự động"
+      },
+      "SwapChainMode":
+      {
+        "N": "Chuỗi hoán đổi của khung vẽ trên màn hình nền",
+        "E": "UpdateLayeredWindow không hỗ trợ chuỗi hoán đổi."
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "Đầu ra nhật ký chẩn đoán",
       "CanvasInformation": "Thông tin khởi tạo trang vẽ",
+      "PresentationFallback": "Phương thức hiển thị dự phòng của khung vẽ trên màn hình nền",
+      "SwapChainFallback": "Chuỗi hoán đổi dự phòng của khung vẽ trên màn hình nền",
       "DisplayInformation": "Màn hình và EDID"
     },
     "Update":

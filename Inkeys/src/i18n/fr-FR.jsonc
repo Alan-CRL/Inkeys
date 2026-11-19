@@ -1042,10 +1042,15 @@
         "E": "Régler la fréquence de rafraîchissement du canevas pendant l’écriture. Une fréquence plus élevée rend le tracé plus fluide, mais utilise davantage de ressources."
       },
       "RenderingSection": "Rendu et compatibilité",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "Privilégier DirectComposition",
-        "E": "Utiliser la composition système pour afficher le canevas sur les appareils compatibles, avec un mode de secours automatique si indisponible."
+        "N": "Mode de transparence du canevas du bureau",
+        "Automatic": "Automatique"
+      },
+      "SwapChainMode":
+      {
+        "N": "Chaîne d’échange du canevas du bureau",
+        "E": "UpdateLayeredWindow ne prend pas en charge les chaînes d’échange."
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "Sortie du journal de diagnostic",
       "CanvasInformation": "Informations d’initialisation du canevas",
+      "PresentationFallback": "Mode de présentation de secours du canevas du bureau",
+      "SwapChainFallback": "Chaîne d’échange de secours du canevas du bureau",
       "DisplayInformation": "Écrans et EDID"
     },
     "Update":

@@ -1045,11 +1045,16 @@ inline constexpr struct I18nKeyRoot
                 const char* E = "SettingsUI/Performance/CanvasFrameRate/E";
             } CanvasFrameRate{};
             const char* RenderingSection = "SettingsUI/Performance/RenderingSection";
-            struct Node__SettingsUI__Performance__DirectComposition
+            struct Node__SettingsUI__Performance__PresentationMode
             {
-                const char* N = "SettingsUI/Performance/DirectComposition/N";
-                const char* E = "SettingsUI/Performance/DirectComposition/E";
-            } DirectComposition{};
+                const char* N = "SettingsUI/Performance/PresentationMode/N";
+                const char* Automatic = "SettingsUI/Performance/PresentationMode/Automatic";
+            } PresentationMode{};
+            struct Node__SettingsUI__Performance__SwapChainMode
+            {
+                const char* N = "SettingsUI/Performance/SwapChainMode/N";
+                const char* E = "SettingsUI/Performance/SwapChainMode/E";
+            } SwapChainMode{};
             struct Node__SettingsUI__Performance__WaitableWait
             {
                 const char* N = "SettingsUI/Performance/WaitableWait/N";
@@ -1470,6 +1475,8 @@ inline constexpr struct I18nKeyRoot
             } StatusIndicator{};
             const char* ConsoleSection = "SettingsUI/DebugSoftware/ConsoleSection";
             const char* CanvasInformation = "SettingsUI/DebugSoftware/CanvasInformation";
+            const char* PresentationFallback = "SettingsUI/DebugSoftware/PresentationFallback";
+            const char* SwapChainFallback = "SettingsUI/DebugSoftware/SwapChainFallback";
             const char* DisplayInformation = "SettingsUI/DebugSoftware/DisplayInformation";
         } DebugSoftware{};
         struct Node__SettingsUI__Update

@@ -222,7 +222,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 	// ---- 设置签名 ----
 
 	enum class Device : std::uint8_t { Unknown, Hardware, Warp };
-	enum class Presentation : std::uint8_t { Unknown, DirectComposition, Ulw };
+	enum class Presentation : std::uint8_t { Unknown, DirectComposition, Ulw, Win7DwmFlip, Win7DwmSequential, DCompSequential };
 	inline constexpr std::uint8_t kNotApplicable = 0xFF;
 
 	struct Signature
@@ -281,7 +281,10 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		switch (presentation)
 		{
 		case Presentation::DirectComposition: return "dcomp";
+		case Presentation::DCompSequential: return "dcomp-sequential";
 		case Presentation::Ulw: return "ulw";
+		case Presentation::Win7DwmFlip: return "win7dwm-flip";
+		case Presentation::Win7DwmSequential: return "win7dwm-sequential";
 		default: return "unknown";
 		}
 	}

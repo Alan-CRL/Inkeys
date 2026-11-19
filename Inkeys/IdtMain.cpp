@@ -1395,7 +1395,7 @@ namespace
 		Inkeys::Drawing::Draw3::HostStyleCallbacks draw3StyleCallbacks,
 		Inkeys::Drawing::Draw3::HostStartOptions& draw3StartOptions,
 		Inkeys::Drawing::Draw3::HostRuntimeCallbacks draw3RuntimeCallbacks,
-		bool preferDraw3DirectComposition, StartWindows&& StartWindowService,
+		bool retryWithLegacyWindows, StartWindows&& StartWindowService,
 		Inkeys::Shutdown::CleanupRealPacket* observation = nullptr)
 	{
 		if (!PrepareDraw3WindowTopmost(windowService, drawpad_window, "initial")) return false;
@@ -1409,7 +1409,7 @@ namespace
 			drawpad_window, windowService.Handle(
 				Inkeys::Window::WindowRole::DrawpadPresentation),
 			draw3StyleCallbacks, draw3StartOptions, draw3RuntimeCallbacks);
-		if (!draw3Started && preferDraw3DirectComposition)
+		if (!draw3Started && retryWithLegacyWindows)
 		{
 			// 同一失败episode覆盖Host内部清理、失败日志和旧Window owner join。
 			const ULONGLONG firstGrace = firstHostFailure.BeginKnownFailure();
@@ -1420,6 +1420,8 @@ namespace
 			}
 			// NOREDIRECTIONBITMAP 在绑定 DComp 后不可清除；显示前顺序重建唯一 HWND 链再走 legacy fallback。
 			if (!observation) Inkeys::Log::Warn(Inkeys::Log::Module::Draw3, "Draw3 Host 启动失败，重建隐藏窗口链并以 ULW 重试");
+			// 重建窗口会开始新的 Host 代次，先保留首次尝试的实际错误供软件调试页显示。
+			draw3StartOptions.previousAttempt = Inkeys::Drawing::Draw3::ProductHost().CanvasFallbackReport();
 			const HWND oldDrawpad = observation ? drawpad_window : nullptr;
 			const HWND oldPresentation = observation ? windowService.Handle(
 				Inkeys::Window::WindowRole::DrawpadPresentation) : nullptr;
@@ -1448,6 +1450,8 @@ namespace
 				ulwHostCleanup.PrepareOrFatal();
 				draw3StartOptions.failedCleanup = ulwHostCleanup.Signal();
 				draw3StartOptions.allowDirectComposition = false;
+				// 保留原偏好用于诊断，重建的窗口链只尝试 ULW。
+				draw3StartOptions.requiredPresentationMode = Inkeys::Drawing::Draw3::HostPresentationMode::UlwDirtyRect;
 				draw3Started = Inkeys::Drawing::Draw3::StartProduct(
 					drawpad_window, windowService.Handle(
 						Inkeys::Window::WindowRole::DrawpadPresentation),
@@ -3692,8 +3696,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		HICON applicationIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_ICON1));
 		std::vector<Inkeys::Window::WindowSpec> windowSpecs;
 		auto createdDrawpadHwnd = std::make_shared<std::atomic<HWND>>(nullptr);
+		const auto& draw3Config = configOnce.Experimental.Inkeys3.Draw3;
+		using PresentationPreference = Inkeys::Draw3PresentationPreference;
+		using HostMode = Inkeys::Drawing::Draw3::HostPresentationMode;
+		const auto presentationPreference = static_cast<PresentationPreference>(draw3Config.PresentationMode.load());
+		HostMode preferredMode = HostMode::Automatic;
+		switch (presentationPreference)
+		{
+		case PresentationPreference::DirectComposition: preferredMode = HostMode::DirectCompositionVisualTree; break;
+		case PresentationPreference::Win7Dwm: preferredMode = HostMode::DwmBlurBehind; break;
+		case PresentationPreference::Ulw: preferredMode = HostMode::UlwDirtyRect; break;
+		default: break;
+		}
+		// 仅 DComp 路径在创建 HWND 前申请 NOREDIRECTIONBITMAP，Win7Dwm 需要普通重定向窗口。
 		const bool preferDraw3DirectComposition =
-			config.Experimental.Inkeys3.Draw3.EnableDirectComposition &&
+			(preferredMode == HostMode::Automatic || preferredMode == HostMode::DirectCompositionVisualTree) &&
 			Inkeys::Drawing::Draw3::ShouldPreconfigureNoRedirectionBitmap();
 
 		// 放大窗口固定保留 1 像素，不再读取已废弃的 AvoidFullScreen 配置。
@@ -3930,6 +3947,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		draw3StartOptions.whiteboardDefaultTheme = { whiteboardDefault.backgroundRgb,
 			static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(whiteboardDefault.pattern) };
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
+		draw3StartOptions.preferredPresentationMode = preferredMode;
+		draw3StartOptions.preferSequentialSwapChain = static_cast<Inkeys::Draw3SwapChainPreference>(draw3Config.SwapChainMode.load()) ==
+			Inkeys::Draw3SwapChainPreference::Sequential;
 		draw3StartOptions.autoSaveRoot =
 			GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave";
 		{
@@ -3992,7 +4012,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		};
 		bool draw3Started = StartDraw3ProductWithFallback(windowService, windowSpecs,
 			drawpad_window, draw3StyleCallbacks, draw3StartOptions, draw3RuntimeCallbacks,
-			preferDraw3DirectComposition, StartWindowService);
+			preferDraw3DirectComposition || preferredMode == HostMode::DwmBlurBehind, StartWindowService);
 		if (!draw3Started)
 		{
 			// Host 初始化失败后的提示和窗口清理可能依赖已停止的绘制线程，先建立监督。

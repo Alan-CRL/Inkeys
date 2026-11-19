@@ -1042,10 +1042,15 @@
         "E": "調整書寫時畫布的更新頻率。較高幀率可使筆跡更流暢，同時增加資源使用量。"
       },
       "RenderingSection": "渲染與兼容性",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "優先使用 DirectComposition",
-        "E": "在支援的裝置上使用系統合成顯示畫布，無法使用時自動改用兼容方式。"
+        "N": "桌面畫布透明呈現方式",
+        "Automatic": "自動"
+      },
+      "SwapChainMode":
+      {
+        "N": "桌面畫布交換鏈",
+        "E": "UpdateLayeredWindow 不支援使用交換鏈。"
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "診斷記錄輸出",
       "CanvasInformation": "畫布初始化資訊",
+      "PresentationFallback": "桌面畫布透明呈現方式已回退",
+      "SwapChainFallback": "桌面畫布交換鏈已回退",
       "DisplayInformation": "顯示器與 EDID"
     },
     "Update":

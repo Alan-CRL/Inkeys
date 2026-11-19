@@ -2762,6 +2762,7 @@ namespace Inkeys::Drawing::Draw3
 			return DefWindowProcW(window, message, wParam, lParam);
 		}
 
+		case WM_DWMCOLORIZATIONCOLORCHANGED:
 		case WM_DWMCOMPOSITIONCHANGED:
 			compositionChangedRequested_.store(true, std::memory_order_release); // DWM 状态变化交给主循环刷新 presenter。
 			RequestControlWake();

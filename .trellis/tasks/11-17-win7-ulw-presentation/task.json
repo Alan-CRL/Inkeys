@@ -22,7 +22,8 @@
     "11-17-dcomp-waitable-latency",
     "11-17-ulw-texture-pipeline",
     "11-17-perf-dashboard",
-    "11-17-cursor-frame-pacing"
+    "11-17-cursor-frame-pacing",
+    "11-19-win7-dwm-presentation"
   ],
   "parent": "11-16-inkeys3-midterm-refactor",
   "relatedFiles": [],

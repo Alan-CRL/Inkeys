@@ -413,10 +413,11 @@ namespace Inkeys::Drawing::Draw3
 		std::string canvasGraphics = "图形设备与交换链：尚未初始化\n";
 		std::string canvasInput = "输入后端：尚未启用\n";
 		std::string canvasInformation = "画布尚未初始化";
+		PresentationFallbackReport canvasFallback;
 
 		void UpdateCanvasInformation(const char* lifecycle = nullptr,
 			const std::string* graphicsText = nullptr, const std::string* inputText = nullptr,
-			bool beginGeneration = false) noexcept
+			bool beginGeneration = false, const PresentationFallbackReport* previous = nullptr) noexcept
 		{
 			try
 			{
@@ -424,6 +425,7 @@ namespace Inkeys::Drawing::Draw3
 				if (beginGeneration)
 				{
 					++canvasInformationGeneration;
+					canvasFallback = previous ? *previous : PresentationFallbackReport{};
 					canvasGraphics = "图形设备与交换链：尚未初始化\n";
 					canvasInput = "输入后端：尚未启用\n";
 				}
@@ -436,10 +438,36 @@ namespace Inkeys::Drawing::Draw3
 			catch (...) {} // 可选诊断失败不得干扰启动/退出协议。
 		}
 
+		void RecordHostStartupFailure(const char* stage, const char* detail = nullptr) noexcept
+		{
+			try
+			{
+				std::scoped_lock lock(canvasInformationMutex);
+				// 优先保留 presenter 已发布的具体失败点和 HRESULT，供新 HWND 代次继承。
+				if (!canvasFallback.lastAttemptFailure.empty()) return;
+				canvasFallback.lastAttemptFailure = stage;
+				if (detail && *detail) canvasFallback.lastAttemptFailure += std::string(": ") + detail;
+			}
+			catch (...) {} // 诊断分配失败不得中断启动清理。
+		}
+
 		static void ObserveCanvasGraphics(void* context, const std::string& information) noexcept
 		{
 			if (auto* self = static_cast<Impl*>(context))
 				self->UpdateCanvasInformation(nullptr, &information);
+		}
+
+		static void ObserveCanvasFallback(void* context, const PresentationFallbackReport& report) noexcept
+		{
+			if (auto* self = static_cast<Impl*>(context))
+			{
+				try
+				{
+					std::scoped_lock lock(self->canvasInformationMutex);
+					self->canvasFallback = report;
+				}
+				catch (...) {} // 可选诊断失败不干扰呈现恢复。
+			}
 		}
 
 		void CaptureCanvasInputInformation(HostInputMode selected) noexcept
@@ -2096,15 +2124,17 @@ namespace Inkeys::Drawing::Draw3
 			if (running.load(std::memory_order_acquire) || drawingThread.joinable() ||
 				attachedWindow.load(std::memory_order_acquire) ||
 				attachedPresentationWindow.load(std::memory_order_acquire)) return false;
-			UpdateCanvasInformation("正在初始化", nullptr, nullptr, true);
+			UpdateCanvasInformation("正在初始化", nullptr, nullptr, true, &options.previousAttempt);
 			LogDraw3BuildIdentity();
 			LogDraw3WindowState("start-request", hwnd, presentationHwnd);
 			BeginRuntimeMetricsRun(options);
-			// 强制 DWM 已禁用，必须在重置 bridge 或附着外部 HWND 前拒绝。
-			if (options.requiredPresentationMode == HostPresentationMode::DwmBlurBehind ||
+			// 严格模式在附着外部 HWND 之前拒绝不可用的 Win7 玻璃路径。
+			if ((options.requiredPresentationMode == HostPresentationMode::DwmBlurBehind && !IsWin7DwmAvailable()) ||
 				options.requiredPresentationMode == HostPresentationMode::DwmBlurBehind2 ||
 				!hwnd || !presentationHwnd || !IsWindow(hwnd) || !IsWindow(presentationHwnd))
 			{
+				RecordHostStartupFailure(!hwnd || !presentationHwnd || !IsWindow(hwnd) || !IsWindow(presentationHwnd)
+					? "Drawpad HWND validation" : "Required presentation mode unavailable");
 				UpdateCanvasInformation("初始化失败（窗口或呈现请求不可用）");
 				SealRuntimeMetricsRun(true);
 				return false;
@@ -2127,6 +2157,7 @@ namespace Inkeys::Drawing::Draw3
 			ExternalWindowCallbacks windowCallbacks{};
 			if (!window.AttachExternal(hwnd, windowCallbacks))
 			{
+				RecordHostStartupFailure("WindowController::AttachExternal");
 				UpdateCanvasInformation("初始化失败（附着画布窗口失败）");
 				failedCleanup.BeginKnownFailure();
 				attachedWindow.store(nullptr, std::memory_order_release);
@@ -2175,6 +2206,7 @@ namespace Inkeys::Drawing::Draw3
 				HapticDiagnostics::Log("host", "backend_initialized=%d run=%llu", hapticReady, static_cast<unsigned long long>(hapticClicks.Run()));
 				bool initialized = false;
 				bool graphicsInitialized = false;
+				const char* startupStage = "InitializeGraphicsDevice";
 					DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=begin hwnd=0x" << std::hex
 						<< reinterpret_cast<UINT_PTR>(attachedWindow.load(std::memory_order_acquire))
 						<< " selectionHwnd=0x"
@@ -2210,7 +2242,7 @@ namespace Inkeys::Drawing::Draw3
 						committedWidth.store(size.width, std::memory_order_release);
 						committedHeight.store(size.height, std::memory_order_release);
 						const TransparentPresentationCallbacks presentationCallbacks{
-							&this->styleCallbacks, &ApplyStyle, this, &ObserveCanvasGraphics
+							&this->styleCallbacks, &ApplyStyle, this, &ObserveCanvasGraphics, &ObserveCanvasFallback
 						};
 						TransparentPresentationOptions presentationOptions{};
 						presentationOptions.requireMode =
@@ -2219,12 +2251,17 @@ namespace Inkeys::Drawing::Draw3
 							ToTransparentMode(startOptions.requiredPresentationMode);
 						presentationOptions.allowDirectComposition =
 							startOptions.allowDirectComposition;
+						if (IsRequiredMode(startOptions.preferredPresentationMode))
+							presentationOptions.preferredMode = ToTransparentMode(startOptions.preferredPresentationMode);
+						presentationOptions.preferSequentialSwapChain = startOptions.preferSequentialSwapChain;
+						presentationOptions.previousAttempt = startOptions.previousAttempt;
 						presentationOptions.failedCleanup = failedCleanup;
 						presentationOptions.enableHardwareAcceleration = startOptions.enableHardwareAcceleration;
 						presentationOptions.enableZhaoxinCompatibility = startOptions.enableZhaoxinCompatibility;
 						presentationOptions.enableWaitableWait = startOptions.enableWaitableWait;
 						presentationOptions.enableUlwAsyncReadback = startOptions.enableUlwAsyncReadback;
 						presentationOptions.enableUlwCompositionAlign = startOptions.enableUlwCompositionAlign;
+						startupStage = "TransparentPresentationController::Initialize";
 						graphicsInitialized = presentation.Initialize(windowHandle,
 							presentationWindowHandle, graphics, renderer,
 							static_cast<UINT>((std::max)(1, size.width)),
@@ -2258,6 +2295,7 @@ namespace Inkeys::Drawing::Draw3
 					startupCondition.notify_all();
 					if (graphicsInitialized)
 					{
+						startupStage = "Draw3 input startup handshake";
 						// 输入必须在图形资源准备好后才启用，避免 producer 先于 renderer 存活。
 						bool inputApproved = false;
 						bool inputDecisionValue = false;
@@ -2278,6 +2316,7 @@ namespace Inkeys::Drawing::Draw3
 							<< " stopped=" << (token.stop_requested() ? 1 : 0) << std::endl;
 						if (inputApproved)
 						{
+							startupStage = "DrawingController initialization";
 							const auto timingProfile = startOptions.frameRate == 30 ? StrokeTimingProfileId::Fps30
 								: startOptions.frameRate == 60 ? StrokeTimingProfileId::Fps60
 								: startOptions.frameRate == 240 ? StrokeTimingProfileId::Fps240 : StrokeTimingProfileId::Fps120;
@@ -2333,6 +2372,7 @@ namespace Inkeys::Drawing::Draw3
 							if (startOptions.startupMilestone)
 								startOptions.startupMilestone(startOptions.startupContext,
 									HostStartupStage::ControllerReady);
+							startupStage = "Draw3 first frame";
 							// 首帧清屏和所有 Renderer 访问均发生在 Draw3 绘制线程。
 							PumpBridgeState();
 							presentation.SetOutputTarget(window.SelectionMode()
@@ -2371,6 +2411,7 @@ namespace Inkeys::Drawing::Draw3
 				catch (const std::exception& exception)
 				{
 					failedCleanup.BeginKnownFailure();
+					RecordHostStartupFailure(startupStage, exception.what());
 					// 初始化失败也必须完成握手；保留异常原因供隐藏测试和现场诊断。
 					DiagnosticOutput::Printf(DiagnosticOutput::ErrError, "[Draw3] startup failed: %s\n", exception.what());
 					initialized = false;
@@ -2381,6 +2422,7 @@ namespace Inkeys::Drawing::Draw3
 					DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3] startup failed: unknown exception\n");
 					initialized = false;
 				}
+				if (!initialized) RecordHostStartupFailure(startupStage);
 				UpdateCanvasInformation(initialized ? "就绪" : "初始化失败");
 				// Signal 由此 owner 按值持有，覆盖失败握手与随后全部 GPU 释放。
 				if (!initialized) failedCleanup.BeginKnownFailure();
@@ -2439,6 +2481,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			catch (...)
 			{
+				RecordHostStartupFailure("Draw3 drawing thread creation");
 				UpdateCanvasInformation("初始化失败（无法创建绘制线程）");
 				// owner 创建失败也先监督，再排空已建立的 worker 并解除外部窗口附着。
 				failedCleanup.BeginKnownFailure();
@@ -2502,6 +2545,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!window.SetMouseCompatibilityEnabled(true))
 				{
 					failedCleanup.BeginKnownFailure();
+					RecordHostStartupFailure("Win32 mouse fallback initialization");
 					if (!window.SetMouseCompatibilityEnabled(false))
 						failedCleanup.FailUnprovenProducerStop();
 				}
@@ -2530,6 +2574,7 @@ namespace Inkeys::Drawing::Draw3
 			failedCleanup.BeginKnownFailure();
 			// 意外异常不降级；仍完成握手，避免绘制 owner 永久等待。
 			inputInitialized = false;
+			RecordHostStartupFailure("Draw3 input initialization exception");
 			UpdateCanvasInformation("初始化失败（输入初始化异常）");
 		}
 		{
@@ -2706,10 +2751,17 @@ namespace Inkeys::Drawing::Draw3
 		return impl_->WriteRuntimeMetrics(absoluteOutputPath);
 	}
 	bool Host::Running() const noexcept { return impl_->running.load(std::memory_order_acquire); }
-	std::string Host::CanvasInformation() const
+	std::string Host::CanvasInformation(PresentationFallbackReport* fallback) const
 	{
 		std::scoped_lock lock(impl_->canvasInformationMutex);
+		if (fallback) *fallback = impl_->canvasFallback;
 		return impl_->canvasInformation;
+	}
+
+	PresentationFallbackReport Host::CanvasFallbackReport() const
+	{
+		std::scoped_lock lock(impl_->canvasInformationMutex);
+		return impl_->canvasFallback;
 	}
 	std::optional<HostHiddenPersistenceSnapshot> Host::HiddenPersistenceSnapshot() const noexcept
 	{
@@ -3236,6 +3288,24 @@ namespace Inkeys::Drawing::Draw3
 			check(host.CanvasInformation().find("Hardware") == std::string::npos &&
 				host.CanvasInformation().find("RTS Extended") == std::string::npos,
 				"new canvas generation removes old successful graphics and input");
+			// 同一代的两类提醒各自保留；新启动只继承本次重建明确传入的失败上下文。
+			const PresentationFallbackReport report{ "DComp → ULW", "SEQUENTIAL → FLIP", "CreateSwapChain 0x80070057" };
+			Host::Impl::ObserveCanvasFallback(&state, report);
+			PresentationFallbackReport snapshot;
+			host.CanvasInformation(&snapshot);
+			check(snapshot.presentationWarning == report.presentationWarning && snapshot.chainWarning == report.chainWarning,
+				"canvas report carries both independent warnings");
+			state.RecordHostStartupFailure("Draw3 first frame");
+			const auto retry = host.CanvasFallbackReport();
+			state.UpdateCanvasInformation("正在初始化", nullptr, nullptr, true, &retry);
+			check(host.CanvasFallbackReport().lastAttemptFailure == report.lastAttemptFailure,
+				"retry generation retains failed request details");
+			state.UpdateCanvasInformation("正在初始化", nullptr, nullptr, true);
+			check(host.CanvasFallbackReport().presentationWarning.empty() && host.CanvasFallbackReport().chainWarning.empty(),
+				"fresh generation clears stale warning strips");
+			state.RecordHostStartupFailure("DrawingController initialization", "test failure");
+			check(host.CanvasFallbackReport().lastAttemptFailure == "DrawingController initialization: test failure",
+				"host startup failure records its stage when presenter had no error");
 			const std::string fallbackGraphics = "WARP / ULW / ordinary\n";
 			const std::string fallbackInput = "Win32Mouse / RTS failed\n";
 			Host::Impl::ObserveCanvasGraphics(&state, fallbackGraphics);

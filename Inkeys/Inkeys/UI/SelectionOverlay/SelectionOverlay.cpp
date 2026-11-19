@@ -29,7 +29,7 @@ namespace Inkeys::UI::SelectionOverlay
 	{
 		using namespace Inkeys::UI::RenderPipeline;
 		using Inkeys::Window::WindowRole;
-		std::shared_ptr<Bar::ShapeEditorSurface> scene;
+		std::atomic<std::shared_ptr<Bar::ShapeEditorSurface>> scene;
 		std::atomic_bool running=false;
 		std::atomic_uint64_t lifecycle=0;
 		std::mutex lifecycleMutex;
@@ -78,7 +78,7 @@ namespace Inkeys::UI::SelectionOverlay
 		}
 		FrameResult Render(const FrameContext& frame)
 		{
-			const auto target=std::atomic_load(&scene);
+			const auto target=scene.load();
 			if(!running.load()||!target)return FrameResult::Idle;
 			auto& service=Window::GetService();const HWND hwnd=service.Handle(WindowRole::SelectionOverlay);
 			if(!hwnd)return FrameResult::Idle;
@@ -114,7 +114,7 @@ namespace Inkeys::UI::SelectionOverlay
 		}
 		void Input(const Bar::SurfaceInputEvent& e,void*)
 		{
-			const auto target=std::atomic_load(&scene);
+			const auto target=scene.load();
 			if(!running.load()||!target||e.generation!=lifecycle.load())return;
 			if(e.message==WM_MOUSEWHEEL)target->Pointer(e.message,e.screenPoint,e.captureOwned,e.presentedRevision,GET_WHEEL_DELTA_WPARAM(e.wParam));
 			else target->Contact(e.message,e.screenPoint,e.contactSource,e.contactId,e.touch,e.pen,e.inputSeconds,e.captureOwned,e.presentedRevision);
@@ -124,7 +124,7 @@ namespace Inkeys::UI::SelectionOverlay
 		}
 		std::chrono::steady_clock::time_point Tick(std::chrono::steady_clock::time_point now,void*)
 		{
-			const auto target=std::atomic_load(&scene);
+			const auto target=scene.load();
 			const auto snapshot=Inkeys::Drawing::Draw3::ProductShapeUiSnapshot();
 			static std::uint64_t finishedSession=0,finishedEpoch=0;
 			bool restorePending=false;
@@ -146,7 +146,7 @@ namespace Inkeys::UI::SelectionOverlay
 		}
 		void Cancel(const Bar::SurfaceInputEvent& e,void*)
 		{
-			const auto target=std::atomic_load(&scene);
+			const auto target=scene.load();
 			if(target)target->CancelPointer();if(e.window)PostMessageW(e.window,ReleaseCaptureMessage,static_cast<WPARAM>(e.captureTicket),0);Request();
 		}
 		void ReleaseNative(HWND hwnd)
@@ -162,7 +162,7 @@ namespace Inkeys::UI::SelectionOverlay
 		}
 		bool ContactNative(HWND hwnd,UINT message,POINT point,NativeKind kind,std::uint64_t source,std::uint32_t id)
 		{
-			const auto target=std::atomic_load(&scene);
+			const auto target=scene.load();
 			if(!running.load()||!target)return false;
 			const bool down=message==WM_LBUTTONDOWN,up=message==WM_LBUTTONUP;
 			auto found=std::find_if(nativeRouting.contacts.begin(),nativeRouting.contacts.end(),[&](const auto& c){return c.source==source&&c.id==id;});
@@ -199,7 +199,7 @@ namespace Inkeys::UI::SelectionOverlay
 		}
 		LRESULT CALLBACK WindowProc(HWND hwnd,UINT message,WPARAM wp,LPARAM lp)
 		{
-			const auto target=std::atomic_load(&scene);
+			const auto target=scene.load();
 			if(message==ReleaseCaptureMessage){if(IsNativeReleaseTicket(nativeTicket,wp))ReleaseNative(hwnd);return 0;}
 			if(message==WM_MOUSEACTIVATE)return MA_NOACTIVATE;
 			if(message==WM_TABLET_QUERYSYSTEMGESTURESTATUS)return TABLET_DISABLE_PRESSANDHOLD|TABLET_DISABLE_PENTAPFEEDBACK|TABLET_DISABLE_PENBARRELFEEDBACK|TABLET_DISABLE_FLICKS;
@@ -289,11 +289,11 @@ namespace Inkeys::UI::SelectionOverlay
 	bool Acquire()
 	{
 		std::scoped_lock lock(lifecycleMutex);if(running.load())return true;
-		std::atomic_store(&scene,std::make_shared<Bar::ShapeEditorSurface>());const auto generation=lifecycle.fetch_add(1)+1;
+		scene.store(std::make_shared<Bar::ShapeEditorSurface>());const auto generation=lifecycle.fetch_add(1)+1;
 		const auto hwnd=Window::GetService().Handle(WindowRole::SelectionOverlay);
 		if(!hwnd||!Bar::RegisterInteractionSurface(hwnd,generation,Input,Tick,Cancel,nullptr))return false;
 		running=true;
-		if(!RenderPipeline::Register(Client::SelectionOverlay,Render)){running=false;Bar::UnregisterInteractionSurface(hwnd);(void)Bar::DrainInteractionSurfaceCallbacks();std::atomic_store(&scene,std::shared_ptr<Bar::ShapeEditorSurface>{});return false;}
+		if(!RenderPipeline::Register(Client::SelectionOverlay,Render)){running=false;Bar::UnregisterInteractionSurface(hwnd);(void)Bar::DrainInteractionSurfaceCallbacks();scene.store({});return false;}
 		Inkeys::Drawing::Draw3::SetShapeUiRefreshCallback(Refresh,nullptr);
 		displaySubscription=Inkeys::Display::Subscribe([](auto){Request();});Request();return true;
 	}
@@ -302,7 +302,7 @@ namespace Inkeys::UI::SelectionOverlay
 		std::scoped_lock lock(lifecycleMutex);if(!running.exchange(false))return;
 		Inkeys::Drawing::Draw3::SetShapeUiRefreshCallback(nullptr,nullptr);displaySubscription.Reset();
 		RenderPipeline::Unregister(Client::SelectionOverlay);const HWND hwnd=Window::GetService().Handle(WindowRole::SelectionOverlay);Bar::UnregisterInteractionSurface(hwnd);
-		(void)Bar::DrainInteractionSurfaceCallbacks();if(const auto target=std::atomic_load(&scene))target->CancelPointer();Bar::ClearShapeUiIntents();(void)Window::GetService().Hide(WindowRole::SelectionOverlay);std::atomic_store(&scene,std::shared_ptr<Bar::ShapeEditorSurface>{});
+		(void)Bar::DrainInteractionSurfaceCallbacks();if(const auto target=scene.load())target->CancelPointer();Bar::ClearShapeUiIntents();(void)Window::GetService().Hide(WindowRole::SelectionOverlay);scene.store({});
 	}
 	void NotifyStateChanged() noexcept {Request();}
 }

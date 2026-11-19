@@ -651,6 +651,12 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.FrameLatencyGate.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Win7DwmPolicy.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationFallbackReport.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.UlwReadbackPacing.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>

@@ -639,6 +639,46 @@ int RunConfigMetadataTests()
 		}
 	}
 
+	{
+		Inkeys::Config presentationConfig;
+		auto& draw3 = presentationConfig.Experimental.Inkeys3.Draw3;
+		Json::Value document(Json::objectValue);
+		Json::Value& fields = document["Experimental"]["Inkeys3"]["Draw3"];
+		writeModeDocument(document);
+		check(presentationConfig.ReadAll() && draw3.PresentationMode.load() == 0 && draw3.SwapChainMode.load() == 0,
+			"fresh presentation settings default to automatic and FLIP");
+		for (const bool legacy : { true, false })
+		{
+			fields["EnableDirectComposition"] = legacy;
+			writeModeDocument(document);
+			check(presentationConfig.ReadAll() && draw3.PresentationMode.load() == (legacy ? 0 : 3),
+				"legacy DComp preference selects automatic or ULW");
+		}
+		fields["PresentationMode"] = 2;
+		fields["SwapChainMode"] = 1;
+		writeModeDocument(document);
+		check(presentationConfig.ReadAll() && draw3.PresentationMode.load() == 2 && draw3.SwapChainMode.load() == 1,
+			"explicit Win7Dwm and SEQUENTIAL take priority over legacy DComp preference");
+		check(presentationConfig.Write(), "write migrated presentation settings");
+		const auto saved = ReadJson(file)["Experimental"]["Inkeys3"]["Draw3"];
+		check(!saved.isMember("EnableDirectComposition") && saved["PresentationMode"].asInt() == 2
+			&& saved["SwapChainMode"].asInt() == 1, "save independent preferences and retire the legacy key");
+		for (const auto& invalid : { Json::Value(), Json::Value(true), Json::Value(-1), Json::Value(4),
+			Json::Value(1.0), Json::Value(Json::UInt64(4294967297ULL)) })
+		{
+			fields["PresentationMode"] = invalid;
+			fields["SwapChainMode"] = invalid;
+			writeModeDocument(document);
+			check(presentationConfig.ReadAll() && draw3.PresentationMode.load() == 0 && draw3.SwapChainMode.load() == 0,
+				"invalid new preferences use defaults even when a legacy preference exists");
+		}
+		fields["PresentationMode"] = 1;
+		fields["SwapChainMode"] = 2;
+		writeModeDocument(document);
+		check(presentationConfig.ReadAll() && draw3.PresentationMode.load() == 1 && draw3.SwapChainMode.load() == 0,
+			"only FLIP and SEQUENTIAL are valid swap-chain settings");
+	}
+
 	using Inkeys::ConfigDetail::ResolveDefaultLargeScreenDevice;
 	struct DeviceDefaultCase final
 	{

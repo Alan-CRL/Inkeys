@@ -10,6 +10,7 @@
 #include "Draw3.PalmEraser.h"
 #include "Draw3.PenDiagnostics.h"
 #include "Draw3.DevicePerformanceModel.h"
+#include "Draw3.PresentationFallbackReport.h"
 #include "../../Helper/FailedCleanupDeadline.h"
 
 #include <windows.h>
@@ -261,6 +262,9 @@ namespace Inkeys::Drawing::Draw3
 		bool enableHiddenTestContactInjection = false;
 		// legacy-compatible HWND 重启后禁止再次选择 DComp。
 		bool allowDirectComposition = true;
+		HostPresentationMode preferredPresentationMode = HostPresentationMode::Automatic;
+		bool preferSequentialSwapChain = false;
+		PresentationFallbackReport previousAttempt;
 		// 产品需要页码提交确认；独立 Host 无 PageControl 时可显式省略。
 		bool requirePresentationUiReady = false;
 		// 空路径关闭持久化 worker；产品固定传入 <程序根目录>/Inkeys/AutoSave。
@@ -424,7 +428,8 @@ namespace Inkeys::Drawing::Draw3
 		bool FirstFrameReady() const noexcept;
 		HostRuntimeSnapshot RuntimeSnapshot() const noexcept;
 		// 只复制初始化/恢复边界发布的文本，不在设置线程访问图形或 RTS 对象。
-		std::string CanvasInformation() const;
+		std::string CanvasInformation(PresentationFallbackReport* fallback = nullptr) const;
+		PresentationFallbackReport CanvasFallbackReport() const;
 		bool RetryCanvasRecovery(const CanvasRecoveryState& expected,
 			const std::function<bool()>& stillDesired = {}) noexcept;
 		// 异步 UI 起笔通知只验证场景/生命周期；短笔结束后同场景仍有效。

@@ -153,7 +153,13 @@ namespace Inkeys::Drawing::Draw3
 			LogHResult("ID3D11Device::QueryInterface(IDXGIDevice1)", result);
 			return false;
 		}
-		resources.dxgiDevice->SetMaximumFrameLatency(1); // 限制排队帧数，降低笔迹显示延迟。
+		// Win7 也支持设备级排队上限。设备已移除时不能继续使用这代资源。
+		result = resources.dxgiDevice->SetMaximumFrameLatency(1);
+		if (FAILED(result))
+		{
+			LogHResult("IDXGIDevice1::SetMaximumFrameLatency(1)", result);
+			if (IsGraphicsDeviceLostError(result)) return false;
+		}
 
 		result = resources.dxgiDevice->GetAdapter(resources.adapter.ReleaseAndGetAddressOf()); // 取得适配器用于日志和 factory 查询。
 		if (FAILED(result) || !resources.adapter)

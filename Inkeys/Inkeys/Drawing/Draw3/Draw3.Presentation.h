@@ -79,7 +79,7 @@ namespace Inkeys::Drawing::Draw3
 		return state->succeeded ? DCompRetirementResult::Completed : DCompRetirementResult::Failed;
 	}
 
-	// DComp 输出交接只在目标 revision 的首个成功全帧 Present 后消费一次屏障。
+	// DComp/Win7Dwm 输出交接只在目标 revision 的首个成功全帧 Present 后消费一次屏障。
 	struct DCompHandoffBarrierState
 	{
 		std::uint64_t pendingOutputRevision = 0;
@@ -94,10 +94,10 @@ namespace Inkeys::Drawing::Draw3
 			pendingOutputRevision = 0;
 		}
 
-		bool Consume(bool directComposition, bool presentFull,
+		bool Consume(bool gpuComposition, bool presentFull,
 			bool presentSucceeded, std::uint64_t outputRevision) noexcept
 		{
-			if (!directComposition || !presentFull || !presentSucceeded ||
+			if (!gpuComposition || !presentFull || !presentSucceeded ||
 				pendingOutputRevision == 0 || pendingOutputRevision != outputRevision)
 				return false;
 			pendingOutputRevision = 0;

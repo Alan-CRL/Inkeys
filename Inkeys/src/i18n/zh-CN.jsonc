@@ -1042,10 +1042,15 @@
         "E": "调整书写时画布的刷新频率。较高帧率可使笔迹更流畅，同时增加资源占用。"
       },
       "RenderingSection": "渲染与兼容",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "优先使用 DirectComposition",
-        "E": "在支持的设备上使用系统合成显示画布，不可用时自动使用兼容方式。"
+        "N": "桌面画布透明呈现方式",
+        "Automatic": "自动"
+      },
+      "SwapChainMode":
+      {
+        "N": "桌面画布交换链",
+        "E": "UpdateLayeredWindow 不支持使用交换链。"
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "诊断日志输出",
       "CanvasInformation": "画布初始化信息",
+      "PresentationFallback": "桌面画布透明呈现方式已回退",
+      "SwapChainFallback": "桌面画布交换链已回退",
       "DisplayInformation": "显示器与 EDID"
     },
     "Update":

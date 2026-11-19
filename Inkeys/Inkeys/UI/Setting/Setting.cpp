@@ -2363,7 +2363,6 @@ SettingSessionCoroutine RunSettingSession()
 				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 				bool ShowFrameRate = Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate;
 				bool CanvasDebug = IsCanvasDebugEnabled();
-				bool EnableDirectComposition = Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition;
 				bool EnableHardwareAcceleration = Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
 				bool EnableZhaoxinCompatibility = Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 				bool EnableWaitableWait = Inkeys::config.Experimental.Inkeys3.Draw3.EnableWaitableWait;
@@ -4681,7 +4680,7 @@ SettingSessionCoroutine RunSettingSession()
 						QueueConfigWrite();
 					}
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Performance.RenderingSection).c_str());
-					// 三项均只保存下次启动的设备偏好，不重建当前绘图设备。
+					// 启动偏好统一保存，运行中的画布继续使用已建立的设备与交换链。
 					if (Design::ToggleRow("##draw3-hardware", IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.N).c_str(),
 						IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableHardwareAcceleration,
 						IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.Note).c_str()))
@@ -4689,10 +4688,23 @@ SettingSessionCoroutine RunSettingSession()
 						Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration = Experimental.Inkeys3.EnableHardwareAcceleration;
 						QueueConfigWrite();
 					}
-					if (Design::ToggleRow("##experimental-dcomp", IA(I18nKey.SettingsUI.Performance.DirectComposition.N).c_str(),
-						IA(I18nKey.SettingsUI.Performance.DirectComposition.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableDirectComposition, IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
+					auto& draw3Config = Inkeys::config.Experimental.Inkeys3.Draw3;
+					const auto& renderingText = I18nKey.SettingsUI.Performance;
+					int presentation = draw3Config.PresentationMode.load();
+					if (Design::ComboRow("##draw3-presentation", IA(renderingText.PresentationMode.N).c_str(),
+						nullptr, "\ue7f4", presentation,
+						{ IA(renderingText.PresentationMode.Automatic) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+							"DirectComposition", "Windows 7 Desktop Window Manager", "UpdateLayeredWindow" }))
 					{
-						Inkeys::config.Experimental.Inkeys3.Draw3.EnableDirectComposition = Experimental.Inkeys3.EnableDirectComposition;
+						draw3Config.PresentationMode = presentation;
+						QueueConfigWrite();
+					}
+					int swapChain = draw3Config.SwapChainMode.load();
+					if (Design::ComboRow("##draw3-swapchain", IA(renderingText.SwapChainMode.N).c_str(),
+						IA(renderingText.SwapChainMode.E).c_str(), "\ue7f4", swapChain,
+						{ "DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL", "DXGI_SWAP_EFFECT_SEQUENTIAL" }))
+					{
+						draw3Config.SwapChainMode = swapChain;
 						QueueConfigWrite();
 					}
 					if (Design::ToggleRow("##draw3-waitable-wait", IA(I18nKey.SettingsUI.Performance.WaitableWait.N).c_str(),
@@ -5005,7 +5017,14 @@ SettingSessionCoroutine RunSettingSession()
 					}
 #endif
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.CanvasInformation).c_str());
-					const auto canvasInformation = Inkeys::Drawing::Draw3::ProductHost().CanvasInformation();
+					Inkeys::Drawing::Draw3::PresentationFallbackReport canvasFallback;
+					const auto canvasInformation = Inkeys::Drawing::Draw3::ProductHost().CanvasInformation(&canvasFallback);
+					if (!canvasFallback.presentationWarning.empty())
+						Design::Notice("##canvas-presentation-fallback", IA(I18nKey.SettingsUI.DebugSoftware.PresentationFallback).c_str(),
+							canvasFallback.presentationWarning.c_str(), ImFluentInfoSeverity_Warning);
+					if (!canvasFallback.chainWarning.empty())
+						Design::Notice("##canvas-swapchain-fallback", IA(I18nKey.SettingsUI.DebugSoftware.SwapChainFallback).c_str(),
+							canvasFallback.chainWarning.c_str(), ImFluentInfoSeverity_Warning);
 					// 复用只读文本卡片的测量排版，独立ID避免与下方EDID卡片共享状态。
 					ImGui::PushID("canvas-initialization");
 					Design::RenderEdidCard(canvasInformation.c_str());

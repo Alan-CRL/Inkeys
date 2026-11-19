@@ -1042,10 +1042,15 @@
         "E": "Ajusta a frequência de atualização da tela ao escrever. Taxas maiores deixam os traços mais fluidos, mas consomem mais recursos."
       },
       "RenderingSection": "Renderização e compatibilidade",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "Priorizar DirectComposition",
-        "E": "Usa a composição do sistema para exibir a tela de desenho nos dispositivos compatíveis. Se indisponível, usa automaticamente o método de compatibilidade."
+        "N": "Método de transparência da tela da área de trabalho",
+        "Automatic": "Automático"
+      },
+      "SwapChainMode":
+      {
+        "N": "Cadeia de troca da tela da área de trabalho",
+        "E": "UpdateLayeredWindow não oferece suporte a cadeias de troca."
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "Saída do log de diagnóstico",
       "CanvasInformation": "Informações de inicialização do desenho",
+      "PresentationFallback": "Método de apresentação alternativo da tela da área de trabalho",
+      "SwapChainFallback": "Cadeia de troca alternativa da tela da área de trabalho",
       "DisplayInformation": "Monitores e EDID"
     },
     "Update":

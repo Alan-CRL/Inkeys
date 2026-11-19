@@ -25,6 +25,8 @@
 | Drawing.InkPredictionMode | 2；0/1/2 | 新笔锁存，0=Disabled、1=StrokeEnd、2=Kalman |
 | Drawing.Laser.MultiTouchEnabled | false | 后续新 Laser Touch，受全局多指约束 |
 | Drawing.Laser.ParticlesEnabled | false，兼容字段 | 产品忽略启用值，构造与setter均强制关闭 |
+| Experimental.Inkeys3.Draw3.PresentationMode | 0；自动/DComp/Win7Dwm/ULW = 0/1/2/3 | 下次启动；缺少新键时将旧 EnableDirectComposition 的 false 映射为 ULW，true 映射为自动 |
+| Experimental.Inkeys3.Draw3.SwapChainMode | 0；FLIP/SEQUENTIAL = 0/1 | 下次启动；DirectComposition 与 Win7Dwm 均尝试所选交换链，ULW 使用离屏纹理 |
 | Experimental.Inkeys3.Draw3.EnableWaitableWait | true | 下次启动（`configOnce` 快照），只控制是否等待帧延迟句柄，不改交换链类型 |
 | Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback | true | 下次启动（`configOnce` 快照）；只影响主画布 ULW：关闭 = 同步读回、不节流、不对齐（独立纹理与 SIMD 复制仍保留） |
 | Experimental.Inkeys3.Draw3.UlwCompositionAlign | true，无界面 | 下次启动；异步读回开启时是否对齐 DWM 合成时机提交，仅供实机开/关对照 |
@@ -40,7 +42,8 @@
 - 粒子条目不显示toggle，仅保留BETA禁用说明；Controller构造配置true、setter请求true也始终关闭，不因旧配置恢复，重复请求不产生额外wake。保留算法/Shader/配置字段，不扩大为资源清理任务。
 - 绘制页先“绘图环境”（设备项）、后“通用”；移除统一新笔提示但保留每笔锁存。界面60FPS、画布120FPS、精准显示本地化推荐标记，数据值不变；侧栏性能与实验glyph对调，不改变路由。
 - 原硬件加速、DComp、兆芯兼容三项仅迁移至性能页，继续使用 Experimental.Inkeys3.Draw3 下原键，均重启生效。
-- “渲染与兼容”节顺序：硬件加速 → DComp → `##draw3-waitable-wait`（waitable 模式下启用等待，重启生效）→ `##draw3-ulw-async-readback`（ULW 模式下异步读回，重启生效）→ `##draw3-unthrottled-mouse-move`（绘制时鼠标移动不受画布帧率限制，即时生效，无重启提示）→ 兆芯兼容。waitable 行为合同见 `draw3-integration.md`“DComp waitable 帧延迟等待与熔断”；ULW 读回合同见同文件“ULW 独立纹理、异步读回与合成对齐”；鼠标选项合同见 `draw3-cursors.md`“绘制时光标跟随画布帧率”。
+- 软件调试 → 画布初始化信息：标题下按需分别显示呈现方式与交换链回退警告。自动后端回退仅记录日志；主动指定后端失败才提示。正文展示实际状态。警告沿用黄色信息条，持有本代首次尝试的失败原因，外层窗口重建时传递。
+- “渲染与兼容”节顺序：硬件加速 → 桌面画布透明呈现方式 → 桌面画布交换链 → `##draw3-waitable-wait`（waitable 模式下启用等待，重启生效）→ `##draw3-ulw-async-readback`（ULW 模式下异步读回，重启生效）→ `##draw3-unthrottled-mouse-move`（绘制时鼠标移动不受画布帧率限制，即时生效，无重启提示）→ 兆芯兼容。waitable 行为合同见 `draw3-integration.md`“DComp waitable 帧延迟等待与熔断”；ULW 读回合同见同文件“ULW 独立纹理、异步读回与合成对齐”；鼠标选项合同见 `draw3-cursors.md`“绘制时光标跟随画布帧率”。
 - `Drawing.FrameRate` 只在启动时选定 profile；设置页改档只写配置（带重启提示），当前会话帧循环仍按启动值运行。实机验证帧率相关行为时必须先重启再测。
 - 共享 Scheduler 保留原子请求、固定顺序、唯一 render owner、Idle/Continue/Retry 和设备恢复；帧率变更不制造永久渲染，也不修改动画倍率或输入采样。
 - 画布设备、adapter、交换链和 RTS 信息在实际初始化/恢复/Resize 边界发布。初始化新代次清旧成功详情，停止后明确标为最后记录；Hardware 偏好不等于实际 Hardware，DComp 偏好不等于最终呈现模式。

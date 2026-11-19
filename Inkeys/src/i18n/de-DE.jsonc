@@ -1042,10 +1042,15 @@
         "E": "Aktualisierungshäufigkeit der Zeichenfläche beim Schreiben einstellen. Höhere Bildraten können Striche flüssiger machen, benötigen aber mehr Ressourcen."
       },
       "RenderingSection": "Rendering und Kompatibilität",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "DirectComposition bevorzugen",
-        "E": "Auf unterstützten Geräten die Systemkomposition für die Zeichenfläche nutzen; ist sie nicht verfügbar, automatisch auf eine kompatible Methode wechseln."
+        "N": "Transparenzmethode der Desktop-Zeichenfläche",
+        "Automatic": "Automatisch"
+      },
+      "SwapChainMode":
+      {
+        "N": "Swapchain der Desktop-Zeichenfläche",
+        "E": "UpdateLayeredWindow unterstützt keine Swapchains."
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "Diagnoseprotokollausgabe",
       "CanvasInformation": "Informationen zur Zeichenflächeninitialisierung",
+      "PresentationFallback": "Ausweichmethode für die Darstellung der Desktop-Zeichenfläche",
+      "SwapChainFallback": "Ausweich-Swapchain für die Desktop-Zeichenfläche",
       "DisplayInformation": "Bildschirme und EDID"
     },
     "Update":

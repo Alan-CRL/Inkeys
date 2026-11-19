@@ -1042,10 +1042,15 @@
         "E": "Atur seberapa sering kanvas diperbarui saat menulis. Laju lebih tinggi membuat tinta lebih halus tetapi memakai lebih banyak sumber daya."
       },
       "RenderingSection": "Perenderan dan kompatibilitas",
-      "DirectComposition":
+      "PresentationMode":
       {
-        "N": "Utamakan DirectComposition",
-        "E": "Gunakan komposisi sistem untuk menampilkan kanvas pada perangkat yang mendukung; otomatis beralih ke cara kompatibel jika tidak tersedia."
+        "N": "Metode transparansi kanvas desktop",
+        "Automatic": "Otomatis"
+      },
+      "SwapChainMode":
+      {
+        "N": "Rantai pertukaran kanvas desktop",
+        "E": "UpdateLayeredWindow tidak mendukung rantai pertukaran."
       },
       "WaitableWait":
       {
@@ -1467,6 +1472,8 @@
       },
       "ConsoleSection": "Keluaran log diagnostik",
       "CanvasInformation": "Info inisialisasi kanvas",
+      "PresentationFallback": "Metode presentasi cadangan untuk kanvas desktop",
+      "SwapChainFallback": "Rantai pertukaran cadangan untuk kanvas desktop",
       "DisplayInformation": "Layar dan EDID"
     },
     "Update":

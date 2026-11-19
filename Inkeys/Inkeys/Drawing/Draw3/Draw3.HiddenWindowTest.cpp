@@ -4763,7 +4763,13 @@ namespace Inkeys::Drawing::Draw3
 			};
 			for (const HostPresentationMode disabledMode : disabledModes)
 			{
-				// 强制选择必须在附着 HWND 前拒绝，失败后仍能继续启动 ULW。
+				if (disabledMode == HostPresentationMode::DwmBlurBehind && IsWin7DwmAvailable())
+				{
+					RunMode(service, styleContext, legacyMagnifierHost, legacyFreeze, legacyDrawpad,
+						legacyPresentation, disabledMode, false, false, false, failures);
+					continue;
+				}
+				// 不受支持的玻璃路径必须在附着 HWND 前拒绝。
 				const auto styleCallsBefore = styleContext.callCount.load(std::memory_order_acquire);
 				const auto windowStyleBefore = GetWindowLongPtrW(legacyDrawpad, GWL_EXSTYLE);
 				const HANDLE tabletPropertyBefore = GetProp(

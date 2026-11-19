@@ -3,6 +3,7 @@
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Presentation.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Win7DwmPolicy.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.TimerPeriod.h"
 
 #include <atomic>
@@ -735,6 +736,68 @@ namespace
 			"late completion permits the next retirement")) ++failures;
 	}
 
+	void TestWin7DwmPolicy(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		struct Environment
+		{
+			int major, minor, build;
+			HRESULT compositionHr;
+			BOOL enabled;
+			HRESULT colorHr;
+			BOOL opaque;
+			HRESULT expected;
+			unsigned expectedCalls;
+		};
+		const HRESULT unsupported = HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
+		const Environment cases[]{
+			{ 10, 0, 26100, S_OK, TRUE, S_OK, FALSE, unsupported, 0 },
+			{ 6, 2, 9200, S_OK, TRUE, S_OK, FALSE, unsupported, 0 },
+			{ 6, 1, 7600, S_OK, TRUE, S_OK, FALSE, unsupported, 0 },
+			{ 6, 1, 7601, E_ACCESSDENIED, TRUE, S_OK, FALSE, E_ACCESSDENIED, 1 },
+			{ 6, 1, 7601, S_OK, FALSE, S_OK, FALSE, DWM_E_COMPOSITIONDISABLED, 1 },
+			{ 6, 1, 7601, S_OK, TRUE, E_FAIL, FALSE, E_FAIL, 2 },
+			{ 6, 1, 7601, S_OK, TRUE, S_OK, TRUE, unsupported, 2 },
+			{ 6, 1, 7601, S_OK, TRUE, S_OK, FALSE, S_OK, 2 },
+		};
+		for (const auto& input : cases)
+		{
+			unsigned calls = 0;
+			const char* stage = nullptr;
+			const HRESULT result = CheckWin7DwmEnvironment(input.major, input.minor, input.build, stage,
+				[&](BOOL* enabled) { ++calls; *enabled = input.enabled; return input.compositionHr; },
+				[&](DWORD*, BOOL* opaque) { ++calls; *opaque = input.opaque; return input.colorHr; });
+			if (!Expect(result == input.expected && calls == input.expectedCalls && stage,
+				"Win7Dwm checks platform, composition and glass color in order")) ++failures;
+		}
+
+		const auto checkChain = [&](bool preferSequential, HRESULT first, HRESULT second,
+			std::vector<bool> expected, HRESULT expectedResult, bool fallbackSequential = true)
+		{
+			std::vector<bool> attempts;
+			HRESULT fallback = S_OK;
+			const HRESULT result = CreatePreferredSwapChain(preferSequential, fallbackSequential, [&](bool sequential)
+			{
+				attempts.push_back(sequential);
+				return attempts.size() == 1 ? first : second;
+			}, [](HRESULT hr) { return hr == DXGI_ERROR_DEVICE_REMOVED; }, [&](HRESULT hr) { fallback = hr; });
+			if (!Expect(attempts == expected && result == expectedResult &&
+				fallback == (attempts.size() > 1 ? first : S_OK), "Win7Dwm chain retry order and failure reason")) ++failures;
+		};
+		checkChain(false, S_OK, E_FAIL, { false }, S_OK);
+		checkChain(false, E_INVALIDARG, S_OK, { false, true }, S_OK);
+		checkChain(false, E_INVALIDARG, E_FAIL, { false, true }, E_FAIL);
+		checkChain(false, DXGI_ERROR_DEVICE_REMOVED, S_OK, { false }, DXGI_ERROR_DEVICE_REMOVED);
+		checkChain(true, S_OK, E_FAIL, { true }, S_OK);
+		checkChain(true, E_INVALIDARG, S_OK, { true }, E_INVALIDARG);
+		// DComp 将单缓冲描述先交给运行时；拒绝后留在同一 presenter 内再试 FLIP。
+		checkChain(true, S_OK, E_FAIL, { true }, S_OK, false);
+		checkChain(true, E_INVALIDARG, S_OK, { true, false }, S_OK, false);
+		checkChain(true, E_INVALIDARG, E_FAIL, { true, false }, E_FAIL, false);
+		checkChain(true, DXGI_ERROR_DEVICE_REMOVED, S_OK, { true }, DXGI_ERROR_DEVICE_REMOVED, false);
+		checkChain(false, E_INVALIDARG, S_OK, { false }, E_INVALIDARG, false);
+	}
+
 	void TestDCompHandoffBarrier(int& failures)
 	{
 		using Inkeys::Drawing::Draw3::DCompHandoffBarrierState;
@@ -1348,6 +1411,7 @@ int RunDraw3BridgeTests()
 	TestEraserModeMapping(failures);
 	TestTimerPeriodController(failures);
 	TestDCompRetirement(failures);
+	TestWin7DwmPolicy(failures);
 	TestDCompHandoffBarrier(failures);
 	TestDrawpadPresentationPlan(failures);
 	TestSceneReadyHandoff(failures);

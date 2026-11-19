@@ -7,11 +7,13 @@
 #include <dxgi1_2.h>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <windows.h>
 
 #include "../../Helper/FailedCleanupDeadline.h"
 #include "Draw3.CompositionClock.h"
+#include "Draw3.PresentationFallbackReport.h"
 
 export module Inkeys.Drawing.Draw3.transparent_presentation;
 
@@ -20,7 +22,7 @@ import Inkeys.Drawing.Draw3.renderer;
 
 export namespace Inkeys::Drawing::Draw3
 {
-	// 首发只选择 DComp/ULW；DWM 枚举值保留给历史兼容代码。
+	// 自动候选只包含 DComp/ULW；DwmBlurBehind 仅供显式选择的 Win7 Aero 路径。
 	enum class TransparentPresentMode
 	{
 		UlwDirtyRect,
@@ -43,6 +45,7 @@ export namespace Inkeys::Drawing::Draw3
 	{
 		TransparentPresentMode mode = TransparentPresentMode::UlwDirtyRect;
 		bool warpDevice = false;
+		bool sequentialSwapChain = false;
 		bool waitableWait = false;        // DComp 下真正在等帧延迟句柄（取不到句柄或已熔断为 false）
 		bool ulwAsyncReadback = false;    // ULW 下异步读回实际开启（未熔断）
 		bool ulwCompositionAlign = false; // 且 DWM 正在合成、对齐开关开启
@@ -57,15 +60,19 @@ export namespace Inkeys::Drawing::Draw3
 		// 绘制 owner 低频发布实际初始化结果，UI 只读取 Host 缓存。
 		void* informationContext = nullptr;
 		void (*informationChanged)(void*, const std::string&) noexcept = nullptr;
+		void (*fallbackChanged)(void*, const PresentationFallbackReport&) noexcept = nullptr;
 	};
 
 	struct TransparentPresentationOptions
 	{
-		// 强制模式只允许 DComp/ULW；Automatic 仍由 Host 使用默认回退链。
+		// 严格模式不会回退到其他 presenter；产品偏好单独参与选路。
 		bool requireMode = false;
 		TransparentPresentMode requiredMode = kPreferredTransparentPresentMode;
 		// Window Service 重建 legacy-compatible HWND 后跳过 DComp，避免再次固化窗口样式。
 		bool allowDirectComposition = true;
+		std::optional<TransparentPresentMode> preferredMode;
+		bool preferSequentialSwapChain = false;
+		PresentationFallbackReport previousAttempt;
 		// startup 专用；运行期 Recover/Resize/Present 不激活这个 scope。
 		Shutdown::FailedCleanupSignal failedCleanup;
 		// 与 Host 启动快照一致，运行中改设置不影响设备恢复。
@@ -124,6 +131,7 @@ export namespace Inkeys::Drawing::Draw3
 	const char* TransparentPresentModeName(TransparentPresentMode mode);
 	// 返回启动创建窗口前是否应预置 DComp 扩展样式。
 	bool ShouldPreconfigureNoRedirectionBitmap();
+	bool IsWin7DwmAvailable() noexcept;
 	// 只测生产 ULW 的 CPU 脏区拷贝与 alpha 检查，不创建窗口或 GPU 资源。
 	int RunUlwDirtyCopyBenchmark() noexcept;
 	// 双槽异步读回自测：WARP 设备 + 从不显示的分层窗，对照异步与同步 presenter 的 DIB（流水、节流、Resize 丢弃）。

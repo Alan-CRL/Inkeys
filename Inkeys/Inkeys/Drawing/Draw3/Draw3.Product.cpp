@@ -15,7 +15,7 @@ namespace
 	// SetWindowPos 会同步重入 Drawpad WndProc，调用闸门必须允许同一 owner 线程嵌套。
 	std::recursive_mutex productCallMutex;
 	std::atomic_bool productStopping = false;
-	std::shared_ptr<const Inkeys::Drawing::Draw3::ShapeUiSnapshot> shapeUiSnapshot;
+	std::atomic<std::shared_ptr<const Inkeys::Drawing::Draw3::ShapeUiSnapshot>> shapeUiSnapshot;
 	std::mutex shapeUiRefreshMutex;
 	Inkeys::Drawing::Draw3::ShapeUiRefresh shapeUiRefresh = nullptr;
 	void* shapeUiRefreshContext = nullptr;
@@ -24,10 +24,10 @@ namespace
 namespace Inkeys::Drawing::Draw3
 {
 	std::shared_ptr<const ShapeUiSnapshot> ProductShapeUiSnapshot() noexcept
-	{ return std::atomic_load_explicit(&shapeUiSnapshot,std::memory_order_acquire); }
+	{ return shapeUiSnapshot.load(std::memory_order_acquire); }
 	void PublishShapeUiSnapshot(std::shared_ptr<const ShapeUiSnapshot> snapshot) noexcept
 	{
-		std::atomic_store_explicit(&shapeUiSnapshot,std::move(snapshot),std::memory_order_release);
+		shapeUiSnapshot.store(std::move(snapshot), std::memory_order_release);
 		std::scoped_lock lock(shapeUiRefreshMutex);
 		if (shapeUiRefresh) shapeUiRefresh(shapeUiRefreshContext);
 	}

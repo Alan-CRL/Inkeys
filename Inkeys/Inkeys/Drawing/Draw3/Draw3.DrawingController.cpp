@@ -21554,10 +21554,22 @@ namespace Inkeys::Drawing::Draw3
 			DevicePerformance::Signature signature;
 			signature.frameRate = static_cast<std::uint16_t>(std::lround(configuration_.timingProfile.target_fps));
 			signature.device = state.warpDevice ? DevicePerformance::Device::Warp : DevicePerformance::Device::Hardware;
-			signature.presentation = state.mode == TransparentPresentMode::DirectCompositionVisualTree
-				? DevicePerformance::Presentation::DirectComposition
-				: state.mode == TransparentPresentMode::UlwDirtyRect
-				? DevicePerformance::Presentation::Ulw : DevicePerformance::Presentation::Unknown;
+			switch (state.mode)
+			{
+			case TransparentPresentMode::DirectCompositionVisualTree:
+				signature.presentation = state.sequentialSwapChain ? DevicePerformance::Presentation::DCompSequential
+					: DevicePerformance::Presentation::DirectComposition;
+				break;
+			case TransparentPresentMode::UlwDirtyRect:
+				signature.presentation = DevicePerformance::Presentation::Ulw;
+				break;
+			case TransparentPresentMode::DwmBlurBehind:
+				// FLIP 创建失败时按实际生效的兼容链分桶，避免对照数据混入首选模式。
+				signature.presentation = state.sequentialSwapChain ? DevicePerformance::Presentation::Win7DwmSequential
+					: DevicePerformance::Presentation::Win7DwmFlip;
+				break;
+			default: break;
+			}
 			signature.waitable = state.waitableWait ? 1 : 0;
 			signature.ulwAsyncReadback = state.ulwAsyncReadback ? 1 : 0;
 			signature.ulwCompositionAlign = state.ulwCompositionAlign ? 1 : 0;

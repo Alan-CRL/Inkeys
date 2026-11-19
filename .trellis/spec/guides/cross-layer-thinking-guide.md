@@ -109,8 +109,8 @@ Win32 window message
 - 窗口创建链必须按 `ShouldPreconfigureNoRedirectionBitmap -> WindowController 独立窗口线程 -> CreateWindowExW -> DComp ConfigureWindow` 检查；不能只看 presenter 初始化阶段。
 - `WS_EX_NOREDIRECTIONBITMAP` 是 DComp 的创建期窗口契约。创建后缺失时记录并回退，不用 `SetWindowLongPtr` 补设。
 - 修改窗口线程、创建样式或 `.vcxproj` 时必须比较 Debug/Release，并验证初始化事件、`GWLP_USERDATA` 路由和关闭等待都能完成。
-- 首发自动候选顺序为 DirectComposition、ULW；两种 DWM 透明模式禁用，强制请求也须拒绝。厂商、架构或 OS 标签本身不能改变顺序。
-- Windows 7 SP1 + 仅 KB2670838 的项目实测支持 `DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL`；保持 FLIP 交换链，不因公开文档描述差异自行回退到 bitblt。硬件 FL11.0 有/无及 WARP 的实际呈现须分别验证。
+- 自动候选始终为 DirectComposition、ULW。显式 Win7Dwm 才可在 Win7 SP1、桌面合成及透明着色均启用时请求第一版 DWM；整窗扩展玻璃模式禁用。
+- Windows 7 SP1 + 仅 KB2670838 的项目实测支持 `DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL`；Win7Dwm 提供 FLIP 和单缓冲 SEQUENTIAL 供实机对照，回退按实际创建结果记录。硬件 FL11.0 有/无及 WARP 的实际呈现须分别验证。
 - 每次新模式尝试前清理上一模式的 presenter、renderer 和 swapchain 状态。
 - GPU 路径保留真透明 alpha；仅 ULW CPU 输出副本叠加 `1/255` alpha 命中测试底层。
 - presenter 初始化成功只证明 API/资源链可用，不证明桌面合成后的可见 alpha 正确；新增适配器或呈现路径时必须在真实桌面背景上验证透明结果。
