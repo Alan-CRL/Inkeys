@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "UI3 脏区调试与帧率显示配置合同（缺省值、设置卡片、SetDebugOptions 同步）"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "调试覆盖层红/绿框与刷新范围规则、主栏脏区事务合同"}
+{"file": ".trellis/spec/native-desktop/ui3-layers.md", "reason": "UI3 分层：FramePacing 新类放置位置与产品层边界"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "模块、BOM+CRLF 约定"}

@@ -746,8 +746,8 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 - 保持单次 GDI interop 链：`GetDC(D2D1_DC_INITIALIZE_MODE_COPY) → UpdateLayeredWindowIndirect → ReleaseDC`。不得在没有端到端数据的情况下加入 CPU staging bitmap、DIB Section、`CopyFromBitmap`、`Map` 或脏行 `memcpy`；这些会引入额外拷贝和更复杂的持久像素一致性。
 - 装饰租约跳帧只延迟提交，不能清除变化键或累计 damage。设备 generation 变化、资源重建失败或呈现事务任一阶段失败都强制下一次全窗口恢复。
 - 只有 `GetDC → UpdateLayeredWindowIndirect → ReleaseDC → EndDraw` 全部成功才可推进业务 damage、viewport controller、mapping tuple、交互命中边界和调试覆盖快照；失败时保留请求并强制下一帧全脏。ULW 已成功但后续阶段失败时，真实 HWND 已经改变，但任何内部呈现快照仍不推进，下帧继续按旧成功 tuple 判定整窗替换并重新对齐。输入消息已在窗口线程入队时固化为 layout 坐标，不依赖异步 viewport 快照发布。`directWindowDragMutex` 必须覆盖 ULW、EndDraw 到成功窗口边界、direct translation 与底栏快照发布；交互侧不能在 resize 已发生但缓存仍旧时使用旧边界 `SetWindowPos`。ULW 成功而后续阶段失败时，旧成功快照保留，但其窗口位置不可用于直移，直至完整恢复呈现成功。
-- `Experimental.Inkeys3.UI3.Debug.Enable` 同时控制脏区框和 HWND 框；活动帧 damage 用红框，idle 前最后一帧将上一帧红框原位改为绿框，本次候选 HWND 包络用蓝框；蓝框属于位图内容，不能代替真实 `GetWindowRect` 证据。`Debug.ShowFrameRate` 只在前者开启时控制下方帧率文字；文字不得显示“休眠”，也不得单独形成持续呈现需求或维持 60 FPS。
-- FPS 文字只随真实 UI、光影、一次性刷新和失败重试帧进入 damage。真实活动结束后由 `DebugFrameSleepLatch` 请求唯一最终帧，用于收缩 viewport 和把旧红框重绘为绿框；完整呈现事务成功后关闭锁存，失败或租约跳帧继续保留，直至下一次真实活动重新武装。两项帧率按同一个完整 1 秒桶锁存，一秒内文字数值不变；实际值只统计成功呈现帧，并在 idle 后恢复真实活动时重建桶，禁止把 idle 等待计入墙钟分母。无限制值以同批有效帧数除以进入 60 FPS pacing 等待前累计的工作时长；只有帧率锁等待被排除。
+- `Experimental.Inkeys3.UI3.Debug.Enable` 同时控制脏区框和 HWND 框；活动帧 damage 用红框，idle 前最后一帧将上一帧红框原位改为绿框，本次候选 HWND 包络用蓝框；蓝框属于位图内容，不能代替真实 `GetWindowRect` 证据。`Debug.ShowFrameRate` 只在前者开启时控制主栏帧率文字与刷新指示点（居中于主栏，见 `configuration-i18n-and-assets.md`「UI3 脏区调试与帧率显示配置合同」）；文字不得显示“休眠”，也不得单独形成持续呈现需求或维持 60 FPS。
+- FPS 文字与指示点只随真实 UI、光影、一次性刷新和失败重试帧进入 damage（每个成功呈现的帧都重绘，包络并入调试 damage 与红框）。真实活动结束后由 `DebugFrameSleepLatch` 请求唯一最终帧，用于收缩 viewport、把旧红框重绘为绿框，并把帧率文字与指示点改为绿色；完整呈现事务成功后关闭锁存，失败或租约跳帧继续保留，直至下一次真实活动重新武装。两项帧率均为逐帧实时值（`InstantFrameRate`，不再按 1 秒桶平均）：实际值 = 1 / 相邻两次成功呈现的帧尾间隔，idle 后恢复真实活动时丢弃上一帧时刻（首帧显示 `--`），禁止把 idle 等待算作一帧间隔；无限制值 = 1 / 该帧进入 60 FPS pacing 等待前的工作时长。指示点按成功呈现序号轮转隐藏一个，重试帧不推进，用于判断界面是否仍在刷新。
 - 红/绿框在**本帧最终业务刷新范围**确定后生成：整窗替换、1px 保活、空 damage 整窗兜底、alpha-only 整窗都先定下 `framePresent`，红框标记它（∪ 帧率文字）——每次 ULW 都有红框或绿框，且框反映本帧真正重画的范围，而不是兜底之前的业务脏区。框按 candidate viewport/窗口裁剪并保证最小可见边长 8px（保活像素、细条也可见），实际画出的 `frame.bounds` 并入本帧提交区并记为“上一帧框”，下一帧并入提交区擦除。调试关闭时提交区与业务 damage 行为不变。蓝框跟随 candidate viewport。绿框使用上次成功呈现的框边界（最终空闲帧无新范围时不保活、不整窗兜底，只重涂旧框），不重新扩大 damage。翻页宿主在调试开启且最终绿框尚未成功提交前不得走“无 damage 早退”，否则最后一帧红框会留在屏幕上。脏区调试开关在设置页运行时切换必须同时通知主栏（`Bar::SetDebugOptions`）与翻页控件（`Ppt::SetDebugEnabled`），与启动路径一致。开关切换（含开启）时两宿主都登记一次整窗覆盖层刷新并重新武装最终帧锁存：静止时这次刷新帧就是绿色最终帧，快速关开不会停在红框；整窗替换与刷新帧的框标记整窗。翻页回执按覆盖层修订号（每次切换递增）消费刷新标记与锁存，在途旧帧回执只记账实际上屏边界，不能吞掉切换后的刷新；直移确认快路在刷新未完成或绿帧未提交时不得直接休眠。调试模式下主栏还有两条只诊断、不改行为的边沿日志：`[ViewportOversize]`（窗口任一边越出可见内容 ∪ 吸附提示包络 240 DIP 以上）与 `[FullWindowPresent]`（成功提交的帧从局部转为整窗时，记整窗原因位、未分类来源位、各阶段范围、已标记键与登记表变化项；边沿只随成功提交推进）。已知限制：窗口任一边 ≤5px 时框不可见；固定手势表面越屏时保活框可能落在屏外。蓝框的旧新边界只在 viewport 或调试开关变化时进入 damage，稳定帧不得因蓝框而每帧全窗刷新。关闭任一覆盖层时，用成功呈现的旧快照清除遗留像素。
 - 使用显式 D2D pivot/scale 变换绘制的内容，damage 必须用同一变换解析实际呈现边界；仅在绘制阶段调用 `Inherit` 的子视觉必须在 dirty 采集前同步同一继承关系。功能组不能只依赖根面板兜底：凡是动画中可能越过根边界的子视觉，都要在 `ResolveDamage()` 前按实际绘制层级同步；Main/More 注册按钮固定为 `button ← MainBar`、`icon/name ← button`。登记表采样不得读取绘制阶段才更新的继承位置：沿继承链纯计算（绘制属性、Logo、背景提示），或在准备时以绘制同算法先写入（主栏/More/翻页按钮 `PrepareButtonVisualInheritance`、绘制属性反馈底板几何、翻页拖柄矩形），绘制时以相同输入重写同值。禁止直接读取未参与本帧绘制的默认或上一帧 `inhX/inhY`；绘制后的 `state.current` 更新也不能补救已经用于 Clear/D2D/ULW 的本帧 dirty。
 
@@ -770,8 +770,8 @@ void SetDebugOptions(bool enable, bool showFrameRate);
 | 未分类的非调试呈现请求 | 安全回退全窗口，不允许空提交 |
 | 调试模式关闭 | 并入上次文字、红/绿框与蓝框边界完成清除，不绘制新覆盖层 |
 | 脏区调试开启、显示帧率关闭 | 活动帧绘制红色 damage 框和蓝色 HWND 框；idle 最终帧把旧红框改为绿色后进入 wait |
-| 显示帧率开启但没有真实呈现需求 | 最终帧保持帧率文字不变、绿框标记旧 damage，成功后进入 wait；不显示“休眠” |
-| idle 后出现真实呈现需求 | 恢复红色 damage 框并以当前活动帧起点重建统计桶，idle 时长不得进入实际帧率 |
+| 显示帧率开启但没有真实呈现需求 | 最终帧文字与指示点改为绿色（数值为上一帧实时值，指示点按序号前进一格）、绿框标记旧 damage，成功后进入 wait；不显示“休眠” |
+| idle 后出现真实呈现需求 | 恢复红色 damage 框与红色文字/指示点；丢弃 idle 前的帧尾时刻，首帧实际帧率显示 `--`，idle 时长不得进入实际帧率 |
 | 一秒统计桶尚未结束 | 真实呈现帧继续绘制已锁存文字，`updated=false`，显示值不变化 |
 | 一秒统计桶结束 | 同时发布实际/无限制平均值并开始新桶；无限制分母不包含 pacing 等待 |
 | 仅鼠标光位置变化 | 只标记鼠标光键；按其旧/新实际受光边框合并，不并入静止主光 |

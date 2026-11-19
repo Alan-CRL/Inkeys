@@ -159,7 +159,7 @@ status.SuperTop = value; SetStatusIndicatorOptions(...); QueueConfigWrite();
 
 ### 1. Scope / Trigger
 
-修改 UI3 脏区红框、下方帧率文字、调试软件页卡片或其启动同步时适用；传统 `IdtFloating` 不在此合同内。
+修改 UI3 脏区红框、主栏帧率文字与刷新指示点、调试软件页卡片或其启动同步时适用；传统 `IdtFloating` 不在此合同内。
 
 ### 2. Signatures
 
@@ -174,35 +174,38 @@ namespace Inkeys::UI::Bar
 
 ~~~text
 Experimental.Inkeys3.UI3.Debug.Enable        : bool = false
-Experimental.Inkeys3.UI3.Debug.ShowFrameRate : bool = true
+Experimental.Inkeys3.UI3.Debug.ShowFrameRate : bool = false
 ~~~
 
 ### 3. Contracts
 
 - `Enable` 只控制实际业务脏区红框；设置卡片名称为“脏区调试”，与附属帧率行一起位于调试软件页。配置路径仍保留在 Experimental.Inkeys3.UI3.Debug，不因 UI 移页而迁移。
-- `ShowFrameRate` 只控制下方帧率文字和为采样维持的连续帧；其设置卡片只在 `Enable=true` 时显示，隐藏不得覆盖持久化值。
-- 新字段默认 `true`，使旧配置开启调试后继续显示帧率。设置修改先更新 `Inkeys::config`，再调用 `SetDebugOptions` 即时同步运行时，最后 `Config::Write()`。
+- `ShowFrameRate` 只控制主栏帧率文字与刷新指示点，不维持任何连续帧（显示只随真实渲染更新，静止即停）；其设置卡片只在 `Enable=true` 时显示，隐藏不得覆盖持久化值。
+- 字段缺省 `false`（2026-11-19 起；缺失该项的配置不显示帧率，已保存的值照旧）；主栏全局 `BarUiDebugFrameRateEnabled` 初值同为 `false`。设置修改先更新 `Inkeys::config`，再调用 `SetDebugOptions` 即时同步运行时，最后 `Config::Write()`。
 - 启动 `ReadAll()` 后必须把两个字段一起传给 Bar；运行时负责用旧/新覆盖层快照清除被关闭的文字或红框。
+- 帧率为逐帧实时值（`UI3::InstantFrameRate`）：实际帧率 = 1 / 相邻两次成功呈现的帧尾间隔，无限制帧率 = 1 / 该帧工作耗时（排除 pacing 等待）；每个成功呈现的帧都重算文字，下一帧绘制时显示。首帧、从休眠恢复（最终帧锁存已呈现后又有活动）或关闭显示后，第一帧显示 `FrameRateUnavailable`，休眠时长不得算作一帧间隔。
+- 显示：文字（12 DIP、居中）与其下方 10 个圆点（直径 4、圆心间距 8、与文字间隔 2 DIP）作为整体居中于主栏底板 `MainBar` 的绘制矩形中心（收起时底板宽 80、居中于主按钮且透明，几何仍作锚点；底栏吸附按 Body 映射取中心，文字不形变），画在主栏内容之上；越出显示器时整体平移回可用范围。颜色与红/绿框共用 `ResolveDebugFrameColor(debugFrameSleepLatch.IsPending())`：平时 `RGB(255,0,0)`，休眠前最终帧 `RGB(0,255,0)`，不透明。指示点按成功呈现序号 `debugFrameIndicatorSerial`（提交成功递增，开关切换清零）隐藏第 `serial % 10` 个：第 1 帧隐藏第 1 个，失败重试的帧不推进。文字与点的包络（外扩 1px）并入可见内容范围（宽于主栏时调试模式下窗口随之变宽）与本帧调试 damage。
 
 ### 4. Validation & Error Matrix
 
 | 条件 | 必须行为 |
 | --- | --- |
-| 旧配置缺少 `ShowFrameRate` | 使用 schema 默认 `true`；不需要手写迁移 |
+| 旧配置缺少 `ShowFrameRate` | 使用 schema 默认 `false`；不需要手写迁移 |
 | `Enable=false` | 隐藏帧率子卡片；不绘制红框或文字 |
 | `Enable=true, ShowFrameRate=false` | 仅在真实业务 damage 时绘制红框；不得持续空帧 |
+| `Enable=true, ShowFrameRate=true` | 文字与指示点只随真实渲染更新；静止后最终帧变绿并休眠，不因显示空转 |
 | 配置写入失败 | 本次运行时开关仍即时生效；下次启动按磁盘值恢复 |
 | 关闭任一项 | 请求清理其上次成功呈现边界；失败时保留到重试成功 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：开启脏区调试后出现帧率子项；关闭帧率文字后红框仍工作，静止 Bar 回到 idle。
-- Base：两个字段保持默认值时，调试默认关闭；用户开启后同时看到红框和帧率。
-- Bad：用 `Enable` 同时永久覆盖 `ShowFrameRate`，或隐藏子卡片时写回 `false`。
+- Good：开启脏区调试后出现帧率子项；开启帧率后交互中数值逐帧跳变、圆点轮流缺一个，静止时文字与点变绿后停止；关闭帧率文字后红框仍工作，静止 Bar 回到 idle。
+- Base：两个字段保持默认值时，调试与帧率默认关闭；用户开启脏区调试后再单独开启帧率。
+- Bad：用 `Enable` 同时永久覆盖 `ShowFrameRate`，或隐藏子卡片时写回 `false`；为让圆点轮转而请求额外帧（指示点的意义正是暴露真实刷新）。
 
 ### 6. Tests Required
 
-- Headless 验证一秒帧率锁存、无限制帧率排除 pacing 等待，以及覆盖层关闭清理。
+- Headless 验证实时帧率（首帧无效、逐帧间隔、时间戳不单调、Reset 排除休眠间隔、工作耗时为 0）与覆盖层关闭清理；`OneSecondFrameRate` 保留但产品不再使用。
 - 完整构建 `InkeysRepo.sln` 的 `Debug | ARM64`；手工验证四种切换组合、设置容器高度、重启持久化和静止 CPU。
 
 ### 7. Wrong vs Correct
