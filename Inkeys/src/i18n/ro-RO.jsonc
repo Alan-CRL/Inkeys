@@ -348,6 +348,7 @@
       "GeneralAppearance": "Aspect și animații",
       "NavWindowDisplay": "Ferestre și ecrane",
       "WindowLayout": "Fereastră",
+      "WindowScene": "Scenarii",
       "WindowBehavior": "Comportament",
       "WindowDisplay": "Ecrane",
       "NavKeysShortcuts": "Taste și comenzi rapide",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "Configurare",
       "DrawEffects": "Efecte de desen",
       "DrawInteraction": "Interacțiune și gesturi",
+      "DrawSave": "Salvare",
       "OperationModeSection": "Mod de operare",
       "IconArrangementSection": "Aranjarea pictogramelor",
       "AnimationSection": "Animații",
@@ -1042,6 +1044,15 @@
         "E": "Ajustează frecvența actualizării pânzei în timpul scrierii. Ratele mai mari pot face cerneala mai fluidă, dar consumă mai multe resurse."
       },
       "RenderingSection": "Randare și compatibilitate",
+      "RenderAcceleration":
+      {
+        "N": "Accelerarea randării pânzei",
+        "Automatic": "Automat",
+        "Hardware": "Accelerare hardware",
+        "Software": "Randare software"
+      },
+      "AdvancedSection": "Setări avansate",
+      "LowLevelSection": "Setări de nivel scăzut",
       "PresentationMode":
       {
         "N": "Metoda de transparență a pânzei de pe desktop",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "Lanțul de schimb al pânzei de pe desktop",
-        "E": "UpdateLayeredWindow nu acceptă lanțuri de schimb."
+        "E": "UpdateLayeredWindow nu acceptă lanțuri de schimb.",
+        "Flip": "Lanț de schimb Flip",
+        "BitBlt": "Lanț de schimb BitBlt"
       },
       "CompositionAlign":
       {
@@ -1062,13 +1075,12 @@
       },
       "WaitableWait":
       {
-        "N": "Activează așteptarea în modul waitable",
+        "N": "Activează așteptarea în modul Waitable",
         "E": "Pe Windows 8.1 și versiunile ulterioare, previne latența cauzată de acumularea cadrelor."
       },
       "UlwAsyncReadback":
       {
-        "N": "Citire asincronă în modul ULW",
-        "E": "Pe sistemele care afișează prin ULW, precum Windows 7, permite calculului CPU și desenării GPU să se desfășoare simultan și trimite cadrele în ritmul reîmprospătării ecranului, reducând sacadarea și latența."
+        "N": "Citire asincronă în modul UpdateLayeredWindow"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "Activare accelerare hardware pentru desen",
-          "E": "Folosește GPU-ul pentru desenarea pânzei; când este dezactivată, randarea se face software.",
-          "Note": "Încercați dezactivarea dacă desenarea este incorectă sau foarte lentă. Reporniți Inkeys pentru aplicare."
-        },
         "ZhaoxinCompatibility":
         {
           "N": "Activare mod de compatibilitate Zhaoxin",

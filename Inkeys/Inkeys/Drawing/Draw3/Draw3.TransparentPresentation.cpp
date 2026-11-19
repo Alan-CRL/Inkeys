@@ -2389,7 +2389,8 @@ namespace Inkeys::Drawing::Draw3
 		{
 			// 所有旧设备引用已由调用方 GPU cache 和 presenter 释放，随后在同一绘制线程重建。
 			*impl_->graphics = {};
-			if (!InitializeGraphicsDevice(*impl_->graphics, impl_->options.enableHardwareAcceleration))
+			if (!InitializeGraphicsDevice(*impl_->graphics, impl_->options.enableHardwareAcceleration,
+				impl_->options.allowWarpFallback))
 			{
 				impl_->lastFailure = failure;
 				impl_->PublishInformation(true, "设备恢复失败");

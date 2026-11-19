@@ -348,6 +348,7 @@
       "GeneralAppearance": "Tampilan dan animasi",
       "NavWindowDisplay": "Jendela dan layar",
       "WindowLayout": "Jendela",
+      "WindowScene": "Skenario",
       "WindowBehavior": "Perilaku",
       "WindowDisplay": "Layar",
       "NavKeysShortcuts": "Tombol dan pintasan",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "Konfigurasi",
       "DrawEffects": "Efek menggambar",
       "DrawInteraction": "Interaksi dan gestur",
+      "DrawSave": "Penyimpanan",
       "OperationModeSection": "Mode operasi",
       "IconArrangementSection": "Susunan ikon",
       "AnimationSection": "Animasi",
@@ -1042,6 +1044,15 @@
         "E": "Atur seberapa sering kanvas diperbarui saat menulis. Laju lebih tinggi membuat tinta lebih halus tetapi memakai lebih banyak sumber daya."
       },
       "RenderingSection": "Perenderan dan kompatibilitas",
+      "RenderAcceleration":
+      {
+        "N": "Akselerasi perenderan kanvas",
+        "Automatic": "Otomatis",
+        "Hardware": "Akselerasi perangkat keras",
+        "Software": "Perenderan perangkat lunak"
+      },
+      "AdvancedSection": "Pengaturan lanjutan",
+      "LowLevelSection": "Pengaturan tingkat rendah",
       "PresentationMode":
       {
         "N": "Metode transparansi kanvas desktop",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "Rantai pertukaran kanvas desktop",
-        "E": "UpdateLayeredWindow tidak mendukung rantai pertukaran."
+        "E": "UpdateLayeredWindow tidak mendukung rantai pertukaran.",
+        "Flip": "Rantai pertukaran Flip",
+        "BitBlt": "Rantai pertukaran BitBlt"
       },
       "CompositionAlign":
       {
@@ -1062,13 +1075,12 @@
       },
       "WaitableWait":
       {
-        "N": "Aktifkan penantian dalam mode waitable",
+        "N": "Aktifkan penantian dalam mode Waitable",
         "E": "Pada Windows 8.1 dan yang lebih baru, mencegah latensi akibat penumpukan frame."
       },
       "UlwAsyncReadback":
       {
-        "N": "Pembacaan balik asinkron dalam mode ULW",
-        "E": "Pada sistem yang menampilkan melalui ULW, seperti Windows 7, memungkinkan perhitungan CPU dan penggambaran GPU berjalan bersamaan serta mengirim bingkai sesuai waktu penyegaran layar, sehingga mengurangi patah-patah dan latensi."
+        "N": "Pembacaan balik asinkron dalam mode UpdateLayeredWindow"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "Aktifkan akselerasi perangkat keras untuk menggambar",
-          "E": "Gunakan GPU untuk menggambar kanvas, atau perenderan perangkat lunak saat nonaktif.",
-          "Note": "Coba nonaktifkan jika gambar bermasalah atau sangat lambat. Mulai ulang Inkeys untuk menerapkan."
-        },
         "ZhaoxinCompatibility":
         {
           "N": "Aktifkan mode kompatibilitas Zhaoxin",

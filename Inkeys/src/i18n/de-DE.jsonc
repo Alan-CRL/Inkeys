@@ -348,6 +348,7 @@
       "GeneralAppearance": "Darstellung und Animationen",
       "NavWindowDisplay": "Fenster und Anzeigen",
       "WindowLayout": "Fenster",
+      "WindowScene": "Szenen",
       "WindowBehavior": "Verhalten",
       "WindowDisplay": "Anzeigen",
       "NavKeysShortcuts": "Tasten und Tastenkürzel",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "Konfiguration",
       "DrawEffects": "Zeicheneffekte",
       "DrawInteraction": "Interaktion und Gesten",
+      "DrawSave": "Speichern",
       "OperationModeSection": "Bedienmodus",
       "IconArrangementSection": "Symbolanordnung",
       "AnimationSection": "Animationen",
@@ -1042,6 +1044,15 @@
         "E": "Aktualisierungshäufigkeit der Zeichenfläche beim Schreiben einstellen. Höhere Bildraten können Striche flüssiger machen, benötigen aber mehr Ressourcen."
       },
       "RenderingSection": "Rendering und Kompatibilität",
+      "RenderAcceleration":
+      {
+        "N": "Rendering-Beschleunigung der Zeichenfläche",
+        "Automatic": "Automatisch",
+        "Hardware": "Hardwarebeschleunigung",
+        "Software": "Softwarerendering"
+      },
+      "AdvancedSection": "Erweiterte Einstellungen",
+      "LowLevelSection": "Systemnahe Einstellungen",
       "PresentationMode":
       {
         "N": "Transparenzmethode der Desktop-Zeichenfläche",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "Swapchain der Desktop-Zeichenfläche",
-        "E": "UpdateLayeredWindow unterstützt keine Swapchains."
+        "E": "UpdateLayeredWindow unterstützt keine Swapchains.",
+        "Flip": "Flip-Swapchain",
+        "BitBlt": "BitBlt-Swapchain"
       },
       "CompositionAlign":
       {
@@ -1067,8 +1080,7 @@
       },
       "UlwAsyncReadback":
       {
-        "N": "Asynchrones Zurücklesen im ULW-Modus",
-        "E": "Lässt auf Systemen mit ULW-Darstellung wie Windows 7 CPU-Berechnung und GPU-Zeichnen gleichzeitig laufen und übergibt Bilder im Takt der Bildschirmaktualisierung, um Ruckeln und Verzögerung zu verringern."
+        "N": "Asynchrones Zurücklesen im UpdateLayeredWindow-Modus"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "Hardwarebeschleunigung fürs Zeichnen aktivieren",
-          "E": "Die Zeichenfläche mit der GPU zeichnen; deaktiviert wird Softwarerendering verwendet.",
-          "Note": "Bei fehlerhaftem oder sehr langsamem Zeichnen versuchsweise deaktivieren. Zum Anwenden Inkeys neu starten."
-        },
         "ZhaoxinCompatibility":
         {
           "N": "Zhaoxin-Kompatibilitätsmodus aktivieren",

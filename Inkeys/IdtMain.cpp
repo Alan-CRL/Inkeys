@@ -938,23 +938,25 @@ namespace
 			}
 			stage = "Draw3 device preferences";
 			Inkeys::Config deviceDefaults;
-			if (!deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+			constexpr int automaticAcceleration = static_cast<int>(Inkeys::Draw3RenderAccelerationPreference::Automatic);
+			if (deviceDefaults.Experimental.Inkeys3.Draw3.RenderAcceleration.load() != automaticAcceleration ||
 				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility ||
 				!writeBytes(mainConfig, "{}") || !deviceDefaults.ReadAll() ||
-				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+				deviceDefaults.Experimental.Inkeys3.Draw3.RenderAcceleration.load() != automaticAcceleration ||
 				!deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility)
 			{
-				std::fputs("[ConfigBoundary] FAIL: Draw3 device preferences defaulted off\n", stderr);
+				std::fputs("[ConfigBoundary] FAIL: Draw3 device preferences did not default to automatic/compatible\n", stderr);
 				return 1;
 			}
-			for (const bool hardware : { false, true })
+			// 画布渲染加速三档：自动 / 硬件加速 / 软件加速。
+			for (const int acceleration : { 0, 1, 2 })
 				for (const bool compatibility : { false, true })
 				{
-					deviceDefaults.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration = hardware;
+					deviceDefaults.Experimental.Inkeys3.Draw3.RenderAcceleration = acceleration;
 					deviceDefaults.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility = compatibility;
 					Inkeys::Config restoredDevice;
 					if (!deviceDefaults.Write() || !restoredDevice.ReadAll() ||
-						restoredDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						restoredDevice.Experimental.Inkeys3.Draw3.RenderAcceleration.load() != acceleration ||
 						restoredDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility)
 					{
 						std::fputs("[ConfigBoundary] FAIL: Draw3 device preferences did not round-trip\n", stderr);
@@ -963,28 +965,31 @@ namespace
 					Inkeys::Config copiedDevice;
 					copiedDevice = restoredDevice;
 					Inkeys::Config miniDevice;
-					if (!miniDevice.ReadMini({ "Experimental.Inkeys3.Draw3.EnableHardwareAcceleration",
+					if (!miniDevice.ReadMini({ "Experimental.Inkeys3.Draw3.RenderAcceleration",
 						"Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility" }) ||
-						miniDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						miniDevice.Experimental.Inkeys3.Draw3.RenderAcceleration.load() != acceleration ||
 						miniDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility ||
-						copiedDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration.load() != hardware ||
+						copiedDevice.Experimental.Inkeys3.Draw3.RenderAcceleration.load() != acceleration ||
 						copiedDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility.load() != compatibility)
 						return 1;
 					const auto uploadInfo = restoredDevice.GetUploadInfo();
-					if (uploadInfo.find("EnableHardwareAcceleration") != std::string::npos ||
+					if (uploadInfo.find("RenderAcceleration") != std::string::npos ||
 						uploadInfo.find("EnableZhaoxinCompatibility") != std::string::npos) return 1;
 				}
-			for (const char* invalid : { "0", "1", "\"false\"", "null", "{}", "[]" })
+			// 加速档只接受精确整数 0..2；兆芯兼容只接受布尔值；非法值均回到默认。
+			const std::pair<const char*, const char*> invalidDeviceValues[]{ { "3", "0" }, { "-1", "1" },
+				{ "true", "\"false\"" }, { "\"1\"", "null" }, { "null", "{}" }, { "{}", "[]" }, { "[]", "0" } };
+			for (const auto& [acceleration, compatibility] : invalidDeviceValues)
 			{
 				Inkeys::Config invalidDevice;
 				const std::string invalidJson = "{\"Experimental\":{\"Inkeys3\":{\"Draw3\":{" +
-					std::string("\"EnableHardwareAcceleration\":") + invalid +
-					",\"EnableZhaoxinCompatibility\":" + invalid + "}}}}";
+					std::string("\"RenderAcceleration\":") + acceleration +
+					",\"EnableZhaoxinCompatibility\":" + compatibility + "}}}}";
 				if (!writeBytes(mainConfig, invalidJson) || !invalidDevice.ReadAll() ||
-					!invalidDevice.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration ||
+					invalidDevice.Experimental.Inkeys3.Draw3.RenderAcceleration.load() != automaticAcceleration ||
 					!invalidDevice.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility)
 				{
-					std::fputs("[ConfigBoundary] FAIL: non-bool Draw3 device preferences were accepted\n", stderr);
+					std::fputs("[ConfigBoundary] FAIL: invalid Draw3 device preferences were accepted\n", stderr);
 					return 1;
 				}
 			}
@@ -3933,8 +3938,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
 		draw3StartOptions.frameRate = configOnce.Drawing.FrameRate;
 		// 启动时捕获设备偏好；呈现回退和设备恢复沿用本代快照。
-		draw3StartOptions.enableHardwareAcceleration =
-			configOnce.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
+		{
+			using AccelerationPreference = Inkeys::Draw3RenderAccelerationPreference;
+			const auto acceleration = static_cast<AccelerationPreference>(
+				configOnce.Experimental.Inkeys3.Draw3.RenderAcceleration.load());
+			// 自动：硬件优先、失败回退 WARP；硬件加速：失败不回退；软件加速：直接 WARP。
+			draw3StartOptions.enableHardwareAcceleration = acceleration != AccelerationPreference::Software;
+			draw3StartOptions.allowWarpFallback = acceleration != AccelerationPreference::Hardware;
+		}
 		draw3StartOptions.enableZhaoxinCompatibility =
 			configOnce.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 		draw3StartOptions.enableWaitableWait =
@@ -3950,6 +3961,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(whiteboardDefault.pattern) };
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		draw3StartOptions.preferredPresentationMode = preferredMode;
+		// 自动交换链目前固定 Flip；只有显式选择 Sequential 时才改用 BitBlt 交换链。
 		draw3StartOptions.preferSequentialSwapChain = static_cast<Inkeys::Draw3SwapChainPreference>(draw3Config.SwapChainMode.load()) ==
 			Inkeys::Draw3SwapChainPreference::Sequential;
 		draw3StartOptions.autoSaveRoot =

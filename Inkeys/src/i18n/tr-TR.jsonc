@@ -348,6 +348,7 @@
       "GeneralAppearance": "Görünüm ve animasyonlar",
       "NavWindowDisplay": "Pencereler ve ekranlar",
       "WindowLayout": "Pencere",
+      "WindowScene": "Senaryolar",
       "WindowBehavior": "Davranış",
       "WindowDisplay": "Ekranlar",
       "NavKeysShortcuts": "Tuşlar ve kısayollar",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "Yapılandırma",
       "DrawEffects": "Çizim efektleri",
       "DrawInteraction": "Etkileşim ve hareketler",
+      "DrawSave": "Kaydetme",
       "OperationModeSection": "İşlem modu",
       "IconArrangementSection": "Simge düzeni",
       "AnimationSection": "Animasyonlar",
@@ -1042,6 +1044,15 @@
         "E": "Yazarken tuvalin yenilenme sıklığını ayarlayın. Yüksek kare hızları mürekkebi akıcı kılarken daha fazla kaynak kullanabilir."
       },
       "RenderingSection": "İşleme ve uyumluluk",
+      "RenderAcceleration":
+      {
+        "N": "Tuval işleme hızlandırma",
+        "Automatic": "Otomatik",
+        "Hardware": "Donanım hızlandırma",
+        "Software": "Yazılımla işleme"
+      },
+      "AdvancedSection": "Gelişmiş ayarlar",
+      "LowLevelSection": "Alt düzey ayarlar",
       "PresentationMode":
       {
         "N": "Masaüstü tuvali saydam sunum yöntemi",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "Masaüstü tuvali takas zinciri",
-        "E": "UpdateLayeredWindow takas zincirlerini desteklemez."
+        "E": "UpdateLayeredWindow takas zincirlerini desteklemez.",
+        "Flip": "Flip takas zinciri",
+        "BitBlt": "BitBlt takas zinciri"
       },
       "CompositionAlign":
       {
@@ -1067,8 +1080,7 @@
       },
       "UlwAsyncReadback":
       {
-        "N": "ULW modunda eşzamansız geri okuma",
-        "E": "Windows 7 gibi ULW ile görüntüleyen sistemlerde CPU hesaplamasının ve GPU çiziminin aynı anda ilerlemesini sağlar ve kareleri ekran yenileme zamanlamasına göre gönderir; takılmayı ve gecikmeyi azaltır."
+        "N": "UpdateLayeredWindow modunda eşzamansız geri okuma"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "Çizim donanım hızlandırmasını aç",
-          "E": "Tuvali çizmek için GPU'yu kullanın; kapalıyken yazılımla çizilir.",
-          "Note": "Çizim hatalıysa veya çok yavaşsa kapatmayı deneyin. Uygulamak için Inkeys'i yeniden başlatın."
-        },
         "ZhaoxinCompatibility":
         {
           "N": "Zhaoxin uyumluluk modunu aç",

@@ -348,6 +348,7 @@
       "GeneralAppearance": "外觀與動畫",
       "NavWindowDisplay": "視窗與顯示器",
       "WindowLayout": "視窗",
+      "WindowScene": "場景",
       "WindowBehavior": "行為",
       "WindowDisplay": "顯示器",
       "NavKeysShortcuts": "按鍵與快速鍵",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "設定",
       "DrawEffects": "繪製效果",
       "DrawInteraction": "互動與手勢",
+      "DrawSave": "儲存",
       "OperationModeSection": "操作模式",
       "IconArrangementSection": "圖示排列",
       "AnimationSection": "動畫",
@@ -1042,6 +1044,15 @@
         "E": "調整書寫時畫布的更新頻率。較高幀率可使筆跡更流暢，同時增加資源使用量。"
       },
       "RenderingSection": "渲染與兼容性",
+      "RenderAcceleration":
+      {
+        "N": "畫布渲染加速",
+        "Automatic": "自動",
+        "Hardware": "硬件加速",
+        "Software": "軟件加速"
+      },
+      "AdvancedSection": "進階設定",
+      "LowLevelSection": "底層設定",
       "PresentationMode":
       {
         "N": "桌面畫布透明呈現方式",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "桌面畫布交換鏈",
-        "E": "UpdateLayeredWindow 不支援使用交換鏈。"
+        "E": "UpdateLayeredWindow 不支援使用交換鏈。",
+        "Flip": "Flip 交換鏈",
+        "BitBlt": "BitBlt 交換鏈"
       },
       "CompositionAlign":
       {
@@ -1062,13 +1075,12 @@
       },
       "WaitableWait":
       {
-        "N": "waitable 模式下啟用等待",
+        "N": "Waitable 模式下啟用等待",
         "E": "在 Windows 8.1 及以上系統中，防止畫面格堆積造成的延遲。"
       },
       "UlwAsyncReadback":
       {
-        "N": "ULW 模式下非同步讀回",
-        "E": "在 Windows 7 等使用 ULW 呈現的系統上，讓 CPU 運算與 GPU 繪製同時進行，並按顯示器刷新時機提交畫面，減少卡頓與延遲。"
+        "N": "UpdateLayeredWindow 模式下非同步讀回"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "啟用繪圖硬件加速",
-          "E": "使用顯示卡加速畫布繪製，關閉後使用軟件繪製。",
-          "Note": "出現繪製異常或嚴重卡頓時可嘗試關閉；重新啟動軟件後生效。"
-        },
         "ZhaoxinCompatibility":
         {
           "N": "為兆芯裝置啟用兼容模式",

@@ -348,6 +348,7 @@
       "GeneralAppearance": "모양 및 애니메이션",
       "NavWindowDisplay": "창 및 디스플레이",
       "WindowLayout": "창",
+      "WindowScene": "장면",
       "WindowBehavior": "동작",
       "WindowDisplay": "디스플레이",
       "NavKeysShortcuts": "키 및 단축키",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "구성",
       "DrawEffects": "그리기 효과",
       "DrawInteraction": "상호작용 및 제스처",
+      "DrawSave": "저장",
       "OperationModeSection": "조작 모드",
       "IconArrangementSection": "아이콘 배치",
       "AnimationSection": "애니메이션",
@@ -1042,6 +1044,15 @@
         "E": "필기 중 캔버스의 새로 고침 빈도를 조정합니다. 높이면 필기가 부드러워지지만 리소스 사용량이 늘어납니다."
       },
       "RenderingSection": "렌더링 및 호환성",
+      "RenderAcceleration":
+      {
+        "N": "캔버스 렌더링 가속",
+        "Automatic": "자동",
+        "Hardware": "하드웨어 가속",
+        "Software": "소프트웨어 렌더링"
+      },
+      "AdvancedSection": "고급 설정",
+      "LowLevelSection": "저수준 설정",
       "PresentationMode":
       {
         "N": "데스크톱 캔버스 투명 표시 방식",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "데스크톱 캔버스 스왑 체인",
-        "E": "UpdateLayeredWindow는 스왑 체인을 지원하지 않습니다."
+        "E": "UpdateLayeredWindow는 스왑 체인을 지원하지 않습니다.",
+        "Flip": "Flip 스왑 체인",
+        "BitBlt": "BitBlt 스왑 체인"
       },
       "CompositionAlign":
       {
@@ -1062,13 +1075,12 @@
       },
       "WaitableWait":
       {
-        "N": "waitable 모드에서 대기 사용",
+        "N": "Waitable 모드에서 대기 사용",
         "E": "Windows 8.1 이상에서 프레임 적체로 인한 지연을 방지합니다."
       },
       "UlwAsyncReadback":
       {
-        "N": "ULW 모드에서 비동기 리드백",
-        "E": "Windows 7 등 ULW로 표시하는 시스템에서 CPU 계산과 GPU 그리기를 동시에 진행하고 디스플레이 새로 고침 시점에 맞춰 화면을 제출하여 끊김과 지연을 줄입니다."
+        "N": "UpdateLayeredWindow 모드에서 비동기 리드백"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "그리기 하드웨어 가속 사용",
-          "E": "GPU로 캔버스 그리기를 가속합니다. 끄면 소프트웨어 그리기를 사용합니다.",
-          "Note": "그리기 오류나 심한 지연이 생기면 꺼 보세요. 다시 시작한 후 적용됩니다."
-        },
         "ZhaoxinCompatibility":
         {
           "N": "Zhaoxin 장치 호환 모드 사용",

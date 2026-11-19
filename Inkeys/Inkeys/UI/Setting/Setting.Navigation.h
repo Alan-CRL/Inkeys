@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "../../../IdtI18nKeys.g.h"
 #include <array>
@@ -15,16 +15,17 @@ namespace Inkeys::UI::Setting::Design
 		Home = 0, Language = 1, Build = 2, Configuration = 3, General = 4,
 		Draw = 5, Plugins = 8, Components = 9,
 		HotKeys = 10, Version = 11, Support = 12, Debug = 13, Experimental = 14, Feedback = 15, Performance = 16, Linkage = 17,
-		Window = 18, Keys = 19, LogsConfig = 20,
+		Window = 18, Keys = 19, LogsConfig = 20, Appearance = 21,
 	};
 
 	// 所有带子页的页面共用一个枚举，数值全局唯一，因此 section 本身即可判定所属页面。
 	enum class Section : int
 	{
 		None = 0,
-		Basic, Appearance, StatusIndicator, DesktopShortcuts,	// 通用
-		DrawEffects, DrawInteraction,							// 绘制
-		WindowLayout, WindowBehavior, WindowDisplay,			// 窗口与显示器
+		Basic, StatusIndicator, DesktopShortcuts,				// 通用
+		AppearanceTheme, AppearanceAnimation,					// 外观
+		DrawEffects, DrawInteraction, DrawSave,					// 绘制
+		WindowLayout, WindowScene, WindowBehavior, WindowDisplay,	// 窗口与显示器
 		LogsLog, LogsConfiguration,								// 日志与配置
 	};
 
@@ -46,16 +47,21 @@ namespace Inkeys::UI::Setting::Design
 
 	inline constexpr std::array GeneralChildren{
 		NavigationChild{ Section::Basic, I18nKey.SettingsUI.Design.GeneralBasic, "\ue713" },
-		NavigationChild{ Section::Appearance, I18nKey.SettingsUI.Design.GeneralAppearance, "\ue790" },
 		NavigationChild{ Section::StatusIndicator, I18nKey.SettingsUI.StatusIndicator.N, "\uea8f" },
 		NavigationChild{ Section::DesktopShortcuts, I18nKey.SettingsUI.DesktopShortcut.N, "\ue71b" },
+	};
+	inline constexpr std::array AppearanceChildren{
+		NavigationChild{ Section::AppearanceTheme, I18nKey.SettingsUI.Design.ThemeSection, "\ue790" },
+		NavigationChild{ Section::AppearanceAnimation, I18nKey.SettingsUI.Design.AnimationSection, "\ue768" },
 	};
 	inline constexpr std::array DrawChildren{
 		NavigationChild{ Section::DrawEffects, I18nKey.SettingsUI.Design.DrawEffects, "\ue790" },
 		NavigationChild{ Section::DrawInteraction, I18nKey.SettingsUI.Design.DrawInteraction, "\ue7c9" },
+		NavigationChild{ Section::DrawSave, I18nKey.SettingsUI.Design.DrawSave, "\ue74e" },
 	};
 	inline constexpr std::array WindowChildren{
 		NavigationChild{ Section::WindowLayout, I18nKey.SettingsUI.Design.WindowLayout, "\ue737" },
+		NavigationChild{ Section::WindowScene, I18nKey.SettingsUI.Design.WindowScene, "\ue7b3" },
 		NavigationChild{ Section::WindowBehavior, I18nKey.SettingsUI.Design.WindowBehavior, "\uf259" },
 		NavigationChild{ Section::WindowDisplay, I18nKey.SettingsUI.Design.WindowDisplay, "\ue7f8" },
 	};
@@ -63,12 +69,13 @@ namespace Inkeys::UI::Setting::Design
 		NavigationChild{ Section::LogsLog, I18nKey.SettingsUI.Design.LogsLog, "\ue756" },
 		NavigationChild{ Section::LogsConfiguration, I18nKey.SettingsUI.Design.LogsConfiguration, "\ue81e" },
 	};
-	static_assert(GeneralChildren.size() <= NavigationMaxChildren && DrawChildren.size() <= NavigationMaxChildren
-		&& WindowChildren.size() <= NavigationMaxChildren && LogsConfigChildren.size() <= NavigationMaxChildren);
+	static_assert(GeneralChildren.size() <= NavigationMaxChildren && AppearanceChildren.size() <= NavigationMaxChildren
+		&& DrawChildren.size() <= NavigationMaxChildren && WindowChildren.size() <= NavigationMaxChildren && LogsConfigChildren.size() <= NavigationMaxChildren);
 
 	// 侧栏中部顺序即用户看到的顺序；新增页面或子页只改这里。
 	inline constexpr std::array NavigationMiddleEntries{
 		NavigationEntry{ PageId::General, I18nKey.SettingsUI.Regular.N, "\ue713", GeneralChildren },
+		NavigationEntry{ PageId::Appearance, I18nKey.SettingsUI.Design.AppearanceSection, "\ue790", AppearanceChildren },
 		NavigationEntry{ PageId::Draw, I18nKey.SettingsUI.Draw.N, "\uee56", DrawChildren },
 		NavigationEntry{ PageId::Window, I18nKey.SettingsUI.Design.NavWindowDisplay, "\ue7f4", WindowChildren },
 		NavigationEntry{ PageId::Keys, I18nKey.SettingsUI.Design.NavKeysShortcuts, "\ue765", {} },

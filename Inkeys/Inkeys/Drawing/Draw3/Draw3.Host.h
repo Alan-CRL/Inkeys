@@ -286,6 +286,8 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t runtimeMetricsMaximumSamples = 32768;
 		// 启动时按值捕获；呈现回退与设备丢失后的恢复沿用本代偏好。
 		bool enableHardwareAcceleration = true;
+		// 硬件设备创建失败时是否回退 WARP；“硬件加速”档为 false。
+		bool allowWarpFallback = true;
 		bool enableZhaoxinCompatibility = true;
 		// DComp waitable 交换链是否在帧开头等待帧延迟句柄；关闭时保留标志但不等待。
 		bool enableWaitableWait = true;

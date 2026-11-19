@@ -348,6 +348,7 @@
       "GeneralAppearance": "Aparência e animações",
       "NavWindowDisplay": "Janelas e telas",
       "WindowLayout": "Janela",
+      "WindowScene": "Cenários",
       "WindowBehavior": "Comportamento",
       "WindowDisplay": "Telas",
       "NavKeysShortcuts": "Teclas e atalhos",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "Configuração",
       "DrawEffects": "Efeitos de desenho",
       "DrawInteraction": "Interação e gestos",
+      "DrawSave": "Salvamento",
       "OperationModeSection": "Modo de operação",
       "IconArrangementSection": "Disposição dos ícones",
       "AnimationSection": "Animações",
@@ -1042,6 +1044,15 @@
         "E": "Ajusta a frequência de atualização da tela ao escrever. Taxas maiores deixam os traços mais fluidos, mas consomem mais recursos."
       },
       "RenderingSection": "Renderização e compatibilidade",
+      "RenderAcceleration":
+      {
+        "N": "Aceleração de renderização da tela",
+        "Automatic": "Automático",
+        "Hardware": "Aceleração por hardware",
+        "Software": "Renderização por software"
+      },
+      "AdvancedSection": "Configurações avançadas",
+      "LowLevelSection": "Configurações de baixo nível",
       "PresentationMode":
       {
         "N": "Método de transparência da tela da área de trabalho",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "Cadeia de troca da tela da área de trabalho",
-        "E": "UpdateLayeredWindow não oferece suporte a cadeias de troca."
+        "E": "UpdateLayeredWindow não oferece suporte a cadeias de troca.",
+        "Flip": "Cadeia de troca Flip",
+        "BitBlt": "Cadeia de troca BitBlt"
       },
       "CompositionAlign":
       {
@@ -1062,13 +1075,12 @@
       },
       "WaitableWait":
       {
-        "N": "Ativar espera no modo waitable",
+        "N": "Ativar espera no modo Waitable",
         "E": "No Windows 8.1 e versões posteriores, evita a latência causada pelo acúmulo de quadros."
       },
       "UlwAsyncReadback":
       {
-        "N": "Leitura assíncrona no modo ULW",
-        "E": "Em sistemas que exibem por ULW, como o Windows 7, permite que o cálculo da CPU e o desenho da GPU ocorram ao mesmo tempo e envia os quadros no ritmo de atualização da tela, reduzindo travamentos e latência."
+        "N": "Leitura assíncrona no modo UpdateLayeredWindow"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "Ativar aceleração de desenho por hardware",
-          "E": "Usa a GPU para acelerar o desenho. Quando desativada, usa renderização por software.",
-          "Note": "Tente desativar se houver falhas de desenho ou lentidão intensa. Reinicie o Inkeys para aplicar."
-        },
         "ZhaoxinCompatibility":
         {
           "N": "Ativar compatibilidade com dispositivos Zhaoxin",

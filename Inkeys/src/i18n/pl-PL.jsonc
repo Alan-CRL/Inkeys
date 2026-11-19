@@ -348,6 +348,7 @@
       "GeneralAppearance": "Wygląd i animacje",
       "NavWindowDisplay": "Okna i wyświetlacze",
       "WindowLayout": "Okno",
+      "WindowScene": "Scenariusze",
       "WindowBehavior": "Zachowanie",
       "WindowDisplay": "Wyświetlacze",
       "NavKeysShortcuts": "Klawisze i skróty",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "Konfiguracja",
       "DrawEffects": "Efekty rysowania",
       "DrawInteraction": "Interakcja i gesty",
+      "DrawSave": "Zapisywanie",
       "OperationModeSection": "Tryb działania",
       "IconArrangementSection": "Układ ikon",
       "AnimationSection": "Animacje",
@@ -1042,6 +1044,15 @@
         "E": "Dostosuj częstotliwość odświeżania płótna podczas pisania. Wyższa liczba klatek może zapewnić płynniejsze ślady, ale zwiększa zużycie zasobów."
       },
       "RenderingSection": "Renderowanie i zgodność",
+      "RenderAcceleration":
+      {
+        "N": "Przyspieszanie renderowania płótna",
+        "Automatic": "Automatyczny",
+        "Hardware": "Przyspieszanie sprzętowe",
+        "Software": "Renderowanie programowe"
+      },
+      "AdvancedSection": "Ustawienia zaawansowane",
+      "LowLevelSection": "Ustawienia niskopoziomowe",
       "PresentationMode":
       {
         "N": "Metoda przezroczystego wyświetlania płótna pulpitu",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "Łańcuch wymiany płótna pulpitu",
-        "E": "UpdateLayeredWindow nie obsługuje łańcuchów wymiany."
+        "E": "UpdateLayeredWindow nie obsługuje łańcuchów wymiany.",
+        "Flip": "Łańcuch wymiany Flip",
+        "BitBlt": "Łańcuch wymiany BitBlt"
       },
       "CompositionAlign":
       {
@@ -1062,13 +1075,12 @@
       },
       "WaitableWait":
       {
-        "N": "Włącz oczekiwanie w trybie waitable",
+        "N": "Włącz oczekiwanie w trybie Waitable",
         "E": "W systemie Windows 8.1 i nowszych zapobiega opóźnieniom spowodowanym kolejkowaniem klatek."
       },
       "UlwAsyncReadback":
       {
-        "N": "Asynchroniczny odczyt zwrotny w trybie ULW",
-        "E": "W systemach wyświetlających przez ULW, takich jak Windows 7, pozwala obliczeniom CPU i rysowaniu GPU przebiegać jednocześnie oraz przesyła klatki w rytmie odświeżania ekranu, zmniejszając zacinanie i opóźnienie."
+        "N": "Asynchroniczny odczyt zwrotny w trybie UpdateLayeredWindow"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "Włącz sprzętowe przyspieszanie rysowania",
-          "E": "Używaj procesora graficznego do rysowania płótna; po wyłączeniu używane jest renderowanie programowe.",
-          "Note": "Spróbuj wyłączyć tę opcję, jeśli rysowanie działa nieprawidłowo lub bardzo wolno. Uruchom ponownie Inkeys, aby zastosować."
-        },
         "ZhaoxinCompatibility":
         {
           "N": "Włącz tryb zgodności Zhaoxin",

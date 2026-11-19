@@ -2363,7 +2363,6 @@ SettingSessionCoroutine RunSettingSession()
 				bool DebugMode = Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable;
 				bool ShowFrameRate = Inkeys::config.Experimental.Inkeys3.UI3.Debug.ShowFrameRate;
 				bool CanvasDebug = IsCanvasDebugEnabled();
-				bool EnableHardwareAcceleration = Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration;
 				bool EnableZhaoxinCompatibility = Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 				bool EnableWaitableWait = Inkeys::config.Experimental.Inkeys3.Draw3.EnableWaitableWait;
 				bool EnableUlwAsyncReadback = Inkeys::config.Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback;
@@ -2585,6 +2584,7 @@ SettingSessionCoroutine RunSettingSession()
 					tabWindow = 18,
 					tabKeys = 19,
 					tabLogsConfig = 20,
+					tabAppearance = 21,
 				};
 				enum settingPlugInTabEnum
 				{
@@ -2880,9 +2880,9 @@ SettingSessionCoroutine RunSettingSession()
 					ImGuiChildFlags_AutoResizeY);
 
 				// 页面只提交内容与业务事件，尺寸及文本对齐由 Design 层负责。
-				const bool sectionPage = destination.page == Design::PageId::Window || destination.page == Design::PageId::Keys
-					|| destination.page == Design::PageId::LogsConfig;
-				// 窗口与显示器、按键与快捷键、日志共用通用页的草稿与事件接线；配置页由独立业务分支承载。
+				const bool sectionPage = destination.page == Design::PageId::Appearance || destination.page == Design::PageId::Window
+					|| destination.page == Design::PageId::Keys || destination.page == Design::PageId::LogsConfig;
+				// 外观、窗口与显示器、按键与快捷键、日志共用通用页的草稿与事件接线；配置页由独立业务分支承载。
 				const int contentPage = destination.page == Design::PageId::LogsConfig
 					&& destination.section == Design::Section::LogsConfiguration ? settingTabEnum::tabConfiguration
 					: sectionPage ? settingTabEnum::tab2 : settingTab;
@@ -2903,7 +2903,7 @@ SettingSessionCoroutine RunSettingSession()
 						static_cast<float>(max(1, settingSign[7].height)) / max(1, settingSign[7].width) }, &homeMotion);
 					switch (action)
 					{
-					case HomeAction::Appearance: navigateTo({ Design::PageId::General, Design::Section::Appearance }); break;
+					case HomeAction::Appearance: navigateTo({ Design::PageId::Appearance, Design::Section::AppearanceTheme }); break;
 					case HomeAction::Shortcuts: navigateTo({ Design::PageId::Keys }); break;
 					case HomeAction::Draw: navigateTo({ Design::PageId::Draw, Design::Section::DrawInteraction }); drawingSubpage = Design::DrawingSubpage::Overview; break;
 					case HomeAction::Plugins: settingTab = settingTabEnum::tab4; settingPlugInTab = settingPlugInTabEnum::tabPlug1; break;
@@ -2993,22 +2993,6 @@ SettingSessionCoroutine RunSettingSession()
 							QueueConfigWrite();
 						}
 					}
-
-					Design::SectionHeader(
-						IA(I18nKey.SettingsUI.Configuration.CanvasSave.N).c_str());
-					{
-						bool autoSave = Inkeys::config.Drawing.AutoSave.Enable;
-						if (Design::ToggleRow("##configuration-history",
-							IA(I18nKey.SettingsUI.Configuration.CanvasSave.Enable).c_str(),
-							IA(I18nKey.SettingsUI.Configuration.CanvasSave.EnableE).c_str(), "\ue81c",
-							autoSave))
-						{
-							Inkeys::config.Drawing.AutoSave.Enable = autoSave;
-							SyncDraw3State();
-							QueueConfigWrite();
-						}
-					}
-
 					break;
 				}
 				// 软件版本
@@ -3479,7 +3463,7 @@ SettingSessionCoroutine RunSettingSession()
 						if (events.whiteboardDockDirectionChanged) workspace.Whiteboard.Direction = draft.whiteboardDockDirection;
 						QueueConfigWrite();
 					}
-					if (destination.section == Design::Section::Appearance)
+					if (destination.page == Design::PageId::Appearance)
 					{
 						if (events.themeModeChanged)
 						{
@@ -3865,7 +3849,27 @@ SettingSessionCoroutine RunSettingSession()
 						if (saveEntries || events.touchAreaChanged) QueueConfigWrite();
 						break;
 					}
-					// 绘制页拆为两个子页：绘制效果（笔迹视觉）与交互与手势（输入、橡皮、光标、白板、触觉）。
+					// 绘制·保存：画布自动保存（原位于日志与配置·配置），不显示画布恢复提示。
+					if (destination.section == Design::Section::DrawSave)
+					{
+						Design::PageHeader(IA(I18nKey.SettingsUI.Design.DrawSave).c_str());
+						Design::SectionHeader(
+							IA(I18nKey.SettingsUI.Configuration.CanvasSave.N).c_str());
+						{
+							bool autoSave = Inkeys::config.Drawing.AutoSave.Enable;
+							if (Design::ToggleRow("##configuration-history",
+								IA(I18nKey.SettingsUI.Configuration.CanvasSave.Enable).c_str(),
+								IA(I18nKey.SettingsUI.Configuration.CanvasSave.EnableE).c_str(), "\ue81c",
+								autoSave))
+							{
+								Inkeys::config.Drawing.AutoSave.Enable = autoSave;
+								SyncDraw3State();
+								QueueConfigWrite();
+							}
+						}
+						break;
+					}
+					// 其余两个子页：绘制效果（笔迹视觉）与交互与手势（输入、橡皮、光标、白板、触觉）。
 					const bool effectsPage = destination.section == Design::Section::DrawEffects;
 					Design::PageHeader(IA(effectsPage ? I18nKey.SettingsUI.Design.DrawEffects : I18nKey.SettingsUI.Design.DrawInteraction).c_str());
 
@@ -4681,28 +4685,57 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Performance.RenderingSection).c_str());
 					// 启动偏好统一保存，运行中的画布继续使用已建立的设备与交换链。
-					if (Design::ToggleRow("##draw3-hardware", IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.N).c_str(),
-						IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableHardwareAcceleration,
-						IA(I18nKey.SettingsUI.Experimental.Draw3.HardwareAcceleration.Note).c_str()))
-					{
-						Inkeys::config.Experimental.Inkeys3.Draw3.EnableHardwareAcceleration = Experimental.Inkeys3.EnableHardwareAcceleration;
-						QueueConfigWrite();
-					}
 					auto& draw3Config = Inkeys::config.Experimental.Inkeys3.Draw3;
 					const auto& renderingText = I18nKey.SettingsUI.Performance;
+					// 只需提示重启生效的行也保留 i 样式，不把提示提升为说明文字。
+					const string restartRequired = IA(I18nKey.SettingsUI.Design.RestartRequired);
+					int acceleration = draw3Config.RenderAcceleration.load();
+					if (Design::ComboRow("##draw3-acceleration", IA(renderingText.RenderAcceleration.N).c_str(),
+						nullptr, "\ue7f4", acceleration,
+						{ IA(renderingText.RenderAcceleration.Automatic) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+							IA(renderingText.RenderAcceleration.Hardware), IA(renderingText.RenderAcceleration.Software) },
+						restartRequired.c_str(), true, true))
+					{
+						draw3Config.RenderAcceleration = acceleration;
+						QueueConfigWrite();
+					}
+					if (Design::ToggleRow("##draw3-zhaoxin", IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.N).c_str(),
+						IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableZhaoxinCompatibility, restartRequired.c_str()))
+					{
+						Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility = Experimental.Inkeys3.EnableZhaoxinCompatibility;
+						QueueConfigWrite();
+					}
+
+					Design::SectionHeader(IA(renderingText.AdvancedSection).c_str());
+					{
+						bool unthrottledMouseMove = Inkeys::config.Experimental.Inkeys3.Draw3.UnthrottledMouseMoveWhileDrawing;
+						if (Design::ToggleRow("##draw3-unthrottled-mouse-move", IA(I18nKey.SettingsUI.Performance.UnthrottledMouseMove.N).c_str(),
+							IA(I18nKey.SettingsUI.Performance.UnthrottledMouseMove.E).c_str(), "\ue7f4", unthrottledMouseMove))
+						{
+							Inkeys::config.Experimental.Inkeys3.Draw3.UnthrottledMouseMoveWhileDrawing = unthrottledMouseMove;
+							SyncDraw3State(); // 即时生效：随光标设置下发到窗口线程。
+							QueueConfigWrite();
+						}
+					}
+
+					Design::SectionHeader(IA(renderingText.LowLevelSection).c_str());
 					int presentation = draw3Config.PresentationMode.load();
 					if (Design::ComboRow("##draw3-presentation", IA(renderingText.PresentationMode.N).c_str(),
 						nullptr, "\ue7f4", presentation,
 						{ IA(renderingText.PresentationMode.Automatic) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
-							"DirectComposition", "Windows 7 Desktop Window Manager", "UpdateLayeredWindow" }))
+							"DirectComposition", "Win7dwm", "UpdateLayeredWindow" },
+						restartRequired.c_str(), true, true))
 					{
 						draw3Config.PresentationMode = presentation;
 						QueueConfigWrite();
 					}
+					// 下拉顺序与 Draw3SwapChainPreference 一致：自动（目前固定 Flip）/ Flip / BitBlt（Sequential）。
 					int swapChain = draw3Config.SwapChainMode.load();
 					if (Design::ComboRow("##draw3-swapchain", IA(renderingText.SwapChainMode.N).c_str(),
 						IA(renderingText.SwapChainMode.E).c_str(), "\ue7f4", swapChain,
-						{ "DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL", "DXGI_SWAP_EFFECT_SEQUENTIAL" }))
+						{ IA(renderingText.PresentationMode.Automatic) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+							IA(renderingText.SwapChainMode.Flip), IA(renderingText.SwapChainMode.BitBlt) },
+						restartRequired.c_str()))
 					{
 						draw3Config.SwapChainMode = swapChain;
 						QueueConfigWrite();
@@ -4715,38 +4748,22 @@ SettingSessionCoroutine RunSettingSession()
 					if (Design::ComboRow("##draw3-composition-align", IA(alignText.N).c_str(),
 						nullptr, "\ue7f4", alignment,
 						{ IA(alignText.Always), IA(alignText.Off), IA(alignText.UlwOnly), IA(alignText.DcompOnly) },
-						IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
+						restartRequired.c_str(), true, true))
 					{
 						draw3Config.UlwCompositionAlign = alignment == 0 || alignment == 2;
 						draw3Config.DcompCompositionAlign = alignment == 0 || alignment == 3;
 						QueueConfigWrite();
 					}
 					if (Design::ToggleRow("##draw3-waitable-wait", IA(I18nKey.SettingsUI.Performance.WaitableWait.N).c_str(),
-						IA(I18nKey.SettingsUI.Performance.WaitableWait.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableWaitableWait, IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
+						IA(I18nKey.SettingsUI.Performance.WaitableWait.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableWaitableWait, restartRequired.c_str()))
 					{
 						Inkeys::config.Experimental.Inkeys3.Draw3.EnableWaitableWait = Experimental.Inkeys3.EnableWaitableWait;
 						QueueConfigWrite();
 					}
 					if (Design::ToggleRow("##draw3-ulw-async-readback", IA(I18nKey.SettingsUI.Performance.UlwAsyncReadback.N).c_str(),
-						IA(I18nKey.SettingsUI.Performance.UlwAsyncReadback.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableUlwAsyncReadback, IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
+						nullptr, "\ue7f4", Experimental.Inkeys3.EnableUlwAsyncReadback, restartRequired.c_str(), nullptr, true))
 					{
 						Inkeys::config.Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback = Experimental.Inkeys3.EnableUlwAsyncReadback;
-						QueueConfigWrite();
-					}
-					{
-						bool unthrottledMouseMove = Inkeys::config.Experimental.Inkeys3.Draw3.UnthrottledMouseMoveWhileDrawing;
-						if (Design::ToggleRow("##draw3-unthrottled-mouse-move", IA(I18nKey.SettingsUI.Performance.UnthrottledMouseMove.N).c_str(),
-							IA(I18nKey.SettingsUI.Performance.UnthrottledMouseMove.E).c_str(), "\ue7f4", unthrottledMouseMove))
-						{
-							Inkeys::config.Experimental.Inkeys3.Draw3.UnthrottledMouseMoveWhileDrawing = unthrottledMouseMove;
-							SyncDraw3State(); // 即时生效：随光标设置下发到窗口线程。
-							QueueConfigWrite();
-						}
-					}
-					if (Design::ToggleRow("##draw3-zhaoxin", IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.N).c_str(),
-						IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableZhaoxinCompatibility, IA(I18nKey.SettingsUI.Design.RestartRequired).c_str()))
-					{
-						Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility = Experimental.Inkeys3.EnableZhaoxinCompatibility;
 						QueueConfigWrite();
 					}
 					break;

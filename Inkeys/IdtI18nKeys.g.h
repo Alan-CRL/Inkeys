@@ -351,6 +351,7 @@ inline constexpr struct I18nKeyRoot
             const char* GeneralAppearance = "SettingsUI/Design/GeneralAppearance";
             const char* NavWindowDisplay = "SettingsUI/Design/NavWindowDisplay";
             const char* WindowLayout = "SettingsUI/Design/WindowLayout";
+            const char* WindowScene = "SettingsUI/Design/WindowScene";
             const char* WindowBehavior = "SettingsUI/Design/WindowBehavior";
             const char* WindowDisplay = "SettingsUI/Design/WindowDisplay";
             const char* NavKeysShortcuts = "SettingsUI/Design/NavKeysShortcuts";
@@ -359,6 +360,7 @@ inline constexpr struct I18nKeyRoot
             const char* LogsConfiguration = "SettingsUI/Design/LogsConfiguration";
             const char* DrawEffects = "SettingsUI/Design/DrawEffects";
             const char* DrawInteraction = "SettingsUI/Design/DrawInteraction";
+            const char* DrawSave = "SettingsUI/Design/DrawSave";
             const char* OperationModeSection = "SettingsUI/Design/OperationModeSection";
             const char* IconArrangementSection = "SettingsUI/Design/IconArrangementSection";
             const char* AnimationSection = "SettingsUI/Design/AnimationSection";
@@ -1045,6 +1047,15 @@ inline constexpr struct I18nKeyRoot
                 const char* E = "SettingsUI/Performance/CanvasFrameRate/E";
             } CanvasFrameRate{};
             const char* RenderingSection = "SettingsUI/Performance/RenderingSection";
+            struct Node__SettingsUI__Performance__RenderAcceleration
+            {
+                const char* N = "SettingsUI/Performance/RenderAcceleration/N";
+                const char* Automatic = "SettingsUI/Performance/RenderAcceleration/Automatic";
+                const char* Hardware = "SettingsUI/Performance/RenderAcceleration/Hardware";
+                const char* Software = "SettingsUI/Performance/RenderAcceleration/Software";
+            } RenderAcceleration{};
+            const char* AdvancedSection = "SettingsUI/Performance/AdvancedSection";
+            const char* LowLevelSection = "SettingsUI/Performance/LowLevelSection";
             struct Node__SettingsUI__Performance__PresentationMode
             {
                 const char* N = "SettingsUI/Performance/PresentationMode/N";
@@ -1054,6 +1065,8 @@ inline constexpr struct I18nKeyRoot
             {
                 const char* N = "SettingsUI/Performance/SwapChainMode/N";
                 const char* E = "SettingsUI/Performance/SwapChainMode/E";
+                const char* Flip = "SettingsUI/Performance/SwapChainMode/Flip";
+                const char* BitBlt = "SettingsUI/Performance/SwapChainMode/BitBlt";
             } SwapChainMode{};
             struct Node__SettingsUI__Performance__CompositionAlign
             {
@@ -1071,7 +1084,6 @@ inline constexpr struct I18nKeyRoot
             struct Node__SettingsUI__Performance__UlwAsyncReadback
             {
                 const char* N = "SettingsUI/Performance/UlwAsyncReadback/N";
-                const char* E = "SettingsUI/Performance/UlwAsyncReadback/E";
             } UlwAsyncReadback{};
             struct Node__SettingsUI__Performance__UnthrottledMouseMove
             {
@@ -1142,12 +1154,6 @@ inline constexpr struct I18nKeyRoot
             } UI3{};
             struct Node__SettingsUI__Experimental__Draw3
             {
-                struct Node__SettingsUI__Experimental__Draw3__HardwareAcceleration
-                {
-                    const char* N = "SettingsUI/Experimental/Draw3/HardwareAcceleration/N";
-                    const char* E = "SettingsUI/Experimental/Draw3/HardwareAcceleration/E";
-                    const char* Note = "SettingsUI/Experimental/Draw3/HardwareAcceleration/Note";
-                } HardwareAcceleration{};
                 struct Node__SettingsUI__Experimental__Draw3__ZhaoxinCompatibility
                 {
                     const char* N = "SettingsUI/Experimental/Draw3/ZhaoxinCompatibility/N";

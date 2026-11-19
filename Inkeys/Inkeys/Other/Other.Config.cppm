@@ -54,7 +54,10 @@ export namespace Inkeys
 	}
 
 	enum class Draw3PresentationPreference { Automatic, DirectComposition, Win7Dwm, Ulw };
-	enum class Draw3SwapChainPreference { Flip, Sequential };
+	// 自动目前固定使用 Flip；Win7Dwm 等路径确认后再按呈现方式选择。
+	enum class Draw3SwapChainPreference { Automatic, Flip, Sequential };
+	// 自动：硬件优先、失败回退 WARP；硬件加速：只用硬件、失败不回退；软件加速：直接使用 WARP。
+	enum class Draw3RenderAccelerationPreference { Automatic, Hardware, Software };
 
 	enum class ConfigUploadMode
 	{
@@ -579,8 +582,8 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnectPenTail, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PresentationMode, static_cast<int>(Draw3PresentationPreference::Automatic)) \
-				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SwapChainMode, static_cast<int>(Draw3SwapChainPreference::Flip)) \
-				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableHardwareAcceleration, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SwapChainMode, static_cast<int>(Draw3SwapChainPreference::Automatic)) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, RenderAcceleration, static_cast<int>(Draw3RenderAccelerationPreference::Automatic)) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableZhaoxinCompatibility, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableWaitableWait, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableUlwAsyncReadback, true) \

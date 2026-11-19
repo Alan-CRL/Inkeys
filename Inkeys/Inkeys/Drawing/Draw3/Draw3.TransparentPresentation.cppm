@@ -77,6 +77,7 @@ export namespace Inkeys::Drawing::Draw3
 		Shutdown::FailedCleanupSignal failedCleanup;
 		// 与 Host 启动快照一致，运行中改设置不影响设备恢复。
 		bool enableHardwareAcceleration = true;
+		bool allowWarpFallback = true;
 		bool enableZhaoxinCompatibility = true;
 		// 仅对取得帧延迟句柄的 DComp waitable 交换链生效；关闭时保留标志但不等待。
 		bool enableWaitableWait = true;

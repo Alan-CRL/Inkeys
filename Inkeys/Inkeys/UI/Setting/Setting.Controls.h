@@ -73,7 +73,8 @@ namespace Inkeys::UI::Setting::Design
 		const char* glyph, float actionWidthDip, float actionHeightDip,
 		const std::function<void(const LayoutRect&)>& action,
 		ImU32 fill = Card, ImU32 border = Stroke, ImTextureID iconTexture = 0,
-		ImU32 iconTint = IM_COL32_WHITE, bool keepDescriptionInline = false, const char* note = nullptr, bool showNoteIcon = true, const InlineRowContent* inlineContent = nullptr);
+		ImU32 iconTint = IM_COL32_WHITE, bool keepDescriptionInline = false, const char* note = nullptr, bool showNoteIcon = true, const InlineRowContent* inlineContent = nullptr,
+		bool keepNoteAsInfo = false); // keepNoteAsInfo：无说明时 note 仍以 i 提示显示，不提升为说明文字。
 	bool ToggleAction(const LayoutRect& bounds, bool& value);
 	bool SliderAction(const LayoutRect& bounds, float& value, float minimum,
 		float maximum, bool& active);
@@ -143,7 +144,7 @@ namespace Inkeys::UI::Setting::Design
 	void SetStateLabels(const char* onText, const char* offText);
 	void SetCopyLabels(const char* prompt, const char* copied);
 	bool ToggleRow(const char* id, const char* title, const char* description,
-		const char* glyph, bool& value, const char* note = nullptr, const InlineRowContent* inlineContent = nullptr);
+		const char* glyph, bool& value, const char* note = nullptr, const InlineRowContent* inlineContent = nullptr, bool keepNoteAsInfo = false);
 	// 父行下方“标签 + 右对齐下拉框”内联区；visibilityId 非空时按 visible 复用条件动画收起/展开，
 	// 收起期间禁交互、保留选择且不产生事件。返回值引用的参数须存活到对应行提交结束。
 	InlineRowContent InlineCombo(const char* id, const char* label, int& value,
@@ -167,7 +168,8 @@ namespace Inkeys::UI::Setting::Design
 	// 每组独立选中索引；72 DIP 按钮与真实标签测高共同换行，可复用“跟随默认”等自定义项。
 	InlineRowContent InlinePreviewSelector(const char* id, std::vector<PreviewSelectorGroup> groups);
 	bool ComboRow(const char* id, const char* title, const char* description,
-		const char* glyph, int& value, const std::vector<std::string>& items, const char* note = nullptr, bool showNoteIcon = true);
+		const char* glyph, int& value, const std::vector<std::string>& items, const char* note = nullptr, bool showNoteIcon = true,
+		bool keepNoteAsInfo = false);
 	// 与 ComboRow 相同，但在下拉框左侧预留一块预览区；preview 收到该区域的物理像素矩形。
 	bool ComboPreviewRow(const char* id, const char* title, const char* description,
 		const char* glyph, int& value, const std::vector<std::string>& items,

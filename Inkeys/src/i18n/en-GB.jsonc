@@ -348,6 +348,7 @@
       "GeneralAppearance": "Appearance and animations",
       "NavWindowDisplay": "Windows and displays",
       "WindowLayout": "Window",
+      "WindowScene": "Scenes",
       "WindowBehavior": "Behaviour",
       "WindowDisplay": "Displays",
       "NavKeysShortcuts": "Keys and shortcuts",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "Configuration",
       "DrawEffects": "Drawing effects",
       "DrawInteraction": "Interaction and gestures",
+      "DrawSave": "Saving",
       "OperationModeSection": "Operation mode",
       "IconArrangementSection": "Icon arrangement",
       "AnimationSection": "Animations",
@@ -1042,6 +1044,15 @@
         "E": "Adjust how often the canvas updates while writing. Higher frame rates can make ink smoother while using more resources."
       },
       "RenderingSection": "Rendering and compatibility",
+      "RenderAcceleration":
+      {
+        "N": "Canvas rendering acceleration",
+        "Automatic": "Automatic",
+        "Hardware": "Hardware acceleration",
+        "Software": "Software rendering"
+      },
+      "AdvancedSection": "Advanced settings",
+      "LowLevelSection": "Low-level settings",
       "PresentationMode":
       {
         "N": "Desktop canvas transparency method",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "Desktop canvas swap chain",
-        "E": "UpdateLayeredWindow does not support swap chains."
+        "E": "UpdateLayeredWindow does not support swap chains.",
+        "Flip": "Flip swap chain",
+        "BitBlt": "BitBlt swap chain"
       },
       "CompositionAlign":
       {
@@ -1062,13 +1075,12 @@
       },
       "WaitableWait":
       {
-        "N": "Enable waiting in waitable mode",
+        "N": "Enable waiting in Waitable mode",
         "E": "On Windows 8.1 and later, prevents latency caused by queued frames."
       },
       "UlwAsyncReadback":
       {
-        "N": "Asynchronous readback in ULW mode",
-        "E": "On systems that present through ULW, such as Windows 7, lets CPU work overlap GPU drawing and submits frames in step with the display refresh, reducing stutter and latency."
+        "N": "Asynchronous readback in UpdateLayeredWindow mode"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "Enable drawing hardware acceleration",
-          "E": "Use the GPU to draw the canvas, or software rendering when disabled.",
-          "Note": "Try disabling this if drawing is incorrect or very slow. Restart Inkeys to apply."
-        },
         "ZhaoxinCompatibility":
         {
           "N": "Enable Zhaoxin compatibility mode",

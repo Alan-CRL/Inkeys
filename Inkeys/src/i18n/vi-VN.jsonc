@@ -348,6 +348,7 @@
       "GeneralAppearance": "Giao diện và hiệu ứng",
       "NavWindowDisplay": "Cửa sổ và màn hình",
       "WindowLayout": "Cửa sổ",
+      "WindowScene": "Tình huống",
       "WindowBehavior": "Hành vi",
       "WindowDisplay": "Màn hình",
       "NavKeysShortcuts": "Phím và phím tắt",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "Cấu hình",
       "DrawEffects": "Hiệu ứng vẽ",
       "DrawInteraction": "Tương tác và cử chỉ",
+      "DrawSave": "Lưu",
       "OperationModeSection": "Chế độ thao tác",
       "IconArrangementSection": "Bố trí biểu tượng",
       "AnimationSection": "Hiệu ứng",
@@ -1042,6 +1044,15 @@
         "E": "Điều chỉnh tần suất làm mới trang vẽ khi viết. Tốc độ khung hình cao hơn giúp nét mượt hơn nhưng dùng nhiều tài nguyên hơn."
       },
       "RenderingSection": "Kết xuất và tương thích",
+      "RenderAcceleration":
+      {
+        "N": "Tăng tốc kết xuất trang vẽ",
+        "Automatic": "Tự động",
+        "Hardware": "Tăng tốc phần cứng",
+        "Software": "Kết xuất phần mềm"
+      },
+      "AdvancedSection": "Cài đặt nâng cao",
+      "LowLevelSection": "Cài đặt cấp thấp",
       "PresentationMode":
       {
         "N": "Phương thức hiển thị trong suốt của khung vẽ trên màn hình nền",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "Chuỗi hoán đổi của khung vẽ trên màn hình nền",
-        "E": "UpdateLayeredWindow không hỗ trợ chuỗi hoán đổi."
+        "E": "UpdateLayeredWindow không hỗ trợ chuỗi hoán đổi.",
+        "Flip": "Chuỗi hoán đổi Flip",
+        "BitBlt": "Chuỗi hoán đổi BitBlt"
       },
       "CompositionAlign":
       {
@@ -1062,13 +1075,12 @@
       },
       "WaitableWait":
       {
-        "N": "Bật chờ trong chế độ waitable",
+        "N": "Bật chờ trong chế độ Waitable",
         "E": "Trên Windows 8.1 trở lên, ngăn độ trễ do dồn khung hình."
       },
       "UlwAsyncReadback":
       {
-        "N": "Đọc ngược bất đồng bộ ở chế độ ULW",
-        "E": "Trên các hệ thống hiển thị qua ULW như Windows 7, cho phép CPU tính toán và GPU vẽ cùng lúc, đồng thời gửi khung hình theo nhịp làm mới của màn hình để giảm giật và độ trễ."
+        "N": "Đọc ngược bất đồng bộ ở chế độ UpdateLayeredWindow"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "Bật tăng tốc phần cứng khi vẽ",
-          "E": "Dùng GPU để vẽ trang vẽ; khi tắt sẽ dùng kết xuất phần mềm.",
-          "Note": "Thử tắt nếu nét vẽ bị lỗi hoặc rất chậm. Khởi động lại Inkeys để áp dụng."
-        },
         "ZhaoxinCompatibility":
         {
           "N": "Bật chế độ tương thích Zhaoxin",

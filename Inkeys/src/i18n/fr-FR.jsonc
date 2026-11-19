@@ -348,6 +348,7 @@
       "GeneralAppearance": "Apparence et animations",
       "NavWindowDisplay": "Fenêtres et écrans",
       "WindowLayout": "Fenêtre",
+      "WindowScene": "Scènes",
       "WindowBehavior": "Comportement",
       "WindowDisplay": "Écrans",
       "NavKeysShortcuts": "Touches et raccourcis",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "Configuration",
       "DrawEffects": "Effets de dessin",
       "DrawInteraction": "Interaction et gestes",
+      "DrawSave": "Enregistrement",
       "OperationModeSection": "Mode d’utilisation",
       "IconArrangementSection": "Disposition des icônes",
       "AnimationSection": "Animations",
@@ -1042,6 +1044,15 @@
         "E": "Régler la fréquence de rafraîchissement du canevas pendant l’écriture. Une fréquence plus élevée rend le tracé plus fluide, mais utilise davantage de ressources."
       },
       "RenderingSection": "Rendu et compatibilité",
+      "RenderAcceleration":
+      {
+        "N": "Accélération du rendu du canevas",
+        "Automatic": "Automatique",
+        "Hardware": "Accélération matérielle",
+        "Software": "Rendu logiciel"
+      },
+      "AdvancedSection": "Paramètres avancés",
+      "LowLevelSection": "Paramètres de bas niveau",
       "PresentationMode":
       {
         "N": "Mode de transparence du canevas du bureau",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "Chaîne d’échange du canevas du bureau",
-        "E": "UpdateLayeredWindow ne prend pas en charge les chaînes d’échange."
+        "E": "UpdateLayeredWindow ne prend pas en charge les chaînes d’échange.",
+        "Flip": "Chaîne d’échange Flip",
+        "BitBlt": "Chaîne d’échange BitBlt"
       },
       "CompositionAlign":
       {
@@ -1062,13 +1075,12 @@
       },
       "WaitableWait":
       {
-        "N": "Activer l’attente en mode waitable",
+        "N": "Activer l’attente en mode Waitable",
         "E": "Sous Windows 8.1 et versions ultérieures, évite la latence due à l’accumulation d’images."
       },
       "UlwAsyncReadback":
       {
-        "N": "Relecture asynchrone en mode ULW",
-        "E": "Sur les systèmes qui affichent via ULW, comme Windows 7, permet au calcul CPU et au dessin GPU de se dérouler en parallèle et soumet les images au rythme de rafraîchissement de l'écran, pour réduire les saccades et la latence."
+        "N": "Relecture asynchrone en mode UpdateLayeredWindow"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "Activer l’accélération matérielle du dessin",
-          "E": "Utiliser le processeur graphique pour dessiner le canevas ; si désactivé, utiliser le rendu logiciel.",
-          "Note": "Essayez de désactiver si le dessin est incorrect ou très lent. Redémarrez Inkeys pour appliquer."
-        },
         "ZhaoxinCompatibility":
         {
           "N": "Activer le mode de compatibilité Zhaoxin",

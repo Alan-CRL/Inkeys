@@ -25,13 +25,13 @@ namespace Inkeys::Drawing::Draw3
 	namespace
 	{
 		template <typename CreateDevice>
-		HRESULT CreateSelectedDevice(bool enableHardwareAcceleration, D3D_DRIVER_TYPE& actualDriver,
+		HRESULT CreateSelectedDevice(bool enableHardwareAcceleration, bool allowWarpFallback, D3D_DRIVER_TYPE& actualDriver,
 			CreateDevice&& createDevice)
 		{
-			// 显式关闭时跳过硬件尝试；失败回退只适用于已请求的硬件路径。
+			// 显式关闭时跳过硬件尝试；失败回退只适用于已请求且允许回退的硬件路径（“硬件加速”档不回退）。
 			actualDriver = enableHardwareAcceleration ? D3D_DRIVER_TYPE_HARDWARE : D3D_DRIVER_TYPE_WARP;
 			HRESULT result = createDevice(actualDriver);
-			if (enableHardwareAcceleration && FAILED(result))
+			if (enableHardwareAcceleration && allowWarpFallback && FAILED(result))
 			{
 				actualDriver = D3D_DRIVER_TYPE_WARP;
 				result = createDevice(actualDriver);
@@ -112,13 +112,13 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
-	bool InitializeGraphicsDevice(GraphicsDeviceResources& resources, bool enableHardwareAcceleration)
+	bool InitializeGraphicsDevice(GraphicsDeviceResources& resources, bool enableHardwareAcceleration, bool allowWarpFallback)
 	{
 		// 重建时不能让新 device 与旧 adapter/factory 混用。
 		resources = {};
 		const UINT creationFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT; // 透明窗口路径需要 BGRA backbuffer。
 		HRESULT hardwareResult = S_OK;
-		HRESULT result = CreateSelectedDevice(enableHardwareAcceleration, resources.driverType,
+		HRESULT result = CreateSelectedDevice(enableHardwareAcceleration, allowWarpFallback, resources.driverType,
 			[&](D3D_DRIVER_TYPE driverType)
 			{
 				if (driverType == D3D_DRIVER_TYPE_WARP && enableHardwareAcceleration)
@@ -132,10 +132,14 @@ namespace Inkeys::Drawing::Draw3
 		{
 			// 跳过硬件时不输出虚构的硬件尝试结果。
 			DiagnosticOutput::Line line(DiagnosticOutput::OutError);
-			line << "[Draw3Diag][device] final=failed hardware_attempted=" << enableHardwareAcceleration;
+			line << "[Draw3Diag][device] final=failed hardware_attempted=" << enableHardwareAcceleration
+				<< " warp_fallback=" << allowWarpFallback;
 			if (enableHardwareAcceleration)
 				line << " hardware_hresult=0x" << std::hex << static_cast<unsigned long>(hardwareResult) << std::dec;
-			line << " warp_hresult=0x" << std::hex << static_cast<unsigned long>(result) << std::dec << std::endl;
+			// 禁止回退时未尝试 WARP，不输出虚构的 WARP 结果。
+			if (!enableHardwareAcceleration || allowWarpFallback)
+				line << " warp_hresult=0x" << std::hex << static_cast<unsigned long>(result) << std::dec;
+			line << std::endl;
 			return false;
 		}
 
@@ -184,24 +188,29 @@ namespace Inkeys::Drawing::Draw3
 	{
 		struct Case
 		{
-			bool enabled;
+			bool enabled, fallback;
 			HRESULT hardwareResult, warpResult;
 			D3D_DRIVER_TYPE expectedDriver;
 			unsigned expectedAttempts;
 		};
 		constexpr Case cases[] = {
-			{ true, S_OK, E_NOTIMPL, D3D_DRIVER_TYPE_HARDWARE, 1 },
-			{ true, E_FAIL, S_OK, D3D_DRIVER_TYPE_WARP, 2 },
-			{ true, E_FAIL, E_NOTIMPL, D3D_DRIVER_TYPE_UNKNOWN, 2 },
-			{ false, E_FAIL, S_OK, D3D_DRIVER_TYPE_WARP, 1 },
-			{ false, S_OK, E_NOTIMPL, D3D_DRIVER_TYPE_UNKNOWN, 1 },
+			{ true, true, S_OK, E_NOTIMPL, D3D_DRIVER_TYPE_HARDWARE, 1 },
+			{ true, true, E_FAIL, S_OK, D3D_DRIVER_TYPE_WARP, 2 },
+			{ true, true, E_FAIL, E_NOTIMPL, D3D_DRIVER_TYPE_UNKNOWN, 2 },
+			{ false, true, E_FAIL, S_OK, D3D_DRIVER_TYPE_WARP, 1 },
+			{ false, true, S_OK, E_NOTIMPL, D3D_DRIVER_TYPE_UNKNOWN, 1 },
+			// “硬件加速”档：硬件成功照常使用，失败不回退 WARP。
+			{ true, false, S_OK, S_OK, D3D_DRIVER_TYPE_HARDWARE, 1 },
+			{ true, false, E_FAIL, S_OK, D3D_DRIVER_TYPE_UNKNOWN, 1 },
+			// 软件档不受回退开关影响。
+			{ false, false, E_FAIL, S_OK, D3D_DRIVER_TYPE_WARP, 1 },
 		};
 		for (const auto& test : cases)
 		{
 			unsigned attempts = 0;
 			bool orderValid = true;
 			D3D_DRIVER_TYPE actual = D3D_DRIVER_TYPE_UNKNOWN;
-			const HRESULT result = CreateSelectedDevice(test.enabled, actual,
+			const HRESULT result = CreateSelectedDevice(test.enabled, test.fallback, actual,
 				[&](D3D_DRIVER_TYPE requested)
 				{
 					const auto expected = test.enabled && attempts == 0
@@ -211,14 +220,14 @@ namespace Inkeys::Drawing::Draw3
 					return requested == D3D_DRIVER_TYPE_HARDWARE ? test.hardwareResult : test.warpResult;
 				});
 			if (!orderValid || attempts != test.expectedAttempts || actual != test.expectedDriver ||
-				result != (test.enabled && SUCCEEDED(test.hardwareResult) ? test.hardwareResult : test.warpResult))
+				result != (test.enabled && (SUCCEEDED(test.hardwareResult) || !test.fallback) ? test.hardwareResult : test.warpResult))
 			{
 				std::fputs("[Draw3DevicePolicy] FAIL: hardware/WARP selection or fallback order\n", stderr);
 				return 1;
 			}
 		}
 		if (RunDiagnosticFormattingProductionTest() != 0) return 1;
-		std::fputs("[Draw3DevicePolicy] PASS: direct WARP, hardware preference and failure fallback\n", stderr);
+		std::fputs("[Draw3DevicePolicy] PASS: direct WARP, hardware preference, failure fallback and hardware-only\n", stderr);
 		return 0;
 	}
 

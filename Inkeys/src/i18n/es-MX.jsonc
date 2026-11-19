@@ -348,6 +348,7 @@
       "GeneralAppearance": "Apariencia y animaciones",
       "NavWindowDisplay": "Ventanas y pantallas",
       "WindowLayout": "Ventana",
+      "WindowScene": "Escenas",
       "WindowBehavior": "Comportamiento",
       "WindowDisplay": "Pantallas",
       "NavKeysShortcuts": "Teclas y atajos",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "Configuración",
       "DrawEffects": "Efectos de dibujo",
       "DrawInteraction": "Interacción y gestos",
+      "DrawSave": "Guardado",
       "OperationModeSection": "Modo de uso",
       "IconArrangementSection": "Disposición de iconos",
       "AnimationSection": "Animaciones",
@@ -1042,6 +1044,15 @@
         "E": "Ajustar la frecuencia de actualización del lienzo al escribir. Las frecuencias altas pueden suavizar el trazo, pero usan más recursos."
       },
       "RenderingSection": "Renderizado y compatibilidad",
+      "RenderAcceleration":
+      {
+        "N": "Aceleración de renderizado del lienzo",
+        "Automatic": "Automático",
+        "Hardware": "Aceleración por hardware",
+        "Software": "Renderizado por software"
+      },
+      "AdvancedSection": "Configuración avanzada",
+      "LowLevelSection": "Configuración de bajo nivel",
       "PresentationMode":
       {
         "N": "Método de transparencia del lienzo de escritorio",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "Cadena de intercambio del lienzo de escritorio",
-        "E": "UpdateLayeredWindow no admite cadenas de intercambio."
+        "E": "UpdateLayeredWindow no admite cadenas de intercambio.",
+        "Flip": "Cadena de intercambio Flip",
+        "BitBlt": "Cadena de intercambio BitBlt"
       },
       "CompositionAlign":
       {
@@ -1062,13 +1075,12 @@
       },
       "WaitableWait":
       {
-        "N": "Activar la espera en modo waitable",
+        "N": "Activar la espera en modo Waitable",
         "E": "En Windows 8.1 y versiones posteriores, evita la latencia causada por la acumulación de cuadros."
       },
       "UlwAsyncReadback":
       {
-        "N": "Lectura asíncrona en modo ULW",
-        "E": "En sistemas que presentan mediante ULW, como Windows 7, permite que el cálculo de la CPU y el dibujo de la GPU se realicen al mismo tiempo y envía los cuadros al ritmo de actualización de la pantalla, reduciendo tirones y latencia."
+        "N": "Lectura asíncrona en modo UpdateLayeredWindow"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "Activar aceleración de dibujo por hardware",
-          "E": "Usar la GPU para dibujar el lienzo; si se desactiva, usar renderizado por software.",
-          "Note": "Prueba a desactivarlo si el dibujo es incorrecto o muy lento. Reinicia Inkeys para aplicar el cambio."
-        },
         "ZhaoxinCompatibility":
         {
           "N": "Activar modo de compatibilidad con Zhaoxin",

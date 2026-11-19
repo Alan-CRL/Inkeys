@@ -1,4 +1,4 @@
-#include "../Inkeys/IdtConfiguration.h"
+﻿#include "../Inkeys/IdtConfiguration.h"
 
 #include <array>
 #include <filesystem>
@@ -646,7 +646,7 @@ int RunConfigMetadataTests()
 		Json::Value& fields = document["Experimental"]["Inkeys3"]["Draw3"];
 		writeModeDocument(document);
 		check(presentationConfig.ReadAll() && draw3.PresentationMode.load() == 0 && draw3.SwapChainMode.load() == 0,
-			"fresh presentation settings default to automatic and FLIP");
+			"fresh presentation and swap-chain settings default to automatic");
 		check(draw3.DcompCompositionAlign.load() && draw3.UlwCompositionAlign.load(),
 			"missing composition alignment settings default to always");
 		for (const bool dcomp : { false, true })
@@ -668,14 +668,14 @@ int RunConfigMetadataTests()
 				"legacy DComp preference selects automatic or ULW");
 		}
 		fields["PresentationMode"] = 2;
-		fields["SwapChainMode"] = 1;
+		fields["SwapChainMode"] = 2;
 		writeModeDocument(document);
-		check(presentationConfig.ReadAll() && draw3.PresentationMode.load() == 2 && draw3.SwapChainMode.load() == 1,
+		check(presentationConfig.ReadAll() && draw3.PresentationMode.load() == 2 && draw3.SwapChainMode.load() == 2,
 			"explicit Win7Dwm and SEQUENTIAL take priority over legacy DComp preference");
 		check(presentationConfig.Write(), "write migrated presentation settings");
 		const auto saved = ReadJson(file)["Experimental"]["Inkeys3"]["Draw3"];
 		check(!saved.isMember("EnableDirectComposition") && saved["PresentationMode"].asInt() == 2
-			&& saved["SwapChainMode"].asInt() == 1, "save independent preferences and retire the legacy key");
+			&& saved["SwapChainMode"].asInt() == 2, "save independent preferences and retire the legacy key");
 		for (const auto& invalid : { Json::Value(), Json::Value(true), Json::Value(-1), Json::Value(4),
 			Json::Value(1.0), Json::Value(Json::UInt64(4294967297ULL)) })
 		{
@@ -686,10 +686,10 @@ int RunConfigMetadataTests()
 				"invalid new preferences use defaults even when a legacy preference exists");
 		}
 		fields["PresentationMode"] = 1;
-		fields["SwapChainMode"] = 2;
+		fields["SwapChainMode"] = 3;
 		writeModeDocument(document);
 		check(presentationConfig.ReadAll() && draw3.PresentationMode.load() == 1 && draw3.SwapChainMode.load() == 0,
-			"only FLIP and SEQUENTIAL are valid swap-chain settings");
+			"only automatic, FLIP and SEQUENTIAL are valid swap-chain settings");
 	}
 
 	using Inkeys::ConfigDetail::ResolveDefaultLargeScreenDevice;

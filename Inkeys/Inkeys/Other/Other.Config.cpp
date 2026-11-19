@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../IdtMain.h"
 #include "../../PptSettingsPersistence.h"
@@ -595,11 +595,13 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			const Json::Value* jsonValue = TryGetValueAtPath(root, groupPath, name);
 			if constexpr (std::is_same_v<T, IdtAtomic<int>>)
 			{
-				if (path == "Experimental.Inkeys3.Draw3.PresentationMode" || path == "Experimental.Inkeys3.Draw3.SwapChainMode")
+				if (path == "Experimental.Inkeys3.Draw3.PresentationMode" || path == "Experimental.Inkeys3.Draw3.SwapChainMode"
+					|| path == "Experimental.Inkeys3.Draw3.RenderAcceleration")
 				{
 					const bool presentation = path == "Experimental.Inkeys3.Draw3.PresentationMode";
 					const int maximum = presentation ? static_cast<int>(Inkeys::Draw3PresentationPreference::Ulw)
-						: static_cast<int>(Inkeys::Draw3SwapChainPreference::Sequential);
+						: path == "Experimental.Inkeys3.Draw3.SwapChainMode" ? static_cast<int>(Inkeys::Draw3SwapChainPreference::Sequential)
+						: static_cast<int>(Inkeys::Draw3RenderAccelerationPreference::Software);
 					if (jsonValue)
 					{
 						const int candidate = ReadNarrowInt(*jsonValue);

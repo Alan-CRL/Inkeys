@@ -348,6 +348,7 @@
       "GeneralAppearance": "外観とアニメーション",
       "NavWindowDisplay": "ウィンドウとディスプレイ",
       "WindowLayout": "ウィンドウ",
+      "WindowScene": "シーン",
       "WindowBehavior": "動作",
       "WindowDisplay": "ディスプレイ",
       "NavKeysShortcuts": "キーとショートカット",
@@ -356,6 +357,7 @@
       "LogsConfiguration": "構成",
       "DrawEffects": "描画効果",
       "DrawInteraction": "操作とジェスチャ",
+      "DrawSave": "保存",
       "OperationModeSection": "操作モード",
       "IconArrangementSection": "アイコンの並び",
       "AnimationSection": "アニメーション",
@@ -1042,6 +1044,15 @@
         "E": "手書き中のキャンバスの更新頻度を調整します。高くすると筆跡が滑らかになりますが、リソース使用量が増えます。"
       },
       "RenderingSection": "描画処理と互換性",
+      "RenderAcceleration":
+      {
+        "N": "キャンバス描画の高速化",
+        "Automatic": "自動",
+        "Hardware": "ハードウェアアクセラレーション",
+        "Software": "ソフトウェア描画"
+      },
+      "AdvancedSection": "詳細設定",
+      "LowLevelSection": "低レベル設定",
       "PresentationMode":
       {
         "N": "デスクトップキャンバスの透過表示方式",
@@ -1050,7 +1061,9 @@
       "SwapChainMode":
       {
         "N": "デスクトップキャンバスのスワップチェーン",
-        "E": "UpdateLayeredWindow はスワップチェーンに対応していません。"
+        "E": "UpdateLayeredWindow はスワップチェーンに対応していません。",
+        "Flip": "Flip スワップチェーン",
+        "BitBlt": "BitBlt スワップチェーン"
       },
       "CompositionAlign":
       {
@@ -1062,13 +1075,12 @@
       },
       "WaitableWait":
       {
-        "N": "waitable モードで待機を有効にする",
+        "N": "Waitable モードで待機を有効にする",
         "E": "Windows 8.1 以降で、フレームの滞留による遅延を防ぎます。"
       },
       "UlwAsyncReadback":
       {
-        "N": "ULW モードで非同期リードバック",
-        "E": "Windows 7 など ULW で表示するシステムで、CPU の計算と GPU の描画を同時に進め、ディスプレイのリフレッシュに合わせて画面を送信し、カクつきと遅延を減らします。"
+        "N": "UpdateLayeredWindow モードで非同期リードバック"
       },
       "UnthrottledMouseMove":
       {
@@ -1139,12 +1151,6 @@
       },
       "Draw3":
       {
-        "HardwareAcceleration":
-        {
-          "N": "描画のハードウェアアクセラレーション",
-          "E": "GPUでキャンバス描画を高速化します。オフの場合はソフトウェア描画を使います。",
-          "Note": "描画の不具合や大きな遅延がある場合はオフをお試しください。再起動後に反映されます。"
-        },
         "ZhaoxinCompatibility":
         {
           "N": "Zhaoxin向け互換モードを有効化",

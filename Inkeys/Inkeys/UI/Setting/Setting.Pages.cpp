@@ -1,4 +1,4 @@
-#include "Setting.Pages.h"
+﻿#include "Setting.Pages.h"
 #include "Setting.HomeBrand.h"
 #include "imfluent/imfluent_internal.h"
 #include <cstring>
@@ -1420,7 +1420,8 @@ namespace Inkeys::UI::Setting::Design
 			IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Note).c_str());
 	}
 
-	static void RenderGeneralAppearance(GeneralDraft& draft, GeneralEvents& events)
+	// 外观·主题：主题、光源与透明度；动画相关条目位于外观·动画子页。
+	static void RenderAppearanceTheme(GeneralDraft& draft, GeneralEvents& events)
 	{
 		const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
 		const float resetSliderWidth = sliderWidth + SliderResetExtraWidthDip;
@@ -1434,28 +1435,6 @@ namespace Inkeys::UI::Setting::Design
 			IA(I18nKey.SettingsUI.Regular.Appearance.Theme.E).c_str(), "\ue790", draft.themeMode, themeOptions);
 		events.settingThemeModeChanged = ComboRow("##设置主题", IA(I18nKey.SettingsUI.Regular.Appearance.SettingTheme.N).c_str(),
 			IA(I18nKey.SettingsUI.Regular.Appearance.SettingTheme.E).c_str(), "\ue771", draft.settingThemeMode, themeOptions);
-
-		SectionHeader(IA(I18nKey.SettingsUI.Design.AnimationSection).c_str());
-		events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
-			IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
-		if (events.animationChanged) ConfigureRowAnimations(0.0F, draft.animation, draft.animationRate);
-		// 效果选择是加载动画卡片的内联下半区：关闭时随条件动画收起并保留偏好，选择仍由现有配置队列保存。
-		const std::string startupEffectLabel = IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.N);
-		const std::vector<std::string> startupEffects{ IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Shimmer),
-			IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Aurora),
-			IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.PixelAssembly) };
-		const auto startupEffect = InlineCombo("startup-effect", startupEffectLabel.c_str(), draft.startupEffect,
-			startupEffects, events.startupEffectChanged, "##startup-effect-visibility", draft.startupPreview);
-		events.startupPreviewChanged = ToggleRow("startup-preview",
-			IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
-			IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview,
-			IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str(), &startupEffect);
-		events.settingEntryAnimationChanged = ComboRow("setting-entry-animation",
-			IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.N).c_str(),
-			IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.E).c_str(), "\ue768", draft.settingEntryAnimation,
-			{ IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.Off),
-			IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.First),
-			IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.Always) });
 
 		SectionHeader(IA(I18nKey.SettingsUI.Design.LightingSection).c_str());
 		events.edgeLightingChanged = ToggleRow("edge-lighting", IA(I18nKey.SettingsUI.Regular.Appearance.EdgeLighting).c_str(),
@@ -1480,9 +1459,34 @@ namespace Inkeys::UI::Setting::Design
 		if (contentOpacityReset) { draft.contentOpacity = 1.0F; events.contentOpacityChanged = true; }
 	}
 
+	static void RenderAppearanceAnimation(GeneralDraft& draft, GeneralEvents& events)
+	{
+		SectionHeader(IA(I18nKey.SettingsUI.Design.AnimationSection).c_str());
+		events.animationChanged = ToggleRow("animation", IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnable).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Appearance.AnimationEnableE).c_str(), "\ue768", draft.animation);
+		if (events.animationChanged) ConfigureRowAnimations(0.0F, draft.animation, draft.animationRate);
+		// 效果选择是加载动画卡片的内联下半区：关闭时随条件动画收起并保留偏好，选择仍由现有配置队列保存。
+		const std::string startupEffectLabel = IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.N);
+		const std::vector<std::string> startupEffects{ IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Shimmer),
+			IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.Aurora),
+			IA(I18nKey.SettingsUI.Regular.StartUp.StartupEffect.PixelAssembly) };
+		const auto startupEffect = InlineCombo("startup-effect", startupEffectLabel.c_str(), draft.startupEffect,
+			startupEffects, events.startupEffectChanged, "##startup-effect-visibility", draft.startupPreview);
+		events.startupPreviewChanged = ToggleRow("startup-preview",
+			IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimation).c_str(),
+			IA(I18nKey.SettingsUI.Regular.StartUp.LoadingAnimationE).c_str(), "\ue768", draft.startupPreview,
+			IA(I18nKey.SettingsUI.Design.NextStartupRequired).c_str(), &startupEffect);
+		events.settingEntryAnimationChanged = ComboRow("setting-entry-animation",
+			IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.E).c_str(), "\ue768", draft.settingEntryAnimation,
+			{ IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.Off),
+			IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.First),
+			IA(I18nKey.SettingsUI.Regular.StartUp.SettingEntryAnimation.Always) });
+	}
+
 	static void RenderWindowLayout(GeneralDraft& draft, GeneralEvents& events)
 	{
-		// 缩放是窗口页最常用的调整，置于最前；随后依次为启动位置、环境位置与主栏布局。
+		// 缩放是窗口页最常用的调整，置于最前，随后为主栏图标排列；启动与场景位置位于场景子页。
 		const float sliderWidth = ImGui::GetContentRegionAvail().x >= Pixels(740.0F) ? 240.0F : 196.0F;
 		const float resetSliderWidth = sliderWidth + SliderResetExtraWidthDip;
 		const std::string resetLabel = IA(I18nKey.SettingsUI.Regular.Appearance.ResetDefault);
@@ -1500,6 +1504,25 @@ namespace Inkeys::UI::Setting::Design
 				events.barZoomActive, barZoomReset, resetLabel.c_str()); });
 		if (barZoomReset) { draft.barZoom = 1.0F; events.barZoomChanged = true; }
 
+		SectionHeader(IA(I18nKey.SettingsUI.Design.IconArrangementSection).c_str());
+		const std::vector<std::string> layoutTitles{
+			IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.N),
+			IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.N) };
+		const std::vector<std::vector<std::string>> layoutOptions{
+			{ IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButton),
+			IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButtonReverse),
+			IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.LeftToRight),
+			IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.RightToLeft) },
+			{ IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.Centerline),
+			IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.WhenSpaceInsufficient) } };
+		events.iconOrderChanged = ComboRow("主栏图标顺序", layoutTitles[0].c_str(), nullptr,
+			"\ue8a4", draft.iconOrder, layoutOptions[0]);
+		events.expansionDirectionChanged = ComboRow("主栏展开方向调整", layoutTitles[1].c_str(), nullptr,
+			"\ue8a4", draft.expansionDirection, layoutOptions[1]);
+	}
+
+	static void RenderWindowScene(GeneralDraft& draft, GeneralEvents& events)
+	{
 		const auto& position = I18nKey.SettingsUI.Position;
 		SectionHeader(IA(position.DesktopSection).c_str());
 		// 启动位置只保存下次启动的偏好，保持当前运行中的主栏位置；类型与位置是同一枚举的展示拆分。
@@ -1582,22 +1605,6 @@ namespace Inkeys::UI::Setting::Design
 		workspaceRow("##whiteboard-auto-dock", whiteboardTitle.c_str(), whiteboardDescription.c_str(), "\ue70f",
 			draft.whiteboardDockMask, draft.whiteboardDockDirection,
 			events.whiteboardDockMaskChanged, events.whiteboardDockDirectionChanged);
-
-		SectionHeader(IA(I18nKey.SettingsUI.Design.IconArrangementSection).c_str());
-		const std::vector<std::string> layoutTitles{
-			IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.N),
-			IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.N) };
-		const std::vector<std::vector<std::string>> layoutOptions{
-			{ IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButton),
-			IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.FollowMainButtonReverse),
-			IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.LeftToRight),
-			IA(I18nKey.SettingsUI.Regular.ToolbarIconOrder.RightToLeft) },
-			{ IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.Centerline),
-			IA(I18nKey.SettingsUI.Regular.ToolbarExpansionDirection.WhenSpaceInsufficient) } };
-		events.iconOrderChanged = ComboRow("主栏图标顺序", layoutTitles[0].c_str(), nullptr,
-			"\ue8a4", draft.iconOrder, layoutOptions[0]);
-		events.expansionDirectionChanged = ComboRow("主栏展开方向调整", layoutTitles[1].c_str(), nullptr,
-			"\ue8a4", draft.expansionDirection, layoutOptions[1]);
 	}
 
 	static void RenderWindowBehavior(GeneralDraft& draft, GeneralEvents& events)
@@ -1881,10 +1888,12 @@ namespace Inkeys::UI::Setting::Design
 		switch (destination.section)
 		{
 		case Section::Basic: RenderGeneralBasic(draft, events); break;
-		case Section::Appearance: RenderGeneralAppearance(draft, events); break;
+		case Section::AppearanceTheme: RenderAppearanceTheme(draft, events); break;
+		case Section::AppearanceAnimation: RenderAppearanceAnimation(draft, events); break;
 		case Section::StatusIndicator: RenderStatusIndicator(draft, events); break;
 		case Section::DesktopShortcuts: RenderDesktopShortcuts(draft, events); break;
 		case Section::WindowLayout: RenderWindowLayout(draft, events); break;
+		case Section::WindowScene: RenderWindowScene(draft, events); break;
 		case Section::WindowBehavior: RenderWindowBehavior(draft, events); break;
 		case Section::LogsLog: RenderLogs(draft, events); break;
 		// 显示器仅有页标题，后续功能接入时在此补渲染。

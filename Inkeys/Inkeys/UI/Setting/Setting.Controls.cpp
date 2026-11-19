@@ -1159,11 +1159,13 @@ namespace Inkeys::UI::Setting::Design
 
 	void SettingRow(const char* id, const char* title, const char* description,
 		const char* glyph, float actionWidthDip, float actionHeightDip,
-		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture, ImU32 iconTint, bool keepDescriptionInline, const char* note, bool showNoteIcon, const InlineRowContent* inlineContent)
+		const std::function<void(const LayoutRect&)>& action, ImU32 fill, ImU32 border, ImTextureID iconTexture, ImU32 iconTint, bool keepDescriptionInline, const char* note, bool showNoteIcon, const InlineRowContent* inlineContent,
+		bool keepNoteAsInfo)
 	{
 		PageBlockScope motion(id);
 		// 只有普通说明之外的补充才画 i；单独一段前提仍按原说明排版和着色。
-		if ((!description || !*description) && note && *note)
+		// 调用方显式要求时（如仅需“重启生效”提示的底层选项），无说明也保留 i 提示样式。
+		if (!keepNoteAsInfo && (!description || !*description) && note && *note)
 		{
 			description = note;
 			note = nullptr;
@@ -2171,7 +2173,7 @@ namespace Inkeys::UI::Setting::Design
 	}
 
 	bool ToggleRow(const char* id, const char* title, const char* description,
-		const char* glyph, bool& value, const char* note, const InlineRowContent* inlineContent)
+		const char* glyph, bool& value, const char* note, const InlineRowContent* inlineContent, bool keepNoteAsInfo)
 	{
 		const float labelWidth = (std::max)(TextWidth(stateOn.c_str()), TextWidth(stateOff.c_str()));
 		bool changed = false;
@@ -2180,7 +2182,7 @@ namespace Inkeys::UI::Setting::Design
 			{
 				changed = ToggleAction(bounds, value);
 				TextAt(value ? stateOn.c_str() : stateOff.c_str(), { bounds.left, bounds.top }, labelWidth);
-			}, Card, Stroke, 0, IM_COL32_WHITE, false, note, true, inlineContent);
+			}, Card, Stroke, 0, IM_COL32_WHITE, false, note, true, inlineContent, keepNoteAsInfo);
 		return changed;
 	}
 
@@ -2341,14 +2343,16 @@ namespace Inkeys::UI::Setting::Design
 	}
 
 	bool ComboRow(const char* id, const char* title, const char* description,
-		const char* glyph, int& value, const std::vector<std::string>& items, const char* note, bool showNoteIcon)
+		const char* glyph, int& value, const std::vector<std::string>& items, const char* note, bool showNoteIcon,
+		bool keepNoteAsInfo)
 	{
 		float width = 160.0F;
 		for (const auto& item : items)
 			width = (std::max)(width, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
 		bool changed = false;
 		SettingRow(id, title, description, glyph, (std::min)(320.0F, width), ControlHeight,
-			[&](const LayoutRect&) { changed = ComboBox("##select", &value, items); }, Card, Stroke, 0, IM_COL32_WHITE, false, note, showNoteIcon);
+			[&](const LayoutRect&) { changed = ComboBox("##select", &value, items); }, Card, Stroke, 0, IM_COL32_WHITE, false, note, showNoteIcon,
+			nullptr, keepNoteAsInfo);
 		return changed;
 	}
 
