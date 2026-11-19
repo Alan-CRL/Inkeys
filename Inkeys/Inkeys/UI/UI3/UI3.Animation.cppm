@@ -860,20 +860,48 @@ export namespace Inkeys::UI::UI3
 				frame_ = frame; advanced_ = true;
 			}
 			changed_ = before != static_cast<double>(value_.val);
+			if (changed_) changedSinceMark_ = true;
 			return value_.val;
 		}
-		void Reset() noexcept { initialized_ = false; advanced_ = false; }
+		void Reset() noexcept { initialized_ = false; advanced_ = false; registryFrame_ = 0; }
 		void ForceNext() noexcept { forceNext_ = true; }
 		bool Active() { return initialized_ && !value_.IsSame(); }
 		bool Changed() const noexcept { return changed_; }
 		double Current() const noexcept { return value_.val; }
 		double Target() const noexcept { return value_.tar; }
+		// UI3 自动脏区：宿主在登记表准备期间设置本字号帧序号（RegistryFrameScope），采样器据此记下
+		// 「本修正已在该字号帧被登记表采样」。只有同一字号帧的登记才算数，过期或别处（纯度检查、无作用域的
+		// 准备）留下的记号自然失效；序号为 0 表示不在宿主准备作用域内，不登记。
+		// 每次在作用域内登记都重新计「登记之后是否推进」：同一序号重入准备→绘制时，第二次未推进也不算覆盖。
+		void MarkRegistrySampled() noexcept
+		{
+			registryFrame_ = RegistryFrameSlot();
+			if (registryFrame_ != 0) changedSinceMark_ = false;
+		}
+		// 本字号帧内已登记、且这次登记之后确实推进了修正值：只有这样宿主才可把它交给登记表。
+		// 已登记但未推进（零步长帧、同序号重入、外层裁剪跳过后再解析等）仍按未登记整幅兜底，避免修正停在中途。
+		[[nodiscard]] bool RegistryCovered(std::uint64_t frame) const noexcept
+		{
+			return frame != 0 && registryFrame_ == frame && changedSinceMark_;
+		}
+		class RegistryFrameScope
+		{
+		public:
+			explicit RegistryFrameScope(std::uint64_t frame) noexcept : previous_(RegistryFrameSlot()) { RegistryFrameSlot() = frame; }
+			~RegistryFrameScope() { RegistryFrameSlot() = previous_; }
+			RegistryFrameScope(const RegistryFrameScope&) = delete;
+			RegistryFrameScope& operator=(const RegistryFrameScope&) = delete;
+		private:
+			std::uint64_t previous_;
+		};
 	private:
+		static std::uint64_t& RegistryFrameSlot() noexcept { thread_local std::uint64_t frame = 0; return frame; }
 		UiValueClass value_{1.0, UiValueModeEnum::Linear};
 		std::uint64_t frame_ = 0;
+		std::uint64_t registryFrame_ = 0;
 		double sourceTarget_ = -1.0;
 		bool sourceAllow_ = false;
-		bool initialized_ = false, advanced_ = false, forceNext_ = false, changed_ = false;
+		bool initialized_ = false, advanced_ = false, forceNext_ = false, changed_ = false, changedSinceMark_ = false;
 	};
 
 }

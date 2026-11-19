@@ -35,6 +35,10 @@
 #include <array>
 #include <cstddef>
 #include <span>
+#include <functional>
+#include <unordered_map>
+#include <unordered_set>
+#include <format>
 
 module Inkeys.UI.Bar;
 import :Main;
@@ -376,6 +380,9 @@ using Inkeys::UI::Bar::ResolveBarBottomDockFramePresentation;
 	using Inkeys::UI::Bar::ResolveBarBottomDockIndicatorVisualEnvelope;
 	using Inkeys::UI::Bar::ResolveBarBottomDockCenteredRootPlacement;
 	using Inkeys::UI::Bar::ResolveBarBottomDockCenteredRootRange;
+	using Inkeys::UI::Bar::ResolveBarBottomDockCenteredPoseRange;
+	using Inkeys::UI::Bar::BarBottomDockCenteredPoseRange;
+	using Inkeys::UI::Bar::BarBottomDockCenteredPoseTrack;
 	using Inkeys::UI::Bar::ResolveBarBottomDockInitialMainBarSide;
 	using Inkeys::UI::Bar::ShouldDeriveBarBottomDockCenteredRoot;
 	using Inkeys::UI::Bar::ResolveBarBottomDockHorizontalMapping;
@@ -424,6 +431,10 @@ enum class BarDirtyFixedVisual : DirtyVisualKey
 	RecallAttributeGroup = 0xFFFF000000000009ULL,
 	GeometryPanelGroup = 0xFFFF00000000000AULL,
 	StatusIndicator = 0xFFFF00000000000BULL,
+	// UI3 自动脏区：属性面板登记表本帧有变化（脏区经 IncludeDamage 并入，本键只承担「已分类」）。
+	PanelMembers = 0xFFFF00000000000CULL,
+	// 构造提示独立成组，不再连带整个形状面板。
+	ConstructionPrompt = 0xFFFF00000000000DULL,
 };
 
 [[nodiscard]] DirtyVisualKey GetBarDirtyVisualKey(const void* visual) noexcept
@@ -578,6 +589,35 @@ struct BarRenderLoopState
 		chrono::steady_clock::now();
 	Inkeys::UI::UI3::FrameAnimationClock animationClock;
 	Inkeys::UI::UI3::DirtyRegionTracker dirtyRegionTracker;
+	// UI3 自动脏区登记表采样使用的本帧倍率（准备时写入）。
+	double visualFrameZoom = 1.0;
+	// 粗细保持环进度由交互线程写入；登记表准备时锁存本帧值，采样与绘制都读这一份。
+	float drawAttributeThicknessHoldProgressFrame = 0.0f;
+	// 精调拨盘候选标志与有效值同样由交互线程写入，准备时锁存本帧值。
+	bool drawAttributeThicknessFineDialCandidateFrame = false;
+	// 拨盘激活预览锚点由交互线程写入：准备阶段锁存一次，采样与绘制读同一值。
+	double drawAttributeThicknessFineDialActivationAnchorFrame = 0.0;
+	double drawAttributeThicknessFineDialValueFrame = 0.0;
+	// 仅测试：生产登记表的绘制纯度检查结果与本帧生产光影脏区，用于诊断。
+	Inkeys::UI::UI3::VisualPurityReport visualPanelsPurity;
+	RECT visualLightDamage{};
+	bool visualLightChanged = false;
+	// 仅测试诊断：本帧全脏原因（1 未分类兜底，2 整幅需求，4 映射替换，8 alpha 整窗，16 tracker 全脏）。
+	unsigned visualFullReason = 0;
+	// UI3 自动脏区：属性面板（形状、橡皮含灵敏度菜单、撤回）的成员登记表，生产生效。
+	// 在面板推进之后、呈现分类之前准备；快照随生产的成功提交推进。
+	Inkeys::UI::UI3::VisualDirtyRegistry visualPanels;
+	std::array<bool, 5> visualPanelsRegistered{};
+	Inkeys::UI::UI3::VisualAttempt visualPanelsAttempt{};
+	bool visualPanelsPrepared = false;
+	// 面板报告了推进但像素无变化：本帧若再无其他脏区，只提交最小保活脏区维持帧节奏，不退回整窗。
+	bool visualPanelsKeepAlive = false;
+	// 本帧渲染需求是否只来自属性面板推进（且登记表无脏区）；只有这种帧才允许保活代替未分类兜底。
+	bool visualPanelsProgressOnly = false;
+	// 主栏与 More 组（V6）；按钮按「地址 + 所在区域」懒登记，只在本帧存活集合里才读取对象（按钮销毁后不会悬空读取）。
+	Inkeys::UI::UI3::VisualGroupId visualMainGroup{}, visualMoreGroup{};
+	std::unordered_map<const void*, Inkeys::UI::UI3::VisualId> visualMainButtons, visualMoreButtons;
+	std::unordered_set<const void*> visualMainLive, visualMoreLive;
 	RECT current = RECT(0, 0, 0, 0);
 	Inkeys::UI::Bar::BarPresentDecision presentDecision;
 	Inkeys::UI::Bar::PresentationAlphaState presentationAlpha;
@@ -640,6 +680,8 @@ struct BarRenderLoopState
 		std::numeric_limits<double>::infinity();
 	bool bottomDockVisualActive = false;
 	bool bottomDockRootLayoutChanged = false;
+	// 本帧推进阶段是否实际按居中吸底摆放了根节点（预测包络只在此时用同姿态收紧）。
+	bool bottomDockCenteredRootApplied = false;
 	bool bottomDockCaptureBottomActive = false;
 	bool bottomDockRecoverySeeded = false;
 	UiValueClass bottomDockTargetIndicatorProgress{ 0.0 };
@@ -679,6 +721,13 @@ struct BarRenderLoopState
 	bool observedDebugFrameRateEnabled = observedDebugModeEnabled
 		&& true == BarUiDebugFrameRateEnabled;
 	bool debugOverlayRefreshPending = false;
+	// 调试诊断：窗口相对可见内容异常变大时只在进入该状态的那一帧记一行日志。
+	bool debugViewportOversizeLogged = false;
+	// 调试诊断：从局部刷新转为整窗刷新的那一帧记一行日志；未分类请求的来源位（1 一次性 2 动画 4 拖动 8 光效）。
+	bool debugFullPresentLogged = false;
+	unsigned debugUnclassifiedSource = 0;
+	// 测试观察：本帧开始时只有已登记的字号修正动画在进行（只唤醒、不整幅）。
+	bool fontRegistryOnlyPending = false;
 	Inkeys::UI::UI3::DebugFrameSleepLatch debugFrameSleepLatch;
 	bool frameRateSamplePending = false;
 	bool unclassifiedDamagePending = false;
@@ -990,12 +1039,879 @@ struct BarMainBarBoundsUnion
 	}
 };
 
+// ---- UI3 自动脏区：测试钩子与映射 ----
+// 测试打开：登记表记录本帧变化项名称（诊断）。
+std::atomic<bool> BarVisualRecordChanged = false;
+// 测试观察者与渲染在同一线程（离屏回调由测试线程驱动）；生产路径为空。
+std::function<void(const Inkeys::UI::Bar::BarVisualShadowFrame&)> BarVisualShadowObserver;
+
+// 与观察段 TransformBottomDockBounds 的四类变换一一对应。
+enum class BarVisualMapping : unsigned char { None, Body, Grip, Rigid };
+
+RECT MapBarVisualBounds(const BarRenderLoopState& state, BarVisualMapping mapping, const RECT& bounds)
+{
+	switch (mapping)
+	{
+	case BarVisualMapping::Body:
+		return TransformBarBottomDockBodyRect(bounds, state.bottomDockHorizontalMapping,
+			state.bottomDockMapping, state.visualFrameZoom);
+	case BarVisualMapping::Grip:
+		return TransformBarBottomDockGripRect(bounds, state.bottomDockHorizontalMapping,
+			state.bottomDockMapping, state.visualFrameZoom);
+	case BarVisualMapping::Rigid:
+		return TranslateBarBottomDockRigidRect(bounds,
+			state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
+			state.bottomDockMapping.rigidOverlayTranslationYDip, state.visualFrameZoom);
+	default:
+		return bounds;
+	}
+}
+
+// ---- UI3 自动脏区：绘制属性登记（V5） ----
+// 位置沿继承链纯计算（主按钮 → 主栏 Center → 绘制按钮 CenterFromTopLeft → 绘制属性 Center → 子对象），
+// 与绘制代码中的 Inherit 公式相同但不写对象，避免读到绘制阶段才更新的 inhX。
+struct BarDrawAttributeChain
+{
+	UiInheritClass panel{ 0.0, 0.0 };
+	double panelW = 0, panelH = 0;
+	bool valid = false;
+};
+
+BarDrawAttributeChain ResolveBarDrawAttributeChain(BarRenderLoopState& state)
+{
+	using enum UiInheritEnum;
+	BarDrawAttributeChain chain;
+	const auto mainButton = state.superellipseMap.find(BarUISetSuperellipseEnum::MainButton);
+	const auto mainBar = state.shapeMap.find(BarUISetShapeEnum::MainBar);
+	const auto panel = state.shapeMap.find(BarUISetShapeEnum::DrawAttributeBar);
+	auto* draw = state.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Draw)];
+	if (mainButton == state.superellipseMap.end() || !mainButton->second || mainBar == state.shapeMap.end()
+		|| !mainBar->second || panel == state.shapeMap.end() || !panel->second || !draw) return chain;
+	const auto& mb = *mainButton->second;
+	const auto& bar = *mainBar->second;
+	const auto& button = draw->button;
+	const auto& p = *panel->second;
+	const UiInheritClass mainTopLeft(mb.x.val - mb.w.val / 2.0, mb.y.val - mb.h.val / 2.0);
+	const UiInheritClass barTopLeft(Center, bar.x.val, bar.y.val, bar.w.val, bar.h.val, mainTopLeft.x, mainTopLeft.y, mb.w.val, mb.h.val);
+	const UiInheritClass drawTopLeft(CenterFromTopLeft, button.x.val, button.y.val, button.w.val, button.h.val,
+		barTopLeft.x, barTopLeft.y, bar.w.val, bar.h.val);
+	chain.panel = UiInheritClass(Center, p.x.val, p.y.val, p.w.val, p.h.val, drawTopLeft.x, drawTopLeft.y, button.w.val, button.h.val);
+	chain.panelW = p.w.val; chain.panelH = p.h.val; chain.valid = true;
+	return chain;
+}
+
+template <class T>
+UiInheritClass BarInheritFrom(UiInheritEnum type, const T& child, const UiInheritClass& parent, double parentW, double parentH)
+{
+	return UiInheritClass(type, child.x.val, child.y.val, child.w.val, child.h.val, parent.x, parent.y, parentW, parentH);
+}
+
+// 与 RenderingAttribute::GetWeigetRect 同公式，位置由调用方给出。
+RECT BarShapeRectAt(const UiShapeClass& shape, const UiInheritClass& at, double zoom)
+{
+	const int outset = RenderingAttribute::GetFrameDirtyOutset(shape.ft, shape.frameRendering, zoom, shape.themeSurface)
+		+ RenderingAttribute::dirtyAntialiasPadding;
+	return { static_cast<LONG>(floor(at.x * zoom) - outset), static_cast<LONG>(floor(at.y * zoom) - outset),
+		static_cast<LONG>(ceil((at.x + shape.w.val) * zoom) + outset), static_cast<LONG>(ceil((at.y + shape.h.val) * zoom) + outset) };
+}
+
+// 与 RenderingAttribute::GetWeigetRect(UiWordClass) 同公式（含 contentScale>1 的放大），位置由调用方给出。
+RECT BarWordRectAt(const UiWordClass& word, const UiInheritClass& at, double zoom)
+{
+	const int pad = RenderingAttribute::dirtyAntialiasPadding;
+	RECT bounds{ static_cast<LONG>(floor(at.x * zoom) - pad), static_cast<LONG>(floor(at.y * zoom) - pad),
+		static_cast<LONG>(ceil((at.x + word.w.val) * zoom) + pad), static_cast<LONG>(ceil((at.y + word.h.val) * zoom) + pad) };
+	const double scale = word.contentScale;
+	if (std::isfinite(scale) && scale > 1.0)
+	{
+		const LONG gx = static_cast<LONG>(ceil((bounds.right - bounds.left) * (scale - 1.0) / 2.0 + 1.0));
+		const LONG gy = static_cast<LONG>(ceil((bounds.bottom - bounds.top) * (scale - 1.0) / 2.0 + 1.0));
+		bounds.left -= gx; bounds.right += gx; bounds.top -= gy; bounds.bottom += gy;
+	}
+	return bounds;
+}
+
+RECT BarSvgRectAt(const UiSVGClass& svg, const UiInheritClass& at, double zoom)
+{
+	return RenderingAttribute::GetRotatedImageRect(at.x, at.y, svg.w.val, svg.h.val, svg.angle.val, zoom, svg.contentScale);
+}
+
+// 组合累加器：部件均以面板左上角继承（TopLeft），逐个写入可见性、位置与状态并合并包络。
+struct BarPanelCompositeAccumulator
+{
+	Inkeys::UI::UI3::VisualStateWriter& out;
+	const BarDrawAttributeChain& chain;
+	double zoom;
+	RECT bounds{};
+	bool visible = false;
+	void Shape(const UiShapeClass& shape)
+	{
+		const auto at = BarInheritFrom(UiInheritEnum::TopLeft, shape, chain.panel, chain.panelW, chain.panelH);
+		const bool drawn = Inkeys::UI::UI3::IsVisuallyDrawn(shape);
+		out.Bool(drawn); out.Real(at.x); out.Real(at.y); Inkeys::UI::UI3::WriteVisualState(out, shape, false);
+		if (drawn) { visible = true; RenderingAttribute::UnionRectInPlace(bounds, BarShapeRectAt(shape, at, zoom)); }
+	}
+	void Svg(const UiSVGClass& svg)
+	{
+		const auto at = BarInheritFrom(UiInheritEnum::TopLeft, svg, chain.panel, chain.panelW, chain.panelH);
+		const bool drawn = Inkeys::UI::UI3::IsVisuallyDrawn(svg);
+		out.Bool(drawn); out.Real(at.x); out.Real(at.y); Inkeys::UI::UI3::WriteVisualState(out, svg, false);
+		if (drawn) { visible = true; RenderingAttribute::UnionRectInPlace(bounds, BarSvgRectAt(svg, at, zoom)); }
+	}
+	void Word(const UiWordClass& word)
+	{
+		const auto at = BarInheritFrom(UiInheritEnum::TopLeft, word, chain.panel, chain.panelW, chain.panelH);
+		const bool drawn = Inkeys::UI::UI3::IsVisuallyDrawn(word);
+		out.Bool(drawn); out.Real(at.x); out.Real(at.y); Inkeys::UI::UI3::WriteVisualState(out, word, false);
+		if (drawn) { visible = true; RenderingAttribute::UnionRectInPlace(bounds, BarWordRectAt(word, at, zoom)); }
+	}
+	void Finish(Inkeys::UI::UI3::VisualSample& sample, const BarPanelVisualContext& context, double press)
+	{
+		sample.visible = visible;
+		if (!visible) return;
+		Inkeys::UI::UI3::Detail::GrowForPress(bounds, press);
+		out.Real(zoom); out.Real(press);
+		sample.bounds = context.map(bounds);
+	}
+};
+
+void RegisterBarDrawAttributeVisuals(BarRenderLoopState& state, BarUISetClass& owner, const BarPanelVisualContext& context)
+{
+	using enum UiInheritEnum;
+	using Inkeys::UI::UI3::VisualSample;
+	using Inkeys::UI::UI3::VisualStateWriter;
+	auto& registry = state.visualPanels;
+	auto writeAt = [](VisualStateWriter& out, const UiInheritClass& at) { out.Real(at.x); out.Real(at.y); };
+	// 组：绘制属性面板整体（Rigid 映射、面板位置与尺寸、等比收拢时的柔光遮罩缩放）。
+	const auto group = registry.AddGroup([&state, context, writeAt](Inkeys::UI::UI3::VisualGroupSample& out)
+		{
+			const auto panel = state.shapeMap.find(BarUISetShapeEnum::DrawAttributeBar);
+			const auto chain = ResolveBarDrawAttributeChain(state);
+			out.visible = chain.valid && panel != state.shapeMap.end() && panel->second
+				&& Inkeys::UI::UI3::IsVisuallyDrawn(*panel->second);
+			if (!out.visible) return;
+			if (context.mappingState) context.mappingState(out.state);
+			writeAt(out.state, chain.panel); out.state.Real(chain.panelW); out.state.Real(chain.panelH);
+			out.state.Real(chain.panelW / BarDrawAttributeExpandedWidth);
+		});
+	// 面板底。
+	(void)registry.Add(group, [&state, context, writeAt](VisualSample& out)
+		{
+			const auto chain = ResolveBarDrawAttributeChain(state);
+			const auto& panel = *state.shapeMap[BarUISetShapeEnum::DrawAttributeBar];
+			if (!chain.valid || !Inkeys::UI::UI3::IsVisuallyDrawn(panel)) return;
+			const double zoom = context.zoom();
+			out.visible = true; out.bounds = context.map(BarShapeRectAt(panel, chain.panel, zoom));
+			out.state.Real(zoom); writeAt(out.state, chain.panel); Inkeys::UI::UI3::WriteVisualState(out.state, panel, false);
+		}, "draw.surface");
+	// 预设色块：反馈底板 + 色块 + 勾在同一按压变换内绘制（DrawFeedbackButton 的 underlay）。
+	for (size_t i = 0; i < owner.drawAttributeSwatchFeedback.size(); ++i)
+	{
+		const auto swatchKey = static_cast<BarUISetShapeEnum>(static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect1) + i);
+		const auto checkKey = static_cast<BarUISetSvgEnum>(static_cast<int>(BarUISetSvgEnum::DrawAttributeBar_ColorSelect1) + i);
+		const auto feedbackKey = static_cast<BarUISetShapeEnum>(static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect1Feedback) + i);
+		(void)registry.Add(group, [&state, &owner, context, writeAt, i, swatchKey, checkKey, feedbackKey](VisualSample& out)
+			{
+				const auto chain = ResolveBarDrawAttributeChain(state);
+				if (!chain.valid) return;
+				const auto& swatch = *state.shapeMap[swatchKey];
+				const auto& check = *state.svgMap[checkKey];
+				const auto& feedback = *state.shapeMap[feedbackKey];
+				const double zoom = context.zoom();
+				const auto swatchAt = BarInheritFrom(TopLeft, swatch, chain.panel, chain.panelW, chain.panelH);
+				const auto checkAt = BarInheritFrom(Center, check, swatchAt, swatch.w.val, swatch.h.val);
+				const auto feedbackAt = BarInheritFrom(TopLeft, feedback, chain.panel, chain.panelW, chain.panelH);
+				RECT bounds{}; bool visible = false;
+				auto include = [&](bool drawn, const RECT& rect) { if (drawn) { visible = true; RenderingAttribute::UnionRectInPlace(bounds, rect); } };
+				include(Inkeys::UI::UI3::IsVisuallyDrawn(feedback), BarShapeRectAt(feedback, feedbackAt, zoom));
+				include(Inkeys::UI::UI3::IsVisuallyDrawn(swatch), BarShapeRectAt(swatch, swatchAt, zoom));
+				include(Inkeys::UI::UI3::IsVisuallyDrawn(check), RenderingAttribute::GetRotatedImageRect(checkAt.x, checkAt.y,
+					check.w.val, check.h.val, check.angle.val, zoom, check.contentScale));
+				out.visible = visible; if (!visible) return;
+				const double press = owner.drawAttributeSwatchFeedback[i].pressScale.val;
+				Inkeys::UI::UI3::Detail::GrowForPress(bounds, press);
+				out.bounds = context.map(bounds);
+				auto& w = out.state;
+				w.Real(zoom); w.Real(press); writeAt(w, swatchAt); writeAt(w, checkAt); writeAt(w, feedbackAt);
+				Inkeys::UI::UI3::WriteVisualState(w, feedback, false);
+				Inkeys::UI::UI3::WriteVisualState(w, swatch, false);
+				Inkeys::UI::UI3::WriteVisualState(w, check, false);
+			}, "draw.swatch" + std::to_string(i + 1));
+	}
+	// 自定义色块：反馈 + 色盘 PNG + 外框 + 色芯 + 勾，同一按压变换。
+	(void)registry.Add(group, [&state, context, writeAt](VisualSample& out)
+		{
+			const auto chain = ResolveBarDrawAttributeChain(state);
+			if (!chain.valid) return;
+			const auto& swatch = *state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect12];
+			const auto& inner = *state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Inner];
+			const auto& feedback = *state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Feedback];
+			const auto& wheel = *state.pngMap[BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel];
+			const auto& check = *state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ColorSelect12Check];
+			const double zoom = context.zoom();
+			const auto swatchAt = BarInheritFrom(TopLeft, swatch, chain.panel, chain.panelW, chain.panelH);
+			const auto innerAt = BarInheritFrom(TopLeft, inner, swatchAt, swatch.w.val, swatch.h.val);
+			const auto wheelAt = BarInheritFrom(TopLeft, wheel, swatchAt, swatch.w.val, swatch.h.val);
+			const auto checkAt = BarInheritFrom(TopLeft, check, swatchAt, swatch.w.val, swatch.h.val);
+			const auto feedbackAt = BarInheritFrom(TopLeft, feedback, chain.panel, chain.panelW, chain.panelH);
+			RECT bounds{}; bool visible = false;
+			auto include = [&](bool drawn, const RECT& rect) { if (drawn) { visible = true; RenderingAttribute::UnionRectInPlace(bounds, rect); } };
+			include(Inkeys::UI::UI3::IsVisuallyDrawn(feedback), BarShapeRectAt(feedback, feedbackAt, zoom));
+			include(Inkeys::UI::UI3::IsVisuallyDrawn(swatch), BarShapeRectAt(swatch, swatchAt, zoom));
+			include(Inkeys::UI::UI3::IsVisuallyDrawn(inner), BarShapeRectAt(inner, innerAt, zoom));
+			include(Inkeys::UI::UI3::IsVisuallyDrawn(wheel), RenderingAttribute::GetRotatedImageRect(wheelAt.x, wheelAt.y,
+				wheel.w.val, wheel.h.val, wheel.angle.val, zoom));
+			include(Inkeys::UI::UI3::IsVisuallyDrawn(check), RenderingAttribute::GetRotatedImageRect(checkAt.x, checkAt.y,
+				check.w.val, check.h.val, check.angle.val, zoom, check.contentScale));
+			out.visible = visible; if (!visible) return;
+			const double press = state.drawAttributeColorPickerEntryPressScale.val;
+			Inkeys::UI::UI3::Detail::GrowForPress(bounds, press);
+			out.bounds = context.map(bounds);
+			auto& w = out.state;
+			w.Real(zoom); w.Real(press);
+			writeAt(w, swatchAt); writeAt(w, innerAt); writeAt(w, wheelAt); writeAt(w, checkAt); writeAt(w, feedbackAt);
+			Inkeys::UI::UI3::WriteVisualState(w, feedback, false); Inkeys::UI::UI3::WriteVisualState(w, swatch, false);
+			Inkeys::UI::UI3::WriteVisualState(w, inner, false); Inkeys::UI::UI3::WriteVisualState(w, wheel, false);
+			Inkeys::UI::UI3::WriteVisualState(w, check, false);
+		}, "draw.swatch-custom");
+	// 笔型按钮：底板（面板 TopLeft）、图标（底板 Left）、文字（底板 TopLeft）在同一按压变换内绘制（DrawFixedButtonVisual）；
+	// 与绘制列表 penTypeButtons 逐项一致（含无按压缩放的 Brush2）。
+	struct PenType { BarUISetShapeEnum shape; BarUISetSvgEnum svg; BarUISetWordEnum word; UiValueClass* press; const char* name; };
+	const PenType penTypes[] = {
+		{ BarUISetShapeEnum::DrawAttributeBar_Brush2, BarUISetSvgEnum::DrawAttributeBar_Brush2, BarUISetWordEnum::DrawAttributeBar_Brush2,
+			nullptr, "draw.pen-brush2" },
+		{ BarUISetShapeEnum::DrawAttributeBar_Laser, BarUISetSvgEnum::DrawAttributeBar_Laser, BarUISetWordEnum::DrawAttributeBar_Laser,
+			&state.drawAttributeLaserPressScale, "draw.pen-laser" },
+		{ BarUISetShapeEnum::DrawAttributeBar_Highlight1, BarUISetSvgEnum::DrawAttributeBar_Highlight1, BarUISetWordEnum::DrawAttributeBar_Highlight1,
+			&state.drawAttributeHighlightPressScale, "draw.pen-highlighter" },
+		{ BarUISetShapeEnum::DrawAttributeBar_Brush1, BarUISetSvgEnum::DrawAttributeBar_Brush1, BarUISetWordEnum::DrawAttributeBar_Brush1,
+			&state.drawAttributeBrushPressScale, "draw.pen-brush" },
+		{ BarUISetShapeEnum::DrawAttributeBar_SoftPen, BarUISetSvgEnum::DrawAttributeBar_SoftPen, BarUISetWordEnum::DrawAttributeBar_SoftPen,
+			&state.drawAttributeSoftPenPressScale, "draw.pen-softpen" },
+	};
+	for (const auto& pen : penTypes)
+		(void)registry.Add(group, [&state, context, writeAt, pen](VisualSample& out)
+			{
+				const auto chain = ResolveBarDrawAttributeChain(state);
+				if (!chain.valid) return;
+				const auto& shape = *state.shapeMap[pen.shape];
+				const auto& icon = *state.svgMap[pen.svg];
+				const auto& word = *state.wordMap[pen.word];
+				const double zoom = context.zoom();
+				const auto shapeAt = BarInheritFrom(TopLeft, shape, chain.panel, chain.panelW, chain.panelH);
+				const auto iconAt = BarInheritFrom(Left, icon, shapeAt, shape.w.val, shape.h.val);
+				const auto wordAt = BarInheritFrom(TopLeft, word, shapeAt, shape.w.val, shape.h.val);
+				RECT bounds{}; bool visible = false;
+				const bool shapeDrawn = Inkeys::UI::UI3::IsVisuallyDrawn(shape);
+				const bool iconDrawn = Inkeys::UI::UI3::IsVisuallyDrawn(icon);
+				const bool wordDrawn = Inkeys::UI::UI3::IsVisuallyDrawn(word);
+				auto include = [&](bool drawn, const RECT& rect) { if (drawn) { visible = true; RenderingAttribute::UnionRectInPlace(bounds, rect); } };
+				include(shapeDrawn, BarShapeRectAt(shape, shapeAt, zoom));
+				include(iconDrawn, BarSvgRectAt(icon, iconAt, zoom));
+				include(wordDrawn, BarWordRectAt(word, wordAt, zoom));
+				out.visible = visible; if (!visible) return;
+				const double press = pen.press ? static_cast<double>(pen.press->val) : 1.0;
+				Inkeys::UI::UI3::Detail::GrowForPress(bounds, press);
+				out.bounds = context.map(bounds);
+				auto& w = out.state;
+				w.Real(zoom); w.Real(press); w.Bool(shapeDrawn); w.Bool(iconDrawn); w.Bool(wordDrawn);
+				writeAt(w, shapeAt); writeAt(w, iconAt); writeAt(w, wordAt);
+				Inkeys::UI::UI3::WriteVisualState(w, shape, false);
+				Inkeys::UI::UI3::WriteVisualState(w, icon, false);
+				Inkeys::UI::UI3::WriteVisualState(w, word, false);
+			}, pen.name);
+	// 扩展入口底板（命中形状兼反馈底板），独立按压。
+	(void)registry.Add(group, [&state, context, writeAt](VisualSample& out)
+		{
+			const auto chain = ResolveBarDrawAttributeChain(state);
+			if (!chain.valid) return;
+			const auto& hit = *state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_PenTypeExtensionHit];
+			if (!Inkeys::UI::UI3::IsVisuallyDrawn(hit)) return;
+			const double zoom = context.zoom();
+			const auto hitAt = BarInheritFrom(TopLeft, hit, chain.panel, chain.panelW, chain.panelH);
+			RECT bounds = BarShapeRectAt(hit, hitAt, zoom);
+			const double press = state.drawAttributePenTypeExtensionPressScale.val;
+			Inkeys::UI::UI3::Detail::GrowForPress(bounds, press);
+			out.visible = true; out.bounds = context.map(bounds);
+			out.state.Real(zoom); out.state.Real(press); writeAt(out.state, hitAt);
+			Inkeys::UI::UI3::WriteVisualState(out.state, hit, false);
+		}, "draw.pen-extension-hit");
+	// 扩展箭头与分割线：共享载体，绘制循环按槽位重写几何/颜色/透明度后各画一次，
+	// 因此按槽位登记、采样其输入；包络取槽位区域，外扩点光柔光、抗锯齿与按压回弹。
+	struct ExtensionSlot { PenModeSelectEnum mode; BarUISetShapeEnum shape; BarUISetWordEnum word; BarPenTypeExtensionSlot slot; const char* name; };
+	const ExtensionSlot slots[] = {
+		{ PenModeSelectEnum::IdtPenSoftPen, BarUISetShapeEnum::DrawAttributeBar_SoftPen, BarUISetWordEnum::DrawAttributeBar_SoftPen,
+			BarPenTypeExtensionSlot::SoftPen, "draw.extension-softpen" },
+		{ PenModeSelectEnum::IdtPenHardPen, BarUISetShapeEnum::DrawAttributeBar_Brush1, BarUISetWordEnum::DrawAttributeBar_Brush1,
+			BarPenTypeExtensionSlot::HardPen, "draw.extension-hardpen" },
+		{ PenModeSelectEnum::IdtPenHighlighter1, BarUISetShapeEnum::DrawAttributeBar_Highlight1, BarUISetWordEnum::DrawAttributeBar_Highlight1,
+			BarPenTypeExtensionSlot::Highlighter, "draw.extension-highlighter" },
+	};
+	for (const auto& slot : slots)
+		(void)registry.Add(group, [&state, context, writeAt, slot](VisualSample& out)
+			{
+				const auto chain = ResolveBarDrawAttributeChain(state);
+				if (!chain.valid) return;
+				const double progress = clamp(static_cast<double>(
+					state.drawAttributePenTypeExtensionProgress[static_cast<size_t>(slot.slot)].val), 0.0, 1.0);
+				if (progress <= 0.000001) return;
+				const auto& anchor = *state.shapeMap[slot.shape];
+				const auto& word = *state.wordMap[slot.word];
+				double scale = chain.panelW / BarDrawAttributeExpandedWidth;
+				if (!isfinite(scale) || scale <= 0.000001) scale = 1.0;
+				const double x = chain.panel.x + anchor.x.val + BarDrawAttributePenTypeExtensionDividerX * scale;
+				const double y = chain.panel.y + anchor.y.val;
+				const double width = BarDrawAttributePenTypeExtensionWidth * scale;
+				const double height = BarDrawAttributePenTypeButtonHeight * scale;
+				const double zoom = context.zoom();
+				const bool current = slot.mode == state.stateModeSnapshot.Pen.ModeSelect && !state.stateModeSnapshot.laserActive;
+				const double press = current ? static_cast<double>(state.drawAttributePenTypeExtensionPressScale.val) : 1.0;
+				const LONG outset = static_cast<LONG>(ceil((ButtonFrameThicknessDip + RenderingAttribute::pointLightDiffuseExtraWidth) * zoom))
+					+ RenderingAttribute::dirtyAntialiasPadding;
+				RECT bounds{ static_cast<LONG>(floor(x * zoom)) - outset, static_cast<LONG>(floor(y * zoom)) - outset,
+					static_cast<LONG>(ceil((x + width) * zoom)) + outset, static_cast<LONG>(ceil((y + height) * zoom)) + outset };
+				Inkeys::UI::UI3::Detail::GrowForPress(bounds, press);
+				out.visible = true; out.bounds = context.map(bounds);
+				auto& w = out.state;
+				w.Real(zoom); w.Real(progress); w.Real(word.pct.val); w.Real(scale); w.Real(x); w.Real(y);
+				w.Bool(anchor.frame.has_value()); if (anchor.frame) w.Color(anchor.frame->val);
+				w.Color(GetThemeColor(ThemeColorEnum::TextPrimary)); w.Real(state.barLightMaterial.val);
+				w.Bool(current); w.Real(press);
+			}, slot.name);
+	// 粗细调节区：预览、激光芯、滑块轨道、三档圆点与数字、精调拨盘、保持环与文字等大量自绘内容，
+	// 作为一个组合登记——包络取调节区相关形状的外接范围并保守外扩（拨盘抬升与柔光），状态采样全部输入。
+	(void)registry.Add(group, [&state, context, writeAt](VisualSample& out)
+		{
+			const auto chain = ResolveBarDrawAttributeChain(state);
+			if (!chain.valid) return;
+			const auto& region = *state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSelect];
+			const auto& divider = *state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessDivider];
+			const auto& adjust = *state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAdjust];
+			const auto& display = *state.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay];
+			const auto& holdLabel = *state.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessHoldLockLabel];
+			const double zoom = context.zoom();
+			const auto regionAt = BarInheritFrom(TopLeft, region, chain.panel, chain.panelW, chain.panelH);
+			const auto dividerAt = BarInheritFrom(TopLeft, divider, chain.panel, chain.panelW, chain.panelH);
+			const auto adjustAt = BarInheritFrom(TopLeft, adjust, chain.panel, chain.panelW, chain.panelH);
+			const auto displayAt = BarInheritFrom(TopLeft, display, chain.panel, chain.panelW, chain.panelH);
+			const auto holdAt = BarInheritFrom(TopLeft, holdLabel, chain.panel, chain.panelW, chain.panelH);
+			RECT bounds = BarShapeRectAt(region, regionAt, zoom);
+			RenderingAttribute::UnionRectInPlace(bounds, BarShapeRectAt(divider, dividerAt, zoom));
+			RenderingAttribute::UnionRectInPlace(bounds, BarShapeRectAt(adjust, adjustAt, zoom));
+			RenderingAttribute::UnionRectInPlace(bounds, BarWordRectAt(display, displayAt, zoom));
+			RenderingAttribute::UnionRectInPlace(bounds, BarWordRectAt(holdLabel, holdAt, zoom));
+			// 三档预设按钮自身的悬停/选中底板（pct、fill、frame、边缘光）与数字透明度也要入采样，
+			// 否则只改这些字段的悬停动画没有脏区、根本不会呈现。
+			const BarUISetShapeEnum presetShapes[] = { BarUISetShapeEnum::DrawAttributeBar_ThicknessFine,
+				BarUISetShapeEnum::DrawAttributeBar_ThicknessMedium, BarUISetShapeEnum::DrawAttributeBar_ThicknessCoarse };
+			const BarUISetWordEnum presetWords[] = { BarUISetWordEnum::DrawAttributeBar_ThicknessFineNumber,
+				BarUISetWordEnum::DrawAttributeBar_ThicknessMediumNumber, BarUISetWordEnum::DrawAttributeBar_ThicknessCoarseNumber };
+			const UiValueClass* presetPress[] = { &state.drawAttributeThicknessFinePressScale,
+				&state.drawAttributeThicknessMediumPressScale, &state.drawAttributeThicknessCoarsePressScale };
+			const auto presetAt = [&](size_t i)
+				{
+					return BarInheritFrom(TopLeft, *state.shapeMap[presetShapes[i]], chain.panel, chain.panelW, chain.panelH);
+				};
+			for (size_t i = 0; i < 3; ++i)
+			{
+				const auto& preset = *state.shapeMap[presetShapes[i]];
+				RECT presetBounds = BarShapeRectAt(preset, presetAt(i), zoom);
+				Inkeys::UI::UI3::Detail::GrowForPress(presetBounds, presetPress[i]->val);
+				RenderingAttribute::UnionRectInPlace(bounds, presetBounds);
+			}
+			{
+				RECT adjustBounds = BarShapeRectAt(adjust, adjustAt, zoom);
+				Inkeys::UI::UI3::Detail::GrowForPress(adjustBounds, state.drawAttributeThicknessAdjustPressScale.val);
+				RenderingAttribute::UnionRectInPlace(bounds, adjustBounds);
+			}
+			if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) return;
+			// 暂定外扩 8 DIP（拨盘刻度抬升、点光柔光）；由自然帧整幅对照验证，出现越界再调整。
+			const LONG outset = static_cast<LONG>(ceil(8.0 * zoom));
+			bounds.left -= outset; bounds.top -= outset; bounds.right += outset; bounds.bottom += outset;
+			out.visible = true; out.bounds = context.map(bounds);
+			auto& w = out.state;
+			w.Real(zoom);
+			writeAt(w, regionAt); writeAt(w, dividerAt); writeAt(w, adjustAt); writeAt(w, displayAt); writeAt(w, holdAt);
+			Inkeys::UI::UI3::WriteVisualState(w, region, false); Inkeys::UI::UI3::WriteVisualState(w, divider, false);
+			Inkeys::UI::UI3::WriteVisualState(w, adjust, false); Inkeys::UI::UI3::WriteVisualState(w, display, false);
+			Inkeys::UI::UI3::WriteVisualState(w, holdLabel, false);
+			for (size_t i = 0; i < 3; ++i)
+			{
+				writeAt(w, presetAt(i));
+				Inkeys::UI::UI3::WriteVisualState(w, *state.shapeMap[presetShapes[i]], false);
+				// 数字的内容与颜色在绘制中按锁存值写入（易变），这里只采样决定绘制结果的输入。
+				const auto& number = *state.wordMap[presetWords[i]];
+				w.Real(number.pct.val); w.Real(number.x.val); w.Real(number.y.val);
+				w.Real(number.w.val); w.Real(number.h.val); w.Real(number.size.val);
+			}
+			// 三角图标颜色在 Preview 与展开态之间渐变，透明度随粗细区交接；位置由三角按钮决定。
+			Inkeys::UI::UI3::WriteVisualState(w,
+				*state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ThicknessAdjust], false);
+				w.Real(state.drawAttributePenThickness.val);
+				w.Real(state.drawAttributePenPreviewMorph.val);
+				w.Real(state.drawAttributeLaserShellProgress.val);
+				w.Real(state.drawAttributeLaserOuterThickness.val);
+				w.Real(state.drawAttributeLaserCoreThickness.val);
+				w.Real(state.drawAttributeLaserCoreWhiteMix.val);
+				w.Real(state.drawAttributeThicknessPresetNumberProgress.val);
+				w.Real(state.drawAttributeThicknessSliderNormalized.val);
+				w.Real(state.drawAttributeThicknessSliderProgress.val);
+				w.Real(state.drawAttributeThicknessSliderAccentOpacity.val);
+				w.Real(state.drawAttributeThicknessSliderThumbOpacity.val);
+				w.Real(state.drawAttributeThicknessSliderThumbScale.val);
+				w.Real(state.drawAttributeThicknessSliderTrackOpacity.val);
+				w.Real(state.drawAttributeThicknessPreviewNumberInsideProgress.val);
+				w.Real(state.drawAttributeThicknessFineDialProgress.val);
+				w.Real(state.drawAttributeThicknessFineDialDwellProgress.val);
+				w.Real(state.drawAttributeThicknessFineDialRecognitionVisibility.val);
+				w.Real(state.drawAttributeThicknessFineDialSelectionProgress.val);
+				w.Real(state.drawAttributeThicknessHoldExchangeProgress.val);
+				w.Real(state.drawAttributeThicknessHoldGroupScale.val);
+				w.Real(state.drawAttributeThicknessHoldRingLockOpacity.val);
+				w.Real(state.drawAttributeThicknessHoldTextMix.val);
+				w.Real(state.drawAttributeThicknessFinePressScale.val);
+				w.Real(state.drawAttributeThicknessMediumPressScale.val);
+				w.Real(state.drawAttributeThicknessCoarsePressScale.val);
+				w.Real(state.drawAttributeThicknessAdjustPressScale.val);
+				w.Real(state.thicknessFineDialNewRangeOpacity.val);
+				w.Real(state.thicknessFineDialOldRangeOpacity.val);
+			for (const auto& diameter : state.drawAttributeThicknessPresetCircleDiameter) w.Real(diameter.val);
+			for (const auto& value : state.drawAttributeThicknessPresetNumberValues) w.Real(static_cast<double>(value));
+			for (const auto& extension : state.drawAttributePenTypeExtensionProgress) w.Real(extension.val);
+			w.Real(state.drawAttributeThicknessSliderCenterDiameter.val);
+			w.Int(static_cast<int>(state.thicknessFineDialOldRenderRange.min)); w.Int(static_cast<int>(state.thicknessFineDialOldRenderRange.max));
+			w.Int(static_cast<int>(state.thicknessFineDialNewRenderRange.min)); w.Int(static_cast<int>(state.thicknessFineDialNewRenderRange.max));
+			w.Int(static_cast<int>(state.thicknessFineDialRangeTransitionPhase));
+			const auto& bar = state.barState.drawAttributeBar;
+			w.Int(static_cast<int>(static_cast<ThicknessViewMode>(bar.thicknessViewMode)));
+			w.Bool(state.drawAttributeThicknessFineDialCandidateFrame);
+			w.Real(state.drawAttributeThicknessFineDialValueFrame);
+			w.Bool(bar.thicknessSliderDragging); w.Bool(bar.thicknessSliderPressed); w.Bool(bar.thicknessSliderHoldLocked);
+			w.Bool(bar.thicknessSliderHoldHintActive); w.Bool(bar.thicknessFineDialDragging); w.Bool(bar.thicknessFineDialPhysicsActive);
+			w.Bool(bar.thicknessPreviewDragging); w.Bool(bar.thicknessPreviewOverflow);
+			w.Real(static_cast<double>(state.drawAttributeThicknessHoldProgressFrame));
+			w.Bool(bar.thicknessFinePress); w.Bool(bar.thicknessMediumPress); w.Bool(bar.thicknessCoarsePress); w.Bool(bar.thicknessAdjustPress);
+			w.Int(static_cast<int>(state.stateModeSnapshot.Pen.ModeSelect)); w.Bool(state.stateModeSnapshot.laserActive);
+			// 绘制中直接读取的其余输入：激光外壳颜色、拨盘激活交接标志与预览锚点、
+			// 大圆填满时的高对比数字（实时预设粗细，仅在数字/圆点交叉进度静止时绘制）。
+			w.Color(state.stateModeSnapshot.Pen.Laser.color);
+			w.Bool(state.drawAttributeThicknessFineDialActivationGeometryTransition);
+			w.Real(state.drawAttributeThicknessFineDialActivationAnchorFrame);
+			w.Bool(state.drawAttributeThicknessPresetNumberProgress.IsSame());
+			for (size_t i = 0; i < 3; ++i)
+				w.Real(state.stateModeSnapshot.laserActive
+					? GetBarLaserThicknessPresetDip(i, state.stateModeSnapshot)
+					: GetBarThicknessPresetMetrics(state.stateModeSnapshot.Pen.ModeSelect, i, state.stateModeSnapshot).resolvedWidthDip);
+			w.Real(state.barLightMaterial.val);
+		}, "draw.thickness");
+	// 粗细预览弹窗：画在面板内容之后、可越出面板；数字围绕锚点整体缩放（与观察段 ResolveScaledDirtyBounds 同算法）。
+	(void)registry.Add(group, [&state, context, writeAt](VisualSample& out)
+		{
+			if (!state.drawAttributeThicknessPreviewPopupGeometryValid) return;
+			const auto chain = ResolveBarDrawAttributeChain(state);
+			if (!chain.valid) return;
+			const auto& surface = *state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupSurface];
+			const auto& circle = *state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessPreviewPopupCircle];
+			const auto& number = *state.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessPreviewPopupNumber];
+			const double zoom = context.zoom();
+			const auto surfaceAt = BarInheritFrom(TopLeft, surface, chain.panel, chain.panelW, chain.panelH);
+			const auto circleAt = BarInheritFrom(TopLeft, circle, chain.panel, chain.panelW, chain.panelH);
+			const double scale = (std::max)(0.000001, static_cast<double>(state.drawAttributeThicknessPreviewPopupScale));
+			const auto& numberRect = state.drawAttributeThicknessPreviewNumberRect;
+			const auto& anchor = state.drawAttributeThicknessPreviewPopupAnchor;
+			RECT bounds{}; bool visible = false;
+			auto include = [&](bool drawn, const RECT& rect) { if (drawn) { visible = true; RenderingAttribute::UnionRectInPlace(bounds, rect); } };
+			include(Inkeys::UI::UI3::IsVisuallyDrawn(surface), BarShapeRectAt(surface, surfaceAt, zoom));
+			include(Inkeys::UI::UI3::IsVisuallyDrawn(circle), BarShapeRectAt(circle, circleAt, zoom));
+			include(Inkeys::UI::UI3::IsVisuallyDrawn(number), ResolveScaledDirtyBounds(numberRect.left, numberRect.top,
+				numberRect.right, numberRect.bottom, anchor.x, anchor.y, scale, zoom, RenderingAttribute::dirtyAntialiasPadding));
+			out.visible = visible; if (!visible) return;
+			out.bounds = context.map(bounds);
+			auto& w = out.state;
+			w.Real(zoom); w.Real(scale); w.Real(anchor.x); w.Real(anchor.y);
+			w.Real(numberRect.left); w.Real(numberRect.top); w.Real(numberRect.right); w.Real(numberRect.bottom);
+			w.Real(state.drawAttributeThicknessPreviewPopupProgress.val); w.Real(state.drawAttributeThicknessPreviewPopupProgress.tar);
+			writeAt(w, surfaceAt); writeAt(w, circleAt);
+			Inkeys::UI::UI3::WriteVisualState(w, surface, false); Inkeys::UI::UI3::WriteVisualState(w, circle, false);
+			Inkeys::UI::UI3::WriteVisualState(w, number, false);
+		}, "draw.preview-popup");
+	// 滑块 thumb：最后一层自绘（DrawSliderThumb），带阴影与描边，包络外扩 8 DIP。
+	(void)registry.Add(group, [&state, context, writeAt](VisualSample& out)
+		{
+			const auto chain = ResolveBarDrawAttributeChain(state);
+			if (!chain.valid) return;
+			const auto& thumb = *state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessSliderThumb];
+			const double opacity = clamp(static_cast<double>(thumb.pct.val), 0.0, 1.0);
+			if (!(opacity > 0.000001) || thumb.w.val <= 0.0 || thumb.h.val <= 0.0) return;
+			const double zoom = context.zoom();
+			const auto thumbAt = BarInheritFrom(TopLeft, thumb, chain.panel, chain.panelW, chain.panelH);
+			const LONG outset = static_cast<LONG>(ceil(8.0 * zoom)) + RenderingAttribute::dirtyAntialiasPadding;
+			RECT bounds{ static_cast<LONG>(floor(thumbAt.x * zoom)) - outset, static_cast<LONG>(floor(thumbAt.y * zoom)) - outset,
+				static_cast<LONG>(ceil((thumbAt.x + thumb.w.val) * zoom)) + outset, static_cast<LONG>(ceil((thumbAt.y + thumb.h.val) * zoom)) + outset };
+			Inkeys::UI::UI3::Detail::GrowForPress(bounds, state.drawAttributeThicknessSliderThumbScale.val);
+			out.visible = true; out.bounds = context.map(bounds);
+			auto& w = out.state;
+			w.Real(zoom); writeAt(w, thumbAt); Inkeys::UI::UI3::WriteVisualState(w, thumb, false);
+			w.Real(state.drawAttributeThicknessSliderThumbOpacity.val); w.Real(state.drawAttributeThicknessSliderThumbScale.val);
+			w.Real(state.drawAttributeThicknessSliderAccentOpacity.val); w.Real(state.drawAttributeThicknessSliderCenterDiameter.val);
+			w.Real(chain.panelW / BarDrawAttributeExpandedWidth); w.Real(state.barLightMaterial.val);
+			w.Color(GetThemeColor(ThemeColorEnum::Surface)); w.Color(GetThemeColor(ThemeColorEnum::Accent));
+		}, "draw.thumb");
+	// 标注/溢出提示弹窗（DrawThicknessPopup）：弹窗底 TopLeft 自面板；标题、正文、关闭按钮围绕锚点角标中心
+	// 按弹窗缩放比例变换，均在弹窗范围内。包络取弹窗底 + 关闭按钮按压回弹；状态含全部部件与锚点。
+	struct TooltipPopup
+	{
+		BarUISetShapeEnum popup; BarUISetWordEnum title, body; BarUISetShapeEnum closeHit; BarUISetSvgEnum closeSvg;
+		BarUISetShapeEnum anchor; UiValueClass* press; UiValueClass* progress; const char* name;
+	};
+	const TooltipPopup tooltips[] = {
+		{ BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopup, BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupText,
+			BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationPopupBody, BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationPopupCloseHit,
+			BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationPopupClose, BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoHit,
+			&state.drawAttributeAnnotationClosePressScale, &state.drawAttributeAnnotationPopupProgress, "draw.annotation-popup" },
+		{ BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopup, BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupText,
+			BarUISetWordEnum::DrawAttributeBar_ThicknessOverflowPopupBody, BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowPopupCloseHit,
+			BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowPopupClose, BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge,
+			&state.drawAttributeOverflowClosePressScale, &state.drawAttributeOverflowPopupProgress, "draw.overflow-popup" },
+	};
+	for (const auto& tip : tooltips)
+		(void)registry.Add(group, [&state, context, writeAt, tip](VisualSample& out)
+			{
+				const auto chain = ResolveBarDrawAttributeChain(state);
+				if (!chain.valid) return;
+				const auto& popup = *state.shapeMap[tip.popup];
+				if (!Inkeys::UI::UI3::IsVisuallyDrawn(popup)) return;
+				const auto& title = *state.wordMap[tip.title];
+				const auto& body = *state.wordMap[tip.body];
+				const auto& closeHit = *state.shapeMap[tip.closeHit];
+				const auto& closeSvg = *state.svgMap[tip.closeSvg];
+				const auto& anchor = *state.shapeMap[tip.anchor];
+				const double zoom = context.zoom();
+				const auto popupAt = BarInheritFrom(TopLeft, popup, chain.panel, chain.panelW, chain.panelH);
+				const auto anchorAt = BarInheritFrom(TopLeft, anchor, chain.panel, chain.panelW, chain.panelH);
+				RECT bounds = BarShapeRectAt(popup, popupAt, zoom);
+				Inkeys::UI::UI3::Detail::GrowForPress(bounds, tip.press->val);
+				out.visible = true; out.bounds = context.map(bounds);
+				auto& w = out.state;
+				w.Real(zoom); w.Real(tip.press->val); w.Real(tip.progress->val);
+				writeAt(w, popupAt); writeAt(w, anchorAt); w.Real(anchor.w.val); w.Real(anchor.h.val);
+				Inkeys::UI::UI3::WriteVisualState(w, popup, false);
+				for (const auto* word : { &title, &body })
+				{
+					writeAt(w, BarInheritFrom(TopLeft, *word, chain.panel, chain.panelW, chain.panelH));
+					Inkeys::UI::UI3::WriteVisualState(w, *word, false);
+				}
+				writeAt(w, BarInheritFrom(TopLeft, closeHit, chain.panel, chain.panelW, chain.panelH));
+				Inkeys::UI::UI3::WriteVisualState(w, closeHit, false);
+				writeAt(w, BarInheritFrom(TopLeft, closeSvg, chain.panel, chain.panelW, chain.panelH));
+				Inkeys::UI::UI3::WriteVisualState(w, closeSvg, false);
+			}, tip.name);
+	// 溢出信息：反馈底板 + 信息图标 + 角标（underlay），同一按压变换。
+	(void)registry.Add(group, [&state, &owner, context](VisualSample& out)
+		{
+			const auto chain = ResolveBarDrawAttributeChain(state);
+			if (!chain.valid) return;
+			BarPanelCompositeAccumulator acc{ out.state, chain, context.zoom() };
+			acc.Shape(*state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoFeedback]);
+			acc.Svg(*state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ThicknessOverflowInfo]);
+			acc.Shape(*state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge]);
+			acc.Finish(out, context, owner.drawAttributeInfoFeedback[1].pressScale.val);
+		}, "draw.overflow-info");
+	// 笔型菜单底（菜单柔光遮罩按 rw/4 归一）。
+	(void)registry.Add(group, [&state, context](VisualSample& out)
+		{
+			const auto chain = ResolveBarDrawAttributeChain(state);
+			if (!chain.valid) return;
+			BarPanelCompositeAccumulator acc{ out.state, chain, context.zoom() };
+			acc.Shape(*state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_PenTypeMenu]);
+			acc.Finish(out, context, 1.0);
+		}, "draw.pen-type-menu");
+	// 菜单「自由线」行：行底 + 勾 + 文字，同一按压变换。
+	(void)registry.Add(group, [&state, context](VisualSample& out)
+		{
+			const auto chain = ResolveBarDrawAttributeChain(state);
+			if (!chain.valid) return;
+			BarPanelCompositeAccumulator acc{ out.state, chain, context.zoom() };
+			acc.Shape(*state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_PenTypeMenuFreeLine]);
+			acc.Svg(*state.svgMap[BarUISetSvgEnum::DrawAttributeBar_PenTypeMenuCheck]);
+			acc.Word(*state.wordMap[BarUISetWordEnum::DrawAttributeBar_PenTypeMenuFreeLine]);
+			acc.Finish(out, context, state.drawAttributePenTypeFreeLinePressScale.val);
+		}, "draw.pen-type-free-line");
+	// 菜单「标注线」文字与信息按钮（反馈 + 图标，同一按压变换）。
+	(void)registry.Add(group, [&state, context](VisualSample& out)
+		{
+			const auto chain = ResolveBarDrawAttributeChain(state);
+			if (!chain.valid) return;
+			BarPanelCompositeAccumulator acc{ out.state, chain, context.zoom() };
+			acc.Word(*state.wordMap[BarUISetWordEnum::DrawAttributeBar_ThicknessAnnotationLabel]);
+			acc.Finish(out, context, 1.0);
+		}, "draw.annotation-label");
+	(void)registry.Add(group, [&state, &owner, context](VisualSample& out)
+		{
+			const auto chain = ResolveBarDrawAttributeChain(state);
+			if (!chain.valid) return;
+			BarPanelCompositeAccumulator acc{ out.state, chain, context.zoom() };
+			acc.Shape(*state.shapeMap[BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoFeedback]);
+			acc.Svg(*state.svgMap[BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationInfo]);
+			acc.Finish(out, context, owner.drawAttributeInfoFeedback[0].pressScale.val);
+		}, "draw.annotation-info");
+	// 取色器（UI3 组件自供采样器）；不挂绘制属性组，收起动画期间独立判定可见性。
+	{
+		Inkeys::UI::UI3::VisualSamplerContext pickerContext;
+		pickerContext.zoom = context.zoom;
+		pickerContext.map = context.map;
+		pickerContext.extra = context.mappingState;
+		(void)registry.Add({}, owner.colorPicker.MakeVisualSampler(std::move(pickerContext)), "draw.color-picker");
+	}
+}
+
+// 面板推进之后调用：同步面板成员的绘制继承（与 Draw 同算法、幂等），准备面板登记表并完成分类。
+// ---- UI3 自动脏区：主栏、主按钮、Logo 与 More 登记（V6） ----
+// 主栏底与主按钮的继承在 AdvanceAnimationsAndDeriveLayout 中已按本帧值写入（UpInh/Inherit，绘制时以相同输入重写同值）；
+// More 面板几何在布局阶段直接写入继承位置；Logo 与背景提示在绘制时才继承，这里按同一公式纯计算，不写对象。
+void RegisterBarMainVisuals(BarRenderLoopState& state, const BarPanelVisualContext& context)
+{
+	using Inkeys::UI::UI3::VisualSample;
+	auto& registry = state.visualPanels;
+	// 主栏组：Body/Grip 映射的全部参数（底栏果冻形变改变像素而包络不一定变化）、PPT 闲置淡化、常驻内容透明度。
+	state.visualMainGroup = registry.AddGroup([&state](Inkeys::UI::UI3::VisualGroupSample& out)
+		{
+			out.visible = true;
+			auto& w = out.state;
+			w.Real(state.visualFrameZoom);
+			const auto& v = state.bottomDockMapping;
+			for (const double value : { v.baseTopDip, v.baseBottomDip, v.visualTopDip, v.visualBottomDip,
+				v.scaleY, v.rigidGripYDip, v.rigidOverlayTranslationYDip }) w.Real(value);
+			const auto& h = state.bottomDockHorizontalMapping;
+			for (const double value : { h.baseLeftDip, h.baseRightDip, h.visualLeftDip, h.visualRightDip,
+				h.scaleX, h.rigidGripTranslationXDip, h.rigidOverlayTranslationXDip }) w.Real(value);
+			w.Real(state.pptIdleFade.val);
+			w.Real(GetThemeResidentContentOpacity());
+		});
+	// More 组：Rigid 映射；与绘制一致，面板不可见时整组（底、分割线、按钮、关闭键）都不画。
+	state.visualMoreGroup = registry.AddGroup([&state, context](Inkeys::UI::UI3::VisualGroupSample& out)
+		{
+			const auto panel = state.shapeMap.find(BarUISetShapeEnum::MorePanel);
+			out.visible = panel != state.shapeMap.end() && panel->second && panel->second->pct.val > 0.000001;
+			if (out.visible && context.mappingState) context.mappingState(out.state);
+		});
+	auto shapeEntry = [&](Inkeys::UI::UI3::VisualGroupId group, BarUISetShapeEnum key, BarVisualMapping mapping, const char* name)
+		{
+			(void)registry.Add(group, [&state, key, mapping](VisualSample& out)
+				{
+					const auto found = state.shapeMap.find(key);
+					if (found == state.shapeMap.end() || !found->second || !Inkeys::UI::UI3::IsVisuallyDrawn(*found->second)) return;
+					out.visible = true;
+					out.bounds = MapBarVisualBounds(state, mapping, RenderingAttribute::GetWeigetRect(*found->second, state.visualFrameZoom));
+					out.state.Real(state.visualFrameZoom);
+					Inkeys::UI::UI3::WriteVisualState(out.state, *found->second);
+				}, name);
+		};
+	shapeEntry(state.visualMainGroup, BarUISetShapeEnum::MainBar, BarVisualMapping::Body, "main.bar");
+	(void)registry.Add(state.visualMainGroup, [&state](VisualSample& out)
+		{
+			const auto found = state.superellipseMap.find(BarUISetSuperellipseEnum::MainButton);
+			if (found == state.superellipseMap.end() || !found->second || !Inkeys::UI::UI3::IsVisuallyDrawn(*found->second)) return;
+			out.visible = true;
+			out.bounds = MapBarVisualBounds(state, BarVisualMapping::Grip, RenderingAttribute::GetWeigetRect(*found->second, state.visualFrameZoom));
+			out.state.Real(state.visualFrameZoom);
+			Inkeys::UI::UI3::WriteVisualState(out.state, *found->second);
+		}, "main.button");
+	// Logo：绘制时 Inherit(Center, 主按钮)。
+	(void)registry.Add(state.visualMainGroup, [&state](VisualSample& out)
+		{
+			const auto found = state.superellipseMap.find(BarUISetSuperellipseEnum::MainButton);
+			if (found == state.superellipseMap.end() || !found->second || !state.mainButtonLogo) return;
+			const auto& logo = *state.mainButtonLogo;
+			if (!Inkeys::UI::UI3::IsVisuallyDrawn(logo)) return;
+			const auto& button = *found->second;
+			const auto at = BarInheritFrom(UiInheritEnum::Center, logo, UiInheritClass(button.inhX, button.inhY), button.w.val, button.h.val);
+			out.visible = true;
+			out.bounds = MapBarVisualBounds(state, BarVisualMapping::Grip, BarSvgRectAt(logo, at, state.visualFrameZoom));
+			out.state.Real(state.visualFrameZoom); out.state.Real(at.x); out.state.Real(at.y);
+			Inkeys::UI::UI3::WriteVisualState(out.state, logo, false);
+		}, "main.logo");
+	// 背景提示文字：绘制时 Inherit()（按目标宽高居中），不经底栏变换。
+	(void)registry.Add(state.visualMainGroup, [&state](VisualSample& out)
+		{
+			const auto found = state.wordMap.find(BarUISetWordEnum::BackgroundWarning);
+			if (found == state.wordMap.end() || !found->second || !Inkeys::UI::UI3::IsVisuallyDrawn(*found->second)) return;
+			const auto& word = *found->second;
+			const UiInheritClass at(word.x.val - word.w.tar / 2.0, word.y.val - word.h.tar / 2.0);
+			out.visible = true;
+			out.bounds = BarWordRectAt(word, at, state.visualFrameZoom);
+			out.state.Real(state.visualFrameZoom); out.state.Real(at.x); out.state.Real(at.y);
+			Inkeys::UI::UI3::WriteVisualState(out.state, word, false);
+		}, "main.background-warning");
+	shapeEntry(state.visualMoreGroup, BarUISetShapeEnum::MorePanel, BarVisualMapping::Rigid, "more.panel");
+	shapeEntry(state.visualMoreGroup, BarUISetShapeEnum::MorePanelDivider, BarVisualMapping::Rigid, "more.divider");
+	// More 关闭键：固定按钮（底板 + 图标 + 按压缩放），继承位置由布局写入。
+	(void)registry.Add(state.visualMoreGroup, [&state, context](VisualSample& out)
+		{
+			const auto close = state.shapeMap.find(BarUISetShapeEnum::MorePanelCloseHit);
+			const auto svg = state.svgMap.find(BarUISetSvgEnum::MorePanelClose);
+			if (close == state.shapeMap.end() || !close->second || svg == state.svgMap.end() || !svg->second) return;
+			Inkeys::UI::UI3::VisualSamplerContext fixed;
+			fixed.zoom = context.zoom;
+			fixed.map = context.map;
+			Inkeys::UI::UI3::MakeFixedButtonVisualSampler({ *close->second, svg->second.get(), nullptr, &state.moreClosePressScale },
+				std::move(fixed))(out);
+		}, "more.close");
+}
+
+// 绘制属性反馈底板的几何在呈现阶段才从色块/信息图标复制（SyncFeedbackGeometry），
+// 登记表采样前按同一公式先写入本帧值（呈现阶段以相同输入重写同值），否则采到上一帧几何。
+void SyncBarDrawAttributeFeedbackGeometry(BarRenderLoopState& state, std::size_t swatchCount)
+{
+	auto copy = [&](BarUISetShapeEnum key, const auto& visual, double radiusX, double radiusY, double thickness)
+		{
+			const auto found = state.shapeMap.find(key);
+			if (found == state.shapeMap.end() || !found->second || !visual) return;
+			auto& feedback = *found->second;
+			feedback.x.SetDirect(visual->x.val); feedback.y.SetDirect(visual->y.val);
+			feedback.w.SetDirect(visual->w.val); feedback.h.SetDirect(visual->h.val);
+			if (feedback.rw) feedback.rw->SetDirect(radiusX);
+			if (feedback.rh) feedback.rh->SetDirect(radiusY);
+			if (feedback.ft) feedback.ft->SetDirect(thickness);
+		};
+	auto shape = [&](BarUISetShapeEnum key) { const auto found = state.shapeMap.find(key); return found == state.shapeMap.end() ? nullptr : found->second; };
+	for (std::size_t i = 0; i < swatchCount; ++i)
+	{
+		const auto swatch = shape(static_cast<BarUISetShapeEnum>(static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect1) + i));
+		if (swatch && swatch->rw && swatch->rh && swatch->ft)
+			copy(static_cast<BarUISetShapeEnum>(static_cast<int>(BarUISetShapeEnum::DrawAttributeBar_ColorSelect1Feedback) + i),
+				swatch, swatch->rw->val, swatch->rh->val, swatch->ft->val);
+	}
+	if (const auto custom = shape(BarUISetShapeEnum::DrawAttributeBar_ColorSelect12); custom && custom->rw && custom->rh && custom->ft)
+		copy(BarUISetShapeEnum::DrawAttributeBar_ColorSelect12Feedback, custom, custom->rw->val, custom->rh->val, custom->ft->val);
+	if (const auto found = state.svgMap.find(BarUISetSvgEnum::DrawAttributeBar_ThicknessAnnotationInfo); found != state.svgMap.end() && found->second)
+	{
+		const double scale = found->second->w.val / BarThicknessTooltipIconSize;
+		copy(BarUISetShapeEnum::DrawAttributeBar_ThicknessAnnotationInfoFeedback, found->second, 4.0 * scale, 4.0 * scale, scale);
+	}
+	if (const auto badge = shape(BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowBadge); badge && badge->rw && badge->rh && badge->ft)
+		copy(BarUISetShapeEnum::DrawAttributeBar_ThicknessOverflowInfoFeedback, badge, badge->rw->val, badge->rh->val, badge->ft->val);
+}
+
+// 主栏 / More 按钮：同步本帧继承位置（与绘制同算法），更新存活集合并懒登记。
+void PrepareBarMainButtonVisuals(BarRenderLoopState& state,
+	const std::vector<std::shared_ptr<BarButtonClass>>& mainButtons, const BarMoreButtonSnapshotClass& moreButtons)
+{
+	state.visualMainLive.clear();
+	state.visualMoreLive.clear();
+	const auto mainBar = state.shapeMap.find(BarUISetShapeEnum::MainBar);
+	if (mainBar == state.shapeMap.end() || !mainBar->second) return;
+	auto live = [&](BarButtonClass* button, bool moreItem)
+		{
+			if (!button) return;
+			(void)Inkeys::UI::UI3::PrepareButtonVisualInheritance(*button,
+				button->button.Inherit(UiInheritEnum::CenterFromTopLeft, *mainBar->second));
+			const void* key = button;
+			(moreItem ? state.visualMoreLive : state.visualMainLive).insert(key);
+			auto& ids = moreItem ? state.visualMoreButtons : state.visualMainButtons;
+			if (ids.contains(key)) return;
+			Inkeys::UI::UI3::VisualSamplerContext context;
+			context.zoom = [&state] { return state.visualFrameZoom; };
+			context.map = [&state, moreItem](const RECT& bounds)
+				{
+					return MapBarVisualBounds(state, moreItem ? BarVisualMapping::Rigid : BarVisualMapping::Body, bounds);
+				};
+			auto inner = Inkeys::UI::UI3::MakeButtonVisualSampler(*button, std::move(context));
+			const std::string name = std::string(moreItem ? "more.item#" : "main.item#") + std::to_string(ids.size());
+			ids.emplace(key, state.visualPanels.Add(moreItem ? state.visualMoreGroup : state.visualMainGroup,
+				[&state, key, button, moreItem, inner = std::move(inner)](Inkeys::UI::UI3::VisualSample& sample)
+				{
+					if (!(moreItem ? state.visualMoreLive : state.visualMainLive).contains(key)) return;
+					// More 按钮在图标透明度为 0 时整体不画（DrawMoreButton）。
+					if (moreItem && button->icon.pct.val <= 0.000001) return;
+					inner(sample);
+				}, name));
+		};
+	for (const auto& button : mainButtons) live(button.get(), false);
+	for (const auto& button : moreButtons.explicitMore) live(button.get(), true);
+	for (const auto& button : moreButtons.forcedOverflow) live(button.get(), true);
+}
+
+void PrepareBarPanelVisuals(BarRenderLoopState& state, BarUISetClass& owner, double frameZoom,
+	const std::vector<std::shared_ptr<BarButtonClass>>& mainButtons, const BarMoreButtonSnapshotClass& moreButtons)
+{
+	state.visualFrameZoom = frameZoom;
+	BarPanelVisualContext context;
+	context.zoom = [&state] { return state.visualFrameZoom; };
+	context.map = [&state](const RECT& bounds) { return MapBarVisualBounds(state, BarVisualMapping::Rigid, bounds); };
+	context.mappingState = [&state](Inkeys::UI::UI3::VisualStateWriter& out)
+		{
+			out.Real(state.visualFrameZoom);
+			out.Real(state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip);
+			out.Real(state.bottomDockMapping.rigidOverlayTranslationYDip);
+		};
+	// 面板对象随 owner 常驻；初始化完成后各登记一次。
+	if (!state.visualPanelsRegistered[0]) state.visualPanelsRegistered[0] = owner.geometryAttribute.RegisterVisuals(state.visualPanels, context);
+	if (!state.visualPanelsRegistered[1]) state.visualPanelsRegistered[1] = owner.eraserAttribute.RegisterVisuals(state.visualPanels, context);
+	if (!state.visualPanelsRegistered[2]) state.visualPanelsRegistered[2] = owner.recallAttribute.RegisterVisuals(state.visualPanels, context);
+	if (!state.visualPanelsRegistered[3] && ResolveBarDrawAttributeChain(state).valid)
+	{
+		RegisterBarDrawAttributeVisuals(state, owner, context);
+		state.visualPanelsRegistered[3] = true;
+	}
+	if (!state.visualPanelsRegistered[4])
+	{
+		RegisterBarMainVisuals(state, context);
+		state.visualPanelsRegistered[4] = true;
+	}
+	PrepareBarMainButtonVisuals(state, mainButtons, moreButtons);
+	SyncBarDrawAttributeFeedbackGeometry(state, owner.drawAttributeSwatchFeedback.size());
+	state.drawAttributeThicknessHoldProgressFrame = (std::clamp)(
+		static_cast<float>(state.barState.drawAttributeBar.thicknessSliderHoldProgress), 0.0f, 1.0f);
+	state.drawAttributeThicknessFineDialCandidateFrame = state.barState.drawAttributeBar.thicknessFineDialCandidateActive;
+	state.drawAttributeThicknessFineDialActivationAnchorFrame = static_cast<double>(
+		state.barState.drawAttributeBar.thicknessFineDialActivationPreviewVisualWidth);
+	state.drawAttributeThicknessFineDialValueFrame = state.drawAttributeThicknessFineDialCandidateFrame
+		? static_cast<double>(state.barState.drawAttributeBar.thicknessFineDialVisualWidth)
+		: static_cast<double>(state.drawAttributePenThickness.val);
+	if (const auto display = state.wordMap.find(BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay);
+		display != state.wordMap.end() && display->second)
+	{
+		// 与绘制同一公式：粗细读数由已采样的粗细值派生，准备时先写入，绘制时重写同值。
+		const std::wstring text = Inkeys::UI::Bar::Detail::FormatWidthDipText(
+			IW(I18nKey.UI.Bar.DrawAttributes.ThicknessFormat), state.drawAttributePenThickness.val);
+		display->second->content.SetVal(text);
+		display->second->content.SetTar(text);
+	}
+	owner.geometryAttribute.PrepareVisuals();
+	owner.eraserAttribute.PrepareVisuals();
+	owner.recallAttribute.PrepareVisuals();
+	// 调试模式也记录变化项名称，供整窗刷新诊断日志使用（最多 16 项）。
+	state.visualPanels.SetRecordChanged(BarVisualRecordChanged.load(std::memory_order_relaxed) || state.observedDebugModeEnabled);
+	{
+		// 登记表采样文字时记下本字号帧序号，绘制解析据此判断字号修正是否已交给登记表。
+		const UiFontCorrectionClass::RegistryFrameScope fontRegistryFrame(state.spec.FontFrameSerial());
+		state.visualPanelsAttempt = state.visualPanels.Prepare();
+	}
+	state.visualPanelsPrepared = true;
+	state.visualPanelsKeepAlive = false;
+	// 只有真实成员脏区才登记分类键；「推进但像素未变」由分类判断单独处理，不能替其他路径的未知变化签字。
+	if (state.visualPanelsAttempt.HasDamage())
+		state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::PanelMembers));
+}
+
+namespace Inkeys::UI::Bar
+{
+	void SetBarVisualShadowTestHook(std::function<void(const BarVisualShadowFrame&)> observe)
+	{
+		BarVisualRecordChanged.store(static_cast<bool>(observe), std::memory_order_relaxed);
+		BarVisualShadowObserver = std::move(observe);
+	}
+}
+
 // 主栏内容绘制入口的「本帧内容状态」：宿主在帧开始之前算好、只与内容有关的量。
 // 指针成员均为非拥有引用，只在本帧（宿主调用 DrawMainBarContent 期间）有效。
 struct BarMainBarContentFrame
 {
 	// 本帧按钮快照里的主栏按钮序列（与 state.mainBarLayoutSnapshot 逐项对应）。
 	const std::vector<std::shared_ptr<BarButtonClass>>* mainButtons = nullptr;
+	// 本帧按钮快照里的 More 浮层按钮（与登记表准备使用同一份）；为空时回退读取当前列表。
+	const BarMoreButtonSnapshotClass* moreButtons = nullptr;
 	// 本帧快照的笔型（FineDial 的逻辑范围）。
 	PenModeSelectEnum penMode = PenModeSelectEnum::IdtPenSoftPen;
 	// 吸附底栏且正在拖动：主体文字的字号目标跟随竖向果冻。
@@ -4620,16 +5536,21 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	const auto& stateMode = state.stateModeSnapshot;
 	const auto& frameDrawingState = frame;
 	const double frameZoom = frame.zoom;
+	// 本帧若在准备登记表之前提前返回，不能沿用上一帧已提交的候选。
+	state.visualPanelsPrepared = false;
 	const double animationDtSeconds = frame.animationDtSeconds;
 	const double currentAnimationSpeedRate = frame.animationSpeedRate;
 	const int forNum = frame.ordinal;
 	bool needRendering = false;
-	const DirtyVisualKey drawAttributeDirtyKey = GetBarDirtyVisualKey(
-		BarDirtyFixedVisual::DrawAttributeGroup);
+	// 主栏、主按钮、Logo、More 与绘制属性的视觉变化由 UI3 自动脏区登记表按对象/绘制块得出
+	// （RegisterBarMainVisuals、RegisterBarDrawAttributeVisuals）：推进时只登记「已由登记表处理」的分类键，
+	// 不再逐对象观察或整组观察（原整组键会把整块主栏/More/绘制属性登记为脏区）。
+	const DirtyVisualKey registryDirtyKey = GetBarDirtyVisualKey(
+		BarDirtyFixedVisual::PanelMembers);
+	const DirtyVisualKey drawAttributeDirtyKey = registryDirtyKey;
 	const DirtyVisualKey geometryAttributeDirtyKey = GetBarDirtyVisualKey(
 		BarDirtyFixedVisual::GeometryAttributeGroup);
-	const DirtyVisualKey moreDirtyKey = GetBarDirtyVisualKey(
-		BarDirtyFixedVisual::MoreGroup);
+	const DirtyVisualKey moreDirtyKey = registryDirtyKey;
 	const DirtyVisualKey dockTargetIndicatorDirtyKey = GetBarDirtyVisualKey(
 		BarDirtyFixedVisual::DockTargetIndicator);
 	state.bottomDockRootLayoutChanged = false;
@@ -4658,7 +5579,8 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			using Property=Inkeys::UI::UI3::ButtonAnimationProperty;
 			const auto role=property==Property::Geometry?geometryRole:property==Property::Visibility
 				?visibilityRole:property==Property::Color?colorRole:contentRole;
-			if(changed || active)state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(visual));
+			(void)visual;
+			if(changed || active)state.dirtyRegionTracker.MarkChanged(registryDirtyKey);
 			ObserveRole(role,active,same);
 			if(geometryAlsoSvg && role==geometryRole && role!=Ui3PropertyRole::SvgSemantic)
 				ObserveRole(Ui3PropertyRole::SvgSemantic,active,same);
@@ -4707,7 +5629,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			if (dirtyKey != 0) state.dirtyRegionTracker.MarkChanged(dirtyKey);
 			if (state.finiteObserver) ObserveRole(contentRole, false, stringO.IsSame());
 		};
-	const auto mainMaterialDirtyKey = GetBarDirtyVisualKey(BarDirtyFixedVisual::MainGroup);
+	const auto mainMaterialDirtyKey = registryDirtyKey;
 	const bool barMaterialActive = !state.barLightMaterial.IsSame();
 	if (barMaterialActive)
 	{
@@ -4723,14 +5645,14 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	for (auto& [key, shape] : state.shapeMap)
 	{
 		shape->lightMaterial = lightMaterial;
-		if (barMaterialActive) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(shape.get()));
+		if (barMaterialActive) state.dirtyRegionTracker.MarkChanged(registryDirtyKey);
 		if (!shape->themeSurface) continue;
 		shape->fill->SetDirect(GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::Surface));
 		shape->frame->SetDirect(GetThemeColor(ThemeModeEnum::Dark, ThemeColorEnum::SurfaceFrame));
 	}
 	const double mainLightMaterial = ThemeMaterial::ClampWeight(state.mainButtonLightMaterial.val);
 	state.superellipseMap[BarUISetSuperellipseEnum::MainButton]->lightMaterial = mainLightMaterial;
-	const auto logoDirtyKey = GetBarDirtyVisualKey(state.mainButtonLogo.get());
+	const auto logoDirtyKey = registryDirtyKey;
 	if (!state.mainLogoPenColor.IsSame())
 		ChangeColor(state.mainLogoPenColor, false, logoDirtyKey);
 	if (!state.mainLogoDrawingPct.IsSame())
@@ -4905,9 +5827,8 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		needRendering|=change;
 		if (change && key == BarUISetShapeEnum::MainBar)
 		{
-			// 主栏是所有浮层的布局根，移动时必须覆盖所有功能组的旧/新位置。
-			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
-				BarDirtyFixedVisual::MainGroup));
+			// 主栏是所有浮层的布局根；登记表逐项比较新旧位置，这里只登记分类键。
+			state.dirtyRegionTracker.MarkChanged(registryDirtyKey);
 			state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
 			state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
 			state.dirtyRegionTracker.MarkChanged(moreDirtyKey);
@@ -4929,7 +5850,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		colorRole = Ui3PropertyRole::Feedback;
 		ObserveRole(geometryRole, false, true);
 		bool forceReplace = false, change = false;
-		const auto dirtyKey = GetBarDirtyVisualKey(val.get());
+		const auto dirtyKey = registryDirtyKey;
 		if (val->forceReplace) val->forceReplace = false, forceReplace = true;
 
 		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace, dirtyKey), change = true;
@@ -4945,8 +5866,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		if (!val->pct.IsSame()) ChangePct(val->pct, forceReplace, dirtyKey), change = true;
 		if (change && key == BarUISetSuperellipseEnum::MainButton)
 		{
-			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
-				BarDirtyFixedVisual::MainGroup));
+			state.dirtyRegionTracker.MarkChanged(registryDirtyKey);
 			state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
 			state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
 			state.dirtyRegionTracker.MarkChanged(moreDirtyKey);
@@ -4977,7 +5897,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 			key == BarUISetPngEnum::DrawAttributeBar_ColorSelect12Wheel, relevant);
 		ObserveRole(geometryRole, false, true);
 		bool forceReplace = false, change = false;
-		const auto dirtyKey = GetBarDirtyVisualKey(val.get());
+		const auto dirtyKey = registryDirtyKey;
 		if (val->forceReplace) val->forceReplace = false, forceReplace = true;
 
 		if (!val->enable.IsSame()) ChangeState(val->enable, forceReplace, dirtyKey), change = true;
@@ -5125,7 +6045,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 	auto AdvanceButton = [&](BarButtonClass& button, bool moreItem)
 	{
 		button.button.lightMaterial = lightMaterial;
-		if (barMaterialActive) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(&button.button));
+		if (barMaterialActive) state.dirtyRegionTracker.MarkChanged(registryDirtyKey);
 		// 主栏倒转（停靠上方、向下展开）时角标换到右下；拖动中锁存，松手后再过渡。
 		if (button.badge && !frame.bottomDockDragActive)
 			button.badge->belowTarget = static_cast<bool>(state.barState.widgetPosition.primaryBar);
@@ -5143,7 +6063,8 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		{
 			using Part = Inkeys::UI::UI3::ButtonAnimationPart;
 			using Property = Inkeys::UI::UI3::ButtonAnimationProperty;
-			if (changed || active) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(visual));
+			(void)visual;
+			if (changed || active) state.dirtyRegionTracker.MarkChanged(registryDirtyKey);
 			Ui3PropertyRole role = Ui3PropertyRole::Feedback;
 			if (part == Part::Icon)
 			{
@@ -5184,6 +6105,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		const bool centerFarEdgeSpringPending =
 			state.bottomDockCenterCaptureFarEdgeActive
 			|| SpringPending(state.bottomDockCenterCaptureFarEdgeSpring);
+		state.bottomDockCenteredRootApplied = false;
 		if (ShouldDeriveBarBottomDockCenteredRoot(
 			frame.bottomDockMode == BarBottomDockMode::BottomDocked,
 			frame.bottomDockCenterMode, frame.bottomDockCenterPhase,
@@ -5218,6 +6140,7 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 				mainBar->Inherit(UiInheritEnum::Center, *mainButton);
 				state.bottomDockRootLayoutChanged = abs(previousMainCenterDip
 					- placement.mainCenterDip) > 0.000001;
+				state.bottomDockCenteredRootApplied = true;
 			}
 		}
 	}
@@ -6812,11 +7735,8 @@ double closeButtonSize =
 			|| centerSpringActive || centerCaptureFarEdgeActive)
 		{
 			needRendering = true;
-			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
-				BarDirtyFixedVisual::MainGroup));
-			state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
+			state.dirtyRegionTracker.MarkChanged(registryDirtyKey);
 			state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
-			state.dirtyRegionTracker.MarkChanged(moreDirtyKey);
 			if (state.bottomDockTargetIndicatorTarget
 				|| state.bottomDockTargetIndicatorProgress.val > 0.000001
 				|| state.bottomDockTargetIndicatorBoundsVisible)
@@ -6876,11 +7796,8 @@ double closeButtonSize =
 	// 时间轴与属性值在同一帧末尾推进，避免批次剩余时间和实际动画相差一帧。
 	if (state.mainBarTimeline.IsActive())
 	{
-		state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
-			BarDirtyFixedVisual::MainGroup));
-		state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
+		state.dirtyRegionTracker.MarkChanged(registryDirtyKey);
 		state.dirtyRegionTracker.MarkChanged(geometryAttributeDirtyKey);
-		state.dirtyRegionTracker.MarkChanged(moreDirtyKey);
 	}
 	if (state.drawAttributeTimeline.IsActive())
 		state.dirtyRegionTracker.MarkChanged(drawAttributeDirtyKey);
@@ -6926,7 +7843,7 @@ double closeButtonSize =
 		frameZoom, state.activeWorkArea, POINT{state.monitorOrigin.x + state.bottomDockFrameTransitionTranslation.x,
 			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y}, state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
 		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline);
-	if (promptChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::GeometryPanelGroup));
+	if (promptChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::ConstructionPrompt));
 
 	const bool geometryChanged = owner_.geometryAttribute.Advance(owner_, state.stateModeSnapshot,
 		animationDtSeconds, currentAnimationSpeedRate, frameZoom, state.activeWorkArea,
@@ -6934,7 +7851,6 @@ double closeButtonSize =
 			state.monitorOrigin.y + state.bottomDockFrameTransitionTranslation.y},
 		state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
 		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline, frame.bottomDockDragActive, frame.frameTime);
-	if (geometryChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::GeometryPanelGroup));
 
 	const bool eraserChanged = owner_.eraserAttribute.Advance(owner_, animationDtSeconds,
 		currentAnimationSpeedRate, frameZoom, state.activeDisplayDpi, state.activeWorkArea,
@@ -6944,7 +7860,6 @@ double closeButtonSize =
 		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline,
 		frame.bottomDockDragActive,
 		state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtEraser && !IsCanvasDebugVisualActive());
-	if (eraserChanged) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::EraserAttributeGroup));
 	const bool recallIdleDismissed = frame.recallIdleDismissed;
 	const bool recallChanged = owner_.recallAttribute.Advance(owner_, frame.recallChrome, frame.recallAnchorVisible, animationDtSeconds,
 		currentAnimationSpeedRate, frameZoom, state.activeDisplayDpi, state.activeWorkArea,
@@ -6953,7 +7868,6 @@ double closeButtonSize =
 		state.bottomDockHorizontalMapping.rigidOverlayTranslationXDip,
 		state.bottomDockMapping.rigidOverlayTranslationYDip, &state.mainBarTimeline,
 		frame.bottomDockDragActive);
-	if (recallChanged || recallIdleDismissed) state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::RecallAttributeGroup));
 	const bool statusChanged = owner_.statusIndicator.Advance(owner_, animationDtSeconds,
 		currentAnimationSpeedRate, frameZoom,
 		state.stateModeSnapshot.StateModeSelect == StateModeSelectEnum::IdtPen
@@ -7012,6 +7926,9 @@ double closeButtonSize =
 		if (previousIdleFade != state.pptIdleFade.val || !state.pptIdleFade.IsSame())
 			state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(BarDirtyFixedVisual::StatusIndicator));
 	}
+	// 属性面板、绘制属性、主栏与 More 的脏区由 UI3 自动脏区登记表按成员得出；
+	// 放在全部推进（含 PPT 闲置淡化）之后、呈现分类之前，采样即本帧绘制值。
+	PrepareBarPanelVisuals(state, owner_, frameZoom, frame.mainButtons, frame.moreButtons);
 	// 只同步原动画结果；不另起时间线，保留换边关键帧与每帧推进顺序。
 	const auto mainFrame = state.shapeMap[BarUISetShapeEnum::MainBar];
 	const auto drawFrame = state.shapeMap[BarUISetShapeEnum::DrawAttributeBar];
@@ -7025,7 +7942,12 @@ double closeButtonSize =
 		state.drawAttributeOverflowPopupProgress.val, (std::clamp)(static_cast<double>(state.drawAttributeOverflowPopupProgress.val), 0.0, 1.0));
 	owner_.colorPickerPanel.SetExternalState(owner_.colorPicker.TargetGeometry() > 0,
 		owner_.colorPicker.Geometry(), owner_.colorPicker.Opacity());
-	return needRendering || promptChanged || geometryChanged || eraserChanged || recallChanged || recallIdleDismissed || statusChanged;
+	// 登记表发现的成员变化本身就是呈现需求（直接写值可能没有任何推进标志）。
+	const bool panelDamage = state.visualPanelsAttempt.HasDamage();
+	state.visualPanelsProgressOnly = (geometryChanged || eraserChanged || recallChanged || recallIdleDismissed)
+		&& !panelDamage && !(needRendering || promptChanged || statusChanged);
+	return needRendering || promptChanged || geometryChanged || eraserChanged || recallChanged || recallIdleDismissed || statusChanged
+		|| panelDamage;
 }
 
 void BarRenderLoopCoordinator::PrepareLightingAndDemand(
@@ -7090,13 +8012,17 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 		|| debugFrameRateEnabled != state.observedDebugFrameRateEnabled)
 	{
 		// FPS 子项切换时只清理旧覆盖层；文字本身不能维持 60 FPS 空转。
+		// 开启调试也必须刷新一次：静止时没有旧覆盖层可清，否则要等下一次业务变化才出现（且蓝框只画出局部）。
 		state.debugOverlayRefreshPending = state.debugOverlayRefreshPending
 			|| !DirtyRegionTracker::IsEmpty(state.lastPresentedDebugTextBounds)
 			|| !DirtyRegionTracker::IsEmpty(state.lastPresentedDebugFrameBounds)
 			|| !DirtyRegionTracker::IsEmpty(state.lastPresentedDebugWindowBounds)
-			|| debugFrameRateEnabled;
+			|| debugFrameRateEnabled || debugModeEnabled;
 		state.observedDebugModeEnabled = debugModeEnabled;
 		state.observedDebugFrameRateEnabled = debugFrameRateEnabled;
+		// 开关边界重新武装最终帧锁存：没有活动时这次刷新帧就是绿色最终帧，不能停在红框。
+		(void)state.debugFrameSleepLatch.Update(false, false);
+		state.debugViewportOversizeLogged = false;
 	}
 	const bool retryingNonSleepVisual = state.presentDecision.HasPendingVisual()
 		&& !state.debugFrameSleepLatch.IsPending();
@@ -7130,6 +8056,8 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 		state.dirtyRegionTracker.MarkChanged(GetBarDirtyVisualKey(
 			BarDirtyFixedVisual::MoreGroup));
 	}
+	state.visualLightChanged = needBorderLightingRendering
+		&& (owner_.lightingStateMachine.DidFramePrimaryLightChange() || owner_.lightingStateMachine.DidFrameCursorLightChange());
 	if (needBorderLightingRendering)
 	{
 		// 两个光源独立累计，鼠标光移动不能把静止主光拉进同一个大矩形。
@@ -7144,8 +8072,16 @@ void BarRenderLoopCoordinator::PrepareLightingAndDemand(
 		|| needBorderLightingRendering)
 		&& !state.dirtyRegionTracker.HasPendingDamage()))
 	{
+		// 需求只来自属性面板推进、且登记表确认像素未变：只保活，不整窗。
+		if (!needRenderOnce && !sustainRendering && !needBorderLightingRendering && state.visualPanelsProgressOnly)
+			state.visualPanelsKeepAlive = true;
 		// 未接入视觉键的呈现请求不能冒险漏刷，保持到成功提交为止。
-		state.unclassifiedDamagePending = true;
+		else
+		{
+			state.unclassifiedDamagePending = true;
+			state.debugUnclassifiedSource |= (needRenderOnce ? 1u : 0u) | (needRendering ? 2u : 0u)
+				| (sustainRendering ? 4u : 0u) | (needBorderLightingRendering ? 8u : 0u);
+		}
 	}
 	state.presentDecision.AddDemand({
 		needRendering || sustainRendering || debugRendering,
@@ -8004,14 +8940,13 @@ void BarRenderLoopCoordinator::DrawMainBarContent(
 									&& fineGeometry.valid && radius > 0.000001
 									&& angularStep > 0.000001)
 							{
-								bool candidateActive = state.barState.drawAttributeBar
-									.thicknessFineDialCandidateActive;
-								double liveVisualValue = candidateActive
-									? static_cast<double>(state.barState.drawAttributeBar
-										.thicknessFineDialVisualWidth)
-									: static_cast<double>(state.drawAttributePenThickness.val);
-								// 发布程序化动画的当帧视觉值，后续抓取可从当前角度接管。
-								if (!candidateActive && isfinite(liveVisualValue))
+								// 本帧锁存值（登记表准备时写入），与脏区采样一致。
+								bool candidateActive = state.drawAttributeThicknessFineDialCandidateFrame;
+								double liveVisualValue = state.drawAttributeThicknessFineDialValueFrame;
+								// 发布程序化动画的当帧视觉值，后续抓取可从当前角度接管；
+								// 交互线程可能在准备之后开始抓取，发布前再确认实时标志，不覆盖其写入。
+								if (!candidateActive && !state.barState.drawAttributeBar.thicknessFineDialCandidateActive
+									&& isfinite(liveVisualValue))
 									state.barState.drawAttributeBar.thicknessFineDialVisualWidth =
 										liveVisualValue;
 								if (!isfinite(liveVisualValue))
@@ -8020,9 +8955,8 @@ void BarRenderLoopCoordinator::DrawMainBarContent(
 										static_cast<double>(logicalRange.min),
 										static_cast<double>(logicalRange.max));
 								double visualValue = liveVisualValue;
-								double previewAnchor = static_cast<double>(
-									state.barState.drawAttributeBar
-										.thicknessFineDialActivationPreviewVisualWidth);
+								double previewAnchor =
+									state.drawAttributeThicknessFineDialActivationAnchorFrame;
 								if (state.drawAttributeThicknessFineDialActivationGeometryTransition
 									&& isfinite(previewAnchor) && previewAnchor > 0.0)
 								{
@@ -8573,8 +9507,8 @@ bool presetButton = button.presetIndex >= 0;
 							DrawButtonVisual(contentRenderer, barDeviceContext,
 								*button, buttonInherit);
 						};
-					BarMoreButtonSnapshotClass moreSnapshot =
-						state.barButtonSet.GetMoreButtonSnapshot();
+					const BarMoreButtonSnapshotClass moreSnapshot = content.moreButtons
+						? *content.moreButtons : state.barButtonSet.GetMoreButtonSnapshot();
 					for (const shared_ptr<BarButtonClass>& button :
 						moreSnapshot.explicitMore)
 						DrawMoreButton(button.get());
@@ -8997,11 +9931,8 @@ bool presetButton = button.presetIndex >= 0;
 						(holdLabelInherit.y + holdLabelHeight / 2.0) * holdUiZoom;
 					if (holdRingOpacity > 0.000001)
 					{
-						float holdProgress = clamp(
-							static_cast<float>(
-								state.barState.drawAttributeBar
-									.thicknessSliderHoldProgress),
-							0.0f, 1.0f);
+						// 本帧锁存值（登记表准备时写入），与脏区采样一致。
+						float holdProgress = state.drawAttributeThicknessHoldProgressFrame;
 						float ringStroke = max(1.0f,
 							static_cast<float>(2.0 * holdUiZoom
 								* (holdRingSize
@@ -9279,9 +10210,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 	const auto& frameDrawingState = frame;
 	const DirtyVisualKey dockTargetIndicatorDirtyKey = GetBarDirtyVisualKey(
 		BarDirtyFixedVisual::DockTargetIndicator);
-	const bool debugModeEnabled = true == BarUiDebugModeEnabled;
-	const bool debugFrameRateEnabled = debugModeEnabled
-		&& true == BarUiDebugFrameRateEnabled;
+	// 沿用需求阶段本帧采到的开关值（不再重读全局）：两阶段之间切换开关时，不能画出框却不登记擦除。
+	const bool debugModeEnabled = state.observedDebugModeEnabled;
+	const bool debugFrameRateEnabled = state.observedDebugFrameRateEnabled;
 	const auto alphaAttempt = state.presentationAlpha.BeginAttempt();
 	const bool alphaOnlyDemand = alphaAttempt.required
 		&& !state.presentDecision.HasPendingVisual()
@@ -9646,6 +10577,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				state.capacityOrigin.x + state.capacitySize.cx, state.capacityOrigin.y + state.capacitySize.cy });
 		// 存储脏区允许越屏；UI 定位仍使用真实 barWindow/工作区，二者不能混用。
 		state.dirtyRegionTracker.BeginFrame(windowBounds);
+		// 面板登记表的脏区（旧∪新）在设好窗口范围后并入；失败重试时随 tracker 待定脏区保留。
+		if (state.visualPanelsPrepared)
+			state.dirtyRegionTracker.IncludeDamage(RECT{}, state.visualPanelsAttempt.damage);
 		if ((state.presentDecision.NeedsFullDirty() && !alphaOnlyDemand)
 			|| state.unclassifiedDamagePending || state.bottomDockRootLayoutChanged)
 			state.dirtyRegionTracker.ForceFullDamage();
@@ -10410,8 +11344,11 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		}
 
 		RECT geometryBounds = TransformBottomDockBounds(owner_.geometryAttribute.Bounds(), BottomDockBoundsTransform::Rigid);
-		RenderingAttribute::UnionRectInPlace(geometryBounds, TransformBottomDockBounds(owner_.constructionPrompt.Bounds(), BottomDockBoundsTransform::Rigid));
 		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(BarDirtyFixedVisual::GeometryPanelGroup), geometryBounds);
+		const RECT promptBounds = TransformBottomDockBounds(owner_.constructionPrompt.Bounds(), BottomDockBoundsTransform::Rigid);
+		state.dirtyRegionTracker.Observe(GetBarDirtyVisualKey(BarDirtyFixedVisual::ConstructionPrompt), promptBounds);
+		// 光影范围沿用原「形状面板 ∪ 构造提示」整块计算（光影不在本次脏区细分范围）。
+		RenderingAttribute::UnionRectInPlace(geometryBounds, promptBounds);
 		if (observePrimaryLight) RenderingAttribute::UnionRectInPlace(primaryLightDamageBounds,
 			IntersectBarWindowRect(geometryBounds, ResolvePrimaryLightInfluence(BottomDockBoundsTransform::Rigid)));
 		if (observeCursorLight) RenderingAttribute::UnionRectInPlace(cursorLightDamageBounds,
@@ -10447,6 +11384,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				geometryAttributeGroupKey, geometryAttributeGroupBounds);
 		if (observeMoreGroup)
 			state.dirtyRegionTracker.Observe(moreGroupKey, moreGroupBounds);
+		state.visualLightDamage = primaryLightDamageBounds;
+		RenderingAttribute::UnionRectInPlace(state.visualLightDamage, cursorLightDamageBounds);
 		if (observePrimaryLight)
 			state.dirtyRegionTracker.Observe(
 				primaryLightKey, primaryLightDamageBounds);
@@ -10663,6 +11602,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			const auto mainButtonY = ValueRange(mainButton->y);
 			const auto mainBarOffsetX = ValueRange(mainBar->x);
 			const auto mainBarWidth = ValueRange(mainBar->w);
+			// 居中吸底且主按钮宽、主栏偏移/宽与描边同相推进时的同姿态极值；无效时沿用独立区间。
+			BarBottomDockCenteredPoseRange centeredPoseRange{};
 			if (ShouldDeriveBarBottomDockCenteredRoot(
 				state.bottomDockFrameMode == BarBottomDockMode::BottomDocked,
 				state.bottomDockFrameCenterMode,
@@ -10700,18 +11641,77 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					mainButtonX = {
 						centeredRootRange.minimumDip,
 						centeredRootRange.maximumDip };
+				// 布局一次 SetTar 让主栏偏移与宽同批次同曲线推进：主栏变宽时根节点反向移动、主栏中心不动。
+				// 上面的独立区间会把不可能同时出现的极值拼起来（实机居中展开时多出约 340 px），
+				// 同相时改按共同进度逐姿态求实际极值；带中点关键帧（换边）或不同相时保留独立区间。
+				{
+					const UiValueClass* tracked[] = { &mainButton->w,
+						mainButton->ft.has_value() ? &mainButton->ft.value() : nullptr,
+						&mainBar->x, &mainBar->w,
+						mainBar->ft.has_value() ? &mainBar->ft.value() : nullptr };
+					const UiValueClass* lead = nullptr;
+					// 只有本帧推进阶段实际按居中摆放了根节点（弹簧未收敛等情况下根不由宽度推导）才收紧。
+					bool samePhase = state.bottomDockCenteredRootApplied;
+					for (const UiValueClass* value : tracked)
+					{
+						if (!value) continue;
+						if (value->hasMiddleV) { samePhase = false; break; }
+						if (static_cast<double>(value->val) == static_cast<double>(value->tar)) continue; // 与 ValueRange 一致：已到终点视为静止
+						if (!lead) { lead = value; continue; }
+						if (static_cast<UiCurveEnum>(value->activeCurve) != static_cast<UiCurveEnum>(lead->activeCurve)
+							|| static_cast<double>(value->progress) != static_cast<double>(lead->progress)
+							|| static_cast<double>(value->dur) != static_cast<double>(lead->dur)
+							|| static_cast<double>(value->timelineStartProgress) != static_cast<double>(lead->timelineStartProgress)
+							|| static_cast<bool>(value->continueTimelinePhase) != static_cast<bool>(lead->continueTimelinePhase))
+						{
+							samePhase = false;
+							break;
+						}
+					}
+					// 实际摆放把描边钳到 0 以上（w + max(0, ft)）；描边为负或正在推进（Back 过冲可能穿过 0）时，
+					// 线性轨道与摆放不一致，回退独立区间。
+					for (const UiValueClass* stroke : { tracked[1], tracked[4] })
+						if (stroke && (static_cast<double>(stroke->val) < 0.0
+							|| static_cast<double>(stroke->val) != static_cast<double>(stroke->tar) || stroke->hasMiddleV))
+							samePhase = false;
+					if (samePhase)
+					{
+						auto Track = [](const UiValueClass* value)
+							{
+								if (!value) return BarBottomDockCenteredPoseTrack{};
+								const double current = value->val, target = value->tar;
+								if (current == target) return BarBottomDockCenteredPoseTrack{ current, current };
+								return BarBottomDockCenteredPoseTrack{ static_cast<double>(value->startV), target };
+							};
+						auto Sum = [](BarBottomDockCenteredPoseTrack a, BarBottomDockCenteredPoseTrack b)
+							{
+								return BarBottomDockCenteredPoseTrack{ a.start + b.start, a.target + b.target };
+							};
+						const auto curve = lead ? UiGetCurveExtrema(static_cast<UiCurveEnum>(lead->activeCurve)) : UiCurveExtremaClass{ 0.0, 0.0 };
+						centeredPoseRange = ResolveBarBottomDockCenteredPoseRange(monitorCenterLocalDip,
+							Sum(Track(&mainButton->w), Track(tracked[1])), Track(&mainBar->x),
+							Sum(Track(&mainBar->w), Track(tracked[4])), Track(&mainBar->w),
+							(std::min)(0.0, curve.minimum), (std::max)(lead ? 1.0 : 0.0, curve.maximum));
+						if (centeredPoseRange.valid)
+							mainButtonX = { centeredPoseRange.rootMinimumDip, centeredPoseRange.rootMaximumDip };
+					}
+				}
 			}
 			// Y由displayCenterY逐帧SetDirect派生，预约其完整已知段而不是当前采样。
 			const auto displayAnchorY = ValueRange(state.displayCenterY);
 			minimumCapacityAnchor.y = static_cast<LONG>(floor(min(mainButtonY.minimum * frameZoom, displayAnchorY.minimum)));
 			maximumCapacityAnchor.y = static_cast<LONG>(ceil(max(mainButtonY.maximum * frameZoom, displayAnchorY.maximum)));
 			AddRoot(mainButtonX, mainButtonY, mainButton);
-			const auto mainBarX = AddRanges(mainButtonX, mainBarOffsetX);
+			// 同相居中时主栏中心与左缘直接取同姿态极值，不再把根与偏移、中心与半宽当独立区间相加。
+			const auto mainBarX = centeredPoseRange.valid
+				? BarWindowScalarRange{ centeredPoseRange.barCenterMinimumDip, centeredPoseRange.barCenterMaximumDip }
+				: AddRanges(mainButtonX, mainBarOffsetX);
 			const auto mainBarY = AddRanges(mainButtonY, ValueRange(mainBar->y));
 			AddRoot(mainBarX, mainBarY, mainBar);
 
-			const auto mainBarLeft = SubtractHalfRange(
-				mainBarX, ValueRange(mainBar->w));
+			const auto mainBarLeft = centeredPoseRange.valid
+				? BarWindowScalarRange{ centeredPoseRange.barLeftMinimumDip, centeredPoseRange.barLeftMaximumDip }
+				: SubtractHalfRange(mainBarX, ValueRange(mainBar->w));
 			const auto mainBarTop = SubtractHalfRange(
 				mainBarY, ValueRange(mainBar->h));
 			const auto drawButtonCenterX = AddRanges(
@@ -10952,8 +11952,17 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 					}
 				}
 			}
+			// More 的实际锚点是 More 按钮（栏端），主栏变宽时它相对栏中心移动至多半个宽度变化量；
+			// 同姿态收紧后栏中心几乎不动，这段位移要按宽度区间补回（原独立区间恰好把它包住）。
+			BarWindowScalarRange morePanelParentX = mainBarX;
+			if (centeredPoseRange.valid)
+			{
+				const double halfWidthTravel = (mainBarWidth.maximum - mainBarWidth.minimum) / 2.0;
+				morePanelParentX.minimum -= halfWidthTravel;
+				morePanelParentX.maximum += halfWidthTravel;
+			}
 			AddInheritedVisual(state.shapeMap[BarUISetShapeEnum::MorePanel],
-				mainBarX, mainBarY, mainBar->inhX + mainBar->w.val / 2.0,
+				morePanelParentX, mainBarY, mainBar->inhX + mainBar->w.val / 2.0,
 				mainBar->inhY + mainBar->h.val / 2.0);
 			if (maximumIndicatorScale > 0.000001)
 			{
@@ -11011,6 +12020,39 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		candidateViewport = Inkeys::UI::Bar::ClipBarViewportForTaskbarEdge(
 			candidateViewport, state.monitorOrigin, state.bottomDockFrameTransitionTranslation,
 			state.activeMonitorBounds.bottom, protectBottomEdge);
+		if (debugModeEnabled)
+		{
+			// 实机「居中吸附松手蓝框巨大」离屏无法复现：调试模式下窗口任一边越出可见内容（含吸附提示包络）
+			// 240 DIP 以上时，记录本帧全部几何输入，定位首个异常增长的分量。只诊断，不改变行为。
+			RECT visibleEnvelope = currentContentBounds;
+			UnionBarWindowRect(visibleEnvelope, dockTargetIndicatorEnvelopeBounds);
+			const LONG margin = static_cast<LONG>(lround(240.0 * frameZoom));
+			const bool oversize = !IsBarWindowRectEmpty(visibleEnvelope) && !IsBarWindowRectEmpty(candidateViewport)
+				&& (candidateViewport.left < visibleEnvelope.left - margin || candidateViewport.top < visibleEnvelope.top - margin
+					|| candidateViewport.right > visibleEnvelope.right + margin || candidateViewport.bottom > visibleEnvelope.bottom + margin);
+			if (oversize && !state.debugViewportOversizeLogged)
+			{
+				const RECT committed = state.viewportController.Committed();
+				const RECT released = state.releasedWindowSurface.Viewport();
+				const auto R = [](const RECT& r) { return std::format("({},{},{},{})", r.left, r.top, r.right, r.bottom); };
+				Inkeys::Log::TryFormat(Inkeys::Log::Level::Warn, Inkeys::Log::Module::Bar,
+					"[ViewportOversize] branch={} drag={} settle={} reserveDock={} viewport={} content={} indicator={} predicted={} layout={} "
+					"committed={} translation=({},{}) anchor=({},{}) committedAnchor=({},{}) released={} zoom={:.3f} "
+					"dockOutset=({:.1f},{:.1f}) springs(top={:.1f},bottom={:.1f},center={:.1f},farEdge={:.1f},grip={:.1f}) mode={} center={}",
+					fixedReleaseGeometry ? "release" : fixedDragGeometry ? "fixedDrag" : frame.bottomDockDragActive ? "dockDrag" : "controller",
+					frame.bottomDockDragActive, settleViewport, reserveBottomDockVisualEnvelope,
+					R(candidateViewport), R(currentContentBounds), R(dockTargetIndicatorEnvelopeBounds), R(predictedEnvelope), R(layoutBounds),
+					R(committed), viewportTranslation.x, viewportTranslation.y, frameAnchor.x, frameAnchor.y,
+					state.committedAnchor.x, state.committedAnchor.y, R(released), frameZoom,
+					horizontalDockOutsetDip, verticalDockOutsetDip,
+					state.bottomDockSpring.positionDip, state.bottomDockCaptureBottomSpring.positionDip,
+					state.bottomDockCenterSpring.positionDip, state.bottomDockCenterCaptureFarEdgeSpring.positionDip,
+					state.bottomDockHorizontalMapping.rigidGripTranslationXDip,
+					static_cast<unsigned>(frame.bottomDockMode), static_cast<unsigned>(frame.bottomDockCenterMode));
+			}
+			state.debugViewportOversizeLogged = oversize;
+		}
+		else state.debugViewportOversizeLogged = false; // 关闭期间复位边沿，下次开启后首个超大帧仍能记录
 
 		if (Inkeys::UI::Bar::IsBarWindowRectEmpty(candidateViewport))
 		{
@@ -11126,8 +12168,14 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			barGdiInterop);
 		barDeviceContext = barDeviceContextLease.Get();
 		barGdiInterop = barGdiInteropLease.Get();
+		state.visualFullReason = (state.unclassifiedDamagePending ? 1u : 0u)
+			| (state.presentDecision.NeedsFullDirty() ? 2u : 0u);
 		RECT businessDirty = state.dirtyRegionTracker.ResolveDamage(
 			state.unclassifiedDamagePending);
+		const RECT debugResolvedBusinessDirty = businessDirty;
+		// 提交成功后 NeedsFullDirty 会被清零，诊断日志用提交前的值。
+		const bool debugNeedsFullDirty = state.presentDecision.NeedsFullDirty();
+		if (state.dirtyRegionTracker.ResolvedFullDamage()) state.visualFullReason |= 16u;
 		const POINT candidateSource{
 			candidateViewport.left - state.capacityOrigin.x,
 			candidateViewport.top - state.capacityOrigin.y };
@@ -11203,24 +12251,63 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				state.bottomDockRootLayoutChanged);
 		const bool forceFullWindowReplacement = mappingFullWindowReplacement
 			|| alphaAttempt.fullWindow;
+		state.visualFullReason |= (mappingFullWindowReplacement ? 4u : 0u) | (alphaAttempt.fullWindow ? 8u : 0u);
 		if (mappingFullWindowReplacement)
 		{
 			// 映射 tuple 变化会重新解释整张 HWND，本帧必须清除并替换完整候选范围。
 			// 只扩大清绘范围；观察结束后不能丢掉未变对象的成功边界。
 			businessDirty = candidateViewport;
 		}
-		// 调试覆盖层在业务脏区解析后加入，避免红框反向污染业务 damage。
+		// 先只按业务确定本帧刷新范围（整窗替换、1px 保活、整窗兜底都在这里定），调试框再标记这一最终范围：
+		// 每次提交都有红/绿框，且框反映本帧真正重画的范围，而不是兜底之前的业务脏区。
+		const bool debugFinalIdleFrame = state.debugFrameSleepLatch.IsPending();
+		RECT framePresent = forceFullWindowReplacement ? candidateViewport
+			: IntersectBarWindowRect(businessDirty, candidateViewport);
+		// 本帧需求均已分类（无未分类请求；整幅需求已使 ResolveDamage 返回整窗），而解析出的业务脏区为空：
+		// 被标记的键前后包络都为空（对象不可见、无旧像素），登记表也确认像素未变——没有任何像素需要重画，
+		// 只保活，不再退回整窗。
+		const bool registryOnlyNoDamage = !state.unclassifiedDamagePending
+			&& !(state.visualPanelsPrepared && state.visualPanelsAttempt.HasDamage());
+		// 调试最终空闲帧只把上一帧框重涂为绿框，没有业务像素需要保活或整窗兜底。
+		const bool debugRecolorOnly = debugModeEnabled && debugFinalIdleFrame
+			&& !IsBarWindowRectEmpty(IntersectBarWindowRect(state.lastPresentedDebugFrameBounds, candidateViewport));
+		if (DirtyRegionTracker::IsEmpty(framePresent) && !debugRecolorOnly
+			&& (state.visualPanelsKeepAlive || registryOnlyNoDamage) && !alphaOnlyDemand
+			&& !forceFullWindowReplacement && !IsBarWindowRectEmpty(candidateViewport))
+		{
+			// 面板推进但像素未变：提交 1 像素保活脏区维持帧节奏；该像素按原样重画，不改变画面。
+			framePresent = RECT{ candidateViewport.left, candidateViewport.top,
+				candidateViewport.left + 1, candidateViewport.top + 1 };
+		}
+		const bool debugKeepAlivePresent = !DirtyRegionTracker::IsEmpty(framePresent)
+			&& framePresent.right - framePresent.left == 1 && framePresent.bottom - framePresent.top == 1;
+		const bool debugEmptyFallback = DirtyRegionTracker::IsEmpty(framePresent) && !debugRecolorOnly;
+		if (DirtyRegionTracker::IsEmpty(framePresent) && !debugRecolorOnly)
+		{
+			// alpha-only demand 只要求整窗 ULW，不虚构业务 scene dirty。
+			if (!alphaOnlyDemand)
+			{
+				// 这里只扩大绘制范围；晚置全脏会在提交时丢失未观察对象的旧边界。
+				businessDirty = candidateViewport;
+			}
+			framePresent = candidateViewport;
+		}
+		// 调试覆盖层在业务刷新范围确定后加入，避免红框反向污染业务 damage；
+		// 框按窗口裁剪并保证最小可见尺寸，提交区并入上一帧框与文字以擦除旧覆盖层。
+		// 整窗替换与开关刷新帧整窗重新提交，框标记整窗。
+		const RECT debugFrameMark = debugModeEnabled
+			&& (forceFullWindowReplacement || state.debugOverlayRefreshPending) ? candidateViewport : framePresent;
 		const auto debugDamage = ResolveDebugDamage(
-			businessDirty,
+			debugFrameMark,
 			state.lastPresentedDebugTextBounds,
 			state.lastPresentedDebugFrameBounds,
 			currentDebugTextBounds,
 			debugModeEnabled,
-			state.debugFrameSleepLatch.IsPending());
-		RECT debugTarget = debugDamage.frameTarget;
-		RECT currentDebugFrameBounds = debugModeEnabled ? debugTarget : RECT{};
+			debugFinalIdleFrame,
+			candidateViewport);
+		auto debugFrame = debugDamage.frame;
+		RECT currentDebugFrameBounds = debugModeEnabled ? debugFrame.bounds : RECT{};
 		RECT presentDirty = debugDamage.presentDamage;
-		if (forceFullWindowReplacement) presentDirty = candidateViewport;
 		if ((forceFullWindowReplacement || state.debugOverlayRefreshPending)
 			&& !IsBarWindowRectEmpty(state.lastPresentedDebugWindowBounds))
 			UnionBarWindowRect(presentDirty,
@@ -11231,13 +12318,14 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		presentDirty = IntersectBarWindowRect(presentDirty, candidateViewport);
 		if (DirtyRegionTracker::IsEmpty(presentDirty))
 		{
-			// alpha-only demand 只要求整窗 ULW，不虚构业务 scene dirty。
-			if (!alphaOnlyDemand)
-			{
-				// 这里只扩大绘制范围；晚置全脏会在提交时丢失未观察对象的旧边界。
-				businessDirty = candidateViewport;
-			}
+			// 防御兜底（重涂条件已要求旧框与窗口相交，正常不可达）：整窗提交，框随之标记整窗。
+			if (!alphaOnlyDemand) businessDirty = candidateViewport;
 			presentDirty = candidateViewport;
+			if (debugModeEnabled)
+			{
+				debugFrame = Inkeys::UI::UI3::ResolveDebugFrameRect(candidateViewport, candidateViewport);
+				currentDebugFrameBounds = debugFrame.bounds;
+			}
 		}
 		D2D1_RECT_F presentDirtyRect = D2D1::RectF(
 			static_cast<FLOAT>(presentDirty.left),
@@ -11255,6 +12343,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		// 本帧内容状态：全部是上面已经算好的量，绘制入口不再回头读宿主的局部变量。
 		BarMainBarContentFrame contentFrame;
 		contentFrame.mainButtons = &frame.mainButtons;
+		contentFrame.moreButtons = &frame.moreButtons;
 		contentFrame.penMode = frame.penMode;
 		contentFrame.bottomDockedDragActive =
 			frame.bottomDockMode==BarBottomDockMode::BottomDocked && frame.bottomDockDragActive;
@@ -11354,33 +12443,20 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 
 		if (debugModeEnabled)
 		{
-			// 红框只标记业务内容与调试文字产生的真实脏区。
-			{
-				if (debugTarget.left < 0) debugTarget.left = 0;
-				if (debugTarget.top < 0) debugTarget.top = 0;
-				LONG debugWindowWidth = static_cast<LONG>(state.barWindow.w);
-				LONG debugWindowHeight = static_cast<LONG>(state.barWindow.h);
-				if (debugTarget.right > debugWindowWidth) debugTarget.right = debugWindowWidth;
-				if (debugTarget.bottom > debugWindowHeight) debugTarget.bottom = debugWindowHeight;
-			}
-
+			// 红框标记本帧最终刷新范围（业务、保活与整窗兜底）与调试文字；几何已按窗口裁剪并保证最小可见尺寸。
 			COLORREF frame = ResolveDebugFrameColor(
 				state.debugFrameSleepLatch.IsPending());
 			constexpr FLOAT debugFrameWidth = DebugFrameWidth;
-			constexpr FLOAT dirtyFrameInset = DebugDirtyFrameInset;
 			constexpr FLOAT windowFrameInset = DebugWindowFrameInset;
 			// 脏区框比 HWND 框再内缩 2px，最终全脏帧仍能同时辨认绿框与蓝框。
 			D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(D2D1::RectF(
-				static_cast<FLOAT>(debugTarget.left) + dirtyFrameInset,
-				static_cast<FLOAT>(debugTarget.top) + dirtyFrameInset,
-				static_cast<FLOAT>(debugTarget.right) - dirtyFrameInset,
-				static_cast<FLOAT>(debugTarget.bottom) - dirtyFrameInset), 0, 0);
+				debugFrame.left, debugFrame.top, debugFrame.right, debugFrame.bottom), 0, 0);
 
 			ID2D1SolidColorBrush* borderBrush =
 				state.spec.GetFrameSolidColorBrush(
 					barDeviceContext, frame, 1.0);
 
-			if (borderBrush)
+			if (borderBrush && debugFrame.Visible())
 				(Inkeys::UI::UI3::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawRoundedRectangle(
 					&roundedRect, borderBrush, debugFrameWidth);
 
@@ -11606,6 +12682,9 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			return deviceLost ? BarRenderLoopStageResult::DeviceLost
 				: BarRenderLoopStageResult::Continue;
 		}
+		// 测试打开时：绘制与提交全部结束后、成功判定之前对生产登记表做绘制纯度检查（只读，不改快照）。
+		if (state.visualPanelsPrepared && BarVisualShadowObserver)
+			state.visualPanelsPurity = state.visualPanels.VerifyPurity();
 		const auto presentAttempt = Inkeys::UI::Bar::BarPresentAttemptResult::Acquired(
 				getDcHr,
 				updateLayeredWindowSucceeded,
@@ -11641,9 +12720,81 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 		}
 		if (presentCompletion.IsCommitted())
 		{
+			if (debugModeEnabled)
+			{
+				// 实机「按下按钮瞬间整窗刷新」诊断：成功提交的帧从局部刷新转为整窗刷新（开关刷新帧除外）时记一行，
+				// 列出整窗原因位、各阶段范围、已标记键与登记表变化项，定位是哪一路把刷新范围撑满。只诊断，不改变行为；
+				// 边沿只随成功提交推进，失败/延后的帧不占用。unclassifiedSource=0 表示主题、显示、透明度等直接置位路径。
+				const bool fullPresent = !state.debugOverlayRefreshPending && Inkeys::UI::Bar::SameBarWindowRect(presentDirty, candidateViewport);
+				if (fullPresent && !state.debugFullPresentLogged)
+				{
+					const auto R = [](const RECT& r) { return std::format("({},{},{},{})", r.left, r.top, r.right, r.bottom); };
+					std::string keys;
+					unsigned keyCount = 0;
+					state.dirtyRegionTracker.VisitChangedKeys([&](DirtyVisualKey key, const RECT& before, const RECT& now)
+						{
+							if (++keyCount > 12) return;
+							const bool fixed = (key & 0xFFFF000000000000ULL) == 0xFFFF000000000000ULL;
+							keys += fixed ? std::format("F{}", static_cast<unsigned>(key & 0xFFFFULL)) : std::string("p");
+							keys += R(before) + "->" + R(now) + ' ';
+						});
+					std::string names;
+					for (const auto& name : state.visualPanelsAttempt.changedNames) names += name + ' ';
+					Inkeys::Log::TryFormat(Inkeys::Log::Level::Warn, Inkeys::Log::Module::Bar,
+						"[FullWindowPresent] reason={} unclassifiedSource={} needsFullDirty={} trackerFull={} mappingFull={} viewportChanged={} "
+						"mappingMode={} rootLayoutChanged={} alphaFull={} alphaOnly={} keepAlive={} emptyFallback={} registryOnlyNoDamage={} "
+						"viewport={} committed={} translation=({},{}) settle={} content={} predicted={} resolvedBusiness={} business={} registry={} light={} lightChanged={} "
+						"keys[{}]={} registryChanged[{}]={}",
+						state.visualFullReason, state.debugUnclassifiedSource, debugNeedsFullDirty,
+						state.dirtyRegionTracker.ResolvedFullDamage(), mappingFullWindowReplacement, viewportMappingChanged,
+						static_cast<int>(presentMappingMode), state.bottomDockRootLayoutChanged, alphaAttempt.fullWindow, alphaOnlyDemand,
+						debugKeepAlivePresent, debugEmptyFallback, registryOnlyNoDamage,
+						R(candidateViewport), R(committedViewport), viewportTranslation.x, viewportTranslation.y,
+						settleViewport, R(currentContentBounds), R(predictedEnvelope),
+						R(debugResolvedBusinessDirty), R(businessDirty),
+						R(state.visualPanelsPrepared ? state.visualPanelsAttempt.damage : RECT{}),
+						R(state.visualLightDamage), state.visualLightChanged,
+						keyCount, keys, state.visualPanelsAttempt.changedCount, names);
+				}
+				state.debugFullPresentLogged = fullPresent;
+			}
+			else state.debugFullPresentLogged = false;
 			owner_.PreparePresentedButtonHits(state.stateModeSnapshot, frameZoom);
 			// D2D/GDI/ULW 四阶段全部成功后，才推进业务与调试覆盖层快照。
 			state.dirtyRegionTracker.CommitPresented();
+			if (state.visualPanelsPrepared) (void)state.visualPanels.Commit(state.visualPanelsAttempt.serial);
+			if (state.visualPanelsPrepared)
+			{
+				if (BarVisualShadowObserver)
+				{
+					const LONG width = candidateViewport.right - candidateViewport.left;
+					const LONG height = candidateViewport.bottom - candidateViewport.top;
+					auto toClient = [&](const RECT& layout)
+						{
+							RECT client = BarLayoutToClientRect(layout, candidateViewport);
+							client.left = (std::max)(client.left, 0L); client.top = (std::max)(client.top, 0L);
+							client.right = (std::min)(client.right, width); client.bottom = (std::min)(client.bottom, height);
+							return DirtyRegionTracker::IsEmpty(client) ? RECT{} : client;
+						};
+					Inkeys::UI::Bar::BarVisualShadowFrame shadowFrame;
+					shadowFrame.shadowDamage = toClient(state.visualPanelsAttempt.damage);
+					shadowFrame.presentDirty = toClient(presentDirty);
+					shadowFrame.panelDamage = state.visualPanelsPrepared ? toClient(state.visualPanelsAttempt.damage) : RECT{};
+					shadowFrame.lightDamage = state.visualLightChanged ? toClient(state.visualLightDamage) : RECT{};
+					shadowFrame.panelChangedNames = state.visualPanelsAttempt.changedNames;
+					shadowFrame.fullReason = state.visualFullReason;
+					shadowFrame.fontRegistryOnly = state.fontRegistryOnlyPending;
+					for (const auto& id : state.visualPanelsPurity.mismatched)
+						if (shadowFrame.purityNames.size() < 8)
+							shadowFrame.purityNames.push_back(state.visualPanels.NameOf(id));
+					shadowFrame.viewport = { width, height };
+					shadowFrame.changed = state.visualPanelsAttempt.changedCount;
+					shadowFrame.purityMismatches = state.visualPanelsPurity.mismatched.size();
+					shadowFrame.purityGroupMismatches = state.visualPanelsPurity.mismatchedGroups.size();
+					shadowFrame.serial = state.visualPanelsAttempt.serial;
+					BarVisualShadowObserver(shadowFrame);
+				}
+			}
 			state.viewportController.Commit(candidateViewport);
 			if (frame.bottomDockDragActive)
 			{
@@ -11877,6 +13028,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			(void)state.debugFrameSleepLatch.CommitPresented();
 			state.frameRateSamplePending = debugFrameRateEnabled;
 			state.unclassifiedDamagePending = false;
+			state.debugUnclassifiedSource = 0;
 			if (state.finiteObserver)
 			{
 				Inkeys::UI::UI3::Ui3FiniteCommitIdentity identity;
@@ -12260,6 +13412,7 @@ BarRenderLoopCoordinator::RenderFrame(
 		owner_.barState.PositionUpdate(zoom);
 		// 规范 root 与成功像素分别重基准，首张恢复帧由成功形状播种，不能再加一次手势位移。
 		state.dirtyRegionTracker.TranslateCommitted(layoutTranslation);
+		state.visualPanels.TranslateCommitted(layoutTranslation);
 		state.cachedVisibleContentBounds = TranslateBarWindowRect(state.cachedVisibleContentBounds, layoutTranslation);
 		state.lastPresentedDebugTextBounds = TranslateBarWindowRect(state.lastPresentedDebugTextBounds, layoutTranslation);
 		state.lastPresentedDebugFrameBounds = TranslateBarWindowRect(state.lastPresentedDebugFrameBounds, layoutTranslation);
@@ -12510,11 +13663,16 @@ BarRenderLoopCoordinator::RenderFrame(
 	frame.zoom = static_cast<double>(state.barStyle.zoom);
 	if (!isfinite(frame.zoom) || frame.zoom <= 0.0) frame.zoom = 1.0;
 	const bool fontPending = state.spec.FontAnimationsActive();
+	const bool fontUncoveredPending = state.spec.UncoveredFontAnimationsActive();
+	state.fontRegistryOnlyPending = fontPending && !fontUncoveredPending;
 	state.spec.SetFrameZoom(frame.zoom);
 	state.spec.BeginFontFrame(frame.frameTime,
 		{frame.animationDtSeconds,frame.animationSpeedRate,static_cast<bool>(UiAnimationEnabled),false},
 		static_cast<double>(state.displayUiBaseScale.tar)*static_cast<double>(state.barStyle.configZoom));
-	if (fontPending) { state.unclassifiedDamagePending = true; state.presentDecision.RequireVisualRetry(); }
+	// 字号修正在绘制中推进。全部由登记表采样的（按钮按压时标签修正等）只唤醒下一帧，
+	// 脏区由登记表比较修正值得出；只要有未登记的修正（直接修正、吸附提示文字等）仍整幅兜底。
+	if (fontUncoveredPending) { state.unclassifiedDamagePending = true; state.presentDecision.RequireVisualRetry(); }
+	else if (fontPending) state.presentDecision.AddDemand({ true, false, false });
 	if (diagnostics)
 	{
 		diagnostics->zoom = frame.zoom;

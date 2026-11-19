@@ -798,6 +798,7 @@ bool UiPNGClass::InitializationFromMemory(const void* data, size_t size)
 	bitmapHeight = static_cast<UINT32>(height);
 	rW = static_cast<double>(width);
 	rH = static_cast<double>(height);
+	++contentRevision;
 	ResetCache();
 	return true;
 }

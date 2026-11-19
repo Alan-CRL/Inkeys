@@ -972,6 +972,125 @@ void BarGeometryAttributePanel::Draw(UIRendering& renderer, ID2D1DeviceContext* 
 	context->PopAxisAlignedClip(); context->PopLayer(); renderer.SetFrameDiffuseMaskGeometryScale(1);
 }
 
+void BarGeometryAttributePanel::PrepareVisuals()
+{
+	if (!initialized_ || !frame_.visible) return;
+	for (auto& button : buttons_)
+		if (button && button->IsVisible())
+			(void)PrepareButtonVisualInheritance(*button, UiInheritClass(button->button.inhX, button->button.inhY));
+	for (auto& divider : attributeDividers_)
+		if (divider && divider->IsVisible())
+			(void)PrepareButtonVisualInheritance(*divider, UiInheritClass(divider->button.inhX, divider->button.inhY));
+}
+
+bool BarGeometryAttributePanel::RegisterVisuals(VisualDirtyRegistry& registry, const BarPanelVisualContext& context)
+{
+	if (!initialized_) return false;
+	const VisualSamplerContext sampler{context.zoom, context.map, {}};
+	const auto writeRect = [](VisualStateWriter& out, const EraserAttributeRect& r)
+		{ out.Real(r.left); out.Real(r.top); out.Real(r.right); out.Real(r.bottom); };
+	// 绘制作用域：面板整体（透明度层 + 裁剪）→ 类别区（裁剪）与参数行区（透明度层 + 裁剪）。
+	const auto panel = registry.AddGroup([this, writeRect, context](VisualGroupSample& out)
+		{
+			out.visible = initialized_ && frame_.visible; if (!out.visible) return;
+			if (context.mappingState) context.mappingState(out.state);
+			out.state.Real(panel_.Opacity()); writeRect(out.state, frame_.panel); out.state.Real(frame_.pose.scale);
+		});
+	const auto category = registry.AddGroup([this, writeRect](VisualGroupSample& out)
+		{ writeRect(out.state, frame_.categoryClip); }, panel);
+	const auto parameter = registry.AddGroup([this, writeRect](VisualGroupSample& out)
+		{
+			out.visible = parameterOpacity_ > 0.000001 && frame_.parameterClip.Height() > 0; if (!out.visible) return;
+			out.state.Real(parameterOpacity_); writeRect(out.state, frame_.parameterClip);
+		}, panel);
+	enum class Clip { None, Category, Parameter };
+	// 按钮：与 Draw 相同的可见条件；裁剪区内的按钮包络与裁剪矩形求交。粗细三档的自绘胶囊与类别长按环作为附加状态。
+	const auto addButton = [&](VisualGroupId group, std::shared_ptr<BarButtonClass> button, int index, Clip clip)
+		{
+			if (!button) return;
+			VisualSamplerContext buttonContext = sampler;
+			buttonContext.extra = [this, index](VisualStateWriter& out)
+				{
+					if (index >= ThicknessBegin && index < ThicknessBegin + ThicknessCount)
+					{
+						out.Real(thicknessPreviewWidths_[index - ThicknessBegin]);
+						out.Bool(pressed_ == index); out.Real(frame_.pose.scale);
+					}
+					if (index >= 0 && index < CategoryCount)
+					{
+						const bool ring = index == ringItem_ && ringProgress_ > 0 && ringOpacity_ > 0.000001;
+						out.Bool(ring);
+						// 长按环直接读取主题色，主题切换须体现在采样中。
+						if (ring) { out.Real(ringProgress_); out.Real(ringOpacity_); out.Real(frame_.pose.scale); out.Color(GetThemeColor(ThemeColorEnum::IconPrimary)); }
+						out.BeginVolatile(); out.Bool(ringFailed_); out.EndVolatile();
+					}
+				};
+			auto inner = MakeButtonVisualSampler(*button, std::move(buttonContext));
+			(void)registry.Add(group, [this, button, index, clip, context, inner = std::move(inner)](VisualSample& out)
+				{
+					if (!button->IsVisible()) return;
+					if (clip == Clip::Category && Intersection(frame_.items[index], frame_.categoryClip).Width() <= 0) return;
+					inner(out);
+					// 粗细三档的斜向胶囊经扩展内容绘制，未选中且无悬停时底板、图标、文字都可能不可见而胶囊仍可见：
+					// 只要胶囊会被画出（name.pct > 0），就以按钮底板几何单独贡献可见性与包络，并采样胶囊输入。
+					if (index >= ThicknessBegin && index < ThicknessBegin + ThicknessCount && button->name.pct.val > 0.0)
+					{
+						const double zoom = context.zoom ? context.zoom() : 1.0;
+						RECT capsule = RenderingAttribute::GetWeigetRect(button->button, zoom);
+						Inkeys::UI::UI3::Detail::GrowForPress(capsule, button->pressScale.val);
+						if (context.map) capsule = context.map(capsule);
+						if (!out.visible) { out.visible = true; out.bounds = capsule; out.state.Real(zoom); }
+						else RenderingAttribute::UnionRectInPlace(out.bounds, capsule);
+						out.state.Color(button->name.color.val); out.state.Real(button->name.pct.val);
+						out.state.Real(button->pressScale.val); WriteVisualState(out.state, button->button);
+						out.state.Real(thicknessPreviewWidths_[index - ThicknessBegin]);
+						out.state.Bool(pressed_ == index); out.state.Real(frame_.pose.scale);
+					}
+					if (!out.visible || clip == Clip::None) return;
+					const double zoom = context.zoom ? context.zoom() : 1.0;
+					RECT clipRect = IntegerRect(clip == Clip::Category ? frame_.categoryClip : frame_.parameterClip, zoom, 1);
+					if (context.map) clipRect = context.map(clipRect);
+					RECT bounds{ (std::max)(out.bounds.left, clipRect.left), (std::max)(out.bounds.top, clipRect.top),
+						(std::min)(out.bounds.right, clipRect.right), (std::min)(out.bounds.bottom, clipRect.bottom) };
+					out.visible = bounds.right > bounds.left && bounds.bottom > bounds.top;
+					out.bounds = out.visible ? bounds : RECT{};
+				}, "geometry.button" + std::to_string(index));
+		};
+	(void)registry.Add(panel, MakeVisualSampler(surface_, sampler));
+	(void)registry.Add(panel, MakeVisualSampler(dividers_[0], sampler));
+	(void)registry.Add(panel, MakeVisualSampler(scrollRail_, sampler));
+	(void)registry.Add(panel, [this, context](VisualSample& out)
+		{
+			// 滑块只在滚动轨道显示时绘制。
+			if (!scrollRail_.enable.val || !IsVisuallyDrawn(scrollThumb_)) return;
+			const double zoom = context.zoom ? context.zoom() : 1.0;
+			out.visible = true;
+			out.bounds = RenderingAttribute::GetWeigetRect(scrollThumb_, zoom);
+			if (context.map) out.bounds = context.map(out.bounds);
+			out.state.Real(zoom); WriteVisualState(out.state, scrollThumb_);
+		});
+	for (int i = 0; i < CircleCenter; ++i) addButton(category, buttons_[i], i, Clip::Category);
+	addButton(panel, buttons_[CloseButton], CloseButton, Clip::None);
+	for (int i = 0; i < GeometrySegmentCount; ++i) addButton(panel, buttons_[SegmentBegin + i], SegmentBegin + i, Clip::None);
+	for (const int item : AttributeItems)
+		if (item >= 0) addButton(panel, buttons_[item], item, Clip::None);
+		else addButton(panel, attributeDividers_[-item - 1], -1, Clip::None);
+	for (int i = CircleCenter; i < StyleBegin; ++i) addButton(parameter, buttons_[i], i, Clip::Parameter);
+	for (int i : {1, 2}) (void)registry.Add(parameter, MakeVisualSampler(dividers_[i], sampler));
+	(void)registry.Add(panel, [this, context](VisualSample& out)
+		{
+			if (!auxiliaryHintVisible_) return;
+			const double zoom = context.zoom ? context.zoom() : 1.0;
+			RECT bounds{}; bool visible = false;
+			if (IsVisuallyDrawn(auxiliaryHintSurface_)) { visible = true; RenderingAttribute::UnionRectInPlace(bounds, RenderingAttribute::GetWeigetRect(auxiliaryHintSurface_, zoom)); }
+			if (IsVisuallyDrawn(auxiliaryHint_)) { visible = true; RenderingAttribute::UnionRectInPlace(bounds, RenderingAttribute::GetWeigetRect(auxiliaryHint_, zoom)); }
+			out.visible = visible; if (!visible) return;
+			out.bounds = context.map ? context.map(bounds) : bounds;
+			out.state.Real(zoom); WriteVisualState(out.state, auxiliaryHintSurface_); WriteVisualState(out.state, auxiliaryHint_);
+		});
+	return true;
+}
+
 void BarGeometryAttributePanel::UpdatePanelFrame(bool open)
 {
 	panel_.SetExternalState(open, motion_.Geometry(), frame_.opacity);

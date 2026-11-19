@@ -22,6 +22,8 @@ import :Renderer;
 import Inkeys.UI.UI3.Animation;
 import Inkeys.UI.UI3.Progress;
 import Inkeys.UI.UI3.Interaction;
+import Inkeys.UI.UI3.VisualDirty;
+import :VisualDirtySampler;
 
 export namespace Inkeys::UI::UI3
 {
@@ -111,6 +113,8 @@ export namespace Inkeys::UI::UI3
   [[nodiscard]] static ColorPickerPart Hit(const ColorPickerSnapshot& frame, double x, double y) noexcept;
   [[nodiscard]] std::shared_ptr<UiShapeClass> Shape(ColorPickerPart part) const;
   [[nodiscard]] const std::array<std::shared_ptr<UiShapeClass>, 6>& Shapes() const noexcept { return shapes_; }
+  // UI3 自动脏区：整块取色器作为一个组合对象采样（面板、色盘渐变与标记、按钮、读数、预览气泡、保持提示）。
+  [[nodiscard]] VisualSampler MakeVisualSampler(VisualSamplerContext context) const;
   // 原来的跨线程反馈迁至组件，宿主仅保留产品开关和原生捕获凭据。
   IdtAtomic<bool> colorPickerDarkTone = true, colorPickerTonePress = false, colorPickerClosePress = false;
   IdtAtomic<bool> colorPickerMarkerVisible = false, colorPickerPointerPressed = false;

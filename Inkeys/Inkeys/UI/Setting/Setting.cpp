@@ -4749,6 +4749,8 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						Inkeys::config.Experimental.Inkeys3.UI3.Debug.Enable = Experimental.Inkeys3.DebugMode;
 						Inkeys::UI::Bar::SetDebugOptions(Experimental.Inkeys3.DebugMode, Experimental.Inkeys3.ShowFrameRate);
+						// 翻页控件复用同一脏区调试开关（不显示帧率），运行中切换也必须同步，与启动路径一致。
+						Inkeys::UI::Ppt::SetDebugEnabled(Experimental.Inkeys3.DebugMode);
 						QueueConfigWrite();
 					}
 					if (Design::ConditionalBlock block{"##debug-frame-rate-visibility", Experimental.Inkeys3.DebugMode}; block)

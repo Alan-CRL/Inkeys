@@ -100,6 +100,10 @@ public:
 	void SetFontTargetZoom(double zoom) noexcept { fontTargetZoom = zoom; }
 	void SetFontTargetScale(double scale) noexcept { fontTargetY = {0.0,scale}; fontTargetTransformReady = true; }
 	[[nodiscard]] bool FontAnimationsActive() const noexcept { return fontAnimationsActive; }
+	// 进行中的字号修正里是否有未被 UI3 自动脏区登记表采样的（宿主只对这部分整幅兜底）。
+	[[nodiscard]] bool UncoveredFontAnimationsActive() const noexcept { return uncoveredFontAnimationsActive; }
+	// 本帧字号帧序号（BeginFontFrame 写入）；宿主据此为登记表准备设置 UiFontCorrectionClass::RegistryFrameScope。
+	[[nodiscard]] std::uint64_t FontFrameSerial() const noexcept { return fontFrameReady ? fontFrameSerial : 0; }
 	class FontTargetScope
 	{
 	public:
@@ -431,7 +435,7 @@ public:
 		UiFontCorrectionClass&, double duration = 0.0);
 protected:
 	bool allowFractionalFontSize = false;
-	bool fontFrameReady = false, fontAnimationsActive = false;
+	bool fontFrameReady = false, fontAnimationsActive = false, uncoveredFontAnimationsActive = false;
 	std::uint64_t fontFrameSerial = 0;
 	double fontTargetZoom = 0.0, fontDuration = 0.0;
 	std::array<double,2> fontTargetY{0.0,1.0};

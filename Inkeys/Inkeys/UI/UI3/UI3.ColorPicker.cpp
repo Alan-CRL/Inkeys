@@ -331,6 +331,41 @@ void ColorPicker::SetHover(ColorPickerPart part)
   else if (pair.second == hoverPart_) StopButtonHoverVisual(*pair.first, false);
  hoverPart_ = part;
 }
+VisualSampler ColorPicker::MakeVisualSampler(VisualSamplerContext context) const
+{
+ return [this, context = std::move(context)](VisualSample& sample)
+ {
+  const double zoom = context.zoom ? context.zoom() : 1.0;
+  RECT bounds{}; bool visible = false;
+  // 色盘、标记、读数、按钮都画在面板内；预览气泡与保持提示可越出面板，单独并入。
+  for (const auto* shape : { panel_.get(), preview_.get(), hold_.get() })
+   if (shape && IsVisuallyDrawn(*shape)) { visible = true; RenderingAttribute::UnionRectInPlace(bounds, RenderingAttribute::GetWeigetRect(*shape, zoom)); }
+  sample.visible = visible;
+  if (!visible) return;
+  Detail::GrowForPress(bounds, (std::max)(tone_.pressScale.val, close_.pressScale.val));
+  sample.bounds = context.map ? context.map(bounds) : bounds;
+  auto& w = sample.state;
+  w.Real(zoom);
+  for (const auto* value : { &progress, &toneMix, &holdOpacity, &holdRingOpacity, &holdTextMix }) w.Real(value->val);
+  for (const auto& value : display_) w.Real(value.val);
+  w.Bool(open_); w.Bool(below_); w.Bool(colorPickerDarkTone); w.Bool(colorPickerMarkerVisible);
+  w.Real(colorPickerMarkerX); w.Real(colorPickerMarkerY); w.Color(previewColor_);
+  w.Real(static_cast<double>(static_cast<float>(colorPickerHoldProgress))); w.Bool(colorPickerPointerPressed);
+  w.Bool(colorPickerHoldHintActive); w.Bool(colorPickerHoldLocked); w.Bool(iconDark_);
+  w.Real(placement_.scale); w.Real(placement_.cursorLightIntensityScale); w.Real(placement_.lightWeight);
+  for (const auto* shape : { panel_.get(), palette_.get(), preview_.get(), hold_.get() }) if (shape) WriteVisualState(w, *shape);
+  for (const auto* button : { &tone_, &close_ })
+  {
+   w.Real(button->pressScale.val);
+   // 按钮继承位置在绘制时才解析，且完全由面板布局（已采样）决定，这里只采样局部状态。
+   WriteVisualState(w, button->button, false); WriteVisualState(w, button->icon, false); WriteVisualState(w, button->name, false);
+  }
+  for (const auto& word : words_) WriteVisualState(w, word);
+  WriteVisualState(w, holdWord_);
+  if (context.extra) context.extra(w);
+ };
+}
+
 std::shared_ptr<UiShapeClass> ColorPicker::Shape(ColorPickerPart part) const
 {
  const int index = part == ColorPickerPart::Panel ? 0 : part == ColorPickerPart::Palette ? 1 : part == ColorPickerPart::Tone ? 2 : part == ColorPickerPart::Close ? 3 : part == ColorPickerPart::Preview ? 4 : part == ColorPickerPart::HoldHint ? 5 : -1;

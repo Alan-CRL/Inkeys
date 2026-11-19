@@ -471,6 +471,72 @@ void BarEraserAttributePanel::Draw(UIRendering& renderer,ID2D1DeviceContext* con
 	}
 }
 
+void BarEraserAttributePanel::PrepareVisuals()
+{
+	if(!initialized_ || !frame_.panelVisible)return;
+	for(int i:{0,4,10,6,7,8,9}){auto& b=buttons_[i];(void)PrepareButtonVisualInheritance(b,UiInheritClass(b.button.inhX,b.button.inhY));}
+	const auto& g=frame_.geometry;
+	title_.UpInh(UiInheritClass(g.menuTitle.left,g.menuTitle.top));
+	automaticArrow_.UpInh(UiInheritClass(automaticArrow_.x.val,automaticArrow_.y.val));
+}
+
+bool BarEraserAttributePanel::RegisterVisuals(VisualDirtyRegistry& registry,const BarPanelVisualContext& context)
+{
+	if(!initialized_)return false;
+	const VisualSamplerContext sampler{context.zoom,context.map,{}};
+	const auto writeRect=[](VisualStateWriter& out,const EraserAttributeRect& r){out.Real(r.left);out.Real(r.top);out.Real(r.right);out.Real(r.bottom);};
+	// 主面板与灵敏度菜单各自整体合成（透明度层 + 裁剪），作为两个组；Draw 在主面板不可见时整体跳过。
+	const auto panel=registry.AddGroup([this,writeRect,context](VisualGroupSample& out)
+		{
+			out.visible=initialized_&&frame_.panelVisible;if(!out.visible)return;
+			if(context.mappingState)context.mappingState(out.state);
+			out.state.Real(panel_.Opacity());writeRect(out.state,frame_.geometry.panel);out.state.Real(frame_.panelPose.scale);
+		});
+	const auto menu=registry.AddGroup([this,writeRect,context](VisualGroupSample& out)
+		{
+			out.visible=initialized_&&frame_.panelVisible&&frame_.menuVisible;if(!out.visible)return;
+			if(context.mappingState)context.mappingState(out.state);
+			out.state.Real(menuPanel_.Opacity());writeRect(out.state,frame_.geometry.menu);out.state.Real(frame_.menuPose.scale);
+		});
+	(void)registry.Add(panel,MakeVisualSampler(surface_,sampler),"eraser.surface");
+	for(int i:{0,4,10})(void)registry.Add(panel,MakeButtonVisualSampler(buttons_[i],sampler),"eraser.button"+std::to_string(i));
+	for(auto& d:dividers_)(void)registry.Add(panel,MakeVisualSampler(d,sampler),"eraser.divider");
+	// 尺寸预览：像素全部裁剪在 previewClips 内，包络直接取裁剪矩形；位图在绘制时懒创建，身份写入易变段。
+	for(size_t i=0;i<3;++i)
+		(void)registry.Add(panel,[this,i,context,writeRect](VisualSample& out)
+			{
+				const auto& g=frame_.geometry;const double zoom=context.zoom?context.zoom():1.0;
+				const RECT clip=IntegerRect(g.previewClips[i],zoom,1);
+				out.visible=clip.right>clip.left&&clip.bottom>clip.top;if(!out.visible)return;
+				out.bounds=context.map?context.map(clip):clip;
+				auto& state=out.state;state.Real(zoom);writeRect(state,g.previewClips[i]);writeRect(state,g.previews[i]);
+				state.Real(circlePress_[i].val);state.Int(static_cast<int>(g.shape));
+				state.Int(static_cast<int>(previewPattern_));state.Int(static_cast<int>(previewTheme_));
+				state.Real(previewDiametersPx_[i]);state.Real(previewDpiScale_);
+				WriteVisualState(state,circleSelectionRings_[i]);WriteVisualState(state,circles_[i]);
+				state.BeginVolatile();
+				state.UInt(reinterpret_cast<std::uintptr_t>(previewBitmaps_[i].Get()));state.Real(previewRasterHalfWidths_[i]);
+				state.EndVolatile();
+			},"eraser.preview"+std::to_string(i));
+	// 自动粗细按钮内部的分割线与箭头：随按钮 4 的按压缩放绕整个按钮中心缩放（回弹峰值约 1.005，被外扩覆盖）。
+	(void)registry.Add(panel,[this,context](VisualSample& out)
+		{
+			const double zoom=context.zoom?context.zoom():1.0;
+			RECT bounds{};bool visible=false;
+			if(IsVisuallyDrawn(automaticDivider_)){visible=true;RenderingAttribute::UnionRectInPlace(bounds,RenderingAttribute::GetWeigetRect(automaticDivider_,zoom));}
+			if(IsVisuallyDrawn(automaticArrow_)){visible=true;RenderingAttribute::UnionRectInPlace(bounds,RenderingAttribute::GetWeigetRect(automaticArrow_,zoom));}
+			out.visible=visible;if(!visible)return;
+			Inkeys::UI::UI3::Detail::GrowForPress(bounds,buttons_[4].pressScale.val);
+			out.bounds=context.map?context.map(bounds):bounds;
+			out.state.Real(zoom);out.state.Real(buttons_[4].pressScale.val);
+			WriteVisualState(out.state,automaticDivider_);WriteVisualState(out.state,automaticArrow_);
+		},"eraser.automatic-decoration");
+	(void)registry.Add(menu,MakeVisualSampler(menu_,sampler),"eraser.menu");
+	(void)registry.Add(menu,MakeVisualSampler(title_,sampler),"eraser.menu-title");
+	for(int i:{6,7,8,9})(void)registry.Add(menu,MakeButtonVisualSampler(buttons_[i],sampler),"eraser.button"+std::to_string(i));
+	return true;
+}
+
 void BarEraserAttributePanel::UpdatePanelFrame(bool open,bool menuOpen)
 {
 	panel_.SetExternalState(open,panelMotion_.Geometry(),frame_.panelOpacity);

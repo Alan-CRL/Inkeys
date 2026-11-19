@@ -151,8 +151,9 @@ export namespace Inkeys::UI::Bar
 		// 固定候选快照只保留最新帧；异步原生回执不能确认后来推进的命中或清除新 damage。
 		[[nodiscard]] std::uint64_t CapturePresentationCandidate() noexcept;
 		[[nodiscard]] bool IsPresentationCandidateCurrent(std::uint64_t serial) const noexcept;
+		// pixelsSubmitted=false：隐藏或无像素候选，只确认窗口与输入，不推进脏区登记表的像素快照。
 		[[nodiscard]] bool CommitPresentationCandidate(std::uint64_t serial,
-			bool inputEnabled = true) noexcept;
+			bool inputEnabled = true, bool pixelsSubmitted = true) noexcept;
 		[[nodiscard]] std::uint64_t PresentedGeneration() const noexcept;
 		[[nodiscard]] std::optional<POINT> PresentationToLogical(POINT) const noexcept;
 		[[nodiscard]] bool HitTestBackground(POINT) const noexcept;

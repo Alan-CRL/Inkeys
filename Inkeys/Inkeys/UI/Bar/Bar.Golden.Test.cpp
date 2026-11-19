@@ -446,6 +446,16 @@ namespace Inkeys::UI::Bar
 					capture = true; pixels = {}; BarAtomic::renderOnceFlag = true; owner.UpdateRendering(false);
 					return advance(1) && result != Pipeline::FrameResult::Retry && pixels.Valid();
 				};
+				if (host->settledNatural)
+				{
+					// 自然帧：只请求渲染，不设 renderOnce，生产按自己的脏区局部提交。
+					const auto naturalFrame = [&]
+					{
+						capture = true; pixels = {}; owner.UpdateRendering(false);
+						return advance(1) && result != Pipeline::FrameResult::Retry && pixels.Valid();
+					};
+					return host->settledNatural(renderFrame, naturalFrame) ? S_OK : E_FAIL;
+				}
 				return !host->settled || host->settled(renderFrame) ? S_OK : E_FAIL;
 			}
 			if (scene.content == Content::Pressed || scene.content == Content::Badge || scene.content == Content::PickerProgress

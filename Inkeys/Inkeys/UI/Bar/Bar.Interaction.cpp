@@ -2120,6 +2120,56 @@ namespace Inkeys::UI::Bar
 			for (unsigned frame = 0; frame < 125; ++frame)
 				if (!repeatRelease(trial, "RepeatTail", pointer)) return false;
 		}
+		// 远处浮动 → 居中底栏（实机「松手瞬间蓝框巨大」的路径）：先拖到远离底边处松手浮动，
+		// 再从浮动位置一路拖回居中吸附区松手；逐帧经同一回调记录 ULW，供调用方断言窗口不越出手势表面。
+		for (unsigned pass = 0; pass < 2; ++pass)
+		{
+			const unsigned trial = 9 + pass;
+			const auto settled = owner.BottomDockPresentedSnapshot();
+			const double settledRootY = (settled.mapping.baseTopDip + settled.mapping.baseBottomDip) / 2.0;
+			pointer = { static_cast<LONG>(std::lround(settled.mainCenterScreenX)),
+				static_cast<LONG>(std::lround(settled.monitorOrigin.y
+					+ settled.mapping.MapY(settledRootY) * settled.zoom + settled.directTranslation.y)) };
+			context = {};
+			if (!enqueue(WM_LBUTTONDOWN)
+				|| !TryReadBarPointerMessage(down, EM_MOUSE, nullptr, true, nullptr)) return false;
+			routine = (owner.*Access::SeekEntry())(down); routine.Start();
+			if (routine.Done() || !repeatRelease(trial, pass ? "FarCenterDown" : "FarFloatDown", pointer)) return false;
+			const POINT from = pointer;
+			// 浮动段同时横向偏离中线，回拖时斜向进入居中吸附区（横向位移远大于居中阈值）。
+			POINT to = { static_cast<LONG>(std::lround(from.x - 100.0 * settled.zoom)),
+				static_cast<LONG>(std::lround(from.y - 360.0 * settled.zoom)) };
+			if (pass)
+			{
+				const double centeredGripX = settled.mainCenterScreenX
+					+ (static_cast<double>(settled.monitorBounds.left) + settled.monitorBounds.right) / 2.0
+					- settled.rawBodyCenterScreenX;
+				const double farDockLine = ResolveBarBottomDockLine(settled.monitorBounds, settled.workArea,
+					SceneBottomDockInsetDip(), static_cast<double>(settled.dpi) / USER_DEFAULT_SCREEN_DPI,
+					settled.desktopDockLine);
+				const double farDockCenter = ResolveBarBottomDockCenterScreenY(farDockLine,
+					settled.mapping.baseBottomDip - settled.mapping.baseTopDip, 0.0, settled.zoom);
+				to = { static_cast<LONG>(std::lround(centeredGripX)),
+					static_cast<LONG>(std::lround(farDockCenter + 12.0 * settled.zoom)) };
+			}
+			constexpr unsigned steps = 8;
+			for (unsigned step = 1; step <= steps; ++step)
+			{
+				pointer = { from.x + static_cast<LONG>(std::lround((to.x - from.x) * static_cast<double>(step) / steps)),
+					from.y + static_cast<LONG>(std::lround((to.y - from.y) * static_cast<double>(step) / steps)) };
+				if (!enqueue(WM_MOUSEMOVE) || routine.Done()) return false;
+				for (unsigned frame = 0; frame < 2; ++frame)
+					if (!repeatRelease(trial, pass ? "FarCenterMove" : "FarFloatMove", pointer)) return false;
+			}
+			if (!enqueue(WM_LBUTTONUP) || !routine.Done()) return false;
+			routine.Rethrow();
+			if (!repeatRelease(trial, pass ? "FarCenterRelease" : "FarFloatRelease", pointer)) return false;
+			if (owner.BottomDockPresentedSnapshot().dragActive
+				&& !repeatRelease(trial, pass ? "FarCenterReleased" : "FarFloatReleased", pointer)) return false;
+			if (owner.BottomDockPresentedSnapshot().dragActive) return false;
+			for (unsigned frame = 0; frame < 125; ++frame)
+				if (!repeatRelease(trial, pass ? "FarCenterTail" : "FarFloatTail", pointer)) return false;
+		}
 		return true;
 	}
 #endif

@@ -1925,6 +1925,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (count != 2) return 2;
 			return Inkeys::UI::Bar::RunUi3HostOffscreenTest();
 		}
+		// UI3 自动脏区离屏验证：完整主栏场景，逐项核对实际变化像素落在登记表脏区内；不创建 HWND。
+		if (count > 1 && wcscmp(arguments[1], L"--ui3-attribute-dirty-test") == 0)
+		{
+			LocalFree(arguments);
+			if (count != 2) return 2;
+			return Inkeys::UI::Bar::RunUi3AttributeDirtyTest();
+		}
 		if (count > 1 && wcscmp(arguments[1], L"--shape-tool-state-test") == 0)
 		{
 			LocalFree(arguments);

@@ -166,6 +166,15 @@ private:
 	void DrawStroke(UIRendering&, ID2D1DeviceContext*, ID2D1Geometry*, COLORREF, double opacity, double material, int variant);
 };
 
+// 面板向 UI3 自动脏区登记成员时由宿主提供：当帧 zoom 与局部像素 → 宿主追踪坐标的映射（属性面板为 Rigid）。
+struct BarPanelVisualContext
+{
+	std::function<double()> zoom;
+	std::function<RECT(const RECT&)> map;
+	// 写入映射的浮点参数（Rigid 平移、缩放）：整数包络相同的亚像素平移也要判定为变化。各面板根组采样时调用。
+	std::function<void(Inkeys::UI::UI3::VisualStateWriter&)> mappingState;
+};
+
 class BarEraserAttributePanel
 {
 	friend class BarUISetClass; // 仅 render owner 在候选命中事务中读取当前 frame_。
@@ -176,6 +185,9 @@ public:
 		bool dragPlacementLocked = false,
 		std::optional<bool> eraserSelected = std::nullopt);
 	void Draw(UIRendering& renderer, ID2D1DeviceContext* context);
+	// UI3 自动脏区：准备阶段按绘制同一算法写好成员继承位置（幂等）；登记成员到面板登记表。
+	void PrepareVisuals();
+	bool RegisterVisuals(Inkeys::UI::UI3::VisualDirtyRegistry& registry, const BarPanelVisualContext& context);
 	void CommitPresented();
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool ResetPointerFeedback();
@@ -242,6 +254,9 @@ public:
 		const UiTimelineClass* parentTimeline = nullptr,
 		bool dragPlacementLocked = false);
 	void Draw(UIRendering& renderer, ID2D1DeviceContext* context);
+	// UI3 自动脏区：准备阶段按绘制同一算法写好成员继承位置（幂等）；登记成员到面板登记表。
+	void PrepareVisuals();
+	bool RegisterVisuals(Inkeys::UI::UI3::VisualDirtyRegistry& registry, const BarPanelVisualContext& context);
 	void CommitPresented();
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool ResetPointerFeedback();
@@ -422,6 +437,9 @@ public:
 		const UiTimelineClass* parentTimeline = nullptr, bool dragPlacementLocked = false,
 		std::chrono::steady_clock::time_point frameTime = std::chrono::steady_clock::now());
 	void Draw(UIRendering& renderer, ID2D1DeviceContext* context);
+	// UI3 自动脏区：准备阶段按绘制同一算法写好成员继承位置（幂等）；登记成员到面板登记表。
+	void PrepareVisuals();
+	bool RegisterVisuals(Inkeys::UI::UI3::VisualDirtyRegistry& registry, const BarPanelVisualContext& context);
 	void CommitPresented();
 	bool Pointer(BarUISetClass& owner, const ExMessage& message, bool cancelled = false, bool contactPointer = false, bool* accepted = nullptr);
 	bool ResetPointerFeedback();
@@ -1626,11 +1644,35 @@ namespace Inkeys::UI::Bar
 		std::function<void(const UPDATELAYEREDWINDOWINFO& info, const std::vector<BYTE>& bytes)> captured;
 		// 场景按基线流程推进到静止后调用；renderFrame 强制渲染一帧，返回是否收到新的有效提交。
 		std::function<bool(const std::function<bool()>& renderFrame)> settled;
+		// 可选：同时拿到自然帧入口（不强制整幅，生产按自己的脏区提交；返回是否有新的有效提交）。设置后代替 settled。
+		std::function<bool(const std::function<bool()>& renderFrame, const std::function<bool()>& naturalFrame)> settledNatural;
 	};
 	// 主栏展开（drawAttribute 为 true 时再打开绘制属性面板）；返回值口径同基线：S_OK 成功、S_FALSE 未静止。
 	HRESULT RunGoldenMainSceneForHost(bool drawAttribute, bool dark, double scale,
 		const BarGoldenMainSceneHost& host);
 	export int RunUi3HostOffscreenTest();
+	// UI3 自动脏区的测试钩子：设置观察者后每个成功提交帧回调一次（生产路径为空）；
+	// shadowDamage 与 panelDamage 均为生产登记表的本帧脏区（影子登记表已删除，字段保留兼容测试）。
+	// 坐标均为本帧窗口客户区像素，已裁切到视口。
+	export struct BarVisualShadowFrame
+	{
+		RECT shadowDamage{};
+		RECT presentDirty{};
+		RECT panelDamage{};
+		RECT lightDamage{};
+		SIZE viewport{};
+		std::size_t changed = 0;
+		std::size_t purityMismatches = 0;
+		std::size_t purityGroupMismatches = 0;
+		std::uint64_t serial = 0;
+		std::vector<std::string> purityNames;
+		std::vector<std::string> panelChangedNames;
+		unsigned fullReason = 0;
+		// 本帧开始时只有已登记的字号修正动画在进行（按压标签修正等，交给登记表而不整幅）。
+		bool fontRegistryOnly = false;
+	};
+	export void SetBarVisualShadowTestHook(std::function<void(const BarVisualShadowFrame&)> observe);
+	export int RunUi3AttributeDirtyTest();
 	bool RunConstructionPromptTouchRouteTest(POINT screen);
 	export int RunIdleBackingResourceLifecycleTest() noexcept;
 	export int RunUi3WorkspaceCenteringTest();

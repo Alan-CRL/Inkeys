@@ -186,6 +186,22 @@ export namespace Inkeys::UI::UI3
 			if (forceFullDamage) ForceFullDamage();
 		}
 
+		// 最近一次 ResolveDamage 是否返回整窗（诊断用）。
+		[[nodiscard]] bool ResolvedFullDamage() const noexcept { return resolvedFullDamage_; }
+		// 诊断（仅调试模式调用）：逐个访问本帧已标记的键及其旧包络、本帧包络（未观察则为空）。
+		template <class Visit>
+		void VisitChangedKeys(Visit&& visit) const
+		{
+			for (DirtyVisualKey key : changedKeys_)
+			{
+				const auto found = visualRecords_.find(key);
+				if (found == visualRecords_.end()) continue;
+				const auto& record = found->second;
+				visit(key, record.hasCommittedBounds ? record.committedBounds : RECT{},
+					record.observedFrame == frameSerial_ ? record.currentBounds : RECT{});
+			}
+		}
+
 		[[nodiscard]] bool HasPendingDamage() const noexcept
 		{
 			return fullDamagePending_ || !changedKeys_.empty()
@@ -326,9 +342,55 @@ export namespace Inkeys::UI::UI3
 			static_cast<LONG>(std::ceil(scaledBottom * zoom)) + padding };
 	}
 
+	// 调试框最小可见边长（像素）：1px 描边内缩 2.5px 后仍保留正尺寸。
+	inline constexpr LONG DebugFrameMinimumSide = 8;
+
+	struct DebugFrameRect
+	{
+		// 描边覆盖的整数像素范围：必须并入本帧提交区，并记为“上一帧调试框”供下一帧擦除。
+		RECT bounds{};
+		// 内缩后的描边矩形；无正尺寸时不画。
+		FLOAT left = 0.0F, top = 0.0F, right = 0.0F, bottom = 0.0F;
+		[[nodiscard]] bool Visible() const noexcept { return right > left && bottom > top; }
+	};
+
+	// 调试框几何：先裁到 clip（为空表示不裁）；任一边短于最小可见边长时以原中心向外扩，
+	// 再平移回 clip 内——保活像素、细条脏区也能看到框，且框不会画到窗口之外。
+	[[nodiscard]] inline DebugFrameRect ResolveDebugFrameRect(
+		const RECT& target, const RECT& clip,
+		FLOAT inset = DebugDirtyFrameInset) noexcept
+	{
+		DebugFrameRect result{};
+		const bool hasClip = !DirtyRegionTracker::IsEmpty(clip);
+		RECT r = hasClip ? IntersectDirtyRect(target, clip) : target;
+		if (DirtyRegionTracker::IsEmpty(r)) return result;
+		const auto fit = [hasClip](LONG& low, LONG& high, LONG clipLow, LONG clipHigh)
+			{
+				if (high - low >= DebugFrameMinimumSide) return;
+				const LONG grow = DebugFrameMinimumSide - (high - low);
+				low -= grow / 2;
+				high = low + DebugFrameMinimumSide;
+				if (!hasClip) return;
+				if (clipHigh - clipLow <= DebugFrameMinimumSide) { low = clipLow; high = clipHigh; return; }
+				if (low < clipLow) { high += clipLow - low; low = clipLow; }
+				if (high > clipHigh) { low -= high - clipHigh; high = clipHigh; }
+			};
+		fit(r.left, r.right, clip.left, clip.right);
+		fit(r.top, r.bottom, clip.top, clip.bottom);
+		result.bounds = r;
+		result.left = static_cast<FLOAT>(r.left) + inset;
+		result.top = static_cast<FLOAT>(r.top) + inset;
+		result.right = static_cast<FLOAT>(r.right) - inset;
+		result.bottom = static_cast<FLOAT>(r.bottom) - inset;
+		return result;
+	}
+
 	struct DebugDamageResolution
 	{
+		// 本帧框所标记的范围（业务刷新范围 ∪ 调试文字；最终空闲帧无新范围时沿用上一帧框）。
 		RECT frameTarget{};
+		// 实际绘制的框（最小可见尺寸、已裁剪）；frame.bounds 已并入 presentDamage。
+		DebugFrameRect frame{};
 		RECT presentDamage{};
 	};
 
@@ -338,7 +400,8 @@ export namespace Inkeys::UI::UI3
 		const RECT& previousFrameBounds,
 		const RECT& currentTextBounds,
 		bool debugEnabled,
-		bool finalIdleFrame = false) noexcept
+		bool finalIdleFrame = false,
+		const RECT& clip = {}) noexcept
 	{
 		DebugDamageResolution result{};
 		result.frameTarget = businessDamage;
@@ -349,6 +412,7 @@ export namespace Inkeys::UI::UI3
 				result.frameTarget = previousFrameBounds;
 			DirtyRegionTracker::UnionInPlace(
 				result.frameTarget, currentTextBounds);
+			result.frame = ResolveDebugFrameRect(result.frameTarget, clip);
 		}
 
 		result.presentDamage = businessDamage;
@@ -363,6 +427,8 @@ export namespace Inkeys::UI::UI3
 				result.presentDamage, currentTextBounds);
 			DirtyRegionTracker::UnionInPlace(
 				result.presentDamage, result.frameTarget);
+			DirtyRegionTracker::UnionInPlace(
+				result.presentDamage, result.frame.bounds);
 		}
 		return result;
 	}

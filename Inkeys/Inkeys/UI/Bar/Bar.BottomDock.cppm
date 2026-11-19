@@ -1203,6 +1203,76 @@ export namespace Inkeys::UI::Bar
 		};
 	}
 
+	// 同相轨道：一个量沿共同曲线进度 f 从 start 走向 target（value = start + (target - start)·f）；
+	// 静止量 start == target。
+	struct BarBottomDockCenteredPoseTrack
+	{
+		double start = 0.0;
+		double target = 0.0;
+		[[nodiscard]] constexpr double At(double f) const noexcept { return start + (target - start) * f; }
+	};
+
+	struct BarBottomDockCenteredPoseRange
+	{
+		double rootMinimumDip = 0.0, rootMaximumDip = 0.0;
+		double barCenterMinimumDip = 0.0, barCenterMaximumDip = 0.0;
+		double barLeftMinimumDip = 0.0, barLeftMaximumDip = 0.0;
+		bool valid = false;
+	};
+
+	// 居中吸底时主按钮宽、主栏偏移与主栏宽同批次同曲线推进（布局一次 SetTar），它们是联动的：
+	// 主栏变宽时根节点反向移动、主栏中心几乎不动。按独立区间分别取极值再相加，会把不可能同时出现的
+	// 极值拼在一起（实机：宽 1128→1578 px 时预测多出约 340 px）。这里在共同进度 f ∈ [fMin, fMax]
+	// （曲线极值，含 Back 过冲）上逐姿态求实际根位置、主栏中心与主栏左缘；分段线性，极值只在区间端点
+	// 与 min/max 切换点取得。buttonVisible/barVisible 含描边（与摆放一致），barRaw 为主栏图元宽（求左缘）。
+	[[nodiscard]] inline BarBottomDockCenteredPoseRange
+		ResolveBarBottomDockCenteredPoseRange(
+			double monitorCenterDip,
+			const BarBottomDockCenteredPoseTrack& buttonVisibleWidth,
+			const BarBottomDockCenteredPoseTrack& barCenterOffset,
+			const BarBottomDockCenteredPoseTrack& barVisibleWidth,
+			const BarBottomDockCenteredPoseTrack& barRawWidth,
+			double fMinimum, double fMaximum) noexcept
+	{
+		if (!std::isfinite(fMinimum) || !std::isfinite(fMaximum) || fMinimum > fMaximum) return {};
+		double candidates[6]{ fMinimum, fMaximum, 0.0, 0.0, 0.0, 0.0 };
+		int count = 2;
+		// 左缘切换：-bw/2 = o - w/2；右缘切换：bw/2 = o + w/2。两式都关于 f 线性。
+		auto AddKink = [&](double at0, double at1)
+			{
+				const double slope = at1 - at0;
+				if (slope == 0.0 || !std::isfinite(slope)) return;
+				const double f = -at0 / slope;
+				if (f > fMinimum && f < fMaximum) candidates[count++] = f;
+			};
+		auto LeftGap = [&](double f) { return barCenterOffset.At(f) - barVisibleWidth.At(f) / 2.0 + buttonVisibleWidth.At(f) / 2.0; };
+		auto RightGap = [&](double f) { return barCenterOffset.At(f) + barVisibleWidth.At(f) / 2.0 - buttonVisibleWidth.At(f) / 2.0; };
+		AddKink(LeftGap(0.0), LeftGap(1.0));
+		AddKink(RightGap(0.0), RightGap(1.0));
+		BarBottomDockCenteredPoseRange result;
+		for (int index = 0; index < count; ++index)
+		{
+			const double f = candidates[index];
+			const auto placement = ResolveBarBottomDockCenteredRootPlacement(monitorCenterDip,
+				buttonVisibleWidth.At(f), barCenterOffset.At(f), barVisibleWidth.At(f));
+			if (!placement.valid) return {};
+			const double barCenter = placement.mainCenterDip + barCenterOffset.At(f);
+			const double barLeft = barCenter - barRawWidth.At(f) / 2.0;
+			if (!result.valid)
+			{
+				result = { placement.mainCenterDip, placement.mainCenterDip, barCenter, barCenter, barLeft, barLeft, true };
+				continue;
+			}
+			result.rootMinimumDip = (std::min)(result.rootMinimumDip, placement.mainCenterDip);
+			result.rootMaximumDip = (std::max)(result.rootMaximumDip, placement.mainCenterDip);
+			result.barCenterMinimumDip = (std::min)(result.barCenterMinimumDip, barCenter);
+			result.barCenterMaximumDip = (std::max)(result.barCenterMaximumDip, barCenter);
+			result.barLeftMinimumDip = (std::min)(result.barLeftMinimumDip, barLeft);
+			result.barLeftMaximumDip = (std::max)(result.barLeftMaximumDip, barLeft);
+		}
+		return result;
+	}
+
 	[[nodiscard]] inline bool ResolveBarBottomDockInitialMainBarSide(
 		bool whiteboardPlacement, bool currentSide) noexcept
 	{

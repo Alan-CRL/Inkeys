@@ -179,7 +179,7 @@ void UIRendering::BeginFontFrame(std::chrono::steady_clock::time_point time,
 	const UiAnimationAdvanceContextClass& context, double targetZoom)
 {
 	const auto serial = static_cast<std::uint64_t>(time.time_since_epoch().count());
-	if (!fontFrameReady || serial != fontFrameSerial) fontAnimationsActive = false;
+	if (!fontFrameReady || serial != fontFrameSerial) { fontAnimationsActive = false; uncoveredFontAnimationsActive = false; }
 	fontFrameReady = true; fontFrameSerial = serial; fontFrameContext = context;
 	fontTargetZoom = targetZoom; fontTargetTransformReady = false; fontDuration = 0.0;
 }
@@ -220,7 +220,12 @@ FLOAT UIRendering::ResolveAnimatedFontSize(ID2D1DeviceContext* context, double f
 	const UiAnimationAdvanceContextClass immediate{0.0, 1.0, false, true};
 	const double coefficient = correction.Resolve(targetPixels, allowFractionalFontSize, fontFrameSerial,
 		fontFrameReady ? fontFrameContext : immediate, duration > 0.0 ? duration : fontDuration);
-	fontAnimationsActive |= correction.Active();
+	if (correction.Active())
+	{
+		fontAnimationsActive = true;
+		// 本字号帧已被登记表采样且本帧推进过的修正，脏区由登记表比较得出；其余仍需宿主整幅兜底。
+		if (!correction.RegistryCovered(fontFrameSerial)) uncoveredFontAnimationsActive = true;
+	}
 	const double resolved = fontSize * coefficient;
 	return std::isfinite(resolved) && resolved > 0.0
 		&& resolved <= (std::numeric_limits<FLOAT>::max)() ? static_cast<FLOAT>(resolved) : 0.0F;

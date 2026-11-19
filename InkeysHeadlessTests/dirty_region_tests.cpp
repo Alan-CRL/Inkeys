@@ -394,6 +394,39 @@ namespace
 		Check(SameRect(disabled.presentDamage, RECT{ 5, 10, 100, 100 }),
 			"disabled debug mode clears stale text and frame");
 	}
+
+	void TestDebugFrameGeometryIsAlwaysVisible()
+	{
+		constexpr RECT window{ 100, 200, 300, 260 };
+		// 普通范围：按原范围内缩，不扩大。
+		const auto normal = ResolveDebugFrameRect(RECT{ 120, 210, 180, 240 }, window);
+		Check(SameRect(normal.bounds, RECT{ 120, 210, 180, 240 }) && normal.Visible()
+			&& normal.left == 122.5F && normal.right == 177.5F,
+			"normal debug frame keeps its damage bounds and inset");
+		// 1px 保活像素在窗口左上角：扩到最小可见边长并平移回窗口内。
+		const auto keepAlive = ResolveDebugFrameRect(RECT{ 100, 200, 101, 201 }, window);
+		Check(SameRect(keepAlive.bounds, RECT{ 100, 200, 108, 208 }) && keepAlive.Visible(),
+			"keepalive pixel gets a visible frame inside the window");
+		// 细条脏区：只扩短边。
+		const auto strip = ResolveDebugFrameRect(RECT{ 150, 230, 250, 232 }, window);
+		Check(SameRect(strip.bounds, RECT{ 150, 227, 250, 235 }) && strip.Visible(),
+			"thin damage expands only its short side around the center");
+		// 越出窗口的范围先裁剪；完全在窗口外不画。
+		const auto clipped = ResolveDebugFrameRect(RECT{ 50, 150, 400, 400 }, window);
+		Check(SameRect(clipped.bounds, window), "debug frame is clipped to the window");
+		Check(!ResolveDebugFrameRect(RECT{ 0, 0, 50, 50 }, window).Visible()
+			&& DirtyRegionTracker::IsEmpty(ResolveDebugFrameRect(RECT{ 0, 0, 50, 50 }, window).bounds),
+			"damage outside the window draws no frame");
+		// 提交区并入实际画出的框范围：下一帧才能按记录的框擦除。
+		const auto damage = ResolveDebugDamage(RECT{ 100, 200, 101, 201 }, {}, {}, {}, true, false, window);
+		Check(SameRect(damage.frame.bounds, RECT{ 100, 200, 108, 208 })
+			&& SameRect(damage.presentDamage, RECT{ 100, 200, 108, 208 }),
+			"present damage covers the drawn minimum-size frame");
+		// 最终空闲帧沿用上一帧已画出的框，重涂为绿框时范围稳定。
+		const auto idle = ResolveDebugDamage(RECT{}, {}, damage.frame.bounds, {}, true, true, window);
+		Check(SameRect(idle.frame.bounds, damage.frame.bounds),
+			"final idle frame recolors exactly the previously drawn frame");
+	}
 }
 
 int RunDirtyRegionTests()
@@ -411,5 +444,6 @@ int RunDirtyRegionTests()
 	TestLightDamageUsesAffectedBorderBands();
 	TestScaledDirectContentUsesPresentedBounds();
 	TestDebugOverlayDamageAndClear();
+	TestDebugFrameGeometryIsAlwaysVisible();
 	return failureCount;
 }

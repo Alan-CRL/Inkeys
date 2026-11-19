@@ -46,6 +46,7 @@ int RunMessageBoxTests(bool runWindowTests);
 int RunMessageBoxVisualTests(const char* outputDirectory);
 int RunMessageBoxFirstFrameChildTest();
 int RunDirtyRegionTests();
+int RunVisualDirtyTests();
 int RunWindowGeometryTests();
 int RunFramePacingTests(bool benchmark);
 int RunDraw3ContactInputBenchmarks();
@@ -1722,6 +1723,9 @@ int main(int argc, char** argv)
 {
 	if (argc == 2 && std::string_view(argv[1]) == "--page-control-only")
 		return RunPageControlTests();
+	// 视觉脏区登记表是纯数据测试，迭代时单独运行。
+	if (argc == 2 && std::string_view(argv[1]) == "--visual-dirty-only")
+		return RunVisualDirtyTests();
 	// PPT解析与诊断协议均为纯值/无窗口测试，可独立定位请求时序。
 	if (argc == 2 && std::string_view(argv[1]) == "--ppt-session-only")
 		return RunPptSessionTests();
@@ -1865,6 +1869,7 @@ int main(int argc, char** argv)
 	failureCount += RunCanvasPolicyTests();
 	if (runWindowTests) failureCount += RunWindowTests();
 	failureCount += RunDirtyRegionTests();
+	failureCount += RunVisualDirtyTests();
 	failureCount += RunWindowGeometryTests();
 	failureCount += RunFramePacingTests(benchmark);
 	failureCount += RunToggleClickCoalescerTests();

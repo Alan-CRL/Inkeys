@@ -318,6 +318,9 @@ namespace Inkeys::UI::PageControl
 			RECT lastPresentedDebugWindowBounds{};
 			Inkeys::UI::UI3::DebugFrameSleepLatch debugFrameSleepLatch;
 			bool debugOverlayRefreshPending = false;
+			// 调试开关每切换一次递增；回执只在绘制时的修订号仍是当前值时才消费刷新标记与绿帧锁存，
+			// 在途旧帧的回执不能吞掉开关之后的覆盖层刷新。
+			std::uint64_t debugOverlayRevision = 0;
 			const char* lastFailureStage = nullptr;
 			HRESULT lastFailureHr = S_OK;
 			DWORD lastFailureError = ERROR_SUCCESS;
@@ -1509,6 +1512,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			bool continueRendering = false;
 			RECT debugFrameBounds{};
 			RECT debugWindowBounds{};
+			std::uint64_t debugOverlayRevision = 0;
 			const char* failureStage = "unknown";
 			HRESULT failureHr = S_OK;
 			DWORD failureError = ERROR_SUCCESS;
@@ -1592,7 +1596,9 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			const bool businessDamagePending =
 				!Inkeys::UI::UI3::DirtyRegionTracker::IsEmpty(businessDamage);
 			if(!businessDamagePending&&!forceFullReplacement&&!lifecycleRendering
-				&&!state.scene.AnimationActive()&&!state.scene.LoadingIndicatorAnimationActive()&&!state.debugFrameSleepLatch.IsPending()&&!state.debugOverlayRefreshPending){
+				&&!state.scene.AnimationActive()&&!state.scene.LoadingIndicatorAnimationActive()&&!state.debugFrameSleepLatch.IsPending()&&!state.debugOverlayRefreshPending
+				// 调试开启且活动结束后尚未提交过最终绿框时不能早退：否则最后一帧红框留在屏幕上、绿框永远不出现。
+				&&!(showDebugFrames&&!state.debugFrameSleepLatch.IsPresented())){
 				result.status=PresentStatus::Success;return result;
 			}
 			const bool retryingNonSleepVisual =
@@ -1605,20 +1611,25 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				showDebugFrames, hasActiveRendering);
 			// 最终绿框就在当前帧提交，成功后应直接休眠，不能再唤醒一帧红框。
 			result.continueRendering = hasActiveRendering;
-			if (!businessDamagePending && !finalIdleFrame
-				&& !state.debugOverlayRefreshPending)
+			const RECT windowTarget{ 0, 0, static_cast<LONG>(width),
+				static_cast<LONG>(height) };
+			// 最终空闲帧只把上一帧框重涂为绿框（旧框须落在窗口内）；其余没有分类 damage 的帧
+			// （包括调试开关刷新与首次开启）先确定整窗兜底，框再标记这一实际重画范围。
+			const bool debugRecolorOnly = showDebugFrames && finalIdleFrame
+				&& !Inkeys::UI::UI3::DirtyRegionTracker::IsEmpty(Inkeys::UI::UI3::IntersectDirtyRect(
+					state.lastPresentedDebugFrameBounds, windowTarget));
+			if (!businessDamagePending && !debugRecolorOnly)
 			{
 				// 非调试请求缺少分类 damage 时仍安全回退整窗。
 				businessDamage = RECT{ 0, 0, static_cast<LONG>(width),
 					static_cast<LONG>(height) };
 			}
+			// 框按窗口裁剪并保证最小可见尺寸；实际画出的范围记为上一帧框，下一帧擦除。
 			const auto debugDamage = Inkeys::UI::UI3::ResolveDebugDamage(
 				businessDamage, {}, state.lastPresentedDebugFrameBounds, {},
-				showDebugFrames, finalIdleFrame);
-			RECT frameTarget = debugDamage.frameTarget;
+				showDebugFrames, finalIdleFrame, windowTarget);
+			const auto debugFrame = debugDamage.frame;
 			RECT presentDirty = debugDamage.presentDamage;
-			const RECT windowTarget{ 0, 0, static_cast<LONG>(width),
-				static_cast<LONG>(height) };
 			const auto debugWindowDamage =
 				ResolvePageControlDebugWindowDamagePolicy(forceFullReplacement,
 					state.debugOverlayRefreshPending, showDebugFrames);
@@ -1658,19 +1669,11 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				(void)context->CreateSolidColorBrush(D2D1::ColorF(
 					0.0F, 120.0F / 255.0F, 1.0F, 1.0F), &windowBrush);
 				constexpr FLOAT frameWidth = Inkeys::UI::UI3::DebugFrameWidth;
-				constexpr FLOAT dirtyInset =
-					Inkeys::UI::UI3::DebugDirtyFrameInset;
 				constexpr FLOAT windowInset =
 					Inkeys::UI::UI3::DebugWindowFrameInset;
 				const D2D1_RECT_F damageRect = D2D1::RectF(
-					static_cast<FLOAT>((std::max)(0L, frameTarget.left)) + dirtyInset,
-					static_cast<FLOAT>((std::max)(0L, frameTarget.top)) + dirtyInset,
-					static_cast<FLOAT>((std::min)(static_cast<LONG>(width), frameTarget.right))
-						- dirtyInset,
-					static_cast<FLOAT>((std::min)(static_cast<LONG>(height), frameTarget.bottom))
-						- dirtyInset);
-				if (damageBrush && damageRect.right > damageRect.left
-					&& damageRect.bottom > damageRect.top)
+					debugFrame.left, debugFrame.top, debugFrame.right, debugFrame.bottom);
+				if (damageBrush && debugFrame.Visible())
 					context->DrawRectangle(&damageRect, damageBrush.Get(), frameWidth);
 				const D2D1_RECT_F windowRect = D2D1::RectF(
 					windowInset, windowInset,
@@ -1784,7 +1787,8 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				return result;
 			}
 			result.status = PresentStatus::Success;result.pixelsSubmitted=true;
-			result.debugFrameBounds = showDebugFrames ? frameTarget : RECT{};
+			result.debugFrameBounds = showDebugFrames ? debugFrame.bounds : RECT{};
+			result.debugOverlayRevision = state.debugOverlayRevision;
 			result.debugWindowBounds = showDebugFrames ? windowTarget : RECT{};
 			return result;
 		}
@@ -2463,7 +2467,8 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			if (pending.snapshot.revision != publishedRevision.load(std::memory_order_acquire)
 				|| pending.directRevision != directMoveRevision.load(std::memory_order_acquire)) return false;
 			std::unique_lock inputCommitLock(inputSnapshotMutex);
-			if (!state.scene.CommitPresentationCandidate(pending.sceneSerial, pending.shouldShow && !pending.inputLocked))
+			if (!state.scene.CommitPresentationCandidate(pending.sceneSerial, pending.shouldShow && !pending.inputLocked,
+				pending.pixels.pixelsSubmitted))
 			{
 				receiptTrace(WaitTrace::Result::CandidateStale);
 				CancelNativeSurfaceFrame(index); state.forceFullPresentation = true; return false;
@@ -2476,9 +2481,11 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				state.committedPresentationReady = true; state.forceFullPresentation = false;
 				state.committedWindowPresentationRevision = actual.presentationRevision;
 				state.committedWindowHandle = actual.hwnd; state.committedWindowGeneration = actual.generation;
+				// 实际上屏的覆盖层边界总要记账（下一帧据此擦除）；刷新标记与绿帧锁存只由绘制时修订号仍为当前的回执消费。
 				state.lastPresentedDebugFrameBounds = pending.pixels.debugFrameBounds;
 				state.lastPresentedDebugWindowBounds = pending.pixels.debugWindowBounds;
-				state.debugOverlayRefreshPending = false; (void)state.debugFrameSleepLatch.CommitPresented();
+				if (pending.pixels.debugOverlayRevision == state.debugOverlayRevision)
+				{ state.debugOverlayRefreshPending = false; (void)state.debugFrameSleepLatch.CommitPresented(); }
 			}
 			CommitInputPresentationLocked(index, pending.mode, pending.snapshot.whiteboard, pending.budget,
 				pending.targetVisible, pending.inputLocked, pending.snapshot.ppt.layout.session,
@@ -2600,7 +2607,10 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			const bool requiresFrame = pending.snapMoving || pending.released;
 			if (!pending.observingMask) pending = {};
 			(void)surfaces[index].scene.Advance(context.frameTime);
-			const bool visual = requiresFrame || surfaces[index].scene.IsInvalidated() || surfaces[index].scene.AnimationActive()||surfaces[index].scene.LoadingIndicatorAnimationActive();
+			// 调试覆盖层刷新与未提交的最终绿帧同样需要一帧，直移确认快路不能直接休眠。
+			const bool visual = requiresFrame || surfaces[index].scene.IsInvalidated() || surfaces[index].scene.AnimationActive()||surfaces[index].scene.LoadingIndicatorAnimationActive()
+				|| surfaces[index].debugOverlayRefreshPending
+				|| (debugEnabled.load(std::memory_order_acquire) && !surfaces[index].debugFrameSleepLatch.IsPresented());
 			if (!visual) surfaces[index].scene.SuspendForIdle(context.frameTime);
 			pairLock.unlock(); renderLock.unlock();
 			FlushCommittedDrag(pairIndex);
@@ -4165,12 +4175,14 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				UINT width=0,height=0;RECT bounds{};std::vector<BYTE> bytes;
 				bool operator==(const PageTestPixels&) const = default;
 			};
+			RECT lastDrawDamage{};
 			const auto drawScene=[&](Scene& scene,std::chrono::steady_clock::time_point now,bool full=true){
 				PageTestPixels result;(void)scene.Advance(now);result.bounds=scene.PresentationBounds();
 				result.width=result.bounds.right-result.bounds.left;result.height=result.bounds.bottom-result.bounds.top;
 				if(FAILED(scene.EnsureDeviceResources(epoch,result.width,result.height))){Check(false,"page status test owns real D2D resources");return result;}
 				auto* dc=scene.DeviceContext();auto& frameTarget=scene.Target();
 				const auto damage=full?RECT{0,0,static_cast<LONG>(result.width),static_cast<LONG>(result.height)}:scene.PendingDamage();
+				lastDrawDamage=damage;
 				frameTarget.BeginFrame(dc,D2D1::RectF(static_cast<FLOAT>(damage.left),static_cast<FLOAT>(damage.top),
 					static_cast<FLOAT>(damage.right),static_cast<FLOAT>(damage.bottom)));
 				WaitTrace::DrawStarted();
@@ -4237,6 +4249,67 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
                 context.frameTime+=1ms;Check(callback(context)==FrameResult::Continue,"offscreen controller continues dt-zero entry at loading deadline");
                 context.frameTime+=20ms;Check(callback(context)==FrameResult::Continue,"offscreen controller advances visible ring after threshold");
                 snapshot.ppt.presentationVisible=false;snapshot.ppt.presentationActive=false;context.frameTime+=20ms;Check(callback(context)==FrameResult::Idle,"offscreen hidden controller retires the spinner");
+            }
+            {
+                // UI3 自动脏区（V7）：悬停/按下/取消/离开逐帧推进，登记表局部脏区的保留画面必须等于整幅重画。
+                auto frame=ppt;frame.currentPage=3;frame.layout.session=8;frame.navigationWaiting={};
+                const auto content=BuildPageContent(0,WorkspaceMode::PptCompact,frame,{});
+                const float scale=1.5F;
+                const LONG width=static_cast<LONG>(std::lround(PptControlLongSideDip*scale)),height=static_cast<LONG>(std::lround(PptControlShortSideDip*scale));
+                Scene partialScene,fullScene;
+                for(auto* scene:{&partialScene,&fullScene}){scene->ConfigurePagination(content);scene->SetBounds({0,0,width,height},scale);scene->SetOpacity(1,0);}
+                const auto begin=origin+40s;(void)drawScene(partialScene,begin);(void)drawScene(fullScene,begin);
+                for(auto* scene:{&partialScene,&fullScene}){scene->CommitPresented();(void)scene->ConsumeDamage();}
+                const auto layout=partialScene.Layout();
+                int stamp=1,checked=0;
+                PageTestPixels previous=drawScene(fullScene,begin);
+                for(auto* scene:{&partialScene,&fullScene}){scene->CommitPresented();(void)scene->ConsumeDamage();}
+                const auto step=[&](const auto& action,const char* label){
+                    action(partialScene);action(fullScene);
+                    int changedFrames=0,partialFrames=0;
+                    for(int i=0;i<30;++i,++stamp){
+                        const auto now=begin+stamp*20ms;
+                        const auto partial=drawScene(partialScene,now,false);
+                        const RECT partialDamage=lastDrawDamage;
+                        const LONG area=(partialDamage.right-partialDamage.left)*(partialDamage.bottom-partialDamage.top);
+                        const auto full=drawScene(fullScene,now);
+                        Check(partial==full,label);++checked;
+                        // 有像素变化的帧必须由严格局部的脏区完成（不能退回整幅）。
+                        if(full.bytes!=previous.bytes){++changedFrames;if(area>0&&area<static_cast<LONG>(full.width*full.height))++partialFrames;
+                            else std::fprintf(stderr,"[PageControlUI3] DEBUG %s frame=%d damage=%ld,%ld,%ld,%ld size=%ux%u\n",label,i,partialDamage.left,partialDamage.top,partialDamage.right,partialDamage.bottom,full.width,full.height);}
+                        previous=full;
+                        for(auto* scene:{&partialScene,&fullScene}){scene->CommitPresented();(void)scene->ConsumeDamage();}
+                    }
+                    // 悬停与按下必有视觉变化；取消/离开可能已由前一步复原。
+                    if(std::strstr(label,"hover")||std::strstr(label,"press"))Check(changedFrames>0,"page feedback step changes pixels");
+                    // 按下/取消会触发字号修正（按压缩放改变文字设备尺寸），修正期间沿用原有整幅兜底；悬停/离开必须严格局部。
+                    if(std::strstr(label,"hover")||std::strstr(label,"leave"))
+                        Check(partialFrames==changedFrames,"page feedback pixels are delivered by strictly partial damage");
+                };
+                for(const auto& button:layout.buttons){
+                    // 1 号是拖柄命中区，没有悬停/按压视觉。
+                    if(!button.visible||!button.enabled||button.id<2)continue;
+                    const POINT center{(button.localPixels.left+button.localPixels.right)/2,(button.localPixels.top+button.localPixels.bottom)/2};
+                    step([&](Scene& scene){(void)scene.PointerMove(center);},"page hover partial damage equals full redraw");
+                    step([&](Scene& scene){(void)scene.PointerDown(center);},"page press partial damage equals full redraw");
+                    step([&](Scene& scene){(void)scene.CancelPointer();},"page cancel partial damage equals full redraw");
+                    step([&](Scene& scene){(void)scene.PointerLeave();},"page leave partial damage equals full redraw");
+                }
+                Check(checked>0,"page feedback partial-damage check visits interactive buttons");
+                // 已确认 A、候选 B 等待回执时又回到 A：旧候选必须失效，B 的回执也不能清掉补画范围（V8）。
+                const bool savedFeedbackAnimation=UiAnimationEnabled;UiAnimationEnabled=false;
+                for(const auto& button:layout.buttons){
+                    if(!button.visible||!button.enabled||button.id<2)continue;
+                    const POINT center{(button.localPixels.left+button.localPixels.right)/2,(button.localPixels.top+button.localPixels.bottom)/2};
+                    (void)partialScene.PointerMove(center);(void)partialScene.Advance(begin+(stamp++)*20ms);
+                    const auto pendingB=partialScene.CapturePresentationCandidate();
+                    (void)partialScene.PointerLeave();(void)partialScene.Advance(begin+(stamp++)*20ms);
+                    Check(!partialScene.IsPresentationCandidateCurrent(pendingB),"returning to the confirmed state invalidates the pending candidate");
+                    Check(partialScene.CommitPresentationCandidate(pendingB)&&!Inkeys::UI::UI3::DirtyRegionTracker::IsEmpty(partialScene.PendingDamage()),
+                        "the stale candidate receipt keeps the repaint range");
+                    break;
+                }
+                UiAnimationEnabled=savedFeedbackAnimation;
             }
             // 短等待无任何像素变化；长等待的“Wait+变浅+环”按500ms门控出现。四面/三倍率/两个方向共用真实Scene。
             for(std::size_t index=0;index<4;++index)for(const float scale:{1.0F,1.5F,2.0F})
@@ -6566,7 +6639,11 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 			std::unique_lock renderLock(renderTransactionMutex);
 			// 与主栏一致，只在开关边界刷新整层覆盖；稳定蓝框不扩大后续 dirty。
 			for (auto& surface : surfaces)
-				surface.debugOverlayRefreshPending = true;
+			{
+				surface.debugOverlayRefreshPending = true; ++surface.debugOverlayRevision;
+				// 重新武装最终帧锁存：静止时开关刷新帧即绿色最终帧，快速关开也不会停在红框。
+				(void)surface.debugFrameSleepLatch.Update(false, false);
+			}
 		}
 		RequestAll();
 	}

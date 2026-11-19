@@ -118,6 +118,7 @@
     <ClCompile Include="..\Inkeys\Inkeys\UI\UI3\UI3.Material.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.LogoAppearance.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\UI3\UI3.DirtyRegion.cppm" />
+    <ClCompile Include="..\Inkeys\Inkeys\UI\UI3\UI3.VisualDirty.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\UI3\UI3.Superellipse.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\UI3\UI3.LoadingIndicator.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\UI3\UI3.Interaction.cppm" />
@@ -217,6 +218,7 @@
     <ClCompile Include="keyboard_shortcut_input_tests.cpp" />
     <ClCompile Include="..\Inkeys\Inkeys\Input\UiPointerInput.cpp" />
 	<ClCompile Include="dirty_region_tests.cpp" />
+	<ClCompile Include="visual_dirty_tests.cpp" />
 	<ClCompile Include="window_geometry_tests.cpp" />
     <ClCompile Include="frame_pacing_tests.cpp" />
 	<ClCompile Include="toggle_click_coalescer_tests.cpp" />

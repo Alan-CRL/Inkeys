@@ -2114,6 +2114,12 @@
     <ClCompile Include="Inkeys\UI\UI3\UI3.DirtyRegion.cppm">
       <Filter>Modules\Inkeys\UI\UI3</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.VisualDirty.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\UI3\UI3.VisualDirtySampler.cppm">
+      <Filter>Modules\Inkeys\UI\UI3</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\UI3\UI3.Superellipse.cppm">
       <Filter>Modules\Inkeys\UI\UI3</Filter>
     </ClCompile>
@@ -2196,6 +2202,9 @@
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.Host.Test.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.AttributeDirty.Test.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp">

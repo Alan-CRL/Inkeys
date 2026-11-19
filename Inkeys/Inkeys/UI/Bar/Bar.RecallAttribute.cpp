@@ -283,6 +283,29 @@ void BarRecallAttributePanel::Draw(UIRendering& renderer, ID2D1DeviceContext* co
 	context->PopAxisAlignedClip(); context->PopLayer(); renderer.SetFrameDiffuseMaskGeometryScale(1);
 }
 
+void BarRecallAttributePanel::PrepareVisuals()
+{
+	if (!initialized_ || !frame_.panelVisible) return;
+	(void)PrepareButtonVisualInheritance(redoButton_, UiInheritClass(redoButton_.button.inhX, redoButton_.button.inhY));
+}
+
+bool BarRecallAttributePanel::RegisterVisuals(VisualDirtyRegistry& registry, const BarPanelVisualContext& context)
+{
+	if (!initialized_) return false;
+	const VisualSamplerContext sampler{context.zoom, context.map, {}};
+	const auto panel = registry.AddGroup([this, context](VisualGroupSample& out)
+		{
+			out.visible = initialized_ && frame_.panelVisible; if (!out.visible) return;
+			if (context.mappingState) context.mappingState(out.state);
+			const auto& r = frame_.geometry.panel;
+			out.state.Real(panel_.Opacity()); out.state.Real(r.left); out.state.Real(r.top); out.state.Real(r.right); out.state.Real(r.bottom);
+			out.state.Real(frame_.panelPose.scale);
+		});
+	(void)registry.Add(panel, MakeVisualSampler(surface_, sampler));
+	(void)registry.Add(panel, MakeButtonVisualSampler(redoButton_, sampler));
+	return true;
+}
+
 void BarRecallAttributePanel::UpdatePanelFrame(bool open)
 {
 	panel_.SetExternalState(open, panelMotion_.Geometry(), frame_.panelOpacity);

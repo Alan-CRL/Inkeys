@@ -171,6 +171,149 @@ namespace Inkeys::UI::Bar
 		ButtonPointerState pointer;
 		BarSurfaceButtonId hover=0,pressed=0,appliedHover=0,appliedPressed=0;
 		bool feedbackDirty=false;
+		// ---- UI3 自动脏区（V7）：每个分页场景（每个目标窗口）一个登记表，坐标为本场景 presentation 客户区像素。
+		// 按钮、浮层、文字、加载环的像素变化由登记表按条目比较「本帧绘制状态」与「已确认呈现状态」得出；
+		// 布局/缩放/原点/字号策略/常驻透明度/背景模式/设备与生命周期仍走整幅脏区。
+		VisualDirtyRegistry visuals;
+		bool visualsRegistered=false;
+		// 最近一次准备的候选与随画面捕获的候选：回执确认时只提交被捕获（实际绘制）的那一次。
+		std::uint64_t preparedVisualSerial=0,capturedVisualSerial=0;
+		// 与 DrawingPose 同一平移：逻辑原点 − presentation 原点 + 姿态位移（亚像素向外取整）。
+		RECT MapPose(const RECT& local,EraserSurfacePose pose) const noexcept
+		{
+			const double tx=logical.left-presentation.left+pose.x*scale,ty=logical.top-presentation.top+pose.y*scale;
+			return {local.left+static_cast<LONG>(std::floor(tx)),local.top+static_cast<LONG>(std::floor(ty)),
+				local.right+static_cast<LONG>(std::ceil(tx)),local.bottom+static_cast<LONG>(std::ceil(ty))};
+		}
+		// 局部 DIP 矩形 → 姿态缩放下的客户区像素，外扩与旧 Include 相同的边框/点光/抗锯齿余量。
+		RECT LocalPixels(EraserAttributeRect r,EraserSurfacePose pose) const noexcept
+		{
+			const double zoom=scale*pose.scale;RECT p=Pixels(r,zoom);
+			const LONG pad=static_cast<LONG>(std::ceil(DamageOutsetDip*zoom));InflateRect(&p,pad,pad);return MapPose(p,pose);
+		}
+		// 文字在 contentScale>1 时围绕中心放大绘制，包络同步放大。
+		static EraserAttributeRect WordLocal(const UiWordClass& word,double x,double y) noexcept
+		{
+			EraserAttributeRect r{x,y,x+word.w.val,y+word.h.val};const double cs=word.contentScale;
+			if(std::isfinite(cs)&&cs>1.0){const double gx=r.Width()*(cs-1)/2,gy=r.Height()*(cs-1)/2;r={r.left-gx,r.top-gy,r.right+gx,r.bottom+gy};}
+			return r;
+		}
+		EraserSurfacePose PoseOf(int group) const noexcept{return group==1?menuPose:group==2?themePose:EraserSurfacePose{};}
+		EraserAttributeRect DragHandleRect() noexcept
+		{
+			const auto r=Bounds(pageButtons[0]->button);const bool vertical=r.Width()<=r.Height();
+			return {EraserRectCenterX(r)-(vertical?1:10),EraserRectCenterY(r)-(vertical?10:1),
+				EraserRectCenterX(r)+(vertical?1:10),EraserRectCenterY(r)+(vertical?10:1)};
+		}
+		void RegisterVisuals()
+		{
+			visualsRegistered=true;
+			// 顶层：整体透明度层、像素映射（缩放与原点）、字号目标、常驻内容透明度（分页按钮与未保存提示）。
+			const auto top=visuals.AddGroup([this](VisualGroupSample& out){
+				out.visible=true;auto& w=out.state;
+				w.Real(opacity.val);w.Real(scale);w.Real(fontTargetScale);
+				w.Int(logical.left-presentation.left);w.Int(logical.top-presentation.top);
+				w.Real(GetThemeResidentContentOpacity());
+			});
+			// 分页根栏：PPT 闲置淡化只作用于根栏与分页按钮（浮层先于它绘制）。
+			const auto rootGroup=visuals.AddGroup([this](VisualGroupSample& out){out.visible=true;out.state.Real(idleFade.val);},top);
+			// 菜单 / 主题浮层：姿态、浮层透明度层、字号目标姿态；与 DrawGroup 一致，不可见时整组不画。
+			auto popup=[this,top](bool child){
+				return visuals.AddGroup([this,child](VisualGroupSample& out){
+					const auto& frame=child?themeFrame:menuFrame;const double alpha=panels[child?2:1].Opacity();
+					out.visible=frame.visible&&alpha>0.0001;if(!out.visible)return;
+					const auto pose=child?themePose:menuPose;auto& w=out.state;
+					w.Real(pose.x);w.Real(pose.y);w.Real(pose.scale);w.Real(alpha);w.Real(frame.targetPose.scale);
+				},top);};
+			const auto menuGroup=popup(false),themeGroup=popup(true);
+			auto shapeEntry=[this](VisualGroupId group,UiShapeClass* shape,int poseGroup,std::function<bool()> gate,const char* name){
+				(void)visuals.Add(group,[this,shape,poseGroup,gate=std::move(gate)](VisualSample& out){
+					if((gate&&!gate())||!IsVisuallyDrawn(*shape))return;
+					const auto b=Bounds(*shape);out.visible=true;out.bounds=LocalPixels(b,PoseOf(poseGroup));
+					out.state.Real(b.left);out.state.Real(b.top);WriteVisualState(out.state,*shape,false);
+				},name);};
+			auto buttonEntry=[this](VisualGroupId group,BarSurfaceButtonId id,int poseGroup,const char* name){
+				VisualSamplerContext context;
+				context.zoom=[this,poseGroup]{return scale*PoseOf(poseGroup).scale;};
+				context.map=[this,poseGroup](const RECT& local){return MapPose(local,PoseOf(poseGroup));};
+				if(id>=9){
+					// 主题预览：底色块（underlay）与底纹在按钮基础部件之外独立绘制——按钮底板常态透明、
+					// 图标与文字都很小，底色块须自己贡献可见性与包络（在同一按压变换内）。
+					const std::size_t i=id-9;
+					auto inner=MakeButtonVisualSampler(Button(id),context);
+					(void)visuals.Add(group,[this,i,id,poseGroup,inner=std::move(inner)](VisualSample& out){
+						inner(out);
+						auto& underlay=previewBackgrounds[i];
+						const bool underlayDrawn=IsVisuallyDrawn(underlay),patternDrawn=i>=6;
+						if(!underlayDrawn&&!patternDrawn)return;
+						auto& button=Button(id);const auto b=Bounds(button.button);
+						// 底色块按自身宽高画在按钮继承位置；底纹画满按钮矩形。
+						EraserAttributeRect local=b;
+						if(underlayDrawn){local.right=(std::max)(local.right,b.left+underlay.w.val);local.bottom=(std::max)(local.bottom,b.top+underlay.h.val);}
+						RECT r=LocalPixels(local,PoseOf(poseGroup));
+						Inkeys::UI::UI3::Detail::GrowForPress(r,button.pressScale.val);
+						if(out.visible)RenderingAttribute::UnionRectInPlace(out.bounds,r);else out.bounds=r;
+						out.visible=true;
+						auto& w=out.state;w.Real(button.pressScale.val);w.Real(b.left);w.Real(b.top);w.Real(b.right);w.Real(b.bottom);
+						w.Bool(underlayDrawn);if(underlayDrawn)WriteVisualState(w,underlay,false);
+						if(i>=6){w.Color(static_cast<COLORREF>(content.backgroundRgb));w.Int(static_cast<int>(i-6));}
+					},name);
+					return;
+				}
+				(void)visuals.Add(group,MakeButtonVisualSampler(Button(id),std::move(context),id==3?&pageTotal:nullptr),name);
+			};
+			shapeEntry(rootGroup,&root,0,{},"page.root");
+			shapeEntry(rootGroup,&dragHandle,0,[this]{return !content.whiteboard;},"page.drag-handle");
+			// 绘制顺序（paginationDrawOrder）只含 2..5；1 号是拖柄的命中区，拖柄单独绘制。
+			for(BarSurfaceButtonId id=2;id<=5;++id)buttonEntry(rootGroup,id,0,"page.button");
+			(void)visuals.Add(rootGroup,[this](VisualSample& out){
+				if(!(content.whiteboard&&content.surface==0&&content.unsaved)||!IsVisuallyDrawn(unsaved))return;
+				out.visible=true;out.bounds=LocalPixels(WordLocal(unsaved,5,-32),{});WriteVisualState(out.state,unsaved,false);
+			},"page.unsaved");
+			// 加载环：页码按钮内侧的弧，按相位推导；包络与旧 ringDamage 相同（按钮 ± 抗锯齿外扩）。
+			(void)visuals.Add(rootGroup,[this](VisualSample& out){
+				if(!(indicator.Ring()>0)||ringFailed)return;
+				auto& button=pageButtons[2]->button;const auto r=Bounds(button);constexpr float reach=PageLoadingStyle::AntialiasOutset;
+				out.visible=true;out.bounds=LocalPixels({r.left-reach,r.top-reach,r.right+reach,r.bottom+reach},{});
+				const auto arc=PageLoadingArcAt(indicator.phase,indicatorAnimations);auto& w=out.state;
+				w.Real(r.left);w.Real(r.top);w.Real(r.Width());w.Real(r.Height());
+				w.Real(button.rw?static_cast<double>(button.rw->val):static_cast<double>(ButtonCornerRadiusDip));
+				w.Real(static_cast<double>(arc.start));w.Real(static_cast<double>(arc.length));w.Real(static_cast<double>(indicator.Ring()));
+				w.Color(GetThemeColor(ThemeColorEnum::IconPrimary));
+			},"page.ring");
+			shapeEntry(menuGroup,&menu,1,{},"page.menu");
+			for(BarSurfaceButtonId id=6;id<=8;++id)buttonEntry(menuGroup,id,1,"page.menu-button");
+			shapeEntry(themeGroup,&theme,2,{},"page.theme");
+			shapeEntry(themeGroup,&divider,2,{},"page.divider");
+			for(std::size_t i=0;i<headings.size();++i)
+				(void)visuals.Add(themeGroup,[this,i](VisualSample& out){
+					auto& word=headings[i];if(!IsVisuallyDrawn(word))return;
+					out.visible=true;out.bounds=LocalPixels(WordLocal(word,350,ThemeBounds.top+(i?191.0:5.0)),themePose);
+					WriteVisualState(out.state,word,false);
+				},"page.heading");
+			for(BarSurfaceButtonId id=9;id<=17;++id)buttonEntry(themeGroup,id,2,"page.preview");
+		}
+		// 准备本帧登记表：必须在最后一次布局/内容/反馈更新之后、宿主读取 PendingDamage 与判断旧候选之前。
+		void PrepareVisuals()
+		{
+			if(backgroundOnly||!initialized)return;
+			if(!visualsRegistered)RegisterVisuals();
+			// 绘制时才解析的派生几何先按同一公式写入（绘制时以相同输入重写同值）。
+			// 页码按钮的总页数槽是次文字，须随按钮一起解析（与 DrawButton 传入的 options.secondary 一致）。
+			for(BarSurfaceButtonId id=2;id<=17;++id){auto& button=Button(id);(void)PrepareButtonVisualInheritance(button,Inherit(button.button),id==3?&pageTotal:nullptr);}
+			if(!content.whiteboard)SetShapeBounds(dragHandle,DragHandleRect(),0,true);
+			const auto attempt=visuals.Prepare();preparedVisualSerial=attempt.serial;
+			bool revise=attempt.changedSincePrevious;
+			if(attempt.HasDamage()){
+				// damage 相对已确认快照：每次都并入（重复并入不扩大）。例如已确认 A、B 待回执时又回到 A，
+				// B 的回执清空 damage 后，下一次准备相对 B 得出的范围仍会补进来。
+				const RECT client{0,0,presentation.right-presentation.left,presentation.bottom-presentation.top};
+				const RECT r=IntersectDirtyRect(attempt.damage,client);
+				if(!Empty(r)){const RECT before=damage;DirtyRegionTracker::UnionInPlace(damage,r);revise|=!EqualRect(&before,&damage);}
+			}
+			// 状态有任何变化（即使 damage 为空或落在已有范围内）也递增修订号：等待回执的旧候选不再代表当前画面。
+			if(revise){invalidated=true;++damageRevision;}
+		}
 
 		Impl()
 		{
@@ -296,11 +439,6 @@ namespace Inkeys::UI::Bar
 			ConfigureButtonVisualTargets(button,kind,duration,1,direct);
 			SetShapeBounds(button.button,rect,duration,direct);
 		}
-		void IncludeButton(BarSurfaceButtonId id) noexcept
-		{
-			const auto& hit=candidate.buttons[id-1];if(!hit.visible)return;
-			Include(Pixels({hit.boundsDip.left,hit.boundsDip.top,hit.boundsDip.right,hit.boundsDip.bottom},scale));
-		}
 		void UpdateHorizontalPageWidths(const BarPageSurfaceContent& next,bool currentChanged,bool totalChanged,bool direct,double duration)
 		{
 			const auto metrics=ResolveButtonVisualMetrics(ButtonVisualLayoutKind::PageHorizontal);
@@ -352,7 +490,6 @@ namespace Inkeys::UI::Bar
 			const bool status=indicator.reached&&content.loadState!=BarPageLoadState::None;
 			const bool currentChanged=current!=shownCurrent,totalChanged=total!=shownTotal;
 			if(!currentChanged&&!totalChanged&&status==shownStatus)return false;
-			IncludeButton(3);
 			// 纯页码之间的跳变立即生效；进出状态文字走既有的文字过渡。
 			const bool immediate=!status&&!shownStatus;
 			const auto observation=ContentObservationBefore(static_cast<long>(shownStatus),content,
@@ -384,7 +521,7 @@ namespace Inkeys::UI::Bar
 			indicatorInputDirty|=content.loadingSession!=next.loadingSession||content.loadState!=next.loadState;
 			// 内容更新不得重新提交布局目标，否则普通翻页会截断正在进行的 PPT/白板转换。
 			const auto text=[&](BarSurfaceButtonId id,const std::wstring& icon,const std::wstring& label,double angle=0){
-				ConfigureButtonContent(Button(id),icon,label,angle,UiDefaultOperationDur,false);IncludeButton(id);
+				ConfigureButtonContent(Button(id),icon,label,angle,UiDefaultOperationDur,false);
 			};
 			const bool wb=next.whiteboard,vertical=next.surface>=2,standard=wb||!BarPptCompactPaginationEnabled;
 			if(content.previousLabel!=next.previousLabel)text(2,L"barMore",standard?next.previousLabel:L"",vertical&&!wb?0:-90);
@@ -396,24 +533,18 @@ namespace Inkeys::UI::Bar
 			for(std::size_t i=0;i<actions.size();++i)if(content.actionLabels[i]!=next.actionLabels[i])text(static_cast<BarSurfaceButtonId>(6+i),icons[i],next.actionLabels[i]);
 			for(std::size_t i=0;i<next.patternLabels.size();++i)if(content.patternLabels[i]!=next.patternLabels[i])text(static_cast<BarSurfaceButtonId>(15+i),L"colorSelect",next.patternLabels[i]);
 			for(std::size_t i=0;i<headings.size();++i)if(content.sectionLabels[i]!=next.sectionLabels[i]){
-				headings[i].SetStringImmediate(next.sectionLabels[i]);if(themeFrame.visible)Include(Pixels(themePose.Apply(ThemeBounds),scale));
+				headings[i].SetStringImmediate(next.sectionLabels[i]);
 			}
 			if(content.unsavedLabel!=next.unsavedLabel||content.unsaved!=next.unsaved){
-				unsaved.SetStringImmediate(next.unsavedLabel);if(wb&&next.surface==0)Include(Pixels({5,-32,300,0},scale));
+				unsaved.SetStringImmediate(next.unsavedLabel);
 			}
 			if(content.backgroundRgb!=next.backgroundRgb||content.pattern!=next.pattern){
 				const auto rgb=next.backgroundRgb;
-				for(std::size_t i=6;i<previewBackgrounds.size();++i){
-					previewBackgrounds[i].fill->SetDirect(RGB((rgb>>16)&255,(rgb>>8)&255,rgb&255));IncludeButton(static_cast<BarSurfaceButtonId>(9+i));
-				}
-				if(content.backgroundRgb!=next.backgroundRgb)for(std::size_t i=0;i<ThemeColors.size();++i)
-					if(ThemeColors[i]==content.backgroundRgb||ThemeColors[i]==next.backgroundRgb)IncludeButton(static_cast<BarSurfaceButtonId>(9+i));
+				for(std::size_t i=6;i<previewBackgrounds.size();++i)
+					previewBackgrounds[i].fill->SetDirect(RGB((rgb>>16)&255,(rgb>>8)&255,rgb&255));
 			}
-			for(std::size_t i=0;i<next.enabled.size();++i)if(content.enabled[i]!=next.enabled[i]||content.interactive[i]!=next.interactive[i])IncludeButton(static_cast<BarSurfaceButtonId>(2+i));
-			if(content.switching!=next.switching||content.loadState!=next.loadState)
-				for(BarSurfaceButtonId id=1;id<=17;++id)IncludeButton(id);
+			// 标题、未保存提示、预览底色、启用态、切换/加载、放映态的像素变化都由登记表按条目得出。
 			if(content.pptActive!=next.pptActive){
-				IncludeButton(7);
 				// 放映恢复时同步撤销 Minimize 的旧反馈，禁用态不能残留按压底色或释放点击。
 				if(next.pptActive){
 					std::scoped_lock lock(inputMutex);
@@ -618,16 +749,20 @@ namespace Inkeys::UI::Bar
 			if(newHover&&newHover!=appliedHover)StartButtonHoverVisual(Button(newHover));
 			if(appliedPressed&&appliedPressed!=newPressed)SetButtonPressedVisual(Button(appliedPressed),false);
 			if(newPressed) {StopButtonHoverVisual(Button(newPressed),true,true);SetButtonPressedVisual(Button(newPressed),true);}
-			if(appliedHover)Include(Pixels({candidate.buttons[appliedHover-1].boundsDip.left,candidate.buttons[appliedHover-1].boundsDip.top,
-				candidate.buttons[appliedHover-1].boundsDip.right,candidate.buttons[appliedHover-1].boundsDip.bottom},scale));
 			appliedHover=newHover;appliedPressed=newPressed;
 		}
-		bool Advance(std::chrono::steady_clock::time_point now)
+		// prepareVisuals=false 仅供 Render：裁剪已按此前的准备确定，绘制期间不得再产生新的候选。
+		bool Advance(std::chrono::steady_clock::time_point now,bool prepareVisuals=true)
 		{
 			// 相同 frameTime 或隐藏后恢复也先处理字号策略，不能被 idle 早退吞掉。
 			if(renderer.UpdateFontRenderingPolicy(Inkeys::config.Experimental.Inkeys3.UI3.AllowFractionalFontSize.load()))FullDamage();
-			if(frameSeen&&now==previousFrame&&!indicatorInputDirty&&indicatorAnimations==static_cast<bool>(UiAnimationEnabled))return active||renderer.FontAnimationsActive();
+			if(frameSeen&&now==previousFrame&&!indicatorInputDirty&&indicatorAnimations==static_cast<bool>(UiAnimationEnabled)){
+				// 同一 frameTime 之间仍可能有内容/布局更新：登记表照常准备，不能被时间短路吞掉。
+				if(prepareVisuals)PrepareVisuals();return active||renderer.FontAnimationsActive();
+			}
 			const bool fontPending=renderer.FontAnimationsActive();
+			// 字号修正系数在绘制时才推进（被裁剪拒绘的按钮不推进），准备阶段的采样无法代表本帧结果：
+			// 修正动画进行中保持整幅，待字号解析前移到裁剪之前再交给登记表。
 			if(fontPending)FullDamage();
 			Inkeys::UI::RenderPipeline::FrameStageTimer timer(Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics(),
 				Inkeys::UI::RenderPipeline::FrameStage::AdvanceAnimationsAndDeriveLayout);
@@ -648,12 +783,11 @@ namespace Inkeys::UI::Bar
             // 门控到点/撤销时才切换状态文字，短暂的跳变不会出现任何变化。
             if(indicatorChanged)(void)RefreshDisplayedText();
             if(indicatorChanged){
-                // 环可见时每帧只重绘页码按钮包络；各按钮变浅的过渡由自身视觉结果登记损伤。
-                Include(ringDamage);
+                // 环与页码按钮的像素变化由登记表得出；这里只记录环包络，供隐藏指示器时立即擦除。
                 const auto r=Bounds(pageButtons[2]->button);
                 constexpr float reach=PageLoadingStyle::AntialiasOutset;
                 const auto current=Pixels({r.left-reach,r.top-reach,r.right+reach,r.bottom+reach},scale);
-                Include(current);ringDamage=indicator.Ring()>0?current:RECT{};
+                ringDamage=indicator.Ring()>0?current:RECT{};
             }
 
 			active=fontPending;bool changed=false,panelsChanged=false;
@@ -727,13 +861,13 @@ namespace Inkeys::UI::Bar
 					if(id==3)pageTotal.pct.SetTar(visible?(enabled?1.0:GetThemeDisabledContentOpacity()):0.0,ButtonHoverTransitionDuration);
 					const auto result=AdvanceButtonVisual(button,animation,id==3?&pageTotal:nullptr);
 					active|=result.active;
-					if(result.changed)Include(Pixels({candidate.buttons[id-1].boundsDip.left,candidate.buttons[id-1].boundsDip.top,
-						candidate.buttons[id-1].boundsDip.right,candidate.buttons[id-1].boundsDip.bottom},scale));
 				}
 			}
 			const auto oldMenu=menuPose,oldTheme=themePose;
 			RefreshGeometry();
-			if(changed || panelsChanged || oldMenu!=menuPose || oldTheme!=themePose)FullDamage();
+			// 背景模式由调用方回调绘制、没有内容版本，视觉变化仍整幅；分页模式由登记表按条目得出。
+			if(backgroundOnly&&(changed || panelsChanged || oldMenu!=menuPose || oldTheme!=themePose))FullDamage();
+			if(prepareVisuals)PrepareVisuals();
 			RefreshLighting();
 			return active||fontPending;
 		}
@@ -829,7 +963,8 @@ namespace Inkeys::UI::Bar
 	{
 		Inkeys::UI::RenderPipeline::FrameStageTimer timer(Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics(),
 			Inkeys::UI::RenderPipeline::FrameStage::SubmitTargetsAndLayout);
-		if (impl_->renderer.RefreshLocalizedTypography()) impl_->FullDamage(); impl_->Configure(content,duration);impl_->RefreshGeometry();return true;
+		if (impl_->renderer.RefreshLocalizedTypography()) impl_->FullDamage(); impl_->Configure(content,duration);impl_->RefreshGeometry();
+		impl_->PrepareVisuals();return true;
 	}
 	bool BarPageSurface::ConfigureBackground(const BarSurfaceBackgroundSpec& background)
 	{
@@ -849,7 +984,7 @@ namespace Inkeys::UI::Bar
 		Inkeys::UI::RenderPipeline::FrameStageTimer timer(Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics(),
 			Inkeys::UI::RenderPipeline::FrameStage::SubmitTargetsAndLayout);
 		// 几何可在同一 frameTime 的 Advance 后落定；只重映射光源，不再推进动画时钟。
-		p.logical=bounds;p.scale=scale;p.renderer.SetFrameZoom(scale);p.RefreshGeometry();p.RefreshLighting();p.FullDamage();return true;
+		p.logical=bounds;p.scale=scale;p.renderer.SetFrameZoom(scale);p.RefreshGeometry();p.RefreshLighting();p.FullDamage();p.PrepareVisuals();return true;
 	}
 	void BarPageSurface::SetFontTargetScale(double scale) noexcept
 	{
@@ -945,11 +1080,13 @@ namespace Inkeys::UI::Bar
 		for(auto& button:impl_->committed.buttons)button.enabled&=inputEnabled;
 		impl_->committedSerial=impl_->capturedSerial;
 		for(auto& panel:impl_->panels)panel.CommitPresented();
+		if(impl_->preparedVisualSerial)(void)impl_->visuals.Commit(impl_->preparedVisualSerial);
 	}
 	std::uint64_t BarPageSurface::CapturePresentationCandidate() noexcept
 	{
 		impl_->capturedCandidate=impl_->candidate;
 		impl_->capturedDamageRevision=impl_->damageRevision;
+		impl_->capturedVisualSerial=impl_->preparedVisualSerial;
 		const auto serial=++impl_->capturedSerial;
 		for(auto& panel:impl_->panels)panel.CaptureCandidate(serial);
 		return serial;
@@ -959,7 +1096,7 @@ namespace Inkeys::UI::Bar
 		return std::all_of(impl_->panels.begin(),impl_->panels.end(),[serial](const Panel& panel){return panel.CanConfirm(serial);})
 			&&impl_->capturedDamageRevision==impl_->damageRevision;
 	}
-	bool BarPageSurface::CommitPresentationCandidate(std::uint64_t serial,bool inputEnabled) noexcept
+	bool BarPageSurface::CommitPresentationCandidate(std::uint64_t serial,bool inputEnabled,bool pixelsSubmitted) noexcept
 	{
 		if(!serial||serial!=impl_->capturedSerial||serial<=impl_->committedSerial)return false;
 		std::scoped_lock lock(impl_->inputMutex);
@@ -969,6 +1106,9 @@ namespace Inkeys::UI::Bar
 		for(auto& button:impl_->committed.buttons)button.enabled&=inputEnabled;
 		impl_->committedSerial=serial;
 		for(auto& panel:impl_->panels)panel.ConfirmPresented(serial);
+		// 登记表只推进到被捕获（实际绘制）的那一次准备；之后的变化仍与它比较。
+		// 隐藏或无像素候选没有改变窗口像素，不推进登记表快照（下一次准备仍与上次上屏状态比较）。
+		if(pixelsSubmitted&&impl_->capturedVisualSerial)(void)impl_->visuals.Commit(impl_->capturedVisualSerial);
 		// 捕获后的反馈/光照失效仍归下一帧，旧回执只消费它实际覆盖的 damage。
 		if(impl_->capturedDamageRevision==impl_->damageRevision){impl_->damage={};impl_->invalidated=false;}
 		return true;
@@ -1039,7 +1179,7 @@ namespace Inkeys::UI::Bar
 	bool BarPageSurface::PopupAnimationActive() const noexcept{return impl_->menuMotion.Active()||impl_->themeMotion.Active();}
 	BarSurfaceRenderResult BarPageSurface::Render(ID2D1DeviceContext* dc,std::chrono::steady_clock::time_point now)
 	{
-		if(!dc)return {};auto& p=*impl_;p.Advance(now);
+		if(!dc)return {};auto& p=*impl_;p.Advance(now,false);
 		if(auto* diagnostics=Inkeys::UI::RenderPipeline::CurrentFrameDiagnostics()){
 			const auto light=p.renderer.SnapshotFrameLighting();
 			diagnostics->lightFlags=(light.edgeLightingEnabled?1U:0U)|(light.primaryLightVisible?2U:0U)
@@ -1067,9 +1207,7 @@ namespace Inkeys::UI::Bar
 		}
 		if(!p.backgroundOnly){
 			if(!p.content.whiteboard){
-				const auto r=Bounds(p.pageButtons[0]->button);const bool vertical=r.Width()<=r.Height();
-				SetShapeBounds(p.dragHandle,{EraserRectCenterX(r)-(vertical?1:10),EraserRectCenterY(r)-(vertical?10:1),
-					EraserRectCenterX(r)+(vertical?1:10),EraserRectCenterY(r)+(vertical?10:1)},0,true);p.DrawShape(dc,p.dragHandle);
+				SetShapeBounds(p.dragHandle,p.DragHandleRect(),0,true);p.DrawShape(dc,p.dragHandle);
 			}
 			// 分页按钮图标/文字属于常驻内容；菜单与主题浮层不受影响。
 			p.renderer.SetResidentContentOpacity(GetThemeResidentContentOpacity());

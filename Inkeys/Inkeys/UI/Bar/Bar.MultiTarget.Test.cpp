@@ -986,6 +986,9 @@ namespace Inkeys::UI::Bar
 					}
 				};
 				std::array<std::optional<SIZE>, 3> repeatedDownSizes;
+				// 远处浮动 → 居中底栏：本次按下准备的手势表面是整段手势与松手恢复的窗口上限。
+				std::optional<SIZE> farGestureSurface;
+				unsigned farCommits = 0;
 				std::optional<WorkspaceCenteringUlw> repeatedDown, repeatedRelease;
 				SIZE repeatedTarget{}, firstRoundMaximumTarget{};
 				RECT repeatedExpectedWindow{};
@@ -1087,6 +1090,32 @@ namespace Inkeys::UI::Bar
 							repeatedTailFrames = repeatedTailCommits = 0;
 							repeatedTailLast.reset();
 							++repeatedReleases;
+						}
+					}
+					if (step.starts_with("Far"))
+					{
+						// 每段手势各自以本段 Down 准备的表面为上限；Down 必须成功提交，松手后核验目标模式。
+						if (step.ends_with("Down"))
+						{
+							if (!committed || !after.dragActive) return Fail("far gesture Down did not prepare its surface");
+							farGestureSurface = ulw.size;
+							++farCommits;
+						}
+						else if (committed && (!farGestureSurface || ulw.size.cx > farGestureSurface->cx || ulw.size.cy > farGestureSurface->cy))
+						{
+							std::fprintf(stderr, "[UI3BottomDock] case=%s phase=%s farWindow=(%ld,%ld) surface=(%ld,%ld)\n",
+								caseName_.c_str(), phase, ulw.size.cx, ulw.size.cy,
+								farGestureSurface ? farGestureSurface->cx : 0L, farGestureSurface ? farGestureSurface->cy : 0L);
+							return Fail("far floating to centered dock grew the window beyond its gesture surface");
+						}
+						if ((step.ends_with("Release") || step.ends_with("Released")) && !after.dragActive)
+						{
+							const bool centered = step.starts_with("FarCenter");
+							if (!committed || (centered ? after.mode != BarBottomDockMode::BottomDocked
+									|| after.centerMode != BarBottomDockCenterMode::Centered
+								: after.mode != BarBottomDockMode::Floating))
+								return Fail("far gesture release did not commit its Floating / Centered target");
+							++farCommits;
 						}
 					}
 					if (step == "RepeatTail")
@@ -1353,6 +1382,10 @@ namespace Inkeys::UI::Bar
 				std::fprintf(stderr, "[UI3ReleaseSurface] case=%s tailFrames=%u commits=%u\n", caseName_.c_str(), initialTailFrames, initialTailCommits);
 				if (!repeats || repeatedReleases != 9 || repeatedFlushCommits != 3 || repeatedTailFrames != 125 || repeatedShrinks != 9)
 					Fail("repeated release sequence did not cover warmup, final-input flush and six measured recoveries");
+				// 远处手势接在九次重复松手之后；前段已失败的用例（既有 PPT/白板基线失败）不重复计数。
+				// 两段各一次成功 Down 与一次核验过目标模式的松手。
+				if (repeats && repeatedReleases == 9 && farCommits != 4)
+					Fail("far floating to centered dock gesture did not commit both Downs and releases");
 				std::fprintf(stderr, "[UI3RepeatedRelease] case=%s warmup=3 ups=%u flush=%u lastTailFrames=%u lastTailCommits=%u\n",
 					caseName_.c_str(), repeatedReleases, repeatedFlushCommits, repeatedTailFrames, repeatedTailCommits);
 				std::fprintf(stderr, "[UI3ReleaseShrink] case=%s initial=%u repeated=%u\n",

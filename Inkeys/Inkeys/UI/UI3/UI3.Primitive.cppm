@@ -6,6 +6,8 @@
 #include <d2d1_1.h>
 #include <wrl/client.h>
 
+#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -38,6 +40,7 @@ public:
 	{
 		unique_lock lockValmt(valmt);
 		val = valT;
+		BumpRevision();
 		lockValmt.unlock();
 
 		unique_lock lockTarmt(tarmt);
@@ -52,6 +55,7 @@ public:
 		shared_lock lockTar(other.tarmt);
 		val = other.val;
 		tar = other.tar;
+		valRevision_.store(other.valRevision_.load(std::memory_order_relaxed), std::memory_order_relaxed);
 	}
 
 public:
@@ -66,6 +70,7 @@ public:
 		// 高频布局会重复提交同一文字，持锁短路避免无效字符串复制。
 		if (val == v) return;
 		val = v;
+		BumpRevision();
 	}
 	wstring GetTar() const
 	{
@@ -83,7 +88,9 @@ public:
 	{
 		unique_lock lock_val(valmt);
 		shared_lock lock_tar(tarmt); // 可读锁，防止tar被其它线程突然写掉
+		if (val == tar) return;
 		val = tar;
+		BumpRevision();
 	}
 	bool IsSame()
 	{
@@ -94,7 +101,8 @@ public:
 	void Initialization(wstring valT)
 	{
 		unique_lock lockValmt(valmt);
-		val = valT;
+		// 版本号只在显示值真正改变时递增，重复设置相同文字不能让视觉脏区每帧判定变化。
+		if (val != valT) { val = valT; BumpRevision(); }
 		lockValmt.unlock();
 
 		unique_lock lockTarmt(tarmt);
@@ -127,11 +135,16 @@ public:
 		return !(lhs == rhs);
 	}
 
+	// 显示值（val）每真正改变一次递增一次：视觉脏区采样比较版本号，避免每帧复制长文本（SVG 内容可达数 KB）。
+	[[nodiscard]] std::uint64_t ValRevision() const noexcept { return valRevision_.load(std::memory_order_relaxed); }
+
 protected:
+	void BumpRevision() noexcept { valRevision_.fetch_add(1, std::memory_order_relaxed); }
 	mutable shared_mutex valmt;
 	mutable shared_mutex tarmt;
 	wstring val = L"";
 	wstring tar = L"";
+	std::atomic<std::uint64_t> valRevision_{ 1 };
 };
 
 // 前向声明
@@ -434,6 +447,8 @@ protected:
 public:
 	double rW = 0.0; // PNG 原始宽度
 	double rH = 0.0; // PNG 原始高度
+	// 位图载荷每次成功替换递增：视觉脏区以它代表 PNG 内容身份（缓存位图地址不能代表内容）。
+	std::uint64_t contentRevision = 0;
 };
 //// 单个文字控件
 class UiWordClass : public UiInnheritBaseClass

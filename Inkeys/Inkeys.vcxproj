@@ -1030,6 +1030,8 @@
     <ClCompile Include="Inkeys\UI\UI3\UI3.WakeSignal.cppm" />
     <ClCompile Include="Inkeys\UI\UI3\UI3.Material.cppm" />
     <ClCompile Include="Inkeys\UI\UI3\UI3.DirtyRegion.cppm" />
+    <ClCompile Include="Inkeys\UI\UI3\UI3.VisualDirty.cppm" />
+    <ClCompile Include="Inkeys\UI\UI3\UI3.VisualDirtySampler.cppm" />
     <ClCompile Include="Inkeys\UI\UI3\UI3.Superellipse.cppm" />
     <ClCompile Include="Inkeys\UI\UI3\UI3.LoadingIndicator.cppm" />
     <ClCompile Include="Inkeys\UI\UI3\UI3.Interaction.cppm" />
@@ -1058,6 +1060,7 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.GeometryAttribute.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Golden.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Host.Test.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.AttributeDirty.Test.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.StatusIndicator.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.EraserAttribute.Test.cpp" />

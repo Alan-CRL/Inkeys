@@ -1551,6 +1551,41 @@ int RunBarBottomDockTests()
 		&& centeredStroke.mainCenterDip <= centeredRootRange.maximumDip
 		&& !invalidCenteredRootRange.valid,
 		"centered root range conservatively reserves the full animated parent travel");
+	{
+		// 同相展开（实机：主栏 564→789 DIP，向右展开）：根节点反向移动，主栏中心不动。
+		// 独立区间相加会让主栏中心横跨约 225 DIP，同姿态求值应为单点。
+		const BarBottomDockCenteredPoseTrack button{ 82.0, 82.0 };
+		const BarBottomDockCenteredPoseTrack offset{ 41.0 + 282.0 + 10.0, 41.0 + 394.5 + 10.0 };
+		const BarBottomDockCenteredPoseTrack width{ 564.0, 789.0 };
+		const auto pose = ResolveBarBottomDockCenteredPoseRange(960.0, button, offset, width, width, 0.0, 1.0);
+		const auto independent = ResolveBarBottomDockCenteredRootRange(960.0, 82.0, 82.0,
+			offset.start, offset.target, width.start, width.target);
+		Check(pose.valid && Near(pose.rootMinimumDip, 560.5) && Near(pose.rootMaximumDip, 673.0)
+			&& Near(pose.barCenterMinimumDip, 1006.0) && Near(pose.barCenterMaximumDip, 1006.0)
+			&& Near(pose.barLeftMinimumDip, 611.5) && Near(pose.barLeftMaximumDip, 724.0)
+			&& independent.valid
+			&& (independent.maximumDip + offset.target) - (independent.minimumDip + offset.start) > 200.0,
+			"centered same-phase pose range keeps the bar center fixed instead of adding correlated extrema");
+		// 偏移穿过主按钮两侧（左右缘 min/max 切换）且带过冲：区间极值必须等于逐点采样极值。
+		const BarBottomDockCenteredPoseTrack crossing{ 300.0, -300.0 };
+		const BarBottomDockCenteredPoseTrack fixedWidth{ 400.0, 400.0 };
+		const auto kinked = ResolveBarBottomDockCenteredPoseRange(960.0, button, crossing, fixedWidth, fixedWidth, -0.1, 1.1);
+		double rootMin = 1e9, rootMax = -1e9, centerMin = 1e9, centerMax = -1e9, leftMin = 1e9, leftMax = -1e9;
+		for (int index = 0; index <= 1200; ++index)
+		{
+			const double f = -0.1 + 1.2 * index / 1200.0;
+			const auto at = ResolveBarBottomDockCenteredRootPlacement(960.0, 82.0, crossing.At(f), 400.0);
+			const double center = at.mainCenterDip + crossing.At(f);
+			rootMin = (std::min)(rootMin, at.mainCenterDip); rootMax = (std::max)(rootMax, at.mainCenterDip);
+			centerMin = (std::min)(centerMin, center); centerMax = (std::max)(centerMax, center);
+			leftMin = (std::min)(leftMin, center - 200.0); leftMax = (std::max)(leftMax, center - 200.0);
+		}
+		Check(kinked.valid && Near(kinked.rootMinimumDip, rootMin) && Near(kinked.rootMaximumDip, rootMax)
+			&& Near(kinked.barCenterMinimumDip, centerMin) && Near(kinked.barCenterMaximumDip, centerMax)
+			&& Near(kinked.barLeftMinimumDip, leftMin) && Near(kinked.barLeftMaximumDip, leftMax)
+			&& !ResolveBarBottomDockCenteredPoseRange(960.0, button, crossing, fixedWidth, fixedWidth, 1.0, 0.0).valid,
+			"centered pose range includes min/max switch points and rejects an inverted progress range");
+	}
 	bool continuousWorkspaceGeometry = ShouldDeriveBarBottomDockCenteredRoot(
 		true, BarBottomDockCenterMode::Centered, BarBottomDockPhase::Stable,
 		false, true, false, false, true, true);
