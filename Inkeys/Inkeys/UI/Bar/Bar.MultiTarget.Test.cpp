@@ -635,7 +635,8 @@ namespace Inkeys::UI::Bar
 				if (!RunPhase("PptToWhiteboard", [&] { workspaceScope_->Set(WorkspaceScene::Whiteboard); SetWhiteboardActive(true); }, false)) return failures_;
 				if (!RunPhase("WhiteboardToPpt", [&] { workspaceScope_->Set(WorkspaceScene::Presentation); SetWhiteboardActive(false); }, false)) return failures_;
 				if (!RunPhase("FinalLeavePpt", [&] { workspaceScope_->Set(WorkspaceScene::Desktop); PublishPptSession(1, false, nullptr); }, true)) return failures_;
-				if (!RunRapidReverse() || !RunRestoreAnimationsOff() || !RunEntryPolicyMatrix()) return failures_;
+				if (!RunRapidReverse() || !RunRestoreAnimationsOff() || !RunEntryPolicyMatrix()
+					|| !RunProgrammaticRigidity()) return failures_;
 				std::fprintf(stderr, "[UI3WorkspaceCentering] case=%s complete failures=%d\n",
 					caseName_.c_str(), failures_);
 				return failures_;
@@ -2046,16 +2047,19 @@ namespace Inkeys::UI::Bar
 					{ "BottomFolded", true, false, true, BarWorkspaceAutoDockBottomFolded },
 					{ "Floating", false, false, false, BarWorkspaceAutoDockFloating },
 					{ "FloatingFolded", false, false, true, BarWorkspaceAutoDockFloatingFolded } };
-				double traceMaxError = 0.0, traceMaxStep = 0.0;
+				double traceMaxError = 0.0, traceMaxStep = 0.0, traceMaxScaleError = 0.0;
 				unsigned traceReversals = 0;
 				const auto runFrames = [&](const char* phase)
 					{
 						double previousX = std::numeric_limits<double>::quiet_NaN(), previousDelta = 0.0;
-						traceMaxError = traceMaxStep = 0.0; traceReversals = 0;
+						traceMaxError = traceMaxStep = traceMaxScaleError = 0.0; traceReversals = 0;
 						for (unsigned frame = 0; frame < 60; ++frame)
 						{
 							if (!Step(phase, nullptr, frame, false)) return false;
 							const auto snapshot = owner_->BottomDockPresentedSnapshot();
+							// 场景放置是程序性移动，不是吸附手势：主栏只能刚性平移/展开，不得被水平果冻拉伸或压缩。
+							traceMaxScaleError = (std::max)(traceMaxScaleError,
+								std::abs(snapshot.horizontalMapping.scaleX - 1.0));
 							const double x = snapshot.mainCenterScreenX;
 							if (std::isfinite(previousX))
 							{
@@ -2088,6 +2092,7 @@ namespace Inkeys::UI::Bar
 							PublishPptSession(1, true, nullptr);
 							if (!runFrames("EntryPolicyEnter")) return false;
 							const double enterError = traceMaxError, enterStep = traceMaxStep;
+							const double enterScaleError = traceMaxScaleError;
 							const unsigned enterReversals = traceReversals;
 							const auto entered = owner_->BottomDockPresentedSnapshot();
 							const bool takeOver = (mask & pre.bit) != 0;
@@ -2105,23 +2110,179 @@ namespace Inkeys::UI::Bar
 							else
 								entryOk = (entered.mode == BarBottomDockMode::BottomDocked) == pre.docked
 									&& owner_->barState.fold == pre.folded;
+							entryOk = entryOk && enterScaleError <= WorkspaceCenteringTolerance;
 							workspaceScope_->Set(WorkspaceScene::Desktop);
 							PublishPptSession(1, false, nullptr);
 							if (!runFrames("EntryPolicyLeave")) return false;
+							const double leaveScaleError = traceMaxScaleError;
 							const auto left = owner_->BottomDockPresentedSnapshot();
 							const bool restoreOk = (left.mode == BarBottomDockMode::BottomDocked) == pre.docked
 								&& (left.centerMode == BarBottomDockCenterMode::Centered) == pre.centered
 								&& owner_->barState.fold == pre.folded
-								&& owner_->barState.widgetPosition.mainBar == baselineSide;
+								&& owner_->barState.widgetPosition.mainBar == baselineSide
+								&& leaveScaleError <= WorkspaceCenteringTolerance;
 							std::fprintf(stderr,
-								"[UI3WorkspaceCentering] case=%s phase=EntryPolicy pre=%s mask=%d direction=%d enter=%s restore=%s maxErr=%.2f maxStep=%.2f reversals=%u\n",
-								caseName_.c_str(), pre.name, mask, direction, entryOk ? "PASS" : "FAIL", restoreOk ? "PASS" : "FAIL", enterError, enterStep, enterReversals);
+								"[UI3WorkspaceCentering] case=%s phase=EntryPolicy pre=%s mask=%d direction=%d enter=%s restore=%s maxErr=%.2f maxStep=%.2f reversals=%u enterScaleErr=%.6f leaveScaleErr=%.6f\n",
+								caseName_.c_str(), pre.name, mask, direction, entryOk ? "PASS" : "FAIL", restoreOk ? "PASS" : "FAIL", enterError, enterStep, enterReversals, enterScaleError, leaveScaleError);
 							if (!entryOk || !restoreOk) ++failures_;
 						}
 				workspace.Ppt.AutoDockMask = savedMask;
 				workspace.Ppt.Direction = savedDirection;
 				// 回到居中展开基线，供后续用例继续使用。
 				Access::SetDockState(*owner_, true, true, false);
+				owner_->UpdateRendering(false);
+				return Settle();
+			}
+
+			// 缩放倍率与 DPI 变化是程序性环境变化，不是吸附手势：主栏只能刚性缩放，
+			// 不得把远端钉在上一成功像素上产生水平果冻（每个成功帧 scaleX 恒为 1）。
+			bool RunProgrammaticRigidity()
+			{
+				struct Access : BarUISetClass
+				{
+					static void SetDockState(BarUISetClass& bar, bool docked, bool centered)
+					{
+						(bar.*&Access::BeginBottomDockTransition)();
+						(bar.*&Access::bottomDockMode).store(docked ? BarBottomDockMode::BottomDocked
+							: BarBottomDockMode::Floating, std::memory_order_relaxed);
+						(bar.*&Access::bottomDockCenterMode).store(centered ? BarBottomDockCenterMode::Centered
+							: BarBottomDockCenterMode::Free, std::memory_order_relaxed);
+						(bar.*&Access::bottomDockPhase).store(BarBottomDockPhase::Stable, std::memory_order_relaxed);
+						(bar.*&Access::bottomDockCenterPhase).store(BarBottomDockPhase::Stable, std::memory_order_relaxed);
+						(bar.*&Access::bottomDockElasticOffsetDip).store(0.0, std::memory_order_relaxed);
+						(bar.*&Access::bottomDockCenterElasticOffsetDip).store(0.0, std::memory_order_relaxed);
+						(bar.*&Access::bottomDockRecoveryActive).store(false, std::memory_order_relaxed);
+						(void)(bar.*&Access::FinishBottomDockTransition)(true);
+						bar.barState.fold = false;
+					}
+				};
+				const double baseConfigZoom = static_cast<double>(owner_->barStyle.configZoom);
+				const auto restoreZoom = [&] { owner_->barStyle.configZoom = baseConfigZoom; };
+				double maxScaleError = 0.0;
+				unsigned viewportMisses = 0;
+				const auto sample = [&]
+					{
+						// 同时检查比例与端点：视觉左右端必须等于布局端点，不能只看 scaleX。
+						const auto snapshot = owner_->BottomDockPresentedSnapshot();
+						const auto& mapping = snapshot.horizontalMapping;
+						maxScaleError = (std::max)({ maxScaleError, std::abs(mapping.scaleX - 1.0),
+							std::abs(mapping.visualLeftDip - mapping.baseLeftDip),
+							std::abs(mapping.visualRightDip - mapping.baseRightDip) });
+						// 刚性缩放后的主栏必须完整落在本次提交的窗口内，不能被旧倍率外框裁掉；
+						// 越出显示器的部分由 barWindow 合法裁剪，先按显示器边界截断。
+						if (presentedUlw_)
+						{
+							const double left = (std::max)(static_cast<double>(snapshot.monitorBounds.left),
+								snapshot.monitorOrigin.x + snapshot.directTranslation.x
+									+ mapping.visualLeftDip * snapshot.zoom);
+							const double right = (std::min)(static_cast<double>(snapshot.monitorBounds.right),
+								snapshot.monitorOrigin.x + snapshot.directTranslation.x
+									+ mapping.visualRightDip * snapshot.zoom);
+							if (left < presentedUlw_->destination.x - 1.0
+								|| right > presentedUlw_->destination.x + presentedUlw_->size.cx + 1.0)
+							{
+								if (viewportMisses++ < 2)
+									std::fprintf(stderr,
+										"[UI3WorkspaceCentering] case=%s phase=ProgrammaticRigidity viewportMiss body=(%.1f,%.1f) window=(%ld,%ld) zoom=%.4f monitor=(%ld,%ld)\n",
+										caseName_.c_str(), left, right, presentedUlw_->destination.x,
+										presentedUlw_->destination.x + presentedUlw_->size.cx, snapshot.zoom,
+										snapshot.monitorBounds.left, snapshot.monitorBounds.right);
+							}
+						}
+					};
+				const auto measure = [&](const char* phase, unsigned frames)
+					{
+						for (unsigned frame = 0; frame < frames; ++frame)
+						{
+							if (!Step(phase, nullptr, frame, false)) return false;
+							sample();
+						}
+						return true;
+					};
+				// 每次环境变化都必须等到新的成功帧，避免未上屏时沿用上一档的恒等快照通过。
+				const auto awaitPresent = [&](const char* phase, auto&& presented)
+					{
+						for (unsigned frame = 0; frame < 12; ++frame)
+						{
+							if (!Step(phase, nullptr, frame, false)) return false;
+							sample();
+							if (presented(owner_->BottomDockPresentedSnapshot())) return true;
+						}
+						return Fail("programmatic rigidity change was never presented");
+					};
+				const auto awaitNextSerial = [&](const char* phase)
+					{
+						const auto serial = owner_->BottomDockPresentedSnapshot().serial;
+						return awaitPresent(phase, [serial](const auto& snapshot) { return snapshot.serial != serial; });
+					};
+				const auto publishDpi = [&](double factor)
+					{
+						auto monitor = monitor_;
+						monitor.effectiveDpiX = monitor.effectiveDpiY = static_cast<UINT>(
+							std::lround(static_cast<double>(monitor_.effectiveDpiX) * factor));
+						auto display = std::make_shared<Inkeys::Display::Snapshot>();
+						display->generation = 1;
+						display->monitors = { monitor };
+						display->primaryIndex = 0;
+						display->virtualBounds = monitor.bounds;
+						display->fallback = true;
+						owner_->PublishDisplaySnapshot(display);
+					};
+				struct Pre { const char* name; bool docked, centered; };
+				for (const Pre pre : { Pre{ "BottomCentered", true, true },
+					Pre{ "BottomFree", true, false }, Pre{ "Floating", false, false } })
+				{
+					maxScaleError = 0.0;
+					if (!SetTool(false) || !Settle()) return false;
+					Access::SetDockState(*owner_, pre.docked, pre.centered);
+					owner_->UpdateRendering(false);
+					if (!Settle()) return false;
+					// 一次性改倍率再还原，然后模拟滑块逐帧连续改倍率。
+					maxScaleError = 0.0; viewportMisses = 0;
+					for (const double factor : { 1.25, 1.0, 0.8, 1.0 })
+					{
+						owner_->barStyle.configZoom = baseConfigZoom * factor;
+						owner_->UpdateRendering(false);
+						if (!awaitNextSerial("RigidityZoomStep") || !measure("RigidityZoomStep", 30))
+						{
+							restoreZoom(); return false;
+						}
+					}
+					for (unsigned step = 1; step <= 12; ++step)
+					{
+						owner_->barStyle.configZoom = baseConfigZoom * (1.0 + 0.04 * step);
+						owner_->UpdateRendering(false);
+						if (!awaitNextSerial("RigidityZoomSlide")) { restoreZoom(); return false; }
+					}
+					restoreZoom();
+					owner_->UpdateRendering(false);
+					if (!awaitNextSerial("RigidityZoomRestore") || !measure("RigidityZoomRestore", 40)
+						|| !Settle()) return false;
+					const double zoomScaleError = maxScaleError;
+					const unsigned zoomViewportMisses = viewportMisses;
+					// 非拖动 DPI 变化：底栏直接重算，悬浮走 0.4 秒位置/比例过渡，两者都不得形变。
+					maxScaleError = 0.0; viewportMisses = 0;
+					for (const double factor : { 1.25, 1.0 })
+					{
+						const auto displaySerial = owner_->BottomDockPresentedSnapshot().displaySerial;
+						publishDpi(factor);
+						if (!awaitPresent("RigidityDpi", [displaySerial](const auto& snapshot)
+							{ return snapshot.displaySerial != displaySerial; })
+							|| !measure("RigidityDpi", 40) || !Settle()) return false;
+					}
+					const double dpiScaleError = maxScaleError;
+					const unsigned dpiViewportMisses = viewportMisses;
+					const bool passed = zoomScaleError <= WorkspaceCenteringTolerance
+						&& dpiScaleError <= WorkspaceCenteringTolerance
+						&& zoomViewportMisses == 0 && dpiViewportMisses == 0;
+					std::fprintf(stderr,
+						"[UI3WorkspaceCentering] case=%s phase=ProgrammaticRigidity pre=%s zoomScaleErr=%.6f dpiScaleErr=%.6f viewportMisses=%u/%u result=%s\n",
+						caseName_.c_str(), pre.name, zoomScaleError, dpiScaleError,
+						zoomViewportMisses, dpiViewportMisses, passed ? "PASS" : "FAIL");
+					if (!passed) ++failures_;
+				}
+				// 回到居中展开基线，供后续用例继续使用。
+				Access::SetDockState(*owner_, true, true);
 				owner_->UpdateRendering(false);
 				return Settle();
 			}

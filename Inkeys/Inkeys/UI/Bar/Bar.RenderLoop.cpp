@@ -678,6 +678,11 @@ struct BarRenderLoopState
 	BarBottomDockSpringState bottomDockCenterSpring{};
 	BarBottomDockSpringState bottomDockCenterCaptureFarEdgeSpring{};
 	bool bottomDockCenterCaptureFarEdgeActive = false;
+	// 本帧与最后成功帧的水平交接元组（zoom/显示序号/形态/手势）不一致：内容外框须重收集，
+	// 不能沿用旧倍率缓存，否则刚性缩放后的新画面会被旧 viewport 裁掉。
+	bool bottomDockHorizontalHandoffPending = false;
+	// 场景接管已清零弹簧：在最后成功帧追上之前，旧的按住快照不能再被当成手势交接重新播种。
+	bool bottomDockProgrammaticHandoff = false;
 	double bottomDockPreviousDirectOffsetDip = 0.0;
 	double bottomDockObservedBoundsOffsetDip =
 		std::numeric_limits<double>::infinity();
@@ -7621,23 +7626,39 @@ double closeButtonSize =
 			|| presentedDockSnapshot.dragActive != dockDragActive
 			|| abs(presentedDockSnapshot.zoom - frameZoom) > 0.000001
 			|| presentedDockSnapshot.displaySerial != state.observedDisplaySerial;
+		// 像素级水平交接只属于手势：按住、刚松手或换了 drag session。缩放倍率、显示快照和场景接管等
+		// 程序性变化由显示过渡/放置动画保证屏幕连续；若也钉住旧远端像素，主栏会被横向拉伸或压缩。
+		// 松手后才消费的场景接管已清零弹簧，此时最后成功帧仍可能是按住快照，也不能据此重新播种。
+		if (dockDragActive || !horizontalHandoff) state.bottomDockProgrammaticHandoff = false;
+		state.bottomDockHorizontalHandoffPending = horizontalHandoff;
+		const bool gestureHorizontalHandoff = horizontalHandoff
+			&& (dockDragActive || (!state.bottomDockProgrammaticHandoff
+				&& (presentedDockSnapshot.dragActive
+					|| presentedDockSnapshot.dragSession != frame.bottomDockDragSession)));
 		const double targetGripScreenX = dockDragActive
 			? frame.bottomDockDragRigidGripScreenX : presentedDockSnapshot.mainCenterScreenX;
 		const double gripOffsetDip = Inkeys::UI::Bar::ResolveBarBottomDockWorldTargetDip(
 			targetGripScreenX, state.monitorOrigin.x, frameTransitionTranslation.x, frameZoom)
 			- dockMainButton->x.val;
 		const double baseFarDip = opensRight ? mainBarRightDip : mainBarLeftDip;
-		double farTargetDip = baseFarDip + (dockDragActive || horizontalHandoff
+		double farTargetDip = baseFarDip + (dockDragActive || gestureHorizontalHandoff
 			? gripOffsetDip : state.bottomDockCenterSpring.positionDip);
-		if (centerMode == BarBottomDockCenterMode::Centered)
+		// 根 X 由放置动画或显示过渡持有、本帧未派生居中时，远端随根刚性移动；
+		// 否则远端提前钉在最终居中边界，根滑动期间主栏宽度会持续变化。
+		const bool rootOwnedByTween = !dockDragActive
+			&& !state.bottomDockCenteredRootApplied
+			&& (state.workspaceEntryRootTween || state.displayTransitionActive);
+		if (centerMode == BarBottomDockCenterMode::Centered && !rootOwnedByTween)
 		{
 			const auto placement = ResolveBarBottomDockCenteredRootPlacement(
 				monitorCenterLocalDip, dockMainButton->w.val + strokeWidthDip,
 				dockMainBar->x.val, dockMainBar->w.val + mainBarStrokeDip);
 			if (placement.valid)
-				farTargetDip = opensRight ? placement.bodyRightDip : placement.bodyLeftDip;
+				// 目标是居中姿态下主栏自身的远端，而非主按钮与主栏联合外框的远端：稳定展开时二者相等；
+				// 换向过渡中主栏尚未越过主按钮，联合远端会落在主按钮边上，把主栏拉伸或压缩过去。
+				farTargetDip = baseFarDip + placement.mainCenterDip - dockMainButton->x.val;
 		}
-		if (horizontalHandoff)
+		if (gestureHorizontalHandoff)
 		{
 			// Down、换形态和松手首帧只播种；重试仍从同一成功像素反解，不能二次吸收 raw elastic。
 			const auto shifted = Inkeys::UI::Bar::ResolveBarBottomDockShiftedHorizontalShape(
@@ -7657,16 +7678,16 @@ double closeButtonSize =
 		bool centerSpringActive = false;
 		if (dockDragActive)
 			state.bottomDockCenterSpring.positionDip = gripOffsetDip;
-		else if (!horizontalHandoff)
+		else if (!gestureHorizontalHandoff)
 			centerSpringActive = AdvanceBarBottomDockSpring(
 				state.bottomDockCenterSpring, 0.0, animationDtSeconds,
 				true == UiAnimationEnabled, true).active;
 		centerSpringActive = !dockDragActive && (centerSpringActive
 			|| abs(state.bottomDockCenterSpring.positionDip) > BarBottomDockSettleDistanceDip);
-		if (centerMode == BarBottomDockCenterMode::Free)
+		if (centerMode == BarBottomDockCenterMode::Free || rootOwnedByTween)
 			farTargetDip = baseFarDip + state.bottomDockCenterSpring.positionDip;
 		bool centerCaptureFarEdgeActive = false;
-		if (!horizontalHandoff)
+		if (!gestureHorizontalHandoff)
 			centerCaptureFarEdgeActive = AdvanceBarBottomDockSpring(
 				state.bottomDockCenterCaptureFarEdgeSpring, 0.0, animationDtSeconds,
 				true == UiAnimationEnabled, true).active;
@@ -10649,6 +10670,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			|| state.bottomDockTargetIndicatorBoundsVisible
 			|| bottomDockBoundsChanged
 			|| state.bottomDockVisualActive
+			|| state.bottomDockHorizontalHandoffPending
 			|| frame.bottomDockDragActive
 			|| frame.bottomDockRecoveryActive
 			|| state.debugFrameSleepLatch.IsPending();
@@ -13555,6 +13577,7 @@ BarRenderLoopCoordinator::RenderFrame(
 			state.bottomDockCenterSpring = {};
 			state.bottomDockCaptureBottomSpring = {};
 			state.bottomDockCenterCaptureFarEdgeSpring = {};
+			state.bottomDockProgrammaticHandoff = true;
 			state.unclassifiedDamagePending = true;
 			state.presentDecision.RequireVisualRetry();
 		}
