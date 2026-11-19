@@ -494,7 +494,7 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 - **只在可能失效时熔断**：`Count` 策略下连续超时 ≥ 8 且连续区间 ≥ 1000 ms，或句柄等待本身失败（`WaitFailed`）。任何一次成功获取都清零连续计数，GPU 慢不会熔断。窗口隐藏/最小化、交接屏障 pending、`recoveryPending`、非主画布输出（SelectionUlw/ULW）、工作区交接/加载未决时为 `Exclude` 或直接不等待。
 - **熔断后**：本会话不再尝试 waitable，经现有 `RecoverFromRuntimeFailure` 重建为同模式、不带 waitable 标志的 FLIP，仍由设备级 `SetMaximumFrameLatency(1)` 限流；新会话复位。
 - **开关关闭** = 保留 waitable 交换链但不等待（A/B 与排障用）；Win8.0（waitable 创建失败）、ULW、Win7 路径不新增任何应用侧等待。
-- **口径**：等待耗时计入帧预算（等得越久帧尾睡得越少），但**不计入工作耗时**——画布调试的无限制帧率/负载与 `RecordActiveFrame` 的 `workMs` 都扣除；运行指标单列 `latencyWaitMs`/`latencyWaitState` 与会话计数 `latencyWait.timeouts/tripped`。
+- **口径**：等待耗时计入帧预算（等得越久帧尾睡得越少），但**不计入工作耗时**——`RecordActiveFrame` 的 `workMs` 扣除；画布调试与设备性能看板的无限制渲染帧率只扣其中的纯显示节拍部分 `FrameLatencyWaitReport::pacingWaitMs`（等待开始时上一次 Present1 之后插入的 `D3D11_QUERY_EVENT` 已完成；未完成说明在等 GPU，整段计入耗时）；运行指标单列 `latencyWaitMs`/`latencyWaitState` 与会话计数 `latencyWait.timeouts/tripped`。
 - **诊断**仅 Debug 级 `[Draw3Diag][latency]`：创建时启用/禁用/跳过原因与 `refreshMs/timeoutMs`，约每秒一行汇总（acquired、timeouts、repaid、repayTimeouts、debt、debtOverflowTotal、平均/最大等待、timeoutMs、signalIntervalMs），熔断一行。不逐帧输出。
 - 实测（SyncInterval 0）：句柄约 1 ms 内回补，正常情况几乎零等待（无压力 120 Hz：每秒 120 次获取、0 超时、0 欠账）；waitable 只在 GPU/合成吃紧时把排队压回一帧。`acquired` 每秒计数可直接读作实际出帧率。压力脚本下（GPU 约 35–55 ms/帧）开画布首秒约 2 次超时，之后每秒 1–3 次超时并当秒还清。
 
@@ -551,7 +551,7 @@ Correct：`PrepareFrameLatency(1000/target_fps, countable)` 在帧首有界等�
 - **刷新间隔**：DWM 合成时取 DWM 时序，否则窗口所在显示器刷新率，再失败 60 Hz；启动、`WM_DWMCOMPOSITIONCHANGED`、Resize 时重测并记 `[ulw-dwm]`。
 - **合成对齐**：仅主画布 ULW + DWM 合成 + 即时模式 + 对齐开启。预设高于刷新率：下一帧来提交也赶得上截止（`nextVBlank − 2 ms`）就本帧只合并脏区；预设等于刷新率或其约数：帧尾等待微调相位（每帧 ≤ 帧间隔 10%）；非约数不调相位。提交耗时估计只记入队后当场完成的非整帧提交（整帧与延后完成不计入，否则对齐时机偏离约 16 次提交）。动态刷新率靠 250 ms 重读跟随，空闲后首帧立即重读。
 - **SIMD 复制**：Staging→DIB 单遍 SSE2/NEON，命中 α 修正、全透明与预乘检查逐字节等于标量版；像素诊断采样帧仍走标量。
-- **口径**：Map 阻塞计入等待、不计入工作耗时（Present 内经 `ConsumePresentLatencyWait`，C1 直接累加，C3 只累加 `frameLatencyWaitMs_`）；逐行复制与 ULW 调用计入工作耗时。
+- **口径**：Map 阻塞计入等待、不计入工作耗时（Present 内经 `ConsumePresentLatencyWait`，C1 直接累加，C3 只累加 `frameLatencyWaitMs_`）；逐行复制与 ULW 调用计入工作耗时。Map 阻塞是在等 GPU，不是人为等待：画布调试与设备性能的无限制渲染耗时**保留**它（不进 `pacingWaitMs`）。
 - **熔断/开关**：`Map(DO_NOT_WAIT)` 非 `WAS_STILL_DRAWING` 错误且设备未移除 → 本会话改同步读回并整帧读回；开关关闭 = 同步读回、不节流、不对齐。
 - **诊断**（Debug）：每秒 `[Draw3Diag][ulw-pipeline]`（mode、immediate/deferred/probeHit/backpressure/frameEnd/beforeIdle/skipped、mapWait/commitLag/rows/ulw 均值与最大）与 `[Draw3Diag][ulw-align]`（aligned、periodMs、marginMs、leadAvg/Min、lateCount），模式切换与对齐启停原因各一行。`commitLag` 是本次提交里最早一帧到 ULW 返回，节流合并时自然偏大，不等于最新帧延迟。
 
@@ -671,28 +671,37 @@ Good：关闭产品准入后，合法 Stop 仍到 owner并确认。Base：普通
 错误：放行所有导航消息或延长超时掩盖丢消息。正确：只放行精确 Stop，保持 owner 身份和失败保护。
 
 
-## Scenario: 设备性能看板计数与移交（2026-11-18）
+## Scenario: 设备性能看板计数与移交（2026-11-18；2026-11-19 帧率口径轮）
 
 ### 1. Scope / Trigger
 修改 Draw3 帧尾、空闲等待分支、呈现器生效状态、Host 启停顺序，或 `Draw3.DevicePerformance*` 文件时应用。看板只读这里产生的统计，不额外采样。
 
 ### 2. Signatures
-- `Draw3.DevicePerformanceModel.h`：`Dimension`、`ToolDimensionMask(int drawingTool)`、`Tally::Add(mask, workMs, budgetMs)`、`Signature`/`NormalizeSignature`、`MergeTally`/`MergeStore`、`BuildReport`、`Advise(overall, measuredFps, configuredFps, refreshHz, sessionFps)`。纯逻辑，无 Windows 依赖。
-- `Draw3.DevicePerformanceJson.h`：`SerializeStore` / `ParseStore`（jsoncpp，字符串进出）。
-- `DevicePerformanceLedger`（`Draw3.DevicePerformanceLedger.h/.cpp`）：`Start(path)`、`Stop()`、`SetCurrentSignature`、`MarkBusy()`、`Submit(signature, counters)`、`SetDisplayRefreshHz`、`SetRecordingEnabled`、`Clear`、`Snapshot(knownRevision, out)`。
+- `Draw3.DevicePerformanceModel.h`：`Dimension`、`ToolDimensionMask(int drawingTool)`、`FrameSample`、`Tally::Add(mask, sample)` 与 `Tally::display`（`DisplayRange::Observe(hz)`）、`Signature`/`NormalizeSignature`、`MergeTally(store, signature, date, now, counters, display)`/`MergeStore`、`MakeFigure`、`BuildReport`、`ClassifyFigure`。纯逻辑，无 Windows 依赖（2026-11-18 起不再计算帧率建议）。
+- `Draw3.DevicePerformanceJson.h`：`SerializeStore` / `ParseStore`（jsoncpp，字符串进出）；`kFileVersion = 3`，计数器为 9 元数组（第 4 项为 `displayedFrames`），日桶带 `display: [minHz, maxHz]`，版本 1、2 文件按 schema 不符改名 `.bad`，不兼容。
+- `DevicePerformanceLedger`（`Draw3.DevicePerformanceLedger.h/.cpp`）：`Start(path)`、`Stop()`、`SetCurrentSignature`、`MarkBusy()`、`Submit(signature, tally, segmentEpoch)`、`SetRecordingEnabled`、`Clear`、`Snapshot(knownRevision, out)`。
+- `TransparentPresentationController::CommittedPresentCount()`（DComp 成功 Present1 + 主画布/辅助 ULW 成功 UpdateLayeredWindow 次数，单调递增）、`LastCommittedPresentMs()`（最近一次提交完成时刻）、`SampleDisplayTiming(nowMs)`（DWM 合成时序 `CompositionTimingSample`，周期保留小数，约 250 ms 重读一次）、`FrameLatencyWaitReport::pacingWaitMs`；`DevicePerformance::RefreshSlotCounter`。
 - `TransparentPresentationController::EffectiveState()`、`InkRenderer::UsesZhaoxinCompatibleUpload()`：签名只读主画布实际生效状态。
 - `Host::DevicePerformanceSnapshot / SetDevicePerformanceRecording / ClearDevicePerformance`；`HostStartOptions::devicePerformancePath`（空 = 只在内存记录）。
 
 ### 3. Contracts
-- 帧内只做固定计数器加法：无锁、无分配、无 I/O。工作耗时与画布调试同口径：`max(0, 帧耗时 - frameLatencyWaitMs_)`。
-- 计数帧：本帧成功上屏，且不是画布调试板自刷新帧、不是一次性重帧（设备恢复、合成变化、Resize、共享层重建、画布命令出队，用帧内局部标志判断）、不是 `outputTargetChanged`、不是 `selectionUsesAuxiliary`（桌面/PPT 选择模式辅助输出），画布调试可视化未开启，记录开关开启，且维度掩码非空。
+- 帧内只做固定计数器加法：无锁、无分配、无 I/O。
+- **三个帧率口径**（与画布调试 HUD 共用同一份逐帧测量）：
+  - 计算帧率：帧循环推进速度，帧间隔 = 本轮开始到下一轮开始，只在本轮以帧率截止等待结束时有效（`markPendingFramePaced`；空闲、掌触期限、错误退避等分支结束的轮次无效），含无脏区不 Present 的帧。
+  - 渲染帧率：有脏区且 Present 成功的帧里，本轮有真正提交且提交完成时刻落进**新 DWM 合成周期**的帧数 / 这些帧的帧间隔之和。合成周期按 `RefreshSlotCounter` 判定：取不早于提交时刻的合成截止（垂直同步 − `kCompositionDeadlineMarginMs`），与上一次计数的截止相差不到半个周期视为同一周期；没有合成时序时每次提交都算。无脏区轮次完成的 ULW 延后提交也推进周期，但不计入上屏帧数。ULW 节流合并跳过的帧照常画进纹理，计入渲染帧与耗时，但不上屏。必须按周期计：DComp 以 `Present1(0, …)`（SyncInterval 0）提交，**waitable 不会把帧循环压到刷新率**——实测画布 240、屏幕 120 Hz 时帧循环与 Present1 都是约 240/s，DWM 每次刷新只显示最新一帧。不能用“min(提交帧率, 刷新率)”封顶：那只是由刷新周期推出的上限，显示值永远是整数刷新率。看不到 DWM 内部丢帧。
+  - 无限制渲染帧率：渲染帧数 / Σ(进入帧率截止等待前的整帧耗时 − `framePacingWaitMs_`)。帧率截止等待与 DWM 对齐相位调整在终点之后自然不计；帧尾 `serviceUlwBeforeFrameWait` 在终点之前，等 GPU 的 Map 计入。
+- 一轮的测量挂起在 `PendingFrame`，在下一轮 `frameStartMs` 之后结算（那时才知道帧间隔与提交计数）；Run 正常退出前以“帧间隔无效”结算最后一轮。
+- 日桶记录计数期间测得的刷新率范围（四舍五入整数 Hz，只用于显示）。
+- 负载百分比**只看帧循环能否按画布帧率推进**：耗时占比 = 平均无限制渲染耗时 / 画布帧间隔；缺口占比 = 画布帧率 / 计算帧率，> 103% 时取两者较大值（至少超载），否则取耗时占比。掉帧 = 帧间隔 > 1.5 × 画布帧间隔，占比 > 10% 时至少偏紧。GPU 吃紧时 DComp 的 waitable 阻塞、ULW 的 Map 等待都会拖慢帧循环，所以照样能测出。
+- **渲染帧率不参与负载**：它含显示器刷新率与呈现同步损失。实测 ULW 异步读回 + 对齐、画布 120：计算帧率 120.4、耗时 19%，只有约 9% 的合成周期没有新内容（读回在“即时/延后完成”间切换时两次 UpdateLayeredWindow 落进同一周期），渲染 106；若用“限制帧率 / 渲染帧率”定档会误报超载。也不要再引入“限制帧率”：按帧加权的 Σ限制间隔 与按时间计的渲染帧率不可比（曾出现渲染 112.5 > 限制 104.3）。
+- 不能直接用“整帧耗时含 waitable 等待 / 帧间隔”：waitable 等待含显示节拍，空闲设备也会显得很忙。
+- 计数帧：不是画布调试板自刷新帧（板子自刷新帧只算计算帧，不算渲染帧）、不是一次性重帧（设备恢复、合成变化、Resize、共享层重建、画布命令出队，用帧内局部标志判断）、不是 `outputTargetChanged`、不是 `selectionUsesAuxiliary`（桌面/PPT 选择模式辅助输出），画布调试可视化未开启，记录开关开启，且维度掩码非空。
 - **不得排除 `selectionMode`**：白板移动模式就是选择模式，漫游只在其中发生。**不得用 `forceFullPresent` 作为排除条件**：每个平移帧都强制全帧。
 - 维度掩码在 `if (hasEndedStroke)` 之前、结束的笔画移出 `active` 之前计算，跳过 `palmObservationOnly` 与 `cancelled`。Pan 位取 `navigationInProgress || canvasPan.Active()`；激光 `Hold/Fade` 补 Laser 位。多工具同帧各维度都计，总体只计一次。
 - 签名每个计数帧比较一次。变化时把旧签名的段拷进第二个预分配槽，空闲时再移交并调用 `SetCurrentSignature`，帧内不调用任何加锁接口。
 - 移交只在循环顶部真正空闲分支 `completeUlwBeforeIdle()` 成功之后，以及 Run 正常退出收尾处。异常退出路径丢弃在途统计。
-- 写盘：一段的第一个计数帧 `MarkBusy()`（原子写，同时返回当前清除代次，存为本段代次），`Submit` 清除忙碌标志，并在账本锁内复查：记录已关闭或段代次与当前清除代次不同（段内点过“清除数据”）时整段丢弃。写盘线程只在不忙碌、记录开启且距上次写盘 ≥ 30 s 时写，Stop 时写最后一次（记录关闭时也不写）。原子写复用 `PptSettings::WriteAtomically`。
+- 写盘：一段的第一个**实际计入**的帧 `MarkBusy()`（原子写，同时返回当前清除代次，存为本段代次；没计入的帧不标记，免得一直挡住写盘）。只有计算帧、没有渲染帧的段移交时不入账，`Submit` 清除忙碌标志，并在账本锁内复查：记录已关闭或段代次与当前清除代次不同（段内点过“清除数据”）时整段丢弃。写盘线程只在不忙碌、记录开启且距上次写盘 ≥ 30 s 时写，Stop 时写最后一次（记录关闭时也不写）。原子写复用 `PptSettings::WriteAtomically`。
 - Host：账本在 `autoSave.Start` 之后、绘制线程创建之前启动。Stop 在每条路径的绘制线程 `join` 之后调用，含 3 条启动失败路径和 Stop 早退分支，Stop 幂等。DComp 失败后会以 ULW 重启 Host，同一路径不重读文件。
-- 刷新率由 `Host::Impl::PumpDisplayScale` 对画布所在显示器调用 `EnumDisplaySettingsW` 取显示模式频率，不用 DWM 实时周期，也不用呈现层的 `ulwRefreshMs`。
 
 ### 4. Validation & Error Matrix
 | 条件 | 必须行为 |
@@ -705,12 +714,13 @@ Good：关闭产品准入后，合法 Stop 仍到 owner并确认。Base：普通
 | 运行中熔断、回退或转 WARP | 新签名自然生效，旧段保留在旧签名下 |
 
 ### 5. Good / Base / Bad Cases
-- Good：白板移动模式拖动画布，漫游维度有数据；激光抬笔淡出期间计入激光。
+- Good：白板移动模式拖动画布，漫游维度有数据；激光抬笔淡出期间计入激光；GPU 压力测试下渲染帧率掉到限制以下，看板显示超载。
+- Good：画布 240 FPS、120 Hz 屏、DComp waitable：计算帧率约 240，渲染帧率按合成周期实测（约 119.x），耗时占比按 4.17 ms 计，不误报超载也不虚报 240 渲染帧率。
 - Base：画布调试只开数据板时照常计数，只有板子自刷新的帧不计。
-- Bad：帧尾检查 `graphicsRecoveryPending_`（到帧尾已被清零）；在帧尾从 `active` 取掩码（抬笔帧已被移除）；帧内调用 `Submit`。
+- Bad：帧尾检查 `graphicsRecoveryPending_`（到帧尾已被清零）；在帧尾从 `active` 取掩码（抬笔帧已被移除）；帧内调用 `Submit`；把 ULW 阻塞 Map 当人为等待扣掉（GPU 吃紧时无限制渲染帧率虚高）；用静止接触的轮次算渲染帧率（无脏区帧不是渲染帧）。
 
 ### 6. Tests Required
-`InkeysHeadlessTests --device-performance-only`：映射、累加、签名规范化、日桶淘汰、报告回退、建议矩阵（含 59/119/239 Hz 容差、重启提示比较当前会话）、JSON 往返/坏文件/单桶非法，以及账本文件级场景（坏文件 `.bad`、Stop 落盘、重载合并、同路径重启不翻倍、清除删文件、记录关闭时坏文件不动且不被覆盖）。帧尾计数条件没有无窗口整循环测试，需要实机验证。
+`InkeysHeadlessTests --device-performance-only`：映射、累加（渲染帧/计算帧/帧间隔无效/掉帧/刷新率范围）、帧率与负载口径（跟得上、跟不上、3% 容差、显示器限制、ULW 节流、无帧间隔回退）、签名规范化、日桶淘汰、报告回退与刷新率范围合并、档位分类、JSON 往返/坏文件/旧版本/单桶非法，以及账本文件级场景（坏文件 `.bad`、Stop 落盘、重载合并、同路径重启不翻倍、清除删文件、记录关闭时坏文件不动且不被覆盖）。帧尾计数条件没有无窗口整循环测试，需要实机验证。
 
 ### 7. Wrong vs Correct
 错误：签名变化时在帧尾直接 `Submit` 旧段。正确：拷入第二个槽，空闲时移交。
