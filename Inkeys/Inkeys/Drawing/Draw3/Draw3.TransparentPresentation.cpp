@@ -1716,6 +1716,8 @@ namespace Inkeys::Drawing::Draw3
 			fallbackStage = nullptr;
 			fallbackResult = S_OK;
 			fallbackReport.presentationWarning.clear();
+			// ULW 不建交换链：先前 GPU 尝试留下的 FLIP/SEQUENTIAL 降级提示已不描述当前输出。
+			if (!swapChain) fallbackReport.chainWarning.clear();
 			if (options.preferredMode && *options.preferredMode != mode)
 			{
 				fallbackReport.presentationWarning = std::string(TransparentPresentModeName(*options.preferredMode)) +
@@ -2814,6 +2816,7 @@ namespace Inkeys::Drawing::Draw3
 		// 不用 UlwAsyncActive()：它随选择模式输出目标翻转，签名只描述主画布。
 		state.ulwAsyncReadback = IsUlwMode(impl.activeMode) && impl.options.enableUlwAsyncReadback && !impl.ulwAsyncFused;
 		state.ulwCompositionAlign = state.ulwAsyncReadback && impl.options.enableUlwCompositionAlign && impl.dwmComposing;
+		state.dcompCompositionAlign = IsDirectCompositionMode(impl.activeMode) && impl.options.enableDcompCompositionAlign;
 		return state;
 	}
 

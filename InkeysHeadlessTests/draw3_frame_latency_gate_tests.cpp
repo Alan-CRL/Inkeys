@@ -22,6 +22,7 @@ namespace
 		int available = 1;
 		bool signalLost = false;
 		bool waitFails = false;
+		int failFromWait = 0; // >0：从第 N 次等待起句柄失效，用于模拟补等时失效
 		std::uint32_t lastTimeoutMs = 0;
 		int waits = 0;
 		std::deque<double> releases;
@@ -37,7 +38,7 @@ namespace
 		{
 			++waits;
 			lastTimeoutMs = timeoutMs;
-			if (waitFails) return FrameLatencySignal::Failed;
+			if (waitFails || (failFromWait > 0 && waits >= failFromWait)) return FrameLatencySignal::Failed;
 			while (!releases.empty() && releases.front() <= nowMs) { releases.pop_front(); ++available; }
 			if (available > 0) { --available; return FrameLatencySignal::Signaled; }
 			if (!releases.empty() && releases.front() <= nowMs + timeoutMs)
@@ -247,6 +248,26 @@ int RunDraw3FrameLatencyGateTests()
 		expect(result.outcome == FrameLatencyWaitOutcome::Failed && !gate.TokenHeld() && gate.ShouldTrip(), "failed wait requests trip");
 		gate.Trip();
 		expect(gate.TripReason() == FrameLatencyTripReason::WaitFailed, "failed wait trip reason");
+	}
+
+	// 主等待成功、还账补等时句柄失效：与主等待失败同样熔断，不当作超时保留欠账。
+	{
+		FrameLatencyGate gate; LatencySemaphore semaphore;
+		gate.Enable();
+		(void)semaphore.Acquire(gate);
+		semaphore.Present(); gate.OnPresentCalled(true);
+		semaphore.available = 0; semaphore.releases.clear();
+		(void)semaphore.Acquire(gate);
+		semaphore.Present(); gate.OnPresentCalled(true);
+		expect(gate.Debt() == 1, "repay failure setup leaves one debt");
+		semaphore.available = 1;
+		semaphore.failFromWait = semaphore.waits + 2;
+		const auto result = semaphore.Acquire(gate);
+		expect(result.outcome == FrameLatencyWaitOutcome::Signaled && gate.TokenHeld() && !result.debtRepayTimedOut,
+			"main wait keeps its token when the repay wait fails");
+		expect(gate.ShouldTrip(), "failed repay wait requests trip");
+		gate.Trip();
+		expect(gate.TripReason() == FrameLatencyTripReason::WaitFailed, "failed repay wait trip reason");
 	}
 
 	// 交换链重建：Reset 清令牌与连续计数，重新 Enable 后从新句柄开始。

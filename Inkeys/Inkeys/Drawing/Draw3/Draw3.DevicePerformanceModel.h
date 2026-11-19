@@ -233,6 +233,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		std::uint8_t waitable = kNotApplicable;            // 仅 DComp 有意义
 		std::uint8_t ulwAsyncReadback = kNotApplicable;    // 仅 ULW 有意义
 		std::uint8_t ulwCompositionAlign = kNotApplicable; // 仅 ULW 且异步读回开启时有意义
+		std::uint8_t dcompCompositionAlign = kNotApplicable; // 仅 DComp（含 SEQUENTIAL 链）有意义
 		std::uint8_t zhaoxinCompatibility = 0;
 		bool operator==(const Signature&) const = default;
 	};
@@ -243,6 +244,12 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		const auto flag = [](std::uint8_t value) -> std::uint8_t
 		{ return value == kNotApplicable ? kNotApplicable : static_cast<std::uint8_t>(value != 0 ? 1 : 0); };
 		signature.zhaoxinCompatibility = signature.zhaoxinCompatibility != 0 ? 1 : 0;
+		// 阶段 E 之前的账本没有该字段：DComp 记录按“未对齐”读入，其余后端一律不适用。
+		const bool dcomp = signature.presentation == Presentation::DirectComposition ||
+			signature.presentation == Presentation::DCompSequential;
+		signature.dcompCompositionAlign = dcomp
+			? (signature.dcompCompositionAlign == kNotApplicable ? 0 : flag(signature.dcompCompositionAlign))
+			: kNotApplicable;
 		if (signature.presentation == Presentation::DirectComposition)
 		{
 			signature.waitable = signature.waitable == kNotApplicable ? 0 : flag(signature.waitable);
@@ -298,6 +305,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		if (signature.waitable != kNotApplicable) key += "-wait" + std::to_string(signature.waitable);
 		if (signature.ulwAsyncReadback != kNotApplicable) key += "-async" + std::to_string(signature.ulwAsyncReadback);
 		if (signature.ulwCompositionAlign != kNotApplicable) key += "-align" + std::to_string(signature.ulwCompositionAlign);
+		if (signature.dcompCompositionAlign != kNotApplicable) key += "-dalign" + std::to_string(signature.dcompCompositionAlign);
 		key += "-zx" + std::to_string(signature.zhaoxinCompatibility);
 		return key;
 	}

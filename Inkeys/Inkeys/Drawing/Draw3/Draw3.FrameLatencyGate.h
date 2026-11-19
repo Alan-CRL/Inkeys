@@ -139,6 +139,11 @@ namespace Inkeys::Drawing::Draw3
 						--debt_;
 						result.debtRepaid = true;
 					}
+					else if (repay == FrameLatencySignal::Failed)
+					{
+						// 句柄失效与主等待失败同样处理：调用方随即熔断，本帧跳过并按熔断重建为不带 waitable 的交换链。
+						waitFailed_ = true;
+					}
 					else
 					{
 						result.debtRepayTimedOut = true;

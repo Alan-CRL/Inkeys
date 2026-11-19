@@ -37,7 +37,8 @@ namespace Inkeys::Drawing::Draw3
 	{
 	public:
 		// 启动、DWM 合成状态变化、Resize/显示器变化时调用，下一次查询立即重读。
-		void Invalidate() noexcept { sampled_ = false; }
+		// 同时作废旧周期：DWM 关闭后调用方不再重读，不能继续按关闭前的合成周期节流或对齐。
+		void Invalidate() noexcept { sampled_ = false; valid_ = false; }
 
 		// 约每 250 ms 重读一次校正漂移（也跟随动态刷新率），不逐帧调用 DWM。
 		bool NeedsRefresh(double nowMs) const noexcept

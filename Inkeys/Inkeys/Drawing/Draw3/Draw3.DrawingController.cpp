@@ -21573,6 +21573,7 @@ namespace Inkeys::Drawing::Draw3
 			signature.waitable = state.waitableWait ? 1 : 0;
 			signature.ulwAsyncReadback = state.ulwAsyncReadback ? 1 : 0;
 			signature.ulwCompositionAlign = state.ulwCompositionAlign ? 1 : 0;
+			signature.dcompCompositionAlign = state.dcompCompositionAlign ? 1 : 0;
 			signature.zhaoxinCompatibility = renderer_.UsesZhaoxinCompatibleUpload() ? 1 : 0;
 			return DevicePerformance::NormalizeSignature(signature);
 		};

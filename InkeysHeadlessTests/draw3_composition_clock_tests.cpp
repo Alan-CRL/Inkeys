@@ -61,6 +61,8 @@ int RunDraw3CompositionClockTests()
 		expect(clock.NeedsRefresh(900.0), "clock going backwards rereads");
 		clock.Invalidate();
 		expect(clock.NeedsRefresh(1001.0), "invalidate forces reread");
+		// DWM 关闭后调用方不再重读，失效时钟不能继续提供关闭前的周期。
+		expect(!clock.Valid() && clock.PeriodMs() == 0.0, "invalidate drops the stale period");
 	}
 
 	// 预设帧率与刷新率的关系。
@@ -294,9 +296,9 @@ int RunDraw3CompositionClockTests()
 		clock.Update({}, start);
 		expect(Near(DcompPhaseAdjustMs(start, kPeriod60, workMs, clock), 0.0), "failed read restores original frame budget");
 		clock = MakeClock(start, kPeriod60);
-		clock = {};
+		clock.Invalidate();
 		expect(clock.NeedsRefresh(start) && Near(DcompPhaseAdjustMs(start, kPeriod60, workMs, clock), 0.0),
-			"device reset drops the old DComp timing sample");
+			"resize or composition change drops the old DComp timing sample");
 	}
 
 	std::cout << "[CompositionClock] failures=" << failures << '\n';

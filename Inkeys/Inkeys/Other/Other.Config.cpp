@@ -614,6 +614,13 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 						if (legacy && legacy->isBool() && !legacy->asBool())
 							value = static_cast<int>(Inkeys::Draw3PresentationPreference::Ulw);
 					}
+					else if (path == "Experimental.Inkeys3.Draw3.RenderAcceleration")
+					{
+						// 旧“启用绘图硬件加速”关闭代表固定 WARP；开启或缺键沿用新默认“自动”。
+						const auto* legacy = TryGetValueAtPath(root, groupPath, "EnableHardwareAcceleration");
+						if (legacy && legacy->isBool() && !legacy->asBool())
+							value = static_cast<int>(Inkeys::Draw3RenderAccelerationPreference::Software);
+					}
 					return;
 				}
 			}

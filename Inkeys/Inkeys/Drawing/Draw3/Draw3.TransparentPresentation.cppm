@@ -49,6 +49,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool waitableWait = false;        // DComp 下真正在等帧延迟句柄（取不到句柄或已熔断为 false）
 		bool ulwAsyncReadback = false;    // ULW 下异步读回实际开启（未熔断）
 		bool ulwCompositionAlign = false; // 且 DWM 正在合成、对齐开关开启
+		bool dcompCompositionAlign = false; // DComp 主画布启用合成时机对齐
 	};
 
 	using SetWindowStyleCallback = bool(*)(

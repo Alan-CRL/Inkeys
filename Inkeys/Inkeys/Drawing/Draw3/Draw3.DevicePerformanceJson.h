@@ -141,6 +141,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 			item["waitable"] = Detail::FlagToJson(signature.waitable);
 			item["ulwAsyncReadback"] = Detail::FlagToJson(signature.ulwAsyncReadback);
 			item["ulwCompositionAlign"] = Detail::FlagToJson(signature.ulwCompositionAlign);
+			item["dcompCompositionAlign"] = Detail::FlagToJson(signature.dcompCompositionAlign);
 			item["zhaoxin"] = static_cast<int>(signature.zhaoxinCompatibility);
 			item["lastUsed"] = static_cast<Json::Int64>(record.lastUsedUnixSeconds);
 			Json::Value days(Json::arrayValue);
@@ -199,7 +200,10 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 			if (frameRate <= 0 || frameRate > 1000 || (zhaoxin != 0 && zhaoxin != 1) ||
 				!Detail::FlagFromJson(item["waitable"], signature.waitable) ||
 				!Detail::FlagFromJson(item["ulwAsyncReadback"], signature.ulwAsyncReadback) ||
-				!Detail::FlagFromJson(item["ulwCompositionAlign"], signature.ulwCompositionAlign))
+				!Detail::FlagFromJson(item["ulwCompositionAlign"], signature.ulwCompositionAlign) ||
+				// 阶段 E 新增字段：旧账本缺键时保持“不适用”，由 NormalizeSignature 归入未对齐，不丢弃记录。
+				(item.isMember("dcompCompositionAlign") &&
+					!Detail::FlagFromJson(item["dcompCompositionAlign"], signature.dcompCompositionAlign)))
 			{
 				++dropped;
 				continue;

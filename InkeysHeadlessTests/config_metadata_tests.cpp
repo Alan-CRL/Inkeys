@@ -667,6 +667,20 @@ int RunConfigMetadataTests()
 			check(presentationConfig.ReadAll() && draw3.PresentationMode.load() == (legacy ? 0 : 3),
 				"legacy DComp preference selects automatic or ULW");
 		}
+		// 旧“启用绘图硬件加速”：关闭迁移为软件加速，开启沿用自动；新键存在时优先。
+		for (const bool legacy : { true, false })
+		{
+			fields["EnableHardwareAcceleration"] = legacy;
+			writeModeDocument(document);
+			check(presentationConfig.ReadAll() && draw3.RenderAcceleration.load() == (legacy ? 0 : 2),
+				"legacy hardware acceleration switch selects automatic or software");
+		}
+		fields["RenderAcceleration"] = 1;
+		writeModeDocument(document);
+		check(presentationConfig.ReadAll() && draw3.RenderAcceleration.load() == 1,
+			"explicit render acceleration takes priority over the legacy switch");
+		fields.removeMember("RenderAcceleration");
+		fields.removeMember("EnableHardwareAcceleration");
 		fields["PresentationMode"] = 2;
 		fields["SwapChainMode"] = 2;
 		writeModeDocument(document);

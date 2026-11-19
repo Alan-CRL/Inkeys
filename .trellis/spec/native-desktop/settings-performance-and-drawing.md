@@ -26,7 +26,8 @@
 | Drawing.Laser.MultiTouchEnabled | false | 后续新 Laser Touch，受全局多指约束 |
 | Drawing.Laser.ParticlesEnabled | false，兼容字段 | 产品忽略启用值，构造与setter均强制关闭 |
 | Experimental.Inkeys3.Draw3.PresentationMode | 0；自动/DComp/Win7Dwm/ULW = 0/1/2/3 | 下次启动；缺少新键时将旧 EnableDirectComposition 的 false 映射为 ULW，true 映射为自动 |
-| Experimental.Inkeys3.Draw3.SwapChainMode | 0；FLIP/SEQUENTIAL = 0/1 | 下次启动；DirectComposition 与 Win7Dwm 均尝试所选交换链，ULW 使用离屏纹理 |
+| Experimental.Inkeys3.Draw3.SwapChainMode | 0；自动/FLIP/SEQUENTIAL = 0/1/2 | 下次启动；自动目前按 FLIP（Win7Dwm 下 FLIP 的视觉正确性待实机确认）；DirectComposition 与 Win7Dwm 均尝试所选交换链，ULW 使用离屏纹理。该键未发布过旧编号，不做 0/1 旧值迁移 |
+| Experimental.Inkeys3.Draw3.RenderAcceleration | 0；自动/硬件加速/软件加速 = 0/1/2 | 下次启动；自动 = 硬件优先、失败回退 WARP；硬件加速 = 只用硬件，不回退；软件加速 = WARP。设备丢失恢复沿用同一策略。缺少新键时旧 EnableHardwareAcceleration=false 迁移为软件加速，true 或缺键为自动 |
 | Experimental.Inkeys3.Draw3.EnableWaitableWait | true | 下次启动（`configOnce` 快照），只控制是否等待帧延迟句柄，不改交换链类型 |
 | Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback | true | 下次启动（`configOnce` 快照）；只影响主画布 ULW：关闭 = 同步读回、不节流、不对齐（独立纹理与 SIMD 复制仍保留） |
 | Experimental.Inkeys3.Draw3.UlwCompositionAlign | true，性能页合成对齐下拉框 | 下次启动；异步读回开启时是否对齐 DWM 合成时机提交，与 DComp 键共同表示始终、关闭或仅指定后端 |
@@ -42,9 +43,9 @@
 - 激光多指有效值是全局多指与保存子偏好的合取；隐藏不清空子偏好。Host 在 render owner 应用，setter 幂等，不能每批重复 control wake 导致空转。
 - 粒子条目不显示toggle，仅保留BETA禁用说明；Controller构造配置true、setter请求true也始终关闭，不因旧配置恢复，重复请求不产生额外wake。保留算法/Shader/配置字段，不扩大为资源清理任务。
 - 绘制页先“绘图环境”（设备项）、后“通用”；移除统一新笔提示但保留每笔锁存。界面60FPS、画布120FPS、精准显示本地化推荐标记，数据值不变；侧栏性能与实验glyph对调，不改变路由。
-- 原硬件加速、DComp、兆芯兼容三项仅迁移至性能页，继续使用 Experimental.Inkeys3.Draw3 下原键，均重启生效。
+- 原硬件加速、DComp、兆芯兼容三项迁移至性能页并重启生效：硬件加速改为 RenderAcceleration 下拉，DComp 开关改为 PresentationMode 下拉（旧键仅在缺少新键时迁移），兆芯兼容继续使用原键。
 - 软件调试 → 画布初始化信息：标题下按需分别显示呈现方式与交换链回退警告。自动后端回退仅记录日志；主动指定后端失败才提示。正文展示实际状态。警告沿用黄色信息条，持有本代首次尝试的失败原因，外层窗口重建时传递。
-- “渲染与兼容”节顺序：硬件加速 → 桌面画布透明呈现方式 → 桌面画布交换链 → `##draw3-waitable-wait`（waitable 模式下启用等待，重启生效）→ `##draw3-ulw-async-readback`（ULW 模式下异步读回，重启生效）→ `##draw3-unthrottled-mouse-move`（绘制时鼠标移动不受画布帧率限制，即时生效，无重启提示）→ 兆芯兼容。waitable 行为合同见 `draw3-integration.md`“DComp waitable 帧延迟等待与熔断”；ULW 读回合同见同文件“ULW 独立纹理、异步读回与合成对齐”；鼠标选项合同见 `draw3-cursors.md`“绘制时光标跟随画布帧率”。
+- 性能页三块顺序：“渲染”= `##draw3-acceleration`（画布渲染加速，只有 i 重启提示）→ 兆芯兼容；“高级设置”= `##draw3-unthrottled-mouse-move`（绘制时鼠标移动不受画布帧率限制，即时生效，无重启提示）；“底层设置”= `##draw3-presentation`（透明呈现方式）→ `##draw3-swapchain`（交换链）→ `##draw3-composition-align`（合成时机对齐）→ `##draw3-waitable-wait`（Waitable 模式下启用等待）→ `##draw3-ulw-async-readback`（UpdateLayeredWindow 模式下异步读回），均重启生效。waitable 行为合同见 `draw3-integration.md`“DComp waitable 帧延迟等待与熔断”；ULW 读回合同见同文件“ULW 独立纹理、异步读回与合成对齐”；鼠标选项合同见 `draw3-cursors.md`“绘制时光标跟随画布帧率”。
 - `Drawing.FrameRate` 只在启动时选定 profile；设置页改档只写配置（带重启提示），当前会话帧循环仍按启动值运行。实机验证帧率相关行为时必须先重启再测。
 - 共享 Scheduler 保留原子请求、固定顺序、唯一 render owner、Idle/Continue/Retry 和设备恢复；帧率变更不制造永久渲染，也不修改动画倍率或输入采样。
 - 画布设备、adapter、交换链和 RTS 信息在实际初始化/恢复/Resize 边界发布。初始化新代次清旧成功详情，停止后明确标为最后记录；Hardware 偏好不等于实际 Hardware，DComp 偏好不等于最终呈现模式。
@@ -148,7 +149,7 @@ Correct：绘制与复制复用同一局部完整字符串；只在user点击标
 - 卡片前调用 `PageContentStart()`；卡片后不另加节间距。背景不用 `ChannelsSplit`：先画背景，内容画完后按真实高度平移背景下半部顶点。数字、条形、底色、箭头统一用 `NavigationTween`（颜色是固定起点到目标的 0→1 插值），不用 `AnimateColorU32`。
 - 卡片内开关用 `ToggleAction` 手动布局，不用 `ToggleRow`（会画出卡中卡）。清除按钮为两段式，3 s 内再点生效。窄窗口下放不下的状态标签不画。
 - `Palette::performanceFill/performanceAccent[5]`（无数据/充裕/适中/偏紧/超载）：绿、黄、红底色与 notice 一致，Acrylic 下与 heroFill 一样设为 alpha 179，“无数据”底色运行时取 `card`。
-- 统计窗口为最近 7 个使用日，按实际生效的设置签名分开（帧率、设备、呈现模式、实际 waitable、ULW 异步读回与对齐、兆芯兼容实际生效值）。当前签名没有数据时显示最近签名的数据，并标注“设置变更前”。
+- 统计窗口为最近 7 个使用日，按实际生效的设置签名分开（帧率、设备、呈现模式与实际交换链、实际 waitable、ULW 异步读回与对齐、DComp 主画布下的合成对齐设置值、兆芯兼容实际生效值）。阶段 E 前写入、缺少 DComp 对齐字段的 DComp 记录按“未对齐”读入。当前签名没有数据时显示最近签名的数据，并标注“设置变更前”。
 - 内容（2026-11-18 精简；2026-11-19 帧率口径轮）：收起态只有标题与档位/状态标签、大号负载百分比，其右侧三行为负载标签、“平均渲染帧率 约 N FPS”（主数值，`Body`）、“计算帧率 约 N FPS · 无限制渲染帧率 约 N FPS”（`Caption` 次要色）；下方一句档位结论，结论下方（收起态）为“当前显示器的帧率限制为 N FPS”（实测范围不同时写 `60–120`，未测到不显示）；各维度行右侧为该维度的平均渲染帧率（取不到为 `--`）；不显示帧率建议、统计范围、覆盖维度或其他说明。展开态是各维度行、记录开关（无说明）、清除按钮，与按钮同行靠右显示评估时间（只显示时间）。
 - 软件调试页“画布”节的“设备性能看板预览”下拉框（默认/无数据/充裕/适中/偏紧/超载/设置变更前）只替换看板显示用的报告，不写配置、不影响记录与统计，重启恢复默认；预览期间看板内的记录开关与清除按钮不作用于真实数据。
 - 文案数字模板（`RenderFpsFormat`、`DimensionFpsFormat`、`DisplayLimitFormat` 的实参为字符串，可为 `--` 或 `60–120`；`SecondaryFpsFormat` 为两个整数）用 `{0}`/`{1}` 占位符，格式化包 try/catch，模板登记在 `IdtTest::RunI18nLocaleTests`。文案中不用 “—”“…”（字形检查）。

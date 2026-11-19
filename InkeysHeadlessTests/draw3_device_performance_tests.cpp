@@ -265,8 +265,16 @@ int RunDraw3DevicePerformanceTests()
 		expect(normalized.waitable == kNotApplicable, "waitable irrelevant under ulw");
 		expect(normalized.ulwCompositionAlign == kNotApplicable, "align irrelevant when async readback off");
 		expect(SignatureKey(ulw) == "fps60-warp-ulw-async0-zx0", "ulw key");
-		expect(SignatureKey(DCompSignature()) == "fps120-hardware-dcomp-wait1-zx0", "dcomp key");
+		expect(SignatureKey(DCompSignature()) == "fps120-hardware-dcomp-wait1-dalign0-zx0", "dcomp key");
 		expect(!(NormalizeSignature(DCompSignature(120)) == NormalizeSignature(DCompSignature(60))), "frame rate splits");
+		// DComp 合成对齐开关拆分 DComp 签名，对 ULW 不适用。
+		Signature aligned = DCompSignature();
+		aligned.dcompCompositionAlign = 1;
+		expect(!(NormalizeSignature(aligned) == NormalizeSignature(DCompSignature())) &&
+			SignatureKey(aligned) == "fps120-hardware-dcomp-wait1-dalign1-zx0", "dcomp alignment splits dcomp signature");
+		ulw.dcompCompositionAlign = 1;
+		expect(NormalizeSignature(ulw).dcompCompositionAlign == kNotApplicable, "dcomp alignment irrelevant under ulw");
+		ulw.dcompCompositionAlign = kNotApplicable;
 	}
 
 	// 日桶：同日合并、第 8 个使用日淘汰最早、时间回拨插入旧日期。
@@ -398,7 +406,7 @@ int RunDraw3DevicePerformanceTests()
 		const std::string text = SerializeStore(store);
 		expect(text.find("fps120-hardware-win7dwm-flip-zx0") != std::string::npos &&
 			text.find("fps120-hardware-win7dwm-sequential-zx0") != std::string::npos &&
-			text.find("fps120-hardware-dcomp-sequential-zx0") != std::string::npos,
+			text.find("fps120-hardware-dcomp-sequential-dalign0-zx0") != std::string::npos,
 			"effective chain keys ignore irrelevant backend switches");
 		Store parsed;
 		std::size_t dropped = 99;
@@ -419,7 +427,19 @@ int RunDraw3DevicePerformanceTests()
 			}
 		}
 		expect(same, "roundtrip preserves store");
-		expect(text.find("fps120-hardware-dcomp-wait1-zx0") != std::string::npos, "readable key written");
+		expect(text.find("fps120-hardware-dcomp-wait1-dalign0-zx0") != std::string::npos, "readable key written");
+		// DComp 合成对齐开启的记录经 JSON 往返仍保留为 1，不与未对齐记录合并。
+		{
+			Store alignedStore;
+			Signature alignedSignature = DCompSignature();
+			alignedSignature.dcompCompositionAlign = 1;
+			MergeTally(alignedStore, alignedSignature, MakeDate(2026, 11, 18), 1763450000,
+				MakeCounters(DimensionBit(Dimension::Writing), 12, 2.0, 8.33));
+			Store alignedParsed;
+			expect(ParseStore(SerializeStore(alignedStore), alignedParsed) == ParseResult::Ok &&
+				alignedParsed.records.size() == 1 && alignedParsed.records[0].signature.dcompCompositionAlign == 1,
+				"dcomp alignment survives json roundtrip");
+		}
 
 		Store untouched = store;
 		expect(ParseStore("{ not json", untouched) == ParseResult::Malformed && untouched.records.size() == store.records.size(),
@@ -457,6 +477,9 @@ int RunDraw3DevicePerformanceTests()
 		expect(!partialStore.records.empty() && !partialStore.records[0].days.empty() &&
 			partialStore.records[0].days[0].display == DisplayRange{ 60, 120 } &&
 			partialStore.records[0].days[0].counters[0].computeFrames == 12, "valid bucket keeps all fields");
+		// 阶段 E 前的 DComp 记录没有 dcompCompositionAlign 字段：保留并归入未对齐。
+		expect(!partialStore.records.empty() && partialStore.records[0].signature.dcompCompositionAlign == 0,
+			"legacy dcomp record without alignment field reads as unaligned");
 	}
 
 	// 账本：启动加载坏文件改名 .bad、Submit 后 Stop 同步落盘、重启加载、清除删除文件。

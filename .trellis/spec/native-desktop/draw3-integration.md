@@ -94,7 +94,7 @@ Wrong：只等 RtsReady/首帧后刷新；Correct：每代窗口准备失败直�
 
 ## 设备与线程
 
-- Draw3 独立创建 D3D11.1 设备、context、DXGI factory、交换链和呈现资源；默认 hardware-first/WARP-fallback，启动快照 EnableHardwareAcceleration=false 时直接 WARP，回退/恢复复用同一快照。禁止引用 `Inkeys.UI.RenderPipeline` 的设备。
+- Draw3 独立创建 D3D11.1 设备、context、DXGI factory、交换链和呈现资源；按启动快照 RenderAcceleration 选设备：自动 = hardware-first/WARP-fallback，硬件加速 = 只用硬件、失败不回退 WARP，软件加速 = 直接 WARP；设备丢失恢复复用同一快照（`allowWarpFallback`）。禁止引用 `Inkeys.UI.RenderPipeline` 的设备。
 - Hardware 与 WARP 都可落在 FL11.0；这不保证动态 SRV 的 `WRITE_NO_OVERWRITE`。除实际 Hardware adapter VendorId=0x1D17 且启动 EnableZhaoxinCompatibility=true 时大结构化资源使用 DEFAULT 局部更新外，动态路径的生产 renderer 必须在当前设备上查 `D3D11_OPTIONS::MapNoOverwriteOnDynamicBufferSRV`，不支持或查询失败时普通笔与 Shape 逐批 DISCARD 且 buffer offset 为零；支持设备保留环形路径。此上传门禁与 presenter 的交换链/离屏目标选择独立，不能为修一项而替换呈现方式。
 - UI 线程只向 bridge 发布不可变快照和命令；renderer、document、history、RTS 消费只在 Draw3 绘制线程进行。
 - 进程只允许一套 Draw3 Host、绘制线程及选定的 RTS 或 Win32Mouse 输入 producer；Desktop、Whiteboard 及每个 `PresentationKey` 的 document/history 是该绘制线程独占的独立 slot。辅助 HWND 仅是同一最终 backbuffer 的 presentation target。退出先关闭绘制准入并预约最终保存命令，停止并排空选定输入 producer，再唤醒绘制线程、执行最终保存屏障并排空 worker、释放双 presenter/设备，最后由 Window Service 销毁两窗。
@@ -417,9 +417,9 @@ Correct：`显式 selectionMode + 当前 interval content + generation/content/c
 
 以下首发选路合同来自 2026-09-27 用户决定；H0 源码仍含 DWM 自动/强制路径。本次工作区已在源码中禁止该选择，但隐藏 HWND、Win7 与运行期设备故障尚未实测，不能把静态选路当作透明呈现 PASS。
 
-- Draw3 自己创建 D3D11.1 device/context（默认 hardware-first/WARP-fallback，硬件加速启动偏好关闭时直接 WARP）、DXGI factory、swap chain 和 presenter，不注册 `Inkeys.UI.RenderPipeline` client，也不共享其 device epoch。
+- Draw3 自己创建 D3D11.1 device/context（按 RenderAcceleration 快照：自动 hardware-first/WARP-fallback，硬件加速不回退，软件加速直接 WARP）、DXGI factory、swap chain 和 presenter，不注册 `Inkeys.UI.RenderPipeline` client，也不共享其 device epoch。
 - 自动 presenter 顺序为 DComp -> ULW。仅手选第一版 Win7Dwm 时检查 Win7 SP1、合成和透明着色；其 HWND 链默认 FLIP_SEQUENTIAL/2，创建失败可试 SEQUENTIAL/1。显式 SEQUENTIAL 直接建单缓冲链。Win7Dwm 跳过 waitable，明确失败转 ULW。每次失败都销毁该模式的 swap chain/presenter 状态后再降级。DComp 在创建前通过能力探测决定是否预置 `WS_EX_NOREDIRECTIONBITMAP`；legacy 重建 Host 明确跳过 DComp。ULW 不创建交换链（2026-11-18 起）：Draw3 直接画到一张独立 BGRA8 纹理（RT|SRV），经 Staging 读回到 premultiplied top-down 32-bit DIB 后提交，保持 `1/255` CPU alpha 边界和 dirty rect，透明像素 alpha 必须保持零；读回流水线合同见“ULW 独立纹理、异步读回与合成对齐”。
-- 用户已在 Win7 SP1 且仅安装 KB2670838 的环境实测 `FLIP_SEQUENTIAL` 可用；微软通用 DXGI swap effect 文档写 Win8 起支持，与该实测相冲突。ULW 已不再使用交换链，该实测保留为阶段 D（Win7 DWM GPU 呈现）选用 FLIP 的兼容依据，不添加 bitblt 或 swap effect 降级。设备/驱动、Hardware FL11.0 与无 FL11.0 时的 WARP、ULW 成功 Present 仍须逐格复验；文档冲突不能替代本轮真机证据。
+- 用户已在 Win7 SP1 且仅安装 KB2670838 的环境实测 `FLIP_SEQUENTIAL` 可用；微软通用 DXGI swap effect 文档写 Win8 起支持，与该实测相冲突。ULW 已不再使用交换链，该实测保留为阶段 D（Win7 DWM GPU 呈现）默认选用 FLIP 的兼容依据；Win7Dwm 的 FLIP 创建失败时只允许一次 SEQUENTIAL/1 兜底（见上条），DComp 收到 SEQUENTIAL 偏好创建失败时改试 FLIP，不添加其他 swap effect 降级。设备/驱动、Hardware FL11.0 与无 FL11.0 时的 WARP、ULW 成功 Present 仍须逐格复验；文档冲突不能替代本轮真机证据。
 - 主 presenter 与辅助 ULW target 共用 renderer/final backbuffer，每帧只向请求目标提交；辅助初始化失败即 Host 启动失败，运行期失败必须重建并全量重试，不回退到主窗穿透。DComp退休使用共享有界等待，超时或已有退休在途时禁止第二worker及后续模式初始化；迟到完成只清理旧状态。样式可清除时才在原HWND降级ULW；否则运行期进入受保护故障退出，不在运行期停止Window Service或重建窗口链——Bar/PPT/Setting/白板等UI客户端在初始化时绑定HWND，整链重建会让它们持有已销毁的窗口。完整legacy窗口链重建只允许发生在启动期UI客户端初始化之前。
 - 只允许一个绑定主 Drawpad 的选定输入 producer（RTS 或 Win32Mouse）；Draw2 RTS 不得初始化或重复发布。退出顺序为关闭绘制准入并预约最终保存 -> 停止并排空选定 producer -> 唤醒绘制线程并执行最终保存屏障 -> 释放双 presenter/device -> Window Service 销毁两窗。
 
@@ -489,7 +489,7 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 - **令牌语义**：未持有令牌才等一次；`Signaled` 持有令牌，只有实际调用且成功的 `Present1` 消耗。空裁剪矩形不调用 `Present1`、`Present1` 失败、`DwmFlush` 失败都不消耗。
 - **等待点**：主循环在设备恢复/Resize 处理之后、导航 Drain 与输入批次之前调用 `PrepareFrameLatency`；帧循环外的 Present（清屏、整画布）在 `PresentSwapChain` 内按 `NeedsWaitBeforePresent()` 补等，策略 `Neutral`（不计数也不打断连续计数）。
 - **超时仍 Present**：超时不是错误，本帧照常合成与 `Present1`；启动首帧初始句柄已发信号。
-- **超时欠账与还账（2026-11-18 压力实测后补）**：waitable 交换链的 `Present1` 不阻塞，`SetMaximumFrameLatency(1)` 也不限它；没拿到名额就成功 Present 会永久多压一帧（压力下 10–25% 超时，表现为 DComp 越拖越远、ULW 不会）。因此 `OnPresentCalled` 在“成功且未持有令牌”时记一笔欠账（上限 2，已满只计 `TotalDebtOverflows`）；之后拿到本帧令牌时若有欠账，再以同一超时多等一次信号，等到则还一笔、每帧最多一笔，补等超时只保留欠账、本帧照常 Present。补等不计入超时次数与熔断。空闲后欠账对应的信号已积在句柄里，补等立即返回，不产生落笔突发排队。`Reset`（交换链重建）与 `Trip` 清零欠账，溢出累计不清零。
+- **超时欠账与还账（2026-11-18 压力实测后补）**：waitable 交换链的 `Present1` 不阻塞，`SetMaximumFrameLatency(1)` 也不限它；没拿到名额就成功 Present 会永久多压一帧（压力下 10–25% 超时，表现为 DComp 越拖越远、ULW 不会）。因此 `OnPresentCalled` 在“成功且未持有令牌”时记一笔欠账（上限 2，已满只计 `TotalDebtOverflows`）；之后拿到本帧令牌时若有欠账，再以同一超时多等一次信号，等到则还一笔、每帧最多一笔，补等超时只保留欠账、本帧照常 Present。补等不计入超时次数与熔断；但补等返回句柄失效（`Failed`）与主等待失败同样置 `waitFailed_`，`PrepareFrameLatency` 随即熔断（`Trip` 清令牌），本帧与主等待失败一样跳过，下一轮重建为不带 waitable 的交换链并整帧重放。空闲后欠账对应的信号已积在句柄里，补等立即返回，不产生落笔突发排队。`Reset`（交换链重建）与 `Trip` 清零欠账，溢出累计不清零。
 - **自适应超时** `clamp(1.5 × max(预设帧间隔, DWM 刷新间隔, 信号间隔 EMA), 4, 200) ms`。EMA 只吸收不超过 200 ms 的获取间隔（更长的是空闲，不是合成节奏）；刷新间隔取 `DwmGetCompositionTimingInfo`，失败按 16.7 ms。任一次等待或补等超时，都把 EMA 抬到本次超时值（下一次超时放宽 1.5 倍）——否则开画布时 GPU 已慢，估计只靠成功获取更新，实测第一秒超时 58 次、欠账溢出 28 次。
 - **只在可能失效时熔断**：`Count` 策略下连续超时 ≥ 8 且连续区间 ≥ 1000 ms，或句柄等待本身失败（`WaitFailed`）。任何一次成功获取都清零连续计数，GPU 慢不会熔断。窗口隐藏/最小化、交接屏障 pending、`recoveryPending`、非主画布输出（SelectionUlw/ULW）、工作区交接/加载未决时为 `Exclude` 或直接不等待。
 - **熔断后**：本会话不再尝试 waitable，经现有 `RecoverFromRuntimeFailure` 重建为同模式、不带 waitable 标志的 FLIP，仍由设备级 `SetMaximumFrameLatency(1)` 限流；新会话复位。
@@ -520,7 +520,7 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 
 ### 6. Tests Required
 
-- `InkeysHeadlessTests/draw3_frame_latency_gate_tests.cpp`（`RunDraw3FrameLatencyGateTests`，`--frame-latency-gate-only`）：禁用不等、首获令牌、令牌消耗规则、自适应超时、EMA 空闲过滤、三种超时策略、熔断阈值、等待失败熔断；欠账只在无令牌成功 Present 时记、GPU 抖动超时后在途帧回到 1、空闲后补等零等待、信号丢失时欠账封顶且计溢出、开画布 GPU 慢（60 ms/帧、初始超时 25 ms）≤3 次超时内适应且不溢出。
+- `InkeysHeadlessTests/draw3_frame_latency_gate_tests.cpp`（`RunDraw3FrameLatencyGateTests`，`--frame-latency-gate-only`）：禁用不等、首获令牌、令牌消耗规则、自适应超时、EMA 空闲过滤、三种超时策略、熔断阈值、等待失败熔断、还账补等失败熔断；欠账只在无令牌成功 Present 时记、GPU 抖动超时后在途帧回到 1、空闲后补等零等待、信号丢失时欠账封顶且计溢出、开画布 GPU 慢（60 ms/帧、初始超时 25 ms）≤3 次超时内适应且不溢出。
 - 完整 Solution `Debug|ARM64` 构建，`InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-control-fence-test`。
 - 熔断路径没有故障注入开关，单纯加压不会触发；真实熔断只能代码审查 + 状态机单测证明。
 
@@ -539,7 +539,7 @@ Correct：`PrepareFrameLatency(1000/target_fps, countable)` 在帧首有界等�
 ### 2. Signatures
 
 - `TransparentPresentationController`：`BeginUlwFrame(frameStartMs, targetFrameMs)`（C1 帧开头探测）、`ServiceUlwBeforeFrameWait()`（帧尾累计脏区拷出）、`CompleteUlwBeforeIdle(textureValid)`（C3 空闲前）、`DiscardUlwAccumulated()`（光栅失败帧）、`UlwFramePhaseAdjustMs(frameStartMs)`（相位微调），均返回 `UlwFrameReport{waitedMs, failed}`；ULW 下 `SwapChain()` 返回空。
-- 纯逻辑头：`Draw3.UlwReadbackPacing.h`（即时/流水自适应：连续 3 帧超预算且 Map 等待 ≥ 帧间隔 25% 进流水；每 500 ms 试一帧即时，≤ 帧间隔 90% 回即时）、`Draw3.CompositionClock.h`（`CompositionClock` 每 250 ms 重读 DWM 时序，`CommitDurationEstimator` 取 EMA 与最近 16 次最大值，`UlwCommitPlanner`、`ClassifyCompositionCadence`）。
+- 纯逻辑头：`Draw3.UlwReadbackPacing.h`（即时/流水自适应：连续 3 帧超预算且 Map 等待 ≥ 帧间隔 25% 进流水；每 500 ms 试一帧即时，≤ 帧间隔 90% 回即时）、`Draw3.CompositionClock.h`（`CompositionClock` 每 250 ms 重读 DWM 时序；`Invalidate()` 同时作废旧周期，DWM 关闭后不再重读时 ULW 节流回到显示器刷新率，`CommitDurationEstimator` 取 EMA 与最近 16 次最大值，`UlwCommitPlanner`、`ClassifyCompositionCadence`）。
 - 配置 `Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback`（默认 true，界面开关）、`Experimental.Inkeys3.Draw3.UlwCompositionAlign`（默认 true，与 DcompCompositionAlign 共用性能页选择项），启动快照经 `HostStartOptions` → `TransparentPresentationOptions`。
 
 ### 3. Contracts
@@ -678,7 +678,7 @@ Good：关闭产品准入后，合法 Stop 仍到 owner并确认。Base：普通
 
 ### 2. Signatures
 - `Draw3.DevicePerformanceModel.h`：`Dimension`、`ToolDimensionMask(int drawingTool)`、`FrameSample`、`Tally::Add(mask, sample)` 与 `Tally::display`（`DisplayRange::Observe(hz)`）、`Signature`/`NormalizeSignature`、`MergeTally(store, signature, date, now, counters, display)`/`MergeStore`、`MakeFigure`、`BuildReport`、`ClassifyFigure`。纯逻辑，无 Windows 依赖（2026-11-18 起不再计算帧率建议）。
-- `Draw3.DevicePerformanceJson.h`：`SerializeStore` / `ParseStore`（jsoncpp，字符串进出）；`kFileVersion = 3`，计数器为 9 元数组（第 4 项为 `displayedFrames`），日桶带 `display: [minHz, maxHz]`，版本 1、2 文件按 schema 不符改名 `.bad`，不兼容。
+- `Draw3.DevicePerformanceJson.h`：`SerializeStore` / `ParseStore`（jsoncpp，字符串进出）；`kFileVersion = 4`，计数器为 8 元数组 `[frames, costMs, timedFrames, displayedFrames, intervalMs, missed, computeFrames, computeIntervalMs]`（渲染帧按 DWM 合成周期计数、去掉限制间隔），日桶带 `display: [minHz, maxHz]`，版本 1–3 文件按 schema 不符改名 `.bad`，不兼容；签名项 `dcompCompositionAlign` 为阶段 E 后追加的可选字段，缺键按未对齐读入、不升版本。
 - `DevicePerformanceLedger`（`Draw3.DevicePerformanceLedger.h/.cpp`）：`Start(path)`、`Stop()`、`SetCurrentSignature`、`MarkBusy()`、`Submit(signature, tally, segmentEpoch)`、`SetRecordingEnabled`、`Clear`、`Snapshot(knownRevision, out)`。
 - `TransparentPresentationController::CommittedPresentCount()`（DComp 成功 Present1 + 主画布/辅助 ULW 成功 UpdateLayeredWindow 次数，单调递增）、`LastCommittedPresentMs()`（最近一次提交完成时刻）、`SampleDisplayTiming(nowMs)`（DWM 合成时序 `CompositionTimingSample`，周期保留小数，约 250 ms 重读一次）、`FrameLatencyWaitReport::pacingWaitMs`；`DevicePerformance::RefreshSlotCounter`。
 - `TransparentPresentationController::EffectiveState()`、`InkRenderer::UsesZhaoxinCompatibleUpload()`：签名只读主画布实际生效状态。
