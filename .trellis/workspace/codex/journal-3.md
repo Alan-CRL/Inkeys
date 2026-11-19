@@ -662,3 +662,25 @@ Migrated live deploy.json/pptcom_configuration.json fields into Inkeys::Config w
 ### Status
 
 [OK] **Completed**
+
+
+## Session 194: 阶段 D：Win7Dwm 手动呈现与回退诊断
+<!-- trellis-session: v=2 fp=0b15ba4ec8d8a7f4 -->
+
+**Date**: 2026-11-19
+**Task**: 阶段 D：Win7Dwm 手动呈现与回退诊断
+**Branch**: `refactoring/draw`
+
+### Summary
+
+完成呈现与交换链选择、软件调试页回退提示和 x86/x64 测试包。ARM64 无窗口测试通过。Win7 SP1 + KB2670838 的动态背景、残影和 FLIP 稳定性留待用户实机补测。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4a7c4680` | feat(draw3): add opt-in Win7 DWM presentation and swap chain fallback diagnostics |
+
+### Status
+
+[OK] **Completed**
