@@ -684,3 +684,25 @@ Migrated live deploy.json/pptcom_configuration.json fields into Inkeys::Config w
 ### Status
 
 [OK] **Completed**
+
+
+## Session 196: 阶段 E：桌面合成时机对齐
+<!-- trellis-session: v=2 fp=cbf2af125ee24bea -->
+
+**Date**: 2026-11-19
+**Task**: 阶段 E：桌面合成时机对齐
+**Branch**: `refactoring/draw`
+
+### Summary
+
+完成 DComp 合成时机对齐、性能页统一设置及本机对照验证，仅归档阶段 E。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4b95186c` | feat(draw3): align DComp frame timing and unify composition alignment settings |
+
+### Status
+
+[OK] **Completed**
