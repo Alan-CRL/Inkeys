@@ -1068,16 +1068,12 @@
         "Expand": "Dettagli",
         "Collapse": "Comprimi",
         "LoadLabel": "Carico medio",
-        "UnlimitedFormat": "Frequenza illimitata circa {0} FPS · misurata a {1} FPS",
+        "RenderFpsFormat": "Frequenza di rendering media circa {0} FPS",
+        "SecondaryFpsFormat": "Frequenza di calcolo circa {0} FPS · Rendering illimitato circa {1} FPS",
+        "DisplayLimitFormat": "Lo schermo attuale limita la frequenza a {0} FPS",
         "EmptyHint": "Dopo qualche tratto, qui vedrai con quanta facilità questo dispositivo disegna la tela.",
         "PreviousTag": "Prima della modifica",
         "PausedTag": "Registrazione in pausa",
-        "LowSample": "Pochi campioni, solo indicativo",
-        "LowSampleShort": "Pochi campioni",
-        "EvaluatedFormat": "Valutato: {0}",
-        "RangeFormat": "Ultimi {0} giorni di utilizzo (dal {1} al {2})",
-        "RangeSingleFormat": "Ultimo giorno di utilizzo ({0})",
-        "CoverageFormat": "Strumenti inclusi: {0}",
         "NoDimensionData": "Nessun dato",
         "DimensionFpsFormat": "Circa {0} FPS",
         "Level":
@@ -1094,19 +1090,6 @@
           "Tight": "Il carico del dispositivo è elevato; in scene complesse potrebbe perdere qualche fotogramma.",
           "Overloaded": "Il dispositivo non regge la frequenza attuale; la scrittura potrebbe scattare o andare in ritardo."
         },
-        "Advice":
-        {
-          "Lower": "Ti consigliamo di ridurre la frequenza della tela a {0} FPS (carico stimato circa {1}%).",
-          "LowestHeavy": "Anche la frequenza minima è impegnativa. Verifica che l’accelerazione hardware sia attiva o chiudi i programmi che usano la GPU.",
-          "LowerToMatch": "Ti consigliamo di ridurre la frequenza della tela a {0} FPS, come quella dello schermo.",
-          "Raise": "Puoi aumentare la frequenza della tela a {0} FPS (carico stimato circa {1}%). La scrittura è più fluida quando coincide con i {2} Hz dello schermo.",
-          "MatchedCanRaise": "La frequenza attuale coincide con la frequenza di aggiornamento dello schermo ({0} Hz). Il dispositivo ha margine sufficiente, quindi puoi anche salire a {1} FPS: l’immagine non sarà più fluida, ma i tratti saranno più precisi e morbidi.",
-          "AboveRefresh": "La frequenza attuale supera la frequenza di aggiornamento dello schermo ({0} Hz). L’immagine non è più fluida, ma i tratti sono più precisi e morbidi; il carico del dispositivo consente di mantenerla.",
-          "Fine": "La frequenza attuale della tela è adeguata.",
-          "Stutter": "Il carico medio non è alto, ma circa il {0}% dei fotogrammi supera il tempo disponibile; possono verificarsi scatti occasionali.",
-          "RestartPending": "Frequenza della tela impostata a {0} FPS. Sarà applicata al riavvio e i dati verranno raccolti di nuovo.",
-          "Previous": "Questi dati risalgono a prima della modifica delle impostazioni; quelli delle impostazioni attuali sono ancora in raccolta."
-        },
         "Dimension":
         {
           "Writing": "Scrittura",
@@ -1118,8 +1101,7 @@
         },
         "Recording":
         {
-          "N": "Registra i dati sulle prestazioni",
-          "E": "Registra solo statistiche come il tempo di disegno, salvate su questo dispositivo e mai caricate."
+          "N": "Registra i dati sulle prestazioni"
         },
         "Clear": "Cancella dati",
         "ClearConfirm": "Conferma"
@@ -1457,6 +1439,18 @@
       {
         "N": "Debug della tela",
         "E": "Mostra sotto la tela frequenza dei fotogrammi, carico hardware e informazioni sui punti di input, e aggiunge un pulsante di debug visivo alla barra principale."
+      },
+      "PerformancePreview":
+      {
+        "N": "Anteprima della dashboard delle prestazioni",
+        "E": "Mostra in anteprima gli stati della dashboard in cima alla pagina Prestazioni con dati virtuali. Cambia solo la visualizzazione; registrazione e statistiche reali non sono interessate. Torna a Predefinito dopo il riavvio.",
+        "Off": "Predefinito",
+        "Empty": "Nessun dato",
+        "Ample": "Ampio",
+        "Moderate": "Moderato",
+        "Tight": "Al limite",
+        "Overloaded": "Sovraccarico",
+        "Previous": "Prima della modifica"
       },
       "DelayWaiting":
       {

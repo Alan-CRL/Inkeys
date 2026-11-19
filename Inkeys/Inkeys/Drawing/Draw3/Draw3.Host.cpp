@@ -1645,19 +1645,6 @@ namespace Inkeys::Drawing::Draw3
 			scale.generation = snapshot ? snapshot->generation : 0;
 			const HMONITOR monitorHandle = hwnd ? MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) : nullptr;
 			scale.monitor = reinterpret_cast<std::uintptr_t>(monitorHandle);
-			{
-				// 画布所在显示器的显示模式频率（不是 DWM 实时周期，动态刷新率空闲时不会报 60）；取不到发布 0，界面按 60 处理。
-				std::uint32_t refreshHz = 0;
-				MONITORINFOEXW monitorInfo{};
-				monitorInfo.cbSize = sizeof(monitorInfo);
-				DEVMODEW mode{};
-				mode.dmSize = sizeof(mode);
-				if (monitorHandle && GetMonitorInfoW(monitorHandle, &monitorInfo) &&
-					EnumDisplaySettingsW(monitorInfo.szDevice, ENUM_CURRENT_SETTINGS, &mode) &&
-					mode.dmDisplayFrequency > 1 && mode.dmDisplayFrequency < 1000)
-					refreshHz = mode.dmDisplayFrequency;
-				devicePerformance.SetDisplayRefreshHz(refreshHz);
-			}
 			const auto* monitor = snapshot ? snapshot->Find(monitorHandle) : nullptr;
 			RECT clientBounds{};
 			POINT origin{};

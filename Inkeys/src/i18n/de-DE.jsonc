@@ -1068,16 +1068,12 @@
         "Expand": "Details",
         "Collapse": "Einklappen",
         "LoadLabel": "Durchschnittliche Last",
-        "UnlimitedFormat": "Unbegrenzte Bildrate ca. {0} FPS · gemessen bei {1} FPS",
+        "RenderFpsFormat": "Durchschnittliche Renderrate ca. {0} FPS",
+        "SecondaryFpsFormat": "Berechnungsrate ca. {0} FPS · Unbegrenzte Renderrate ca. {1} FPS",
+        "DisplayLimitFormat": "Der aktuelle Bildschirm begrenzt die Bildrate auf {0} FPS",
         "EmptyHint": "Nach einigen Strichen zeigt dieser Bereich, wie leicht dieses Gerät die Zeichenfläche bewältigt.",
         "PreviousTag": "Vor Einstellungsänderung",
         "PausedTag": "Aufzeichnung pausiert",
-        "LowSample": "Wenige Messwerte, nur als Richtwert",
-        "LowSampleShort": "Wenige Messwerte",
-        "EvaluatedFormat": "Ausgewertet: {0}",
-        "RangeFormat": "Letzte {0} Nutzungstage ({1} bis {2})",
-        "RangeSingleFormat": "Letzter Nutzungstag ({0})",
-        "CoverageFormat": "Erfasst: {0}",
         "NoDimensionData": "Noch keine Daten",
         "DimensionFpsFormat": "Ca. {0} FPS",
         "Level":
@@ -1094,19 +1090,6 @@
           "Tight": "Das Gerät ist stark ausgelastet; in komplexen Szenen können gelegentlich Bilder ausfallen.",
           "Overloaded": "Das Gerät schafft die aktuelle Bildrate nicht; das Schreiben kann ruckeln oder verzögert sein."
         },
-        "Advice":
-        {
-          "Lower": "Empfohlen: Bildrate der Zeichenfläche auf {0} FPS senken (erwartete Last ca. {1} %).",
-          "LowestHeavy": "Selbst die niedrigste Bildrate ist anspruchsvoll. Prüfen, ob die Hardwarebeschleunigung aktiviert ist, oder Programme schließen, die die GPU belasten.",
-          "LowerToMatch": "Empfohlen: Bildrate der Zeichenfläche passend zur Anzeige auf {0} FPS senken.",
-          "Raise": "Die Bildrate der Zeichenfläche kann auf {0} FPS erhöht werden (erwartete Last ca. {1} %). Am flüssigsten ist das Schreiben, wenn sie den {2} Hz der Anzeige entspricht.",
-          "MatchedCanRaise": "Die aktuelle Bildrate entspricht der Bildwiederholrate der Anzeige ({0} Hz). Das Gerät hat genug Reserve, daher sind auch {1} FPS möglich: Das Bild wird nicht flüssiger, aber die Striche werden präziser und glatter.",
-          "AboveRefresh": "Die aktuelle Bildrate liegt über der Bildwiederholrate der Anzeige ({0} Hz). Das Bild wird nicht flüssiger, aber die Striche werden präziser und glatter; die Gerätelast erlaubt es, sie beizubehalten.",
-          "Fine": "Die aktuelle Bildrate der Zeichenfläche ist passend eingestellt.",
-          "Stutter": "Die durchschnittliche Last ist gering, aber etwa {0} % der Bilder überschreiten die verfügbare Bildzeit; gelegentliches Ruckeln ist möglich.",
-          "RestartPending": "Bildrate der Zeichenfläche auf {0} FPS geändert. Wirksam nach einem Neustart; die Daten werden dann neu gesammelt.",
-          "Previous": "Dies sind Daten von vor der Einstellungsänderung; Daten für die aktuelle Einstellung werden noch gesammelt."
-        },
         "Dimension":
         {
           "Writing": "Schreiben",
@@ -1118,8 +1101,7 @@
         },
         "Recording":
         {
-          "N": "Geräteleistungsdaten aufzeichnen",
-          "E": "Es werden nur Statistiken wie die Zeichendauer erfasst. Sie bleiben auf diesem Gerät und werden nicht hochgeladen."
+          "N": "Geräteleistungsdaten aufzeichnen"
         },
         "Clear": "Daten löschen",
         "ClearConfirm": "Löschen bestätigen"
@@ -1457,6 +1439,18 @@
       {
         "N": "Zeichenfläche debuggen",
         "E": "Zeigt unter der Zeichenfläche Bildrate, Hardwarelast und Eingabepunkt-Informationen an und fügt der Hauptleiste eine Schaltfläche für die visuelle Fehlersuche hinzu."
+      },
+      "PerformancePreview":
+      {
+        "N": "Vorschau des Leistungs-Dashboards",
+        "E": "Zeigt die Zustände des Dashboards oben auf der Seite Leistung mit virtuellen Daten an. Nur die Anzeige ändert sich, die tatsächliche Aufzeichnung und Statistik bleiben unberührt. Wird nach einem Neustart auf Standard zurückgesetzt.",
+        "Off": "Standard",
+        "Empty": "Noch keine Daten",
+        "Ample": "Reichlich",
+        "Moderate": "Mittel",
+        "Tight": "Knapp",
+        "Overloaded": "Überlastet",
+        "Previous": "Vor Einstellungsänderung"
       },
       "DelayWaiting":
       {

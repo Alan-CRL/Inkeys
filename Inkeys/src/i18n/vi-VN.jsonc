@@ -1068,16 +1068,12 @@
         "Expand": "Chi tiết",
         "Collapse": "Thu gọn",
         "LoadLabel": "Tải trung bình",
-        "UnlimitedFormat": "Không giới hạn khoảng {0} FPS · đo ở {1} FPS",
+        "RenderFpsFormat": "Tốc độ kết xuất trung bình khoảng {0} FPS",
+        "SecondaryFpsFormat": "Tốc độ tính toán khoảng {0} FPS · Kết xuất không giới hạn khoảng {1} FPS",
+        "DisplayLimitFormat": "Màn hình hiện tại giới hạn tốc độ khung hình ở {0} FPS",
         "EmptyHint": "Sau vài nét vẽ, mục này sẽ cho biết thiết bị vẽ trang vẽ nhẹ nhàng đến mức nào.",
         "PreviousTag": "Trước khi đổi cài đặt",
         "PausedTag": "Đã tạm dừng ghi",
-        "LowSample": "Ít mẫu, chỉ để tham khảo",
-        "LowSampleShort": "Ít mẫu",
-        "EvaluatedFormat": "Đánh giá lúc {0}",
-        "RangeFormat": "{0} ngày sử dụng gần nhất ({1} đến {2})",
-        "RangeSingleFormat": "1 ngày sử dụng gần nhất ({0})",
-        "CoverageFormat": "Đã bao gồm: {0}",
         "NoDimensionData": "Chưa có dữ liệu",
         "DimensionFpsFormat": "Khoảng {0} FPS",
         "Level":
@@ -1094,19 +1090,6 @@
           "Tight": "Tải thiết bị khá cao, đôi khi có thể rớt khung hình trong cảnh phức tạp.",
           "Overloaded": "Thiết bị không theo kịp tốc độ khung hình hiện tại, nét viết có thể giật hoặc trễ."
         },
-        "Advice":
-        {
-          "Lower": "Nên giảm tốc độ khung hình trang vẽ xuống {0} FPS (tải dự kiến khoảng {1}%).",
-          "LowestHeavy": "Ngay cả tốc độ khung hình thấp nhất cũng khá nặng. Hãy kiểm tra đã bật tăng tốc phần cứng chưa, hoặc đóng các chương trình đang dùng GPU.",
-          "LowerToMatch": "Nên giảm tốc độ khung hình trang vẽ xuống {0} FPS cho khớp với màn hình.",
-          "Raise": "Có thể tăng tốc độ khung hình trang vẽ lên {0} FPS (tải dự kiến khoảng {1}%); khớp với màn hình {2} Hz sẽ cho nét viết mượt nhất.",
-          "MatchedCanRaise": "Tốc độ khung hình hiện tại đã khớp với tần số quét của màn hình ({0} Hz). Thiết bị còn dư nhiều, cũng có thể tăng lên {1} FPS: hình ảnh không mượt hơn nhưng nét mực sẽ chính xác và mịn hơn.",
-          "AboveRefresh": "Tốc độ khung hình hiện tại cao hơn tần số quét của màn hình ({0} Hz). Hình ảnh không mượt hơn nhưng nét mực chính xác và mịn hơn; tải thiết bị cho phép giữ nguyên.",
-          "Fine": "Tốc độ khung hình trang vẽ hiện tại là phù hợp.",
-          "Stutter": "Tải trung bình không cao, nhưng khoảng {0}% khung hình vượt quá thời gian khung hình, đôi khi có thể bị giật.",
-          "RestartPending": "Đã đổi tốc độ khung hình trang vẽ thành {0} FPS, có hiệu lực sau khi khởi động lại và dữ liệu sẽ được thu thập lại.",
-          "Previous": "Đây là dữ liệu trước khi đổi cài đặt; dữ liệu cho cài đặt hiện tại vẫn đang được thu thập."
-        },
         "Dimension":
         {
           "Writing": "Viết",
@@ -1118,8 +1101,7 @@
         },
         "Recording":
         {
-          "N": "Ghi dữ liệu hiệu năng thiết bị",
-          "E": "Chỉ ghi các số liệu thống kê như thời gian vẽ, lưu trên máy này và không tải lên."
+          "N": "Ghi dữ liệu hiệu năng thiết bị"
         },
         "Clear": "Xóa dữ liệu",
         "ClearConfirm": "Xác nhận xóa"
@@ -1457,6 +1439,18 @@
       {
         "N": "Gỡ lỗi canvas",
         "E": "Hiển thị tốc độ khung hình, tải phần cứng và thông tin điểm nhập bên dưới canvas, đồng thời thêm nút gỡ lỗi trực quan vào thanh chính."
+      },
+      "PerformancePreview":
+      {
+        "N": "Xem trước bảng hiệu năng",
+        "E": "Xem trước các trạng thái của bảng ở đầu trang Hiệu năng bằng dữ liệu ảo. Chỉ thay đổi phần hiển thị; việc ghi và thống kê thực tế không bị ảnh hưởng. Trở về Mặc định sau khi khởi động lại.",
+        "Off": "Mặc định",
+        "Empty": "Chưa có dữ liệu",
+        "Ample": "Dư dả",
+        "Moderate": "Vừa phải",
+        "Tight": "Hơi căng",
+        "Overloaded": "Quá tải",
+        "Previous": "Trước khi đổi cài đặt"
       },
       "DelayWaiting":
       {

@@ -349,3 +349,44 @@ struct DevicePerformanceReport
 - 卡片内记录开关用 `ToggleAction` 手动布局（ToggleRow 会画出卡中卡）；清除按钮为两段式（3 s 内再次点击生效，收起时复位）。
 - Acrylic 下 `performanceFill` 与 heroFill/featureTint 一样调到 alpha 179；“无数据”底色运行时取 `GetPalette().card`。绿/黄/红底色与 notice 成功/警告/严重一致。
 - 文案中不使用字体覆盖未经验证的符号（不用 “—”、“…”），无数据时数字位显示 “--”；格式化统一包 try/catch，模板出错时回退为原文。看板的数字模板已登记进 `IdtTest::RunI18nLocaleTests`。
+
+## 13. 文案轮精简与调试预览（2026-11-18，以本节为准）
+
+用户实机后要求删除大量说明文字，并在软件调试页加入预览。
+- **删除帧率建议**：`Suggestion`/`Advice`/`Advise`/`MatchFrameRate`/`PredictLoadPercent` 及其常量与单测；Host 中仅为建议采集的显示器刷新率（`PumpDisplayScale` 的 `EnumDisplaySettingsW`）与账本 `SetDisplayRefreshHz`；报告的 `displayRefreshHz`、`sessionFrameRate`。§5 与 §6.5 作废。档位仍由 `ClassifyFigure`（含超时帧 > 10% 至少偏紧）决定，只是不再输出文字。
+- **收起态**：标题与标签、大数字、“无限制帧率 约 {0} FPS”（去掉“测得于”）、一句档位结论。删除建议段、超时/重启/设置变更前说明段、评估时间行、统计范围、覆盖维度、“样本较少”提示。
+- **展开态**：维度行样本少时只把数值置灰，不附“样本少”；记录开关去掉说明；评估时间只显示 `yyyy-MM-dd HH:mm:ss`，与“清除数据”按钮同行靠右（放不下时不画）。
+- **i18n**：删除 `Advice.*`、`EvaluatedFormat`、`RangeFormat`、`RangeSingleFormat`、`CoverageFormat`、`LowSample`、`LowSampleShort`、`Recording.E`；`UnlimitedFormat` 改为单参数（其余语言取原译文“ · ”之前的部分）；格式化自检同步。
+- **软件调试预览**：`Setting.PerformanceDashboard` 提供 `PerformanceDashboardPreview`（默认/无数据/充裕/适中/偏紧/超载/设置变更前）、`MakePerformanceDashboardPreview(preview, frameRate)` 生成虚拟报告（“适中”含两项暂无数据与一项样本少，“设置变更前”用 60 FPS 旧签名），以及进程内选择 `PerformanceDashboardPreviewSelection()`。调试页“画布”节在画布调试开关后用 `ComboRow` 选择；性能页在选择非默认时用虚拟报告替换显示用报告。不写配置，不触碰账本与绘制线程；预览期间看板里的记录开关与“清除数据”不生效（Codex 复核 P2）。
+- 报告的 `usageDays`/`firstDate`/`lastDate`/`coverageMask` 只服务于已删除的统计范围与覆盖行，一并删除；7 个使用日窗口仍由日桶淘汰保证。
+
+## 14. 帧率口径轮（2026-11-19，以本节为准）
+
+起因：GPU 压力测试时看板仍显示“轻松”。旧口径的工作耗时扣掉了 `frameLatencyWaitMs_`（含 waitable 等待与 ULW 阻塞 Map），GPU 吃紧时变长的恰是这些等待；预算也只看画布帧率。经四轮实机修正，定稿如下（§2.2/§3 的计数与 §5 档位依据被本节替代）。
+
+### 14.1 三个帧率
+- **计算帧率**：帧循环推进速度。帧间隔 = 本轮开始到下一轮开始，只在本轮以帧率截止等待结束时有效（书写、漫游/激光淡出、拒收接触节拍三个分支调用 `markPendingFramePaced`）；无脏区不 Present 的轮次也算。
+- **渲染帧率**：有脏区且 Present 成功的帧里，本轮有真正提交（`CommittedPresentCount()`：DComp 成功 Present1、ULW 成功 UpdateLayeredWindow）且提交完成时刻（`LastCommittedPresentMs()`）落进新 DWM 合成周期的帧数 / 这些帧的帧间隔之和。周期由 `RefreshSlotCounter` 按 `SampleDisplayTiming()`（约 250 ms 重读、周期保留小数）判定：不早于提交时刻的合成截止（垂直同步 − 2 ms），与上次计数的截止相差不到半个周期视为同一周期；没有合成时序时每次提交都算。
+- **无限制渲染帧率**：渲染帧数 / Σ(进入帧率截止等待前的整帧耗时 − `framePacingWaitMs_`)。`pacingWaitMs` 只含 waitable 等待（帧内与 Present 前补等）中“开始等待时上一次 Present1 之后插入的 `D3D11_QUERY_EVENT` 已完成”的部分（`GetData(DONOTFLUSH)` 不等待、不自旋）；ULW 阻塞 Map、帧尾拷出是在等 GPU，计入。
+
+### 14.2 负载与档位
+- 耗时占比 = 平均无限制渲染耗时 / 画布帧间隔；缺口占比 = 画布帧率 / 计算帧率，> 103% 时取较大值（至少超载）。掉帧 = 帧间隔 > 1.5 × 画布帧间隔，占比 > 10% 至少偏紧。
+- 渲染帧率与显示器只用于显示。
+
+### 14.3 实机推翻的假设（不要再走回头路）
+1. **waitable 会把帧循环压到刷新率**：DComp 以 `Present1(0, …)`（SyncInterval 0）提交，旧帧被替换后缓冲马上空出，waitable 立即发信号。实测画布 240、120 Hz 屏，帧循环与 Present1 都约 240/s，DWM 每次刷新只显示最新一帧。
+2. **渲染帧率按刷新率封顶**：min(提交帧率, 刷新率) 只是由刷新周期推出的上限，且刷新率被取整，显示值永远是整数刷新率。改为按合成周期实测。
+3. **渲染帧率低于显示器能力即超载**：ULW 异步读回 + 对齐、画布 120 实测计算帧率 120.4、耗时 19%，约 9% 的合成周期没有新内容（读回在即时/延后完成间切换时两次 UpdateLayeredWindow 落进同一周期），渲染 106，被误报超载。负载改为只看帧循环。另：按帧加权的 Σ限制间隔与按时间计的渲染帧率不可比（曾出现渲染 112.5 > 限制 104.3），限制帧率整体删除。
+
+### 14.4 结算时机与存储
+- 一轮的测量挂起在 `PendingFrame`，下一轮 `frameStartMs` 之后结算（那时才知道帧间隔与是否提交）；Run 正常退出前以帧间隔无效结算最后一轮。签名变化检测随之移到结算处；`MarkBusy` 只在一段第一个实际计入的帧调用。只有计算帧、没有渲染帧的段移交时不入账。
+- 计数器 8 元数组 `[frames, costMs, timedFrames, displayedFrames, intervalMs, missed, computeFrames, computeIntervalMs]`，日桶 `display: [minHz, maxHz]`（四舍五入整数，只显示）；`kFileVersion = 4`，旧版本按 schema 不符改名 `.bad`（阶段 C 未发布，不兼容）。
+
+### 14.5 界面与画布调试 HUD
+- 看板：大百分比右侧为“平均负载”、“平均渲染帧率 约 N FPS”、小字“计算帧率 约 N FPS · 无限制渲染帧率 约 N FPS”；结论下方“当前显示器的帧率限制为 N FPS”（范围写 `60–120`）；工具行右侧为该工具的平均渲染帧率（取不到为 `--`）。新 i18n 键 `RenderFpsFormat`/`SecondaryFpsFormat`/`DisplayLimitFormat`（替代 `UnlimitedFormat`）。
+- HUD：FPS = 每秒落进新合成周期的帧，新增 Calc（每秒按帧率推进的帧循环）与 Display（窗口内刷新率范围）一行，Unlimited 与 Load 改用同一耗时，Load 分母为画布帧间隔。
+
+### 14.6 已知局限
+- 多显示器时 DWM 时序为整个桌面合成（Win8.1 起 `DwmGetCompositionTimingInfo` 只接受空 hwnd），不一定是画布所在显示器。
+- GPU 完成查询区分“等 GPU / 等显示节拍”是近似：GPU 吃紧时可能把少量垂直同步对齐也计入耗时。
+- 按合成周期计数看不到 DWM 内部丢帧。

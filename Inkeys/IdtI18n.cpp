@@ -369,22 +369,13 @@ int IdtTest::RunI18nLocaleTests()
 		formatted(I18nKey.SettingsUI.PlugIn.PPTHelper.WidgetScale.Ind, "1.25", scale);
 		formatted(I18nKey.SettingsUI.Update.Downloading, "42", downloadSourceLine);
 		{
-			// 设备性能看板：与 Setting.PerformanceDashboard.cpp 的实参类型一致（int / std::string）。
-			int fps = 240, load = 37, refresh = 144, days = 5, percent = 12;
-			std::string first = "11-12", last = "11-18", stamp = "2026-11-18 14:03:27", tools = "Pen";
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.UnlimitedFormat, "240", fps, refresh);
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.DimensionFpsFormat, "240", fps);
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.EvaluatedFormat, "14:03:27", stamp);
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.RangeFormat, "11-18", days, first, last);
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.RangeSingleFormat, "11-18", last);
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.CoverageFormat, "Pen", tools);
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.Advice.Lower, "37", fps, load);
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.Advice.LowerToMatch, "240", fps);
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.Advice.Raise, "144", fps, load, refresh);
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.Advice.MatchedCanRaise, "240", refresh, fps);
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.Advice.AboveRefresh, "144", refresh);
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.Advice.Stutter, "12", percent);
-			formatted(I18nKey.SettingsUI.Performance.Dashboard.Advice.RestartPending, "240", fps);
+			// 设备性能看板：与 Setting.PerformanceDashboard.cpp 的实参类型一致（帧率文本为 std::string，可为“--”）。
+			int compute = 120, unlimited = 240;
+			std::string fps = "118", range = "60-120";
+			formatted(I18nKey.SettingsUI.Performance.Dashboard.RenderFpsFormat, "118", fps);
+			formatted(I18nKey.SettingsUI.Performance.Dashboard.SecondaryFpsFormat, "240", compute, unlimited);
+			formatted(I18nKey.SettingsUI.Performance.Dashboard.DisplayLimitFormat, "120", range);
+			formatted(I18nKey.SettingsUI.Performance.Dashboard.DimensionFpsFormat, "118", fps);
 		}
 		try
 		{

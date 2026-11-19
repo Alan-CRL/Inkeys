@@ -100,11 +100,14 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 	// 最近一次 0.5s 结算的快照，仅供测试和诊断读取。
 	struct PerformanceSnapshot
 	{
-		double fps = 0.0;
-		double unlimitedFps = 0.0;
-		double loadPercent = 0.0;
+		double fps = 0.0;          // 渲染帧率：落进新 DWM 合成周期的提交帧数 / 窗口时长
+		double unlimitedFps = 0.0; // 无限制渲染帧率：渲染帧数 / 无限制渲染耗时之和
+		double loadPercent = 0.0;  // 平均无限制渲染耗时 / 画布帧间隔
 		double cpuPercent = 0.0;
 		std::size_t chartCount = 0;
+		double computeFps = 0.0;   // 计算帧率：按帧率推进的帧循环数 / 窗口时长
+		int displayMinHz = 0;      // 窗口内测得的显示器刷新率范围，0 = 未测到
+		int displayMaxHz = 0;
 	};
 
 	class Overlay
@@ -120,8 +123,10 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 		// （板子/标记的上一次与当前范围并集）；无变化时为空矩形。
 		RECT Update(const FrameParams& params);
 
-		// 每个真正呈现的帧完成后调用；counted=false 的调试自刷新帧不计入帧率。
-		void OnFrame(double workMs, bool counted) noexcept;
+		// 每轮帧循环结算一次（绘制线程在下一轮开始时调用，口径与设备性能看板一致）：
+		// rendered = 有脏区且 Present 成功（调试自刷新帧为 false）；displayed = 提交落进新的 DWM 合成周期；
+		// paced = 本轮以帧率截止等待结束（计算帧）；costMs = 无限制渲染耗时；displayHz = 测得的刷新率，0 = 未知。
+		void OnFrame(double costMs, bool rendered, bool displayed, bool paced, int displayHz) noexcept;
 		// 承载最新输入的那一帧 Present 返回之后调用（QPC 计数）；每个新输入快照只结算一次延迟。
 		void OnPresented(std::int64_t nowQpc) noexcept;
 		bool ContactLatency(std::uint64_t key, float& milliseconds) const noexcept;
@@ -152,7 +157,7 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 
 		PerformanceSnapshot Performance() const noexcept
 		{
-			return { fps_, unlimitedFps_, loadPercent_, cpuPercent_, chartCount_ };
+			return { fps_, unlimitedFps_, loadPercent_, cpuPercent_, chartCount_, computeFps_, displayMinHz_, displayMaxHz_ };
 		}
 		// 读取指定接触当前的测得速度（供测试/诊断）；找不到接触返回 false，未知值为负。
 		bool ContactSpeed(std::uint64_t key, float& pxPerSec, float& cmPerSec) const noexcept;
@@ -215,11 +220,18 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 		// 性能窗口与快照。
 		bool perfStarted_ = false;
 		double windowStartMs_ = 0.0;
-		std::uint64_t frameCount_ = 0;
-		double workSumMs_ = 0.0;
+		std::uint64_t frameCount_ = 0;     // 渲染帧
+		std::uint64_t displayedCount_ = 0; // 落进新 DWM 合成周期的帧
+		std::uint64_t computeCount_ = 0;   // 按帧率推进的帧循环
+		double costSumMs_ = 0.0;
+		int windowDisplayMinHz_ = 0;
+		int windowDisplayMaxHz_ = 0;
 		double fps_ = 0.0;
+		double computeFps_ = 0.0;
 		double unlimitedFps_ = 0.0;
 		double loadPercent_ = 0.0;
+		int displayMinHz_ = 0;
+		int displayMaxHz_ = 0;
 		double cpuPercent_ = 0.0;
 		std::array<float, kChartSamples> chart_ = {};
 		std::size_t chartCount_ = 0;
@@ -232,7 +244,7 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 		InputPath inputPath_ = InputPath::Unknown;
 		bool perfDirty_ = false;
 		// 上次绘制到板子上的性能文本与曲线；仅显示内容变化时才重绘，静止画布无多余脏区。
-		std::array<long, 4> shownPerf_ = {};
+		std::array<long, 7> shownPerf_ = {};
 		std::array<float, kChartSamples> shownChart_ = {};
 		std::size_t shownChartCount_ = 0;
 

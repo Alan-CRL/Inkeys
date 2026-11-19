@@ -4634,20 +4634,29 @@ SettingSessionCoroutine RunSettingSession()
 							performanceRevision = performanceReport.revision;
 						Design::PerformanceDashboardInput dashboard;
 						dashboard.report = &performanceReport;
-						dashboard.configuredFps = Inkeys::config.Drawing.FrameRate.load();
+						// 软件调试页的预览：只替换显示用的报告，真实记录与统计照常进行。
+						Inkeys::Drawing::Draw3::DevicePerformance::Report previewReport;
+						const auto preview = Design::PerformanceDashboardPreviewSelection();
+						const bool previewing = preview != Design::PerformanceDashboardPreview::Off;
+						if (previewing)
+						{
+							previewReport = Design::MakePerformanceDashboardPreview(preview, Inkeys::config.Drawing.FrameRate.load());
+							dashboard.report = &previewReport;
+						}
 						dashboard.recordingEnabled = Inkeys::config.Drawing.DevicePerformanceRecording.load();
 						dashboard.delta = navigationDelta;
 						dashboard.animationsEnabled = Experimental.Inkeys3.AnimationEnable;
 						dashboard.animationRate = Experimental.Inkeys3.AnimationSpeedRate;
 						const auto events = Design::RenderPerformanceDashboard(dashboard);
-						if (events.recordingChanged)
+						// 预览时开关与清除只作用于虚拟显示，不改动真实记录、账本和文件。
+						if (events.recordingChanged && !previewing)
 						{
 							Inkeys::config.Drawing.DevicePerformanceRecording = events.recordingEnabled;
 							// 即时生效：关闭后绘制线程不再累加、不再写盘。
 							Inkeys::Drawing::Draw3::ProductHost().SetDevicePerformanceRecording(events.recordingEnabled);
 							QueueConfigWrite();
 						}
-						if (events.clearRequested) Inkeys::Drawing::Draw3::ProductHost().ClearDevicePerformance();
+						if (events.clearRequested && !previewing) Inkeys::Drawing::Draw3::ProductHost().ClearDevicePerformance();
 					}
 					Design::SectionHeader(IA(I18nKey.SettingsUI.Performance.FrameRateSection).c_str());
 					int interfaceFrameIndex = Inkeys::config.UI.FrameRate.load() == 30 ? 0 : 1;
@@ -4816,6 +4825,19 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						// 热生效且不持久化：每次启动都需要重新打开；同步 Draw3 与主栏按钮，不需要重启。
 						SetCanvasDebugEnabled(Experimental.Inkeys3.CanvasDebug);
+					}
+					{
+						// 性能看板预览：只替换性能页看板的显示数据，不影响记录与统计；不写配置，重启恢复“默认”。
+						auto& preview = Design::PerformanceDashboardPreviewSelection();
+						int previewIndex = static_cast<int>(preview);
+						if (Design::ComboRow("##debug-perf-dashboard-preview", IA(I18nKey.SettingsUI.DebugSoftware.PerformancePreview.N).c_str(),
+							IA(I18nKey.SettingsUI.DebugSoftware.PerformancePreview.E).c_str(), "\ue9d9", previewIndex,
+							{ IA(I18nKey.SettingsUI.DebugSoftware.PerformancePreview.Off), IA(I18nKey.SettingsUI.DebugSoftware.PerformancePreview.Empty),
+							  IA(I18nKey.SettingsUI.DebugSoftware.PerformancePreview.Ample), IA(I18nKey.SettingsUI.DebugSoftware.PerformancePreview.Moderate),
+							  IA(I18nKey.SettingsUI.DebugSoftware.PerformancePreview.Tight), IA(I18nKey.SettingsUI.DebugSoftware.PerformancePreview.Overloaded),
+							  IA(I18nKey.SettingsUI.DebugSoftware.PerformancePreview.Previous) }))
+							preview = static_cast<Design::PerformanceDashboardPreview>(std::clamp(previewIndex, 0,
+								static_cast<int>(Design::PerformanceDashboardPreview::Count) - 1));
 					}
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.StatusIndicator.Section).c_str());
 					// 只发布调试命令；条目和动画由主栏渲染线程独占，计数读取其原子快照。

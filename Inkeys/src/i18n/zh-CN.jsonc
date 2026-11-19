@@ -1068,16 +1068,12 @@
         "Expand": "详情",
         "Collapse": "收起",
         "LoadLabel": "平均负载",
-        "UnlimitedFormat": "无限制帧率 约 {0} FPS · 测得于 {1} FPS",
+        "RenderFpsFormat": "平均渲染帧率 约 {0} FPS",
+        "SecondaryFpsFormat": "计算帧率 约 {0} FPS · 无限制渲染帧率 约 {1} FPS",
+        "DisplayLimitFormat": "当前显示器的帧率限制为 {0} FPS",
         "EmptyHint": "画几笔后，这里会显示这台设备绘制画布的轻松程度。",
         "PreviousTag": "设置变更前",
         "PausedTag": "记录已暂停",
-        "LowSample": "样本较少，仅供参考",
-        "LowSampleShort": "样本少",
-        "EvaluatedFormat": "评估于 {0}",
-        "RangeFormat": "最近 {0} 个使用日（{1} 至 {2}）",
-        "RangeSingleFormat": "最近 1 个使用日（{0}）",
-        "CoverageFormat": "已覆盖：{0}",
         "NoDimensionData": "暂无数据",
         "DimensionFpsFormat": "约 {0} FPS",
         "Level":
@@ -1094,19 +1090,6 @@
           "Tight": "设备负载偏高，复杂场景下可能偶尔掉帧。",
           "Overloaded": "设备跟不上当前帧率，书写可能卡顿或延迟。"
         },
-        "Advice":
-        {
-          "Lower": "建议把画布帧率降低到 {0} FPS（预计负载约 {1}%）。",
-          "LowestHeavy": "即使最低帧率也较吃力，请确认已开启硬件加速，或关闭占用 GPU 的程序。",
-          "LowerToMatch": "建议把画布帧率降低到与显示器一致的 {0} FPS。",
-          "Raise": "可以把画布帧率升高到 {0} FPS（预计负载约 {1}%），与显示器 {2} Hz 一致时书写最流畅。",
-          "MatchedCanRaise": "当前帧率已与显示器刷新率（{0} Hz）一致。设备余量充足，也可以升到 {1} FPS：画面不会更流畅，但墨迹会更精确、平滑。",
-          "AboveRefresh": "当前帧率高于显示器刷新率（{0} Hz），画面不会更流畅，但墨迹会更精确、平滑；设备负载允许保持。",
-          "Fine": "当前画布帧率设置合适。",
-          "Stutter": "平均负载不高，但约 {0}% 的帧超出帧时间，可能偶尔卡顿。",
-          "RestartPending": "画布帧率已改为 {0} FPS，重启后生效并重新积累数据。",
-          "Previous": "这是设置变更前的数据，当前设置的数据还在积累。"
-        },
         "Dimension":
         {
           "Writing": "书写",
@@ -1118,8 +1101,7 @@
         },
         "Recording":
         {
-          "N": "记录设备性能数据",
-          "E": "只记录绘制耗时等统计数字，保存在本机，不上传。"
+          "N": "记录设备性能数据"
         },
         "Clear": "清除数据",
         "ClearConfirm": "确认清除"
@@ -1457,6 +1439,18 @@
       {
         "N": "画布调试",
         "E": "在画布底层显示帧率、硬件压力与输入点信息，并在主栏提供可视化调试按钮。"
+      },
+      "PerformancePreview":
+      {
+        "N": "设备性能看板预览",
+        "E": "用虚拟数据预览性能页顶部看板的各种状态，只影响显示，不影响实际记录与统计。重启后恢复默认。",
+        "Off": "默认",
+        "Empty": "无数据",
+        "Ample": "充裕",
+        "Moderate": "适中",
+        "Tight": "偏紧",
+        "Overloaded": "超载",
+        "Previous": "设置变更前"
       },
       "DelayWaiting":
       {

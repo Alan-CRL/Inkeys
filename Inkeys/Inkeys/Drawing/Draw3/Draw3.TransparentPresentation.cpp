@@ -489,6 +489,9 @@ namespace Inkeys::Drawing::Draw3
 			UlwReadbackPacing pacing;
 			UlwCommitPlanner planner;
 			PipelineSummary pipelineSummary;
+			// 成功的 UpdateLayeredWindow 次数与最近一次的完成时刻（单调递增，Reset 不清零），供设备性能统计按刷新周期计数
+			std::uint64_t completedUpdates = 0;
+			double lastUpdateMs = 0.0;
 
 			ID3D11Texture2D* SlotTexture(int slot) const noexcept
 			{
@@ -959,7 +962,8 @@ namespace Inkeys::Drawing::Draw3
 				const ULONGLONG ulwStartedTick = inspectPixels ? GetTickCount64() : 0;
 				const BOOL updated = UpdateLayeredWindowIndirect(window, &update);
 				const DWORD error = updated ? ERROR_SUCCESS : GetLastError(); // 日志前锁存本次 API 错误。
-				completion.ulwMs = QpcMilliseconds() - rowsFinishedMs;
+				const double ulwFinishedMs = QpcMilliseconds();
+				completion.ulwMs = ulwFinishedMs - rowsFinishedMs;
 				if (inspectPixels) LogPixelDiagnostic(*pixels, diagnosticTick, dirty, presentFull, updated, error,
 					mappedMs - issuedMs, completion.mapWaitMs, CompletionPointName(point),
 					rowsFinishedTick - diagnosticTick, GetTickCount64() - ulwStartedTick);
@@ -970,6 +974,8 @@ namespace Inkeys::Drawing::Draw3
 						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
 					return completion;
 				}
+				++completedUpdates;
+				lastUpdateMs = ulwFinishedMs;
 				if (!presentSuccessLogged || presentFailureLogged)
 				{
 					LogPresentEvent(presentFailureLogged ? "recovery" : "success", dirty, presentFull);
@@ -1412,6 +1418,13 @@ namespace Inkeys::Drawing::Draw3
 		double compositionRefreshMs = kFrameLatencyDefaultRefreshMs;
 		double frameLatencyTargetMs = 1000.0 / 120.0;
 		FrameLatencyWaitReport presentLatencyWait;
+		// 设备性能统计：DComp 成功 Present1 次数与最近一次返回时刻；每次 Present1 后插入的 GPU 完成查询；DWM 合成时序采样缓存。
+		std::uint64_t dcompPresents = 0;
+		double lastDcompPresentMs = 0.0;
+		Microsoft::WRL::ComPtr<ID3D11Query> gpuIdleQuery;
+		bool gpuIdleQueryIssued = false;
+		double displayTimingSampleMs = 0.0;
+		CompositionTimingSample displayTiming;
 		struct FrameLatencySummary
 		{
 			double startMs = 0.0, waitSumMs = 0.0, waitMaxMs = 0.0;
@@ -1716,6 +1729,8 @@ namespace Inkeys::Drawing::Draw3
 
 		bool ReleaseAttempt()
 		{
+			gpuIdleQuery.Reset(); // 查询属于旧设备，换设备后重新创建
+			gpuIdleQueryIssued = false;
 			const bool retired = ResetPresenters();
 			if (renderer) renderer->ReleaseResources();
 			CloseFrameLatencyHandle();
@@ -1989,8 +2004,10 @@ namespace Inkeys::Drawing::Draw3
 			// 帧循环外的呈现（清屏、整帧等）没有令牌时先补等一次，不绕过排队上限；超时照常 Present。
 			if (frameLatencyWaitHandle && frameLatencyGate.NeedsWaitBeforePresent())
 			{
+				const bool gpuIdle = PreviousFrameGpuIdle();
 				const FrameLatencyWaitResult waited = WaitFrameLatency(FrameLatencyTimeoutPolicy::Neutral);
 				presentLatencyWait.waitedMs += waited.waitedMs;
+				if (gpuIdle) presentLatencyWait.pacingWaitMs += waited.waitedMs;
 				if (waited.outcome == FrameLatencyWaitOutcome::Signaled)
 					presentLatencyWait.state = FrameLatencyWaitState::Signaled;
 				else if (waited.outcome == FrameLatencyWaitOutcome::TimedOut)
@@ -2002,7 +2019,34 @@ namespace Inkeys::Drawing::Draw3
 			const HRESULT result = swapChain->Present1(0, 0, &parameters);
 			// 只有实际调用且成功的 Present1 才消耗令牌；上面的空矩形早退不算。
 			frameLatencyGate.OnPresentCalled(SUCCEEDED(result));
+			if (SUCCEEDED(result))
+			{
+				++dcompPresents;
+				lastDcompPresentMs = QpcMilliseconds();
+				IssueGpuIdleQuery();
+			}
 			return result;
+		}
+
+		// Present1 之后插入事件查询：下一次 waitable 等待前查询是否已完成，区分“等 GPU”与“等显示节拍”。
+		// 创建失败时不插入，之后的等待按显示节拍处理（与引入查询前的口径一致）。
+		void IssueGpuIdleQuery() noexcept
+		{
+			if (!graphics || !graphics->device || !graphics->context) return;
+			if (!gpuIdleQuery)
+			{
+				const D3D11_QUERY_DESC description = { D3D11_QUERY_EVENT, 0 };
+				if (FAILED(graphics->device->CreateQuery(&description, gpuIdleQuery.GetAddressOf()))) return;
+			}
+			graphics->context->End(gpuIdleQuery.Get());
+			gpuIdleQueryIssued = true;
+		}
+
+		// 不等待、不 Flush：上一次 Present1 之前提交的 GPU 工作是否已全部完成。
+		bool PreviousFrameGpuIdle() noexcept
+		{
+			if (!gpuIdleQueryIssued || !gpuIdleQuery || !graphics || !graphics->context) return true;
+			return graphics->context->GetData(gpuIdleQuery.Get(), nullptr, 0, D3D11_ASYNC_GETDATA_DONOTFLUSH) == S_OK;
 		}
 	};
 
@@ -2403,9 +2447,11 @@ namespace Inkeys::Drawing::Draw3
 		// 窗口隐藏/最小化或输出交接屏障未完成时句柄可能长期不发信号：超时只计统计，不参与熔断。
 		const bool countable = countsTowardTrip && impl_->dcompHandoffBarrier.pendingOutputRevision == 0 &&
 			IsWindowVisible(impl_->primaryWindow) && !IsIconic(impl_->primaryWindow);
+		const bool gpuIdle = impl_->PreviousFrameGpuIdle();
 		const FrameLatencyWaitResult result = impl_->WaitFrameLatency(
 			countable ? FrameLatencyTimeoutPolicy::Count : FrameLatencyTimeoutPolicy::Exclude);
 		report.waitedMs = result.waitedMs;
+		if (gpuIdle) report.pacingWaitMs = result.waitedMs;
 		report.timedOut = result.outcome == FrameLatencyWaitOutcome::TimedOut;
 		report.state = result.outcome == FrameLatencyWaitOutcome::Signaled
 			? FrameLatencyWaitState::Signaled : FrameLatencyWaitState::TimedOut;
@@ -2490,6 +2536,38 @@ namespace Inkeys::Drawing::Draw3
 		impl_->SyncUlwFuse();
 		if (report.failed) impl_->SetFailure(E_FAIL);
 		return report;
+	}
+
+	std::uint64_t TransparentPresentationController::CommittedPresentCount() const noexcept
+	{
+		if (!impl_) return 0;
+		return impl_->dcompPresents + impl_->primaryUlwPresenter.completedUpdates + impl_->selectionUlwPresenter.completedUpdates;
+	}
+
+	double TransparentPresentationController::LastCommittedPresentMs() const noexcept
+	{
+		if (!impl_) return 0.0;
+		return (std::max)({ impl_->lastDcompPresentMs, impl_->primaryUlwPresenter.lastUpdateMs,
+			impl_->selectionUlwPresenter.lastUpdateMs });
+	}
+
+	CompositionTimingSample TransparentPresentationController::SampleDisplayTiming(double nowMs) noexcept
+	{
+		if (!impl_) return {};
+		Impl& impl = *impl_;
+		// 约每 250 ms 读一次 DWM 合成时序（与 CompositionClock 同频），不逐帧调用 DWM。
+		if (impl.displayTimingSampleMs > 0.0 && nowMs >= impl.displayTimingSampleMs &&
+			nowMs - impl.displayTimingSampleMs < kCompositionClockRereadMs)
+			return impl.displayTiming;
+		impl.displayTimingSampleMs = nowMs;
+		impl.displayTiming = {};
+		BOOL composing = FALSE;
+		if (FAILED(DwmIsCompositionEnabled(&composing)) || !composing) return impl.displayTiming;
+		const CompositionTimingSample sample = Impl::SampleCompositionTiming();
+		if (sample.valid && std::isfinite(sample.vblankMs) && sample.periodMs >= kCompositionClockMinPeriodMs &&
+			sample.periodMs <= kCompositionClockMaxPeriodMs)
+			impl.displayTiming = sample;
+		return impl.displayTiming;
 	}
 
 	double TransparentPresentationController::UlwFramePhaseAdjustMs(double frameStartMs) const

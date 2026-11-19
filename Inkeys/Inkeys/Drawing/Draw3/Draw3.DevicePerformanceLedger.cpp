@@ -136,12 +136,12 @@ namespace Inkeys::Drawing::Draw3
 		catch (...) {}
 	}
 
-	void DevicePerformanceLedger::Submit(const Signature& signature, const Counters& counters,
+	void DevicePerformanceLedger::Submit(const Signature& signature, const Tally& tally,
 		std::uint64_t segmentEpoch) noexcept
 	{
 		// 移交发生在进入空闲等待前：绘制已停，写盘线程可以落盘。
 		busy_.store(false, std::memory_order_relaxed);
-		if (counters[0].frames == 0)
+		if (tally.counters[0].frames == 0) // 没有渲染帧的段（只有静止接触的计算帧）不入账
 		{
 			// 在锁内通知：写盘线程在“检查忙碌”与“进入等待”之间持锁，锁外通知可能丢失。
 			std::scoped_lock lock(mutex_);
@@ -156,7 +156,7 @@ namespace Inkeys::Drawing::Draw3
 			// 锁内复查：移交途中关闭了记录，或段开始后用户清除了数据，都整段丢弃。
 			if (!recordingEnabled_.load(std::memory_order_relaxed)) return;
 			if (segmentEpoch != kAnyEpoch && segmentEpoch != clearEpoch_) return;
-			if (!MergeTally(store_, signature, date, now, counters)) return;
+			if (!MergeTally(store_, signature, date, now, tally.counters, tally.display)) return;
 			RebuildReportLocked();
 			MarkDirtyLocked();
 		}
@@ -165,15 +165,6 @@ namespace Inkeys::Drawing::Draw3
 			// 只在空闲时调用；分配失败等异常丢弃本段，绘制线程不受影响。
 			DiagnosticOutput::Text(DiagnosticOutput::OutWarn, "[Draw3.DevicePerformance] submit dropped a segment\n");
 		}
-	}
-
-	void DevicePerformanceLedger::SetDisplayRefreshHz(std::uint32_t refreshHz) noexcept
-	{
-		std::scoped_lock lock(mutex_);
-		if (displayRefreshHz_ == refreshHz) return;
-		displayRefreshHz_ = refreshHz;
-		try { RebuildReportLocked(); }
-		catch (...) {}
 	}
 
 	void DevicePerformanceLedger::SetRecordingEnabled(bool enabled) noexcept
@@ -235,8 +226,6 @@ namespace Inkeys::Drawing::Draw3
 	{
 		Report next = BuildReport(store_, currentSignature_ ? &*currentSignature_ : nullptr);
 		next.recordingEnabled = recordingEnabled_.load(std::memory_order_relaxed);
-		next.displayRefreshHz = displayRefreshHz_;
-		next.sessionFrameRate = currentSignature_ ? currentSignature_->frameRate : 0;
 		next.revision = ++revision_;
 		report_ = next;
 	}

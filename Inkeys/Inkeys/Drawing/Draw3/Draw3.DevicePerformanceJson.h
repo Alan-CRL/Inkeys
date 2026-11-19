@@ -15,32 +15,78 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 	// device-performance.json 的序列化与解析（jsoncpp）。纯内存字符串进出，文件 I/O 由账本负责，
 	// 便于单测覆盖往返、坏文件与单桶非法字段。
 	inline constexpr const char* kFileSchema = "inkeys.device-performance";
-	inline constexpr int kFileVersion = 1;
+	inline constexpr int kFileVersion = 4; // 4：渲染帧按 DWM 合成周期计数、去掉限制间隔，不兼容 1–3
 	inline constexpr std::array<const char*, kCounterCount> kCounterNames =
 		{ "all", "writing", "highlighter", "eraser", "laser", "shape", "pan" };
 
 	namespace Detail
 	{
+		// 计数器按字段顺序写成数组：[frames, costMs, timedFrames, displayedFrames, intervalMs,
+		// missed, computeFrames, computeIntervalMs]。
 		inline Json::Value CounterToJson(const Counter& counter)
 		{
 			Json::Value value(Json::arrayValue);
 			value.append(Json::Value(static_cast<Json::UInt64>(counter.frames)));
-			value.append(Json::Value(counter.workMs));
-			value.append(Json::Value(static_cast<Json::UInt64>(counter.overBudget)));
+			value.append(Json::Value(counter.costMs));
+			value.append(Json::Value(static_cast<Json::UInt64>(counter.timedFrames)));
+			value.append(Json::Value(static_cast<Json::UInt64>(counter.displayedFrames)));
+			value.append(Json::Value(counter.intervalMs));
+			value.append(Json::Value(static_cast<Json::UInt64>(counter.missed)));
+			value.append(Json::Value(static_cast<Json::UInt64>(counter.computeFrames)));
+			value.append(Json::Value(counter.computeIntervalMs));
 			return value;
 		}
 
 		inline bool CounterFromJson(const Json::Value& value, Counter& out)
 		{
-			if (!value.isArray() || value.size() != 3) return false;
-			if (!value[0u].isUInt64() || !value[1u].isNumeric() || !value[2u].isUInt64()) return false;
+			if (!value.isArray() || value.size() != 8) return false;
+			for (const Json::ArrayIndex i : { 0u, 2u, 3u, 5u, 6u })
+				if (!value[i].isUInt64()) return false;
+			for (const Json::ArrayIndex i : { 1u, 4u, 7u })
+				if (!value[i].isNumeric()) return false;
 			Counter counter;
 			counter.frames = value[0u].asUInt64();
-			counter.workMs = value[1u].asDouble();
-			counter.overBudget = value[2u].asUInt64();
-			if (!std::isfinite(counter.workMs) || counter.workMs < 0.0 || counter.overBudget > counter.frames) return false;
-			if (counter.frames == 0 && counter.workMs != 0.0) return false;
+			counter.costMs = value[1u].asDouble();
+			counter.timedFrames = value[2u].asUInt64();
+			counter.displayedFrames = value[3u].asUInt64();
+			counter.intervalMs = value[4u].asDouble();
+			counter.missed = value[5u].asUInt64();
+			counter.computeFrames = value[6u].asUInt64();
+			counter.computeIntervalMs = value[7u].asDouble();
+			for (const double ms : { counter.costMs, counter.intervalMs, counter.computeIntervalMs })
+				if (!std::isfinite(ms) || ms < 0.0) return false;
+			if (counter.timedFrames > counter.frames || counter.displayedFrames > counter.timedFrames ||
+				counter.missed > counter.timedFrames) return false;
+			if (counter.frames == 0 && counter.costMs != 0.0) return false;
+			if (counter.timedFrames == 0 && counter.intervalMs != 0.0) return false;
+			if (counter.computeFrames == 0 && counter.computeIntervalMs != 0.0) return false;
 			out = counter;
+			return true;
+		}
+
+		inline Json::Value DisplayToJson(const DisplayRange& display)
+		{
+			Json::Value value(Json::arrayValue);
+			value.append(Json::Value(static_cast<int>(display.minHz)));
+			value.append(Json::Value(static_cast<int>(display.maxHz)));
+			return value;
+		}
+
+		// [0, 0] 表示未测到；否则必须是合理范围内的 [min, max]。
+		inline bool DisplayFromJson(const Json::Value& value, DisplayRange& out)
+		{
+			if (!value.isArray() || value.size() != 2 || !value[0u].isInt() || !value[1u].isInt()) return false;
+			const int minHz = value[0u].asInt(), maxHz = value[1u].asInt();
+			DisplayRange display;
+			if (minHz == 0 && maxHz == 0)
+			{
+				out = display;
+				return true;
+			}
+			if (minHz < kMinDisplayHz || maxHz > kMaxDisplayHz || minHz > maxHz) return false;
+			display.minHz = static_cast<std::uint16_t>(minHz);
+			display.maxHz = static_cast<std::uint16_t>(maxHz);
+			out = display;
 			return true;
 		}
 
@@ -100,6 +146,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 				Json::Value bucket(Json::objectValue);
 				bucket["date"] = static_cast<int>(day.date);
 				bucket["updated"] = static_cast<Json::Int64>(day.updatedUnixSeconds);
+				bucket["display"] = Detail::DisplayToJson(day.display);
 				for (std::size_t i = 0; i < kCounterCount; ++i)
 					bucket[kCounterNames[i]] = Detail::CounterToJson(day.counters[i]);
 				days.append(bucket);
@@ -170,13 +217,14 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 				{
 					day.date = bucket["date"].asInt();
 					day.updatedUnixSeconds = bucket["updated"].asInt64();
-					valid = IsValidDate(day.date);
+					valid = IsValidDate(day.date) && Detail::DisplayFromJson(bucket["display"], day.display);
 				}
 				for (std::size_t i = 0; valid && i < kCounterCount; ++i)
 					valid = Detail::CounterFromJson(bucket[kCounterNames[i]], day.counters[i]);
 				// 维度计数不能超过总体（总体每帧只计一次）。
 				for (std::size_t i = 1; valid && i < kCounterCount; ++i)
-					valid = day.counters[i].frames <= day.counters[0].frames;
+					valid = day.counters[i].frames <= day.counters[0].frames &&
+						day.counters[i].computeFrames <= day.counters[0].computeFrames;
 				if (!valid || day.counters[0].frames == 0)
 				{
 					++dropped;

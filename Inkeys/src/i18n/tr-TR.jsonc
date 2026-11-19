@@ -1068,16 +1068,12 @@
         "Expand": "Ayrıntılar",
         "Collapse": "Daralt",
         "LoadLabel": "Ortalama yük",
-        "UnlimitedFormat": "Sınırsız kare hızı yaklaşık {0} FPS · {1} FPS'de ölçüldü",
+        "RenderFpsFormat": "Ortalama işleme kare hızı yaklaşık {0} FPS",
+        "SecondaryFpsFormat": "Hesaplama kare hızı yaklaşık {0} FPS · Sınırsız işleme kare hızı yaklaşık {1} FPS",
+        "DisplayLimitFormat": "Geçerli ekran kare hızını {0} FPS ile sınırlıyor",
         "EmptyHint": "Birkaç çizgi çizdikten sonra burada bu cihazın tuvali ne kadar rahat çizdiği gösterilir.",
         "PreviousTag": "Ayar değişikliğinden önce",
         "PausedTag": "Kayıt duraklatıldı",
-        "LowSample": "Az örnek, yalnızca fikir verir",
-        "LowSampleShort": "Az örnek",
-        "EvaluatedFormat": "Değerlendirme: {0}",
-        "RangeFormat": "Son {0} kullanım günü ({1} - {2})",
-        "RangeSingleFormat": "Son kullanım günü ({0})",
-        "CoverageFormat": "Kapsanan: {0}",
         "NoDimensionData": "Henüz veri yok",
         "DimensionFpsFormat": "Yaklaşık {0} FPS",
         "Level":
@@ -1094,19 +1090,6 @@
           "Tight": "Cihaz yükü yüksek; karmaşık sahnelerde ara sıra kare düşebilir.",
           "Overloaded": "Cihaz mevcut kare hızına yetişemiyor; yazarken takılma veya gecikme olabilir."
         },
-        "Advice":
-        {
-          "Lower": "Tuval kare hızını {0} FPS'ye düşürmeniz önerilir (tahmini yük yaklaşık %{1}).",
-          "LowestHeavy": "En düşük kare hızı bile zorlayıcı. Donanım hızlandırmanın açık olduğundan emin olun veya GPU kullanan programları kapatın.",
-          "LowerToMatch": "Tuval kare hızını ekranla aynı olan {0} FPS'ye düşürmeniz önerilir.",
-          "Raise": "Tuval kare hızını {0} FPS'ye yükseltebilirsiniz (tahmini yük yaklaşık %{1}). Ekranın {2} Hz değeriyle eşleştiğinde yazım en akıcı olur.",
-          "MatchedCanRaise": "Mevcut kare hızı ekran yenileme hızıyla ({0} Hz) aynı. Cihazda yeterli pay var, {1} FPS'ye de çıkabilirsiniz: görüntü daha akıcı olmaz ama mürekkep daha hassas ve pürüzsüz olur.",
-          "AboveRefresh": "Mevcut kare hızı ekran yenileme hızından ({0} Hz) yüksek. Görüntü daha akıcı olmaz ama mürekkep daha hassas ve pürüzsüz olur; cihaz yükü bu ayarı korumaya izin veriyor.",
-          "Fine": "Mevcut tuval kare hızı ayarı uygun.",
-          "Stutter": "Ortalama yük yüksek değil, ancak karelerin yaklaşık %{0} kadarı kare süresini aşıyor; ara sıra takılma olabilir.",
-          "RestartPending": "Tuval kare hızı {0} FPS olarak değiştirildi. Yeniden başlatınca geçerli olur ve veriler yeniden toplanır.",
-          "Previous": "Bu veriler ayar değişikliğinden öncesine ait; mevcut ayarların verileri hâlâ toplanıyor."
-        },
         "Dimension":
         {
           "Writing": "Yazma",
@@ -1118,8 +1101,7 @@
         },
         "Recording":
         {
-          "N": "Cihaz performans verilerini kaydet",
-          "E": "Yalnızca çizim süresi gibi istatistikler kaydedilir; bu cihazda saklanır ve karşıya yüklenmez."
+          "N": "Cihaz performans verilerini kaydet"
         },
         "Clear": "Verileri temizle",
         "ClearConfirm": "Onayla"
@@ -1457,6 +1439,18 @@
       {
         "N": "Tuval hata ayıklama",
         "E": "Tuvalin altında kare hızını, donanım yükünü ve giriş noktası bilgilerini gösterir; ana çubuğa görsel hata ayıklama düğmesi ekler."
+      },
+      "PerformancePreview":
+      {
+        "N": "Performans panosu önizlemesi",
+        "E": "Performans sayfasının üstündeki panonun durumlarını sanal verilerle önizler. Yalnızca görünüm değişir; gerçek kayıt ve istatistikler etkilenmez. Yeniden başlatınca Varsayılan değerine döner.",
+        "Off": "Varsayılan",
+        "Empty": "Henüz veri yok",
+        "Ample": "Rahat",
+        "Moderate": "Orta",
+        "Tight": "Sıkışık",
+        "Overloaded": "Aşırı yük",
+        "Previous": "Ayar değişikliğinden önce"
       },
       "DelayWaiting":
       {

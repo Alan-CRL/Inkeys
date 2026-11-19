@@ -114,13 +114,26 @@ namespace
 	{
 		Overlay overlay;
 		overlay.Update(Params(1000.0));
-		for (int i = 0; i < 30; ++i) overlay.OnFrame(2.0, true);
-		for (int i = 0; i < 5; ++i) overlay.OnFrame(50.0, false); // 调试自刷新帧不计入。
+		for (int i = 0; i < 30; ++i) overlay.OnFrame(2.0, true, true, true, i < 15 ? 120 : 60);
+		for (int i = 0; i < 10; ++i) overlay.OnFrame(2.0, true, false, true, 60); // ULW 节流合并：画了但没提交。
+		for (int i = 0; i < 5; ++i) overlay.OnFrame(50.0, false, false, false, 0); // 调试自刷新帧不计入。
 		const RECT dirty = overlay.Update(Params(1500.0));
 		const PerformanceSnapshot shot = overlay.Performance();
-		check(std::abs(shot.fps - 60.0) < 0.01, "current fps is frames over the window");
-		check(std::abs(shot.unlimitedFps - 500.0) < 0.01, "unlimited fps excludes pacing waits");
-		check(std::abs(shot.loadPercent - 12.0) < 0.01, "frame load is work time over the target interval");
+		check(std::abs(shot.fps - 60.0) < 0.01, "render fps counts displayed frames over the window");
+		check(std::abs(shot.computeFps - 80.0) < 0.01, "compute fps counts paced frame loops");
+		check(std::abs(shot.unlimitedFps - 500.0) < 0.01, "unlimited render fps uses cost of rendered frames");
+		check(std::abs(shot.loadPercent - 12.0) < 0.01, "frame load is cost over the limit interval");
+		check(shot.displayMinHz == 60 && shot.displayMaxHz == 120, "display range within the window");
+		{
+			// 画布帧率高于刷新率：0.5 s 内提交 120 帧（240/s），显示器 120 Hz，只有一半落进新合成周期。
+			Overlay fast;
+			fast.Update(Params(1000.0));
+			for (int i = 0; i < 120; ++i) fast.OnFrame(1.0, true, i % 2 == 0, true, 120);
+			fast.Update(Params(1500.0));
+			const PerformanceSnapshot shown = fast.Performance();
+			check(std::abs(shown.fps - 120.0) < 0.01 && std::abs(shown.computeFps - 240.0) < 0.01,
+				"render fps counts refresh periods while compute runs faster");
+		}
 		check(shot.chartCount == 1 && !Empty(dirty), "a changed snapshot extends the chart and dirties the plate");
 		// 空闲画布：数值与曲线稳定（曲线满 120 点且全为 0）后不再产生脏区。
 		int stableFrames = 0;

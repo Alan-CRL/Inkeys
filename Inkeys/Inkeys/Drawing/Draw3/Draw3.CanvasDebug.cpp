@@ -362,7 +362,7 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 		{
 			int y = m.padding;
 			y += m.lineHeight + m.gap;            // 标题
-			y += 3 * m.lineHeight + m.gap;        // 性能三行（含输入通路）
+			y += 4 * m.lineHeight + m.gap;        // 性能四行（含输入通路）
 			y += m.chartHeight + m.gap;           // 曲线
 			if (rows > 0)
 			{
@@ -657,11 +657,18 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 		return false;
 	}
 
-	void Overlay::OnFrame(double workMs, bool counted) noexcept
+	void Overlay::OnFrame(double costMs, bool rendered, bool displayed, bool paced, int displayHz) noexcept
 	{
-		if (!counted || !std::isfinite(workMs) || workMs < 0.0) return;
+		if (paced) ++computeCount_;
+		if (displayHz > 0)
+		{
+			windowDisplayMinHz_ = windowDisplayMinHz_ == 0 ? displayHz : std::min(windowDisplayMinHz_, displayHz);
+			windowDisplayMaxHz_ = std::max(windowDisplayMaxHz_, displayHz);
+		}
+		if (!rendered || !std::isfinite(costMs) || costMs < 0.0) return;
 		++frameCount_;
-		workSumMs_ += workMs;
+		if (displayed) ++displayedCount_;
+		costSumMs_ += costMs;
 	}
 
 	bool Overlay::ConsumePlateUpload() noexcept
@@ -750,12 +757,16 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 		if (elapsedMs < kSnapshotIntervalMs) return;
 
 		const double seconds = elapsedMs / 1000.0;
-		fps_ = static_cast<double>(frameCount_) / seconds;
-		unlimitedFps_ = (frameCount_ > 0 && workSumMs_ > 0.0)
-			? static_cast<double>(frameCount_) / (workSumMs_ / 1000.0) : 0.0;
+		fps_ = static_cast<double>(displayedCount_) / seconds;
+		computeFps_ = static_cast<double>(computeCount_) / seconds;
+		unlimitedFps_ = (frameCount_ > 0 && costSumMs_ > 0.0)
+			? static_cast<double>(frameCount_) / (costSumMs_ / 1000.0) : 0.0;
+		// 与设备性能看板一致：耗时按画布帧间隔计（帧循环按画布帧率推进，显示器不放宽预算）。
 		const double interval = targetFps > 0.0 ? 1000.0 / targetFps : 1000.0 / 60.0;
 		loadPercent_ = frameCount_ > 0
-			? (workSumMs_ / static_cast<double>(frameCount_)) / interval * 100.0 : 0.0;
+			? (costSumMs_ / static_cast<double>(frameCount_)) / interval * 100.0 : 0.0;
+		displayMinHz_ = windowDisplayMinHz_;
+		displayMaxHz_ = windowDisplayMaxHz_;
 		sampleCpu();
 
 		// 长时间被阻塞（没有调用）时按 0.5s 补足样本，保持曲线横轴等于真实时间。
@@ -772,11 +783,16 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 		}
 		windowStartMs_ = nowMs;
 		frameCount_ = 0;
-		workSumMs_ = 0.0;
+		displayedCount_ = 0;
+		computeCount_ = 0;
+		costSumMs_ = 0.0;
+		windowDisplayMinHz_ = 0;
+		windowDisplayMaxHz_ = 0;
 		// 只有显示精度（0.1）内的数值或曲线真的变化时才需要重绘板子。
-		const std::array<long, 4> shown = {
+		const std::array<long, 7> shown = {
 			std::lround(std::min(fps_, 99999.9) * 10.0), std::lround(std::min(unlimitedFps_, 99999.9) * 10.0),
-			std::lround(std::min(loadPercent_, 999.9) * 10.0), std::lround(std::min(cpuPercent_, 999.9) * 10.0) };
+			std::lround(std::min(loadPercent_, 999.9) * 10.0), std::lround(std::min(cpuPercent_, 999.9) * 10.0),
+			std::lround(std::min(computeFps_, 99999.9) * 10.0), displayMinHz_, displayMaxHz_ };
 		if (shown != shownPerf_ || chartCount_ != shownChartCount_ || chart_ != shownChart_)
 		{
 			shownPerf_ = shown;
@@ -820,12 +836,26 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 		y += m.lineHeight + m.gap;
 
 		char text[64];
-		// 两行性能数据：固定列起点 0/4/14/24，数值右对齐，位数变化不错位。
+		// 三行性能数据：固定列起点 0/4/14/24，数值右对齐，位数变化不错位。
 		std::snprintf(text, sizeof(text), "%7.1f", std::min(fps_, 99999.9));
 		DrawGlyphs(surface, coverage, cw, ch, left, y, "FPS", kDim);
 		DrawGlyphs(surface, coverage, cw, ch, left + 4 * cw, y, text, kText);
 		DrawGlyphs(surface, coverage, cw, ch, left + 14 * cw, y, "Unlimited", kDim);
 		std::snprintf(text, sizeof(text), "%8.1f", std::min(unlimitedFps_, 99999.9));
+		DrawGlyphs(surface, coverage, cw, ch, left + 24 * cw, y, text, kText);
+		y += m.lineHeight;
+		// 计算帧率（帧循环推进速度）与窗口内测得的显示器刷新率范围。
+		std::snprintf(text, sizeof(text), "%7.1f", std::min(computeFps_, 99999.9));
+		DrawGlyphs(surface, coverage, cw, ch, left, y, "Calc", kDim);
+		DrawGlyphs(surface, coverage, cw, ch, left + 4 * cw, y, text, kText);
+		DrawGlyphs(surface, coverage, cw, ch, left + 14 * cw, y, "Display", kDim);
+		{
+			char range[24];
+			if (displayMinHz_ <= 0) std::snprintf(range, sizeof(range), "--");
+			else if (displayMinHz_ == displayMaxHz_) std::snprintf(range, sizeof(range), "%dHz", displayMinHz_);
+			else std::snprintf(range, sizeof(range), "%d-%dHz", displayMinHz_, displayMaxHz_);
+			std::snprintf(text, sizeof(text), "%8s", range);
+		}
 		DrawGlyphs(surface, coverage, cw, ch, left + 24 * cw, y, text, kText);
 		y += m.lineHeight;
 		DrawGlyphs(surface, coverage, cw, ch, left, y, "Load", kDim);

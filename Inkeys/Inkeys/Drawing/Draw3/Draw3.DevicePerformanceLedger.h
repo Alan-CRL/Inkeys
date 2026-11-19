@@ -43,10 +43,8 @@ namespace Inkeys::Drawing::Draw3
 			return clearEpochPublished_.load(std::memory_order_relaxed);
 		}
 		// 绘制线程：空闲移交一段累加结果（同时清除忙碌标志）。锁内复查记录开关与清除代次。任何异常都只丢弃本段。
-		void Submit(const DevicePerformance::Signature& signature, const DevicePerformance::Counters& counters,
+		void Submit(const DevicePerformance::Signature& signature, const DevicePerformance::Tally& tally,
 			std::uint64_t segmentEpoch = kAnyEpoch) noexcept;
-		// 当前会话画布显示器模式刷新率（Hz，0 = 未知），只进报告不入盘。
-		void SetDisplayRefreshHz(std::uint32_t refreshHz) noexcept;
 		void SetRecordingEnabled(bool enabled) noexcept;
 		bool RecordingEnabled() const noexcept { return recordingEnabled_.load(std::memory_order_relaxed); }
 		// 清空内存数据并删除文件（写盘线程执行删除）。
@@ -71,7 +69,6 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<DevicePerformance::Signature> currentSignature_;
 		DevicePerformance::Report report_;
 		std::uint64_t revision_ = 1;
-		std::uint32_t displayRefreshHz_ = 0;
 		bool dirty_ = false;
 		std::int64_t lastWriteMs_ = (std::numeric_limits<std::int64_t>::min)() / 2; // 首次空闲立即可写
 		bool deleteFilePending_ = false;

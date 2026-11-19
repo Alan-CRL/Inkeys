@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include "Draw3.CompositionClock.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -12,8 +14,14 @@
 namespace Inkeys::Drawing::Draw3::DevicePerformance
 {
 	// 设备性能看板的纯逻辑：维度划分、逐帧累加、按“设置签名 × 本地日”分桶、最近 7 个使用日汇总、
-	// 档位与帧率建议。不依赖 Windows/D3D/模块，单测直接包含。工作耗时口径与画布调试一致：
-	// 帧耗时扣除帧延迟等待与等 GPU（由调用方传入扣除后的值）。
+	// 档位。不依赖 Windows/D3D/模块，单测直接包含。三个帧率口径（由调用方逐帧量好传入，与画布调试一致）：
+	// - 计算帧率：帧循环推进的速度（含无脏区、不 Present 的帧），帧间隔 = 相邻两轮帧循环的开始时刻之差；
+	// - 渲染帧率：有脏区的帧里，真正提交（DComp Present1 / ULW UpdateLayeredWindow）且落进一个新 DWM 合成周期的帧数，
+	//   按这些帧的帧间隔计。DComp 以 SyncInterval 0 提交，画布帧率高于刷新率时帧循环与 Present1 都按画布帧率跑，
+	//   同一合成周期内的多次提交 DWM 只显示最新一帧，所以按合成周期计数（RefreshSlotCounter），不按提交次数；
+	// - 无限制渲染帧率：整帧耗时只扣除人为等待（帧率等待、DWM 对齐、上一帧 GPU 已完成时的 waitable 显示节拍），
+	//   等 GPU 的时间保留，表示拿掉这些限制后整帧能跑到的帧率。
+	// 负载百分比只衡量设备能否按画布帧率推进帧循环（见 MakeFigure）；渲染帧率另含显示器与呈现同步的损失，只用于显示。
 	inline constexpr std::size_t kDimensionCount = 6;
 	inline constexpr std::size_t kCounterCount = kDimensionCount + 1; // [0] 总体，[1..6] 各维度
 	inline constexpr std::size_t kMaxUsageDays = 7;
@@ -23,16 +31,18 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 	// 样本较少的提示阈值：总体约 5 s、单维度约 1 s（@120 FPS）。
 	inline constexpr std::uint64_t kLowSampleOverallFrames = 600;
 	inline constexpr std::uint64_t kLowSampleDimensionFrames = 120;
-	// 档位阈值（负载百分比）与超时帧修正。
+	// 档位阈值（负载百分比）与掉帧修正。
 	inline constexpr double kAmpleBelowPercent = 50.0;
 	inline constexpr double kModerateBelowPercent = 80.0;
 	inline constexpr double kTightBelowPercent = 100.0;
-	inline constexpr double kStutterOverBudgetRatio = 0.10;
-	// 帧率建议的预计负载上限：降低时的目标、升高时留余量、已匹配后的“可选更高”。
-	inline constexpr double kLowerTargetPercent = 80.0;
-	inline constexpr double kRaiseMaxPercent = 70.0;
-	inline constexpr double kOptionalRaiseMaxPercent = 50.0;
-	inline constexpr std::array<int, 4> kFrameRatePresets = { 30, 60, 120, 240 };
+	inline constexpr double kStutterOverBudgetRatio = 0.10; // 掉帧占比超过它时至少为“偏紧”
+	// 帧间隔超过画布帧间隔的这个倍数记为掉帧（吸收计时器过冲与 DWM 对齐的相位微调）。
+	inline constexpr double kMissedIntervalRatio = 1.5;
+	// 计算帧率低于画布帧率超过 3%（缺口占比 > 103%）才算帧循环跟不上：吸收 Sleep 过冲的误差。
+	inline constexpr double kComputeDeficitPercent = 103.0;
+	// 显示器刷新率的合理范围（Hz），之外视为采样无效。
+	inline constexpr int kMinDisplayHz = 10;
+	inline constexpr int kMaxDisplayHz = 1000;
 
 	enum class Dimension : std::uint8_t { Writing, Highlighter, Eraser, Laser, Shape, Pan };
 
@@ -66,15 +76,25 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 
 	struct Counter
 	{
-		std::uint64_t frames = 0;
-		double workMs = 0.0;
-		std::uint64_t overBudget = 0;
+		std::uint64_t frames = 0;          // 渲染帧：有脏区且 Present 成功（ULW 节流合并跳过的帧也算，它照常画进了纹理）
+		double costMs = 0.0;               // 渲染帧的无限制渲染耗时之和
+		std::uint64_t timedFrames = 0;     // 渲染帧中帧间隔有效的帧
+		std::uint64_t displayedFrames = 0; // timedFrames 中提交落进新 DWM 合成周期的帧（实际上屏的帧）
+		double intervalMs = 0.0;           // timedFrames 的帧间隔之和
+		std::uint64_t missed = 0;          // timedFrames 中掉帧（帧间隔 > 1.5 × 画布帧间隔）的帧
+		std::uint64_t computeFrames = 0;   // 帧间隔有效的计算帧（含无脏区帧）
+		double computeIntervalMs = 0.0;
 
 		void Merge(const Counter& other) noexcept
 		{
 			frames += other.frames;
-			workMs += other.workMs;
-			overBudget += other.overBudget;
+			costMs += other.costMs;
+			timedFrames += other.timedFrames;
+			displayedFrames += other.displayedFrames;
+			intervalMs += other.intervalMs;
+			missed += other.missed;
+			computeFrames += other.computeFrames;
+			computeIntervalMs += other.computeIntervalMs;
 		}
 		bool operator==(const Counter&) const = default;
 	};
@@ -86,26 +106,111 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		for (std::size_t i = 0; i < kCounterCount; ++i) into[i].Merge(from[i]);
 	}
 
+	// 计数期间测得的显示器刷新率范围（整数 Hz），0 = 未测到。
+	struct DisplayRange
+	{
+		std::uint16_t minHz = 0;
+		std::uint16_t maxHz = 0;
+
+		bool Valid() const noexcept { return minHz > 0 && maxHz >= minHz; }
+		void Observe(int hz) noexcept
+		{
+			if (hz < kMinDisplayHz || hz > kMaxDisplayHz) return;
+			const auto value = static_cast<std::uint16_t>(hz);
+			minHz = minHz == 0 ? value : (std::min)(minHz, value);
+			maxHz = (std::max)(maxHz, value);
+		}
+		void Merge(const DisplayRange& other) noexcept
+		{
+			if (!other.Valid()) return;
+			Observe(other.minHz);
+			Observe(other.maxHz);
+		}
+		bool operator==(const DisplayRange&) const = default;
+	};
+
+	// 按 DWM 合成节奏判断一次提交是否开启了新的合成周期：提交落在“合成截止 = 垂直同步 − 余量”之前就由该次合成取走，
+	// 同一周期内的后续提交只会替换内容，DWM 仍只显示一帧。没有合成时序（DWM 未合成、读取失败）时每次提交都算新帧。
+	struct RefreshSlotCounter
+	{
+		bool hasLast = false;
+		double lastDeadlineMs = 0.0;
+
+		// commitMs 为提交完成时刻；vblankMs/periodMs 为 DWM 合成时序（周期保留小数，可来自稍早的采样，时刻可外推）。
+		bool Observe(double commitMs, double vblankMs, double periodMs) noexcept
+		{
+			if (!std::isfinite(commitMs)) return false;
+			if (!(std::isfinite(vblankMs) && std::isfinite(periodMs) && periodMs >= kCompositionClockMinPeriodMs &&
+				periodMs <= kCompositionClockMaxPeriodMs))
+			{
+				hasLast = false;
+				return true;
+			}
+			const double margin = kCompositionDeadlineMarginMs;
+			// 不早于提交时刻的第一个合成截止（与 CompositionClock::DeadlineAtOrAfter 同式）。
+			const double deadline = vblankMs + std::ceil((commitMs + margin - vblankMs) / periodMs - 1e-9) * periodMs - margin;
+			// 时序每 250 ms 重读、周期随动态刷新率变化，截止时刻有微小漂移：差半个周期以内视为同一周期。
+			if (hasLast && deadline < lastDeadlineMs + periodMs * 0.5) return false;
+			hasLast = true;
+			lastDeadlineMs = deadline;
+			return true;
+		}
+		void Reset() noexcept { hasLast = false; }
+	};
+
+	// 一轮帧循环的测量结果（绘制线程在下一轮开始时结算）。
+	struct FrameSample
+	{
+		bool rendered = false;    // 有脏区且 Present 成功
+		bool displayed = false;   // 本轮真正提交且落进新的 DWM 合成周期（见 RefreshSlotCounter）
+		double costMs = -1.0;     // 无限制渲染耗时，rendered 时有效
+		double intervalMs = -1.0; // 本轮开始到下一轮开始；本轮不是以帧率等待结束时无效（< 0）
+		double targetMs = 0.0;    // 画布帧间隔（1000 / 画布帧率），判断掉帧
+	};
+
 	// 绘制线程独占的一段累加结果：每个计数帧只做常数次加法，无锁、无分配。
 	struct Tally
 	{
 		Counters counters{};
+		DisplayRange display;
 
-		bool Empty() const noexcept { return counters[0].frames == 0; }
-		void Clear() noexcept { counters = {}; }
+		bool Empty() const noexcept { return counters[0].frames == 0 && counters[0].computeFrames == 0; }
+		void Clear() noexcept
+		{
+			counters = {};
+			display = {};
+		}
 
-		// 返回是否计入。mask 为空、耗时非法或达到单段上限时不计。
-		bool Add(std::uint32_t dimensionMask, double workMs, double budgetMs) noexcept
+		// 返回是否计入。mask 为空、数值非法、既不是渲染帧也没有有效帧间隔，或达到单段上限时不计。
+		bool Add(std::uint32_t dimensionMask, const FrameSample& sample) noexcept
 		{
 			dimensionMask &= kAllDimensionsMask;
-			if (dimensionMask == 0 || !std::isfinite(workMs) || workMs < 0.0) return false;
-			if (counters[0].frames >= kTallyFrameCap) return false;
-			const bool over = budgetMs > 0.0 && workMs > budgetMs;
+			if (dimensionMask == 0) return false;
+			const bool rendered = sample.rendered && std::isfinite(sample.costMs) && sample.costMs >= 0.0;
+			const bool timed = std::isfinite(sample.intervalMs) && sample.intervalMs > 0.0 &&
+				std::isfinite(sample.targetMs) && sample.targetMs > 0.0;
+			if (!rendered && !timed) return false;
+			if ((std::max)(counters[0].frames, counters[0].computeFrames) >= kTallyFrameCap) return false;
+			const bool missed = timed && sample.intervalMs > sample.targetMs * kMissedIntervalRatio;
 			const auto add = [&](Counter& counter)
 			{
-				++counter.frames;
-				counter.workMs += workMs;
-				if (over) ++counter.overBudget;
+				if (rendered)
+				{
+					++counter.frames;
+					counter.costMs += sample.costMs;
+					if (timed)
+					{
+						++counter.timedFrames;
+						if (sample.displayed) ++counter.displayedFrames;
+						counter.intervalMs += sample.intervalMs;
+						if (missed) ++counter.missed;
+					}
+				}
+				if (timed)
+				{
+					++counter.computeFrames;
+					counter.computeIntervalMs += sample.intervalMs;
+				}
 			};
 			add(counters[0]); // 总体每帧只计一次；多工具同帧时各维度都计
 			for (std::size_t i = 0; i < kDimensionCount; ++i)
@@ -212,6 +317,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 	{
 		std::int32_t date = 0;
 		Counters counters{};
+		DisplayRange display;
 		std::int64_t updatedUnixSeconds = 0;
 	};
 
@@ -235,6 +341,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		if (it != record.days.end() && it->date == bucket.date)
 		{
 			MergeCounters(it->counters, bucket.counters);
+			it->display.Merge(bucket.display);
 			it->updatedUnixSeconds = (std::max)(it->updatedUnixSeconds, bucket.updatedUnixSeconds);
 		}
 		else record.days.insert(it, bucket);
@@ -271,13 +378,13 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 
 	// 把一段累加结果合并进“date × 签名”日桶。空段或非法日期不合并。
 	inline bool MergeTally(Store& store, const Signature& rawSignature, std::int32_t date,
-		std::int64_t nowUnixSeconds, const Counters& counters)
+		std::int64_t nowUnixSeconds, const Counters& counters, const DisplayRange& display = {})
 	{
 		if (counters[0].frames == 0 || !IsValidDate(date)) return false;
 		const Signature signature = NormalizeSignature(rawSignature);
 		SignatureRecord& record = FindOrAddRecord(store, signature);
 		record.lastUsedUnixSeconds = (std::max)(record.lastUsedUnixSeconds, nowUnixSeconds);
-		MergeDay(record, DayBucket{ date, counters, nowUnixSeconds });
+		MergeDay(record, DayBucket{ date, counters, display, nowUnixSeconds });
 		PruneSignatures(store, &signature);
 		return true;
 	}
@@ -302,24 +409,44 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 	{
 		bool available = false;
 		std::uint64_t frames = 0;
-		double avgWorkMs = 0.0;
-		double loadPercent = 0.0;
-		double unlimitedFps = 0.0;
-		double overBudgetRatio = 0.0;
+		double renderFps = 0.0;    // 平均渲染帧率（按 DWM 合成周期实测）；没有有效帧间隔时为 0
+		double computeFps = 0.0;   // 平均计算帧率；没有有效帧间隔时为 0
+		double unlimitedFps = 0.0; // 无限制渲染帧率
+		double costPercent = 0.0;  // 平均无限制渲染耗时 / 画布帧间隔
+		double loadPercent = 0.0;  // 负载百分比（档位依据）
+		double overBudgetRatio = 0.0; // 掉帧占比（帧间隔有效的渲染帧中）
 		bool lowSample = false;
 	};
 
+	// frameRate 为签名的画布帧率。负载百分比只看设备能否按画布帧率推进帧循环：
+	// - 耗时占比 = 平均无限制渲染耗时 / 画布帧间隔：帧循环按画布帧率推进（画布帧率高于刷新率时也是），
+	//   每帧都要装进画布帧间隔；
+	// - 缺口占比 = 画布帧率 / 计算帧率：计算帧率比画布帧率低 3% 以上（帧循环跟不上）时取 max(缺口占比, 耗时占比)，
+	//   至少为超载；否则取耗时占比，表示还剩多少余量。GPU 吃紧时 DComp 的 waitable 阻塞、ULW 的 Map 等待都会拖慢帧循环。
+	// 渲染帧率含显示器刷新率与呈现同步（ULW 读回、DWM 合成周期）的损失，不参与负载，避免把同步损失当成性能不足。
 	inline Figure MakeFigure(const Counter& counter, int frameRate, std::uint64_t lowSampleFrames) noexcept
 	{
 		Figure figure;
 		if (counter.frames == 0 || frameRate <= 0) return figure;
 		figure.available = true;
 		figure.frames = counter.frames;
-		figure.avgWorkMs = counter.workMs / static_cast<double>(counter.frames);
-		figure.loadPercent = figure.avgWorkMs / (1000.0 / frameRate) * 100.0;
-		// 工作耗时之和极小（理论上不会出现）时不给出无穷大的帧率。
-		figure.unlimitedFps = counter.workMs > 1e-6 ? static_cast<double>(counter.frames) / (counter.workMs / 1000.0) : 0.0;
-		figure.overBudgetRatio = static_cast<double>(counter.overBudget) / static_cast<double>(counter.frames);
+		const double frames = static_cast<double>(counter.frames);
+		// 耗时之和极小（理论上不会出现）时不给出无穷大的帧率。
+		figure.unlimitedFps = counter.costMs > 1e-6 ? frames / (counter.costMs / 1000.0) : 0.0;
+		figure.costPercent = counter.costMs / frames / (1000.0 / frameRate) * 100.0;
+		figure.loadPercent = figure.costPercent;
+		if (counter.timedFrames > 0 && counter.intervalMs > 1e-6)
+		{
+			figure.renderFps = static_cast<double>(counter.displayedFrames) / (counter.intervalMs / 1000.0);
+			figure.overBudgetRatio = static_cast<double>(counter.missed) / static_cast<double>(counter.timedFrames);
+		}
+		if (counter.computeFrames > 0 && counter.computeIntervalMs > 1e-6)
+		{
+			figure.computeFps = static_cast<double>(counter.computeFrames) / (counter.computeIntervalMs / 1000.0);
+			const double deficitPercent = frameRate / figure.computeFps * 100.0;
+			if (deficitPercent > kComputeDeficitPercent)
+				figure.loadPercent = (std::max)(figure.costPercent, deficitPercent);
+		}
 		figure.lowSample = counter.frames < lowSampleFrames;
 		return figure;
 	}
@@ -333,14 +460,9 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		Signature signature;
 		Figure overall;
 		std::array<Figure, kDimensionCount> dimensions{};
-		std::uint32_t usageDays = 0;
-		std::int32_t firstDate = 0;
-		std::int32_t lastDate = 0;
+		DisplayRange display; // 这些数据计数期间测得的显示器刷新率范围
 		std::int64_t evaluatedUnixSeconds = 0;
-		std::uint32_t coverageMask = 0;
 		bool recordingEnabled = true;
-		std::uint32_t displayRefreshHz = 0; // 当前会话画布显示器模式刷新率，不入盘；0 = 未知
-		std::uint16_t sessionFrameRate = 0; // 当前会话实际运行的画布帧率（当前签名），0 = 未知；用于“重启后生效”判断
 	};
 
 	// 当前签名有数据就用它；否则取最近使用的其他签名（“设置变更前”）；都没有则为空。
@@ -368,24 +490,19 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		for (const DayBucket& day : chosen->days)
 		{
 			MergeCounters(total, day.counters);
+			report.display.Merge(day.display);
 			report.evaluatedUnixSeconds = (std::max)(report.evaluatedUnixSeconds, day.updatedUnixSeconds);
 		}
 		report.signature = chosen->signature;
-		report.usageDays = static_cast<std::uint32_t>(chosen->days.size());
-		report.firstDate = chosen->days.front().date;
-		report.lastDate = chosen->days.back().date;
 		const int frameRate = chosen->signature.frameRate;
 		report.overall = MakeFigure(total[0], frameRate, kLowSampleOverallFrames);
 		for (std::size_t i = 0; i < kDimensionCount; ++i)
-		{
 			report.dimensions[i] = MakeFigure(total[i + 1], frameRate, kLowSampleDimensionFrames);
-			if (report.dimensions[i].available) report.coverageMask |= 1u << i;
-		}
 		if (!report.overall.available) report.source = ReportSource::None;
 		return report;
 	}
 
-	// ---- 档位与帧率建议 ----
+	// ---- 档位（看板只显示档位结论，不给帧率建议）----
 
 	enum class Level : std::uint8_t { None, Ample, Moderate, Tight, Overloaded };
 
@@ -398,122 +515,12 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		return Level::Overloaded;
 	}
 
-	// 平均值会掩盖卡顿：超时帧占比超过 10% 时至少为“偏紧”。
+	// 平均值会掩盖卡顿：掉帧占比超过 10% 时至少为“偏紧”。
 	inline Level ClassifyFigure(const Figure& figure) noexcept
 	{
 		if (!figure.available) return Level::None;
 		Level level = ClassifyLoad(figure.loadPercent);
 		if (figure.overBudgetRatio > kStutterOverBudgetRatio && level < Level::Tight) level = Level::Tight;
 		return level;
-	}
-
-	enum class Suggestion : std::uint8_t
-	{
-		None,          // 无数据，或只给超时提示
-		Lower,         // 建议降低到 suggestedFps
-		LowestHeavy,   // 即使最低帧率也较吃力
-		LowerToMatch,  // 平均不高但超时帧多，且高于刷新率：降到与显示器一致
-		Raise,         // 可以升高到 suggestedFps（不超过与显示器一致的档位）
-		MatchedCanRaise, // 已与显示器一致，余量大，可选更高档（不会更流畅，但墨迹更精确平滑）
-		AboveRefresh,  // 当前高于显示器刷新率，负载允许保持
-		Fine           // 当前帧率设置合适
-	};
-
-	struct Advice
-	{
-		Level level = Level::None;
-		Suggestion suggestion = Suggestion::None;
-		int suggestedFps = 0;
-		int matchFps = 0;           // 不超过显示器刷新率的最大预设档
-		int refreshHz = 0;          // 0 = 未知（按 60 Hz 推算 matchFps）
-		bool stutterNote = false;   // 平均不高但超时帧占比 > 10%
-		double overBudgetPercent = 0.0;
-		bool restartPending = false; // 配置帧率与测得帧率不同（重启后生效）
-		int configuredFps = 0;
-	};
-
-	// 显示模式频率是向下取整的整数，59.94/119.88 Hz 屏常报 59/119：留 2 Hz 容差，避免建议系统性偏低一档。
-	inline constexpr int kRefreshMatchToleranceHz = 2;
-
-	constexpr int MatchFrameRate(int refreshHz) noexcept
-	{
-		const int refresh = refreshHz > 0 ? refreshHz : 60;
-		int best = kFrameRatePresets.front();
-		for (const int preset : kFrameRatePresets)
-			if (preset <= refresh + kRefreshMatchToleranceHz) best = preset;
-		return best;
-	}
-
-	// 按每帧工作量不变线性外推的预计负载（%）；文案统一用“约”。
-	constexpr double PredictLoadPercent(double avgWorkMs, int fps) noexcept
-	{
-		return avgWorkMs * fps / 10.0;
-	}
-
-	// sessionFps：当前会话实际运行的帧率；0 时按 measuredFps。“重启后生效”只比较配置与当前会话，
-	// 不能比较历史样本的帧率（已重启到新帧率、新签名还没有数据时会误报）。
-	inline Advice Advise(const Figure& overall, int measuredFps, int configuredFps, int refreshHz, int sessionFps = 0) noexcept
-	{
-		Advice advice;
-		advice.refreshHz = refreshHz > 0 ? refreshHz : 0;
-		advice.matchFps = MatchFrameRate(refreshHz);
-		advice.configuredFps = configuredFps;
-		const int runningFps = sessionFps > 0 ? sessionFps : measuredFps;
-		advice.restartPending = configuredFps > 0 && runningFps > 0 && configuredFps != runningFps;
-		advice.level = ClassifyFigure(overall);
-		if (!overall.available || measuredFps <= 0) return advice;
-		advice.overBudgetPercent = overall.overBudgetRatio * 100.0;
-		const double load = overall.loadPercent;
-		const double work = overall.avgWorkMs;
-
-		// 1. 平均负载 ≥ 80%：降到预计负载 ≤ 80% 的最高档。
-		if (load >= kLowerTargetPercent)
-		{
-			for (const int preset : kFrameRatePresets)
-				if (preset < measuredFps && PredictLoadPercent(work, preset) <= kLowerTargetPercent)
-					advice.suggestedFps = preset;
-			advice.suggestion = advice.suggestedFps > 0 ? Suggestion::Lower : Suggestion::LowestHeavy;
-			return advice;
-		}
-		// 2. 平均不高但超时帧多：高于显示器时降到与显示器一致；否则只给超时提示。
-		if (overall.overBudgetRatio > kStutterOverBudgetRatio)
-		{
-			advice.stutterNote = true;
-			if (measuredFps > advice.matchFps)
-			{
-				advice.suggestion = Suggestion::LowerToMatch;
-				advice.suggestedFps = advice.matchFps;
-			}
-			return advice;
-		}
-		// 3. 低于显示器：在 (当前, 匹配档] 中取预计负载 ≤ 70% 的最高档。
-		if (measuredFps < advice.matchFps)
-		{
-			for (const int preset : kFrameRatePresets)
-				if (preset > measuredFps && preset <= advice.matchFps && PredictLoadPercent(work, preset) <= kRaiseMaxPercent)
-					advice.suggestedFps = preset;
-			advice.suggestion = advice.suggestedFps > 0 ? Suggestion::Raise : Suggestion::Fine;
-			return advice;
-		}
-		// 4. 已与显示器一致：上一档余量很大时说明可选更高（不是建议）。
-		if (measuredFps == advice.matchFps)
-		{
-			for (const int preset : kFrameRatePresets)
-				if (preset > measuredFps)
-				{
-					if (PredictLoadPercent(work, preset) <= kOptionalRaiseMaxPercent)
-					{
-						advice.suggestion = Suggestion::MatchedCanRaise;
-						advice.suggestedFps = preset;
-						return advice;
-					}
-					break;
-				}
-			advice.suggestion = Suggestion::Fine;
-			return advice;
-		}
-		// 5. 高于显示器（且负载 < 80%）：说明不会更流畅但墨迹更精确平滑，允许保持。
-		advice.suggestion = Suggestion::AboveRefresh;
-		return advice;
 	}
 }

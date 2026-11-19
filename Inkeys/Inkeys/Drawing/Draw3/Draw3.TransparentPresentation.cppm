@@ -11,6 +11,7 @@
 #include <windows.h>
 
 #include "../../Helper/FailedCleanupDeadline.h"
+#include "Draw3.CompositionClock.h"
 
 export module Inkeys.Drawing.Draw3.transparent_presentation;
 
@@ -101,6 +102,9 @@ export namespace Inkeys::Drawing::Draw3
 		double waitedMs = 0.0;
 		// 本次等待是否真的超时；等待失败导致的熔断不算超时。
 		bool timedOut = false;
+		// waitedMs 中的纯显示节拍等待：开始等待时上一帧 GPU 工作已完成，等的只是 DWM 消费/垂直同步。
+		// 设备性能统计无限制渲染帧率时扣除；上一帧 GPU 仍在执行时整段等待都算等 GPU，不计入。
+		double pacingWaitMs = 0.0;
 	};
 
 	struct TransparentPresentObservation
@@ -195,6 +199,14 @@ export namespace Inkeys::Drawing::Draw3
 		bool IsGpuTransparentComposition() const;
 		// 返回当前交换链供渲染器缩放使用；ULW 模式不建交换链，返回空（最终目标是独立纹理）。
 		IDXGISwapChain1* SwapChain() const;
+		// 单调递增的真实提交次数：DComp 实际调用且成功的 Present1，ULW 主画布/辅助输出成功的 UpdateLayeredWindow
+		// （节流合并跳过的帧不算）。调用方比较一轮帧循环前后的差值判断本轮是否真正提交。
+		std::uint64_t CommittedPresentCount() const noexcept;
+		// 最近一次真正提交完成的时刻（QPC 毫秒）：DComp Present1 返回、ULW UpdateLayeredWindow 返回；从未提交为 0。
+		double LastCommittedPresentMs() const noexcept;
+		// 当前 DWM 合成时序（垂直同步时刻与刷新周期，周期保留小数），约每 250 ms 重读一次，动态刷新率下随实际周期变化；
+		// DWM 未合成或读取失败时 valid=false。
+		CompositionTimingSample SampleDisplayTiming(double nowMs) noexcept;
 
 	private:
 		struct Impl;

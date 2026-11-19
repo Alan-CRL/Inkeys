@@ -1068,16 +1068,12 @@
         "Expand": "Détails",
         "Collapse": "Réduire",
         "LoadLabel": "Charge moyenne",
-        "UnlimitedFormat": "Fréquence illimitée env. {0} FPS · mesurée à {1} FPS",
+        "RenderFpsFormat": "Fréquence de rendu moyenne env. {0} FPS",
+        "SecondaryFpsFormat": "Fréquence de calcul env. {0} FPS · Rendu illimité env. {1} FPS",
+        "DisplayLimitFormat": "L'écran actuel limite la fréquence à {0} FPS",
         "EmptyHint": "Après quelques traits, cette zone indiquera avec quelle aisance cet appareil dessine le canevas.",
         "PreviousTag": "Avant modification",
         "PausedTag": "Enregistrement en pause",
-        "LowSample": "Peu d’échantillons, à titre indicatif",
-        "LowSampleShort": "Peu d’échantillons",
-        "EvaluatedFormat": "Évaluation : {0}",
-        "RangeFormat": "{0} derniers jours d’utilisation (du {1} au {2})",
-        "RangeSingleFormat": "Dernier jour d’utilisation ({0})",
-        "CoverageFormat": "Outils couverts : {0}",
         "NoDimensionData": "Aucune donnée",
         "DimensionFpsFormat": "Env. {0} FPS",
         "Level":
@@ -1094,19 +1090,6 @@
           "Tight": "La charge de l’appareil est élevée ; des images peuvent parfois être perdues dans les scènes complexes.",
           "Overloaded": "L’appareil ne suit pas la fréquence d’images actuelle ; l’écriture peut saccader ou être retardée."
         },
-        "Advice":
-        {
-          "Lower": "Nous conseillons de réduire la fréquence d’images du canevas à {0} FPS (charge estimée env. {1} %).",
-          "LowestHeavy": "Même la fréquence la plus basse est exigeante. Vérifiez que l’accélération matérielle est activée ou fermez les programmes qui utilisent le GPU.",
-          "LowerToMatch": "Nous conseillons de réduire la fréquence d’images du canevas à {0} FPS, comme celle de l’écran.",
-          "Raise": "Vous pouvez augmenter la fréquence d’images du canevas à {0} FPS (charge estimée env. {1} %). L’écriture est la plus fluide quand elle correspond aux {2} Hz de l’écran.",
-          "MatchedCanRaise": "La fréquence actuelle correspond à la fréquence de rafraîchissement de l’écran ({0} Hz). L’appareil a assez de marge, vous pouvez aussi monter à {1} FPS : l’affichage ne sera pas plus fluide, mais le tracé sera plus précis et plus lisse.",
-          "AboveRefresh": "La fréquence actuelle dépasse la fréquence de rafraîchissement de l’écran ({0} Hz). L’affichage n’est pas plus fluide, mais le tracé est plus précis et plus lisse ; la charge de l’appareil permet de la conserver.",
-          "Fine": "La fréquence d’images actuelle du canevas est adaptée.",
-          "Stutter": "La charge moyenne est faible, mais env. {0} % des images dépassent leur temps imparti ; de légères saccades sont possibles.",
-          "RestartPending": "Fréquence d’images du canevas réglée sur {0} FPS. Elle s’appliquera au redémarrage et les données seront à nouveau collectées.",
-          "Previous": "Ces données datent d’avant la modification des réglages ; celles des réglages actuels sont en cours de collecte."
-        },
         "Dimension":
         {
           "Writing": "Écriture",
@@ -1118,8 +1101,7 @@
         },
         "Recording":
         {
-          "N": "Enregistrer les données de performances",
-          "E": "Seules des statistiques comme le temps de dessin sont enregistrées. Elles restent sur cet appareil et ne sont jamais envoyées."
+          "N": "Enregistrer les données de performances"
         },
         "Clear": "Effacer les données",
         "ClearConfirm": "Confirmer"
@@ -1457,6 +1439,18 @@
       {
         "N": "Débogage du canevas",
         "E": "Affiche sous le canevas la fréquence d'images, la charge matérielle et les informations des points d'entrée, et ajoute un bouton de débogage visuel à la barre principale."
+      },
+      "PerformancePreview":
+      {
+        "N": "Aperçu du tableau de bord des performances",
+        "E": "Prévisualise les états du tableau de bord en haut de la page Performances avec des données virtuelles. Seul l’affichage change ; l’enregistrement et les statistiques réels ne sont pas affectés. Revient à Par défaut après un redémarrage.",
+        "Off": "Par défaut",
+        "Empty": "Aucune donnée",
+        "Ample": "Ample",
+        "Moderate": "Modéré",
+        "Tight": "Juste",
+        "Overloaded": "Surchargé",
+        "Previous": "Avant modification"
       },
       "DelayWaiting":
       {

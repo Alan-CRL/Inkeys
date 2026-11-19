@@ -33,21 +33,55 @@ namespace
 		return signature;
 	}
 
-	// 构造一段“frames 帧、每帧 workMs”的累加，全部属于 mask 维度。
-	Counters MakeCounters(std::uint32_t mask, std::uint64_t frames, double workMs, double budgetMs)
+	// 一帧按画布帧率推进的渲染帧：帧间隔 = 画布帧间隔，落进新的合成周期。
+	FrameSample RenderedFrame(double costMs, double targetMs)
 	{
-		Tally tally;
-		for (std::uint64_t i = 0; i < frames; ++i) tally.Add(mask, workMs, budgetMs);
-		return tally.counters;
+		FrameSample sample;
+		sample.rendered = true;
+		sample.displayed = true;
+		sample.costMs = costMs;
+		sample.intervalMs = targetMs;
+		sample.targetMs = targetMs;
+		return sample;
 	}
 
-	Figure MakeOverall(double avgWorkMs, int fps, double overBudgetRatio = 0.0, std::uint64_t frames = 1000)
+	// 构造一段“frames 帧、每帧无限制渲染耗时 costMs、按 targetMs 画布帧间隔推进”的累加，全部属于 mask 维度。
+	Tally MakeTally(std::uint32_t mask, std::uint64_t frames, double costMs, double targetMs)
 	{
+		Tally tally;
+		for (std::uint64_t i = 0; i < frames; ++i) tally.Add(mask, RenderedFrame(costMs, targetMs));
+		return tally;
+	}
+
+	Counters MakeCounters(std::uint32_t mask, std::uint64_t frames, double costMs, double targetMs)
+	{
+		return MakeTally(mask, frames, costMs, targetMs).counters;
+	}
+
+	// 总体数据：每帧耗时 avgCostMs，帧间隔 = intervalScale × 画布帧间隔（1000 / fps），
+	// displayedRatio 的帧落进新合成周期，missedRatio 的帧掉帧。
+	Figure MakeOverall(double avgCostMs, int fps, double missedRatio = 0.0, double intervalScale = 1.0,
+		double displayedRatio = 1.0, std::uint64_t frames = 1000)
+	{
+		const double count = static_cast<double>(frames);
 		Counter counter;
 		counter.frames = frames;
-		counter.workMs = avgWorkMs * static_cast<double>(frames);
-		counter.overBudget = static_cast<std::uint64_t>(overBudgetRatio * static_cast<double>(frames));
+		counter.costMs = avgCostMs * count;
+		counter.timedFrames = frames;
+		counter.displayedFrames = static_cast<std::uint64_t>(displayedRatio * count);
+		counter.intervalMs = 1000.0 / fps * count * intervalScale;
+		counter.missed = static_cast<std::uint64_t>(missedRatio * count);
+		counter.computeFrames = frames;
+		counter.computeIntervalMs = counter.intervalMs;
 		return MakeFigure(counter, fps, kLowSampleOverallFrames);
+	}
+
+	bool SameCounter(const Counter& a, const Counter& b)
+	{
+		return a.frames == b.frames && a.timedFrames == b.timedFrames && a.displayedFrames == b.displayedFrames &&
+			a.missed == b.missed && a.computeFrames == b.computeFrames && Near(a.costMs, b.costMs, 1e-9) &&
+			Near(a.intervalMs, b.intervalMs, 1e-9) &&
+			Near(a.computeIntervalMs, b.computeIntervalMs, 1e-9);
 	}
 }
 
@@ -73,28 +107,142 @@ int RunDraw3DevicePerformanceTests()
 		expect(ToolDimensionMask(10) == 0 && ToolDimensionMask(-1) == 0, "unknown tool has no dimension");
 	}
 
-	// 累加：多维度帧总体只计一次；空掩码、非法耗时不计；超预算计数。
+	// 累加：多维度帧总体只计一次；渲染帧、计算帧、帧间隔与掉帧分别计；非法样本不计。
 	{
 		Tally tally;
-		const std::uint32_t writingAndPan = DimensionBit(Dimension::Writing) | DimensionBit(Dimension::Pan);
-		expect(tally.Add(writingAndPan, 4.0, 8.0), "add multi-dimension frame");
-		expect(tally.Add(DimensionBit(Dimension::Writing), 10.0, 8.0), "add over-budget frame");
-		expect(!tally.Add(0, 1.0, 8.0), "empty mask not counted");
-		expect(!tally.Add(DimensionBit(Dimension::Writing), -1.0, 8.0), "negative work not counted");
-		expect(!tally.Add(DimensionBit(Dimension::Writing), std::nan(""), 8.0), "nan work not counted");
-		expect(tally.counters[0].frames == 2 && Near(tally.counters[0].workMs, 14.0), "overall counts each frame once");
-		expect(tally.counters[1].frames == 2 && tally.counters[1].overBudget == 1, "writing counted with over budget");
-		expect(tally.counters[6].frames == 1 && Near(tally.counters[6].workMs, 4.0), "pan counted for multi frame");
-		expect(tally.counters[3].frames == 0, "eraser untouched");
+		const std::uint32_t writing = DimensionBit(Dimension::Writing);
+		const std::uint32_t writingAndPan = writing | DimensionBit(Dimension::Pan);
+		expect(tally.Add(writingAndPan, RenderedFrame(4.0, 8.0)), "add multi-dimension frame");
+		FrameSample late = RenderedFrame(3.0, 8.0);
+		late.intervalMs = 12.5; // 超过 1.5 倍画布帧间隔：掉帧
+		late.displayed = false; // ULW 节流合并跳过：画了但没上屏
+		expect(tally.Add(writing, late), "add missed frame");
+		FrameSample still; // 静止接触：无脏区的计算帧
+		still.intervalMs = 8.0;
+		still.targetMs = 8.0;
+		expect(tally.Add(writing, still), "compute-only frame counted");
+		FrameSample unpaced = RenderedFrame(5.0, 8.0); // 以空闲/期限等待结束：帧间隔无效，只计耗时
+		unpaced.intervalMs = -1.0;
+		expect(tally.Add(writing, unpaced), "unpaced rendered frame counted");
+		FrameSample nothing; // 既不是渲染帧也没有帧间隔
+		expect(!tally.Add(writing, nothing), "empty sample not counted");
+		expect(!tally.Add(0, RenderedFrame(1.0, 8.0)), "empty mask not counted");
+		FrameSample negative = RenderedFrame(-1.0, 8.0);
+		negative.intervalMs = -1.0;
+		expect(!tally.Add(writing, negative), "negative cost without interval not counted");
+		FrameSample nan = RenderedFrame(std::nan(""), 8.0);
+		nan.intervalMs = std::nan("");
+		expect(!tally.Add(writing, nan), "nan sample not counted");
+		const Counter& overall = tally.counters[0];
+		expect(overall.frames == 3 && Near(overall.costMs, 12.0), "rendered frames and cost");
+		expect(overall.timedFrames == 2 && overall.displayedFrames == 1 && Near(overall.intervalMs, 20.5) &&
+			overall.missed == 1, "timed frames, displayed frames and missed frames");
+		expect(overall.computeFrames == 3 && Near(overall.computeIntervalMs, 28.5), "compute frames include still frame");
+		expect(tally.counters[6].frames == 1 && Near(tally.counters[6].costMs, 4.0) && tally.counters[6].computeFrames == 1,
+			"pan counted for multi frame");
+		expect(tally.counters[3].frames == 0 && tally.counters[3].computeFrames == 0, "eraser untouched");
+		tally.display.Observe(60);
+		tally.display.Observe(120);
+		tally.display.Observe(5); // 不合理的采样忽略
+		expect(tally.display.minHz == 60 && tally.display.maxHz == 120, "display range observed");
 		tally.Clear();
-		expect(tally.Empty(), "clear empties tally");
+		expect(tally.Empty() && !tally.display.Valid(), "clear empties tally");
+		Tally stillOnly;
+		stillOnly.Add(writing, still);
+		expect(!stillOnly.Empty(), "compute-only tally is not empty");
 	}
 
 	// 单段累加上限。
 	{
 		Tally tally;
 		tally.counters[0].frames = kTallyFrameCap;
-		expect(!tally.Add(DimensionBit(Dimension::Writing), 1.0, 8.0), "cap stops accumulation");
+		expect(!tally.Add(DimensionBit(Dimension::Writing), RenderedFrame(1.0, 8.0)), "cap stops accumulation");
+	}
+
+	// 帧率与负载口径：负载只看帧循环能否按画布帧率推进；渲染帧率含显示器与同步损失，只显示不定档位。
+	{
+		const Figure keepUp = MakeOverall(2.0, 120);
+		expect(Near(keepUp.renderFps, 120.0) && Near(keepUp.computeFps, 120.0), "keep-up frame rates");
+		expect(Near(keepUp.unlimitedFps, 500.0) && Near(keepUp.loadPercent, 24.0), "keep-up load is cost over canvas interval");
+		expect(ClassifyFigure(keepUp) == Level::Ample, "light work keeps ample");
+		// GPU 被压满：waitable 阻塞或 Map 等待拖慢帧循环，计算帧率只有画布帧率的一半。
+		const Figure gpuBound = MakeOverall(2.0, 120, 0.0, 2.0);
+		expect(Near(gpuBound.computeFps, 60.0) && Near(gpuBound.loadPercent, 200.0) &&
+			ClassifyFigure(gpuBound) == Level::Overloaded, "frame loop falling behind is overloaded");
+		// 3% 以内的缺口（计时器过冲）不算跟不上。
+		const Figure jitter = MakeOverall(2.0, 120, 0.0, 1.02);
+		expect(Near(jitter.loadPercent, 24.0), "small deficit within tolerance keeps cost load");
+		// ULW 呈现同步损失：帧循环 120、耗时 19%，只有 88% 的帧落进新合成周期，渲染约 106，不算超载。
+		const Figure syncLoss = MakeOverall(1.6, 120, 0.0, 1.0, 0.88);
+		expect(Near(syncLoss.renderFps, 105.6) && Near(syncLoss.loadPercent, 19.2) &&
+			ClassifyFigure(syncLoss) == Level::Ample, "presentation sync loss does not count as overload");
+		// 显示器 60 Hz、画布 120：帧循环 120，每两帧一帧上屏，渲染 60；耗时按画布帧间隔 8.33 ms 计。
+		const Figure displayBound = MakeOverall(4.0, 120, 0.0, 1.0, 0.5);
+		expect(Near(displayBound.renderFps, 60.0) && Near(displayBound.loadPercent, 48.0),
+			"display-limited render, cost uses canvas interval");
+		// DComp SyncInterval 0：画布 240、显示器 120，帧循环与 Present1 都是 240，每两次提交只有一次落进新合成周期。
+		Tally dcomp240;
+		for (int i = 0; i < 100; ++i)
+		{
+			FrameSample sample = RenderedFrame(0.8, 1000.0 / 240.0);
+			sample.displayed = i % 2 == 0;
+			dcomp240.Add(DimensionBit(Dimension::Writing), sample);
+		}
+		const Figure fast = MakeFigure(dcomp240.counters[0], 240, kLowSampleOverallFrames);
+		expect(Near(fast.renderFps, 120.0) && Near(fast.computeFps, 240.0),
+			"render fps counts refresh periods while compute runs at the canvas rate");
+		expect(Near(fast.loadPercent, 0.8 / (1000.0 / 240.0) * 100.0) && ClassifyFigure(fast) == Level::Ample,
+			"display-limited render does not count as a deficit");
+		// 帧循环偶尔卡一下：帧间隔超过 1.5 倍画布帧间隔记为掉帧（与显示器刷新率无关）。
+		Tally hiccup;
+		FrameSample slow = RenderedFrame(1.0, 1000.0 / 120.0);
+		slow.intervalMs = 13.0;
+		hiccup.Add(DimensionBit(Dimension::Writing), slow);
+		expect(hiccup.counters[0].missed == 1, "missed frame uses canvas interval");
+	}
+
+	// 按 DWM 合成周期计数：同一周期内的多次提交只算一帧；周期保留小数，实测值不会被凑成整数。
+	{
+		const double period = 1000.0 / 119.88;
+		RefreshSlotCounter slots;
+		int displayed = 0;
+		// 画布 240：每周期两次提交（垂直同步在 0，合成截止为 n·period − 2 ms）。
+		for (int i = 0; i < 240; ++i)
+			if (slots.Observe(1000.0 + i * period / 2.0 + 0.3, 0.0, period)) ++displayed;
+		expect(displayed == 120, "two commits per refresh period count once");
+		// 帧循环抖动：一次提交越过截止落到下一周期，紧接着的提交与它同周期，少计一帧。
+		slots.Reset();
+		displayed = 0;
+		const double base = 240.0 * period + 1.0; // 每次提交都在周期开头 1 ms，远早于截止
+		const double times[] = { 0.0, period, 2.0 * period + 6.0, 3.0 * period + 0.2, 4.0 * period }; // 第三次晚于截止
+		for (const double t : times)
+			if (slots.Observe(base + t, 0.0, period)) ++displayed;
+		expect(displayed == 4, "a late commit sharing the next period is not counted twice");
+		// 时序重采样后垂直同步参考点换到更晚的一次：截止时刻不变，不会重复计数。
+		slots.Reset();
+		expect(slots.Observe(3000.0, 0.0, period), "first commit opens a period");
+		const double laterVBlank = std::floor(3000.0 / period) * period;
+		expect(!slots.Observe(3000.5, laterVBlank, period), "resampled vblank reference keeps the same period");
+		// 没有合成时序：每次提交都算一帧。
+		expect(slots.Observe(3001.0, 0.0, 0.0) && slots.Observe(3001.1, 0.0, 0.0), "no timing counts every commit");
+		// ULW 节流：画布 120 帧循环，只有一半提交，显示器 60：渲染 60、计算 120，跟得上。
+		Tally throttled;
+		for (int i = 0; i < 100; ++i)
+		{
+			FrameSample sample = RenderedFrame(2.0, 1000.0 / 120.0);
+			sample.displayed = i % 2 == 0;
+			throttled.Add(DimensionBit(Dimension::Writing), sample);
+		}
+		const Figure ulw = MakeFigure(throttled.counters[0], 120, kLowSampleOverallFrames);
+		expect(Near(ulw.renderFps, 60.0) && Near(ulw.computeFps, 120.0) && Near(ulw.loadPercent, 24.0),
+			"throttled ulw renders at the display limit");
+		// 没有有效帧间隔：只按耗时占比，渲染/计算帧率为 0（界面显示“--”）。
+		Counter untimed;
+		untimed.frames = 10;
+		untimed.costMs = 20.0;
+		const Figure noInterval = MakeFigure(untimed, 60, kLowSampleOverallFrames);
+		expect(noInterval.available && noInterval.renderFps == 0.0 && noInterval.computeFps == 0.0 &&
+			Near(noInterval.loadPercent, 2.0 / (1000.0 / 60.0) * 100.0), "untimed figure uses cost load only");
 	}
 
 	// 签名规范化：与当前模式无关的开关不拆签名。
@@ -174,24 +322,26 @@ int RunDraw3DevicePerformanceTests()
 		const Signature previous = DCompSignature(60);
 		expect(BuildReport(store, &current).source == ReportSource::None, "empty store");
 		MergeTally(store, previous, MakeDate(2026, 11, 1), 100,
-			MakeCounters(DimensionBit(Dimension::Laser), 100, 5.0, 16.67));
+			MakeCounters(DimensionBit(Dimension::Laser), 100, 5.0, 1000.0 / 60.0));
 		Report report = BuildReport(store, &current);
 		expect(report.source == ReportSource::PreviousSignature && report.signature.frameRate == 60,
 			"falls back to previous signature");
 		expect(Near(report.overall.loadPercent, 5.0 / (1000.0 / 60.0) * 100.0), "load uses measured frame rate");
+		expect(!report.display.Valid(), "no display range recorded");
 		MergeTally(store, current, MakeDate(2026, 11, 2), 200,
-			MakeCounters(DimensionBit(Dimension::Writing), 300, 2.0, 8.33));
+			MakeCounters(DimensionBit(Dimension::Writing), 300, 2.0, 1000.0 / 120.0), DisplayRange{ 120, 120 });
 		MergeTally(store, current, MakeDate(2026, 11, 3), 300,
-			MakeCounters(DimensionBit(Dimension::Writing) | DimensionBit(Dimension::Pan), 100, 6.0, 8.33));
+			MakeCounters(DimensionBit(Dimension::Writing) | DimensionBit(Dimension::Pan), 100, 6.0, 1000.0 / 120.0),
+			DisplayRange{ 60, 90 });
 		report = BuildReport(store, &current);
 		expect(report.source == ReportSource::CurrentSignature, "current signature preferred");
-		expect(report.usageDays == 2 && report.firstDate == MakeDate(2026, 11, 2) &&
-			report.lastDate == MakeDate(2026, 11, 3), "usage days and range");
 		expect(report.evaluatedUnixSeconds == 300, "evaluated time is latest merge");
-		expect(report.overall.frames == 400 && Near(report.overall.avgWorkMs, 3.0), "frame-weighted across days");
-		expect(Near(report.overall.unlimitedFps, 1000.0 / 3.0), "unlimited fps");
+		expect(report.overall.frames == 400 && Near(report.overall.unlimitedFps, 1000.0 / 3.0), "frame-weighted across days");
 		expect(Near(report.overall.loadPercent, 3.0 / (1000.0 / 120.0) * 100.0), "overall load");
-		expect(report.coverageMask == (DimensionBit(Dimension::Writing) | DimensionBit(Dimension::Pan)), "coverage");
+		expect(Near(report.overall.renderFps, 120.0), "render fps across days");
+		expect(report.display.minHz == 60 && report.display.maxHz == 120, "display range merged across days");
+		expect(report.dimensions[static_cast<int>(Dimension::Writing)].available &&
+			report.dimensions[static_cast<int>(Dimension::Pan)].available, "used dimensions available");
 		expect(report.dimensions[static_cast<int>(Dimension::Pan)].frames == 100 &&
 			report.dimensions[static_cast<int>(Dimension::Laser)].available == false, "dimension figures");
 		expect(report.overall.lowSample, "400 frames is low sample");
@@ -216,63 +366,8 @@ int RunDraw3DevicePerformanceTests()
 	{
 		expect(ClassifyLoad(10) == Level::Ample && ClassifyLoad(50) == Level::Moderate &&
 			ClassifyLoad(80) == Level::Tight && ClassifyLoad(100) == Level::Overloaded, "load levels");
-		expect(ClassifyFigure(MakeOverall(1.0, 120, 0.2)) == Level::Tight, "stutter raises level to tight");
+		expect(ClassifyFigure(MakeOverall(1.0, 120, 0.2)) == Level::Tight, "missed frames raise level to tight");
 		expect(ClassifyFigure(Figure{}) == Level::None, "no data level");
-	}
-
-	// 帧率建议矩阵。
-	{
-		// 1. 超载：120 FPS 下每帧 10 ms（120%）→ 60 FPS 预计 60%。
-		Advice advice = Advise(MakeOverall(10.0, 120), 120, 120, 120);
-		expect(advice.level == Level::Overloaded && advice.suggestion == Suggestion::Lower && advice.suggestedFps == 60,
-			"overloaded lowers");
-		// 1b. 30 FPS 也吃力。
-		advice = Advise(MakeOverall(40.0, 60), 60, 60, 60);
-		expect(advice.suggestion == Suggestion::LowestHeavy, "lowest heavy");
-		// 2. 平均 30%，超时 20%，240 FPS 在 120 Hz 屏 → 降到 120。
-		advice = Advise(MakeOverall(1.25, 240, 0.2), 240, 240, 120);
-		expect(advice.stutterNote && advice.suggestion == Suggestion::LowerToMatch && advice.suggestedFps == 120,
-			"stutter above refresh lowers to match");
-		// 2b. 超时多但未高于显示器：只提示，不建议升高。
-		advice = Advise(MakeOverall(2.0, 60, 0.2), 60, 60, 120);
-		expect(advice.stutterNote && advice.suggestion == Suggestion::None, "stutter blocks raise");
-		// 3. 60 FPS、每帧 2 ms，120 Hz 屏 → 升到 120（预计 24%）。
-		advice = Advise(MakeOverall(2.0, 60), 60, 60, 120);
-		expect(advice.suggestion == Suggestion::Raise && advice.suggestedFps == 120, "raise to match");
-		// 3b. 144 Hz 屏匹配档为 120；60 → 120。
-		advice = Advise(MakeOverall(2.0, 60), 60, 60, 144);
-		expect(advice.matchFps == 120 && advice.suggestedFps == 120, "144 Hz matches 120 preset");
-		// 3d. 整数刷新率容差：59/119/239 Hz 视同 60/120/240；75→60、144/165→120。
-		expect(MatchFrameRate(59) == 60 && MatchFrameRate(119) == 120 && MatchFrameRate(239) == 240 &&
-			MatchFrameRate(75) == 60 && MatchFrameRate(144) == 120 && MatchFrameRate(165) == 120 &&
-			MatchFrameRate(57) == 30 && MatchFrameRate(20) == 30, "refresh match tolerance");
-		// 3c. 每帧 7 ms：120 预计 84% 不行，保持 60 合适。
-		advice = Advise(MakeOverall(7.0, 60), 60, 60, 120);
-		expect(advice.suggestion == Suggestion::Fine, "raise blocked by predicted load");
-		// 4. 已匹配且 240 预计 ≤ 50%：可选更高。
-		advice = Advise(MakeOverall(1.5, 120), 120, 120, 120);
-		expect(advice.suggestion == Suggestion::MatchedCanRaise && advice.suggestedFps == 240, "matched can raise");
-		// 4b. 已匹配、240 预计 72%：合适。
-		advice = Advise(MakeOverall(3.0, 120), 120, 120, 120);
-		expect(advice.suggestion == Suggestion::Fine, "matched fine");
-		// 5. 高于刷新率、负载可承受。
-		advice = Advise(MakeOverall(2.0, 240), 240, 240, 60);
-		expect(advice.suggestion == Suggestion::AboveRefresh, "above refresh keeps");
-		// 刷新率未知按 60。
-		advice = Advise(MakeOverall(2.0, 30), 30, 30, 0);
-		expect(advice.matchFps == 60 && advice.refreshHz == 0 && advice.suggestion == Suggestion::Raise &&
-			advice.suggestedFps == 60, "unknown refresh treated as 60");
-		// 帧率已改未重启。
-		advice = Advise(MakeOverall(2.0, 120), 120, 60, 120);
-		expect(advice.restartPending && advice.configuredFps == 60, "restart pending note");
-		// 已从 60 重启到 120、新签名还没有数据（报告来自 60 的旧签名）：不提示重启。
-		advice = Advise(MakeOverall(2.0, 60), 60, 120, 120, 120);
-		expect(!advice.restartPending, "restart note compares the running session, not the old sample");
-		advice = Advise(MakeOverall(2.0, 60), 60, 240, 120, 120);
-		expect(advice.restartPending, "config differs from running session");
-		// 无数据。
-		advice = Advise(Figure{}, 120, 120, 120);
-		expect(advice.level == Level::None && advice.suggestion == Suggestion::None, "no data advice");
 	}
 
 	// JSON 往返、坏文件、schema 不符与单桶非法字段。
@@ -285,7 +380,8 @@ int RunDraw3DevicePerformanceTests()
 		ulw.ulwAsyncReadback = 1;
 		ulw.ulwCompositionAlign = 0;
 		MergeTally(store, DCompSignature(), MakeDate(2026, 11, 17), 1763400000,
-			MakeCounters(DimensionBit(Dimension::Writing) | DimensionBit(Dimension::Pan), 50, 2.5, 8.33));
+			MakeCounters(DimensionBit(Dimension::Writing) | DimensionBit(Dimension::Pan), 50, 2.5, 8.33),
+			DisplayRange{ 60, 120 });
 		MergeTally(store, DCompSignature(), MakeDate(2026, 11, 18), 1763450430,
 			MakeCounters(DimensionBit(Dimension::Eraser), 30, 9.0, 8.33));
 		MergeTally(store, ulw, MakeDate(2026, 11, 18), 1763450000,
@@ -303,11 +399,10 @@ int RunDraw3DevicePerformanceTests()
 				a.days.size() == b.days.size();
 			for (std::size_t d = 0; same && d < a.days.size(); ++d)
 			{
-				same = a.days[d].date == b.days[d].date && a.days[d].updatedUnixSeconds == b.days[d].updatedUnixSeconds;
+				same = a.days[d].date == b.days[d].date && a.days[d].updatedUnixSeconds == b.days[d].updatedUnixSeconds &&
+					a.days[d].display == b.days[d].display;
 				for (std::size_t c = 0; same && c < kCounterCount; ++c)
-					same = a.days[d].counters[c].frames == b.days[d].counters[c].frames &&
-						a.days[d].counters[c].overBudget == b.days[d].counters[c].overBudget &&
-						Near(a.days[d].counters[c].workMs, b.days[d].counters[c].workMs, 1e-9);
+					same = SameCounter(a.days[d].counters[c], b.days[d].counters[c]);
 			}
 		}
 		expect(same, "roundtrip preserves store");
@@ -317,29 +412,38 @@ int RunDraw3DevicePerformanceTests()
 		expect(ParseStore("{ not json", untouched) == ParseResult::Malformed && untouched.records.size() == 2,
 			"malformed text fails without touching output");
 		expect(ParseStore("[]", untouched) == ParseResult::Malformed, "non-object root fails");
-		expect(ParseStore(R"({"schema":"other","version":1,"signatures":[]})", untouched) == ParseResult::WrongSchema,
+		expect(ParseStore(R"({"schema":"other","version":4,"signatures":[]})", untouched) == ParseResult::WrongSchema,
 			"wrong schema");
-		expect(ParseStore(R"({"schema":"inkeys.device-performance","version":2,"signatures":[]})", untouched) ==
+		expect(ParseStore(R"({"schema":"inkeys.device-performance","version":1,"signatures":[]})", untouched) ==
+			ParseResult::WrongSchema, "old version is not compatible");
+		expect(ParseStore(R"({"schema":"inkeys.device-performance","version":3,"signatures":[]})", untouched) ==
+			ParseResult::WrongSchema, "version 3 is not compatible");
+		expect(ParseStore(R"({"schema":"inkeys.device-performance","version":5,"signatures":[]})", untouched) ==
 			ParseResult::WrongSchema, "future version");
 
-		// 一个日桶 overBudget > frames、一个日期非法、一个维度超过总体：都只丢弃该桶。
-		const std::string partial = R"({"schema":"inkeys.device-performance","version":1,"signatures":[
+		// 掉帧多于有效帧、日期非法、维度超过总体、刷新率范围非法：都只丢弃该桶。
+		const std::string partial = R"({"schema":"inkeys.device-performance","version":4,"signatures":[
 			{"frameRate":120,"device":"hardware","presentation":"dcomp","waitable":1,"ulwAsyncReadback":-1,
 			 "ulwCompositionAlign":-1,"zhaoxin":0,"lastUsed":100,"days":[
-				{"date":20261101,"updated":100,"all":[10,20.0,11],"writing":[10,20.0,0],"highlighter":[0,0.0,0],
-				 "eraser":[0,0.0,0],"laser":[0,0.0,0],"shape":[0,0.0,0],"pan":[0,0.0,0]},
-				{"date":20261199,"updated":100,"all":[10,20.0,0],"writing":[10,20.0,0],"highlighter":[0,0.0,0],
-				 "eraser":[0,0.0,0],"laser":[0,0.0,0],"shape":[0,0.0,0],"pan":[0,0.0,0]},
-				{"date":20261102,"updated":100,"all":[10,20.0,0],"writing":[11,20.0,0],"highlighter":[0,0.0,0],
-				 "eraser":[0,0.0,0],"laser":[0,0.0,0],"shape":[0,0.0,0],"pan":[0,0.0,0]},
-				{"date":20261103,"updated":150,"all":[10,20.0,1],"writing":[10,20.0,1],"highlighter":[0,0.0,0],
-				 "eraser":[0,0.0,0],"laser":[0,0.0,0],"shape":[0,0.0,0],"pan":[0,0.0,0]}]},
+				{"date":20261101,"updated":100,"display":[0,0],"all":[10,20.0,10,10,83.3,11,10,83.3],
+				 "writing":[10,20.0,10,10,83.3,0,10,83.3],"highlighter":[0,0.0,0,0,0.0,0,0,0.0],"eraser":[0,0.0,0,0,0.0,0,0,0.0],"laser":[0,0.0,0,0,0.0,0,0,0.0],"shape":[0,0.0,0,0,0.0,0,0,0.0],"pan":[0,0.0,0,0,0.0,0,0,0.0]},
+				{"date":20261199,"updated":100,"display":[0,0],"all":[10,20.0,10,10,83.3,0,10,83.3],
+				 "writing":[10,20.0,10,10,83.3,0,10,83.3],"highlighter":[0,0.0,0,0,0.0,0,0,0.0],"eraser":[0,0.0,0,0,0.0,0,0,0.0],"laser":[0,0.0,0,0,0.0,0,0,0.0],"shape":[0,0.0,0,0,0.0,0,0,0.0],"pan":[0,0.0,0,0,0.0,0,0,0.0]},
+				{"date":20261102,"updated":100,"display":[0,0],"all":[10,20.0,10,10,83.3,0,10,83.3],
+				 "writing":[11,20.0,10,10,83.3,0,10,83.3],"highlighter":[0,0.0,0,0,0.0,0,0,0.0],"eraser":[0,0.0,0,0,0.0,0,0,0.0],"laser":[0,0.0,0,0,0.0,0,0,0.0],"shape":[0,0.0,0,0,0.0,0,0,0.0],"pan":[0,0.0,0,0,0.0,0,0,0.0]},
+				{"date":20261104,"updated":120,"display":[120,60],"all":[10,20.0,10,10,83.3,0,10,83.3],
+				 "writing":[10,20.0,10,10,83.3,0,10,83.3],"highlighter":[0,0.0,0,0,0.0,0,0,0.0],"eraser":[0,0.0,0,0,0.0,0,0,0.0],"laser":[0,0.0,0,0,0.0,0,0,0.0],"shape":[0,0.0,0,0,0.0,0,0,0.0],"pan":[0,0.0,0,0,0.0,0,0,0.0]},
+				{"date":20261103,"updated":150,"display":[60,120],"all":[10,20.0,10,9,83.3,1,12,90.0],
+				 "writing":[10,20.0,10,9,83.3,1,12,90.0],"highlighter":[0,0.0,0,0,0.0,0,0,0.0],"eraser":[0,0.0,0,0,0.0,0,0,0.0],"laser":[0,0.0,0,0,0.0,0,0,0.0],"shape":[0,0.0,0,0,0.0,0,0,0.0],"pan":[0,0.0,0,0,0.0,0,0,0.0]}]},
 			{"frameRate":"bad","days":[]}]})";
 		Store partialStore;
 		dropped = 0;
 		expect(ParseStore(partial, partialStore, &dropped) == ParseResult::Ok, "partial file parses");
-		expect(dropped == 4 && partialStore.records.size() == 1 && partialStore.records[0].days.size() == 1 &&
+		expect(dropped == 5 && partialStore.records.size() == 1 && partialStore.records[0].days.size() == 1 &&
 			partialStore.records[0].days[0].date == MakeDate(2026, 11, 3), "invalid buckets and records dropped");
+		expect(!partialStore.records.empty() && !partialStore.records[0].days.empty() &&
+			partialStore.records[0].days[0].display == DisplayRange{ 60, 120 } &&
+			partialStore.records[0].days[0].counters[0].computeFrames == 12, "valid bucket keeps all fields");
 	}
 
 	// 账本：启动加载坏文件改名 .bad、Submit 后 Stop 同步落盘、重启加载、清除删除文件。
@@ -356,7 +460,7 @@ int RunDraw3DevicePerformanceTests()
 			corrupt << "{ broken";
 		}
 		const Signature signature = DCompSignature();
-		const Counters counters = MakeCounters(DimensionBit(Dimension::Writing), 40, 3.0, 8.33);
+		const Tally counters = MakeTally(DimensionBit(Dimension::Writing), 40, 3.0, 8.33);
 		{
 			Inkeys::Drawing::Draw3::DevicePerformanceLedger ledger;
 			ledger.SetCurrentSignature(signature);
@@ -370,8 +474,8 @@ int RunDraw3DevicePerformanceTests()
 			expect(ledger.Snapshot(report.revision, after) && after.source == ReportSource::CurrentSignature &&
 				after.overall.frames == 40, "submit updates report");
 			expect(!ledger.Snapshot(after.revision, report), "unchanged revision does not copy");
-			ledger.SetDisplayRefreshHz(120);
-			expect(ledger.Snapshot(after.revision, report) && report.displayRefreshHz == 120, "refresh rate published");
+			ledger.SetRecordingEnabled(true); // 状态未变：不应产生新版本
+			expect(!ledger.Snapshot(after.revision, report), "unchanged recording flag keeps revision");
 			ledger.Stop(); // 同步写盘
 		}
 		expect(fs::exists(file), "stop writes file");
@@ -400,7 +504,7 @@ int RunDraw3DevicePerformanceTests()
 			expect(ledger.StoreCopy().records.empty(), "clear empties memory");
 		}
 		expect(!fs::exists(file), "clear deletes file");
-		// 记录关闭时遇到坏文件：不改名、不覆盖（关闭即不写文件）；报告带当前会话帧率。
+		// 记录关闭时遇到坏文件：不改名、不覆盖（关闭即不写文件）。
 		{
 			{
 				std::ofstream corrupt(file, std::ios::binary);
@@ -414,7 +518,8 @@ int RunDraw3DevicePerformanceTests()
 			expect(ledger.WaitLoaded(5000), "ledger loads with recording off");
 			expect(fs::exists(file) && !fs::exists(file.wstring() + L".bad"), "recording off leaves corrupt file untouched");
 			Report report;
-			expect(ledger.Snapshot(0, report) && report.sessionFrameRate == 120, "report carries session frame rate");
+			expect(ledger.Snapshot(0, report) && report.source == ReportSource::None && !report.recordingEnabled,
+				"recording off report is empty and paused");
 			ledger.SetRecordingEnabled(true);
 			ledger.Submit(signature, counters);
 			ledger.Stop();

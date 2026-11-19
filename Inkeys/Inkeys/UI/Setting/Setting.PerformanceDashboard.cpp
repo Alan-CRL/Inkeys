@@ -14,7 +14,6 @@
 #include <ctime>
 #include <format>
 #include <string>
-#include <vector>
 
 namespace Inkeys::UI::Setting::Design
 {
@@ -80,13 +79,6 @@ namespace Inkeys::UI::Setting::Design
 			catch (const std::exception&) { return pattern; }
 		}
 
-		std::string DateText(std::int32_t date)
-		{
-			char text[16];
-			std::snprintf(text, sizeof(text), "%02d-%02d", date / 100 % 100, date % 100);
-			return text;
-		}
-
 		std::string DateTimeText(std::int64_t unixSeconds)
 		{
 			const std::time_t value = static_cast<std::time_t>(unixSeconds);
@@ -135,51 +127,6 @@ namespace Inkeys::UI::Setting::Design
 			}
 		}
 
-		// 帧率建议与附加说明，每项一段；数字模板用 std::format 占位符，顺序与 zh-CN 一致。
-		std::vector<std::pair<std::string, bool>> AdviceParagraphs(const Advice& advice, const Report& report)
-		{
-			std::vector<std::pair<std::string, bool>> paragraphs; // second = 次要色
-			const int suggested = advice.suggestedFps;
-			const int predicted = static_cast<int>(std::lround(PredictLoadPercent(report.overall.avgWorkMs, suggested)));
-			// 刷新率未知时界面按与之匹配的预设档说明（MatchFrameRate 已按 60 Hz 处理）。
-			const int refresh = advice.refreshHz > 0 ? advice.refreshHz : advice.matchFps;
-			switch (advice.suggestion)
-			{
-			case Suggestion::Lower:
-				paragraphs.emplace_back(Format(IA(I18nKey.SettingsUI.Performance.Dashboard.Advice.Lower), suggested, predicted), false);
-				break;
-			case Suggestion::LowestHeavy:
-				paragraphs.emplace_back(IA(I18nKey.SettingsUI.Performance.Dashboard.Advice.LowestHeavy), false);
-				break;
-			case Suggestion::LowerToMatch:
-				paragraphs.emplace_back(Format(IA(I18nKey.SettingsUI.Performance.Dashboard.Advice.LowerToMatch), suggested), false);
-				break;
-			case Suggestion::Raise:
-				paragraphs.emplace_back(Format(IA(I18nKey.SettingsUI.Performance.Dashboard.Advice.Raise), suggested, predicted, refresh), false);
-				break;
-			case Suggestion::MatchedCanRaise:
-				paragraphs.emplace_back(Format(IA(I18nKey.SettingsUI.Performance.Dashboard.Advice.MatchedCanRaise), refresh, suggested), false);
-				break;
-			case Suggestion::AboveRefresh:
-				paragraphs.emplace_back(Format(IA(I18nKey.SettingsUI.Performance.Dashboard.Advice.AboveRefresh), refresh), false);
-				break;
-			case Suggestion::Fine:
-				paragraphs.emplace_back(IA(I18nKey.SettingsUI.Performance.Dashboard.Advice.Fine), false);
-				break;
-			default: break;
-			}
-			if (advice.stutterNote)
-			{
-				const int percent = static_cast<int>(std::lround(advice.overBudgetPercent));
-				paragraphs.emplace_back(Format(IA(I18nKey.SettingsUI.Performance.Dashboard.Advice.Stutter), percent), false);
-			}
-			if (advice.restartPending)
-				paragraphs.emplace_back(Format(IA(I18nKey.SettingsUI.Performance.Dashboard.Advice.RestartPending), advice.configuredFps), true);
-			if (report.source == ReportSource::PreviousSignature)
-				paragraphs.emplace_back(IA(I18nKey.SettingsUI.Performance.Dashboard.Advice.Previous), true);
-			return paragraphs;
-		}
-
 		// 小号胶囊标签；返回宽度（像素）。
 		float DrawChip(ImDrawList* draw, const std::string& text, ImVec2 position, float height, ImU32 color)
 		{
@@ -188,6 +135,13 @@ namespace Inkeys::UI::Setting::Design
 			TextAt(text.c_str(), { position.x + Pixels(8.0F), position.y + (height - Pixels(16.0F)) * 0.5F },
 				width, ImFluentTextStyle_Caption, color);
 			return width;
+		}
+
+		// 帧率取整显示；0（没有有效帧间隔等无法测得的情况）显示为“--”。
+		std::string FpsText(double fps)
+		{
+			const long rounded = std::lround(fps);
+			return rounded > 0 ? std::to_string(rounded) : std::string("--");
 		}
 
 		std::string PercentText(double percent)
@@ -212,9 +166,7 @@ namespace Inkeys::UI::Setting::Design
 		static const Report kEmptyReport{};
 		const Report& report = input.report ? *input.report : kEmptyReport;
 		const bool hasData = report.source != ReportSource::None && report.overall.available;
-		const Advice advice = Advise(report.overall, report.signature.frameRate, input.configuredFps,
-			static_cast<int>(report.displayRefreshHz), static_cast<int>(report.sessionFrameRate));
-		const Level level = hasData ? advice.level : Level::None;
+		const Level level = hasData ? ClassifyFigure(report.overall) : Level::None;
 		const auto& palette = GetPalette();
 		const int levelIndex = static_cast<int>(level);
 		const ImU32 accent = level == Level::None ? palette.textSecondary : palette.performanceAccent[levelIndex];
@@ -361,16 +313,23 @@ namespace Inkeys::UI::Setting::Design
 			const float sideWidth = (std::max)(Pixels(80.0F), right - sideLeft);
 			if (hasData)
 			{
+				// 三行：负载标签、平均渲染帧率（主数值）、计算帧率与无限制渲染帧率（小字）。
 				const std::string label = IA(I18nKey.SettingsUI.Performance.Dashboard.LoadLabel);
+				const std::string detail = Format(IA(I18nKey.SettingsUI.Performance.Dashboard.RenderFpsFormat),
+					FpsText(report.overall.renderFps));
+				const int compute = static_cast<int>(std::lround(report.overall.computeFps));
 				const int unlimited = static_cast<int>(std::lround(report.overall.unlimitedFps));
-				const int measured = static_cast<int>(report.signature.frameRate);
-				const std::string detail = Format(IA(I18nKey.SettingsUI.Performance.Dashboard.UnlimitedFormat), unlimited, measured);
+				const std::string secondary = Format(IA(I18nKey.SettingsUI.Performance.Dashboard.SecondaryFpsFormat),
+					compute, unlimited);
 				const float labelHeight = TextHeight(label.c_str(), sideWidth, ImFluentTextStyle_BodyStrong);
 				const float detailHeight = TextHeight(detail.c_str(), sideWidth, ImFluentTextStyle_Body);
-				const float sideTop = y + (numberSize.y - labelHeight - detailHeight - Pixels(2.0F)) * 0.5F;
+				const float secondaryHeight = TextHeight(secondary.c_str(), sideWidth, ImFluentTextStyle_Caption);
+				const float sideTop = y + (numberSize.y - labelHeight - detailHeight - secondaryHeight - Pixels(4.0F)) * 0.5F;
 				TextAt(label.c_str(), { sideLeft, sideTop }, sideWidth, ImFluentTextStyle_BodyStrong, palette.textPrimary);
 				TextAt(detail.c_str(), { sideLeft, sideTop + labelHeight + Pixels(2.0F) }, sideWidth, ImFluentTextStyle_Body,
-					palette.textSecondary);
+					palette.textPrimary);
+				TextAt(secondary.c_str(), { sideLeft, sideTop + labelHeight + detailHeight + Pixels(4.0F) }, sideWidth,
+					ImFluentTextStyle_Caption, palette.textSecondary);
 			}
 			else
 			{
@@ -382,38 +341,21 @@ namespace Inkeys::UI::Setting::Design
 		}
 		y += numberSize.y + Pixels(8.0F);
 
-		// ---- 结论、帧率建议与元信息 ----
+		// ---- 档位结论（收起态只保留这一句；评估时间放在展开区）----
 		if (hasData)
 		{
 			const std::string conclusion = ConclusionText(level);
 			TextAt(conclusion.c_str(), { left, y }, contentWidth, ImFluentTextStyle_BodyStrong, palette.textPrimary);
 			y += TextHeight(conclusion.c_str(), contentWidth, ImFluentTextStyle_BodyStrong) + Pixels(4.0F);
-			for (const auto& [text, secondary] : AdviceParagraphs(advice, report))
+			// 计数期间实测的显示器刷新率：动态刷新率下给出范围（如 60–120），测不到时不显示这一行。
+			if (report.display.Valid())
 			{
-				TextAt(text.c_str(), { left, y }, contentWidth, ImFluentTextStyle_Body,
-					secondary ? palette.textSecondary : palette.textPrimary);
-				y += TextHeight(text.c_str(), contentWidth, ImFluentTextStyle_Body) + Pixels(2.0F);
-			}
-			y += Pixels(10.0F);
-
-			std::string range = report.usageDays <= 1
-				? Format(IA(I18nKey.SettingsUI.Performance.Dashboard.RangeSingleFormat), DateText(report.lastDate))
-				: Format(IA(I18nKey.SettingsUI.Performance.Dashboard.RangeFormat), static_cast<int>(report.usageDays),
-					DateText(report.firstDate), DateText(report.lastDate));
-			const std::string evaluated = Format(IA(I18nKey.SettingsUI.Performance.Dashboard.EvaluatedFormat),
-				DateTimeText(report.evaluatedUnixSeconds));
-			const std::string firstLine = evaluated + " \xC2\xB7 " + range;
-			std::string coverage;
-			for (std::size_t i = 0; i < kDimensionCount; ++i)
-				if ((report.coverageMask & (1u << i)) != 0)
-					coverage += (coverage.empty() ? "" : " \xC2\xB7 ") + DimensionName(i);
-			std::string secondLine = Format(IA(I18nKey.SettingsUI.Performance.Dashboard.CoverageFormat), coverage);
-			if (report.overall.lowSample)
-				secondLine += "   " + IA(I18nKey.SettingsUI.Performance.Dashboard.LowSample);
-			for (const std::string* line : std::array<const std::string*, 2>{ &firstLine, &secondLine })
-			{
-				TextAt(line->c_str(), { left, y }, contentWidth, ImFluentTextStyle_Caption, palette.textSecondary);
-				y += TextHeight(line->c_str(), contentWidth, ImFluentTextStyle_Caption) + Pixels(2.0F);
+				const std::string range = report.display.minHz == report.display.maxHz
+					? std::to_string(report.display.maxHz)
+					: std::to_string(report.display.minHz) + "\xE2\x80\x93" + std::to_string(report.display.maxHz);
+				const std::string limit = Format(IA(I18nKey.SettingsUI.Performance.Dashboard.DisplayLimitFormat), range);
+				TextAt(limit.c_str(), { left, y }, contentWidth, ImFluentTextStyle_Body, palette.textSecondary);
+				y += TextHeight(limit.c_str(), contentWidth, ImFluentTextStyle_Body) + Pixels(4.0F);
 			}
 		}
 		// 收起态内容统一用一个 Dummy 登记高度（其中的按钮已作为独立 item 提交）。
@@ -471,9 +413,9 @@ namespace Inkeys::UI::Setting::Design
 					const float percentTextWidth = TextWidth(percent.c_str(), ImFluentTextStyle_Body);
 					TextAt(percent.c_str(), { barRight + Pixels(8.0F) + percentWidth - percentTextWidth, textTop },
 						percentTextWidth + Pixels(2.0F), ImFluentTextStyle_Body, valueColor);
-					const int fps = static_cast<int>(std::lround(figure.unlimitedFps));
-					std::string fpsText = Format(IA(I18nKey.SettingsUI.Performance.Dashboard.DimensionFpsFormat), fps);
-					if (figure.lowSample) fpsText += " \xC2\xB7 " + IA(I18nKey.SettingsUI.Performance.Dashboard.LowSampleShort);
+					// 该工具在用时的平均渲染帧率（按 DWM 合成周期实测）。
+					const std::string fpsText = Format(IA(I18nKey.SettingsUI.Performance.Dashboard.DimensionFpsFormat),
+						FpsText(figure.renderFps));
 					const float fpsTextWidth = TextWidth(fpsText.c_str(), ImFluentTextStyle_Body);
 					TextAt(fpsText.c_str(), { right - fpsTextWidth, textTop }, fpsTextWidth + Pixels(2.0F),
 						ImFluentTextStyle_Body, palette.textSecondary);
@@ -487,14 +429,11 @@ namespace Inkeys::UI::Setting::Design
 			// 记录开关：卡片内不用 ToggleRow（会画出卡中卡），手动布局 ToggleAction。
 			{
 				const std::string name = IA(I18nKey.SettingsUI.Performance.Dashboard.Recording.N);
-				const std::string description = IA(I18nKey.SettingsUI.Performance.Dashboard.Recording.E);
 				const float textWidth = contentWidth - Pixels(64.0F);
 				const float nameHeight = TextHeight(name.c_str(), textWidth, ImFluentTextStyle_Body);
-				const float descriptionHeight = TextHeight(description.c_str(), textWidth, ImFluentTextStyle_Caption);
-				const float blockHeight = (std::max)(nameHeight + descriptionHeight + Pixels(2.0F), Pixels(40.0F));
-				TextAt(name.c_str(), { left, row }, textWidth, ImFluentTextStyle_Body, palette.textPrimary);
-				TextAt(description.c_str(), { left, row + nameHeight + Pixels(2.0F) }, textWidth, ImFluentTextStyle_Caption,
-					palette.textSecondary);
+				const float blockHeight = (std::max)(nameHeight, Pixels(40.0F));
+				TextAt(name.c_str(), { left, row + (blockHeight - nameHeight) * 0.5F }, textWidth, ImFluentTextStyle_Body,
+					palette.textPrimary);
 				bool recording = input.recordingEnabled;
 				ImGui::PushID("##perf-recording");
 				if (ToggleAction(LayoutRect{ right - Pixels(48.0F), row, right, row + blockHeight }, recording))
@@ -524,6 +463,14 @@ namespace Inkeys::UI::Setting::Design
 						motion.clearArmedAt = ImGui::GetTime();
 					}
 				}
+				if (hasData && report.evaluatedUnixSeconds > 0)
+				{
+					const std::string evaluated = DateTimeText(report.evaluatedUnixSeconds);
+					const float evaluatedWidth = TextWidth(evaluated.c_str(), ImFluentTextStyle_Caption);
+					if (left + buttonWidth + Pixels(16.0F) + evaluatedWidth <= right)
+						TextAt(evaluated.c_str(), { right - evaluatedWidth, row + (Pixels(32.0F) - Pixels(16.0F)) * 0.5F },
+							evaluatedWidth + Pixels(2.0F), ImFluentTextStyle_Caption, palette.textSecondary);
+				}
 				row += Pixels(32.0F);
 			}
 			ImGui::SetCursorScreenPos({ origin.x, start.y });
@@ -542,5 +489,67 @@ namespace Inkeys::UI::Setting::Design
 		motion.lastHeight = realHeight;
 		ImGui::PopID();
 		return events;
+	}
+
+	Inkeys::Drawing::Draw3::DevicePerformance::Report MakePerformanceDashboardPreview(
+		PerformanceDashboardPreview preview, int frameRate)
+	{
+		Report report;
+		if (preview == PerformanceDashboardPreview::Off || preview == PerformanceDashboardPreview::Empty ||
+			preview >= PerformanceDashboardPreview::Count)
+			return report; // 无数据：source 为 None
+		struct Preset
+		{
+			double overall;
+			std::array<double, kDimensionCount> dimensions; // < 0 表示该工具暂无数据
+			std::uint32_t lowSampleMask;                    // 这些工具用少量帧，检查“样本少”的灰色数值
+			int frameRate;                                  // 0 = 跟随当前配置帧率
+		};
+		Preset preset{};
+		switch (preview)
+		{
+		case PerformanceDashboardPreview::Ample: preset = { 24.0, { 22.0, 18.0, 31.0, 27.0, 20.0, 35.0 }, 0, 0 }; break;
+		case PerformanceDashboardPreview::Moderate: preset = { 63.0, { 58.0, -1.0, 74.0, 66.0, -1.0, 69.0 }, 1u << 3, 0 }; break;
+		case PerformanceDashboardPreview::Tight: preset = { 88.0, { 84.0, 71.0, 97.0, 79.0, 92.0, 103.0 }, 0, 0 }; break;
+		case PerformanceDashboardPreview::Overloaded: preset = { 142.0, { 131.0, 118.0, 168.0, 104.0, 125.0, 151.0 }, 0, 0 }; break;
+		default: preset = { 47.0, { 45.0, -1.0, 52.0, -1.0, -1.0, 49.0 }, 0, 60 }; break; // Previous：旧签名 60 FPS
+		}
+		const int fps = preset.frameRate > 0 ? preset.frameRate : (frameRate > 0 ? frameRate : 120);
+		// 虚拟计数：负载 < 100% 时帧循环跟得上（渲染/计算帧率 = 画布帧率），
+		// ≥ 100% 时帧间隔按负载拉长（渲染/计算帧率 = 画布帧率 / 负载），并有 60% 掉帧。
+		const auto counter = [&](double loadPercent, std::uint64_t frames)
+		{
+			Counter value;
+			const double intervalMs = 1000.0 / fps;
+			const double count = static_cast<double>(frames);
+			value.frames = frames;
+			value.costMs = loadPercent / 100.0 * intervalMs * count;
+			value.timedFrames = frames;
+			value.displayedFrames = frames;
+			value.intervalMs = intervalMs * count * (std::max)(1.0, loadPercent / 100.0);
+			value.missed = loadPercent >= 100.0 ? frames * 3 / 5 : 0;
+			value.computeFrames = frames;
+			value.computeIntervalMs = value.intervalMs;
+			return value;
+		};
+		report.source = preview == PerformanceDashboardPreview::Previous ? ReportSource::PreviousSignature
+			: ReportSource::CurrentSignature;
+		report.signature.frameRate = static_cast<std::uint16_t>(fps);
+		report.overall = MakeFigure(counter(preset.overall, 9000), fps, kLowSampleOverallFrames);
+		for (std::size_t i = 0; i < kDimensionCount; ++i)
+		{
+			if (preset.dimensions[i] < 0.0) continue;
+			const std::uint64_t frames = (preset.lowSampleMask & (1u << i)) != 0 ? 60 : 1800;
+			report.dimensions[i] = MakeFigure(counter(preset.dimensions[i], frames), fps, kLowSampleDimensionFrames);
+		}
+		report.display = { 60, 120 }; // 动态刷新率机器上测得的范围
+		report.evaluatedUnixSeconds = static_cast<std::int64_t>(std::time(nullptr));
+		return report;
+	}
+
+	PerformanceDashboardPreview& PerformanceDashboardPreviewSelection() noexcept
+	{
+		static PerformanceDashboardPreview selection = PerformanceDashboardPreview::Off;
+		return selection;
 	}
 }

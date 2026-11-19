@@ -1,5 +1,6 @@
 ﻿module;
 #include "Draw3.DiagnosticOutput.h"
+#include "Draw3.CompositionClock.h"
 #include "Assets/EraserGripVisual.h"
 
 #ifndef NOMINMAX
@@ -15399,6 +15400,7 @@ namespace Inkeys::Drawing::Draw3
 		const FrameLatencyWaitReport presentLatencyWait = presentation_.ConsumePresentLatencyWait();
 		const double presentLatencyWaitMs = presentLatencyWait.waitedMs;
 		frameLatencyWaitMs_ += presentLatencyWaitMs;
+		framePacingWaitMs_ += presentLatencyWait.pacingWaitMs;
 		if (metrics_ && presentLatencyWait.timedOut) metrics_->RecordLatencyWait(true, false);
 		lastPresentDurationMs_ = (std::max)(0.0,
 			GetQpcTimeMilliseconds() - presentStartMs - presentLatencyWaitMs);
@@ -21573,7 +21575,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (!performanceDeferredTally.Empty())
 			{
-				devicePerformance_->Submit(performanceDeferredSignature, performanceDeferredTally.counters,
+				devicePerformance_->Submit(performanceDeferredSignature, performanceDeferredTally,
 					performanceDeferredSegmentEpoch);
 				performanceDeferredTally.Clear();
 			}
@@ -21587,7 +21589,7 @@ namespace Inkeys::Drawing::Draw3
 				devicePerformance_->Submit(performanceSignature, {});
 				return;
 			}
-			devicePerformance_->Submit(performanceSignature, performanceTally.counters, performanceSegmentEpoch);
+			devicePerformance_->Submit(performanceSignature, performanceTally, performanceSegmentEpoch);
 			performanceTally.Clear();
 		};
 		if (devicePerformance_)
@@ -21597,6 +21599,71 @@ namespace Inkeys::Drawing::Draw3
 			performanceSignatureKnown = true;
 			devicePerformance_->SetCurrentSignature(performanceSignature);
 		}
+		// 一轮帧循环的测量挂起到下一轮开始时结算：那时才知道本轮帧间隔（本轮开始到下一轮开始）与是否真正提交上屏
+		// （ULW 节流时本帧的累计脏区可能在帧尾或进入空闲前才拷出）。只有固定大小的拷贝与常数次加法。
+		struct PendingFrame
+		{
+			bool valid = false;
+			double startMs = 0.0;
+			double endMs = 0.0;          // 进入帧率截止等待（或其他收尾等待）之前的时刻
+			double pacingWaitMs = 0.0;   // 本轮纯显示节拍等待，不算无限制渲染耗时
+			bool paced = false;          // 本轮以帧率截止等待结束：下一轮开始 − 本轮开始 = 有效帧间隔
+			bool rendered = false;       // 有脏区且 Present 成功（不含调试板自刷新帧）
+			std::uint64_t commitsBefore = 0;
+			CompositionTimingSample displayTiming; // DWM 合成时序（按合成周期计数渲染帧）；valid=false 时每次提交都算
+			int displayHz = 0;           // 由刷新周期四舍五入，只用于刷新率范围显示；0 = 未测到
+			std::uint32_t dimensions = 0; // 设备性能看板维度，0 = 不计看板
+			bool hud = false;            // 画布调试 HUD 计入
+		};
+		PendingFrame pendingFrame;
+		DevicePerformance::RefreshSlotCounter refreshSlots; // 按 DWM 合成周期判断提交是否真正上屏一帧
+		// 帧率截止等待之前调用：本轮的整帧耗时到此为止（帧尾 ULW 拷出等 GPU 的时间也算在内），帧间隔有效。
+		const auto markPendingFramePaced = [&](double endMs) noexcept
+		{
+			if (!pendingFrame.valid) return;
+			pendingFrame.endMs = endMs;
+			pendingFrame.paced = true;
+		};
+		const auto settlePendingFrame = [&](double nextStartMs, std::uint64_t commitsNow) noexcept
+		{
+			if (!pendingFrame.valid) return;
+			const PendingFrame frame = pendingFrame;
+			pendingFrame.valid = false;
+			DevicePerformance::FrameSample sample;
+			sample.rendered = frame.rendered;
+			// 本轮有任何真正提交（含无脏区轮次完成的 ULW 延后提交）都推进合成周期，但只有渲染帧计入上屏帧数。
+			const bool committed = commitsNow != frame.commitsBefore;
+			const bool newSlot = committed && refreshSlots.Observe(presentation_.LastCommittedPresentMs(),
+				frame.displayTiming.vblankMs, frame.displayTiming.valid ? frame.displayTiming.periodMs : 0.0);
+			sample.displayed = frame.rendered && newSlot;
+			sample.costMs = (std::max)(0.0, frame.endMs - frame.startMs - frame.pacingWaitMs);
+			sample.intervalMs = frame.paced && nextStartMs > frame.startMs ? nextStartMs - frame.startMs : -1.0;
+			sample.targetMs = 1000.0 / configuration_.timingProfile.target_fps;
+			if (frame.hud && canvasDebugOverlay)
+				canvasDebugOverlay->OnFrame(sample.costMs, sample.rendered, sample.displayed, frame.paced, frame.displayHz);
+			if (frame.dimensions == 0 || !devicePerformance_ || !devicePerformance_->RecordingEnabled()) return;
+			const DevicePerformance::Signature signature = currentPerformanceSignature();
+			if (!performanceSignatureKnown || !(signature == performanceSignature))
+			{
+				// 运行中实际呈现状态变了（极少）：旧签名的段转存到第二个槽（固定大小拷贝），空闲时再移交。
+				// 同一段内第三次变化时较早的数据丢弃（只影响一次极短的统计）。
+				if (!performanceTally.Empty())
+				{
+					performanceDeferredTally = performanceTally;
+					performanceDeferredSignature = performanceSignature;
+					performanceDeferredSegmentEpoch = performanceSegmentEpoch;
+					performanceTally.Clear();
+				}
+				performanceSignature = signature;
+				performanceSignatureKnown = true;
+				performanceSignaturePending = true;
+			}
+			const bool segmentStart = performanceTally.Empty();
+			if (!performanceTally.Add(frame.dimensions, sample)) return;
+			// 一段的第一个计数帧：告诉账本绘制中，写盘线程在下一次空闲移交前不落盘（没计入的帧不标记，免得一直挡住写盘）。
+			if (segmentStart) performanceSegmentEpoch = devicePerformance_->MarkBusy();
+			performanceTally.display.Observe(frame.displayHz);
+		};
 		try
 		{
 		while (true)
@@ -21636,6 +21703,9 @@ namespace Inkeys::Drawing::Draw3
 					configuration_.dpiScale);
 			}
 			const double frameStartMs = GetQpcTimeMilliseconds();
+			// 上一轮的设备性能/HUD 测量在本轮开始时结算；提交计数取本轮开始值，本轮的提交与上一轮比较。
+			const std::uint64_t frameCommitsBefore = presentation_.CommittedPresentCount();
+			settlePendingFrame(frameStartMs, frameCommitsBefore);
 			if (metricsState_)
 			{
 				const uint32_t before = static_cast<uint32_t>(std::count_if(active.begin(), active.end(),
@@ -21659,6 +21729,7 @@ namespace Inkeys::Drawing::Draw3
 			} metricsLoopExit{ metricsState_.get(), active };
 			lastPresentDurationMs_ = 0.0;
 			frameLatencyWaitMs_ = 0.0;
+			framePacingWaitMs_ = 0.0;
 			lastPresentSucceeded_ = false;
 			performanceHeavyFrame = false;
 			performanceFrameDimensions = 0;
@@ -21869,6 +21940,7 @@ namespace Inkeys::Drawing::Draw3
 				const FrameLatencyWaitReport latencyWait = presentation_.PrepareFrameLatency(
 					1000.0 / configuration_.timingProfile.target_fps, latencyCountable);
 				frameLatencyWaitMs_ += latencyWait.waitedMs;
+				framePacingWaitMs_ += latencyWait.pacingWaitMs;
 				const bool latencyTripped = latencyWait.state == FrameLatencyWaitState::Tripped;
 				if (metricsState_)
 				{
@@ -23771,57 +23843,43 @@ namespace Inkeys::Drawing::Draw3
 				frameDirty.top >= canvasDebugInjectedBounds.top &&
 				frameDirty.right <= canvasDebugInjectedBounds.right &&
 				frameDirty.bottom <= canvasDebugInjectedBounds.bottom;
-			if (canvasDebugOverlay)
+			if (canvasDebugOverlay && presentSucceeded && !canvasDebugOnlyFrame)
 			{
-				const bool debugOnlyFrame = canvasDebugOnlyFrame;
-				// 帧延迟等待不是工作耗时：无限制帧率与负载百分比按扣除后的耗时计算。
-				canvasDebugOverlay->OnFrame((std::max)(0.0, canvasFrameElapsedMilliseconds - frameLatencyWaitMs_),
-					presentSucceeded && !debugOnlyFrame);
-				if (presentSucceeded && !debugOnlyFrame)
-				{
-					// 输入到上屏：快照时间戳到承载它的 Present 返回；DWM 扫描输出还会再多至多一个刷新周期。
-					LARGE_INTEGER presentedQpc = {};
-					QueryPerformanceCounter(&presentedQpc);
-					canvasDebugOverlay->OnPresented(presentedQpc.QuadPart);
-				}
+				// 输入到上屏：快照时间戳到承载它的 Present 返回；DWM 扫描输出还会再多至多一个刷新周期。
+				LARGE_INTEGER presentedQpc = {};
+				QueryPerformanceCounter(&presentedQpc);
+				canvasDebugOverlay->OnPresented(presentedQpc.QuadPart);
 			}
-			// 设备性能看板计数：成功上屏的真实绘制帧。排除一次性重帧、模式切换帧、桌面/PPT 选择模式辅助输出
-			// （白板移动模式也是选择模式但仍输出主画布，漫游就在其中，不能排除）、画布调试可视化（标记自身有光栅开销）。
-			if (devicePerformance_ && presentSucceeded && !canvasDebugOnlyFrame && !performanceHeavyFrame &&
-				!outputTargetChanged && !selectionUsesAuxiliary &&
-				canvasDebugOptions_.load(std::memory_order_acquire) != 3u && devicePerformance_->RecordingEnabled())
 			{
-				std::uint32_t dimensions = performanceFrameDimensions;
-				// 平移惯性最后一帧或抬手帧 Step 后 Active() 已为 false，用帧开始时的状态补上。
-				if (navigationInProgress || canvasPan.Active())
-					dimensions |= DevicePerformance::DimensionBit(DevicePerformance::Dimension::Pan);
-				// 激光笔抬起后的保持/淡出仍在按帧率出帧，属于激光笔负载。
-				if (laserLifecycle.phase == LaserTrailPhase::Hold || laserLifecycle.phase == LaserTrailPhase::Fade)
-					dimensions |= DevicePerformance::DimensionBit(DevicePerformance::Dimension::Laser);
-				if (dimensions != 0)
+				// 设备性能看板计数：真实绘制的帧循环（有在用工具或漫游、激光淡出），无脏区的帧只算计算帧。
+				// 排除一次性重帧、模式切换帧、桌面/PPT 选择模式辅助输出（白板移动模式也是选择模式但仍输出主画布，
+				// 漫游就在其中，不能排除）、画布调试可视化（标记自身有光栅开销）。
+				std::uint32_t dimensions = 0;
+				if (devicePerformance_ && !performanceHeavyFrame && !outputTargetChanged && !selectionUsesAuxiliary &&
+					canvasDebugOptions_.load(std::memory_order_acquire) != 3u && devicePerformance_->RecordingEnabled())
 				{
-					const DevicePerformance::Signature signature = currentPerformanceSignature();
-					if (!performanceSignatureKnown || !(signature == performanceSignature))
-					{
-						// 运行中实际呈现状态变了（极少）：旧签名的段转存到第二个槽（固定大小拷贝），空闲时再移交。
-						// 同一段内第三次变化时较早的数据丢弃（只影响一次极短的统计）。
-						if (!performanceTally.Empty())
-						{
-							performanceDeferredTally = performanceTally;
-							performanceDeferredSignature = performanceSignature;
-							performanceDeferredSegmentEpoch = performanceSegmentEpoch;
-							performanceTally.Clear();
-						}
-						performanceSignature = signature;
-						performanceSignatureKnown = true;
-						performanceSignaturePending = true;
-					}
-					// 一段的第一个计数帧：告诉账本绘制中，写盘线程在下一次空闲移交前不落盘。
-					if (performanceTally.Empty()) performanceSegmentEpoch = devicePerformance_->MarkBusy();
-					performanceTally.Add(dimensions,
-						(std::max)(0.0, canvasFrameElapsedMilliseconds - frameLatencyWaitMs_),
-						1000.0 / configuration_.timingProfile.target_fps);
+					dimensions = performanceFrameDimensions;
+					// 平移惯性最后一帧或抬手帧 Step 后 Active() 已为 false，用帧开始时的状态补上。
+					if (navigationInProgress || canvasPan.Active())
+						dimensions |= DevicePerformance::DimensionBit(DevicePerformance::Dimension::Pan);
+					// 激光笔抬起后的保持/淡出仍在按帧率出帧，属于激光笔负载。
+					if (laserLifecycle.phase == LaserTrailPhase::Hold || laserLifecycle.phase == LaserTrailPhase::Fade)
+						dimensions |= DevicePerformance::DimensionBit(DevicePerformance::Dimension::Laser);
 				}
+				// 测量挂起到下一轮开始时结算；帧率截止等待分支会更新结束时刻并标记为按帧率推进。
+				pendingFrame = {};
+				pendingFrame.valid = dimensions != 0 || canvasDebugOverlay != nullptr;
+				pendingFrame.startMs = frameStartMs;
+				pendingFrame.endMs = frameStartMs + canvasFrameElapsedMilliseconds;
+				pendingFrame.pacingWaitMs = framePacingWaitMs_;
+				pendingFrame.rendered = presentSucceeded && !canvasDebugOnlyFrame;
+				pendingFrame.commitsBefore = frameCommitsBefore;
+				pendingFrame.displayTiming = pendingFrame.valid ? presentation_.SampleDisplayTiming(frameStartMs)
+					: CompositionTimingSample{};
+				pendingFrame.displayHz = pendingFrame.displayTiming.valid
+					? static_cast<int>(std::lround(1000.0 / pendingFrame.displayTiming.periodMs)) : 0;
+				pendingFrame.dimensions = dimensions;
+				pendingFrame.hud = canvasDebugOverlay != nullptr;
 			}
 			previousCanvasFrameWorkMilliseconds = (std::max)(0.0,
 				canvasFrameElapsedMilliseconds - lastPresentDurationMs_);
@@ -23865,6 +23923,7 @@ namespace Inkeys::Drawing::Draw3
 						lastPresentDurationMs_, lastPresentSucceeded_);
 				const double remainingFrameBudgetMs =
 					1000.0 / configuration_.timingProfile.target_fps - workMs;
+				markPendingFramePaced(frameStartMs + workMs);
 				// DWM 合成对齐（ULW）：微调下一帧开始相位，使提交恰好落在合成截止之前；其余模式为 0。
 				input_.WaitForFrameDeadline(remainingFrameBudgetMs + presentation_.UlwFramePhaseAdjustMs(frameStartMs));
 				size_t committedCount = 0;
@@ -23893,6 +23952,7 @@ namespace Inkeys::Drawing::Draw3
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
 				const double remainingFrameBudgetMs =
 					1000.0 / configuration_.timingProfile.target_fps - workMs;
+				markPendingFramePaced(frameStartMs + workMs);
 				input_.WaitForFrameDeadline(remainingFrameBudgetMs + presentation_.UlwFramePhaseAdjustMs(frameStartMs));
 				lastActiveFrameStartMs = frameStartMs;
 			}
@@ -23902,6 +23962,7 @@ namespace Inkeys::Drawing::Draw3
 				// 这里按预设帧间隔等待，每个帧间隔最多一帧光标；按下/抬起仍以打断式唤醒立即返回。
 				if (!rasterSubmissionFailed) serviceUlwBeforeFrameWait(); // 光栅失败帧的最终纹理不可读回
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
+				markPendingFramePaced(frameStartMs + workMs);
 				input_.WaitForFrameDeadline(1000.0 / configuration_.timingProfile.target_fps - workMs +
 					presentation_.UlwFramePhaseAdjustMs(frameStartMs));
 				lastActiveFrameStartMs = 0.0;
@@ -23977,6 +24038,9 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
+		// 退出前结算最后一轮：它之后没有下一轮，帧间隔无效，只计耗时与是否提交。
+		pendingFrame.paced = false;
+		settlePendingFrame(GetQpcTimeMilliseconds(), presentation_.CommittedPresentCount());
 		submitPerformanceTally();
 		FlushCursorDiagnostics();
 		if (haptics_) haptics_->StopFeedback();

@@ -1071,16 +1071,12 @@ inline constexpr struct I18nKeyRoot
                 const char* Expand = "SettingsUI/Performance/Dashboard/Expand";
                 const char* Collapse = "SettingsUI/Performance/Dashboard/Collapse";
                 const char* LoadLabel = "SettingsUI/Performance/Dashboard/LoadLabel";
-                const char* UnlimitedFormat = "SettingsUI/Performance/Dashboard/UnlimitedFormat";
+                const char* RenderFpsFormat = "SettingsUI/Performance/Dashboard/RenderFpsFormat";
+                const char* SecondaryFpsFormat = "SettingsUI/Performance/Dashboard/SecondaryFpsFormat";
+                const char* DisplayLimitFormat = "SettingsUI/Performance/Dashboard/DisplayLimitFormat";
                 const char* EmptyHint = "SettingsUI/Performance/Dashboard/EmptyHint";
                 const char* PreviousTag = "SettingsUI/Performance/Dashboard/PreviousTag";
                 const char* PausedTag = "SettingsUI/Performance/Dashboard/PausedTag";
-                const char* LowSample = "SettingsUI/Performance/Dashboard/LowSample";
-                const char* LowSampleShort = "SettingsUI/Performance/Dashboard/LowSampleShort";
-                const char* EvaluatedFormat = "SettingsUI/Performance/Dashboard/EvaluatedFormat";
-                const char* RangeFormat = "SettingsUI/Performance/Dashboard/RangeFormat";
-                const char* RangeSingleFormat = "SettingsUI/Performance/Dashboard/RangeSingleFormat";
-                const char* CoverageFormat = "SettingsUI/Performance/Dashboard/CoverageFormat";
                 const char* NoDimensionData = "SettingsUI/Performance/Dashboard/NoDimensionData";
                 const char* DimensionFpsFormat = "SettingsUI/Performance/Dashboard/DimensionFpsFormat";
                 struct Node__SettingsUI__Performance__Dashboard__Level
@@ -1097,19 +1093,6 @@ inline constexpr struct I18nKeyRoot
                     const char* Tight = "SettingsUI/Performance/Dashboard/Conclusion/Tight";
                     const char* Overloaded = "SettingsUI/Performance/Dashboard/Conclusion/Overloaded";
                 } Conclusion{};
-                struct Node__SettingsUI__Performance__Dashboard__Advice
-                {
-                    const char* Lower = "SettingsUI/Performance/Dashboard/Advice/Lower";
-                    const char* LowestHeavy = "SettingsUI/Performance/Dashboard/Advice/LowestHeavy";
-                    const char* LowerToMatch = "SettingsUI/Performance/Dashboard/Advice/LowerToMatch";
-                    const char* Raise = "SettingsUI/Performance/Dashboard/Advice/Raise";
-                    const char* MatchedCanRaise = "SettingsUI/Performance/Dashboard/Advice/MatchedCanRaise";
-                    const char* AboveRefresh = "SettingsUI/Performance/Dashboard/Advice/AboveRefresh";
-                    const char* Fine = "SettingsUI/Performance/Dashboard/Advice/Fine";
-                    const char* Stutter = "SettingsUI/Performance/Dashboard/Advice/Stutter";
-                    const char* RestartPending = "SettingsUI/Performance/Dashboard/Advice/RestartPending";
-                    const char* Previous = "SettingsUI/Performance/Dashboard/Advice/Previous";
-                } Advice{};
                 struct Node__SettingsUI__Performance__Dashboard__Dimension
                 {
                     const char* Writing = "SettingsUI/Performance/Dashboard/Dimension/Writing";
@@ -1122,7 +1105,6 @@ inline constexpr struct I18nKeyRoot
                 struct Node__SettingsUI__Performance__Dashboard__Recording
                 {
                     const char* N = "SettingsUI/Performance/Dashboard/Recording/N";
-                    const char* E = "SettingsUI/Performance/Dashboard/Recording/E";
                 } Recording{};
                 const char* Clear = "SettingsUI/Performance/Dashboard/Clear";
                 const char* ClearConfirm = "SettingsUI/Performance/Dashboard/ClearConfirm";
@@ -1461,6 +1443,18 @@ inline constexpr struct I18nKeyRoot
                 const char* N = "SettingsUI/DebugSoftware/CanvasDebug/N";
                 const char* E = "SettingsUI/DebugSoftware/CanvasDebug/E";
             } CanvasDebug{};
+            struct Node__SettingsUI__DebugSoftware__PerformancePreview
+            {
+                const char* N = "SettingsUI/DebugSoftware/PerformancePreview/N";
+                const char* E = "SettingsUI/DebugSoftware/PerformancePreview/E";
+                const char* Off = "SettingsUI/DebugSoftware/PerformancePreview/Off";
+                const char* Empty = "SettingsUI/DebugSoftware/PerformancePreview/Empty";
+                const char* Ample = "SettingsUI/DebugSoftware/PerformancePreview/Ample";
+                const char* Moderate = "SettingsUI/DebugSoftware/PerformancePreview/Moderate";
+                const char* Tight = "SettingsUI/DebugSoftware/PerformancePreview/Tight";
+                const char* Overloaded = "SettingsUI/DebugSoftware/PerformancePreview/Overloaded";
+                const char* Previous = "SettingsUI/DebugSoftware/PerformancePreview/Previous";
+            } PerformancePreview{};
             struct Node__SettingsUI__DebugSoftware__DelayWaiting
             {
                 const char* N = "SettingsUI/DebugSoftware/DelayWaiting/N";
