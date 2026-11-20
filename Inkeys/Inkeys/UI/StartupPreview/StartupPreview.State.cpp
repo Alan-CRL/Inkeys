@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include <algorithm>
 #include <chrono>
@@ -74,9 +74,14 @@ namespace Inkeys::UI::StartupPreview
 			&& widthDip <= CachedStartupBarWidthMaximumDip;
 	}
 
-	double ResolveCachedStartupBarWidthDip(double widthDip) noexcept
+	double ResolveCachedStartupBarWidthDip(double widthDip, bool compact) noexcept
 	{
+		if (compact)
+			return IsValidCachedStartupBarWidthDip(widthDip)
+				? widthDip : CompactCachedStartupBarWidthDip;
+		// 大尺寸展开宽度不可能小于 80 DIP 主按钮；全局下限放宽到 35 后仍按原规则回退。
 		return IsValidCachedStartupBarWidthDip(widthDip)
+			&& widthDip >= ::BarMainButtonWidthDip
 			? widthDip : DefaultStartupBarWidthDip;
 	}
 
@@ -90,18 +95,21 @@ namespace Inkeys::UI::StartupPreview
 	}
 
 	double CalculateStartupBarTotalWidthDip(double mainButtonTargetWidthDip,
-		double layoutTotalWidthDip, bool expanded) noexcept
+		double layoutTotalWidthDip, bool expanded, bool compact) noexcept
 	{
 		if (!std::isfinite(mainButtonTargetWidthDip)
 			|| mainButtonTargetWidthDip < CachedStartupBarWidthMinimumDip
 			|| mainButtonTargetWidthDip > CachedStartupBarWidthMaximumDip)
-			return DefaultStartupBarWidthDip;
+			return compact ? CompactCachedStartupBarWidthDip : DefaultStartupBarWidthDip;
 		if (!expanded) return mainButtonTargetWidthDip;
 		if (!std::isfinite(layoutTotalWidthDip) || layoutTotalWidthDip <= 0.0)
-			return DefaultStartupBarWidthDip;
+			return compact ? CompactCachedStartupBarWidthDip : DefaultStartupBarWidthDip;
+		// 主按钮到主栏间距按档位：小尺寸 5、大尺寸 10。
 		return ResolveCachedStartupBarWidthDip(
 			Inkeys::UI::Bar::CalculateExpandedTotalWidthDip(
-				mainButtonTargetWidthDip, layoutTotalWidthDip));
+				mainButtonTargetWidthDip, layoutTotalWidthDip,
+				compact ? ::BarCompactSizeMetrics.mainButtonGap
+					: ::BarMainButtonToMainBarGapDip), compact);
 	}
 
 	double ResolveStartupPreviewScale(double dpi, double barZoom, double uiBaseScale) noexcept
@@ -128,12 +136,13 @@ namespace Inkeys::UI::StartupPreview
 	}
 
 	StartupPreviewPixelSize ResolveStartupPreviewPixelSize(
-		double widthDip, double dpi, double barZoom, double uiBaseScale) noexcept
+		double widthDip, double dpi, double barZoom, double uiBaseScale, double heightDip) noexcept
 	{
-		widthDip = ResolveCachedStartupBarWidthDip(widthDip);
+		if (!std::isfinite(heightDip) || heightDip <= 0.0) heightDip = DefaultStartupBarHeightDip;
+		widthDip = ResolveCachedStartupBarWidthDip(widthDip, heightDip <= CompactStartupBarHeightDip);
 		return {
 			RoundStartupPreviewDipToPixels(widthDip, dpi, barZoom, uiBaseScale),
-			RoundStartupPreviewDipToPixels(DefaultStartupBarHeightDip,
+			RoundStartupPreviewDipToPixels(heightDip,
 				dpi, barZoom, uiBaseScale),
 		};
 	}

@@ -283,6 +283,17 @@ int RunDisplayTests()
 				- 0.6 * dpiScale) < 1e-9,
 				"basic taskbar mode retains 48 DIP without Shell samples and defaults missing DPI to 96");
 		}
+	for (const UINT dpi : { 96U, 144U, 192U })
+		for (const int thickness : { 24, 48, 72, 96 })
+		{
+			// 小尺寸：基础量 35 DIP 对 35 DIP 主栏（100% 即 1:1），真实量让 35 DIP 主栏等于任务栏厚度。
+			const double basic = ResolveUiScaleBase(dpi, thickness, 96, 48, UiScaleBaseMode::TaskbarBasic, 35.0, 35.0);
+			Check(std::abs(basic - dpi / 96.0) < 1e-9,
+				"compact basic taskbar base keeps the 35 DIP bar at its DPI size");
+			const double actual = ResolveUiScaleBase(dpi, thickness, 96, 48, UiScaleBaseMode::TaskbarActual, 35.0, 35.0);
+			Check(std::abs(35.0 * actual - thickness) < 1e-9,
+				"compact actual taskbar base matches the 35 DIP bar to taskbar thickness");
+		}
 	Check(std::abs(ResolveUiScaleBase(192, 0, 144, 72, UiScaleBaseMode::TaskbarActual) - 1.2) < 1e-9
 		&& ResolveUiScaleBase(144, 0, 0, 0, UiScaleBaseMode::TaskbarActual) == 1.5
 		&& ResolveUiScaleBase(0, -1, 0, -1, UiScaleBaseMode::TaskbarActual) == 1.0,

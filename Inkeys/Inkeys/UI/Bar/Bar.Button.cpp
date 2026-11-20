@@ -1020,6 +1020,9 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 		presentation, whiteboard, featureEnabled, separate, selection && !hasContent, freezeAvailable);
 	const auto recall = barUISet.RecallChromeView(compactSelection);
 	if (fold || !hasMoreButtons) barUISet.barState.moreExpanded = false;
+	// 读取渲染线程已落地的档位，保证投影与本帧布局使用同一尺寸。
+	const bool compactSize = NormalizeBarSizeMode(barUISet.barStyle.appliedSizeMode.load(
+		std::memory_order_acquire)) == BarSizeMode::Compact;
 	const auto apply = [&](BarButtonClass* button)
 	{
 		if (!button) return;
@@ -1084,6 +1087,8 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 			break;
 		default: break;
 		}
+		// 小尺寸只改运行时有效尺寸：基准/配置/注册尺寸保持原值，切回大尺寸即恢复。
+		if (compactSize && size != ButtonSizeEnum::oneTwo) size = ButtonSizeEnum::oneOne;
 		button->size = size;
 		button->userVisible = button->baseUserVisible.load();
 		button->hide = hide;
@@ -1728,6 +1733,13 @@ void BarButtonSetClass::PresetHoming(const StateModeClass& stateMode)
 
 namespace
 {
+	// 主栏已落地小尺寸档位：撤回外观改为两键常驻、无弹窗。
+	bool IsCompactSizeBar()
+	{
+		return NormalizeBarSizeMode(barUISet.barStyle.appliedSizeMode.load(std::memory_order_acquire))
+			== BarSizeMode::Compact;
+	}
+
 	bool IsCompactSelectionBar()
 	{
 		return !Inkeys::UI::Bar::WhiteboardActive()
@@ -1788,7 +1800,7 @@ namespace
 			std::scoped_lock lock(owner.recallChromeMutex);
 			RefreshRecallAvailabilityLocked(owner);
 			clickAvailability = owner.recallChrome.availability;
-			const auto view = ResolveRecallChrome(owner.recallChrome, IsCompactSelectionBar());
+			const auto view = ResolveRecallChrome(owner.recallChrome, IsCompactSelectionBar(), IsCompactSizeBar());
 			if (popupCommand && (!view.popupOpen || view.popupShowsRedo != redo)) return false;
 			commandEnabled = RecallChromeCommandEnabled(clickAvailability, redo);
 			if (!commandEnabled) ApplyRecallCommandResultLocked(owner, redo, clickAvailability, false);
@@ -1827,7 +1839,7 @@ Inkeys::UI::Bar::RecallChromeView BarUISetClass::RecallChromeView(bool compactSe
 {
 	std::scoped_lock lock(recallChromeMutex);
 	RefreshRecallAvailabilityLocked(*this);
-	recallChromePresentation = Inkeys::UI::Bar::ResolveRecallChrome(recallChrome, compactSelection);
+	recallChromePresentation = Inkeys::UI::Bar::ResolveRecallChrome(recallChrome, compactSelection, IsCompactSizeBar());
 	return recallChromePresentation;
 }
 
@@ -1890,7 +1902,7 @@ bool BarUISetClass::ActivateRecallPopupCommand()
 	{
 		std::scoped_lock lock(recallChromeMutex);
 		RefreshRecallAvailabilityLocked(*this);
-		const auto view = Inkeys::UI::Bar::ResolveRecallChrome(recallChrome, IsCompactSelectionBar());
+		const auto view = Inkeys::UI::Bar::ResolveRecallChrome(recallChrome, IsCompactSelectionBar(), IsCompactSizeBar());
 		if (!view.popupOpen) return false;
 		showsRedo = view.popupShowsRedo;
 	}
@@ -2027,10 +2039,14 @@ namespace Inkeys::UI::Bar
 	BarButtonListLayout ResolveBarButtonListLayout(
 		const std::vector<std::shared_ptr<BarButtonClass>>& buttons,
 		BarButtonListLayoutKind kind,
-		const std::vector<std::shared_ptr<BarButtonClass>>& secondGroup)
+		const std::vector<std::shared_ptr<BarButtonClass>>& secondGroup,
+		BarSizeMode sizeMode)
 	{
+		const auto& sizeMetrics = ResolveBarSizeMetrics(sizeMode);
+		const bool compact = sizeMode == BarSizeMode::Compact;
+		const ListLayoutMetrics listMetrics{ sizeMetrics.gap, sizeMetrics.one, sizeMetrics.two };
 		ListLayoutSpec spec;
-		spec.height = BarMainBarHeightDip;
+		spec.height = sizeMetrics.barHeight;
 		std::vector<ListLayoutItem> items;
 		std::vector<std::shared_ptr<BarButtonClass>> identities;
 		auto Append = [&](const auto& group)
@@ -2047,20 +2063,30 @@ namespace Inkeys::UI::Bar
 				case ButtonSizeEnum::oneTwo: item.columnSpan = 1; item.rowSpan = 2; break;
 				default: item.columnSpan = item.rowSpan = 2; break;
 				}
-				item.width = item.columnSpan == 2 ? ButtonTwoSideDip : ButtonOneSideDip;
-				item.height = item.rowSpan == 2 ? ButtonTwoSideDip : ButtonOneSideDip;
+				item.width = item.columnSpan == 2 ? sizeMetrics.two : sizeMetrics.one;
+				item.height = item.rowSpan == 2 ? sizeMetrics.two : sizeMetrics.one;
 				item.visible = button->IsVisible(); item.separator = button->preset == BarButtonPresetEnum::Divider;
 				if (kind == BarButtonListLayoutKind::GeometryGrid)
 				{
-					item.columnSpan = item.rowSpan = 2; item.width = item.height = ButtonTwoSideDip;
+					// 形状类别：大尺寸固定 2×2，小尺寸统一 1×1。
+					item.columnSpan = item.rowSpan = compact ? 1 : 2;
+					item.width = item.height = compact ? sizeMetrics.one : ButtonTwoSideDip;
 				}
 				else if (kind == BarButtonListLayoutKind::GroupedGrid)
 				{
 					if (size == ButtonSizeEnum::oneTwo) item.width = 10.0;
 				}
-				else if (kind == BarButtonListLayoutKind::SingleRow)
+				else if (kind == BarButtonListLayoutKind::SingleRow
+					|| (compact && kind == BarButtonListLayoutKind::Main))
 				{
-					if (item.separator)
+					if (item.separator && compact && kind == BarButtonListLayoutKind::Main)
+					{
+						// 小尺寸主栏分割线：与大尺寸同语义，落在两按钮之间的间隙正中，不额外占宽；按 1×1 行高居中。
+						item.width = ButtonFrameThicknessDip; item.height = sizeMetrics.dividerHeight;
+						item.columnSpan = item.rowSpan = 1; item.centerHeight = sizeMetrics.one;
+						item.columnBoundary = true;
+					}
+					else if (item.separator)
 					{
 						item.width = ButtonFrameThicknessDip; item.height = ButtonOneSideDip - 4;
 						item.columnSpan = item.rowSpan = 1; item.centerHeight = ButtonOneSideDip;
@@ -2077,31 +2103,58 @@ namespace Inkeys::UI::Bar
 			}
 		};
 		Append(buttons);
+		if (compact && kind == BarButtonListLayoutKind::Main)
+		{
+			for (std::size_t index = 0; index + 1 < identities.size(); ++index)
+				if (identities[index] && identities[index + 1]
+					&& identities[index]->preset == BarButtonPresetEnum::Redo
+					&& identities[index + 1]->preset == BarButtonPresetEnum::Recall)
+				{
+					std::swap(items[index], items[index + 1]);
+					std::swap(identities[index], identities[index + 1]);
+					++index;
+				}
+		}
 		const auto firstEnd = items.size();
 		if (kind == BarButtonListLayoutKind::GeometryGrid)
 		{
 			spec.kind = ListLayoutKind::FixedGrid;
-			const auto count = std::count_if(items.begin(), items.end(), [](const auto& item) { return item.visible; });
-			spec.columns = (std::min)(6, (std::max)(1, static_cast<int>(count)));
+			// 列数固定为一整行（大尺寸 6 个 2×2、小尺寸 12 个 1×1，宽度均为 445），
+			// 图形不足一行时靠左排列，面板与顶栏宽度不随本类图形数量收窄。
+			spec.columns = compact ? 12 : 6;
+			if (compact) spec.cellColumnSpan = spec.cellRowSpan = 1;
 		}
 		else if (kind == BarButtonListLayoutKind::GroupedGrid)
 		{
 			// 列数使用原始快照长度（含空引用），分组边界也保留原快照的非空判定。
 			const auto count = (std::max)(size_t{1}, buttons.size() + secondGroup.size());
 			spec.kind = ListLayoutKind::GroupedGrid;
-			spec.columns = 2 * (std::min)(5, (std::max)(1,
-				static_cast<int>(std::ceil(std::sqrt(static_cast<double>(count))))));
+			// 小尺寸全部为 1×1：一行最多 10 个，列数随数量增长，保持接近方形。
+			spec.columns = compact
+				? (std::min)(10, (std::max)(1, static_cast<int>(std::ceil(std::sqrt(static_cast<double>(count)) * 1.5))))
+				: 2 * (std::min)(5, (std::max)(1,
+					static_cast<int>(std::ceil(std::sqrt(static_cast<double>(count))))));
 			spec.minimumRows = 1;
 			Append(secondGroup);
 			const bool showDivider = !buttons.empty() && !secondGroup.empty();
-			spec.groups.push_back({0, firstEnd, spec.columns, false, 2, false});
+			if (compact)
+			{
+				// 小尺寸列数不超过单行实际项数（两组分行时取较多的一组），避免两个按钮占三列宽。
+				const std::size_t rowItems = showDivider
+					? (std::max)(firstEnd, items.size() - firstEnd) : items.size();
+				spec.columns = (std::min)(spec.columns, (std::max)(1, static_cast<int>(rowItems)));
+			}
+			spec.groups.push_back({0, firstEnd, spec.columns, false, compact ? 1 : 2, false});
 			spec.groups.push_back({firstEnd, items.size(), spec.columns, showDivider, 1, showDivider});
 		}
-		else if (kind != BarButtonListLayoutKind::SingleRow)
+		else if (kind != BarButtonListLayoutKind::SingleRow && !compact)
 		{
 			spec.kind = ListLayoutKind::GroupedGrid; spec.packing = ListGridPacking::PairedRows;
 		}
-		const auto packed = ResolveListLayout(items, spec);
+		// 小尺寸主栏走单行流：起步与间距 5，行中心 = 5 + 32.5/2 = 21.25，恰为 42.5 高的中线。
+		// 小尺寸形状网格的定列格边取 1×1 边长。
+		const auto packed = ResolveListLayout(items, spec, compact && kind == BarButtonListLayoutKind::GeometryGrid
+			? ListLayoutMetrics{ sizeMetrics.gap, sizeMetrics.one, sizeMetrics.one } : listMetrics);
 		BarButtonListLayout layout;
 		layout.width = packed.width; layout.height = packed.height; layout.subColumns = packed.columns;
 		layout.totalRows = packed.rows; layout.showDivider = packed.showDivider;

@@ -393,7 +393,7 @@ GROUP(UI, \
 			GROUP(Bar, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, RightClickClose, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, Zoom2, 1.0) \
-				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, UseTaskbarHeightAsScaleBase, ConfigDetail::GetDefaultLargeScreenDevice() ? 1 : 0) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, UseTaskbarHeightAsScaleBase, 1) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, StartupPlacement, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SelectAndClickThroughMode, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, IconOrder, 0) \
@@ -589,11 +589,13 @@ GROUP(UI, \
 			) \
 			GROUP(UI3, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ThemeMode, ThemeModeDark) 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, BackgroundOpacity, ResidentBackgroundOpacityThemeDefault) 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, ContentOpacity, ResidentContentOpacityDefault) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SizeMode, 0) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, AllowFractionalFontSize, false) \
 				GROUP(StartupPreview, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, ::StartupPreviewEnabledDefault) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Effect, static_cast<int>(::Inkeys::UI::StartupPreviewEffect::Shimmer)) \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, CachedStartupBarWidthDip, ::StartupPreviewCachedWidthDefaultDip) \
+					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<double>, CachedStartupBarWidthDipCompact, ::StartupPreviewCachedWidthCompactDefaultDip) \
 				) \
 				GROUP(Debug, \
 					X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, false) \

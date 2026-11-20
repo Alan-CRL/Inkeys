@@ -312,6 +312,10 @@ namespace Inkeys::UI::PageControl
 			HWND committedWindowHandle = nullptr;
 			std::uint64_t committedWindowGeneration = 0;
 			bool committedPresentationReady = false;
+			// 最后一次成功提交像素时场景所处的界面尺寸档位及该档布局是否已落定（拖动直移据此判断旧像素能否复用）。
+			bool committedCompact = false, committedCompactSettled = true;
+			// 换档布局过渡进行中：换档配置时置位，采集到无动画的帧时清除。
+			bool compactTransitionPending = false;
 			bool forceFullPresentation = true;
 			bool windowCommitFailureActive = false;
 			RECT lastPresentedDebugFrameBounds{};
@@ -956,9 +960,12 @@ namespace Inkeys::UI::PageControl
 				const UINT dpi = monitor->effectiveDpiX
 					? monitor->effectiveDpiX : USER_DEFAULT_SCREEN_DPI;
 				const double userZoom = std::clamp(static_cast<double>(Inkeys::config.UI.Bar.Zoom2), 0.5, 2.0);
+				// 任务栏基准与主栏使用同一已落地尺寸，保证翻页控件与主栏倍率一致。
+				const auto& sizeMetrics = ResolveBarSizeMetrics(Inkeys::UI::Bar::AppliedSizeMode());
 				const float uiScale = static_cast<float>(Inkeys::Display::ResolveUiScaleBase(
 					*snapshot, *monitor, static_cast<Inkeys::Display::UiScaleBaseMode>(
-						Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load())) * userZoom);
+						Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load()),
+					sizeMetrics.barHeight, sizeMetrics.taskbarBasicQuantity) * userZoom);
 				return { monitor->bounds, static_cast<float>(dpi) / USER_DEFAULT_SCREEN_DPI, uiScale };
 			}
 			return { { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) }, 1.0F, 1.0F };
@@ -1120,6 +1127,8 @@ namespace Inkeys::UI::PageControl
 				content.loadState=BarPageLoadState::Loading;content.statusSecondary=IW(labels.Wait);
 			}
 			if(content.loadState!=BarPageLoadState::None)content.kind=Inkeys::UI::Bar::BarPageContentKind::Status;
+			// 小尺寸页码槽放不下状态词：保留页码，状态只由加载环与边框表达（空串表示不替换该槽）。
+			if(content.compact){content.statusPrimary.clear();content.statusSecondary.clear();}
 		}
 
 		[[nodiscard]] PageContent BuildPageContent(std::size_t index,WorkspaceMode mode,
@@ -1128,6 +1137,8 @@ namespace Inkeys::UI::PageControl
 			PageContent content;
 			content.surface=static_cast<unsigned>(index);
 			content.whiteboard=mode==WorkspaceMode::WhiteboardExpanded;
+			// 小尺寸档位来自主栏已落地值；表面据此在下一次配置时切换 1×1/2×1 布局。
+			content.compact=Inkeys::UI::Bar::AppliedSizeMode()==BarSizeMode::Compact;
 			// 白板没有PPT场次；用固定非零身份让加载指示器在白板里同样按“一次等待”门控。
 			content.loadingSession=content.whiteboard?WhiteboardLoadingSession:ppt.layout.session;
 			// 工作区交接期间宿主也会置 switching；它只锁输入，不能把淡入/淡出中的页码换成“加载中”再换回。
@@ -1140,12 +1151,15 @@ namespace Inkeys::UI::PageControl
 			content.navigationWaitingNext=!content.whiteboard&&(pagePreparing||IsPptNavigationWaiting(ppt,true));
 			content.unsaved=whiteboard.unsaved;content.menu=whiteboard.menu;
 			if(content.whiteboard){
-				content.currentPage=std::to_wstring(whiteboard.currentPage);content.totalPage=L"/"+std::to_wstring(whiteboard.totalPage);
+				// 小尺寸页码槽宽有限：白板显示同样封顶 999（业务仍使用真实页数）。
+				if(content.compact){content.currentPage=PageNumber(whiteboard.currentPage,999);content.totalPage=L"/"+PageNumber(whiteboard.totalPage,999);}
+				else{content.currentPage=std::to_wstring(whiteboard.currentPage);content.totalPage=L"/"+std::to_wstring(whiteboard.totalPage);}
 
 				content.enabled={whiteboard.previousEnabled,whiteboard.pageEnabled,whiteboard.nextEnabled};
 				content.interactive={whiteboard.previousInteractive,whiteboard.pageInteractive,whiteboard.nextInteractive};
 			}else{
-				const int maximum=index>=2?999:9999;
+				// 竖向槽与小尺寸 2×1 页码宽度有限，统一封顶 999，保证"999/999"放得下。
+				const int maximum=index>=2||content.compact?999:9999;
 				const int visibleCurrent=ppt.numericPageOverride?ppt.displayedCurrentPage:ppt.currentPage;
 				const int visibleTotal=ppt.numericPageOverride?ppt.displayedTotalPage:ppt.totalPage;
 				content.currentPage=PageNumber(visibleCurrent,maximum);content.totalPage=L"/"+PageNumber(visibleTotal,maximum);
@@ -1391,7 +1405,11 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			const bool fadingOut=state.sceneConfigured&&desiredMode==WorkspaceMode::Hidden;
 			const auto languageRevision = I18n::revision();
 			if(!state.sceneConfigured || modeChanged || (!fadingOut&&(state.observedRevision!=revision || state.localeRevision!=languageRevision))){
-				const bool animate=modeChanged&&ShouldAnimateWorkspaceLayout(SurfaceFor(index),state.configuredMode,visualMode,state.targetVisible);
+				// 界面尺寸热切换同样走布局过渡，避免控件尺寸瞬间跳变。
+				const bool compactChanged=state.sceneConfigured
+					&&state.configuredContent.compact!=(Inkeys::UI::Bar::AppliedSizeMode()==BarSizeMode::Compact);
+				const bool animate=(modeChanged&&ShouldAnimateWorkspaceLayout(SurfaceFor(index),state.configuredMode,visualMode,state.targetVisible))
+					||(compactChanged&&state.targetVisible&&!modeChanged);
 				WaitTrace::Fields contentFields;
 				if(WaitTrace::Enabled()&&visualMode==WorkspaceMode::PptCompact){
 					contentFields.session=ppt.layout.session;contentFields.layoutSession=ppt.layout.session;contentFields.layoutEpoch=ppt.layout.epoch;
@@ -1405,7 +1423,8 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				bool configured;
 				{ WaitTrace::ContentScope contentTrace(contentFields);
 				  state.configuredContent=BuildPageContent(index,visualMode,ppt,whiteboard);
-				  configured=state.scene.ConfigurePagination(state.configuredContent,animate?LayoutTransitionDurationSeconds():0); }
+				  configured=state.scene.ConfigurePagination(state.configuredContent,animate?LayoutTransitionDurationSeconds():0);
+				  if(compactChanged)state.compactTransitionPending=true; }
 				if(!configured){
 					failedStage="pagination-configure";
 					auto fields=WaitingFields(ppt,static_cast<int>(index),revision);fields.mode=static_cast<unsigned>(visualMode);
@@ -1835,6 +1854,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				dpiScale, directMoveRevision.load(std::memory_order_acquire),
 				deviceGeneration, true, uiScale);
 			ppt.uiScale = uiScale;
+			ppt.compactSize = Inkeys::UI::Bar::AppliedSizeMode() == BarSizeMode::Compact;
 			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt,
 				budget.presentationOutsetDip, budget.bitmapLimit);
 			for (const std::size_t surfaceIndex : pair)
@@ -1971,6 +1991,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				dpiScale, directMoveRevision.load(std::memory_order_acquire),
 				deviceGeneration, true, uiScale) : InputSnapshot(index).budget;
 			ppt.uiScale = uiScale;
+			ppt.compactSize = Inkeys::UI::Bar::AppliedSizeMode() == BarSizeMode::Compact;
 			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt,
 				budget.presentationOutsetDip, budget.bitmapLimit);
 			const std::size_t pairIndex = bottom ? 0 : 1;
@@ -2049,9 +2070,13 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 					previousLayout, candidateLayouts[item],
 					pairState.scene.PresentationOutsetPixels());
 				// 旧 Scene 的实际倍率不同于候选时不能做只移动 HWND 的快速路径。
+				// 界面尺寸档位不同（倍率可能相同）时旧像素同样不可复用，必须走重绘路径。
 				if (!pairState.appliedSceneBoundsReady
 					|| std::abs(pairState.appliedSceneScale
-						- candidateLayouts[item].scale) > 0.0001F)
+						- candidateLayouts[item].scale) > 0.0001F
+					|| pairState.committedCompact != candidatePpt.compactSize
+					// 双向换档的布局过渡中提交的是中间尺寸像素，须等该档布局落定后才可直移。
+					|| !pairState.committedCompactSettled)
 					directTargets[item].pureTranslation = false;
 				directLogicalTargets[item] = !bottom && MiddleSnapMatches(pair[item], candidatePpt, candidateLayouts[item])
 					? ResolveMiddleSnapBounds(pair[item], candidateLayouts[item], sampleTime) : candidateLayouts[item].logicalBounds;
@@ -2376,6 +2401,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			WorkspaceMode mode = WorkspaceMode::Hidden;
 			bool shouldShow = false, targetVisible = false, inputLocked = true;
 			bool pptFrame = false, dragGeometryAtTarget = false, keepAnimating = false;
+			bool compact = false, compactSettled = true;
 		};
 		// 每窗仅保留最新候选；较早完成只用于退休原生命令，不能覆盖新帧快照。
 		std::array<NativeSurfaceFrame, 4> nativeFrames;
@@ -2479,6 +2505,8 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				state.committedBackingCapacity = pending.backing;
 				state.committedDeviceGeneration = pending.deviceGeneration;
 				state.committedPresentationReady = true; state.forceFullPresentation = false;
+				state.committedCompact = pending.compact;
+				state.committedCompactSettled = pending.compactSettled;
 				state.committedWindowPresentationRevision = actual.presentationRevision;
 				state.committedWindowHandle = actual.hwnd; state.committedWindowGeneration = actual.generation;
 				// 实际上屏的覆盖层边界总要记账（下一帧据此擦除）；刷新标记与绿帧锁存只由绘制时修订号仍为当前的回执消费。
@@ -2644,6 +2672,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 				monitor, dpiScale, frameDirectMoveRevision,
 				frameContext.epoch.generation, false, uiScale);
 			ppt.uiScale = uiScale;
+			ppt.compactSize = Inkeys::UI::Bar::AppliedSizeMode() == BarSizeMode::Compact;
 			ppt = ResolveRuntimePageControlLayout(monitor, dpiScale, ppt,
 				groupBudget.presentationOutsetDip, groupBudget.bitmapLimit);
 			const Surface surface = SurfaceFor(index);
@@ -2891,6 +2920,10 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			frame.shouldShow = shouldShow; frame.targetVisible = state.targetVisible; frame.inputLocked = state.inputLocked;
 			frame.pptFrame = pptFrame; frame.dragGeometryAtTarget = dragGeometryAtTarget; frame.keepAnimating = keepAnimating;
 			frame.sceneSerial = state.scene.CapturePresentationCandidate();
+			frame.compact = state.configuredContent.compact;
+			if (state.compactTransitionPending && !state.scene.AnimationActive() && !state.bounds.active)
+				state.compactTransitionPending = false;
+			frame.compactSettled = !state.compactTransitionPending;
 			const auto publishStarted = hiddenWindowPerformanceTiming ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 			frame.revision = service.PublishCandidate(frame.candidate);
 			if (hiddenWindowPerformanceTiming)
@@ -3090,6 +3123,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 						state.dragStartScreen = event.screenPoint;
 						const auto [monitor, dpiScale, uiScale] = LayoutMonitor();
 						ppt.uiScale=uiScale;
+						ppt.compactSize=Inkeys::UI::Bar::AppliedSizeMode()==BarSizeMode::Compact;
 						ppt = ResolveRuntimePageControlLayout(monitor,dpiScale,ppt,
 							committed.budget.presentationOutsetDip,committed.budget.bitmapLimit);
 						state.dragStartLayout = ppt.layout;
@@ -4075,7 +4109,7 @@ Check(loading.loadState==Inkeys::UI::Bar::BarPageLoadState::Loading&&loading.sta
 				// 命中矩形向外覆盖像素；0.25 倍下 17.5px 的正方形可覆盖 19px，不能比较浮点边长差。
 				const RECT expected{static_cast<LONG>(std::floor(dip.left*scale)),static_cast<LONG>(std::floor(dip.top*scale)),
 					static_cast<LONG>(std::ceil(dip.right*scale)),static_cast<LONG>(std::ceil(dip.bottom*scale))};
-				const bool standard=!BarPptCompactPaginationEnabled&&dip.right-dip.left==ButtonTwoSideDip
+				const bool standard=dip.right-dip.left==ButtonTwoSideDip
 					&&dip.bottom-dip.top==ButtonTwoSideDip&&EqualRect(&rect,&expected);
 				if(!standard)std::fprintf(stderr,"[PageControlUI3] size index=%zu scale=%.3f id=%u "
 					"actual=(%ld,%ld,%ld,%ld) expected=(%ld,%ld,%ld,%ld) dip=(%.2f,%.2f,%.2f,%.2f)\n",

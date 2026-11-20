@@ -504,6 +504,21 @@ namespace Inkeys::UI::Bar
 			barUISet.UpdateRendering(false);
 	}
 
+	void SetSizeMode(int sizeMode) noexcept
+	{
+		const int normalized = static_cast<int>(NormalizeBarSizeMode(sizeMode));
+		// 与主题一致：设置线程只发布目标，几何重建由渲染线程在帧首完成。
+		if (barUISet.barStyle.requestedSizeMode.exchange(
+			normalized, std::memory_order_acq_rel) != normalized)
+			barUISet.UpdateRendering(false);
+	}
+
+	BarSizeMode AppliedSizeMode() noexcept
+	{
+		return NormalizeBarSizeMode(
+			barUISet.barStyle.appliedSizeMode.load(std::memory_order_acquire));
+	}
+
 	void SetResidentOpacity(int backgroundPercent, int contentPercent) noexcept
 	{
 		const bool backgroundChanged = barUISet.barStyle.requestedBackgroundOpacity.exchange(

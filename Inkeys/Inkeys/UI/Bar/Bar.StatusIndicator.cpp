@@ -308,11 +308,25 @@ bool BarStatusIndicatorPanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 		for(auto it=presented.entries.rbegin();it!=presented.entries.rend();++it)
 		{
 			if(it->opacity<.05)continue;
+			if(it->shape==StatusIndicatorShape::Text)
+			{
+				// 小尺寸：只接收加宽多出的部分；原主按钮区域交给主按钮手势（保留拖动），点击再分流为收起。
+				// 与绘制同一门槛：文字可见且文字区有宽度，贴边截断为零时不吞点击。
+				if(it->textOpacity<.05||it->textClip.Width()<=.5)continue;
+				const auto& m=presented.main;
+				if(!StatusIndicatorInsideMainButton(m,x,y,0))continue;
+				StatusIndicatorLayoutInput baseMain=m;baseMain.mainCenterX=m.compactBaseCenterX;baseMain.mainWidth=m.compactBaseWidth;
+				if(StatusIndicatorInsideMainButton(baseMain,x,y,0))continue;
+				hit=it->key;role=it->role;break;
+			}
 			// 停靠方块很小，命中区外扩到 DockHitMin，但只在方块自身周围。
+			const bool compact=presented.main.compact;
+			const double hitMin=compact?StatusIndicatorStyle::CompactDockHitMin:StatusIndicatorStyle::DockHitMin;
 			const double pad=it->role==StatusIndicatorRole::Dock
-				?(std::max)(0.0,(StatusIndicatorStyle::DockHitMin-it->bounds.Width())/2):0.0;
+				?(std::max)(0.0,(hitMin-it->bounds.Width())/2):0.0;
 			// 停靠方块压在主按钮边框上：伸进主按钮内部超过 MainButtonYield 的部分让给主按钮，避免误展开。
-			if(it->role==StatusIndicatorRole::Dock&&StatusIndicatorInsideMainButton(presented.main,x,y,StatusIndicatorStyle::MainButtonYield))continue;
+			// 小尺寸方块本就位于主按钮右上角内侧，不做让位。
+			if(!compact&&it->role==StatusIndicatorRole::Dock&&StatusIndicatorInsideMainButton(presented.main,x,y,StatusIndicatorStyle::MainButtonYield))continue;
 			if(HitRoundedRect(it->bounds,it->radius,x,y,pad)){hit=it->key;role=it->role;break;}
 		}
 		if(owner.BottomDockPresentedSnapshot().serial==before.serial)break;
@@ -329,7 +343,21 @@ bool BarStatusIndicatorPanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 	const auto feedback=[&](std::uint64_t key){ return key&&key==hit&&role==StatusIndicatorRole::Capsule?0:key; };
 	if(result.previousHover!=result.hover||result.previousPressed!=result.pressed)
 	{ Command c;c.kind=CommandKind::Feedback;c.hover=feedback(result.hover);c.pressed=feedback(result.pressed);Queue(std::move(c)); }
+	// 小尺寸文字展示中，在加宽主按钮范围内按下属于主按钮手势（随后点击会分流为收起），不能当作点到外部。
+	bool insideCompactMain=false;
 	if(event==ButtonPointerEvent::Down&&!hit)
+	{
+		Presented presented;{std::lock_guard lock(presentedMutex_);presented=presented_;}
+		const bool textShown=presented.main.compact&&std::any_of(presented.entries.begin(),presented.entries.end(),[](const auto& item)
+			{return item.shape==StatusIndicatorShape::Text&&item.textOpacity>=.05&&item.textClip.Width()>.5;});
+		if(textShown)
+		{
+			const auto before=owner.BottomDockPresentedSnapshot();
+			const auto point=ResolveBarBottomDockGripHitTestPointFromRigid(message.x,message.y,before.horizontalMapping,before.mapping,before.zoom);
+			insideCompactMain=StatusIndicatorInsideMainButton(presented.main,point.logicalX/presented.zoom,point.logicalY/presented.zoom,0);
+		}
+	}
+	if(event==ButtonPointerEvent::Down&&!hit&&!insideCompactMain)
 	{ Command c;c.kind=CommandKind::Outside;Queue(std::move(c)); }
 	if(result.activate)
 	{
@@ -338,6 +366,22 @@ bool BarStatusIndicatorPanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 	}
 	if(contactPointer&&event==ButtonPointerEvent::Up)ResetPointerFeedback();
 	return hit||result.previousPressed||result.pressed;
+}
+
+bool BarStatusIndicatorPanel::ConsumeCompactMainClick()
+{
+	// 主按钮手势已判定为点击：若小尺寸状态文字正在展示（可收起），改为收起该状态而不折叠主栏。
+	std::uint64_t key=0;
+	{
+		std::lock_guard lock(presentedMutex_);
+		if(!presented_.main.compact)return false;
+		for(const auto& item:presented_.entries)
+			if(item.shape==StatusIndicatorShape::Text&&item.role==StatusIndicatorRole::Capsule&&item.textOpacity>=.05
+				&&item.textClip.Width()>.5){key=item.key;break;}
+	}
+	if(!key)return false;
+	Command c;c.kind=CommandKind::Click;c.key=key;c.role=StatusIndicatorRole::Capsule;Queue(std::move(c));
+	return true;
 }
 
 void BarStatusIndicatorPanel::DrawStroke(UIRendering& renderer,ID2D1DeviceContext* context,ID2D1Geometry* geometry,
@@ -461,7 +505,8 @@ void BarStatusIndicatorPanel::Draw(UIRendering& renderer,ID2D1DeviceContext* con
 		ComPtr<ID2D1Geometry> mask;
 		for(std::size_t j=i+1;j<layout_.entries.size();++j)
 		{
-			if(!shapes[j]||layout_.entries[j].opacity<.02||!OutsetStatusIndicatorRect(item.bounds,GlowOutsetDip()).Intersects(layout_.entries[j].bounds))continue;
+			if(!shapes[j]||layout_.entries[j].opacity<.02||layout_.entries[j].shape==StatusIndicatorShape::Text
+				||!OutsetStatusIndicatorRect(item.bounds,GlowOutsetDip()).Intersects(layout_.entries[j].bounds))continue;
 			if(!mask)
 			{
 				ComPtr<ID2D1RectangleGeometry> full;factory->CreateRectangleGeometry(area,&full);mask=full;
@@ -479,6 +524,39 @@ void BarStatusIndicatorPanel::Draw(UIRendering& renderer,ID2D1DeviceContext* con
 		const D2D1_POINT_2F center{(rr.rect.left+rr.rect.right)/2,(rr.rect.top+rr.rect.bottom)/2};
 		if(scale!=1)context->SetTransform(D2D1::Matrix3x2F::Scale(static_cast<FLOAT>(scale),static_cast<FLOAT>(scale),center)*original);
 
+		if(item.shape==StatusIndicatorShape::Text)
+		{
+			// 小尺寸：文字画在变宽的主按钮内（表面、边框与进度环由主按钮与环负责），裁入文字区并在滚动时两端渐隐。
+			if(item.textOpacity>.002&&item.textClip.Width()>.5)
+			{
+				const auto accent=Accent(StatusIndicatorColor::Display(item.accentArgb,material));
+				const auto clip=Pixels(item.textClip,zoom_);
+				ComPtr<ID2D1LinearGradientBrush> fade;
+				if(item.fadeLeft||item.fadeRight)
+				{
+					const FLOAT span=(std::max)(1.0F,clip.right-clip.left),edge=(std::min)(.45F,static_cast<FLOAT>(StatusIndicatorStyle::TextFade*zoom_)/span);
+					const std::array<D2D1_GRADIENT_STOP,4> stops{{{0,D2D1::ColorF(0,0,0,item.fadeLeft?0.f:1.f)},{edge,D2D1::ColorF(0,0,0,1)},
+						{1-edge,D2D1::ColorF(0,0,0,1)},{1,D2D1::ColorF(0,0,0,item.fadeRight?0.f:1.f)}}};
+					ComPtr<ID2D1GradientStopCollection> collection;
+					if(SUCCEEDED(context->CreateGradientStopCollection(stops.data(),static_cast<UINT32>(stops.size()),&collection)))
+						context->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(D2D1::Point2F(clip.left,0),D2D1::Point2F(clip.right,0)),collection.Get(),&fade);
+				}
+				context->PushLayer(D2D1::LayerParameters1(clip,nullptr,D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,D2D1::IdentityMatrix(),
+					1.0F,fade.Get(),D2D1_LAYER_OPTIONS1_NONE),nullptr);
+				auto [wordIt,created]=words_.try_emplace(item.key);auto& word=wordIt->second;
+				if(created){word.Initialization(0,0,1,StatusIndicatorStyle::CapsuleHeight,DisplayText(entry->spec),StatusIndicatorStyle::TextSize,accent);word.enable.Initialization(true);}
+				word.SetStringImmediate(DisplayText(entry->spec));word.color.SetDirect(accent);word.pct.SetDirect(item.textOpacity);
+				word.w.SetDirect((std::max)(entry->textWidth+4.0,item.textClip.Width()));word.h.SetDirect(item.bounds.Height());
+				word.size.SetDirect(StatusIndicatorStyle::TextSize);word.fontTargetSize=StatusIndicatorStyle::TextSize;
+				renderer.SetResidentContentOpacity(residentContent);
+				renderer.Word(context,word,UiInheritClass(item.textX,item.bounds.top),DWRITE_FONT_WEIGHT_BOLD,DWRITE_TEXT_ALIGNMENT_LEADING);
+				renderer.SetResidentContentOpacity(1);
+				context->PopLayer();
+			}
+			context->SetTransform(original);
+			if(layered)context->PopLayer();
+			continue;
+		}
 		// 表面：主栏同源材质（背景透明度、闲置淡化、浅色缩放由常驻表面规则统一处理）。
 		UiShapeClass shape(0,0,item.bounds.Width(),item.bounds.Height(),item.radius,item.radius,std::nullopt,surface,std::nullopt);
 		shape.enable.Initialization(true);shape.pct.Initialization(BarMainBarFillOpacity);

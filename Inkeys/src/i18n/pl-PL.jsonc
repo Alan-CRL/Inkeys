@@ -685,10 +685,17 @@
           "Dark": "Tryb ciemny",
           "Light": "Tryb jasny"
         },
+        "UiSize":
+        {
+          "N": "Rozmiar interfejsu",
+          "E": "W małym rozmiarze pasek i sterowanie stronami mają 42,5 DIP wysokości, a przyciski pokazują tylko ikony; najedź kursorem, aby zobaczyć nazwę. Działa od razu.",
+          "Large": "Duży",
+          "Small": "Mały"
+        },
         "TaskbarScaleBase":
         {
           "N": "Skalowanie według paska zadań",
-          "E": "Przy skali 100% „Bazowy rozmiar paska zadań” ustala wysokość głównego paska na 48 DIP; „Rzeczywisty rozmiar paska zadań” dostosowuje ją do grubości paska zadań.",
+          "E": "Przy skali 100% „Bazowy rozmiar paska zadań” ustawia wysokość paska na 48 DIP w dużym rozmiarze i 35 DIP w małym; „Rzeczywisty rozmiar paska zadań” dopasowuje ją do grubości paska zadań.",
           "Off": "Wyłączone",
           "Base": "Bazowy rozmiar paska zadań",
           "Actual": "Rzeczywisty rozmiar paska zadań"

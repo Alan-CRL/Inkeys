@@ -17,15 +17,17 @@ namespace Inkeys::UI::StartupPreview::Drawing
 	inline constexpr float ProgressOuterDiameterDip = 32.f;
 	inline constexpr float ProgressStrokeDip = 3.f;
 
+	// floatingSideDip/cornerDip：大尺寸 80/8，小尺寸 42.5/8。
 	[[nodiscard]] inline HRESULT CreateShape(ID2D1Factory* factory,
-		float width, float height, float scale, bool floating, ID2D1Geometry** output)
+		float width, float height, float scale, bool floating, ID2D1Geometry** output,
+		float floatingSideDip = 80.f, float cornerDip = 8.f)
 	{
 		if (!factory || !output || scale <= 0.f) return E_INVALIDARG;
 		if (floating)
 		{
 			Microsoft::WRL::ComPtr<ID2D1PathGeometry> path;
 			// 只对窗口包络舍入；按钮主体保留80DIP，并与正式按钮在整数bounds中心重合。
-			const float extent = 80.f * scale;
+			const float extent = floatingSideDip * scale;
 			HRESULT result = Inkeys::UI::UI3::CreateSuperellipsePath(factory, extent, extent, 3.f,
 				std::clamp(static_cast<int>(extent / 4.f), 24, 128), &path);
 			if (FAILED(result)) return result;
@@ -37,7 +39,7 @@ namespace Inkeys::UI::StartupPreview::Drawing
 		}
 		Microsoft::WRL::ComPtr<ID2D1RoundedRectangleGeometry> rounded;
 		const auto rect = D2D1::RoundedRect(D2D1::RectF(scale * .5f, scale * .5f,
-			width - scale * .5f, height - scale * .5f), 8.f * scale, 8.f * scale);
+			width - scale * .5f, height - scale * .5f), cornerDip * scale, cornerDip * scale);
 		const HRESULT result = factory->CreateRoundedRectangleGeometry(&rect, &rounded);
 		if (SUCCEEDED(result)) *output = rounded.Detach();
 		return result;

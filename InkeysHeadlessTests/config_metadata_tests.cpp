@@ -1,4 +1,4 @@
-#include "../Inkeys/IdtConfiguration.h"
+﻿#include "../Inkeys/IdtConfiguration.h"
 
 #include <array>
 #include <filesystem>
@@ -665,7 +665,8 @@ int RunConfigMetadataTests()
 			"production startup classifier retains touch readiness, unknown size and inclusive area threshold");
 	for (const bool defaultLargeScreen : { false, true })
 	{
-		const int defaultMode = defaultLargeScreen ? 1 : 0;
+		// 缩放基准默认值对所有设备统一为任务栏基础量 1（用户 2026-11-19 修订），不再按设备区分。
+		const int defaultMode = 1;
 		Inkeys::ConfigDetail::SetDefaultLargeScreenDevice(defaultLargeScreen);
 		// 改名刻意不导入旧倍率；走真实文件和生产 schema，避免测试复制迁移逻辑。
 		Inkeys::Config scaleConfig;

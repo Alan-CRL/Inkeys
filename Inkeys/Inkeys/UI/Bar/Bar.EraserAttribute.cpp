@@ -198,6 +198,13 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	currentInput.main={main->inhX,main->inhY,main->inhX+main->w.val,main->inhY+main->h.val};
 	currentInput.anchor={anchor->button.inhX,anchor->button.inhY,anchor->button.inhX+anchor->button.w.val,anchor->button.inhY+anchor->button.h.val};
 	currentInput.zoom=zoom;currentInput.dpiScale=dpi/96.0;
+	currentInput.sizeMode=NormalizeBarSizeMode(owner.barStyle.appliedSizeMode.load(std::memory_order_acquire));
+	{
+		// 非居中底栏：面板不越过主按钮外侧边；按静止边长取主按钮矩形，避免按压脉冲带动面板。
+		const double mainHalf=ResolveBarSizeMetrics(currentInput.sizeMode).mainButtonSide/2;
+		currentInput.mainButton={root->x.val-mainHalf,root->y.val-mainHalf,root->x.val+mainHalf,root->y.val+mainHalf};
+		currentInput.limitToMainButton=!owner.IsCenteredBottomDock();
+	}
 	currentInput.work={(workArea.left-origin.x)/zoom-rigidX,(workArea.top-origin.y)/zoom-rigidY,(workArea.right-origin.x)/zoom-rigidX,(workArea.bottom-origin.y)/zoom-rigidY};
 	const bool holdDragPlacement=dragPlacementLocked && open;
 	const bool releasedDragPlacement=!holdDragPlacement && dragPlacementLocked_;
@@ -311,8 +318,13 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	for(int i:buttonVisuals)
 	{
 		auto& b=buttons_[i];changed_|=b.name.SetStringImmediate(ButtonLabel(i));
+		// 小尺寸自动粗细与手掌橡皮只显示图标：关闭文字而不改写透明度（透明度由共享交互视觉统一驱动）；
+		// 清空按钮在小尺寸下按不可见处理，图标与文字由共享交互视觉淡出。
+		b.name.enable.Initialization(!ButtonLabel(i).empty() && !(g.compact && (i==4 || i==10)));
 		const bool selected=(i==4 && automatic_==AutomaticState::On) || (i==10 && palmEnabled_) || (i>=6 && i<=8 && sensitivity_==i-6);
-		const bool presented=IsPanelButton(i)?frame_.panelVisible:frame_.menuVisible;
+		// 小尺寸没有清空按钮；自动粗细与手掌橡皮改用 1×1 仅图标视觉。
+		const bool compactPanel=g.compact;
+		const bool presented=(IsPanelButton(i)?frame_.panelVisible:frame_.menuVisible) && !(compactPanel && i==0);
 		const double scale=IsPanelButton(i)?frame_.panelPose.scale:frame_.menuPose.scale;
 		b.state->state=selected?WidgetState::Selected:WidgetState::None;
 		SetButtonPressedVisual(b,ButtonVisual(pressed_)==i);
@@ -321,7 +333,13 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 			std::nullopt,true,std::nullopt,GetThemeColor(selected?ThemeColorEnum::Accent:ThemeColorEnum::SurfaceFrame));
 		Place(b.button,i==4?g.automatic:g.items[i]);
 		b.button.rw->SetDirect(ButtonCornerRadiusDip*scale);b.button.rh->SetDirect(ButtonCornerRadiusDip*scale);b.button.ft->SetDirect(ButtonFrameThicknessDip*scale);
-		const bool large=i==0 || i==4 || i==10;
+		const bool large=(i==0 || i==4 || i==10) && !compactPanel;
+		if(i==4 || i==10)
+		{
+			// 图标尺寸随档位双向切换：小尺寸 1×1 为 20，大尺寸恢复 2×2 的 28。
+			const double iconSide=compactPanel?20.0:metrics.iconSizeDip;
+			b.icon.SetWH(iconSide,iconSide);b.icon.w.SetDirect(b.icon.w.tar);b.icon.h.SetDirect(b.icon.h.tar);
+		}
 		const double offset=i==4?-EraserAttributeAutomaticArrowWidthDip/2:0;
 		b.icon.x.SetDirect(offset*scale);b.icon.y.SetDirect(large?metrics.iconOffsetYDip*scale:0);b.icon.contentScale=scale;
 		b.name.x.SetDirect(offset*scale);b.name.y.SetDirect(large?metrics.primaryOffsetYDip*scale:0);
@@ -364,6 +382,8 @@ bool BarEraserAttributePanel::Advance(BarUISetClass& owner,double dt,double spee
 	for(size_t i=0;i<dividers_.size();++i)
 	{
 		auto& d=dividers_[i];Place(d,g.dividers[i]);d.ft->SetDirect(ButtonFrameThicknessDip*frame_.panelPose.scale);
+		// 小尺寸只保留预览组与开关组之间的一条分割线。
+		d.pct.SetDirect(g.compact && i==1?0.0:0.30);d.frameLightPct->SetDirect(g.compact && i==1?0.0:1.0);
 		d.rw->SetDirect(BarUiDividerRadius*frame_.panelPose.scale);d.rh->SetDirect(BarUiDividerRadius*frame_.panelPose.scale);
 		d.fill->SetDirect(GetThemeColor(ThemeColorEnum::SurfaceFrame));d.frame->SetDirect(GetThemeColor(ThemeColorEnum::SurfaceFrame));
 	}
@@ -447,7 +467,8 @@ void BarEraserAttributePanel::Draw(UIRendering& renderer,ID2D1DeviceContext* con
 	auto drawButton=[&](int i){auto& b=buttons_[i];DrawButtonVisual(renderer,context,b,UiInheritClass(b.button.inhX,b.button.inhY));};
 	renderer.PushPanelOpacity(context,PixelRect(frame_.geometry.panel,zoom_),panel_.Opacity());renderer.SetFrameDiffuseMaskGeometryScale(1/frame_.panelPose.scale);
 	panel_.DrawFrame(renderer,context,{surface_.inhX,surface_.inhY},nullptr,false,PixelRect(g.panel,zoom_));
-	drawButton(0);drawButton(4);drawButton(10);
+	if(!g.compact)drawButton(0);
+	drawButton(4);drawButton(10);
 	for(size_t i=0;i<3;++i)DrawPreview(renderer,context,i);
 	for(auto& d:dividers_)renderer.Shape(context,d,UiInheritClass(d.inhX,d.inhY));
 	// 内部分割线和箭头跟随整个90×70按钮围绕同一中心缩放。
@@ -674,4 +695,12 @@ bool BarEraserAttributePanel::Pointer(BarUISetClass& owner,const ExMessage& mess
 		if(pressed>=0 || contactPointer)owner.UpdateRendering(false);return inside || pressed>=0;
 	}
 	return inside;
+}
+// 小尺寸悬停提示：自动粗细（含其展开箭头）与手掌橡皮显示名称；尺寸圆与菜单项（自带文字）不提示。
+std::wstring BarEraserAttributePanel::HoverHintText() const
+{
+	// 面板开合动画期间不提示。
+	if(!panelMotion_.Visible() || panelMotion_.Active())return {};
+	const int item=hovered_.load();
+	return item==4||item==5?ButtonLabel(4):item==10?ButtonLabel(10):std::wstring{};
 }

@@ -298,7 +298,8 @@ export namespace Inkeys::UI::Bar
 			const BarBottomDockFeedbackGeometry& mainBar,
 			double actualLabelWidthDip,
 			double actualLabelHeightDip,
-			double visibleMainBarTopDip) noexcept
+			double visibleMainBarTopDip,
+			double separatedGapDip = -1.0) noexcept
 	{
 		auto FiniteOrZero = [](double value) noexcept
 			{ return std::isfinite(value) ? value : 0.0; };
@@ -327,8 +328,10 @@ export namespace Inkeys::UI::Bar
 		const double width = actualLabelWidthDip + padding * 2.0;
 		const double center = ((std::min)(button.leftDip, bar.leftDip)
 			+ (std::max)(button.rightDip, bar.rightDip)) / 2.0;
-		const double top = visibleMainBarTopDip
-			- BarBottomDockIndicatorHeightDip / 2.0;
+		// 大尺寸提示条半高压入主栏上沿；小尺寸传入非负间隙，整条位于主栏上方并保持该间隙。
+		const double top = std::isfinite(separatedGapDip) && separatedGapDip >= 0.0
+			? visibleMainBarTopDip - separatedGapDip - BarBottomDockIndicatorHeightDip
+			: visibleMainBarTopDip - BarBottomDockIndicatorHeightDip / 2.0;
 		return { center - width / 2.0, top, center + width / 2.0,
 			top + BarBottomDockIndicatorHeightDip };
 	}

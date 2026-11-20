@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../IdtMain.h"
 #include "../../PptSettingsPersistence.h"
@@ -644,6 +644,14 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
 					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
 					value = static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(candidate));
+					return;
+				}
+				if (path == "Experimental.Inkeys3.UI3.SizeMode")
+				{
+					// 界面尺寸只接受 0/1 整数；布尔、浮点、超宽或越界值回到大尺寸默认。
+					const bool integerType = jsonValue->type() == Json::intValue || jsonValue->type() == Json::uintValue;
+					const int candidate = integerType && jsonValue->isInt() ? jsonValue->asInt() : -1;
+					value = candidate == 0 || candidate == 1 ? candidate : defaultValue.load();
 					return;
 				}
 				if (path == "Drawing.PalmEraser.ThresholdPercent" || path == "Drawing.PalmEraser.RecognitionWindowMs")

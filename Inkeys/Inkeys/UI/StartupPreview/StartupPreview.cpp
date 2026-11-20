@@ -490,6 +490,8 @@ namespace Inkeys::UI::StartupPreview
 		std::atomic<BarStartupState> globalBarStartupState =
 			BarStartupState::NotStarted;
 		std::atomic<double> publishedStartupBarWidthDip = 0.0;
+		// 与宽度同批发布的首帧档位：先写档位，再以 acq_rel CAS 发布宽度。
+		std::atomic<bool> publishedStartupBarCompact = false;
 
 		[[nodiscard]] std::shared_ptr<Runtime> SnapshotRuntime() noexcept
 		{
@@ -530,9 +532,13 @@ namespace Inkeys::UI::StartupPreview
 			const bool floating = StartupPlacementIsFolded(runtime.options.startupPlacement);
 			next.appearance = Effects::ResolveAppearance(runtime.options.themeMode,
 				runtime.options.backgroundOpacity, runtime.options.contentOpacity, floating);
+			// 小尺寸预览：折叠外形 42.5 DIP、展开圆角与主栏一致。
+			const bool compact = runtime.options.compact;
 			if (SUCCEEDED(result)) result = next.effect.Initialize(next.context.Get(), width, height,
 				runtime.targetRect, runtime.scatterRect, DpiScale(runtime), floating,
-				runtime.options.effect, next.appearance, runtime.effectSeed);
+				runtime.options.effect, next.appearance, runtime.effectSeed, true,
+				compact ? static_cast<float>(CompactStartupBarHeightDip) : 80.f,
+				compact ? static_cast<float>(CompactStartupBarCornerRadiusDip) : 8.f);
 			if (FAILED(result)) return result;
 			resources.Reset(); resources = std::move(next);
 			return S_OK;
@@ -849,11 +855,12 @@ namespace Inkeys::UI::StartupPreview
 	RECT ResolveStartupPreviewBounds(const RECT& monitorBounds,
 		const RECT& workArea, double widthDip, double heightDip,
 		UINT dpi, double zoom, StartupPlacement placement, double uiBaseScale,
-		double desktopDockLine) noexcept
+		double desktopDockLine, double foldedSideDip) noexcept
 	{
 		const bool floating = StartupPlacementIsFolded(placement);
-		const double visibleWidthDip = (floating ? 80.0 : widthDip) + 1.0;
-		const double visibleHeightDip = (floating ? 80.0 : heightDip) + 1.0;
+		if (!std::isfinite(foldedSideDip) || foldedSideDip <= 0.0) foldedSideDip = 80.0;
+		const double visibleWidthDip = (floating ? foldedSideDip : widthDip) + 1.0;
+		const double visibleHeightDip = (floating ? foldedSideDip : heightDip) + 1.0;
 		return ResolveStartupPlacementBounds(placement, monitorBounds, workArea,
 			visibleWidthDip, visibleHeightDip, ResolveStartupPreviewScale(dpi, zoom, uiBaseScale),
 			static_cast<double>(dpi ? dpi : USER_DEFAULT_SCREEN_DPI) / USER_DEFAULT_SCREEN_DPI, desktopDockLine);
@@ -874,8 +881,8 @@ namespace Inkeys::UI::StartupPreview
 			runtime->options.effect = NormalizeStartupPreviewEffect(static_cast<int>(options.effect));
 			runtime->effectSeed = GetTickCount() ^ GetCurrentProcessId();
 			runtime->options.startupPlacement = NormalizeStartupPlacement(static_cast<int>(options.startupPlacement));
-			runtime->options.cachedWidthDip = ResolveCachedStartupBarWidthDip(
-				options.cachedWidthDip);
+			// 小尺寸无效缓存回退到小尺寸默认包络，不能借用大尺寸 470。
+			runtime->options.cachedWidthDip = ResolveCachedStartupBarWidthDip(options.cachedWidthDip, options.compact);
 			runtime->options.dpi = options.dpi == 0
 				? USER_DEFAULT_SCREEN_DPI : options.dpi;
 			runtime->options.barZoom = std::isfinite(options.barZoom)
@@ -888,9 +895,9 @@ namespace Inkeys::UI::StartupPreview
 			RECT bounds = options.contentBounds;
 			if (Width(bounds) == 0 || Height(bounds) == 0)
 				bounds = ResolveStartupPreviewBounds(options.monitorBounds, workArea,
-					runtime->options.cachedWidthDip, DefaultStartupBarHeightDip,
+					runtime->options.cachedWidthDip, options.compact ? CompactStartupBarHeightDip : DefaultStartupBarHeightDip,
 					runtime->options.dpi, runtime->options.barZoom, runtime->options.startupPlacement, runtime->options.uiBaseScale,
-					runtime->options.desktopDockLine);
+					runtime->options.desktopDockLine, options.compact ? CompactStartupBarHeightDip : 80.0);
 			// 粒子窗口可以外扩，但正式目标坐标和逻辑宽度缓存保持不变。
 			const Effects::Rect target{ static_cast<float>(bounds.left), static_cast<float>(bounds.top),
 				static_cast<float>(bounds.right), static_cast<float>(bounds.bottom) };
@@ -989,7 +996,7 @@ namespace Inkeys::UI::StartupPreview
 	}
 
 	void NotifyBarFirstCommittedFrame(double mainButtonTargetWidthDip,
-		double layoutTotalWidthDip, bool expanded) noexcept
+		double layoutTotalWidthDip, bool expanded, bool compact) noexcept
 	{
 		// 即使首帧折叠，宽度缓存也代表展开目标包络，不能以80DIP污染下次居中启动。
 		(void)expanded;
@@ -1000,21 +1007,24 @@ namespace Inkeys::UI::StartupPreview
 				|| layoutTotalWidthDip <= 0.0
 				|| layoutTotalWidthDip > CachedStartupBarWidthMaximumDip
 					- mainButtonTargetWidthDip
-					- StartupMainButtonToMainBarGapDip)) return;
+					- (compact ? ::BarCompactSizeMetrics.mainButtonGap : StartupMainButtonToMainBarGapDip))) return;
 		const double widthDip = CalculateStartupBarTotalWidthDip(
-			mainButtonTargetWidthDip, layoutTotalWidthDip, true);
+			mainButtonTargetWidthDip, layoutTotalWidthDip, true, compact);
 		if (!IsValidCachedStartupBarWidthDip(widthDip)) return;
 		double expected = 0.0;
+		if (publishedStartupBarWidthDip.load(std::memory_order_acquire) == 0.0)
+			publishedStartupBarCompact.store(compact, std::memory_order_relaxed);
 		(void)publishedStartupBarWidthDip.compare_exchange_strong(
 			expected, widthDip, std::memory_order_acq_rel);
 	}
 
-	bool TakeCommittedStartupBarWidthDip(double& widthDip) noexcept
+	bool TakeCommittedStartupBarWidthDip(double& widthDip, bool* compact) noexcept
 	{
 		const double value = publishedStartupBarWidthDip.exchange(
 			0.0, std::memory_order_acq_rel);
 		if (!IsValidCachedStartupBarWidthDip(value)) return false;
 		widthDip = value;
+		if (compact) *compact = publishedStartupBarCompact.load(std::memory_order_relaxed);
 		return true;
 	}
 
@@ -1104,7 +1114,7 @@ namespace Inkeys::UI::StartupPreview
 		if (!runtime) return {};
 		return {
 			!StartupPlacementIsFolded(runtime->options.startupPlacement)
-				? runtime->options.cachedWidthDip : 80.0,
+				? runtime->options.cachedWidthDip : (runtime->options.compact ? CompactStartupBarHeightDip : 80.0),
 			runtime->active.load(std::memory_order_acquire),
 			runtime->firstFrameCommitted.load(std::memory_order_acquire),
 			runtime->previewFadeOutCommitted.load(std::memory_order_acquire),

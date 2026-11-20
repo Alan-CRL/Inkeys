@@ -685,10 +685,17 @@
           "Dark": "Chế độ tối",
           "Light": "Chế độ sáng"
         },
+        "UiSize":
+        {
+          "N": "Kích thước giao diện",
+          "E": "Ở cỡ nhỏ, thanh chính và điều khiển trang cao 42,5 DIP, các nút chỉ hiện biểu tượng; di chuột lên để xem tên. Có hiệu lực ngay.",
+          "Large": "Lớn",
+          "Small": "Nhỏ"
+        },
         "TaskbarScaleBase":
         {
           "N": "Cơ sở tỷ lệ thanh tác vụ",
-          "E": "Ở tỷ lệ 100%, Cỡ cơ sở thanh tác vụ đặt chiều cao thanh chính cố định là 48 DIP; Cỡ thực thanh tác vụ điều chỉnh theo độ dày thanh tác vụ.",
+          "E": "Ở tỷ lệ 100%, \"Cỡ cơ sở thanh tác vụ\" đặt chiều cao thanh chính là 48 DIP ở cỡ lớn và 35 DIP ở cỡ nhỏ; \"Cỡ thực thanh tác vụ\" khớp chiều cao với độ dày thanh tác vụ.",
           "Off": "Tắt",
           "Base": "Cỡ cơ sở thanh tác vụ",
           "Actual": "Cỡ thực thanh tác vụ"

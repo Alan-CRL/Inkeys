@@ -685,10 +685,17 @@
           "Dark": "Mode sombre",
           "Light": "Mode clair"
         },
+        "UiSize":
+        {
+          "N": "Taille de l’interface",
+          "E": "En petite taille, la barre et les contrôles de page font 42,5 DIP de haut et les boutons n’affichent que leur icône ; survolez-les pour voir leur nom. Prend effet immédiatement.",
+          "Large": "Grande",
+          "Small": "Petite"
+        },
         "TaskbarScaleBase":
         {
           "N": "Échelle selon la barre des tâches",
-          "E": "À 100 %, Taille de base fixe la hauteur de la barre principale à 48 DIP ; Taille réelle suit l’épaisseur de la barre des tâches.",
+          "E": "À 100 %, « Taille de base » fixe la hauteur de la barre à 48 DIP en grande taille et à 35 DIP en petite taille ; « Taille réelle » aligne sa hauteur sur l’épaisseur de la barre des tâches.",
           "Off": "Désactivé",
           "Base": "Taille de base",
           "Actual": "Taille réelle"

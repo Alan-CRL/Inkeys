@@ -412,12 +412,15 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		for (const auto& entry : ShapeCategoryCatalog()) if (entry.preset == tool.preset) categoryRequest_ = static_cast<int>(entry.category);
 	}
 	const auto requestedCategory = static_cast<ShapeToolbarCategory>(categoryRequest_.load());
-	const bool categoryChanged = !hadOpen_ || category_ != requestedCategory;
+	const auto sizeMode = NormalizeBarSizeMode(owner.barStyle.appliedSizeMode.load(std::memory_order_acquire));
+	const bool compactSize = sizeMode == BarSizeMode::Compact;
+	const bool categoryChanged = !hadOpen_ || category_ != requestedCategory || categoryLayoutSizeMode_ != sizeMode;
 	if (categoryChanged)
 	{
 		category_ = requestedCategory; scrollRequest_ = 0; scroll_.SetDirect(0); ResetPointerFeedback();
 		for (int i = 0; i < CategoryCount; ++i) buttons_[i]->hide = ShapeCategoryCatalog()[i].category != category_;
-		categoryLayout_ = ResolveBarButtonListLayout(categoryList_.Snapshot(), BarButtonListLayoutKind::GeometryGrid);
+		categoryLayout_ = ResolveBarButtonListLayout(categoryList_.Snapshot(), BarButtonListLayoutKind::GeometryGrid, {}, sizeMode);
+		categoryLayoutSizeMode_ = sizeMode;
 	}
 
 	const auto standard = ResolveButtonVisualMetrics(ButtonVisualLayoutKind::StandardTwoTwo);
@@ -449,7 +452,8 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		constraintWidth += measureConstraint(item)+(item == GeometryTriangleModeBegin ? 0 : g);
 	else if (trapezoid) constraintWidth = measureConstraint(GeometryTrapezoidMode);
 	// 固定属性/参数保持原尺寸；有限空间只收缩类别视口，先比较主栏两侧真实可用高度。
-	const double buttonSide = ButtonOneSideDip, gap = 10;
+	// 与主栏的间隙随界面尺寸（大 10 / 小 5），与其他属性窗一致。
+	const double buttonSide = ButtonOneSideDip, gap = ResolveBarSizeMetrics(sizeMode).attachedGap;
 	const bool hasConstraint = triangle || trapezoid;
 	const bool parameterDivider = hasAuxiliary && (circle || polygon || hasConstraint);
 	const double separationWidth = parameterDivider ? 1 + g * 2 : 0;
@@ -510,6 +514,13 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	const double width = (std::max)(1.0, static_cast<double>(width_.val));
 	const double height = (std::max)(1.0, static_cast<double>(height_.val));
 	double left = EraserRectCenterX(trigger) - width / 2;
+	if (!owner.IsCenteredBottomDock())
+	{
+		// 非居中底栏：面板不越过主按钮外侧边，未越过时仍以入口居中。
+		const double mainHalf = ResolveBarSizeMetrics(sizeMode).mainButtonSide / 2;
+		left = ClampBarAttributePanelLeft(left, width, root->x.val - mainHalf, root->x.val + mainHalf,
+			static_cast<bool>(owner.barState.widgetPosition.mainBar));
+	}
 	double top = previousBelow_ ? main->inhY + main->h.val + gap : main->inhY - height - gap;
 	if (width <= work.Width()) left = (std::clamp)(left, work.left, work.right - width);
 	EraserAttributeRect panel{left, top, left + width, top + height};
@@ -546,6 +557,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	next.panel = pf.pose.Apply(panel);
 	const double gridTop = top + g + headerHeight;
 	next.categoryClip = pf.pose.Apply({left+g,gridTop,left+width-g,gridTop+viewport});
+	next.categoryPaintClip = pf.pose.Apply({left,gridTop-g,left+width,gridTop+viewport+g});
 	if (scrollMaximum > 0.000001)
 	{
 		const EraserAttributeRect track{left+width-g-buttonSide,gridTop,left+width-g,gridTop+viewport};
@@ -575,9 +587,10 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		const double itemLeft = gridLeft + x.val - item.width / 2, itemTop = gridTop + y.val - item.height / 2 - offset;
 		slots[index] = {itemLeft,itemTop,itemLeft+item.width,itemTop+item.height}; categoryAnchors_[index] = slots[index];
 	}
-	const double headerRight = gridLeft + categoryLayout_.width;
+	// 顶栏（类别分段 + 关闭）始终铺满面板内宽，不随本类图形数量收窄。
+	const double headerRight = left + width - g;
 	slots[CloseButton] = {headerRight - buttonSide, top + g, headerRight, top + g + buttonSide};
-	const double segmentWidth = (categoryLayout_.width - buttonSide - g * 4) / GeometrySegmentCount;
+	const double segmentWidth = (width - g * 2 - buttonSide - g * 4) / GeometrySegmentCount;
 	for (int i = 0; i < GeometrySegmentCount; ++i) slots[SegmentBegin+i] =
 		{left+g+i*(segmentWidth+g),top+g,left+g+i*(segmentWidth+g)+segmentWidth,top+g+buttonSide};
 	double y = gridTop + viewport + g;
@@ -768,7 +781,9 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 		const bool category = i < CategoryCount, circleOption = i == CircleCenter || i == CircleBox;
 		if (category)
 		{
-			ConfigureButtonVisualTargets(b, ButtonVisualLayoutKind::StandardTwoTwo, UiDefaultOperationDur, scale, true);
+			// 小尺寸类别按钮为 1×1 仅图标，名称交给悬停提示。
+			ConfigureButtonVisualTargets(b, compactSize ? ButtonVisualLayoutKind::StandardOneOne
+				: ButtonVisualLayoutKind::StandardTwoTwo, UiDefaultOperationDur, scale, true);
 			b.name.size.SetDirect(categoryFontSizes_[i] * scale);
 			b.name.fontTargetSize = categoryFontSizes_[i]*fontTargetScale;
 		}
@@ -789,7 +804,8 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 			b.name.fontTargetSize = fontSize*fontTargetScale;
 		}
 		// contentScale归共享SVG转换独占；面板姿态只改标准布局尺寸，不覆盖换图动画。
-		b.name.enable.Initialization(!label.empty()); b.icon.enable.Initialization(!resource.empty());
+		// 小尺寸类别按钮只显示图标：关闭文字而不改写透明度，命中门禁照常落定。
+		b.name.enable.Initialization(!label.empty() && !(compactSize && category)); b.icon.enable.Initialization(!resource.empty());
 		if (b.badge)
 		{
 			// 直线/箭头常驻；其它图形仅在当前选择被长按固定时显示。
@@ -935,7 +951,7 @@ void BarGeometryAttributePanel::Draw(UIRendering& renderer, ID2D1DeviceContext* 
 		}
 		DrawButtonVisual(renderer, context, b, UiInheritClass(b.button.inhX, b.button.inhY), options);
 	};
-	context->PushAxisAlignedClip(PixelRect(frame_.categoryClip, frame_.zoom), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+	context->PushAxisAlignedClip(PixelRect(frame_.categoryPaintClip, frame_.zoom), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 	for (size_t i = 0; i < CircleCenter; ++i)
 		if (Intersection(frame_.items[i],frame_.categoryClip).Width() > 0) drawButton(i);
 	context->PopAxisAlignedClip();
@@ -1048,7 +1064,7 @@ bool BarGeometryAttributePanel::RegisterVisuals(VisualDirtyRegistry& registry, c
 					}
 					if (!out.visible || clip == Clip::None) return;
 					const double zoom = context.zoom ? context.zoom() : 1.0;
-					RECT clipRect = IntegerRect(clip == Clip::Category ? frame_.categoryClip : frame_.parameterClip, zoom, 1);
+					RECT clipRect = IntegerRect(clip == Clip::Category ? frame_.categoryPaintClip : frame_.parameterClip, zoom, 1);
 					if (context.map) clipRect = context.map(clipRect);
 					RECT bounds{ (std::max)(out.bounds.left, clipRect.left), (std::max)(out.bounds.top, clipRect.top),
 						(std::min)(out.bounds.right, clipRect.right), (std::min)(out.bounds.bottom, clipRect.bottom) };
@@ -1193,7 +1209,8 @@ bool BarGeometryAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& m
 			// 同一worker连续滚轮累积目标，不依赖尚未呈现的动画位置；先撤销可能的按钮按下。
 			ResetPointerFeedback(); StopCarousel();
 			scrollRequest_ = (std::clamp)((std::clamp)(scrollRequest_.load(),0.0,f.scrollMaximum)
-				- static_cast<double>(message.wheel)/WHEEL_DELTA*(ButtonTwoSideDip+ButtonGapDip),0.0,f.scrollMaximum);
+				- static_cast<double>(message.wheel)/WHEEL_DELTA*(categoryLayoutSizeMode_ == BarSizeMode::Compact
+					? ButtonOneSideDip + ResolveBarSizeMetrics(BarSizeMode::Compact).gap : ButtonTwoSideDip+ButtonGapDip),0.0,f.scrollMaximum);
 			owner.UpdateRendering(false);
 		}
 		return inside;
@@ -1278,4 +1295,13 @@ bool BarGeometryAttributePanel::Pointer(BarUISetClass& owner, const ExMessage& m
 		return inside || pressed >= 0;
 	}
 	return inside;
+}
+// 小尺寸悬停提示：取渲染线程已应用的悬停按钮名称；分割线与颜色块不提示。
+std::wstring BarGeometryAttributePanel::HoverHintText() const
+{
+	if (!motion_.Visible() || appliedHover_ < 0 || appliedHover_ >= static_cast<int>(buttons_.size())) return {};
+	const auto& button = buttons_[appliedHover_];
+	if (!button || !button->IsVisible() || button->preset == BarButtonPresetEnum::Divider) return {};
+	auto text = button->name.content.GetTar();
+	return text.starts_with(L"__color") ? std::wstring{} : text;
 }

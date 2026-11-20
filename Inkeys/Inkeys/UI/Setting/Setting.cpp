@@ -2339,6 +2339,8 @@ SettingSessionCoroutine RunSettingSession()
 		bool BarZoomSavePending = false;
 		int ThemeMode = Inkeys::NormalizeThemeMode(
 			Inkeys::config.Experimental.Inkeys3.UI3.ThemeMode);
+		int SizeMode = static_cast<int>(NormalizeBarSizeMode(
+			Inkeys::config.Experimental.Inkeys3.UI3.SizeMode));
 		int BackgroundOpacity = Inkeys::NormalizeResidentBackgroundOpacity(
 			Inkeys::config.Experimental.Inkeys3.UI3.BackgroundOpacity);
 		int ContentOpacity = Inkeys::NormalizeResidentContentOpacity(
@@ -3357,6 +3359,7 @@ SettingSessionCoroutine RunSettingSession()
 						draft.whiteboardDockDirection = std::clamp(workspace.Whiteboard.Direction.load(), 0, 2);
 					}
 					draft.themeMode = ThemeMode - Inkeys::ThemeModeDark;
+					draft.sizeMode = SizeMode;
 					draft.settingThemeMode = Inkeys::config.UI.Setting.DarkMode ? 0 : 1;
 					// 背景未自定义时显示当前主栏主题的默认值；内容透明度直接显示保存值。
 					draft.backgroundOpacityDefault = static_cast<float>(GetThemeDefaultResidentBackgroundOpacity(
@@ -3577,6 +3580,17 @@ SettingSessionCoroutine RunSettingSession()
 					}
 					if (destination.section == Design::Section::WindowLayout)
 					{
+						if (events.sizeModeChanged)
+						{
+							SizeMode = static_cast<int>(NormalizeBarSizeMode(draft.sizeMode));
+							if (Inkeys::config.Experimental.Inkeys3.UI3.SizeMode != SizeMode)
+							{
+								// 与主题一致：先更新配置与运行时目标，几何由主栏渲染线程热切换，再异步持久化。
+								Inkeys::config.Experimental.Inkeys3.UI3.SizeMode = SizeMode;
+								Inkeys::UI::Bar::SetSizeMode(SizeMode);
+								QueueConfigWrite();
+							}
+						}
 						if (events.taskbarScaleBaseChanged)
 						{
 							Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase = draft.taskbarScaleBase;

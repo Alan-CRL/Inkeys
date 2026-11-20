@@ -685,10 +685,17 @@
           "Dark": "Modo escuro",
           "Light": "Modo claro"
         },
+        "UiSize":
+        {
+          "N": "Tamanho da interface",
+          "E": "No tamanho pequeno, a barra principal e os controles de página têm 42,5 DIP de altura e os botões mostram apenas ícones; passe o mouse para ver o nome. Aplica-se na hora.",
+          "Large": "Grande",
+          "Small": "Pequeno"
+        },
         "TaskbarScaleBase":
         {
           "N": "Referência de escala da barra de tarefas",
-          "E": "Em 100%, o tamanho-base tem altura fixa de 48 DIP; o tamanho real acompanha a espessura da barra de tarefas.",
+          "E": "Em 100%, \"Tamanho-base da barra de tarefas\" define a altura da barra principal em 48 DIP no tamanho grande e 35 DIP no pequeno; \"Tamanho real da barra de tarefas\" iguala a altura à espessura da barra de tarefas.",
           "Off": "Desativada",
           "Base": "Tamanho-base da barra de tarefas",
           "Actual": "Tamanho real da barra de tarefas"

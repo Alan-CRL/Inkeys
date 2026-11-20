@@ -98,11 +98,15 @@ void BarUISetClass::PublishDisplaySnapshot(
 	if (!monitor) return;
 	const double desktopDockLine = Inkeys::Display::ResolveDesktopBottomDockLine(*monitor);
 	const bool protectBottomEdge = Inkeys::Display::ShouldProtectTaskbarBottomEdge(*monitor);
-	const double uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
-		*snapshot, *monitor, static_cast<Inkeys::Display::UiScaleBaseMode>(
-			Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load()));
 	{
 		lock_guard lock(pendingDisplayPublishMutex);
+		// 档位在发布锁内读取：渲染线程先写 applied 再发布，任何晚到的旧档计算都无法覆盖新档倍率。
+		const auto& sizeMetrics = ResolveBarSizeMetrics(NormalizeBarSizeMode(
+			barStyle.appliedSizeMode.load(memory_order_acquire)));
+		const double uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
+			*snapshot, *monitor, static_cast<Inkeys::Display::UiScaleBaseMode>(
+				Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load()),
+			sizeMetrics.barHeight, sizeMetrics.taskbarBasicQuantity);
 		// 其他屏幕或 Shell 重复采样不能重启本栏的位置动画。
 		const auto previous = PendingDisplaySnapshot();
 		if (previous.serial != 0
@@ -312,6 +316,10 @@ namespace Inkeys::UI::Bar
 	}
 	void InitializeUI(BarUISetClass& barUISet)
 	{
+		// 启动尺寸在缩放与首帧几何之前落地，任务栏基准和首帧布局都按同一档位解析。
+		barUISet.barStyle.appliedSizeMode.store(static_cast<int>(NormalizeBarSizeMode(
+			barUISet.barStyle.requestedSizeMode.load(std::memory_order_acquire))),
+			std::memory_order_release);
 		Inkeys::UI::Bar::Zoom::Initialize(barUISet);
 		// 启动配置已在初始化线程之前发布，首帧直接采用该目标。
 		const bool darkStyle = barUISet.barStyle.requestedDarkStyle.load(
@@ -319,6 +327,9 @@ namespace Inkeys::UI::Bar
 		barUISet.barStyle.darkStyle = darkStyle;
 		SetThemeStyleSource(&barUISet.barStyle);
 
+		// 首帧几何直接按已落地的界面尺寸构建，避免先显示大尺寸再收缩。
+		const auto& startupSizeMetrics = ResolveBarSizeMetrics(NormalizeBarSizeMode(
+			barUISet.barStyle.appliedSizeMode.load(std::memory_order_acquire)));
 		// 定义主按钮的位置（Inkeys2 兼容模式）
 		double mainX, mainY;
 		{
@@ -333,8 +344,8 @@ namespace Inkeys::UI::Bar
 			{
 				const RECT visible = Inkeys::UI::ResolveStartupPlacementBounds(
 					barUISet.startupPlacement, monitor->bounds, monitor->workArea,
-					BarMainButtonWidthDip + ButtonFrameThicknessDip,
-					BarMainButtonHeightDip + ButtonFrameThicknessDip,
+					startupSizeMetrics.mainButtonSide + ButtonFrameThicknessDip,
+					startupSizeMetrics.mainButtonSide + ButtonFrameThicknessDip,
 					barUISet.barStyle.zoom, barUISet.barStyle.dpiZoom);
 				mainX = ((static_cast<double>(visible.left) + visible.right) / 2.0
 					- monitor->bounds.left) / barUISet.barStyle.zoom;
@@ -355,7 +366,8 @@ namespace Inkeys::UI::Bar
 
 			// 主按钮
 			{
-				auto superellipse = make_shared<UiSuperellipseClass>(mainX, mainY, 80.0, 80.0, 3.0, 1.0, GetThemeColor(ThemeColorEnum::Surface), GetThemeColor(ThemeColorEnum::SurfaceFrame));
+				auto superellipse = make_shared<UiSuperellipseClass>(mainX, mainY,
+					startupSizeMetrics.mainButtonSide, startupSizeMetrics.mainButtonSide, 3.0, 1.0, GetThemeColor(ThemeColorEnum::Surface), GetThemeColor(ThemeColorEnum::SurfaceFrame));
 				superellipse->pct.Initialization(BarMainButtonCollapsedFillOpacity);
 				superellipse->framePct = UiPctClass(0.18);
 				superellipse->frameRendering = UiFrameRenderingEnum::PointLight;
@@ -367,7 +379,8 @@ namespace Inkeys::UI::Bar
 					auto svg = make_shared<UiSVGClass>(0.0, 0.0, nullopt, nullopt);
 					svg->InitializationFromResource(L"UI", L"logo1");
 					barUISet.ConfigureLogoAppearance(*svg, BarLogoAppearance::Resolve(0.0, 0.0, 0));
-					svg->SetWH(nullopt, 80.0);
+					// Logo 与主按钮等高，小尺寸按 42.5/80 同比缩小。
+					svg->SetWH(nullopt, startupSizeMetrics.mainButtonSide);
 					svg->enable.Initialization(true);
 					barUISet.svgMap[BarUISetSvgEnum::logo1] = svg;
 				}
@@ -375,8 +388,8 @@ namespace Inkeys::UI::Bar
 			// 主栏
 			{
 				auto shape = make_shared<UiShapeClass>(0.0, 0.0,
-					BarMainBarWidthDip, BarMainBarHeightDip,
-					BarMainBarCornerRadiusDip, BarMainBarCornerRadiusDip,
+					startupSizeMetrics.mainButtonSide, startupSizeMetrics.barHeight,
+					startupSizeMetrics.barCornerRadius, startupSizeMetrics.barCornerRadius,
 					ButtonFrameThicknessDip,
 					GetThemeColor(ThemeColorEnum::Surface),
 					GetThemeColor(ThemeColorEnum::SurfaceFrame));

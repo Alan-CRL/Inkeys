@@ -106,8 +106,14 @@ ListLayoutResult ResolveListLayout(const std::vector<ListLayoutItem>& items,
 		const bool visible = item.visible;
 		if (spec.kind == ListLayoutKind::SingleRow)
 		{
-			p.x = x + p.width / 2.0; p.y = gap + item.centerHeight.value_or(p.height) / 2.0;
-			if (visible) x += p.width + gap;
+			p.y = gap + item.centerHeight.value_or(p.height) / 2.0;
+			// 单行边界项（分割线）落在前一间隙正中，不推进行宽。
+			if (item.columnBoundary) p.x = x - gap / 2.0;
+			else
+			{
+				p.x = x + p.width / 2.0;
+				if (visible) x += p.width + gap;
+			}
 			width = x;
 		}
 		else if (item.columnBoundary)

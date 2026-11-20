@@ -127,6 +127,19 @@ int RunRecallAttributeTests()
 		std::cout << "[RecallMotion] openingPeak=" << openingPeak << " closingPeak=" << closingPeak << '\n';
 	}
 	{
+		// 小尺寸：没有撤回弹窗，撤回与重做常驻主栏；精简选择态仍整体隐藏。
+		RecallChromeState state;
+		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, false });
+		state = ApplyRecallChromeCommandResult(state, false, state.availability, true);
+		auto view = ResolveRecallChrome(state, false, true);
+		expect(!view.popupOpen && view.mainUndoVisible && view.mainRedoVisible && view.undoEnabled && !view.redoEnabled,
+			"compact size keeps undo and redo on the bar without a popup");
+		view = ResolveRecallChrome(state, true, true);
+		expect(!view.popupOpen && !view.mainUndoVisible && !view.mainRedoVisible,
+			"compact size hides both recall commands in the compact selection bar like the large size");
+		expect(ResolveRecallChrome(state).popupOpen, "large size keeps the existing popup behaviour");
+	}
+	{
 		static_assert(RecallChromeIdleSeconds == 3.0);
 		RecallChromeState state;
 		state = ApplyRecallChromeEvent(state, RecallChromeEvent::Availability, { true, false });

@@ -685,10 +685,17 @@
           "Dark": "Dunkler Modus",
           "Light": "Heller Modus"
         },
+        "UiSize":
+        {
+          "N": "Oberflächengröße",
+          "E": "In der kleinen Größe sind Leiste und Seitensteuerung 42,5 DIP hoch und Schaltflächen zeigen nur Symbole; beim Darüberfahren erscheint der Name. Wirkt sofort.",
+          "Large": "Groß",
+          "Small": "Klein"
+        },
         "TaskbarScaleBase":
         {
           "N": "Skalierung nach Taskleiste",
-          "E": "Bei 100 % hält Basisgröße die Hauptleiste auf 48 DIP Höhe; Tatsächliche Größe folgt der Dicke der Taskleiste.",
+          "E": "Bei 100 % Skalierung ist die Leiste mit „Basisgröße“ in der großen Größe 48 DIP und in der kleinen Größe 35 DIP hoch; mit „Tatsächliche Größe“ entspricht ihre Höhe der Taskleistendicke.",
           "Off": "Aus",
           "Base": "Basisgröße",
           "Actual": "Tatsächliche Größe"

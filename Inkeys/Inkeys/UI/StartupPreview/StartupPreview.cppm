@@ -41,6 +41,8 @@ export namespace Inkeys::UI::StartupPreview
 		StartupPlacement startupPlacement = StartupPlacement::CenteredBottomBar;
 		HINSTANCE instance = nullptr;
 		double cachedWidthDip = DefaultCachedStartupBarWidthDip;
+		// 小尺寸：预览高度与折叠外形 42.5 DIP、圆角 8（cachedWidthDip 由调用方取小尺寸缓存）。
+		bool compact = false;
 		double barZoom = 1.0;
 		double uiBaseScale = 0.0;
 		double desktopDockLine = std::numeric_limits<double>::quiet_NaN();
@@ -70,7 +72,8 @@ export namespace Inkeys::UI::StartupPreview
 		UINT dpi, double zoom,
 		StartupPlacement placement = StartupPlacement::CenteredBottomBar,
 		double uiBaseScale = 0.0,
-		double desktopDockLine = std::numeric_limits<double>::quiet_NaN()) noexcept;
+		double desktopDockLine = std::numeric_limits<double>::quiet_NaN(),
+		double foldedSideDip = 80.0) noexcept;
 
 	[[nodiscard]] bool Start(const StartOptions& options);
 	void Stop() noexcept;
@@ -78,9 +81,10 @@ export namespace Inkeys::UI::StartupPreview
 	[[nodiscard]] bool IsPresentationAvailable() noexcept;
 	[[nodiscard]] bool ShouldBarStartTransparent() noexcept;
 	void RevalidateTopmost() noexcept;
+	// compact：首帧所在的界面尺寸档位，与宽度同一条记录发布，主线程据此选择写回字段。
 	void NotifyBarFirstCommittedFrame(double mainButtonTargetWidthDip,
-		double layoutTotalWidthDip, bool expanded) noexcept;
-	[[nodiscard]] bool TakeCommittedStartupBarWidthDip(double& widthDip) noexcept;
+		double layoutTotalWidthDip, bool expanded, bool compact = false) noexcept;
+	[[nodiscard]] bool TakeCommittedStartupBarWidthDip(double& widthDip, bool* compact = nullptr) noexcept;
 	void SetBarStartupState(BarStartupState state) noexcept;
 	[[nodiscard]] BarStartupState GetBarStartupState() noexcept;
 	void NotifyBarPresentationAlphaCommitted(std::uint8_t alpha) noexcept;

@@ -36,7 +36,8 @@ namespace Inkeys::UI::StartupPreview::Drawing
 		// allowSpriteBatch 仅供测试强制走逐个 DrawBitmap 回退路径，验证两条路径像素一致。
 		[[nodiscard]] HRESULT Initialize(ID2D1DeviceContext* context, UINT width, UINT height,
 			Effects::Rect target, Effects::Rect scatter, float scale, bool floating,
-			StartupPreviewEffect effect, Effects::Appearance appearance, std::uint32_t seed, bool allowSpriteBatch = true)
+			StartupPreviewEffect effect, Effects::Appearance appearance, std::uint32_t seed, bool allowSpriteBatch = true,
+			float floatingSideDip = 80.f, float cornerDip = 8.f)
 		{
 			Reset();
 			if (!context || !width || !height || scale <= 0.f || Effects::Width(target) <= 0.f || Effects::Height(target) <= 0.f) return E_INVALIDARG;
@@ -50,7 +51,8 @@ namespace Inkeys::UI::StartupPreview::Drawing
 				D2D1::PixelFormat(DXGI_FORMAT_A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
 			if (SUCCEEDED(hr)) hr = context_->CreateBitmap(D2D1::SizeU(baseWidth_, baseHeight_), nullptr, 0, maskProperties, &mask_);
 			ComPtr<ID2D1Factory> factory; context_->GetFactory(&factory);
-			if (SUCCEEDED(hr)) hr = CreateShape(factory.Get(), static_cast<float>(baseWidth_), static_cast<float>(baseHeight_), scale, floating, &shape_);
+			if (SUCCEEDED(hr)) hr = CreateShape(factory.Get(), static_cast<float>(baseWidth_), static_cast<float>(baseHeight_), scale, floating, &shape_,
+				floatingSideDip, cornerDip);
 			if (SUCCEEDED(hr)) hr = context_->CreateSolidColorBrush(EffectColor(appearance.surface), &fill_);
 			if (SUCCEEDED(hr)) hr = context_->CreateSolidColorBrush(EffectColor(appearance.frame), &frame_);
 			if (SUCCEEDED(hr)) hr = context_->CreateSolidColorBrush(D2D1::ColorF(1.f, 1.f, 1.f), &maskBrush_);

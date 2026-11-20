@@ -685,10 +685,17 @@
           "Dark": "Modalità scura",
           "Light": "Modalità chiara"
         },
+        "UiSize":
+        {
+          "N": "Dimensione interfaccia",
+          "E": "Nella dimensione piccola la barra e i controlli di pagina sono alti 42,5 DIP e i pulsanti mostrano solo l’icona; passa il mouse per vederne il nome. Effetto immediato.",
+          "Large": "Grande",
+          "Small": "Piccola"
+        },
         "TaskbarScaleBase":
         {
           "N": "Scala basata sulla barra delle applicazioni",
-          "E": "Alla scala del 100%, Dimensione base barra fissa l'altezza della barra principale a 48 DIP; Dimensione reale barra segue lo spessore della barra delle applicazioni.",
+          "E": "Al 100%, «Dimensione base barra» imposta l’altezza della barra a 48 DIP nella dimensione grande e a 35 DIP in quella piccola; «Dimensione reale barra» la allinea allo spessore della barra delle applicazioni.",
           "Off": "Disattivata",
           "Base": "Dimensione base barra",
           "Actual": "Dimensione reale barra"

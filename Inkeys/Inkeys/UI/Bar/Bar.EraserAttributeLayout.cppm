@@ -35,17 +35,24 @@ export namespace Inkeys::UI::Bar
 		Inkeys::Drawing::Draw3::EraserShape shape = Inkeys::Drawing::Draw3::EraserShape::Circle;
 		double previewCornerRadius = 6;
 		bool below = false, reversed = false, menuBelow = false, horizontalOverflow = false;
+		// 小尺寸：不含清空按钮，items[0] 与 dividers[1] 为空矩形。
+		bool compact = false;
 		friend bool operator==(const EraserAttributeLayout&, const EraserAttributeLayout&) = default;
 	};
 	struct EraserAttributeLayoutInput
 	{
 		EraserAttributeRect main, anchor, work;
+		// 非居中底栏时面板不越过主按钮外侧边（ClampBarAttributePanelLeft）；居中底栏不限制。
+		EraserAttributeRect mainButton;
+		bool limitToMainButton = false;
 		double dpiScale = 1, zoom = 1;
 		Inkeys::Drawing::Draw3::EraserShape shape = Inkeys::Drawing::Draw3::EraserShape::Circle;
 		bool below = false, reversed = false;
 		int lockedMenuSide = -1;
 		// 直拖或方向过渡沿用已呈现侧，不能因临时工作区坐标立即翻边。
 		bool lockPanelSide = false;
+		// 界面尺寸：小尺寸面板高 42.5，按钮 1×1，去掉清空按钮。
+		BarSizeMode sizeMode = BarSizeMode::Large;
 		// 测试可以注入大于面板高度的直径，生产始终传三档基础尺寸。
 		std::array<float, 3> diametersDip{
 			static_cast<float>(Inkeys::Drawing::Draw3::SpeedEraser::BaseSizePresets[0]),
@@ -74,6 +81,7 @@ export namespace Inkeys::UI::Bar
 		const double x=EraserRectCenterX(anchor)-EraserRectCenterX(input.anchor);
 		const double y=EraserRectCenterY(anchor)-EraserRectCenterY(input.anchor);
 		input.main=OffsetEraserRect(input.main,x,y);
+		input.mainButton=OffsetEraserRect(input.mainButton,x,y);
 		input.anchor=OffsetEraserRect(input.anchor,x,y);
 		input.work=OffsetEraserRect(input.work,x,y);
 		return input;
@@ -113,8 +121,10 @@ export namespace Inkeys::UI::Bar
 		const double zoom=std::isfinite(input.zoom) && input.zoom>0?input.zoom:1;
 		const double dpi=std::isfinite(input.dpiScale) && input.dpiScale>0?input.dpiScale:1;
 		r.shape=input.shape;r.previewCornerRadius=6*dpi/zoom;
-		const double height=input.main.Height()>0?input.main.Height():BarMainBarHeightDip;
-		const double button=ButtonTwoSideDip,arrow=EraserAttributeAutomaticArrowWidthDip;
+		const bool compact=input.sizeMode==BarSizeMode::Compact;r.compact=compact;
+		const auto& sizeMetrics=ResolveBarSizeMetrics(input.sizeMode);
+		const double height=input.main.Height()>0?input.main.Height():sizeMetrics.barHeight;
+		const double button=compact?sizeMetrics.one:ButtonTwoSideDip,arrow=EraserAttributeAutomaticArrowWidthDip;
 		const double autoWidth=button+arrow,available=(std::max)(1.0,input.work.Width());
 		DisplayScale display;display.dipPerPixelX=display.dipPerPixelY=static_cast<float>(1/dpi);
 		double diameters=0;
@@ -133,12 +143,22 @@ export namespace Inkeys::UI::Bar
 		const double automaticSide=gap+dgap+autoWidth+gap+button;
 		const double leftSide=input.reversed?automaticSide:circleSide;
 		const double rightSide=input.reversed?circleSide:automaticSide;
-		const double naturalWidth=leftSide+stroke+dgap+button+dgap+stroke+rightSide;
+		// 小尺寸：预览组 | 分割线 | 自动粗细 + 手掌橡皮；按钮之间与面板外缘为 5，分割线落在组间间隙正中不占宽。
+		const double compactGap=sizeMetrics.gap,compactGroupSide=autoWidth+compactGap+button;
+		const double naturalWidth=compact
+			?circleSide+compactGap+compactGroupSide+compactGap
+			:leftSide+stroke+dgap+button+dgap+stroke+rightSide;
 		const double halfClear=(std::min)(button/2,available/2);
 		const double clearCenter=(std::clamp)(EraserRectCenterX(input.anchor),input.work.left+halfClear,input.work.right-halfClear);
-		const double idealX=clearCenter-(leftSide+stroke+dgap+button/2);
+		// 大尺寸以清空按钮对准主栏橡皮按钮；小尺寸没有清空按钮，整块面板以橡皮按钮居中。
+		// 不越过主按钮外侧边：reversed 即主栏向左展开。
+		const double centeredX=compact?EraserRectCenterX(input.anchor)-naturalWidth/2
+			:clearCenter-(leftSide+stroke+dgap+button/2);
+		const double idealX=input.limitToMainButton
+			?Inkeys::UI::Bar::ClampBarAttributePanelLeft(centeredX,naturalWidth,input.mainButton.left,input.mainButton.right,!input.reversed)
+			:centeredX;
 		r.horizontalOverflow=naturalWidth>available || idealX<input.work.left || idealX+naturalWidth>input.work.right;
-		const double panelGap=BarMainButtonToMainBarGapDip;
+		const double panelGap=sizeMetrics.attachedGap;
 		const double down=input.work.bottom-input.main.bottom-panelGap,up=input.main.top-input.work.top-panelGap;
 		r.below=input.below;r.reversed=input.reversed;
 		if(!input.lockPanelSide && (r.below?down:up)<height && (r.below?up:down)>(r.below?down:up))r.below=!r.below;
@@ -146,13 +166,28 @@ export namespace Inkeys::UI::Bar
 			input.work.top,(std::max)(input.work.top,input.work.bottom-height));
 		r.panel={(std::max)(idealX,input.work.left),y,(std::min)(idealX+naturalWidth,input.work.right),y+height};
 		const double cy=y+height/2,bh=button;
-		const double clearLeft=idealX+leftSide+stroke+dgap;
-		r.items[0]={clearLeft,cy-bh/2,clearLeft+button,cy+bh/2};
-		const double dh=button-ButtonGapDip*4;
-		r.dividers[0]={idealX+leftSide,cy-dh/2,idealX+leftSide+stroke,cy+dh/2};
-		r.dividers[1]={r.items[0].right+dgap,cy-dh/2,r.items[0].right+dgap+stroke,cy+dh/2};
-		const double leftStart=idealX,rightStart=r.dividers[1].right;
-		const double circleStart=r.reversed?rightStart:leftStart,autoStart=r.reversed?leftStart:rightStart;
+		double circleStart=0,autoStart=0;
+		if(compact)
+		{
+			const double dh=sizeMetrics.dividerHeight;
+			// 正向：预览组之后的间隙正中；倒转：自动组之后的间隙正中。
+			const double gapLeft=r.reversed?idealX+compactGap+compactGroupSide:idealX+circleSide;
+			const double dividerLeft=gapLeft+(compactGap-stroke)/2;
+			r.items[0]={};r.dividers[1]={};
+			r.dividers[0]={dividerLeft,cy-dh/2,dividerLeft+stroke,cy+dh/2};
+			circleStart=r.reversed?gapLeft+compactGap:idealX;
+			autoStart=r.reversed?idealX+compactGap:gapLeft+compactGap;
+		}
+		else
+		{
+			const double clearLeft=idealX+leftSide+stroke+dgap;
+			r.items[0]={clearLeft,cy-bh/2,clearLeft+button,cy+bh/2};
+			const double dh=button-ButtonGapDip*4;
+			r.dividers[0]={idealX+leftSide,cy-dh/2,idealX+leftSide+stroke,cy+dh/2};
+			r.dividers[1]={r.items[0].right+dgap,cy-dh/2,r.items[0].right+dgap+stroke,cy+dh/2};
+			const double leftStart=idealX,rightStart=r.dividers[1].right;
+			circleStart=r.reversed?rightStart:leftStart;autoStart=r.reversed?leftStart:rightStart;
+		}
 		const double circleEnd=circleStart+circleSide;
 		r.previewRegion=IntersectEraserRect({circleStart,y,circleEnd,y+height},r.panel);
 		double cursor=circleStart+circleGap;
@@ -172,15 +207,17 @@ export namespace Inkeys::UI::Bar
 				circle.right+ButtonGapDip,circle.bottom+ButtonGapDip},r.previewClips[i]);
 		}
 		// 分割线侧留主栏同款 dgap；面板外缘侧保持标准 gap。
-		const double ax=autoStart+(r.reversed?gap:dgap);
+		const double ax=compact?autoStart:autoStart+(r.reversed?gap:dgap);
+		const double palmGap=compact?compactGap:gap;
 		r.automatic={ax,cy-bh/2,ax+autoWidth,cy+bh/2};
 		// 倒转只移动整个分组，A和右侧箭头不镜像，两个动作区保持原语义。
 		r.items[4]={ax,cy-bh/2,ax+button,cy+bh/2};r.items[5]={ax+button,cy-bh/2,ax+autoWidth,cy+bh/2};
-		r.palm=r.items[10]={r.automatic.right+gap,cy-bh/2,r.automatic.right+gap+button,cy+bh/2};
+		r.palm=r.items[10]={r.automatic.right+palmGap,cy-bh/2,r.automatic.right+palmGap+button,cy+bh/2};
 		// 内部分割线与主栏分割线使用同一高度并保持垂直居中。
 		r.automaticDivider={ax+button-stroke/2,r.dividers[0].top,
 			ax+button+stroke/2,r.dividers[0].bottom};
-		const double menuWidth=(std::min)(available,button*2+ButtonOneSideDip+ButtonGapDip*2);
+		// 灵敏度菜单尺寸与面板档位无关，始终按 2×2 基准，保证标题与三档按钮宽度。
+		const double menuWidth=(std::min)(available,ButtonTwoSideDip*2+ButtonOneSideDip+ButtonGapDip*2);
 		const double row=ButtonOneSideDip,padding=ButtonGapDip*2,mg=ButtonGapDip;
 		const double menuHeight=row*2+padding*2+mg;
 		r.menuBelow=input.lockedMenuSide<0?r.below:input.lockedMenuSide!=0;

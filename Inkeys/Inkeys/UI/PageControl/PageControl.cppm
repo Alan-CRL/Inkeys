@@ -279,12 +279,10 @@ export namespace Inkeys::UI::PageControl
 		return vertical ? (next ? 180.0 : 0.0) : (next ? 90.0 : -90.0);
 	}
 
-	inline constexpr double PptCompactLongSideDip = BarPptCompactLongSideDip;
-	inline constexpr double PptCompactShortSideDip = BarPptCompactShortSideDip;
 	inline constexpr double PptControlLongSideDip = BarPptPaginationLongSideDip;
 	inline constexpr double PptControlShortSideDip = BarPptPaginationShortSideDip;
 	inline constexpr double PptDragHandleSlotDip = BarPaginationDragHandleSlotDip;
-	inline constexpr double PptArrowButtonSideDip = BarPptCompactPaginationEnabled ? ButtonOneSideDip : ButtonTwoSideDip;
+	inline constexpr double PptArrowButtonSideDip = ButtonTwoSideDip;
 	inline constexpr double PptPageButtonLongSideDip = ButtonTwoSideDip;
 	inline constexpr double PageControlGapDip = ButtonGapDip;
 	inline constexpr double WhiteboardWidthDip = BarWhiteboardPaginationWidthDip;
@@ -372,52 +370,26 @@ export namespace Inkeys::UI::PageControl
 		bool secondaryTextNormal = false;
 	};
 
+	// 命中合同与 Scene 的单行列表布局同源；小尺寸箭头为 1×1、不显示文字，页码为 2×1（竖向 1×2）。
 	[[nodiscard]] inline std::array<PptWidgetContract, 4>
-		ResolvePptWidgetContracts(Surface surface) noexcept
+		ResolvePptWidgetContracts(Surface surface, bool compact = false) noexcept
 	{
 		const bool vertical = surface == Surface::MiddleLeft
 			|| surface == Surface::MiddleRight;
 		const bool right = surface == Surface::BottomRight;
-		DipRect drag{};
-		DipRect previous{};
-		DipRect page{};
-		DipRect next{};
-		if (!BarPptCompactPaginationEnabled)
-		{
-			const auto geometry=Inkeys::UI::Bar::ResolveBarPptStandardPaginationGeometry(vertical,right);
-			const auto rect=[](const auto& r){return DipRect{r.left,r.top,r.right,r.bottom};};
-			drag=rect(geometry.drag);previous=rect(geometry.previous);page=rect(geometry.page);next=rect(geometry.next);
-		}
-		else if (vertical)
-		{
-			drag = { 5.0, 5.0, 37.5, 15.0 };
-			previous = { 5.0, 15.0, 37.5, 47.5 };
-			page = { 5.0, 52.5, 37.5, 122.5 };
-			next = { 5.0, 127.5, 37.5, 160.0 };
-		}
-		else if (right)
-		{
-			previous = { 5.0, 5.0, 37.5, 37.5 };
-			page = { 42.5, 5.0, 112.5, 37.5 };
-			next = { 117.5, 5.0, 150.0, 37.5 };
-			drag = { 150.0, 5.0, 160.0, 37.5 };
-		}
-		else
-		{
-			drag = { 5.0, 5.0, 15.0, 37.5 };
-			previous = { 15.0, 5.0, 47.5, 37.5 };
-			page = { 52.5, 5.0, 122.5, 37.5 };
-			next = { 127.5, 5.0, 160.0, 37.5 };
-		}
+		const auto geometry=Inkeys::UI::Bar::ResolveBarPptStandardPaginationGeometry(vertical,right,
+			compact?BarSizeMode::Compact:BarSizeMode::Large);
+		const auto rect=[](const auto& r){return DipRect{r.left,r.top,r.right,r.bottom};};
+		const DipRect drag=rect(geometry.drag),previous=rect(geometry.previous),page=rect(geometry.page),next=rect(geometry.next);
 		return {
 			PptWidgetContract{ PptWidgetRole::DragHandle, drag,
 				false, false, true, false, false, false, false, false },
 			PptWidgetContract{ PptWidgetRole::Previous, previous,
-				!BarPptCompactPaginationEnabled, true, false, false, true, true, false, false },
+				!compact, true, false, false, true, true, false, false },
 			PptWidgetContract{ PptWidgetRole::Page, page,
 				true, true, true, true, true, true, true, true },
 			PptWidgetContract{ PptWidgetRole::Next, next,
-				!BarPptCompactPaginationEnabled, true, false, false, true, true, false, false },
+				!compact, true, false, false, true, true, false, false },
 		};
 	}
 
@@ -653,6 +625,8 @@ export namespace Inkeys::UI::PageControl
 		PptLayoutState layout;
 		// 帧内派生的 UI 全局尺度；不属于用户位置/控件倍率，不参与持久化。
 		float uiScale = 0.0F;
+		// 主栏已落地的小尺寸档位：翻页控件外框短边 42.5，箭头 1×1、页码 2×1。
+		bool compactSize = false;
 	};
 
 	// 闲置背景/内容在渲染通道分别取上限，显隐透明度与命中始终独立。
@@ -1267,14 +1241,17 @@ export namespace Inkeys::UI::PageControl
 			|| surface == Surface::MiddleLeft;
 		// 所有分页 UI 共用主栏全局尺度；白板只隔离 PPT 的局部倍率与位置。
 		float scale = ResolvePptUiScale(dpiScale, ppt.uiScale);
-		double widthDip = result.vertical
-			? PptControlShortSideDip : PptControlLongSideDip;
-		double heightDip = result.vertical
-			? PptControlLongSideDip : PptControlShortSideDip;
+		const auto sizeMode = ppt.compactSize ? BarSizeMode::Compact : BarSizeMode::Large;
+		const double longSide = ::BarPptPaginationLongSide(sizeMode);
+		const double shortSide = ::BarPptPaginationShortSide(sizeMode);
+		double widthDip = result.vertical ? shortSide : longSide;
+		double heightDip = result.vertical ? longSide : shortSide;
 		if (result.mode == WorkspaceMode::WhiteboardExpanded)
 		{
-			widthDip = surface == Surface::BottomLeft ? WhiteboardLeftWidthDip : WhiteboardWidthDip;
-			heightDip = WhiteboardHeightDip;
+			widthDip = surface == Surface::BottomLeft
+				? ::BarWhiteboardPaginationLeftWidth(sizeMode)
+				: ::BarWhiteboardPaginationWidth(sizeMode);
+			heightDip = ::BarWhiteboardPaginationHeight(sizeMode);
 		}
 		else if (result.vertical)
 			scale *= NormalizeRuntimeControlScale(ppt.layout.middlePairScale);
@@ -1335,8 +1312,11 @@ export namespace Inkeys::UI::PageControl
 
 	[[nodiscard]] inline PptLayoutState ClampPageControlLayout(
 		Surface moved, const RECT& monitor, float dpiScale,
-		PptLayoutState layout, float uiScale = 0.0F) noexcept
+		PptLayoutState layout, float uiScale = 0.0F, bool compact = false) noexcept
 	{
+		const auto sizeMode = compact ? BarSizeMode::Compact : BarSizeMode::Large;
+		const double longSide = ::BarPptPaginationLongSide(sizeMode);
+		const double shortSide = ::BarPptPaginationShortSide(sizeMode);
 		const float width = static_cast<float>((std::max)(1L,
 			monitor.right - monitor.left));
 		const float height = static_cast<float>((std::max)(1L,
@@ -1347,8 +1327,8 @@ export namespace Inkeys::UI::PageControl
 		{
 			const float scale = ResolvePptUiScale(dpiScale, uiScale)
 				* NormalizeRuntimeControlScale(layout.bottomPairScale);
-			const double controlWidth = PptControlLongSideDip;
-			const double controlHeight = PptControlShortSideDip;
+			const double controlWidth = longSide;
+			const double controlHeight = shortSide;
 			layout.bottomPairWidth = (std::clamp)(layout.bottomPairWidth,
 				0.0F, (std::max)(0.0F, width / 2.0F
 					- static_cast<float>((controlWidth + PageControlGapDip) * scale)));
@@ -1364,11 +1344,11 @@ export namespace Inkeys::UI::PageControl
 				* NormalizeRuntimeControlScale(layout.middlePairScale);
 			layout.middlePairWidth = (std::clamp)(layout.middlePairWidth,
 				0.0F, (std::max)(0.0F, width / 2.0F
-					- static_cast<float>((PptControlShortSideDip
+					- static_cast<float>((shortSide
 						+ PageControlGapDip) * scale)));
 			const float verticalLimit = (std::max)(0.0F,
 				height / 2.0F - static_cast<float>(
-					(PptControlLongSideDip / 2.0
+					(longSide / 2.0
 						+ PageControlGapDip) * scale));
 			layout.middlePairHeight = (std::clamp)(layout.middlePairHeight,
 				-verticalLimit, verticalLimit);
@@ -1425,7 +1405,7 @@ export namespace Inkeys::UI::PageControl
 			currentCandidate.middlePairWidth = candidate.middlePairWidth;
 			currentCandidate.middlePairHeight = candidate.middlePairHeight;
 		}
-		const auto clamped = ClampPageControlLayout(moved, monitor, dpiScale, currentCandidate, ppt.uiScale);
+		const auto clamped = ClampPageControlLayout(moved, monitor, dpiScale, currentCandidate, ppt.uiScale, ppt.compactSize);
 		result.clamped = bottom
 			? candidate.bottomPairWidth != clamped.bottomPairWidth
 				|| candidate.bottomPairHeight != clamped.bottomPairHeight
@@ -1521,16 +1501,17 @@ export namespace Inkeys::UI::PageControl
 			userScale = (std::min)({ std::clamp(NormalizeScale(userScale), 0.5F, 3.0F),
 				maximum, screenMaximum, resourceMaximum });
 		};
-		FitScale(bottomVisible, true, PptControlLongSideDip,
-			PptControlShortSideDip, ppt.layout.bottomPairScale);
-		FitScale(middleVisible, false, PptControlShortSideDip,
-			PptControlLongSideDip, ppt.layout.middlePairScale);
+		const auto fitSizeMode = ppt.compactSize ? BarSizeMode::Compact : BarSizeMode::Large;
+		FitScale(bottomVisible, true, ::BarPptPaginationLongSide(fitSizeMode),
+			::BarPptPaginationShortSide(fitSizeMode), ppt.layout.bottomPairScale);
+		FitScale(middleVisible, false, ::BarPptPaginationShortSide(fitSizeMode),
+			::BarPptPaginationLongSide(fitSizeMode), ppt.layout.middlePairScale);
 		if (bottomVisible)
 			ppt.layout = ClampPageControlLayout(Surface::BottomLeft,
-				monitor, dpiScale, ppt.layout, ppt.uiScale);
+				monitor, dpiScale, ppt.layout, ppt.uiScale, ppt.compactSize);
 		if (middleVisible)
 			ppt.layout = ClampPageControlLayout(Surface::MiddleLeft,
-				monitor, dpiScale, ppt.layout, ppt.uiScale);
+				monitor, dpiScale, ppt.layout, ppt.uiScale, ppt.compactSize);
 
 		auto TryNearest = [](float start, float minimum, float maximum,
 			auto&& invalid, float& resolved)
@@ -1563,11 +1544,11 @@ export namespace Inkeys::UI::PageControl
 			for (int attempt = 0; attempt < 24; ++attempt)
 			{
 				ppt.layout = ClampPageControlLayout(Surface::MiddleLeft,
-					monitor, dpiScale, ppt.layout, ppt.uiScale);
+					monitor, dpiScale, ppt.layout, ppt.uiScale, ppt.compactSize);
 				PptLayoutState upper = ppt.layout;
 				upper.middlePairHeight = height;
 				upper = ClampPageControlLayout(Surface::MiddleLeft,
-					monitor, dpiScale, upper, ppt.uiScale);
+					monitor, dpiScale, upper, ppt.uiScale, ppt.compactSize);
 				const float limit = upper.middlePairHeight;
 				float resolved = ppt.layout.middlePairHeight;
 				const bool found = TryNearest(ppt.layout.middlePairHeight,

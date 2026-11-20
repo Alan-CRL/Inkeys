@@ -121,6 +121,10 @@ public:
 	std::chrono::steady_clock::time_point PollDeadline(std::chrono::steady_clock::time_point);
 	RECT Bounds() const;
 	RECT OverflowBounds() const;
+	// 小尺寸：最近一次布局要求主按钮变宽的量（DIP），渲染线程在下一帧按此绘制加宽主按钮。
+	double CompactExtraWidth() const noexcept { return layout_.compactExtraWidth; }
+	// 主按钮手势判定为点击时调用：小尺寸状态文字展示中则排队收起并返回 true。
+	bool ConsumeCompactMainClick();
 	bool Active() const noexcept { return model_.NeedsFrames() || feedbackActive_; }
 	bool Changed() const noexcept { return changed_; }
 	int RunOffscreenTest(BarUISetClass&);
@@ -199,6 +203,10 @@ public:
 	bool Active() const noexcept { return active_; }
 	bool IdleFadeProtected() const noexcept { return panelMotion_.Visible() || menuMotion_.Visible(); }
 	void RememberEntryFromSelection(bool value) noexcept { returnToSelectionOnClear_ = value; }
+	// 小尺寸悬停提示：当前悬停按钮的名称（无则空串）；仅渲染线程调用。
+	std::wstring HoverHintText() const;
+	// 面板/菜单开合动画进行中：期间记录的悬停命中基于中间几何，提示来源须作废。
+	bool HoverHintMotionActive() const noexcept { return panelMotion_.Active() || menuMotion_.Active(); }
 private:
 	void Initialize();
 	bool Execute(BarUISetClass& owner, int item);
@@ -314,10 +322,12 @@ namespace Inkeys::UI::Bar
 		int subColumns = 0, explicitRows = 0, totalRows = 0;
 		bool showDivider = false;
 	};
+	// sizeMode 决定网格间距与行高；小尺寸主栏为单行 1×1，大尺寸保持既有双行流。
 	[[nodiscard]] BarButtonListLayout ResolveBarButtonListLayout(
 		const std::vector<std::shared_ptr<BarButtonClass>>& buttons,
 		BarButtonListLayoutKind kind,
-		const std::vector<std::shared_ptr<BarButtonClass>>& secondGroup = {});
+		const std::vector<std::shared_ptr<BarButtonClass>>& secondGroup = {},
+		BarSizeMode sizeMode = BarSizeMode::Large);
 
 
 	// PageControl 只登记窗口事实；第三光源仍由 Main Bar 的唯一状态机拥有。
@@ -361,6 +371,8 @@ namespace Inkeys::UI::Bar
 	struct GeometryAttributePresentation
 	{
 		EraserAttributeRect panel, parameterClip, categoryClip, scrollTrack, scrollThumb, workArea;
+		// 类别网格的绘制裁剪：在命中裁剪外放宽一个间距，容纳 1×1 按钮越出边框的角标。
+		EraserAttributeRect categoryPaintClip;
 		std::array<EraserAttributeRect,GeometryControlCount> items{};
 		std::array<ButtonHitSnapshot,GeometryControlCount> hits{};
 		EraserSurfacePose pose;
@@ -454,6 +466,9 @@ public:
 	std::array<RECT,1> PresentedRegions() const;
 	Inkeys::UI::Bar::GeometryAttributePresentation PresentationSnapshot() const;
 	bool IdleFadeProtected() const noexcept { return motion_.Visible(); }
+	// 小尺寸悬停提示：当前悬停按钮的名称（无则空串）；仅渲染线程调用。
+	std::wstring HoverHintText() const;
+	bool HoverHintMotionActive() const noexcept { return motion_.Active(); }
 	bool Changed() const noexcept { return changed_; }
 	bool Active() const noexcept { return active_; }
 private:
@@ -472,6 +487,8 @@ private:
 	std::array<std::shared_ptr<BarButtonClass>,Inkeys::UI::Bar::GeometryControlCount> buttons_;
 	BarButtonListClass categoryList_, attributeList_;
 	Inkeys::UI::Bar::BarButtonListLayout categoryLayout_, attributeLayout_;
+	// 类别网格所按的界面尺寸；档位变化时重新排布（小尺寸为 1×1、最多 12 列）。
+	BarSizeMode categoryLayoutSizeMode_ = BarSizeMode::Large;
 	IdtAtomic<int> categoryRequest_ = 0;
 	Inkeys::UI::Bar::ShapeToolbarCategory category_ = Inkeys::UI::Bar::ShapeToolbarCategory::Regular;
 	std::array<UiValueClass,Inkeys::UI::Bar::GeometryCategoryCount> categoryX_, categoryY_;
@@ -888,6 +905,14 @@ public:
 	BarConstructionPrompt constructionPrompt;
 	BarEraserAttributePanel eraserAttribute;
 	BarStatusIndicatorPanel statusIndicator;
+	// 小尺寸悬停提示的输入来源：输入线程经交互反馈队列投递，仅渲染线程读写。
+	// mouse=最近一条消息是未按键的真实鼠标移动；screen=光标屏幕坐标；main=命中的主栏/More 按钮（可空），more=来自 More。
+	struct HoverHintSource
+	{
+		bool mouse = false, more = false;
+		POINT screen{};
+		std::shared_ptr<BarButtonClass> main;
+	} hoverHintSource;
 	BarRecallAttributePanel recallAttribute;
 	Panel mainPanel{"Main"}, morePanel{"More"}, colorPickerPanel{"MainColorPicker"};
 	Panel annotationTooltipPanel{"AnnotationTooltip"}, overflowTooltipPanel{"OverflowTooltip"};
@@ -1054,6 +1079,14 @@ public:
 		return bottomDockMode.load(memory_order_acquire)
 			== Inkeys::UI::Bar::BarBottomDockMode::BottomDocked
 			|| bottomDockRecoveryActive.load(memory_order_acquire);
+	}
+	// 居中底栏时属性窗保持居中；其余状态属性窗不越过主按钮外侧边（ClampBarAttributePanelLeft）。
+	bool IsCenteredBottomDock() const noexcept
+	{
+		return bottomDockMode.load(memory_order_acquire)
+			== Inkeys::UI::Bar::BarBottomDockMode::BottomDocked
+			&& bottomDockCenterMode.load(memory_order_acquire)
+			== Inkeys::UI::Bar::BarBottomDockCenterMode::Centered;
 	}
 	BarBottomDockPresentedSnapshot BottomDockPresentedSnapshot() const noexcept
 	{
@@ -1713,6 +1746,10 @@ namespace Inkeys::UI::Bar
 	export bool GetBarEdgeLightingEnabled() noexcept;
 	export void SetEdgeLightingOptions(bool enable, bool dynamic);
 	export void SetThemeMode(int themeMode) noexcept;
+	// 0=大尺寸，1=小尺寸；非法值按大尺寸处理。
+	export void SetSizeMode(int sizeMode) noexcept;
+	// 已在主栏落地的尺寸档位，翻页控件等外部表面据此解析几何。
+	export BarSizeMode AppliedSizeMode() noexcept;
 	// 背景百分比 0 表示跟随主题默认；调用方负责先按配置规则归一。
 	export void SetResidentOpacity(int backgroundPercent, int contentPercent) noexcept;
 	export using ::Inkeys::UI::Bar::StatusIndicatorKind;
@@ -1747,6 +1784,8 @@ namespace Inkeys::UI::Bar
 	export PptIdleInputSnapshot SnapshotPptIdleInput() noexcept;
 	export void ResetPptIdleInput() noexcept;
 	export void PublishPptIdleDeadline(std::chrono::steady_clock::time_point) noexcept;
+	// 小尺寸悬停提示 500 ms 到点唤醒：交互 worker 到点后请求一帧 Bar 渲染。
+	export void PublishBarHoverHintDeadline(std::chrono::steady_clock::time_point) noexcept;
 	export void SetPptPresentationActive(bool active) noexcept;
 	export bool PptPresentationActive() noexcept;
 	export void PublishPptSession(std::uint64_t session, bool active, HWND showWindow) noexcept;

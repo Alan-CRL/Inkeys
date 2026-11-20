@@ -685,10 +685,17 @@
           "Dark": "Dark mode",
           "Light": "Light mode"
         },
+        "UiSize":
+        {
+          "N": "Interface size",
+          "E": "In Small size, the main bar and page controls are 42.5 DIP tall and buttons show icons only; hover to see their names. Takes effect immediately.",
+          "Large": "Large",
+          "Small": "Small"
+        },
         "TaskbarScaleBase":
         {
           "N": "Taskbar-based scaling",
-          "E": "At 100% scale, Taskbar base size fixes the main bar height at 48 DIP; Actual taskbar size follows the taskbar thickness.",
+          "E": "At 100% scale, Taskbar base size sets the main bar height to 48 DIP in Large size and 35 DIP in Small size; Actual taskbar size matches the main bar height to the taskbar thickness.",
           "Off": "Off",
           "Base": "Taskbar base size",
           "Actual": "Actual taskbar size"

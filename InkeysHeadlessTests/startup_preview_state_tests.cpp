@@ -879,22 +879,41 @@ int RunStartupPreviewStateTests()
 		++failures;
 	if (!Expect(CalculateStartupBarTotalWidthDip(80.0, 380.0, false) == 80.0,
 		"collapsed nominal geometry contains only the main button")) ++failures;
-	for (const double invalid : { 0.0, -1.0, 79.99, 4096.01,
+	for (const double invalid : { 0.0, -1.0, 34.99, 4096.01,
 		(std::numeric_limits<double>::quiet_NaN)(),
 		(std::numeric_limits<double>::infinity)(),
 		-(std::numeric_limits<double>::infinity)() })
 		if (!Expect(ResolveCachedStartupBarWidthDip(invalid)
 			== DefaultCachedStartupBarWidthDip,
 			"invalid cached width falls back to 470 DIP")) ++failures;
+	// 小尺寸：下限放宽到 42.5 DIP 主按钮，主按钮到主栏间距 5，预览高度/折叠外形 42.5，默认展开包络 352.5。
+	if (!Expect(CompactStartupBarHeightDip == 42.5 && CompactStartupBarCornerRadiusDip == 8.0
+		&& CompactCachedStartupBarWidthDip == 352.5 && CalculateStartupBarTotalWidthDip(42.5, 305.0, true, true) == 352.5
+		&& ResolveCachedStartupBarWidthDip(42.5, true) == 42.5 && ResolveCachedStartupBarWidthDip(35.0, true) == 352.5
+		&& ResolveCachedStartupBarWidthDip(std::numeric_limits<double>::quiet_NaN(), true) == 352.5,
+		"compact startup preview keeps its own 42.5 DIP geometry and default width")) ++failures;
+	// 全局下限放宽后，大尺寸缓存仍不接受小于 80 DIP 主按钮的宽度。
+	if (!Expect(ResolveCachedStartupBarWidthDip(42.5) == DefaultCachedStartupBarWidthDip
+		&& ResolveCachedStartupBarWidthDip(79.0) == DefaultCachedStartupBarWidthDip,
+		"large cached width below the 80 DIP main button falls back to 470")) ++failures;
+	{
+		const auto compactPixels = ResolveStartupPreviewPixelSize(248.25, 96.0, 1.0, 1.0, CompactStartupBarHeightDip);
+		if (!Expect(compactPixels.width == 248 && compactPixels.height == 43,
+			"compact preview pixel size uses the 42.5 DIP height")) ++failures;
+		const RECT monitor{ 0, 0, 1920, 1080 }, work{ 0, 0, 1920, 1040 };
+		const auto folded = ResolveStartupPreviewBounds(monitor, work, 248.25, 42.5, 96, 1.0,
+			Inkeys::UI::StartupPlacement::BottomRightFloating, 1.0, std::numeric_limits<double>::quiet_NaN(), 42.5);
+		if (!Expect(folded.right - folded.left == 44 && folded.bottom - folded.top == 44,
+			"compact folded preview uses the 42.5 DIP main button")) ++failures;
+	}
 	if (!Expect(ResolveCachedStartupBarWidthDip(80.0) == 80.0
 		&& ResolveCachedStartupBarWidthDip(612.5) == 612.5,
 		"valid cached width remains an unscaled DIP value")) ++failures;
 	const auto legacyConfig = ReadLegacyStartupPreviewFixture();
 	if (!Expect(legacyConfig.read && !legacyConfig.enabled
 		&& legacyConfig.widthDip == DefaultCachedStartupBarWidthDip
-		&& legacyConfig.zoom == 1.0 && legacyConfig.taskbarBase
-			== (Inkeys::ConfigDetail::GetDefaultLargeScreenDevice() ? 1 : 0),
-		"legacy main.json keeps cached width and uses frozen device default for taskbar base"))
+		&& legacyConfig.zoom == 1.0 && legacyConfig.taskbarBase == 1,
+		"legacy main.json keeps cached width and uses the taskbar basic default for every device"))
 		++failures;
 	if (!Expect(!ShouldWriteCachedStartupBarWidthDip(470.0, 470.0)
 		&& !ShouldWriteCachedStartupBarWidthDip(470.0, 470.005)
@@ -1214,6 +1233,13 @@ int RunStartupPreviewStateTests()
 		"first failure keeps its red color and frozen actual target sticky"))
 		++failures;
 
+	// 小尺寸首帧：档位与宽度同批发布，间距按 5 DIP。
+	NotifyBarFirstCommittedFrame(42.5, 305.0, true, true);
+	{
+		double compactWidth = 0.0; bool compact = false;
+		if (!Expect(TakeCommittedStartupBarWidthDip(compactWidth, &compact) && compact && compactWidth == 352.5,
+			"compact first frame publishes its size mode with the 5 DIP gap width")) ++failures;
+	}
 	NotifyBarFirstCommittedFrame(80.0, 380.0, true);
 	double publishedWidth = 0.0;
 	if (!Expect(TakeCommittedStartupBarWidthDip(publishedWidth)

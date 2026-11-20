@@ -34,6 +34,62 @@ int RunEraserAttributeTests()
 		expect(static_cast<int>(migrated)==pair.second && RestoreBaseSize(static_cast<int>(migrated))==migrated,"legacy preset migration is ordinal and idempotent");
 	}
 	{
+		// 小尺寸：面板高 42.5，无清空按钮；预览组 | 分割线 | 自动粗细 + 手掌橡皮，间距 5，分割线落在组间间隙正中，距主栏 5。
+		for(const bool reversed:{false,true})
+		{
+			EraserAttributeLayoutInput input;input.work={0,0,1400,900};input.main={500,420,700,462.5};
+			input.anchor={600,425,632.5,457.5};input.sizeMode=BarSizeMode::Compact;input.reversed=reversed;
+			const auto l=ResolveEraserAttributeLayout(input);
+			expect(l.compact && std::abs(l.panel.Height()-42.5)<0.001,"compact eraser panel follows the 42.5 DIP main bar");
+			expect(l.items[0].Width()==0 && l.dividers[1].Width()==0 && !l.items[0].Contains(l.items[0].left,l.items[0].top),
+				"compact eraser panel has no clear button or second divider");
+			expect(std::abs(l.items[4].Width()-32.5)<0.001 && std::abs(l.items[4].Height()-32.5)<0.001
+				&& std::abs(l.items[5].Width()-20.0)<0.001 && std::abs(l.palm.Width()-32.5)<0.001,
+				"compact automatic is 52.5x32.5 and palm is 1x1");
+			expect(std::abs(l.palm.left-l.automatic.right-5.0)<0.001,"compact palm keeps the 5 DIP gap");
+			expect(std::abs(l.dividers[0].Height()-28.5)<0.001,"compact divider fits the 42.5 DIP panel");
+			expect(reversed ? l.palm.right<l.dividers[0].left && l.dividers[0].right<l.previews[0].left
+				: l.previews[2].right<l.dividers[0].left && l.dividers[0].right<l.automatic.left,
+				"compact order is presets / divider / automatic + palm (mirrored when reversed)");
+			expect(std::abs(l.panel.top-(input.main.top-5.0-42.5))<0.001 || std::abs(l.panel.top-(input.main.bottom+5.0))<0.001,
+				"compact eraser panel keeps the 5 DIP attached gap");
+			for(size_t i=0;i<3;++i)
+				expect(l.previewClips[i].top>=l.panel.top-1e-6 && l.previewClips[i].bottom<=l.panel.bottom+1e-6
+					&& l.items[i+1].top>=l.panel.top-1e-6 && l.items[i+1].bottom<=l.panel.bottom+1e-6,
+					"compact previews stay clipped to the panel without enlarging hit areas");
+			// 40 DIP 档保持原直径，42.5 DIP 面板可完整容纳。
+			expect(std::abs(l.previews[2].Height()-l.previewDiameters[2])<0.001 && l.previewDiameters[2]<=l.panel.Height()
+				&& l.previews[2].top>=l.panel.top-1e-6 && l.previews[2].bottom<=l.panel.bottom+1e-6,
+				"compact largest preview keeps its diameter inside the panel");
+			expect(ResolveEraserAttributeRelease(5,4,true,false)==5 && ResolveEraserAttributeRelease(4,5,true,false)==4,
+				"compact automatic body and arrow keep their release actions");
+			expect(std::abs(l.menu.Width()-182.5)<0.001,"compact sensitivity menu keeps its standard width");
+			expect(std::abs((l.panel.left+l.panel.right)/2-(input.anchor.left+input.anchor.right)/2)<0.001,
+				"compact panel centers on the main eraser entry");
+		}
+	}
+	{
+		// 非居中底栏：面板不越过主按钮外侧边（向右展开限左边、向左展开限右边）；未越过时与不限制一致。
+		for(const bool reversed:{false,true})
+		{
+			EraserAttributeLayoutInput input;input.work={0,0,1400,900};input.sizeMode=BarSizeMode::Compact;input.reversed=reversed;
+			input.main={500,420,800,462.5};
+			input.mainButton=reversed?EraserAttributeRect{805,420,847.5,462.5}:EraserAttributeRect{452.5,420,495,462.5};
+			input.anchor=reversed?EraserAttributeRect{767.5,425,800,457.5}:EraserAttributeRect{505,425,537.5,457.5};
+			const auto free=ResolveEraserAttributeLayout(input);
+			input.limitToMainButton=true;
+			const auto limited=ResolveEraserAttributeLayout(input);
+			expect(reversed ? free.panel.right>input.mainButton.right && std::abs(limited.panel.right-input.mainButton.right)<0.001
+				: free.panel.left<input.mainButton.left && std::abs(limited.panel.left-input.mainButton.left)<0.001,
+				"eraser panel stops at the main button outer edge outside the centered dock");
+			expect(std::abs(limited.panel.Width()-free.panel.Width())<0.001,"main-button limit shifts without resizing the panel");
+			input.anchor=reversed?EraserAttributeRect{550,425,582.5,457.5}:EraserAttributeRect{720,425,752.5,457.5};
+			input.limitToMainButton=false;const auto farFree=ResolveEraserAttributeLayout(input);
+			input.limitToMainButton=true;const auto farLimited=ResolveEraserAttributeLayout(input);
+			expect(farFree.panel==farLimited.panel,"panels that do not cross the main button stay centered");
+		}
+	}
+	{
 		EraserAttributeLayoutInput input;input.work={0,0,1400,900};input.main={500,420,880,500};input.anchor={650,425,720,495};
 		const auto l=ResolveEraserAttributeLayout(input);
 		auto cx=[](EraserAttributeRect r){return (r.left+r.right)/2;};

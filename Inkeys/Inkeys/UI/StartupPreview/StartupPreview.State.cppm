@@ -29,6 +29,10 @@ export namespace Inkeys::UI::StartupPreview
 	inline constexpr double DefaultStartupBarHeightDip = BarMainBarHeightDip;
 	inline constexpr double DefaultStartupBarCornerRadiusDip =
 		BarMainBarCornerRadiusDip;
+	// 小尺寸启动预览：高度与折叠外形 42.5 DIP、圆角与主栏一致，展开宽度单独缓存。
+	inline constexpr double CompactStartupBarHeightDip = BarCompactSizeMetrics.barHeight;
+	inline constexpr double CompactStartupBarCornerRadiusDip = BarCompactSizeMetrics.barCornerRadius;
+	inline constexpr double CompactCachedStartupBarWidthDip = StartupPreviewCachedWidthCompactDefaultDip;
 	// 2.8s 平滑扫过，随后在完整离屏端保持 1.2s。
 	inline constexpr double StartupPreviewShimmerCycleSeconds = 4.0;
 	inline constexpr double StartupPreviewShimmerSweepFraction = 0.70;
@@ -52,18 +56,21 @@ export namespace Inkeys::UI::StartupPreview
 	};
 
 	[[nodiscard]] bool IsValidCachedStartupBarWidthDip(double widthDip) noexcept;
-	[[nodiscard]] double ResolveCachedStartupBarWidthDip(double widthDip) noexcept;
+	// compact=false：有效且不小于大尺寸主按钮 80，否则回退 470；compact=true：有效（≥42.5）否则回退小尺寸默认。
+	[[nodiscard]] double ResolveCachedStartupBarWidthDip(double widthDip, bool compact = false) noexcept;
 	[[nodiscard]] bool ShouldWriteCachedStartupBarWidthDip(
 		double currentWidthDip, double candidateWidthDip) noexcept;
 	[[nodiscard]] double CalculateStartupBarTotalWidthDip(
 		double mainButtonTargetWidthDip, double layoutTotalWidthDip,
-		bool expanded = true) noexcept;
+		bool expanded = true, bool compact = false) noexcept;
 	[[nodiscard]] double ResolveStartupPreviewScale(double dpi,
 		double barZoom, double uiBaseScale = 0.0) noexcept;
 	[[nodiscard]] std::int32_t RoundStartupPreviewDipToPixels(double dip,
 		double dpi, double barZoom, double uiBaseScale = 0.0) noexcept;
+	// heightDip 缺省为大尺寸高度；小尺寸传 CompactStartupBarHeightDip。
 	[[nodiscard]] StartupPreviewPixelSize ResolveStartupPreviewPixelSize(
-		double widthDip, double dpi, double barZoom, double uiBaseScale = 0.0) noexcept;
+		double widthDip, double dpi, double barZoom, double uiBaseScale = 0.0,
+		double heightDip = DefaultStartupBarHeightDip) noexcept;
 
 	struct GeometryRect final
 	{

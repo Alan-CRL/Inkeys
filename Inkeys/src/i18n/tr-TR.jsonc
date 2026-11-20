@@ -685,10 +685,17 @@
           "Dark": "Koyu mod",
           "Light": "Açık mod"
         },
+        "UiSize":
+        {
+          "N": "Arayüz boyutu",
+          "E": "Küçük boyutta çubuk ve sayfa denetimleri 42,5 DIP yüksekliğindedir ve düğmeler yalnızca simge gösterir; adını görmek için üzerine gelin. Hemen uygulanır.",
+          "Large": "Büyük",
+          "Small": "Küçük"
+        },
         "TaskbarScaleBase":
         {
           "N": "Görev çubuğu ölçek tabanı",
-          "E": "%100 ölçekte Görev çubuğu temel boyutu ana çubuk yüksekliğini 48 DIP olarak sabitler; Gerçek görev çubuğu boyutu ise görev çubuğunun kalınlığını izler.",
+          "E": "%100 ölçekte \"Görev çubuğu temel boyutu\" çubuk yüksekliğini büyük boyutta 48 DIP, küçük boyutta 35 DIP yapar; \"Gerçek görev çubuğu boyutu\" yüksekliği görev çubuğu kalınlığına eşitler.",
           "Off": "Kapalı",
           "Base": "Görev çubuğu temel boyutu",
           "Actual": "Gerçek görev çubuğu boyutu"

@@ -368,9 +368,33 @@ namespace
 			"drag divider lane touches the adjacent arrow without a third gap");
 		Check(side[0].bounds.top == 5.0 && side[3].bounds.bottom == PptControlLongSideDip-PageControlGapDip,
 			"side layout keeps the ten DIP drag slot above three standard buttons");
-		Check(!BarPptCompactPaginationEnabled&&PptCompactLongSideDip==165.0&&PptCompactShortSideDip==42.5
-			&&PptControlLongSideDip==240.0&&PptControlShortSideDip==80.0,
-			"legacy geometry remains available while the production compact path is disabled");
+		Check(PptControlLongSideDip==240.0&&PptControlShortSideDip==80.0,
+			"large PPT controls keep the standard two by two geometry");
+		// 小尺寸：箭头 1×1、页码 2×1（竖向 1×2），间距 5，拖动 lane 5，外框 160×42.5。
+		{
+			const auto compactLeft=ResolvePptWidgetContracts(Surface::BottomLeft,true);
+			const auto compactRight=ResolvePptWidgetContracts(Surface::BottomRight,true);
+			const auto compactSide=ResolvePptWidgetContracts(Surface::MiddleLeft,true);
+			Check(compactLeft[1].bounds.right-compactLeft[1].bounds.left==32.5&&compactLeft[2].bounds.right-compactLeft[2].bounds.left==70.0
+				&&compactLeft[2].bounds.bottom-compactLeft[2].bounds.top==32.5&&compactLeft[3].bounds.right==160.0-5.0,
+				"compact horizontal PPT control uses 1x1 arrows and a 2x1 page slot");
+			Check(compactSide[2].bounds.right-compactSide[2].bounds.left==32.5&&compactSide[2].bounds.bottom-compactSide[2].bounds.top==70.0
+				&&compactSide[3].bounds.bottom==160.0-5.0,
+				"compact vertical PPT control uses a 1x2 page slot");
+			Check(compactRight[0].bounds.right==160.0-5.0&&compactRight[1].bounds.left==5.0,
+				"compact right control keeps the drag lane on the outer edge");
+			Check(!compactLeft[1].displaysText&&!compactLeft[3].displaysText&&compactLeft[2].displaysText,
+				"compact arrows hide labels while the page slot keeps its numbers");
+			Check(::BarPptPaginationShortSide(BarSizeMode::Compact)==42.5
+				&&::BarWhiteboardPaginationHeight(BarSizeMode::Compact)==42.5,
+				"compact paging controls are 42.5 DIP thick");
+			for(const auto surface:{Surface::BottomLeft,Surface::BottomRight,Surface::MiddleLeft,Surface::MiddleRight}){
+				const auto large=ResolvePptWidgetContracts(surface,false),def=ResolvePptWidgetContracts(surface);
+				for(std::size_t id=0;id<large.size();++id)Check(large[id].bounds.left==def[id].bounds.left&&large[id].bounds.right==def[id].bounds.right
+					&&large[id].bounds.top==def[id].bounds.top&&large[id].bounds.bottom==def[id].bounds.bottom,
+					"large contracts are unchanged by the size parameter");
+			}
+		}
 		for(const auto surface:{Surface::BottomLeft,Surface::BottomRight,Surface::MiddleLeft,Surface::MiddleRight}){
 			const auto buttons=ResolvePptWidgetContracts(surface);
 			for(std::size_t id=1;id<buttons.size();++id)Check(buttons[id].bounds.right-buttons[id].bounds.left==ButtonTwoSideDip

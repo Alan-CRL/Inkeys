@@ -20,8 +20,9 @@ export namespace Inkeys::UI::Bar
     enum class StatusIndicatorIcon : std::uint8_t { Slideshow, Pin, NewVersion, Star, Bell, Info, Bolt };
     enum class StatusIndicatorPhase : std::uint8_t { Expanded, Collapsing, Docked, Dismissing, Exiting };
     enum class StatusIndicatorPublishResult : std::uint8_t { Added, Updated, Rejected };
-    // 胶囊与方块均为圆角矩形；Tile 为只含图标的方块（停靠、飞行、同心弧）。
-    enum class StatusIndicatorShape : std::uint8_t { Capsule, Tile };
+    // 胶囊与方块均为圆角矩形；Tile 为只含图标的方块（停靠、飞行、同心弧）；
+    // Text 为小尺寸下画在变宽主按钮内的文字（不画表面、边框与图标，命中区为整个主按钮）。
+    enum class StatusIndicatorShape : std::uint8_t { Capsule, Tile, Text };
     // 命中角色：胶囊点击收起；停靠方块点击重新展开/打开弧；弧上方块点选。
     enum class StatusIndicatorRole : std::uint8_t { None, Capsule, Dock, Fan };
 
@@ -57,6 +58,10 @@ export namespace Inkeys::UI::Bar
         // 收起：文字段欠阻尼收进图标，方块延迟后沿弧线飞向停靠槽，着陆轻弹。
         // 飞行先向内（正常向下、倒转向上）离开展开胶囊区域，再从内侧回到停靠槽；FlightSink 为三次贝塞尔控制点内移量。
         inline constexpr double FlightDelay=.10,FlightSink=44,LandAt=.97,LandBumpVelocity=1.6;
+        // 小尺寸：不显示胶囊，主按钮向远离主栏一侧变宽显示文字；停靠方块缩小，与大尺寸一样压在主按钮右上边框上。
+        // 变宽量 = 图标后间距 + 文字（上限同胶囊文字区）+ 靠主栏侧内边距。
+        inline constexpr double CompactTextGap=4,CompactTextPadding=10;
+        inline constexpr double CompactDockSize=12,CompactDockRadius=3,CompactDockIcon=8,CompactDockStep=4,CompactDockInset=9,CompactDockHitMin=18;
         inline constexpr double SpringStep=1.0/120,SpringMaxDt=.5;
         inline constexpr double Pi=3.14159265358979323846;
     }
@@ -238,6 +243,12 @@ export namespace Inkeys::UI::Bar
         using namespace StatusIndicatorStyle;
         textWidth=std::isfinite(textWidth)?(std::max)(0.0,textWidth):0.0;
         return std::clamp(2*CapsulePadding+CapsuleIcon+CapsuleGap+textWidth,CapsuleHeight,CapsuleMaxWidth);
+    }
+    inline double StatusIndicatorCompactExtraWidth(double textWidth) noexcept
+    {
+        using namespace StatusIndicatorStyle;
+        textWidth=std::isfinite(textWidth)?(std::max)(0.0,textWidth):0.0;
+        return CompactTextGap+(std::min)(textWidth,StatusIndicatorTextLimit())+CompactTextPadding;
     }
     inline double StatusIndicatorTextOverflow(double textWidth) noexcept
     {
@@ -935,6 +946,10 @@ export namespace Inkeys::UI::Bar
         double below=0;                 // 倒转（主栏在屏幕上方）：0 正常向上，1 向下；过渡值用于换边动画
         StatusIndicatorRect baseBounds; // 不含指示器的正常态内容边界
         StatusIndicatorRect work;       // 显示器工作区
+        // 小尺寸：主按钮静止边长与变宽方向（-1 向左、+1 向右，即远离主栏一侧）。
+        bool compact=false;
+        double compactBaseWidth=42.5,compactWidenSign=-1;
+        double compactBaseCenterX=0; // 原主按钮中心（未加宽），扇形与命中让位以它为基准
     };
 
     struct StatusIndicatorEntryLayout
@@ -971,6 +986,7 @@ export namespace Inkeys::UI::Bar
         StatusIndicatorRect normalBounds,overflowBounds;
         StatusIndicatorRect reserveBounds; // 越界几何的动画峰值包络（首帧即预留）
         bool fanMirrored=false;
+        double compactExtraWidth=0; // 小尺寸：主按钮当前应变宽的量（DIP），下一帧提交给主按钮
     };
 
     // 点是否位于主按钮超椭圆内且距边框超过 inset（停靠方块的命中让给主按钮）。
@@ -1097,28 +1113,51 @@ export namespace Inkeys::UI::Bar
         const double dir=StatusIndicatorDirection(input),edgeY=StatusIndicatorEdgeY(input);
         const double now=model.Now();
 
+        const bool compact=input.compact;
         // 停靠位：竖直中心落在超椭圆边框上、靠右端；旧的向左错开，夹入原窗口。
-        const double dockX0=cx+a-DockInset;
+        // 小尺寸沿用同一逻辑（可越出主按钮边框），只是方块更小、离右端的内收更短。
+        const double dockSize=compact?CompactDockSize:DockSize;
+        const double dockX0=compact?cx+a-CompactDockInset:cx+a-DockInset;
         const double dockY0=input.mainCenterY+Lerp(-1.0,1.0,Clamp01(input.below))*StatusIndicatorSuperHalfHeight(dockX0-cx,a,b,n);
         auto dockPoint=[&](double slot)
         {
-            Point p{dockX0-(std::max)(0.0,slot)*DockStep,dockY0};
+            Point p{dockX0-(std::max)(0.0,slot)*(compact?CompactDockStep:DockStep),dockY0};
             if(baseValid)
             {
-                p.x=std::clamp(p.x,base.left+DockSize/2,(std::max)(base.left+DockSize/2,base.right-DockSize/2));
-                p.y=std::clamp(p.y,base.top+DockSize/2,(std::max)(base.top+DockSize/2,base.bottom-DockSize/2));
+                p.x=std::clamp(p.x,base.left+dockSize/2,(std::max)(base.left+dockSize/2,base.right-dockSize/2));
+                p.y=std::clamp(p.y,base.top+dockSize/2,(std::max)(base.top+dockSize/2,base.bottom-dockSize/2));
             }
             return p;
         };
+        // 小尺寸文字区：外侧端保留主按钮静止宽度给主图标，其余为文字，文字靠近主栏一侧。
+        const StatusIndicatorRect mainRect{cx-a,input.mainCenterY-b,cx+a,input.mainCenterY+b};
+        auto compactText=[&](StatusIndicatorEntryLayout& l,const StatusIndicatorEntry& e,double textOpacity,double scroll)
+        {
+            const double baseWidth=(std::max)(0.0,input.compactBaseWidth);
+            const bool widenLeft=input.compactWidenSign<0;
+            const double clipLeft=widenLeft?mainRect.left+baseWidth+CompactTextGap:mainRect.left+CompactTextPadding;
+            const double clipRight=widenLeft?mainRect.right-CompactTextPadding:mainRect.right-baseWidth-CompactTextGap;
+            l.shape=StatusIndicatorShape::Text;l.bounds=mainRect;l.radius=b;
+            l.iconSize=0;l.iconCenterX=cx;l.iconCenterY=input.mainCenterY;
+            l.textClip={clipLeft,mainRect.top,(std::max)(clipLeft,clipRight),mainRect.bottom};
+            l.textScale=1;l.textOpacity=Clamp01(textOpacity);
+            const double overflow=StatusIndicatorTextOverflow(e.textWidth);
+            l.scrollOffset=overflow>0?scroll:0;l.textX=clipLeft-(overflow>0?scroll:0);
+            l.fadeLeft=overflow>0&&scroll>.5;l.fadeRight=overflow>0&&scroll<overflow-.5;
+        };
+        double compactExtra=0;
         std::size_t dockCount=0;
         for(const auto& e:model.Entries())if(e.InDock())++dockCount;
         if(model.FrozenFanCount())dockCount=model.FrozenFanCount();
         const double fanP=model.FanProgress(),fanBlend=InOutSine(fanP);
+        // 小尺寸扇形始终以未加宽的主按钮为圆心与半径基准，状态文字展示期间打开也不变。
+        StatusIndicatorLayoutInput fanInput=input;
+        if(compact){fanInput.mainCenterX=input.compactBaseCenterX;fanInput.mainWidth=input.compactBaseWidth;}
         auto fanPoint=[&](double slot)
         {
             slot=std::clamp(std::isfinite(slot)?slot:0.0,0.0,static_cast<double>((std::max)(dockCount,std::size_t{1})-1));
             const auto lo=static_cast<std::size_t>(std::floor(slot)),hi=static_cast<std::size_t>(std::ceil(slot));
-            const auto pa=ResolveStatusIndicatorFanPlacement(lo,dockCount,input),pb=ResolveStatusIndicatorFanPlacement(hi,dockCount,input);
+            const auto pa=ResolveStatusIndicatorFanPlacement(lo,dockCount,fanInput),pb=ResolveStatusIndicatorFanPlacement(hi,dockCount,fanInput);
             out.fanMirrored=pa.mirrored;
             return LerpPoint({pa.x,pa.y},{pb.x,pb.y},slot-static_cast<double>(lo));
         };
@@ -1135,6 +1174,57 @@ export namespace Inkeys::UI::Bar
             const double fullWidth=StatusIndicatorCapsuleWidth(e.textWidth);
             double opacity=1;int z=0;bool overflow=false;
             Point pivot{cx,edgeY};double scale=1;
+
+            if(compact&&(e.phase==StatusIndicatorPhase::Expanded||e.phase==StatusIndicatorPhase::Dismissing
+                ||(e.phase==StatusIndicatorPhase::Exiting&&!e.dockSerial)))
+            {
+                // 小尺寸展开：只有队首驱动主按钮变宽，后排不显示（无处可露）。
+                const double front=Clamp01(1-e.stack.position);
+                if(front<=0)continue;
+                const double span=(std::max)(1e-6,fullWidth-CapsuleHeight);
+                double grow=(e.phase==StatusIndicatorPhase::Expanded?Clamp01((e.width.position-CapsuleHeight)/span):1.0)
+                    *OutSine(e.appear)*front;
+                if(e.phase==StatusIndicatorPhase::Dismissing||e.phase==StatusIndicatorPhase::Exiting)grow*=1-InOutSine(e.vanish);
+                compactExtra=(std::max)(compactExtra,StatusIndicatorCompactExtraWidth(e.textWidth)*grow*presence);
+                compactText(l,e,SmoothRange(.35,1,grow),scrollFor(e,e.scrollElapsed));
+                l.role=e.phase==StatusIndicatorPhase::Expanded?StatusIndicatorRole::Capsule:StatusIndicatorRole::None;
+                l.opacity=Clamp01(presence);l.z=500;l.overflow=baseValid&&!StatusIndicatorRectContains(base,l.bounds);
+                if(l.textOpacity>.002)items.push_back(std::move(l));
+                continue;
+            }
+            if(compact&&e.Morphing()&&!(e.phase==StatusIndicatorPhase::Exiting)&&!(fanP>0&&e.phase==StatusIndicatorPhase::Docked))
+            {
+                // 小尺寸收起/重新展开：主按钮宽度随形变收回或再次变宽，文字同步淡出/淡入；
+                // 缩小版方块从文字区飞向右上角停靠位。
+                const double m=e.morph.position,f=e.flight.position;
+                const double grow=Clamp01(1-m);
+                compactExtra=(std::max)(compactExtra,StatusIndicatorCompactExtraWidth(e.textWidth)*grow*presence);
+                if(grow>.002)
+                {
+                    StatusIndicatorEntryLayout text=l;
+                    compactText(text,e,1-SmoothRange(0,.7,m),scrollFor(e,e.phase==StatusIndicatorPhase::Docked?now-e.selectStart:e.scrollElapsed));
+                    text.role=e.phase==StatusIndicatorPhase::Docked&&model.Selected()==e.spec.key&&f<.05?StatusIndicatorRole::Capsule:StatusIndicatorRole::None;
+                    text.opacity=Clamp01(presence);text.z=500;text.overflow=baseValid&&!StatusIndicatorRectContains(base,text.bounds);
+                    if(text.textOpacity>.002)items.push_back(std::move(text));
+                }
+                const Point start{(mainRect.left+mainRect.right)/2,input.mainCenterY};
+                const Point end=dockPoint(e.landed?e.dock.position:0);
+                const double t=std::clamp(f,-0.15,1.15);
+                // 轻微弧线：中段向外（正常向上、倒转向下）抬起 4 DIP。
+                const Point at{Lerp(start.x,end.x,t),Lerp(start.y,end.y,t)+dir*4*std::sin(Pi*Clamp01(t))};
+                const double size=CompactDockSize*(std::max)(0.0,e.bump.position);
+                if(size<=0||f<=.01)continue;
+                l.shape=StatusIndicatorShape::Tile;l.bounds=Box(at,size,size);l.radius=CompactDockRadius*(std::max)(0.0,e.bump.position);
+                l.iconSize=CompactDockIcon*(std::max)(0.0,e.bump.position);l.iconCenterX=at.x;l.iconCenterY=at.y;
+                opacity=SmoothRange(0,.4,f)*Lerp(1,DockOpacity,SmoothRange(.55,1,f));
+                l.role=StatusIndicatorRole::None;
+                const bool settledInDock=e.landed&&f>=LandAt;
+                z=settledInDock?2000+static_cast<int>(Capacity)-static_cast<int>(e.dockTarget):2500;
+                if(baseValid&&!StatusIndicatorRectContains(base,l.bounds))overflow=true;
+                l.opacity=Clamp01(opacity*presence);l.z=z;l.overflow=overflow;
+                if(l.opacity>0&&!l.bounds.Empty())items.push_back(std::move(l));
+                continue;
+            }
 
             if(e.phase==StatusIndicatorPhase::Expanded||(e.phase==StatusIndicatorPhase::Dismissing)
                 ||(e.phase==StatusIndicatorPhase::Exiting&&!e.dockSerial))
@@ -1181,7 +1271,9 @@ export namespace Inkeys::UI::Bar
             else
             {
                 // 停靠方块 / 同心弧 / 弧上选中胶囊。
-                Point p=dockPoint(e.dock.position);double size=DockSize,radius=DockRadius,icon=DockIcon;
+                Point p=dockPoint(e.dock.position);
+                double size=compact?CompactDockSize:DockSize,radius=compact?CompactDockRadius:DockRadius,icon=compact?CompactDockIcon:DockIcon;
+                const double restSize=size,restRadius=radius,restIcon=icon;
                 opacity=DockOpacity;z=1000+static_cast<int>(Capacity)-static_cast<int>(e.dockTarget);l.role=StatusIndicatorRole::Dock;
                 if(fanP>0)
                 {
@@ -1189,7 +1281,7 @@ export namespace Inkeys::UI::Bar
                     // 逐项轻微错峰，Back 曲线带出弹性。
                     const double k=Clamp01(fanP*1.15-slot*.012);const double g=OutBack(k);
                     p=LerpPoint(p,fanPoint(slot),g);
-                    size=Lerp(DockSize,FanSize,g);radius=Lerp(DockRadius,FanRadius,Clamp01(g));icon=Lerp(DockIcon,FanIcon,Clamp01(g));
+                    size=Lerp(restSize,FanSize,g);radius=Lerp(restRadius,FanRadius,Clamp01(g));icon=Lerp(restIcon,FanIcon,Clamp01(g));
                     // 弧上方块与停靠层同处展开胶囊之下，展开/收回途中不穿过胶囊；只有选中胶囊升到最上。
                     opacity=Lerp(DockOpacity,1,fanBlend);z=2600+static_cast<int>(slot*10);overflow=true;
                     l.role=fanP>.5?StatusIndicatorRole::Fan:StatusIndicatorRole::Dock;
@@ -1245,7 +1337,7 @@ export namespace Inkeys::UI::Bar
             if(e.presence<=0)continue;
             const double fullWidth=StatusIndicatorCapsuleWidth(e.textWidth);
             const bool capsule=e.phase==StatusIndicatorPhase::Expanded||e.phase==StatusIndicatorPhase::Collapsing||e.Morphing();
-            if(!capsule)continue;
+            if(!capsule||compact)continue;
             const double layer=(std::min)((std::max)(0.0,e.stack.position),StackLayers);
             const auto rect=Box({cx,edgeY+dir*layer*StackStep},fullWidth,CapsuleHeight);
             out.reserveBounds=UnionStatusIndicatorRect(out.reserveBounds,ScaleRect(rect,EnterPeakScale,{cx,edgeY}));
@@ -1261,7 +1353,7 @@ export namespace Inkeys::UI::Bar
         {
             for(std::size_t i=0;i<dockCount;++i)
             {
-                const auto place=ResolveStatusIndicatorFanPlacement(i,dockCount,input);
+                const auto place=ResolveStatusIndicatorFanPlacement(i,dockCount,fanInput);
                 const double pad=FanSize/2*EnterPeakScale+2;
                 const double half=CapsuleMaxWidth/2*EnterPeakScale+2;
                 out.reserveBounds=UnionStatusIndicatorRect(out.reserveBounds,{place.x-half,place.y-pad,place.x+half,place.y+pad});
@@ -1275,6 +1367,7 @@ export namespace Inkeys::UI::Bar
             if(r.Empty())r={};
         }
 
+        out.compactExtraWidth=compact?compactExtra:0;
         const auto& ring=model.Ring();
         const std::array<const StatusIndicatorRingLayer*,2> layers{&ring.outgoing,&ring.current};
         for(std::size_t i=0;i<layers.size();++i)

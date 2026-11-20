@@ -3022,6 +3022,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		"Experimental.Inkeys3.UI3.BackgroundOpacity",
 		"Experimental.Inkeys3.UI3.ContentOpacity",
 		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip",
+		"Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDipCompact",
+		"Experimental.Inkeys3.UI3.SizeMode",
 		"UI.Bar.Zoom2", "UI.Bar.UseTaskbarHeightAsScaleBase", "UI.Bar.StartupPlacement" });
 	// 调试开关只启用慢速成功观察，不授权失败注入。
 	if (startupMiniConfig.Experimental.Inkeys3.UI3.Debug.DelayWaitingOperations)
@@ -3084,8 +3086,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			startupMiniConfig.Experimental.Inkeys3.UI3.BackgroundOpacity.load());
 		previewOptions.contentOpacity = Inkeys::NormalizeResidentContentOpacity(
 			startupMiniConfig.Experimental.Inkeys3.UI3.ContentOpacity.load());
-		previewOptions.cachedWidthDip =
-			Inkeys::UI::StartupPreview::ResolveCachedStartupBarWidthDip(
+		// 启动预览按本次界面尺寸绘制：小尺寸读取独立缓存宽度，高度与折叠外形按 42.5 DIP，任务栏基础量两档统一为 48。
+		const auto startupSizeMode = NormalizeBarSizeMode(startupMiniConfig.Experimental.Inkeys3.UI3.SizeMode.load());
+		const auto& startupSizeMetrics = ResolveBarSizeMetrics(startupSizeMode);
+		previewOptions.compact = startupSizeMode == BarSizeMode::Compact;
+		previewOptions.cachedWidthDip = previewOptions.compact
+			? Inkeys::UI::StartupPreview::ResolveCachedStartupBarWidthDip(
+				startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDipCompact.load(), true)
+			: Inkeys::UI::StartupPreview::ResolveCachedStartupBarWidthDip(
 				startupMiniConfig.Experimental.Inkeys3.UI3.StartupPreview.
 				CachedStartupBarWidthDip);
 		previewOptions.barZoom = startupMiniConfig.UI.Bar.Zoom2;
@@ -3098,21 +3106,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			previewOptions.dpi = taskbarMonitor->effectiveDpiX;
 			previewOptions.uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
 				taskbarMonitor->effectiveDpiX, taskbarMonitor->taskbarThicknessPx, 0, 0,
-				scaleBaseMode);
+				scaleBaseMode, startupSizeMetrics.barHeight, startupSizeMetrics.taskbarBasicQuantity);
 			previewOptions.desktopDockLine = Inkeys::Display::ResolveDesktopBottomDockLine(*taskbarMonitor);
 			monitorInfo.rcMonitor = taskbarMonitor->bounds;
 			monitorInfo.rcWork = taskbarMonitor->workArea;
 		}
 		else previewOptions.uiBaseScale = Inkeys::Display::ResolveUiScaleBase(
-			startupDpi, 0, 0, 0, scaleBaseMode);
+			startupDpi, 0, 0, 0, scaleBaseMode, startupSizeMetrics.barHeight, startupSizeMetrics.taskbarBasicQuantity);
 		previewOptions.monitorBounds = monitorInfo.rcMonitor;
 		previewOptions.workArea = monitorInfo.rcWork;
 		previewOptions.contentBounds = Inkeys::UI::StartupPreview::ResolveStartupPreviewBounds(
 			previewOptions.monitorBounds, previewOptions.workArea,
 			previewOptions.cachedWidthDip,
-			Inkeys::UI::StartupPreview::DefaultStartupBarHeightDip,
+			startupSizeMetrics.barHeight,
 			previewOptions.dpi, previewOptions.barZoom, startupPlacement, previewOptions.uiBaseScale,
-			previewOptions.desktopDockLine);
+			previewOptions.desktopDockLine, startupSizeMetrics.mainButtonSide);
 		previewOptions.progress = &startupProgress;
 		previewOptions.requestBarAlpha = [](std::uint8_t alpha)
 			{ Inkeys::UI::Bar::RequestPresentationAlpha(alpha); };
@@ -3354,9 +3362,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				config.Experimental.Inkeys3.UI3.ContentOpacity);
 			config.Experimental.Inkeys3.UI3.BackgroundOpacity = backgroundOpacity;
 			config.Experimental.Inkeys3.UI3.ContentOpacity = contentOpacity;
+			// 界面尺寸只保留 0/1；必须在 Bar 与翻页控件初始化前发布，首帧即按所选尺寸构建。
+			const int sizeMode = static_cast<int>(NormalizeBarSizeMode(
+				config.Experimental.Inkeys3.UI3.SizeMode));
+			config.Experimental.Inkeys3.UI3.SizeMode = sizeMode;
 			if (!config.Write())
 				Inkeys::Log::Warn(Inkeys::Log::Module::Config, "main.json 写回失败，保留现存配置文件");
 			Inkeys::UI::Bar::SetThemeMode(themeMode);
+			Inkeys::UI::Bar::SetSizeMode(sizeMode);
 			Inkeys::UI::Bar::SetResidentOpacity(backgroundOpacity, contentOpacity);
 			Inkeys::UI::Bar::SetAnimationOptions(
 				static_cast<bool>(config.Experimental.Inkeys3.UI3.Animation.Enable),
@@ -4198,14 +4211,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 		// Bar 渲染线程只发布有限 DIP；主线程沿既有配置路径去重落盘。
 		double committedStartupWidthDip = 0.0;
+		// 首帧宽度写回首帧所在档位的缓存字段（档位与宽度同批发布），两种尺寸互不覆盖。
+		bool committedStartupCompact = false;
 		if (Inkeys::UI::StartupPreview::TakeCommittedStartupBarWidthDip(
-			committedStartupWidthDip)
+			committedStartupWidthDip, &committedStartupCompact)
 			&& Inkeys::UI::StartupPreview::ShouldWriteCachedStartupBarWidthDip(
-				config.Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip,
+				committedStartupCompact
+					? config.Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDipCompact.load()
+					: config.Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip.load(),
 				committedStartupWidthDip))
 		{
-			config.Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip =
-				committedStartupWidthDip;
+			if (committedStartupCompact)
+				config.Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDipCompact = committedStartupWidthDip;
+			else
+				config.Experimental.Inkeys3.UI3.StartupPreview.CachedStartupBarWidthDip = committedStartupWidthDip;
 			if (!config.Write())
 				Inkeys::Log::Warn(Inkeys::Log::Module::Config,
 					"启动占位总宽度写回失败，本次启动继续运行");

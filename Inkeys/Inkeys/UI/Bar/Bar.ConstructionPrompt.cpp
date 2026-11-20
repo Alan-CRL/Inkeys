@@ -186,7 +186,9 @@ bool BarConstructionPrompt::Advance(BarUISetClass& owner,std::shared_ptr<const S
 	const double targetLeft=(std::clamp)((anchorLeft+anchorRight-targetWidth)/2,workLeft+5,(std::max)(workLeft+5,workRight-targetWidth-5));
 	const double workTop=(workArea.top-origin.y)/zoom-rigidY,workBottom=(workArea.bottom-origin.y)/zoom-rigidY;
 	// 与居中底栏提示相同的嵌入深度：提示条半高压入主栏边缘；空间不足翻到主栏下方时同样向上压入。
-	const double embed=BarBottomDockIndicatorHeightDip/2;
+	// 小尺寸不再嵌入：embed 取负的属性窗间隙，上方 = 主栏上沿 - 间隙 - 高度，翻到下方 = 主栏下沿 + 间隙。
+	const bool compactSize=NormalizeBarSizeMode(owner.barStyle.appliedSizeMode.load(std::memory_order_acquire))==BarSizeMode::Compact;
+	const double embed=compactSize?-ResolveBarSizeMetrics(BarSizeMode::Compact).attachedGap:BarBottomDockIndicatorHeightDip/2;
 	const double above=anchorTop+embed-targetHeight;
 	const double targetTop=(std::clamp)(above>=workTop+5?above:anchorBottom-embed,workTop+5,(std::max)(workTop+5,workBottom-targetHeight-5));
 	if(opening&&hidden){left_.SetDirect(targetLeft);top_.SetDirect(targetTop);}

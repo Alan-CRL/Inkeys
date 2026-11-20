@@ -1493,6 +1493,11 @@ namespace Inkeys::UI::Setting::Design
 		const float resetSliderWidth = sliderWidth + SliderResetExtraWidthDip;
 		const std::string resetLabel = IA(I18nKey.SettingsUI.Regular.Appearance.ResetDefault);
 		SectionHeader(IA(I18nKey.SettingsUI.Design.ScalingSection).c_str());
+		// 界面尺寸是缩放分区的首项，影响主栏与翻页控件；选项顺序与配置值一致：0=大尺寸，1=小尺寸。
+		const std::vector<std::string> sizeOptions{ IA(I18nKey.SettingsUI.Regular.Appearance.UiSize.Large),
+			IA(I18nKey.SettingsUI.Regular.Appearance.UiSize.Small) };
+		events.sizeModeChanged = ComboRow("##界面尺寸", IA(I18nKey.SettingsUI.Regular.Appearance.UiSize.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Appearance.UiSize.E).c_str(), "\ue9a6", draft.sizeMode, sizeOptions);
 		events.taskbarScaleBaseChanged = ComboRow("##以任务栏高度作为缩放基础量",
 			IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.N).c_str(),
 			IA(I18nKey.SettingsUI.Regular.Appearance.TaskbarScaleBase.E).c_str(), "\ue737", draft.taskbarScaleBase,

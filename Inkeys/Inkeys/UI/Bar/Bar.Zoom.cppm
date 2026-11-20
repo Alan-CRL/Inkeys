@@ -171,11 +171,13 @@ export namespace Inkeys::UI::Bar::Zoom
 		const auto* monitor = snapshot ? snapshot->Primary() : nullptr;
 		const auto scaleBaseMode = static_cast<Inkeys::Display::UiScaleBaseMode>(
 			Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load());
+		const auto& sizeMetrics = ResolveBarSizeMetrics(NormalizeBarSizeMode(
+			barUISet.barStyle.appliedSizeMode.load(std::memory_order_acquire)));
 		barUISet.barStyle.uiBaseZoom = monitor
 			? Inkeys::Display::ResolveUiScaleBase(*snapshot, *monitor,
-				scaleBaseMode)
+				scaleBaseMode, sizeMetrics.barHeight, sizeMetrics.taskbarBasicQuantity)
 			: Inkeys::Display::QueryUiScaleBase(MonitorFromPoint(POINT{}, MONITOR_DEFAULTTOPRIMARY),
-				scaleBaseMode);
+				scaleBaseMode, sizeMetrics.barHeight, sizeMetrics.taskbarBasicQuantity);
 		barUISet.barStyle.configZoom = configZoom;
 		RefreshZoom(barUISet);
 		barUISet.barStyle.initialZoomFitPending = true;

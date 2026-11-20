@@ -394,6 +394,52 @@ namespace
 			"ThemeMode Dark survives the configuration snapshot codec");
 	}
 
+	void TestSizeModeConfigPolicy()
+	{
+		Inkeys::Config configSnapshot;
+		Check(configSnapshot.Experimental.Inkeys3.UI3.SizeMode == 0,
+			"SizeMode schema defaults to Large mode 0");
+		Check(NormalizeBarSizeMode(0) == BarSizeMode::Large
+			&& NormalizeBarSizeMode(1) == BarSizeMode::Compact,
+			"SizeMode preserves valid Large 0 and Compact 1 values");
+		for (const int invalid : { -1, 2, 99 })
+			Check(NormalizeBarSizeMode(invalid) == BarSizeMode::Large,
+				"invalid SizeMode values fall back to Large mode 0");
+		Check(configSnapshot.UI.Bar.UseTaskbarHeightAsScaleBase == 1,
+			"scale base defaults to the taskbar basic quantity on every device");
+		const auto& large = ResolveBarSizeMetrics(BarSizeMode::Large);
+		const auto& compact = ResolveBarSizeMetrics(BarSizeMode::Compact);
+		Check(large.gap == ButtonGapDip && large.one == ButtonOneSideDip && large.two == ButtonTwoSideDip
+			&& large.barHeight == BarMainBarHeightDip && large.mainButtonSide == BarMainButtonWidthDip
+			&& large.mainButtonGap == BarMainButtonToMainBarGapDip && large.barCornerRadius == BarMainBarCornerRadiusDip
+			&& large.taskbarBasicQuantity == 48.0 && large.mainButtonExpandedExponent == 10.0,
+			"Large size metrics are exactly the existing constants");
+		Check(compact.gap == 5.0 && compact.one == 32.5 && compact.two == 70.0 && compact.barHeight == 42.5
+			&& compact.mainButtonSide == 42.5 && compact.mainButtonGap == 5.0 && compact.attachedGap == 5.0
+			&& compact.barCornerRadius == 8.0 && compact.dividerHeight == 28.5 && compact.taskbarBasicQuantity == 48.0 && compact.mainButtonExpandedExponent == 5.14,
+			"Compact size metrics follow the confirmed 42.5 DIP grid");
+		{
+			// 小尺寸悬停提示：默认右上；右侧放不下翻左；上方放不下翻下；最终夹进范围。
+			const Inkeys::UI::Bar::BarHoverHintRect area{ 0, 0, 1000, 800 };
+			const auto normal = Inkeys::UI::Bar::ResolveBarHoverHintRect(500, 400, 100, 24, 12, area);
+			const auto flippedLeft = Inkeys::UI::Bar::ResolveBarHoverHintRect(950, 400, 100, 24, 12, area);
+			const auto flippedDown = Inkeys::UI::Bar::ResolveBarHoverHintRect(500, 20, 100, 24, 12, area);
+			const auto clamped = Inkeys::UI::Bar::ResolveBarHoverHintRect(50, 790, 1200, 24, 12, area);
+			Check(normal.left == 512 && normal.bottom == 388 && normal.right - normal.left == 100,
+				"hover hint sits above-right of the cursor");
+			Check(flippedLeft.right == 938 && flippedLeft.bottom == 388, "hover hint flips left at the right edge");
+			Check(flippedDown.top == 44 && flippedDown.left == 512, "hover hint flips below at the top edge");
+			Check(clamped.left == 0 && clamped.right == 1000 && clamped.top >= 0 && clamped.bottom <= 800,
+				"hover hint is limited to and stays inside the available area");
+		}
+
+		Inkeys::Config source;
+		source.Experimental.Inkeys3.UI3.SizeMode = 1;
+		configSnapshot = source;
+		Check(configSnapshot.Experimental.Inkeys3.UI3.SizeMode == 1,
+			"SizeMode Compact survives the configuration snapshot codec");
+	}
+
 	void TestResidentOpacityPolicy()
 	{
 		// 配置：背景 0 = 跟随主题默认，其余与内容透明度收敛到 30~100。
@@ -485,6 +531,7 @@ int RunBarThemeTests()
 	TestTrueAndDisplayPenColors();
 	TestAnimationReversalAndDisabled();
 	TestThemeModeConfigPolicy();
+	TestSizeModeConfigPolicy();
 	TestResidentOpacityPolicy();
 	TestIdleOpacity();
 	TestStaticAppearancePresentContract();

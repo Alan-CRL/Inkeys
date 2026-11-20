@@ -114,6 +114,7 @@ namespace
 	std::mutex pptIdleInputMutex;
 	Inkeys::UI::Bar::PptIdleInputSnapshot pptIdleInput;
 	Inkeys::UI::UI3::PageLoadingDeadline pptIdleDeadline;
+	Inkeys::UI::UI3::PageLoadingDeadline hoverHintDeadline;
 
 	void UpdatePptIdleInput(bool hovered, bool pressed, bool activity = false) noexcept
 	{
@@ -134,6 +135,10 @@ void Inkeys::UI::Bar::ResetPptIdleInput() noexcept { UpdatePptIdleInput(false, f
 void Inkeys::UI::Bar::PublishPptIdleDeadline(std::chrono::steady_clock::time_point time) noexcept
 {
 	if (pptIdleDeadline.Publish(time)) WakeInteractionWorker();
+}
+void Inkeys::UI::Bar::PublishBarHoverHintDeadline(std::chrono::steady_clock::time_point time) noexcept
+{
+	if (hoverHintDeadline.Publish(time)) WakeInteractionWorker();
 }
 constexpr UINT BarBorderCursorSuspendMessage = WM_APP + 0x31;
 constexpr UINT BarCanvasDrawingActivityMessage = WM_APP + 0x32;
@@ -1597,6 +1602,7 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 
 	void ProcessBarTooltipTimer(HWND hWnd, WPARAM wParam);
 	void ProcessBarPointerLeave();
+	void PublishBarHoverHintSource(bool mouse, POINT screen, std::shared_ptr<BarButtonClass> main, bool more = false);
 
 	// —— 主内容处理器回调：共享 worker 泵（Inkeys.UI.UI3:HostInput）对主栏消息做的每件事各对应一个。
 	// opaque 始终是泵调用方传入的 MainInteractionAwaitContext。
@@ -1613,6 +1619,8 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 			pendingMainInput.clear(); context.cancelled = true;
 			FinishBarPointerSession();
 			Inkeys::UI::Bar::ResetPptIdleInput();
+			// 取消/捕获丢失/销毁同样收起小尺寸悬停提示。
+			PublishBarHoverHintSource(false, POINT{}, nullptr);
 		}
 		else if (!pendingMainInput.empty() && CanCoalesceMainInput(pendingMainInput.back(), event))
 			pendingMainInput.back() = std::move(event);
@@ -1643,6 +1651,9 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 		bool idleDue = false;
 		deadline = (std::min)(deadline, pptIdleDeadline.Consume(now, idleDue));
 		if (idleDue) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
+		bool hoverHintDue = false;
+		deadline = (std::min)(deadline, hoverHintDeadline.Consume(now, hoverHintDue));
+		if (hoverHintDue) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
 		bool carouselDue = false;
 		const auto carouselWake = barUISet.geometryAttribute.ConsumeCarouselWake(now,carouselDue);
 		if (carouselWake != InteractionClock::time_point{}) deadline = (std::min)(deadline,carouselWake);
@@ -1818,6 +1829,16 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 			interactionVisualDrainPosted = false;
 			interactionVisualFeedback.clear();
 		}
+	}
+	// 小尺寸悬停提示来源：经交互反馈队列投递到渲染线程（同一身份只保留最后一次，高频 Move 不堆积）。
+	const char barHoverHintFeedbackIdentity = 0;
+	void PublishBarHoverHintSource(bool mouse, POINT screen, std::shared_ptr<BarButtonClass> main, bool more)
+	{
+		QueueInteractionVisualFeedback(&barHoverHintFeedbackIdentity, 0, [mouse, screen, more, main = std::move(main)]() mutable
+		{
+			auto& source = barUISet.hoverHintSource;
+			source.mouse = mouse; source.more = more; source.screen = screen; source.main = std::move(main);
+		});
 	}
 
 	bool SetInteractionPenColor(COLORREF color, bool save = true, std::uint64_t revision = 0)
@@ -3033,6 +3054,8 @@ namespace
 	}
 	void ProcessBarPointerLeave()
 	{
+		// 离开窗口即收起小尺寸悬停提示。
+		PublishBarHoverHintSource(false, POINT{}, nullptr);
 		if (barUISet.geometryAttribute.ResetPointerFeedback()) barUISet.UpdateRendering(false);
 		barUISet.statusIndicator.ResetPointerFeedback();
 		const auto idle = Inkeys::UI::Bar::SnapshotPptIdleInput();
@@ -3378,6 +3401,14 @@ LRESULT CALLBACK barWindowMsgCallback(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 			msg, static_cast<ULONG_PTR>(GetMessageExtraInfo())))
 		{ if(UiDiag::Enabled()) { UiDiag::ErrorScope diagnosticError; UiDiag::Log("bar",hWnd,"filter","pointer_promoted_mouse",msg,nullptr,"extra=0x%llx",static_cast<unsigned long long>(GetMessageExtraInfo())); } return 0; }
 		if (msg == WM_MOUSEMOVE) barUISet.ActivateBorderCursorTracking(hWnd);
+		// 只在未按键的移动时注册，避免为持键手势新增离开语义。
+		if (msg == WM_MOUSEMOVE && Inkeys::UI::Bar::AppliedSizeMode() == BarSizeMode::Compact
+			&& !(wParam & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON)))
+		{
+			// 小尺寸悬停提示依赖离开事件收起；边缘光效关闭时原路径不注册 TME_LEAVE。
+			TRACKMOUSEEVENT track{ sizeof(track), TME_LEAVE, hWnd, 0 };
+			(void)TrackMouseEvent(&track);
+		}
 		if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONDBLCLK)
 		{
 			Inkeys::Inputs::SetKeyBoardDown(VK_LBUTTON, true);
@@ -5040,6 +5071,44 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
   co_return true;
  }
 
+	// 小尺寸悬停提示：每条消息发布一次「真实鼠标位置 + 主栏/More 命中按钮」；触摸、按下与其他消息一律收起。
+	// 命中包含选中/禁用按钮（提示只显示名称，不改悬停视觉），颜色块与分割线除外；延时与绘制由渲染线程负责。
+	void PublishHoverHintPointer()
+	{
+		// 按住任一鼠标键（含面板按压后的移动）不算悬停；坐标取真实光标屏幕采样，由渲染线程按当帧原点换算。
+		POINT screen{};
+		const bool mouse = Inkeys::UI::Bar::AppliedSizeMode() == BarSizeMode::Compact
+			&& msg.message == WM_MOUSEMOVE && !IsBarTouchPointerMessage(msg)
+			&& !msg.lbutton && !msg.rbutton && !msg.mbutton
+			&& !Inkeys::Inputs::IsKeyBoardDown(VK_LBUTTON)
+			&& ReadBarPointerPosition(&screen);
+		if (!mouse && !hoverHintPublished) return;
+		hoverHintPublished = mouse;
+		std::shared_ptr<BarButtonClass> target;
+		bool fromMore = false;
+		if (mouse && !barState.fold && !IsColorPickerOccludingPoint(msg.x, msg.y)
+			&& !IsPenTypeMenuOccludingPoint(msg.x, msg.y))
+		{
+			auto Hit = [&](const std::shared_ptr<BarButtonClass>& button)
+				{
+					return button && button->IsVisible() && button->preset != BarButtonPresetEnum::Divider
+						&& !button->name.content.GetTar().starts_with(L"__color") && HitPresentedButton(*button, msg);
+				};
+			for (const auto& button : barButtonSet.buttonList.Snapshot())
+				if (Hit(button)) { target = button; break; }
+			if (!target && barState.moreExpanded)
+			{
+				const BarMoreButtonSnapshotClass snapshot = barButtonSet.GetMoreButtonSnapshot();
+				for (const auto* list : { &snapshot.explicitMore, &snapshot.forcedOverflow })
+				{
+					for (const auto& button : *list) if (Hit(button)) { target = button; fromMore = true; break; }
+					if (target) break;
+				}
+			}
+		}
+		PublishBarHoverHintSource(mouse, screen, std::move(target), fromMore);
+	}
+
 	BarInteractionStageResult FinishInteraction()
 	{
 		FinishBarPointerSession();
@@ -6110,7 +6179,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						visualMessageY, static_cast<int>(SHRT_MIN),
 						static_cast<int>(SHRT_MAX)));
 					const BarSeekResult seekResult = co_await Seek(seekMessage);
-					if (seekResult.allowClick)
+					// 小尺寸状态文字展示中：点击变宽的主按钮即收起该状态，不折叠主栏；拖动不受影响。
+					if (seekResult.allowClick && barUISet.statusIndicator.ConsumeCompactMainClick())
+						AcceptBarButtonFeedback();
+					else if (seekResult.allowClick)
 					{
 						if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(Inkeys::UI::UI3::Ui3FiniteScene::MainFold,
 							Inkeys::UI::Bar::Ui3FixtureActionPoint::Commit)) co_return BarInteractionStageResult::Shutdown;
@@ -8253,6 +8325,7 @@ public:
 			}
 
 
+			PublishHoverHintPointer();
 			const auto dockIndicatorResult =
 				HandleBottomDockIndicatorOcclusion();
 			if (dockIndicatorResult == BarInteractionStageResult::Shutdown) break;
@@ -8414,6 +8487,8 @@ private:
 	// 原生双击历史与最后成功按钮同寿命；取消本次接触不清掉上一击归属。
 	PointerGestureRecognizer mainButtonGesture{[] { GestureConfig config; config.doubleClick = GestureDoubleClick::Native; return config; }()};
 	BarButtonClass* hoveredMainBarButton = nullptr;
+	// 上一次发布的悬停提示来源是否为真实鼠标（为假时非鼠标消息不再重复投递）。
+	bool hoverHintPublished = false;
 	bool suppressHoverUntilPointerMove = false;
 	POINT hoverSuppressionScreenPoint{};
 	IndependentHoverTargetEnum hoveredIndependentButton =
@@ -9332,9 +9407,12 @@ InteractionTask<BarSeekResult> BarUISetClass::Seek(const ExMessage& msg)
 	bool displayEnvironmentAwaited = initialDisplayTransitionPending;
 	unsigned long long requestedDisplaySerial = initialDisplaySnapshot.serial;
 	double requestedDisplayZoom = initialTargetZoom;
-	const double bodyHeightDip = 80.0;
 	const double strokeWidthDip = mainButton->ft.has_value()
 		? max(0.0, static_cast<double>(mainButton->ft.value().tar)) : 0.0;
+	// 吸附阈值与上下夹边按已落地档位的主按钮边长（大 80 / 小 35）；
+	// 尺寸过渡中途起拖时渲染线程会在起拖帧把几何对齐到同一终值。
+	const double bodyHeightDip = ResolveBarSizeMetrics(NormalizeBarSizeMode(
+		barStyle.appliedSizeMode.load(memory_order_acquire))).mainButtonSide;
 	const double visibleHalfWidthDip = mainButton->GetW() / 2.0
 		+ strokeWidthDip / 2.0;
 	auto VisibleHalfHeightScreen = [&]()

@@ -685,10 +685,17 @@
           "Dark": "Mod întunecat",
           "Light": "Mod luminos"
         },
+        "UiSize":
+        {
+          "N": "Dimensiunea interfeței",
+          "E": "În dimensiunea mică, bara și comenzile de pagină au 42,5 DIP înălțime, iar butoanele afișează doar pictograma; treceți cu mouse-ul pentru a vedea numele. Se aplică imediat.",
+          "Large": "Mare",
+          "Small": "Mică"
+        },
         "TaskbarScaleBase":
         {
           "N": "Scalare după bara de activități",
-          "E": "La scara de 100%, dimensiunea de bază fixează înălțimea barei principale la 48 DIP; dimensiunea reală urmărește grosimea barei de activități.",
+          "E": "La 100%, „Dimensiunea de bază a barei” stabilește înălțimea barei la 48 DIP în dimensiunea mare și la 35 DIP în cea mică; „Dimensiunea reală a barei” o potrivește cu grosimea barei de activități.",
           "Off": "Dezactivat",
           "Base": "Dimensiunea de bază a barei",
           "Actual": "Dimensiunea reală a barei"

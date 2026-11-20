@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Setting.Controls.h"
 #include "Setting.HomeBrand.h"
@@ -340,6 +340,7 @@ namespace Inkeys::UI::Setting::Design
 		int settingEntryAnimation = 1;
 		bool allowMultipleInstances = false;
 		int themeMode = 0; // 0=深色，1=浅色；配置值映射在 Setting.cpp 完成。
+		int sizeMode = 0; // 界面尺寸：0=大尺寸，1=小尺寸，与配置值一致。
 		int settingThemeMode = 1; // 设置窗口自身配色，选项顺序与主栏主题一致：0=深色，1=浅色。
 		// 常驻透明度为绝对值（0.30~1.00）；背景默认值随主栏主题变化，供显示与重置。
 		float backgroundOpacity = 0.80F, backgroundOpacityDefault = 0.80F;
@@ -384,6 +385,7 @@ namespace Inkeys::UI::Setting::Design
 		bool whiteboardDockMaskChanged = false, whiteboardDockDirectionChanged = false;
 		bool taskbarScaleBaseChanged = false;
 		bool themeModeChanged = false;
+		bool sizeModeChanged = false;
 		bool settingThemeModeChanged = false;
 		bool backgroundOpacityChanged = false, backgroundOpacityActive = false, backgroundOpacityReset = false;
 		bool contentOpacityChanged = false, contentOpacityActive = false;

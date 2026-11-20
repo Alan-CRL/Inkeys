@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
@@ -4300,7 +4300,7 @@ namespace
 		{
 			Design::GeneralEvents events; LayoutRect lastItem; float height = 0; int vertices = 0, blueVertices = 0;
 			bool operation = false, layout = false, collapse = false, shortcuts = false, startupPreview = false, desktopShortcuts = false, startupEffect = false;
-			bool entryAnimation = false, obsoleteSettingZoom = false, barZoom = false, allowMultipleInstances = false, animationRate = false, paintDevice = false;
+			bool uiSize = false, entryAnimation = false, obsoleteSettingZoom = false, barZoom = false, allowMultipleInstances = false, animationRate = false, paintDevice = false;
 			bool logs = false;
 		};
 		ImGuiWindow* host = nullptr;
@@ -4330,6 +4330,7 @@ namespace
 			// 效果选择是加载动画行的内联区，提交标记位于父行 ID 之下。
 			ImGui::PushID("startup-preview"); frame.startupEffect = rowSeen("startup-effect"); ImGui::PopID();
 			frame.entryAnimation = rowSeen("setting-entry-animation"); frame.animationRate = rowSeen("animation-rate");
+			frame.uiSize = rowSeen("##界面尺寸");
 			frame.allowMultipleInstances = rowSeen("allow-multiple-instances"); frame.paintDevice = rowSeen("##draw-device");
 			frame.obsoleteSettingZoom = rowSeen("setting-zoom"); frame.barZoom = rowSeen("bar-zoom");
 			frame.logs = rowSeen("log-threshold") && rowSeen("log-folder") && rowSeen("log-retention") && rowSeen("log-max-size");
@@ -4354,7 +4355,7 @@ namespace
 				&& !events.edgeLightingChanged && !events.topIntervalChanged && !events.rightClickCloseChanged
 				&& !events.safetyModeChanged && !events.allowMultipleInstancesChanged && !events.startupPreviewChanged && !events.startupEffectChanged && !events.animationChanged
 				&& !events.dynamicEdgeLightingChanged
-				&& !events.startupPlacementChanged && !events.taskbarScaleBaseChanged
+				&& !events.startupPlacementChanged && !events.taskbarScaleBaseChanged && !events.sizeModeChanged
 				&& !events.pptDockMaskChanged && !events.pptDockDirectionChanged && !events.whiteboardDockMaskChanged && !events.whiteboardDockDirectionChanged
 				&& !events.selectModeChanged && !events.iconOrderChanged && !events.expansionDirectionChanged
 				&& std::none_of(events.autoCollapseChanged.begin(), events.autoCollapseChanged.end(), [](bool value) { return value; })
@@ -4380,6 +4381,7 @@ namespace
 				&& frame.desktopShortcuts == (section == Design::Section::DesktopShortcuts)
 				&& frame.startupPreview == (section == Design::Section::Appearance) && !frame.startupEffect
 				&& frame.entryAnimation == (section == Design::Section::Appearance)
+				&& frame.uiSize == (section == Design::Section::WindowLayout)
 				&& frame.barZoom == (section == Design::Section::WindowLayout) && !frame.obsoleteSettingZoom
 				&& frame.allowMultipleInstances == (section == Design::Section::Basic)
 				&& frame.logs == (section == Design::Section::LogsLog),

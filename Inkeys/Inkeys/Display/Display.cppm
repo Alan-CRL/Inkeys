@@ -238,13 +238,14 @@ export namespace Inkeys::Display
 	};
 	[[nodiscard]] double ResolveUiScaleBase(UINT dpi, int taskbarThicknessPx,
 		UINT primaryDpi, int primaryTaskbarThicknessPx,
-		UiScaleBaseMode mode, double baseHeightDip = 80.0) noexcept;
+		UiScaleBaseMode mode, double baseHeightDip = 80.0,
+		double basicQuantityDip = 48.0) noexcept;
 	[[nodiscard]] double ResolveUiScaleBase(const Snapshot& snapshot,
 		const MonitorInfo& monitor, UiScaleBaseMode mode,
-		double baseHeightDip = 80.0) noexcept;
+		double baseHeightDip = 80.0, double basicQuantityDip = 48.0) noexcept;
 	// Mini 仅采样 DPI/任务栏；不枚举 EDID，也不发布正式快照。
 	[[nodiscard]] double QueryUiScaleBase(HMONITOR monitor, UiScaleBaseMode mode,
-		double baseHeightDip = 80.0) noexcept;
+		double baseHeightDip = 80.0, double basicQuantityDip = 48.0) noexcept;
 	// 启动 Mini 阶段只查询目标屏的有效 DPI，不枚举拓扑/EDID，也不发布显示快照。
 	[[nodiscard]] UINT QueryEffectiveDpi(HMONITOR monitor) noexcept;
 	[[nodiscard]] bool Initialize();

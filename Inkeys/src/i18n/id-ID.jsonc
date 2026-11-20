@@ -685,10 +685,17 @@
           "Dark": "Mode gelap",
           "Light": "Mode terang"
         },
+        "UiSize":
+        {
+          "N": "Ukuran antarmuka",
+          "E": "Pada ukuran kecil, bilah utama dan kontrol halaman setinggi 42,5 DIP dan tombol hanya menampilkan ikon; arahkan kursor untuk melihat namanya. Langsung berlaku.",
+          "Large": "Besar",
+          "Small": "Kecil"
+        },
         "TaskbarScaleBase":
         {
           "N": "Dasar skala bilah tugas",
-          "E": "Pada skala 100%, Ukuran dasar bilah tugas menetapkan tinggi bilah utama menjadi 48 DIP; Ukuran aktual bilah tugas mengikuti ketebalan bilah tugas.",
+          "E": "Pada skala 100%, \"Ukuran dasar bilah tugas\" membuat tinggi bilah utama 48 DIP pada ukuran besar dan 35 DIP pada ukuran kecil; \"Ukuran aktual bilah tugas\" menyamakan tingginya dengan ketebalan bilah tugas.",
           "Off": "Nonaktif",
           "Base": "Ukuran dasar bilah tugas",
           "Actual": "Ukuran aktual bilah tugas"

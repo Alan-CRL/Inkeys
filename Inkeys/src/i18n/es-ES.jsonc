@@ -685,10 +685,17 @@
           "Dark": "Modo oscuro",
           "Light": "Modo claro"
         },
+        "UiSize":
+        {
+          "N": "Tamaño de la interfaz",
+          "E": "En tamaño pequeño, la barra y los controles de página miden 42,5 DIP de alto y los botones solo muestran iconos; pasa el ratón para ver su nombre. Se aplica al instante.",
+          "Large": "Grande",
+          "Small": "Pequeño"
+        },
         "TaskbarScaleBase":
         {
           "N": "Escala según la barra de tareas",
-          "E": "Al 100 %, Tamaño base fija la altura de la barra principal en 48 DIP; Tamaño real sigue el grosor de la barra de tareas.",
+          "E": "Al 100 % de escala, con «Tamaño base» la barra mide 48 DIP en tamaño grande y 35 DIP en tamaño pequeño; con «Tamaño real» su altura coincide con el grosor de la barra de tareas.",
           "Off": "Desactivado",
           "Base": "Tamaño base",
           "Actual": "Tamaño real"

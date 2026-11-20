@@ -118,6 +118,10 @@ public:
 	// 常驻表面透明度百分比：背景 0 表示跟随主题默认；同样由渲染线程在帧首应用。
 	std::atomic<int> requestedBackgroundOpacity = 0;
 	std::atomic<int> requestedContentOpacity = 100;
+	// 界面尺寸：设置线程只写 requested；渲染线程在帧首（无主栏拖动时）落地为 applied。
+	// 按钮投影、输入线程与翻页控件只读 applied，保证同一帧不混用两套尺寸。
+	std::atomic<int> requestedSizeMode = 0;
+	std::atomic<int> appliedSizeMode = 0;
 	IdtAtomic<double> dpiZoom = 1.0;
 	// UI 基准独立于真实 DPI，画笔尺寸仍只使用 dpiZoom。
 	IdtAtomic<double> uiBaseZoom = 1.0;

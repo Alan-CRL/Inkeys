@@ -351,7 +351,12 @@ namespace Inkeys::UI::UI3
 		auto& badge = *button.badge;
 		double unit = badge.scale;
 		if (!std::isfinite(unit) || unit <= 0.0) unit = 1.0;
-		const double diameter = ButtonBadgeDiameterDip * unit, inset = ButtonBadgeInsetDip * unit;
+		const double diameter = ButtonBadgeDiameterDip * unit;
+		// 1×1 按钮太小，内收的角标会压住图标：角标中心落在按钮角点上（可略微越出按钮）；
+		// 2×1 及以上保持内收 4DIP。中间尺寸按最大边长线性过渡，尺寸动画中不跳变。
+		const double side = (std::max)(static_cast<double>(button.button.w.val), static_cast<double>(button.button.h.val)) / unit;
+		const double t = std::clamp((side - ButtonOneSideDip) / (ButtonTwoSideDip - ButtonOneSideDip), 0.0, 1.0);
+		const double inset = (-ButtonBadgeDiameterDip / 2 + t * (ButtonBadgeInsetDip + ButtonBadgeDiameterDip / 2)) * unit;
 		const double below = std::clamp(static_cast<double>(badge.below.val), 0.0, 1.0);
 		const double progress = (std::max)(0.0, static_cast<double>(badge.progress.val));
 		ButtonBadgeGeometry result;

@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 export module Inkeys.UI.Bar.RecallChrome;
 
@@ -136,11 +136,22 @@ export namespace Inkeys::UI::Bar
 			|| (after.hold == RecallChromeHold::None && before.pendingLayout != after.pendingLayout));
 	}
 
-	inline RecallChromeView ResolveRecallChrome(RecallChromeState state, bool compactSelection = false) noexcept
+	inline RecallChromeView ResolveRecallChrome(RecallChromeState state, bool compactSelection = false,
+		bool compactSize = false) noexcept
 	{
 		RecallChromeView view;
 		view.undoEnabled = state.availability.canUndo;
 		view.redoEnabled = state.availability.canRedo;
+		if (compactSize)
+		{
+			// 小尺寸没有撤回属性弹窗：撤回与重做同时显示在主栏，不可用时由主栏绘制为灰色；
+			// 精简选择态（选择且无墨迹）与大尺寸一致，两者都隐藏。
+			view.popupOpen = false;
+			view.popupShowsRedo = state.hold != RecallChromeHold::Redo;
+			view.mainUndoVisible = view.mainRedoVisible = !compactSelection;
+			view.undoExpanded = view.redoExpanded = false;
+			return view;
+		}
 		// 精简选择态只覆盖显隐，不丢弃历史布局和 3 秒保护。
 		view.popupOpen = !compactSelection && state.hold != RecallChromeHold::None && !state.popupSuppressed;
 		view.popupShowsRedo = state.hold != RecallChromeHold::Redo;

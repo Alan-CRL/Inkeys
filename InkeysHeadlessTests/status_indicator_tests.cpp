@@ -1119,5 +1119,88 @@ int RunStatusIndicatorTests()
 		check(!expanded.ClickExpanded(1, now), "click on docked unselected tile is not an expanded click");
 	}
 
+	// Compact：小尺寸不出胶囊，队首驱动主按钮变宽并在变宽区内画文字；停靠方块缩小，与大尺寸一样压在主按钮右上边框上。
+	for (const double widenSign : { -1.0, 1.0 })
+	{
+		auto compactInput = [&](double extra)
+		{
+			StatusIndicatorLayoutInput input;
+			input.mainCenterX = 500 + widenSign * extra / 2; input.mainCenterY = 500;
+			input.mainWidth = 42.5 + extra; input.mainHeight = 42.5; input.mainN = 10;
+			input.baseBounds = { 400, 400, 700, 600 }; input.work = { 0, 0, 1920, 1040 };
+			input.compact = true; input.compactBaseWidth = 42.5; input.compactWidenSign = widenSign; input.compactBaseCenterX = 500;
+			return input;
+		};
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::PptSlideshow), now); model.SetTextWidth(1, 52);
+		Run(model, now, 1.0);
+		const double fullExtra = StatusIndicatorCompactExtraWidth(52);
+		auto shown = ResolveStatusIndicatorLayout(model, compactInput(0));
+		check(Near(shown.compactExtraWidth, fullExtra, 0.05), "Compact: expanded front widens the main button by text extra");
+		const auto layout = ResolveStatusIndicatorLayout(model, compactInput(fullExtra));
+		const auto* text = FindLayout(layout, 1);
+		check(text && text->shape == StatusIndicatorShape::Text && text->role == StatusIndicatorRole::Capsule,
+			"Compact: front status draws as clickable main-button text, not a capsule");
+		bool capsule = false;
+		for (const auto& entry : layout.entries) capsule |= entry.shape == StatusIndicatorShape::Capsule;
+		check(!capsule && layout.reserveBounds.Empty(), "Compact: no capsule or capsule overflow reservation");
+		if (text)
+		{
+			const double left = 500 + widenSign * fullExtra / 2 - (42.5 + fullExtra) / 2, right = left + 42.5 + fullExtra;
+			check(widenSign < 0 ? Near(text->textClip.left, left + 42.5 + CompactTextGap) && Near(text->textClip.right, right - CompactTextPadding)
+				: Near(text->textClip.left, left + CompactTextPadding) && Near(text->textClip.right, right - 42.5 - CompactTextGap),
+				"Compact: text sits between the outer main icon and the main bar side");
+		}
+		Run(model, now, now + Hold + 2.0);
+		const auto docked = ResolveStatusIndicatorLayout(model, compactInput(0));
+		const auto* tile = FindLayout(docked, 1);
+		check(Near(docked.compactExtraWidth, 0, 1e-3), "Compact: collapsed status returns the main button to its base width");
+		check(tile && tile->shape == StatusIndicatorShape::Tile && Near(tile->bounds.Width(), CompactDockSize, 1e-3)
+			&& tile->bounds.top < 500 - 21.25 && tile->bounds.bottom > 500 - 21.25 && tile->bounds.right <= 500 + 21.25
+			&& CenterX(*tile) > 500 && CenterY(*tile) < 500 && tile->role == StatusIndicatorRole::Dock,
+			"Compact: docked tile straddles the main button top-right border like the large size");
+		check(docked.overflowBounds.Empty(), "Compact: docked tile inside the window does not grow it");
+		{
+			// 窗口紧贴主按钮时，越出边框的方块仍被夹回窗口内。
+			auto tight = compactInput(0); tight.baseBounds = { 478.75, 478.75, 521.25, 521.25 };
+			const auto clamped = ResolveStatusIndicatorLayout(model, tight);
+			const auto* clampedTile = FindLayout(clamped, 1);
+			check(clampedTile && clampedTile->bounds.top >= 478.75 - 1e-6 && clampedTile->bounds.right <= 521.25 + 1e-6,
+				"Compact: docked tile is clamped into the window");
+		}
+		// 单个状态点击停靠方块：重新变宽显示文字，而不是展开胶囊。
+		model.ClickDocked(1, now); Run(model, now, now + 0.6);
+		const auto reexpanded = ResolveStatusIndicatorLayout(model, compactInput(fullExtra));
+		const auto* again = FindLayout(reexpanded, 1);
+		check(reexpanded.compactExtraWidth > fullExtra * 0.9 && again && again->shape == StatusIndicatorShape::Text,
+			"Compact: single dock click widens the main button again");
+	}
+	// Compact fan：扇形项尺寸与大尺寸一致，半径按 42.5×42.5 主按钮重算。
+	{
+		StatusIndicatorModel model; double now = 0;
+		model.Publish(Spec(1, Kind::PptSlideshow), now); model.Publish(Spec(2, Kind::SuperTop), now);
+		Run(model, now, 8.0); model.ClickDocked(1, now); Run(model, now, now + 0.6);
+		StatusIndicatorLayoutInput input;
+		input.mainCenterX = 500; input.mainCenterY = 500; input.mainWidth = 42.5; input.mainHeight = 42.5; input.mainN = 10;
+		input.baseBounds = { 400, 480, 700, 520 }; input.work = { 0, 0, 1920, 1040 };
+		input.compact = true; input.compactBaseWidth = 42.5; input.compactBaseCenterX = 500;
+		const auto fan = ResolveStatusIndicatorLayout(model, input);
+		const auto* item = FindLayout(fan, 1);
+		check(model.FanOpen() && item && Near(item->bounds.Width(), FanSize, 1e-3) && item->role == StatusIndicatorRole::Fan,
+			"Compact: fan items keep the large size");
+		if (item)
+		{
+			const double radius = std::hypot(CenterX(*item) - 500, CenterY(*item) - 500);
+			check(Near(radius, StatusIndicatorFanLayerRadius(42.5, 42.5, 10, 0), 0.05),
+				"Compact: fan radius is recomputed from the 42.5x42.5 main button");
+		}
+		// 状态文字展示期间打开扇形，圆心与半径仍以原主按钮为基准。
+		input.mainCenterX = 470; input.mainWidth = 102.5;
+		const auto wideFan = ResolveStatusIndicatorLayout(model, input);
+		const auto* wideItem = FindLayout(wideFan, 1);
+		check(item && wideItem && Near(CenterX(*wideItem), CenterX(*item), 1e-6) && Near(CenterY(*wideItem), CenterY(*item), 1e-6),
+			"Compact: widened main button does not move the fan");
+	}
+
 	return failures;
 }

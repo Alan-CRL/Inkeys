@@ -52,9 +52,10 @@ namespace Inkeys::UI::Bar
 		constexpr double DamageOutsetDip = ButtonFrameThicknessDip
 			+ RenderingAttribute::pointLightDiffuseExtraWidth
 			+ RenderingAttribute::dirtyAntialiasPadding;
-		constexpr EraserAttributeRect MenuBounds{190,-122.5,340,-5};
-		constexpr EraserAttributeRect ThemeBounds{345,-301,575,-5};
-		constexpr EraserAttributeRect ThemeAnchor{195,-42.5,335,-10};
+		// 大尺寸白板菜单基准（以大尺寸 More 按钮中心 265 对齐）；小尺寸由表面按 More 按钮实际位置平移。
+		constexpr EraserAttributeRect LargeMenuBounds{190,-122.5,340,-5};
+		constexpr EraserAttributeRect LargeThemeBounds{345,-301,575,-5};
+		constexpr EraserAttributeRect LargeThemeAnchor{195,-42.5,335,-10};
 		constexpr auto& ThemeColors=WhiteboardVisual::ThemeColors;
 
 		bool Empty(const RECT& r) noexcept { return r.right<=r.left || r.bottom<=r.top; }
@@ -94,6 +95,8 @@ namespace Inkeys::UI::Bar
 
 	struct BarPageSurface::Impl
 	{
+		// 白板菜单与主题面板的当前位置：内容尺寸不变，只随 More 按钮水平平移（遮蔽同名大尺寸基准）。
+		EraserAttributeRect MenuBounds=LargeMenuBounds,ThemeBounds=LargeThemeBounds,ThemeAnchor=LargeThemeAnchor;
 		// 列表只管理分页；两个属性面板仍是固定数组，没有第二份控件描述树。
 		BarButtonListClass pagination;
 		std::array<std::shared_ptr<BarButtonClass>,5> pageButtons;
@@ -288,7 +291,7 @@ namespace Inkeys::UI::Bar
 			for(std::size_t i=0;i<headings.size();++i)
 				(void)visuals.Add(themeGroup,[this,i](VisualSample& out){
 					auto& word=headings[i];if(!IsVisuallyDrawn(word))return;
-					out.visible=true;out.bounds=LocalPixels(WordLocal(word,350,ThemeBounds.top+(i?191.0:5.0)),themePose);
+					out.visible=true;out.bounds=LocalPixels(WordLocal(word,ThemeBounds.left+5,ThemeBounds.top+(i?191.0:5.0)),themePose);
 					WriteVisualState(out.state,word,false);
 				},"page.heading");
 			for(BarSurfaceButtonId id=9;id<=17;++id)buttonEntry(themeGroup,id,2,"page.preview");
@@ -491,7 +494,8 @@ namespace Inkeys::UI::Bar
 			const bool currentChanged=current!=shownCurrent,totalChanged=total!=shownTotal;
 			if(!currentChanged&&!totalChanged&&status==shownStatus)return false;
 			// 纯页码之间的跳变立即生效；进出状态文字走既有的文字过渡。
-			const bool immediate=!status&&!shownStatus;
+			// 小尺寸不显示状态词，槽内始终是页码：一律立即换字，避免门控期间数字走中点过渡。
+			const bool immediate=content.compact||(!status&&!shownStatus);
 			const auto observation=ContentObservationBefore(static_cast<long>(shownStatus),content,
 				immediate?Inkeys::Business::PptWaitTrace::ContentPolicy::Immediate:Inkeys::Business::PptWaitTrace::ContentPolicy::Animated,
 				(currentChanged?1U:0U)|(totalChanged?2U:0U)|(status!=shownStatus?4U:0U));
@@ -502,7 +506,7 @@ namespace Inkeys::UI::Bar
 				primaryChanged=pageButtons[2]->name.TransitionToString(current);secondaryChanged=pageTotal.TransitionToString(total);
 			}
 			CompleteContentObservation(observation,primaryChanged,secondaryChanged);
-			if(BarPptCompactPaginationEnabled&&!content.whiteboard&&content.surface<2){
+			if(content.compact&&content.surface<2){
 				auto shown=content;shown.currentPage=current;shown.totalPage=total;
 				auto& name=pageButtons[2]->name;
 				const bool moving=!name.x.IsSame()||!name.w.IsSame()||!name.size.IsSame()
@@ -523,12 +527,12 @@ namespace Inkeys::UI::Bar
 			const auto text=[&](BarSurfaceButtonId id,const std::wstring& icon,const std::wstring& label,double angle=0){
 				ConfigureButtonContent(Button(id),icon,label,angle,UiDefaultOperationDur,false);
 			};
-			const bool wb=next.whiteboard,vertical=next.surface>=2,standard=wb||!BarPptCompactPaginationEnabled;
+			const bool wb=next.whiteboard,vertical=next.surface>=2,standard=!next.compact;
 			if(content.previousLabel!=next.previousLabel)text(2,L"barMore",standard?next.previousLabel:L"",vertical&&!wb?0:-90);
 			if(content.nextLabel!=next.nextLabel||content.nextIsAdd!=next.nextIsAdd||content.nextIsEndShow!=next.nextIsEndShow)
 				text(4,wb&&next.nextIsAdd?L"barAdd":(!wb&&next.nextIsEndShow?L"barEndShow":L"barMore"),standard?next.nextLabel:L"",
 					(wb&&next.nextIsAdd)||(!wb&&next.nextIsEndShow)?0:(vertical&&!wb?180:90));
-			if(content.moreLabel!=next.moreLabel)text(5,L"barMenu",next.moreLabel);
+			if(content.moreLabel!=next.moreLabel)text(5,L"barMenu",standard?next.moreLabel:L"");
 			const wchar_t* icons[]={L"barCloseWhiteboard",L"barMinimize",L"barPalette"};
 			for(std::size_t i=0;i<actions.size();++i)if(content.actionLabels[i]!=next.actionLabels[i])text(static_cast<BarSurfaceButtonId>(6+i),icons[i],next.actionLabels[i]);
 			for(std::size_t i=0;i<next.patternLabels.size();++i)if(content.patternLabels[i]!=next.patternLabels[i])text(static_cast<BarSurfaceButtonId>(15+i),L"colorSelect",next.patternLabels[i]);
@@ -558,21 +562,25 @@ namespace Inkeys::UI::Bar
 		}
 		void Configure(const BarPageSurfaceContent& next,double duration)
 		{
-			if(initialized&&!backgroundOnly&&content.surface==next.surface&&content.whiteboard==next.whiteboard){UpdateContent(next);return;}
+			if(initialized&&!backgroundOnly&&content.surface==next.surface&&content.whiteboard==next.whiteboard
+				&&content.compact==next.compact){UpdateContent(next);return;}
 			indicatorInputDirty=true;root.residentSurface=true;
 			const bool direct=!initialized || duration<=0;
-			const bool wb=next.whiteboard,vertical=next.surface>=2,left=next.surface==0,standard=wb||!BarPptCompactPaginationEnabled;
+			const bool wb=next.whiteboard,vertical=next.surface>=2,left=next.surface==0,standard=!next.compact;
+			const auto sizeMode=next.compact?BarSizeMode::Compact:BarSizeMode::Large;
+			const auto& sizeMetrics=ResolveBarSizeMetrics(sizeMode);
 			for(std::size_t i=0;i<pageButtons.size();++i){
 				pageButtons[i]->hide=(i==0&&wb)||(i==4&&(!wb||!left));
-				pageButtons[i]->size=ButtonSizeEnum::twoTwo;
+				// 小尺寸：箭头/加页/更多 1×1，页码 2×1（竖向由下方转置为 1×2）。
+				pageButtons[i]->size=standard?ButtonSizeEnum::twoTwo:(i==2?ButtonSizeEnum::twoOne:ButtonSizeEnum::oneOne);
 			}
 			UpdatePaginationDrawOrder();++layoutRevision;
 			std::array<EraserAttributeRect,5> rects{};
 			EraserAttributeRect rootRect;
-			if(standard){
-				// 可见标准按钮决定位置和背景尺寸；Drag 仍是无额外间距的自有 lane。
-				const auto row=ResolveBarButtonListLayout(buttonRow,BarButtonListLayoutKind::SingleRow);
-				const double lane=pageButtons[0]->IsVisible()?BarPaginationDragHandleSlotDip:0;
+			{
+				// 可见标准按钮决定位置和背景尺寸；Drag 仍是无额外间距的自有 lane。大小尺寸共用此路径。
+				const auto row=ResolveBarButtonListLayout(buttonRow,BarButtonListLayoutKind::SingleRow,{},sizeMode);
+				const double lane=pageButtons[0]->IsVisible()?BarPaginationDragLaneDip(sizeMode):0;
 				const bool leading=next.surface!=1;
 				const double offset=leading?lane:0;
 				rootRect=vertical?EraserAttributeRect{0,0,row.height,row.width+lane}:EraserAttributeRect{0,0,row.width+lane,row.height};
@@ -587,21 +595,27 @@ namespace Inkeys::UI::Bar
 					}
 					rects[i+1]=vertical?EraserAttributeRect{rect.top,rect.left,rect.bottom,rect.right}:rect;
 				}
-				const double start=leading?ButtonGapDip:row.width-ButtonGapDip;
-				const EraserAttributeRect drag{start,ButtonGapDip,start+lane,row.height-ButtonGapDip};
+				const double gap=sizeMetrics.gap;
+				const double start=leading?gap:row.width-gap;
+				const EraserAttributeRect drag{start,gap,start+lane,row.height-gap};
 				rects[0]=vertical?EraserAttributeRect{drag.top,drag.left,drag.bottom,drag.right}:drag;
 			}
-			else{
-				// 旧紧凑分支继续保留；当前编译期开关统一使用上方的标准列表布局。
-				rootRect=vertical?EraserAttributeRect{0,0,BarPptPaginationShortSideDip,BarPptPaginationLongSideDip}:
-					EraserAttributeRect{0,0,BarPptPaginationLongSideDip,BarPptPaginationShortSideDip};
-				if(vertical)rects={EraserAttributeRect{5,5,37.5,15},{5,15,37.5,47.5},{5,52.5,37.5,122.5},{5,127.5,37.5,160},{37.5,127.5,37.5,160}};
-				else if(next.surface==1)rects={EraserAttributeRect{150,5,160,37.5},{5,5,37.5,37.5},{42.5,5,112.5,37.5},{117.5,5,150,37.5},{160,5,160,37.5}};
-				else rects={EraserAttributeRect{5,5,15,37.5},{15,5,47.5,37.5},{52.5,5,122.5,37.5},{127.5,5,160,37.5},{160,5,160,37.5}};
-				const double half=ButtonTwoSideDip/2,x=EraserRectCenterX(rects[3]),y=EraserRectCenterY(rects[3]);
-				rects[4]={x-half,y-half,x+half,y+half};
+			// 白板菜单与主题面板随 More 按钮中心水平平移；大尺寸偏移为 0，保持原坐标。
+			{
+				const double dx=standard?0.0:EraserRectCenterX(rects[4])-EraserRectCenterX(LargeMenuBounds);
+				MenuBounds={LargeMenuBounds.left+dx,LargeMenuBounds.top,LargeMenuBounds.right+dx,LargeMenuBounds.bottom};
+				ThemeBounds={LargeThemeBounds.left+dx,LargeThemeBounds.top,LargeThemeBounds.right+dx,LargeThemeBounds.bottom};
+				ThemeAnchor={LargeThemeAnchor.left+dx,LargeThemeAnchor.top,LargeThemeAnchor.right+dx,LargeThemeAnchor.bottom};
+				// 弹层底板与主题分割线与内容同步平移（大尺寸目标与原值相同，不产生变化）。
+				SetShapeBounds(menu,MenuBounds,0,true);SetShapeBounds(theme,ThemeBounds,0,true);
+				SetShapeBounds(divider,{ThemeBounds.left+5,-116,ThemeBounds.right-5,-115},0,true);
 			}
 			SetShapeBounds(root,rootRect,duration,direct);
+			if(!backgroundOnly){
+				const double radius=standard?BarMainBarCornerRadiusDip:sizeMetrics.barCornerRadius;
+				if(root.rw)root.rw->SetDirect(radius);
+				if(root.rh)root.rh->SetDirect(radius);
+			}
 			ConfigureButton(*pageButtons[0],ButtonVisualLayoutKind::Custom,rects[0],L"",L"",0,duration,direct);
 			ConfigureButton(*pageButtons[1],standard?ButtonVisualLayoutKind::StandardTwoTwo:ButtonVisualLayoutKind::StandardOneOne,
 				rects[1],L"barMore",standard?next.previousLabel:L"",vertical&&!wb?0:-90,duration,direct);
@@ -630,7 +644,8 @@ namespace Inkeys::UI::Bar
 			ConfigureButton(*pageButtons[3],standard?ButtonVisualLayoutKind::StandardTwoTwo:ButtonVisualLayoutKind::StandardOneOne,rects[3],
 				wb&&next.nextIsAdd?L"barAdd":(!wb&&next.nextIsEndShow?L"barEndShow":L"barMore"),standard?next.nextLabel:L"",
 				(wb&&next.nextIsAdd)||(!wb&&next.nextIsEndShow)?0:(vertical&&!wb?180:90),duration,direct);
-			ConfigureButton(*pageButtons[4],ButtonVisualLayoutKind::StandardTwoTwo,rects[4],L"barMenu",next.moreLabel,0,duration,direct);
+			ConfigureButton(*pageButtons[4],standard?ButtonVisualLayoutKind::StandardTwoTwo:ButtonVisualLayoutKind::StandardOneOne,
+				rects[4],L"barMenu",standard?next.moreLabel:L"",0,duration,direct);
 			if(direct)for(auto& button:pageButtons)if(!button->IsVisible()){
 				// 首帧没有动画 dt；直接配置的隐藏成员从透明开始，普通退场仍保留当前值渐隐。
 				button->icon.pct.SetDirect(0);button->name.pct.SetDirect(0);button->button.pct.SetDirect(0);
@@ -640,7 +655,7 @@ namespace Inkeys::UI::Bar
 			const wchar_t* icons[]={L"barCloseWhiteboard",L"barMinimize",L"barPalette"};
 			for(std::size_t i=0;i<actions.size();++i){
 				const double y=MenuBounds.top+5+i*(ButtonOneSideDip+5);
-				ConfigureButton(actions[i],ButtonVisualLayoutKind::StandardFourOne,{195,y,335,y+32.5},icons[i],next.actionLabels[i],0,0,true);
+				ConfigureButton(actions[i],ButtonVisualLayoutKind::StandardFourOne,{MenuBounds.left+5,y,MenuBounds.right-5,y+32.5},icons[i],next.actionLabels[i],0,0,true);
 			}
 			for(std::size_t i=0;i<previews.size();++i){
 				const double x=ThemeBounds.left+5+(i%3)*75;
@@ -670,13 +685,20 @@ namespace Inkeys::UI::Bar
 			themeFrame=ResolveBarAttributePanelFrame(themeMotion,ThemeBounds,ThemeAnchor,60,&menuFrame);
 			menuPose=menuFrame.pose;themePose=themeFrame.pose;
 			RECT extent=Pixels(Bounds(root),scale);
+			// 小尺寸长边为非整数 DIP（如 192.5）：根外框按 PageControl 布局同一 lround 取整，
+			// 否则呈现外框比目标多 1 px，拖动到位判定与保存交接永远不成立；多出的小数像素落在外扩内。
+			if(content.compact){const auto r=Bounds(root);
+				extent={static_cast<LONG>(std::lround(r.left*scale)),static_cast<LONG>(std::lround(r.top*scale)),
+					static_cast<LONG>(std::lround(r.right*scale)),static_cast<LONG>(std::lround(r.bottom*scale))};}
 			if(menuFrame.visible&&menuFrame.opacity>0.0001)DirtyRegionTracker::UnionInPlace(extent,Pixels(menuPose.Apply(MenuBounds),scale));
 			if(themeFrame.visible&&themeFrame.opacity>0.0001)DirtyRegionTracker::UnionInPlace(extent,Pixels(themePose.Apply(ThemeBounds),scale));
 			if(content.whiteboard&&content.surface==0&&content.unsaved)DirtyRegionTracker::UnionInPlace(extent,Pixels({5,-32,300,0},scale));
 			presentation=extent;OffsetRect(&presentation,logical.left,logical.top);InflateRect(&presentation,Outset(),Outset());
 			candidate={};candidate.logical=logical;candidate.presentation=presentation;candidate.scale=scale;candidate.enabled=opacity.val>0.0001;
 			const std::array<EraserAttributeRect,3> panelRects{Bounds(root),menuPose.Apply(MenuBounds),themePose.Apply(ThemeBounds)};
-			const std::array<double,3> panelRadii{backgroundOnly?background.cornerRadiusDip:BarMainBarCornerRadiusDip,
+			// 小尺寸翻页背景与主栏同为 5.25 DIP 同心圆角；大尺寸保持 8。
+			const double rootRadius=content.compact?ResolveBarSizeMetrics(BarSizeMode::Compact).barCornerRadius:BarMainBarCornerRadiusDip;
+			const std::array<double,3> panelRadii{backgroundOnly?background.cornerRadiusDip:rootRadius,
 				BarMainBarCornerRadiusDip*menuPose.scale,BarMainBarCornerRadiusDip*themePose.scale};
 			const std::array<bool,3> panelVisible{candidate.enabled,menuFrame.visible&&menuFrame.opacity>0.0001,themeFrame.visible&&themeFrame.opacity>0.0001};
 			panels[0].SetExternalState(static_cast<double>(opacity.tar)>0.0001,1,opacity.val);
@@ -938,7 +960,7 @@ namespace Inkeys::UI::Bar
 			if(child){
 				DrawShape(dc,divider);
 				for(std::size_t i=0;i<headings.size();++i)
-					renderer.Word(dc,headings[i],{350,ThemeBounds.top+(i?191.0:5.0)},DWRITE_FONT_WEIGHT_BOLD,DWRITE_TEXT_ALIGNMENT_LEADING);
+					renderer.Word(dc,headings[i],{ThemeBounds.left+5,ThemeBounds.top+(i?191.0:5.0)},DWRITE_FONT_WEIGHT_BOLD,DWRITE_TEXT_ALIGNMENT_LEADING);
 				for(BarSurfaceButtonId id=9;id<=17;++id)DrawButton(dc,id);
 			}else{
 				for(BarSurfaceButtonId id=6;id<=8;++id)DrawButton(dc,id);

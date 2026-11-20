@@ -1091,6 +1091,12 @@ int RunBarBottomDockTests()
 		&& Near(dockIndicator.rightDip, 174.0)
 		&& Near(dockIndicator.bottomDip, 623.0),
 		"dock indicator uses equal text padding and centers on main bar top");
+	const auto separatedDockIndicator = ResolveBarBottomDockIndicatorGeometry(
+		dockMainButtonBounds, dockMainBarBounds, 52.0, 14.0, 608.0, 5.0);
+	Check(Near(separatedDockIndicator.leftDip, 106.0)
+		&& Near(separatedDockIndicator.topDip, 573.0)
+		&& Near(separatedDockIndicator.bottomDip, 603.0),
+		"compact dock indicator sits above the main bar with the attached-panel gap");
 	const auto normalizedDockIndicator = ResolveBarBottomDockIndicatorGeometry(
 		BarBottomDockFeedbackGeometry{
 			std::numeric_limits<double>::quiet_NaN(), 30.0, -20.0, 10.0 },

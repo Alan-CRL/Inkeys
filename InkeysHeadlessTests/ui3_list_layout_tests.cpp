@@ -66,6 +66,19 @@ namespace
 			&& Placement(hidden.placements[1], 1, 40.0, 40.0, 70.0, 70.0, 0, 0, 2, 2),
 			"hidden separator reserves no horizontal gap");
 	}
+	void TestCompactSingleRow()
+	{
+		// 小尺寸主栏：间距 1.25、按钮 32.5，行中心恰为 35 DIP 高的中线。
+		ListLayoutSpec spec; spec.height = 35.0;
+		auto divider = Separator(); divider.height = 22.0;
+		const auto layout = ResolveListLayout({Item(), divider, Item(), Item()}, spec, {1.25, 32.5, 66.25});
+		Check(layout.placements.size() == 4 && layout.width == 1.25 + 32.5 + 1.25 + 1.0 + 1.25 + 32.5 + 1.25 + 32.5 + 1.25
+			&& layout.height == 35.0, "compact row advances by 1.25 DIP gaps");
+		if (layout.placements.size() != 4) return;
+		Check(layout.placements[0].y == 17.5 && layout.placements[1].y == 17.5 && layout.placements[3].y == 17.5
+			&& layout.placements[0].x == 17.5 && layout.placements[1].x == 35.5,
+			"compact row centers buttons and dividers on the 35 DIP bar");
+	}
 	void TestFixedGrid()
 	{
 		ListLayoutSpec spec; spec.kind = ListLayoutKind::FixedGrid; spec.columns = 3;
@@ -175,6 +188,6 @@ namespace
 
 int RunUi3ListLayoutTests()
 {
-	TestSingleRow(); TestFixedGrid(); TestGroupedGrid(); TestPairedRows(); TestEmptyAndSeparators();
+	TestSingleRow(); TestCompactSingleRow(); TestFixedGrid(); TestGroupedGrid(); TestPairedRows(); TestEmptyAndSeparators();
 	return failures;
 }

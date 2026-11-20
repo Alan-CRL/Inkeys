@@ -688,6 +688,13 @@ inline constexpr struct I18nKeyRoot
                     const char* Dark = "SettingsUI/Regular/Appearance/Theme/Dark";
                     const char* Light = "SettingsUI/Regular/Appearance/Theme/Light";
                 } Theme{};
+                struct Node__SettingsUI__Regular__Appearance__UiSize
+                {
+                    const char* N = "SettingsUI/Regular/Appearance/UiSize/N";
+                    const char* E = "SettingsUI/Regular/Appearance/UiSize/E";
+                    const char* Large = "SettingsUI/Regular/Appearance/UiSize/Large";
+                    const char* Small = "SettingsUI/Regular/Appearance/UiSize/Small";
+                } UiSize{};
                 struct Node__SettingsUI__Regular__Appearance__TaskbarScaleBase
                 {
                     const char* N = "SettingsUI/Regular/Appearance/TaskbarScaleBase/N";

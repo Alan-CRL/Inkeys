@@ -1814,6 +1814,22 @@ namespace Inkeys::UI::Bar
 		const auto topRoot=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];
 		const auto topMain=owner.shapeMap[BarUISetShapeEnum::MainBar];
 		expect(std::abs(belowPrompt.panel.top-((std::max)(topRoot->inhY+topRoot->h.val,topMain->inhY+topMain->h.val)-BarBottomDockIndicatorHeightDip/2))<.01,"insufficient room above flips prompt below and embeds it into visible bar");
+		// 小尺寸：步骤栏不再嵌入主栏，翻到下方时与主栏保持属性窗间隙；回到上方同理。
+		owner.barStyle.requestedSizeMode=1;sceneTick(150);
+		{
+			const auto smallBelow=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+			const auto smallRoot=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];const auto smallMain=owner.shapeMap[BarUISetShapeEnum::MainBar];
+			const double gap=ResolveBarSizeMetrics(BarSizeMode::Compact).attachedGap;
+			expect(std::abs(smallMain->h.val-42.5)<.01&&std::abs(smallRoot->h.val-42.5)<.01,"compact size lands a 42.5 DIP main bar and main button");
+			expect(std::abs(smallBelow.panel.top-((std::max)(smallRoot->inhY+smallRoot->h.val,smallMain->inhY+smallMain->h.val)+gap))<.01,"compact prompt flips below with the attached-panel gap instead of embedding");
+			BarGeometryAttributeTestAccess::MoveRoot(owner,600,650);sceneTick(120);
+			const auto smallAbove=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
+			const auto aboveRoot=owner.superellipseMap[BarUISetSuperellipseEnum::MainButton];const auto aboveMain=owner.shapeMap[BarUISetShapeEnum::MainBar];
+			const double smallTop=(std::min)(static_cast<double>(aboveRoot->inhY),static_cast<double>(aboveMain->inhY));
+			expect(std::abs(smallAbove.panel.bottom-(smallTop-gap))<.01,"compact prompt sits above the main bar with the attached-panel gap");
+		}
+		owner.barStyle.requestedSizeMode=0;sceneTick(150);
+		BarGeometryAttributeTestAccess::MoveRoot(owner,600,60);sceneTick(120);
 		BarGeometryAttributeTestAccess::Display(owner,460,420,192);owner.barStyle.configZoom=1;sceneTick(120);
 		const auto compact=BarGeometryAttributeTestAccess::PromptFrame(owner.constructionPrompt);
 		expect(compact.visible&&compact.input,"restricted workspace prompt settles and accepts input");

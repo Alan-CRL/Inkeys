@@ -50,6 +50,8 @@ export namespace Inkeys::UI::Bar
 		unsigned surface = 0;
 		std::uint64_t loadingSession = 0;
 		bool whiteboard = false, switching = false, pptActive = false;
+		// 小尺寸档位：箭头/加页/更多 1×1、页码 2×1（竖向 1×2），外框短边 42.5，不显示按钮文字与状态词。
+		bool compact = false;
 		bool nextIsAdd = false, nextIsEndShow = false, unsaved = false;
 		bool navigationWaitingPrevious = false, navigationWaitingNext = false;
 		int menu = 0;
