@@ -369,6 +369,7 @@ inline constexpr struct I18nKeyRoot
             const char* ThemeSection = "SettingsUI/Design/ThemeSection";
             const char* OpacitySection = "SettingsUI/Design/OpacitySection";
             const char* WindowBehaviorSection = "SettingsUI/Design/WindowBehaviorSection";
+            const char* OtherOptionsSection = "SettingsUI/Design/OtherOptionsSection";
             const char* SafetyRecoverySection = "SettingsUI/Design/SafetyRecoverySection";
             const char* ShortcutGlobalSection = "SettingsUI/Design/ShortcutGlobalSection";
             const char* ShortcutEditingSection = "SettingsUI/Design/ShortcutEditingSection";

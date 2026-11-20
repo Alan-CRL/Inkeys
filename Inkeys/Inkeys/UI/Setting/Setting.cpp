@@ -3607,15 +3607,7 @@ SettingSessionCoroutine RunSettingSession()
 							QueueConfigWrite();
 							BarZoomSavePending = false;
 						}
-					}
-					if (destination.section == Design::Section::WindowBehavior)
-					{
-						if (events.topIntervalChanged && Inkeys::config.UI.TopSleepTime != draft.topInterval)
-						{
-							Inkeys::config.UI.TopSleepTime = draft.topInterval;
-							QueueConfigWrite();
-							topWindowNow = true;
-						}
+						// “其他选项”分组位于窗口页底部。
 						if (events.rightClickCloseChanged && Inkeys::config.UI.Bar.RightClickClose != draft.rightClickClose)
 						{
 							Inkeys::config.UI.Bar.RightClickClose = draft.rightClickClose;
@@ -3628,6 +3620,15 @@ SettingSessionCoroutine RunSettingSession()
 							QueueConfigWrite();
 							// 立即生效：窗口服务按新策略重算 Drawpad 底行与 NonRude。
 							Inkeys::Window::GetService().SetDrawpadNonFullscreen(draft.desktopCanvasNonFullscreen);
+						}
+					}
+					if (destination.section == Design::Section::WindowBehavior)
+					{
+						if (events.topIntervalChanged && Inkeys::config.UI.TopSleepTime != draft.topInterval)
+						{
+							Inkeys::config.UI.TopSleepTime = draft.topInterval;
+							QueueConfigWrite();
+							topWindowNow = true;
 						}
 					}
 					if (destination.section == Design::Section::LogsLog)
