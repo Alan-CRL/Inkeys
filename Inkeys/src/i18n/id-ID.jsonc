@@ -721,6 +721,7 @@
         "RightClickClose": "Klik kanan ikon utama untuk menutup Inkeys",
         "RightClickCloseE": "Menampilkan dialog konfirmasi.",
         "DesktopCanvasNonFullscreen": "Gunakan jendela non-layar penuh saat menggambar di kanvas desktop",
+        "DesktopCanvasNonFullscreenE": "Jika diaktifkan, gestur sentuh sistem Windows (seperti menggeser dari tepi layar) tidak dapat diblokir saat menggambar.",
         "DrawingRetract": "Ciutkan bilah utama saat menggambar",
         "ErasingRetract": "Ciutkan bilah utama saat menghapus",
         "DraggingRetract": "Ciutkan bilah utama saat digeser",

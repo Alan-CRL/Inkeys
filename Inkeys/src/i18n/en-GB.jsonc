@@ -721,6 +721,7 @@
         "RightClickClose": "Right-click the main icon to exit Inkeys",
         "RightClickCloseE": "Shows a confirmation dialog.",
         "DesktopCanvasNonFullscreen": "Use a non-full-screen window when drawing on the desktop canvas",
+        "DesktopCanvasNonFullscreenE": "When on, Windows system touch gestures (such as swiping in from the screen edge) can't be blocked while drawing.",
         "DrawingRetract": "Collapse the main toolbar while drawing",
         "ErasingRetract": "Collapse the main toolbar while erasing",
         "DraggingRetract": "Collapse the main toolbar while dragging it",

@@ -721,6 +721,7 @@
         "RightClickClose": "Inkeys'ten çıkmak için ana simgeye sağ tıklayın",
         "RightClickCloseE": "Onay iletişim kutusu gösterilir.",
         "DesktopCanvasNonFullscreen": "Masaüstü tuvalinde çizerken tam ekran olmayan pencere kullan",
+        "DesktopCanvasNonFullscreenE": "Açıkken, çizim sırasında Windows sistem dokunma hareketleri (ekran kenarından kaydırma gibi) engellenemez.",
         "DrawingRetract": "Çizerken ana araç çubuğunu daralt",
         "ErasingRetract": "Silerken ana araç çubuğunu daralt",
         "DraggingRetract": "Ana araç çubuğunu taşırken daralt",

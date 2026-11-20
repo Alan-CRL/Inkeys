@@ -721,6 +721,7 @@
         "RightClickClose": "Clic droit sur l’icône principale pour fermer Inkeys",
         "RightClickCloseE": "Afficher une boîte de confirmation.",
         "DesktopCanvasNonFullscreen": "Utiliser une fenêtre non plein écran pour dessiner sur le canevas du bureau",
+        "DesktopCanvasNonFullscreenE": "Si activé, les gestes tactiles du système Windows (comme le balayage depuis le bord de l’écran) ne peuvent pas être bloqués pendant le dessin.",
         "DrawingRetract": "Replier la barre principale pendant le dessin",
         "ErasingRetract": "Replier la barre principale pendant le gommage",
         "DraggingRetract": "Replier la barre principale lorsqu’on la déplace",

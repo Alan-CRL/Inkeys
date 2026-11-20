@@ -721,6 +721,7 @@
         "RightClickClose": "Clic destro sull'icona principale per uscire",
         "RightClickCloseE": "Viene mostrata una finestra di conferma.",
         "DesktopCanvasNonFullscreen": "Usa una finestra non a schermo intero quando disegni sulla tela del desktop",
+        "DesktopCanvasNonFullscreenE": "Se attivo, i gesti touch di sistema di Windows (come lo scorrimento dal bordo dello schermo) non possono essere bloccati durante il disegno.",
         "DrawingRetract": "Comprimi la barra mentre disegni",
         "ErasingRetract": "Comprimi la barra mentre cancelli",
         "DraggingRetract": "Comprimi la barra quando la trascini",

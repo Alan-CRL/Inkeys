@@ -721,6 +721,7 @@
         "RightClickClose": "Ieșire din Inkeys la clic dreapta pe pictograma principală",
         "RightClickCloseE": "Se afișează o casetă de confirmare.",
         "DesktopCanvasNonFullscreen": "Folosește o fereastră fără ecran complet când desenezi pe pânza desktopului",
+        "DesktopCanvasNonFullscreenE": "Când este activat, gesturile tactile de sistem Windows (cum ar fi glisarea de la marginea ecranului) nu pot fi blocate în timpul desenării.",
         "DrawingRetract": "Restrânge bara principală în timpul desenării",
         "ErasingRetract": "Restrânge bara principală în timpul ștergerii",
         "DraggingRetract": "Restrânge bara principală când o trageți",

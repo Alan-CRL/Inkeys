@@ -721,6 +721,7 @@
         "RightClickClose": "右鍵點擊主圖標關閉程式",
         "RightClickCloseE": "將會跳出一個確認提示框。",
         "DesktopCanvasNonFullscreen": "桌面畫布繪圖時使用非全螢幕視窗",
+        "DesktopCanvasNonFullscreenE": "開啟後，繪圖時將無法封鎖 Windows 系統的觸控手勢（如從螢幕邊緣滑入）。",
         "DrawingRetract": "使用畫筆時收起主欄",
         "ErasingRetract": "使用橡皮時收起主欄",
         "DraggingRetract": "拖動主欄時收起主欄",

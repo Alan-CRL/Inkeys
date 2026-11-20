@@ -721,6 +721,7 @@
         "RightClickClose": "Nhấp chuột phải biểu tượng chính để thoát Inkeys",
         "RightClickCloseE": "Hiển thị hộp thoại xác nhận.",
         "DesktopCanvasNonFullscreen": "Dùng cửa sổ không toàn màn hình khi vẽ trên canvas màn hình nền",
+        "DesktopCanvasNonFullscreenE": "Khi bật, các cử chỉ chạm của hệ thống Windows (như vuốt từ cạnh màn hình) sẽ không bị chặn khi vẽ.",
         "DrawingRetract": "Thu gọn thanh chính khi vẽ",
         "ErasingRetract": "Thu gọn thanh chính khi tẩy",
         "DraggingRetract": "Thu gọn thanh chính khi kéo",

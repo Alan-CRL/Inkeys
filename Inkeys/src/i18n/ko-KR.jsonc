@@ -721,6 +721,7 @@
         "RightClickClose": "주 아이콘을 우클릭하여 종료",
         "RightClickCloseE": "확인 대화 상자가 표시됩니다.",
         "DesktopCanvasNonFullscreen": "데스크톱 캔버스에 그릴 때 전체 화면이 아닌 창 사용",
+        "DesktopCanvasNonFullscreenE": "켜면 그리는 동안 Windows 시스템 터치 제스처(화면 가장자리에서 밀어 넣기 등)를 차단할 수 없습니다.",
         "DrawingRetract": "펜으로 그릴 때 주 도구 모음 접기",
         "ErasingRetract": "지우개 사용 중 주 도구 모음 접기",
         "DraggingRetract": "주 도구 모음을 끌 때 접기",

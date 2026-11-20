@@ -721,6 +721,7 @@
         "RightClickClose": "Cerrar Inkeys con clic derecho en el icono principal",
         "RightClickCloseE": "Muestra un diálogo de confirmación.",
         "DesktopCanvasNonFullscreen": "Usar una ventana sin pantalla completa al dibujar en el lienzo del escritorio",
+        "DesktopCanvasNonFullscreenE": "Si se activa, no se podrán bloquear los gestos táctiles del sistema Windows (como deslizar desde el borde de la pantalla) al dibujar.",
         "DrawingRetract": "Plegar la barra principal al dibujar",
         "ErasingRetract": "Plegar la barra principal al borrar",
         "DraggingRetract": "Plegar la barra principal al arrastrarla",

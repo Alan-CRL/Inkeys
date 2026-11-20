@@ -721,6 +721,7 @@
         "RightClickClose": "Encerrar ao clicar com o botão direito no ícone principal",
         "RightClickCloseE": "Uma caixa de confirmação será exibida.",
         "DesktopCanvasNonFullscreen": "Usar uma janela sem tela cheia ao desenhar na tela da área de trabalho",
+        "DesktopCanvasNonFullscreenE": "Quando ativado, os gestos de toque do sistema Windows (como deslizar a partir da borda da tela) não podem ser bloqueados durante o desenho.",
         "DrawingRetract": "Recolher a barra ao desenhar com a caneta",
         "ErasingRetract": "Recolher a barra ao usar a borracha",
         "DraggingRetract": "Recolher a barra ao arrastá-la",

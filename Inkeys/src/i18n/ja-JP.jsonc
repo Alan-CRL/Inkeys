@@ -721,6 +721,7 @@
         "RightClickClose": "メインアイコンの右クリックで終了",
         "RightClickCloseE": "確認ダイアログを表示します。",
         "DesktopCanvasNonFullscreen": "デスクトップキャンバスで描画するときに全画面でないウィンドウを使う",
+        "DesktopCanvasNonFullscreenE": "オンにすると、描画中に Windows システムのタッチジェスチャー（画面の端からのスワイプなど）をブロックできなくなります。",
         "DrawingRetract": "ペンで描画中にメインバーをたたむ",
         "ErasingRetract": "消しゴム使用中にメインバーをたたむ",
         "DraggingRetract": "メインバーの移動時にたたむ",

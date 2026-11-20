@@ -721,6 +721,7 @@
         "RightClickClose": "Kliknięcie ikony głównej prawym przyciskiem zamyka program",
         "RightClickCloseE": "Wyświetla okno potwierdzenia.",
         "DesktopCanvasNonFullscreen": "Używaj okna niepełnoekranowego podczas rysowania na płótnie pulpitu",
+        "DesktopCanvasNonFullscreenE": "Po włączeniu systemowe gesty dotykowe Windows (np. przesunięcie od krawędzi ekranu) nie będą blokowane podczas rysowania.",
         "DrawingRetract": "Zwijaj główny pasek podczas rysowania",
         "ErasingRetract": "Zwijaj główny pasek podczas wymazywania",
         "DraggingRetract": "Zwijaj główny pasek podczas przeciągania",

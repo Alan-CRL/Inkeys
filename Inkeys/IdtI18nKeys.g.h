@@ -724,6 +724,7 @@ inline constexpr struct I18nKeyRoot
                 const char* RightClickClose = "SettingsUI/Regular/Behavior/RightClickClose";
                 const char* RightClickCloseE = "SettingsUI/Regular/Behavior/RightClickCloseE";
                 const char* DesktopCanvasNonFullscreen = "SettingsUI/Regular/Behavior/DesktopCanvasNonFullscreen";
+                const char* DesktopCanvasNonFullscreenE = "SettingsUI/Regular/Behavior/DesktopCanvasNonFullscreenE";
                 const char* DrawingRetract = "SettingsUI/Regular/Behavior/DrawingRetract";
                 const char* ErasingRetract = "SettingsUI/Regular/Behavior/ErasingRetract";
                 const char* DraggingRetract = "SettingsUI/Regular/Behavior/DraggingRetract";
