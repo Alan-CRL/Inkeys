@@ -222,7 +222,8 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 	// ---- 设置签名 ----
 
 	enum class Device : std::uint8_t { Unknown, Hardware, Warp };
-	enum class Presentation : std::uint8_t { Unknown, DirectComposition, Ulw, Win7DwmFlip, Win7DwmSequential, DCompSequential };
+	// 交换链由呈现方式固定（DComp=FLIP、Win7Dwm=SEQUENTIAL），旧版 win7dwm-flip / dcomp-sequential 记录解析为未知并丢弃。
+	enum class Presentation : std::uint8_t { Unknown, DirectComposition, Ulw, Win7DwmSequential };
 	inline constexpr std::uint8_t kNotApplicable = 0xFF;
 
 	struct Signature
@@ -233,7 +234,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		std::uint8_t waitable = kNotApplicable;            // 仅 DComp 有意义
 		std::uint8_t ulwAsyncReadback = kNotApplicable;    // 仅 ULW 有意义
 		std::uint8_t ulwCompositionAlign = kNotApplicable; // 仅 ULW 且异步读回开启时有意义
-		std::uint8_t dcompCompositionAlign = kNotApplicable; // 仅 DComp（含 SEQUENTIAL 链）有意义
+		std::uint8_t dcompCompositionAlign = kNotApplicable; // 仅 DComp 有意义
 		std::uint8_t zhaoxinCompatibility = 0;
 		bool operator==(const Signature&) const = default;
 	};
@@ -245,8 +246,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		{ return value == kNotApplicable ? kNotApplicable : static_cast<std::uint8_t>(value != 0 ? 1 : 0); };
 		signature.zhaoxinCompatibility = signature.zhaoxinCompatibility != 0 ? 1 : 0;
 		// 阶段 E 之前的账本没有该字段：DComp 记录按“未对齐”读入，其余后端一律不适用。
-		const bool dcomp = signature.presentation == Presentation::DirectComposition ||
-			signature.presentation == Presentation::DCompSequential;
+		const bool dcomp = signature.presentation == Presentation::DirectComposition;
 		signature.dcompCompositionAlign = dcomp
 			? (signature.dcompCompositionAlign == kNotApplicable ? 0 : flag(signature.dcompCompositionAlign))
 			: kNotApplicable;
@@ -288,9 +288,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		switch (presentation)
 		{
 		case Presentation::DirectComposition: return "dcomp";
-		case Presentation::DCompSequential: return "dcomp-sequential";
 		case Presentation::Ulw: return "ulw";
-		case Presentation::Win7DwmFlip: return "win7dwm-flip";
 		case Presentation::Win7DwmSequential: return "win7dwm-sequential";
 		default: return "unknown";
 		}

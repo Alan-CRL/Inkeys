@@ -471,7 +471,6 @@ namespace Inkeys::Drawing::Draw3
 					(style & WS_EX_LAYERED) == 0;
 				break;
 			case HostPresentationMode::DwmBlurBehind:
-			case HostPresentationMode::DwmBlurBehind2:
 				correctModeStyle = (style & (WS_EX_NOREDIRECTIONBITMAP | WS_EX_LAYERED)) == 0;
 				break;
 			case HostPresentationMode::UlwDirtyRect:
@@ -4786,7 +4785,6 @@ namespace Inkeys::Drawing::Draw3
 				HostPresentationMode::Automatic, false, false, false, failures);
 			const HostStyleCallbacks legacyCallbacks{ &styleContext, &ApplyDrawpadStyle };
 			const HostPresentationMode disabledModes[] = {
-				HostPresentationMode::DwmBlurBehind2,
 				HostPresentationMode::DwmBlurBehind
 			};
 			for (const HostPresentationMode disabledMode : disabledModes)

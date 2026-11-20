@@ -155,13 +155,13 @@ L0 可由当前笔状态重建，不在 resize 中保留。
 
 ```text
 DirectCompositionVisualTree
-  -> DwmBlurBehind2 (DwmExtendFrameIntoClientArea)
   -> UlwDirtyRect
+（手选 Win7Dwm：DwmBlurBehind -> UlwDirtyRect；DwmBlurBehind2 已于 2026-11-20 删除）
 ```
 
 窗口由 `WindowController` 直接以不含 `WS_VISIBLE` 的 `WS_POPUP` 样式创建，且窗口类背景画刷为空。设备、presenter、RTS 和 renderer 初始化完成后，必须先提交一张透明画布，再显示窗口，避免首帧前出现实色背景。
 
-每种模式先尝试 waitable swapchain，失败后使用普通 swapchain。GPU 透明模式使用 BGRA8、flip sequential、双缓冲和 premultiplied alpha；DWM HWND 路径失败时会尝试 unspecified alpha 兼容模式。
+DComp 先尝试 waitable swapchain，失败后使用普通 swapchain，固定 BGRA8、flip sequential、双缓冲和 premultiplied alpha；Win7Dwm HWND 链固定 SEQUENTIAL 单缓冲、unspecified alpha。交换链类型没有用户偏好。
 
 - DComp 运行时加载 `dcomp.dll`，不把 API 可用性当成编译期保证。
 - DComp 依赖窗口创建时包含 `WS_EX_NOREDIRECTIONBITMAP`。配置 presenter 时若样式缺失，记录实际扩展样式并回退；创建后补设不属于恢复路径。

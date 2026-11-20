@@ -645,7 +645,6 @@ namespace Inkeys::Drawing::Draw3
 			case TransparentPresentMode::DirectCompositionVisualTree:
 				return HostPresentationMode::DirectCompositionVisualTree;
 			case TransparentPresentMode::DwmBlurBehind: return HostPresentationMode::DwmBlurBehind;
-			case TransparentPresentMode::DwmBlurBehind2: return HostPresentationMode::DwmBlurBehind2;
 			default: return HostPresentationMode::Automatic;
 			}
 		}
@@ -869,7 +868,6 @@ namespace Inkeys::Drawing::Draw3
 			{
 			case HostPresentationMode::UlwDirtyRect: return TransparentPresentMode::UlwDirtyRect;
 			case HostPresentationMode::DwmBlurBehind: return TransparentPresentMode::DwmBlurBehind;
-			case HostPresentationMode::DwmBlurBehind2: return TransparentPresentMode::DwmBlurBehind2;
 			case HostPresentationMode::DirectCompositionVisualTree:
 			default: return TransparentPresentMode::DirectCompositionVisualTree;
 			}
@@ -2152,7 +2150,6 @@ namespace Inkeys::Drawing::Draw3
 			BeginRuntimeMetricsRun(options);
 			// 严格模式在附着外部 HWND 之前拒绝不可用的 Win7 玻璃路径。
 			if ((options.requiredPresentationMode == HostPresentationMode::DwmBlurBehind && !IsWin7DwmAvailable()) ||
-				options.requiredPresentationMode == HostPresentationMode::DwmBlurBehind2 ||
 				!hwnd || !presentationHwnd || !IsWindow(hwnd) || !IsWindow(presentationHwnd))
 			{
 				RecordHostStartupFailure(!hwnd || !presentationHwnd || !IsWindow(hwnd) || !IsWindow(presentationHwnd)
@@ -2282,7 +2279,6 @@ namespace Inkeys::Drawing::Draw3
 							startOptions.allowDirectComposition;
 						if (IsRequiredMode(startOptions.preferredPresentationMode))
 							presentationOptions.preferredMode = ToTransparentMode(startOptions.preferredPresentationMode);
-						presentationOptions.preferSequentialSwapChain = startOptions.preferSequentialSwapChain;
 						presentationOptions.previousAttempt = startOptions.previousAttempt;
 						presentationOptions.failedCleanup = failedCleanup;
 						presentationOptions.enableHardwareAcceleration = startOptions.enableHardwareAcceleration;
@@ -3387,19 +3383,19 @@ namespace Inkeys::Drawing::Draw3
 				host.CanvasInformation().find("RTS Extended") == std::string::npos,
 				"new canvas generation removes old successful graphics and input");
 			// 同一代的两类提醒各自保留；新启动只继承本次重建明确传入的失败上下文。
-			const PresentationFallbackReport report{ "DComp → ULW", "SEQUENTIAL → FLIP", "CreateSwapChain 0x80070057" };
+			const PresentationFallbackReport report{ "DComp → ULW", "CreateSwapChain 0x80070057" };
 			Host::Impl::ObserveCanvasFallback(&state, report);
 			PresentationFallbackReport snapshot;
 			host.CanvasInformation(&snapshot);
-			check(snapshot.presentationWarning == report.presentationWarning && snapshot.chainWarning == report.chainWarning,
-				"canvas report carries both independent warnings");
+			check(snapshot.presentationWarning == report.presentationWarning,
+				"canvas report carries the presentation warning");
 			state.RecordHostStartupFailure("Draw3 first frame");
 			const auto retry = host.CanvasFallbackReport();
 			state.UpdateCanvasInformation("正在初始化", nullptr, nullptr, true, &retry);
 			check(host.CanvasFallbackReport().lastAttemptFailure == report.lastAttemptFailure,
 				"retry generation retains failed request details");
 			state.UpdateCanvasInformation("正在初始化", nullptr, nullptr, true);
-			check(host.CanvasFallbackReport().presentationWarning.empty() && host.CanvasFallbackReport().chainWarning.empty(),
+			check(host.CanvasFallbackReport().presentationWarning.empty(),
 				"fresh generation clears stale warning strips");
 			state.RecordHostStartupFailure("DrawingController initialization", "test failure");
 			check(host.CanvasFallbackReport().lastAttemptFailure == "DrawingController initialization: test failure",

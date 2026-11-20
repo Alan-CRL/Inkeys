@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <string>
 
@@ -8,7 +8,6 @@ namespace Inkeys::Drawing::Draw3
 	struct PresentationFallbackReport
 	{
 		std::string presentationWarning;
-		std::string chainWarning;
 		std::string lastAttemptFailure;
 	};
 }

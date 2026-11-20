@@ -781,7 +781,7 @@
         {
           "N": "Inércia ao arrastar o quadro branco",
           "E": "O quadro continua deslizando após soltar no modo de arraste. Ajuste cada tipo de entrada separadamente.",
-          "TouchpadRequirement": "Os gestos do touchpad no quadro exigem Windows 8.1 ou posterior e um touchpad de precisão.",
+          "TouchpadRequirement": "Os gestos do touchpad exigem Windows 8.1 ou posterior e um touchpad de precisão.",
           "RtsNotice": "A entrada de mensagens RealTimeStylus está em uso e não é compatível com o arraste do quadro pelo touchpad.",
           "RtsGestureUnavailable": "Este gesto não está disponível no modo RealTimeStylus no sistema ou dispositivo atual.",
           "Mouse": "Mouse",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "Método de entrada",
-        "E": "Define como a entrada dos dispositivos é recebida. Algumas opções podem entrar em conflito com os gestos do touchpad no quadro.",
+        "E": "Define como a entrada dos dispositivos é recebida. Algumas opções podem entrar em conflito com os gestos do touchpad.",
+        "RtsTouchpadNotice": "O método de entrada atual (RealTimeStylus) não oferece suporte a gestos do touchpad no Windows 8.1 e no Windows 10.",
+        "PointerUnsupported": "O Windows 7 não oferece suporte ao WM_POINTER. O RealTimeStylus será usado automaticamente.",
         "MouseCompatibility": "Entrada de compatibilidade com mouse",
         "RtsExtended": "RealTimeStylus (propriedades estendidas)",
         "RtsBasicXY": "RealTimeStylus (X/Y básico)",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "Método de transparência da tela da área de trabalho",
-        "Automatic": "Automático"
-      },
-      "SwapChainMode":
-      {
-        "N": "Cadeia de troca da tela da área de trabalho",
-        "E": "UpdateLayeredWindow não oferece suporte a cadeias de troca.",
-        "Flip": "Cadeia de troca Flip",
-        "BitBlt": "Cadeia de troca BitBlt"
+        "Automatic": "Automático",
+        "DcompUnsupported": "O Windows 7 não oferece suporte ao DirectComposition. O UpdateLayeredWindow será usado automaticamente.",
+        "Win7dwmUnsupportedFormat": "O Windows {0} não oferece suporte ao Win7dwm. O UpdateLayeredWindow será usado automaticamente.",
+        "Win7dwmAeroRequired": "O Win7dwm só está disponível com um tema Aero. Caso contrário, o UpdateLayeredWindow será usado automaticamente."
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "Saída do log de diagnóstico",
       "CanvasInformation": "Informações de inicialização do desenho",
       "PresentationFallback": "Método de apresentação alternativo da tela da área de trabalho",
-      "SwapChainFallback": "Cadeia de troca alternativa da tela da área de trabalho",
       "InputFallback": "Método de entrada alternativo",
       "DisplayInformation": "Monitores e EDID"
     },

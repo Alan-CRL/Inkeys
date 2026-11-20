@@ -781,7 +781,7 @@
         {
           "N": "Inertie du déplacement du tableau blanc",
           "E": "Le tableau continue de glisser après le relâchement en mode déplacement. Réglable pour chaque type de saisie.",
-          "TouchpadRequirement": "Les gestes du pavé tactile sur le tableau blanc nécessitent Windows 8.1 ou version ultérieure et un pavé tactile de précision.",
+          "TouchpadRequirement": "Les gestes du pavé tactile nécessitent Windows 8.1 ou version ultérieure et un pavé tactile de précision.",
           "RtsNotice": "La saisie par messages RealTimeStylus est actuellement utilisée ; elle n’est pas compatible avec le déplacement du tableau blanc au pavé tactile.",
           "RtsGestureUnavailable": "Ce geste n’est pas disponible en mode RealTimeStylus sur ce système ou cet appareil.",
           "Mouse": "Souris",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "Méthode de saisie",
-        "E": "Détermine la façon dont les saisies des périphériques sont reçues. Certaines options peuvent entrer en conflit avec les gestes du pavé tactile sur le tableau blanc.",
+        "E": "Détermine la façon dont les saisies des périphériques sont reçues. Certaines options peuvent entrer en conflit avec les gestes du pavé tactile.",
+        "RtsTouchpadNotice": "Le mode de saisie actuel (RealTimeStylus) ne prend pas en charge les gestes du pavé tactile sous Windows 8.1 et Windows 10.",
+        "PointerUnsupported": "Windows 7 ne prend pas en charge WM_POINTER. RealTimeStylus sera utilisé automatiquement.",
         "MouseCompatibility": "Saisie de compatibilité souris",
         "RtsExtended": "RealTimeStylus (propriétés étendues)",
         "RtsBasicXY": "RealTimeStylus (X/Y de base)",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "Mode de transparence du canevas du bureau",
-        "Automatic": "Automatique"
-      },
-      "SwapChainMode":
-      {
-        "N": "Chaîne d’échange du canevas du bureau",
-        "E": "UpdateLayeredWindow ne prend pas en charge les chaînes d’échange.",
-        "Flip": "Chaîne d’échange Flip",
-        "BitBlt": "Chaîne d’échange BitBlt"
+        "Automatic": "Automatique",
+        "DcompUnsupported": "Windows 7 ne prend pas en charge DirectComposition. UpdateLayeredWindow sera utilisé automatiquement.",
+        "Win7dwmUnsupportedFormat": "Windows {0} ne prend pas en charge Win7dwm. UpdateLayeredWindow sera utilisé automatiquement.",
+        "Win7dwmAeroRequired": "Win7dwm n’est disponible qu’avec un thème Aero. Sinon, UpdateLayeredWindow sera utilisé automatiquement."
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "Sortie du journal de diagnostic",
       "CanvasInformation": "Informations d’initialisation du canevas",
       "PresentationFallback": "Mode de présentation de secours du canevas du bureau",
-      "SwapChainFallback": "Chaîne d’échange de secours du canevas du bureau",
       "InputFallback": "Mode de saisie de secours",
       "DisplayInformation": "Écrans et EDID"
     },

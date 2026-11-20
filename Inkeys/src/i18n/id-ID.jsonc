@@ -781,7 +781,7 @@
         {
           "N": "Inersia seret papan tulis",
           "E": "Terus meluncur setelah dilepas dalam mode seret papan tulis. Atur setiap jenis input secara terpisah.",
-          "TouchpadRequirement": "Gestur touchpad pada papan tulis memerlukan Windows 8.1 atau lebih baru dan touchpad presisi.",
+          "TouchpadRequirement": "Gestur touchpad memerlukan Windows 8.1 atau lebih baru dan touchpad presisi.",
           "RtsNotice": "Saat ini input pesan RealTimeStylus sedang digunakan; tidak kompatibel dengan seret papan tulis menggunakan touchpad.",
           "RtsGestureUnavailable": "Gestur ini tidak tersedia dalam mode RealTimeStylus pada sistem atau perangkat saat ini.",
           "Mouse": "Mouse",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "Metode input",
-        "E": "Menentukan cara input perangkat diterima. Beberapa opsi mungkin bertentangan dengan gestur touchpad pada papan tulis.",
+        "E": "Menentukan cara input perangkat diterima. Beberapa opsi mungkin bertentangan dengan gestur touchpad.",
+        "RtsTouchpadNotice": "Metode input saat ini (RealTimeStylus) tidak mendukung gestur touchpad di Windows 8.1 dan Windows 10.",
+        "PointerUnsupported": "Windows 7 tidak mendukung WM_POINTER. RealTimeStylus akan digunakan secara otomatis.",
         "MouseCompatibility": "Input kompatibilitas mouse",
         "RtsExtended": "RealTimeStylus (properti tambahan)",
         "RtsBasicXY": "RealTimeStylus (X/Y dasar)",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "Metode transparansi kanvas desktop",
-        "Automatic": "Otomatis"
-      },
-      "SwapChainMode":
-      {
-        "N": "Rantai pertukaran kanvas desktop",
-        "E": "UpdateLayeredWindow tidak mendukung rantai pertukaran.",
-        "Flip": "Rantai pertukaran Flip",
-        "BitBlt": "Rantai pertukaran BitBlt"
+        "Automatic": "Otomatis",
+        "DcompUnsupported": "Windows 7 tidak mendukung DirectComposition. UpdateLayeredWindow akan digunakan secara otomatis.",
+        "Win7dwmUnsupportedFormat": "Windows {0} tidak mendukung Win7dwm. UpdateLayeredWindow akan digunakan secara otomatis.",
+        "Win7dwmAeroRequired": "Win7dwm hanya tersedia dengan tema Aero. Jika tidak, UpdateLayeredWindow akan digunakan secara otomatis."
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "Keluaran log diagnostik",
       "CanvasInformation": "Info inisialisasi kanvas",
       "PresentationFallback": "Metode presentasi cadangan untuk kanvas desktop",
-      "SwapChainFallback": "Rantai pertukaran cadangan untuk kanvas desktop",
       "InputFallback": "Metode input cadangan",
       "DisplayInformation": "Layar dan EDID"
     },

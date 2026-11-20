@@ -781,7 +781,7 @@
         {
           "N": "白板拖动惯性",
           "E": "在白板拖动模式下，松开后继续滑动。可按输入类型单独调整。",
-          "TouchpadRequirement": "白板的触控板手势需要 Windows 8.1 或更高版本及精确式触控板。",
+          "TouchpadRequirement": "触控板手势需要 Windows 8.1 或更高版本及精确式触控板。",
           "RtsNotice": "当前使用的是 RealTimeStylus 消息输入，不兼容触控板白板拖动。",
           "RtsGestureUnavailable": "当前系统或设备无法在 RealTimeStylus 模式下使用此手势。",
           "Mouse": "鼠标",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "输入方式",
-        "E": "决定设备消息的输入方式，一些选项可能与白板的触控板手势冲突。",
+        "E": "决定设备消息的输入方式，一些选项可能与触控板手势冲突。",
+        "RtsTouchpadNotice": "当前输入方式（RealTimeStylus）在 Windows 8.1 和 Windows 10 上不支持触控板手势。",
+        "PointerUnsupported": "当前 Windows 7 系统不支持 WM_POINTER，将自动回退至 RealTimeStylus。",
         "MouseCompatibility": "鼠标兼容输入",
         "RtsExtended": "RealTimeStylus（扩展属性）",
         "RtsBasicXY": "RealTimeStylus（基础 X/Y）",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "桌面画布透明呈现方式",
-        "Automatic": "自动"
-      },
-      "SwapChainMode":
-      {
-        "N": "桌面画布交换链",
-        "E": "UpdateLayeredWindow 不支持使用交换链。",
-        "Flip": "Flip 交换链",
-        "BitBlt": "BitBlt 交换链"
+        "Automatic": "自动",
+        "DcompUnsupported": "当前 Windows 7 系统不支持 DirectComposition，将自动回退至 UpdateLayeredWindow。",
+        "Win7dwmUnsupportedFormat": "当前 Windows {0} 系统不支持 Win7dwm，将自动回退至 UpdateLayeredWindow。",
+        "Win7dwmAeroRequired": "Win7dwm 仅在开启 Aero 主题时可用，否则将自动回退至 UpdateLayeredWindow。"
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "诊断日志输出",
       "CanvasInformation": "画布初始化信息",
       "PresentationFallback": "桌面画布透明呈现方式已回退",
-      "SwapChainFallback": "桌面画布交换链已回退",
       "InputFallback": "输入方式已回退",
       "DisplayInformation": "显示器与 EDID"
     },

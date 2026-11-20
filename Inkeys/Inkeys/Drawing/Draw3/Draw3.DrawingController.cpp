@@ -21686,16 +21686,13 @@ namespace Inkeys::Drawing::Draw3
 			switch (state.mode)
 			{
 			case TransparentPresentMode::DirectCompositionVisualTree:
-				signature.presentation = state.sequentialSwapChain ? DevicePerformance::Presentation::DCompSequential
-					: DevicePerformance::Presentation::DirectComposition;
+				signature.presentation = DevicePerformance::Presentation::DirectComposition;
 				break;
 			case TransparentPresentMode::UlwDirtyRect:
 				signature.presentation = DevicePerformance::Presentation::Ulw;
 				break;
 			case TransparentPresentMode::DwmBlurBehind:
-				// FLIP 创建失败时按实际生效的兼容链分桶，避免对照数据混入首选模式。
-				signature.presentation = state.sequentialSwapChain ? DevicePerformance::Presentation::Win7DwmSequential
-					: DevicePerformance::Presentation::Win7DwmFlip;
+				signature.presentation = DevicePerformance::Presentation::Win7DwmSequential;
 				break;
 			default: break;
 			}

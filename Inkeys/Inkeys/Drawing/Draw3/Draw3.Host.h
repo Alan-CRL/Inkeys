@@ -229,7 +229,6 @@ namespace Inkeys::Drawing::Draw3
 		UlwDirtyRect,
 		DirectCompositionVisualTree,
 		DwmBlurBehind,
-		DwmBlurBehind2,
 	};
 
 	enum class HostOutputTarget : std::uint8_t
@@ -256,7 +255,6 @@ namespace Inkeys::Drawing::Draw3
 		// legacy-compatible HWND 重启后禁止再次选择 DComp。
 		bool allowDirectComposition = true;
 		HostPresentationMode preferredPresentationMode = HostPresentationMode::Automatic;
-		bool preferSequentialSwapChain = false;
 		PresentationFallbackReport previousAttempt;
 		// 产品需要页码提交确认；独立 Host 无 PageControl 时可显式省略。
 		bool requirePresentationUiReady = false;

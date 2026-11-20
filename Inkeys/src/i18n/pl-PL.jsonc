@@ -781,7 +781,7 @@
         {
           "N": "Bezwładność przesuwania tablicy",
           "E": "Tablica przesuwa się dalej po zwolnieniu w trybie przeciągania. Ustawienia są niezależne dla każdego typu wejścia.",
-          "TouchpadRequirement": "Gesty touchpada na tablicy wymagają systemu Windows 8.1 lub nowszego oraz precyzyjnego touchpada.",
+          "TouchpadRequirement": "Gesty touchpada wymagają systemu Windows 8.1 lub nowszego oraz precyzyjnego touchpada.",
           "RtsNotice": "Obecnie używane jest wejście komunikatów RealTimeStylus, które nie jest zgodne z przesuwaniem tablicy za pomocą touchpada.",
           "RtsGestureUnavailable": "Ten gest nie jest dostępny w trybie RealTimeStylus w bieżącym systemie lub na bieżącym urządzeniu.",
           "Mouse": "Mysz",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "Metoda wprowadzania",
-        "E": "Określa sposób odbierania danych wejściowych z urządzeń. Niektóre opcje mogą kolidować z gestami touchpada na tablicy.",
+        "E": "Określa sposób odbierania danych wejściowych z urządzeń. Niektóre opcje mogą kolidować z gestami touchpada.",
+        "RtsTouchpadNotice": "Bieżąca metoda wprowadzania (RealTimeStylus) nie obsługuje gestów touchpada w systemach Windows 8.1 i Windows 10.",
+        "PointerUnsupported": "System Windows 7 nie obsługuje WM_POINTER. Automatycznie zostanie użyty RealTimeStylus.",
         "MouseCompatibility": "Wejście zgodności z myszą",
         "RtsExtended": "RealTimeStylus (właściwości rozszerzone)",
         "RtsBasicXY": "RealTimeStylus (podstawowe X/Y)",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "Metoda przezroczystego wyświetlania płótna pulpitu",
-        "Automatic": "Automatyczny"
-      },
-      "SwapChainMode":
-      {
-        "N": "Łańcuch wymiany płótna pulpitu",
-        "E": "UpdateLayeredWindow nie obsługuje łańcuchów wymiany.",
-        "Flip": "Łańcuch wymiany Flip",
-        "BitBlt": "Łańcuch wymiany BitBlt"
+        "Automatic": "Automatyczny",
+        "DcompUnsupported": "System Windows 7 nie obsługuje DirectComposition. Automatycznie zostanie użyty UpdateLayeredWindow.",
+        "Win7dwmUnsupportedFormat": "System Windows {0} nie obsługuje Win7dwm. Automatycznie zostanie użyty UpdateLayeredWindow.",
+        "Win7dwmAeroRequired": "Win7dwm jest dostępny tylko z motywem Aero. W przeciwnym razie automatycznie zostanie użyty UpdateLayeredWindow."
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "Dziennik diagnostyczny",
       "CanvasInformation": "Informacje o inicjalizacji płótna",
       "PresentationFallback": "Zastępcza metoda wyświetlania płótna pulpitu",
-      "SwapChainFallback": "Zastępczy łańcuch wymiany płótna pulpitu",
       "InputFallback": "Zastępcza metoda wprowadzania",
       "DisplayInformation": "Ekrany i EDID"
     },

@@ -100,9 +100,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		inline Presentation PresentationFromName(const std::string& name) noexcept
 		{
 			if (name == "dcomp") return Presentation::DirectComposition;
-			if (name == "dcomp-sequential") return Presentation::DCompSequential;
 			if (name == "ulw") return Presentation::Ulw;
-			if (name == "win7dwm-flip") return Presentation::Win7DwmFlip;
 			if (name == "win7dwm-sequential") return Presentation::Win7DwmSequential;
 			return Presentation::Unknown;
 		}

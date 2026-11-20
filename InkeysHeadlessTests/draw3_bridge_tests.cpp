@@ -1,4 +1,4 @@
-#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
+﻿#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Bridge.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Shortcut.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.Host.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.PresentationState.h"
@@ -771,31 +771,6 @@ namespace
 				"Win7Dwm checks platform, composition and glass color in order")) ++failures;
 		}
 
-		const auto checkChain = [&](bool preferSequential, HRESULT first, HRESULT second,
-			std::vector<bool> expected, HRESULT expectedResult, bool fallbackSequential = true)
-		{
-			std::vector<bool> attempts;
-			HRESULT fallback = S_OK;
-			const HRESULT result = CreatePreferredSwapChain(preferSequential, fallbackSequential, [&](bool sequential)
-			{
-				attempts.push_back(sequential);
-				return attempts.size() == 1 ? first : second;
-			}, [](HRESULT hr) { return hr == DXGI_ERROR_DEVICE_REMOVED; }, [&](HRESULT hr) { fallback = hr; });
-			if (!Expect(attempts == expected && result == expectedResult &&
-				fallback == (attempts.size() > 1 ? first : S_OK), "Win7Dwm chain retry order and failure reason")) ++failures;
-		};
-		checkChain(false, S_OK, E_FAIL, { false }, S_OK);
-		checkChain(false, E_INVALIDARG, S_OK, { false, true }, S_OK);
-		checkChain(false, E_INVALIDARG, E_FAIL, { false, true }, E_FAIL);
-		checkChain(false, DXGI_ERROR_DEVICE_REMOVED, S_OK, { false }, DXGI_ERROR_DEVICE_REMOVED);
-		checkChain(true, S_OK, E_FAIL, { true }, S_OK);
-		checkChain(true, E_INVALIDARG, S_OK, { true }, E_INVALIDARG);
-		// DComp 将单缓冲描述先交给运行时；拒绝后留在同一 presenter 内再试 FLIP。
-		checkChain(true, S_OK, E_FAIL, { true }, S_OK, false);
-		checkChain(true, E_INVALIDARG, S_OK, { true, false }, S_OK, false);
-		checkChain(true, E_INVALIDARG, E_FAIL, { true, false }, E_FAIL, false);
-		checkChain(true, DXGI_ERROR_DEVICE_REMOVED, S_OK, { true }, DXGI_ERROR_DEVICE_REMOVED, false);
-		checkChain(false, E_INVALIDARG, S_OK, { false }, E_INVALIDARG, false);
 	}
 
 	void TestDCompHandoffBarrier(int& failures)

@@ -781,7 +781,7 @@
         {
           "N": "Beyaz tahta sürükleme eylemsizliği",
           "E": "Beyaz tahta sürükleme modunda bırakıldıktan sonra kaymaya devam eder. Her giriş türü ayrı ayrı ayarlanabilir.",
-          "TouchpadRequirement": "Beyaz tahtadaki dokunmatik yüzey hareketleri için Windows 8.1 veya üzeri ve hassas dokunmatik yüzey gerekir.",
+          "TouchpadRequirement": "Dokunmatik yüzey hareketleri için Windows 8.1 veya üzeri ve hassas dokunmatik yüzey gerekir.",
           "RtsNotice": "Şu anda RealTimeStylus ileti girişi kullanılıyor; bu giriş, dokunmatik yüzeyle beyaz tahta sürüklemeyle uyumlu değildir.",
           "RtsGestureUnavailable": "Bu hareket, geçerli sistemde veya aygıtta RealTimeStylus modunda kullanılamaz.",
           "Mouse": "Fare",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "Giriş yöntemi",
-        "E": "Cihaz girişinin nasıl alınacağını belirler. Bazı seçenekler, beyaz tahtadaki dokunmatik yüzey hareketleriyle çakışabilir.",
+        "E": "Cihaz girişinin nasıl alınacağını belirler. Bazı seçenekler dokunmatik yüzey hareketleriyle çakışabilir.",
+        "RtsTouchpadNotice": "Geçerli giriş yöntemi (RealTimeStylus), Windows 8.1 ve Windows 10'da dokunmatik yüzey hareketlerini desteklemez.",
+        "PointerUnsupported": "Windows 7, WM_POINTER'ı desteklemez. Bunun yerine otomatik olarak RealTimeStylus kullanılacak.",
         "MouseCompatibility": "Fare uyumluluk girişi",
         "RtsExtended": "RealTimeStylus (genişletilmiş özellikler)",
         "RtsBasicXY": "RealTimeStylus (temel X/Y)",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "Masaüstü tuvali saydam sunum yöntemi",
-        "Automatic": "Otomatik"
-      },
-      "SwapChainMode":
-      {
-        "N": "Masaüstü tuvali takas zinciri",
-        "E": "UpdateLayeredWindow takas zincirlerini desteklemez.",
-        "Flip": "Flip takas zinciri",
-        "BitBlt": "BitBlt takas zinciri"
+        "Automatic": "Otomatik",
+        "DcompUnsupported": "Windows 7, DirectComposition'ı desteklemez. Bunun yerine otomatik olarak UpdateLayeredWindow kullanılacak.",
+        "Win7dwmUnsupportedFormat": "Windows {0}, Win7dwm'yi desteklemez. Bunun yerine otomatik olarak UpdateLayeredWindow kullanılacak.",
+        "Win7dwmAeroRequired": "Win7dwm yalnızca Aero teması açıkken kullanılabilir. Aksi halde otomatik olarak UpdateLayeredWindow kullanılacak."
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "Tanılama günlüğü çıktısı",
       "CanvasInformation": "Tuval başlatma bilgisi",
       "PresentationFallback": "Masaüstü tuvali yedek sunum yöntemi",
-      "SwapChainFallback": "Masaüstü tuvali yedek takas zinciri",
       "InputFallback": "Yedek giriş yöntemi",
       "DisplayInformation": "Ekranlar ve EDID"
     },

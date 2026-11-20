@@ -781,7 +781,7 @@
         {
           "N": "Inerzia del trascinamento della lavagna",
           "E": "La lavagna continua a scorrere dopo il rilascio in modalità trascinamento. Regolabile per ogni tipo di input.",
-          "TouchpadRequirement": "I gesti del touchpad sulla lavagna richiedono Windows 8.1 o versione successiva e un touchpad di precisione.",
+          "TouchpadRequirement": "I gesti del touchpad richiedono Windows 8.1 o versione successiva e un touchpad di precisione.",
           "RtsNotice": "È in uso l’input a messaggi RealTimeStylus, non compatibile con il trascinamento della lavagna con il touchpad.",
           "RtsGestureUnavailable": "Questo gesto non è disponibile in modalità RealTimeStylus sul sistema o dispositivo attuale.",
           "Mouse": "Mouse",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "Metodo di input",
-        "E": "Determina come viene ricevuto l’input dei dispositivi. Alcune opzioni potrebbero entrare in conflitto con i gesti del touchpad sulla lavagna.",
+        "E": "Determina come viene ricevuto l’input dei dispositivi. Alcune opzioni potrebbero entrare in conflitto con i gesti del touchpad.",
+        "RtsTouchpadNotice": "Il metodo di input attuale (RealTimeStylus) non supporta i gesti del touchpad su Windows 8.1 e Windows 10.",
+        "PointerUnsupported": "Windows 7 non supporta WM_POINTER. Verrà usato automaticamente RealTimeStylus.",
         "MouseCompatibility": "Input di compatibilità mouse",
         "RtsExtended": "RealTimeStylus (proprietà estese)",
         "RtsBasicXY": "RealTimeStylus (X/Y di base)",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "Metodo di trasparenza della tela del desktop",
-        "Automatic": "Automatico"
-      },
-      "SwapChainMode":
-      {
-        "N": "Catena di scambio della tela del desktop",
-        "E": "UpdateLayeredWindow non supporta le catene di scambio.",
-        "Flip": "Catena di scambio Flip",
-        "BitBlt": "Catena di scambio BitBlt"
+        "Automatic": "Automatico",
+        "DcompUnsupported": "Windows 7 non supporta DirectComposition. Verrà usato automaticamente UpdateLayeredWindow.",
+        "Win7dwmUnsupportedFormat": "Windows {0} non supporta Win7dwm. Verrà usato automaticamente UpdateLayeredWindow.",
+        "Win7dwmAeroRequired": "Win7dwm è disponibile solo con un tema Aero. Altrimenti verrà usato automaticamente UpdateLayeredWindow."
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "Output del registro diagnostico",
       "CanvasInformation": "Informazioni di inizializzazione della tela",
       "PresentationFallback": "Metodo di presentazione alternativo della tela del desktop",
-      "SwapChainFallback": "Catena di scambio alternativa della tela del desktop",
       "InputFallback": "Metodo di input alternativo",
       "DisplayInformation": "Schermi ed EDID"
     },

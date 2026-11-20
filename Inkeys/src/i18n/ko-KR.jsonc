@@ -781,7 +781,7 @@
         {
           "N": "화이트보드 드래그 관성",
           "E": "화이트보드 드래그 모드에서 손을 뗀 후에도 계속 이동합니다. 입력 유형별로 설정할 수 있습니다.",
-          "TouchpadRequirement": "화이트보드 터치패드 제스처를 사용하려면 Windows 8.1 이상과 정밀 터치패드가 필요합니다.",
+          "TouchpadRequirement": "터치패드 제스처를 사용하려면 Windows 8.1 이상과 정밀 터치패드가 필요합니다.",
           "RtsNotice": "현재 RealTimeStylus 메시지 입력을 사용 중이며 터치패드 화이트보드 드래그와 호환되지 않습니다.",
           "RtsGestureUnavailable": "현재 시스템 또는 장치에서는 RealTimeStylus 모드에서 이 제스처를 사용할 수 없습니다.",
           "Mouse": "마우스",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "입력 방식",
-        "E": "장치 입력을 받는 방식을 결정합니다. 일부 옵션은 화이트보드 터치패드 제스처와 충돌할 수 있습니다.",
+        "E": "장치 입력을 받는 방식을 결정합니다. 일부 옵션은 터치패드 제스처와 충돌할 수 있습니다.",
+        "RtsTouchpadNotice": "현재 입력 방식(RealTimeStylus)은 Windows 8.1 및 Windows 10에서 터치패드 제스처를 지원하지 않습니다.",
+        "PointerUnsupported": "Windows 7은 WM_POINTER를 지원하지 않습니다. 자동으로 RealTimeStylus를 사용합니다.",
         "MouseCompatibility": "마우스 호환 입력",
         "RtsExtended": "RealTimeStylus(확장 속성)",
         "RtsBasicXY": "RealTimeStylus(기본 X/Y)",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "데스크톱 캔버스 투명 표시 방식",
-        "Automatic": "자동"
-      },
-      "SwapChainMode":
-      {
-        "N": "데스크톱 캔버스 스왑 체인",
-        "E": "UpdateLayeredWindow는 스왑 체인을 지원하지 않습니다.",
-        "Flip": "Flip 스왑 체인",
-        "BitBlt": "BitBlt 스왑 체인"
+        "Automatic": "자동",
+        "DcompUnsupported": "Windows 7은 DirectComposition을 지원하지 않습니다. 자동으로 UpdateLayeredWindow를 사용합니다.",
+        "Win7dwmUnsupportedFormat": "Windows {0}은(는) Win7dwm을 지원하지 않습니다. 자동으로 UpdateLayeredWindow를 사용합니다.",
+        "Win7dwmAeroRequired": "Win7dwm은 Aero 테마를 사용할 때만 사용할 수 있습니다. 그렇지 않으면 자동으로 UpdateLayeredWindow를 사용합니다."
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "진단 로그 출력",
       "CanvasInformation": "캔버스 초기화 정보",
       "PresentationFallback": "데스크톱 캔버스 대체 표시 방식",
-      "SwapChainFallback": "데스크톱 캔버스 대체 스왑 체인",
       "InputFallback": "대체 입력 방식",
       "DisplayInformation": "디스플레이 및 EDID"
     },

@@ -781,7 +781,7 @@
         {
           "N": "Inercia al arrastrar la pizarra",
           "E": "La pizarra sigue deslizándose al soltar en el modo de arrastre. Se puede ajustar por tipo de entrada.",
-          "TouchpadRequirement": "Los gestos del panel táctil en la pizarra requieren Windows 8.1 o posterior y un panel táctil de precisión.",
+          "TouchpadRequirement": "Los gestos del panel táctil requieren Windows 8.1 o posterior y un panel táctil de precisión.",
           "RtsNotice": "Se está usando la entrada de mensajes de RealTimeStylus, que no es compatible con el arrastre de la pizarra con el panel táctil.",
           "RtsGestureUnavailable": "Este gesto no está disponible en el modo RealTimeStylus en el sistema o dispositivo actual.",
           "Mouse": "Ratón",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "Método de entrada",
-        "E": "Determina cómo se recibe la entrada de los dispositivos. Algunas opciones pueden entrar en conflicto con los gestos del panel táctil en la pizarra.",
+        "E": "Determina cómo se recibe la entrada de los dispositivos. Algunas opciones pueden entrar en conflicto con los gestos del panel táctil.",
+        "RtsTouchpadNotice": "El método de entrada actual (RealTimeStylus) no admite gestos del panel táctil en Windows 8.1 ni en Windows 10.",
+        "PointerUnsupported": "Windows 7 no admite WM_POINTER. Se usará RealTimeStylus automáticamente.",
         "MouseCompatibility": "Entrada de compatibilidad con ratón",
         "RtsExtended": "RealTimeStylus (propiedades extendidas)",
         "RtsBasicXY": "RealTimeStylus (X/Y básico)",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "Método de transparencia del lienzo de escritorio",
-        "Automatic": "Automático"
-      },
-      "SwapChainMode":
-      {
-        "N": "Cadena de intercambio del lienzo de escritorio",
-        "E": "UpdateLayeredWindow no admite cadenas de intercambio.",
-        "Flip": "Cadena de intercambio Flip",
-        "BitBlt": "Cadena de intercambio BitBlt"
+        "Automatic": "Automático",
+        "DcompUnsupported": "Windows 7 no admite DirectComposition. Se usará UpdateLayeredWindow automáticamente.",
+        "Win7dwmUnsupportedFormat": "Windows {0} no admite Win7dwm. Se usará UpdateLayeredWindow automáticamente.",
+        "Win7dwmAeroRequired": "Win7dwm solo está disponible con un tema Aero. De lo contrario, se usará UpdateLayeredWindow automáticamente."
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "Salida del registro de diagnóstico",
       "CanvasInformation": "Información de inicialización del lienzo",
       "PresentationFallback": "Método de presentación alternativo del lienzo de escritorio",
-      "SwapChainFallback": "Cadena de intercambio alternativa del lienzo de escritorio",
       "InputFallback": "Método de entrada alternativo",
       "DisplayInformation": "Pantallas y EDID"
     },

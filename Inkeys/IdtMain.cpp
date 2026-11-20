@@ -3966,9 +3966,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(whiteboardDefault.pattern) };
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		draw3StartOptions.preferredPresentationMode = preferredMode;
-		// 自动交换链目前固定 Flip；只有显式选择 Sequential 时才改用 BitBlt 交换链。
-		draw3StartOptions.preferSequentialSwapChain = static_cast<Inkeys::Draw3SwapChainPreference>(draw3Config.SwapChainMode.load()) ==
-			Inkeys::Draw3SwapChainPreference::Sequential;
 		draw3StartOptions.autoSaveRoot =
 			GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave";
 		{

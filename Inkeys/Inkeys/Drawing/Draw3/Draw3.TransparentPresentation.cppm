@@ -27,8 +27,7 @@ export namespace Inkeys::Drawing::Draw3
 	{
 		UlwDirtyRect,
 		DirectCompositionVisualTree,
-		DwmBlurBehind,
-		DwmBlurBehind2
+		DwmBlurBehind
 	};
 
 	inline constexpr TransparentPresentMode kPreferredTransparentPresentMode =
@@ -45,7 +44,6 @@ export namespace Inkeys::Drawing::Draw3
 	{
 		TransparentPresentMode mode = TransparentPresentMode::UlwDirtyRect;
 		bool warpDevice = false;
-		bool sequentialSwapChain = false;
 		bool waitableWait = false;        // DComp 下真正在等帧延迟句柄（取不到句柄或已熔断为 false）
 		bool ulwAsyncReadback = false;    // ULW 下异步读回实际开启（未熔断）
 		bool ulwCompositionAlign = false; // 且 DWM 正在合成、对齐开关开启
@@ -72,7 +70,6 @@ export namespace Inkeys::Drawing::Draw3
 		// Window Service 重建 legacy-compatible HWND 后跳过 DComp，避免再次固化窗口样式。
 		bool allowDirectComposition = true;
 		std::optional<TransparentPresentMode> preferredMode;
-		bool preferSequentialSwapChain = false;
 		PresentationFallbackReport previousAttempt;
 		// startup 专用；运行期 Recover/Resize/Present 不激活这个 scope。
 		Shutdown::FailedCleanupSignal failedCleanup;

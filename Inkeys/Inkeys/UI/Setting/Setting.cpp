@@ -1383,13 +1383,16 @@ namespace
 			"RealTimeStylus", "WM_POINTER", IA(text.MouseCompatibility) };
 		// 说明只面向用户；实际后端与回退原因在“软件调试”画布初始化输出中展示。
 		const string description = IA(text.E);
-		const int disabledItem = SupportsPointerInput(version.majorVersion, version.minorVersion)
-			? -1 : static_cast<int>(InputPreference::Pointer);
+		// 所有选项都可选，便携版换到其他系统时由启动链自动回退（Win7 手选 Pointer 解析为 RTS）。
 		int selected = static_cast<int>(preference);
-		// Win7 上只把已保存的 Pointer 显示为自动，打开设置不会改写配置。
-		if (selected == disabledItem) selected = static_cast<int>(InputPreference::Automatic);
+		// RTS 不接收精确式触控板手势；Win8.1/10 只有 WM_POINTER 能用白板触控板手势。
+		if (preference == InputPreference::RealTimeStylus)
+			Design::Notice("##draw3-input-rts-touchpad", IA(text.RtsTouchpadNotice).c_str(), nullptr);
+		else if (preference == InputPreference::Pointer && !SupportsPointerInput(version.majorVersion, version.minorVersion))
+			Design::Notice("##draw3-input-pointer-unsupported", IA(text.PointerUnsupported).c_str(), nullptr,
+				ImFluentInfoSeverity_Warning);
 		if (Design::ComboRow("##draw3-input-mode", IA(text.N).c_str(), description.c_str(), "\ue7c9",
-			selected, items, restartRequired.c_str(), true, true, disabledItem))
+			selected, items, restartRequired.c_str(), true, true))
 		{
 			saved = selected;
 			QueueConfigWrite();
@@ -4779,7 +4782,30 @@ SettingSessionCoroutine RunSettingSession()
 
 					Design::SectionHeader(IA(renderingText.LowLevelSection).c_str());
 					RenderDraw3InputMode(inputOsVersion, restartRequired);
+					// 所有组合都允许选择，便携版换到其他系统时由启动链自动回退；这里只提示不兼容（警告）与系统条件（信息）。
+					using Inkeys::Draw3PresentationPreference;
+					const bool win8OrLater = inputOsVersion.majorVersion > 6 ||
+						(inputOsVersion.majorVersion == 6 && inputOsVersion.minorVersion >= 2);
 					int presentation = draw3Config.PresentationMode.load();
+					if (presentation == static_cast<int>(Draw3PresentationPreference::DirectComposition) && !win8OrLater)
+						Design::Notice("##draw3-presentation-dcomp-unsupported",
+							IA(renderingText.PresentationMode.DcompUnsupported).c_str(), nullptr, ImFluentInfoSeverity_Warning);
+					else if (presentation == static_cast<int>(Draw3PresentationPreference::Win7Dwm))
+					{
+						if (win8OrLater)
+						{
+							const string windowsName = inputOsVersion.majorVersion == 6
+								? (inputOsVersion.minorVersion == 2 ? "8" : "8.1")
+								: (inputOsVersion.buildNumber >= 22000 ? "11" : "10");
+							string warning;
+							try { warning = vformat(IA(renderingText.PresentationMode.Win7dwmUnsupportedFormat), make_format_args(windowsName)); }
+							catch (const format_error&) { warning = IA(renderingText.PresentationMode.Win7dwmUnsupportedFormat); }
+							Design::Notice("##draw3-presentation-win7dwm-unsupported", warning.c_str(), nullptr,
+								ImFluentInfoSeverity_Warning);
+						}
+						else Design::Notice("##draw3-presentation-win7dwm-aero",
+							IA(renderingText.PresentationMode.Win7dwmAeroRequired).c_str(), nullptr);
+					}
 					if (Design::ComboRow("##draw3-presentation", IA(renderingText.PresentationMode.N).c_str(),
 						nullptr, "\ue7f4", presentation,
 						{ IA(renderingText.PresentationMode.Automatic) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
@@ -4789,17 +4815,6 @@ SettingSessionCoroutine RunSettingSession()
 						draw3Config.PresentationMode = presentation;
 						QueueConfigWrite();
 					}
-					// 下拉顺序与 Draw3SwapChainPreference 一致：自动（目前固定 Flip）/ Flip / BitBlt（Sequential）。
-					int swapChain = draw3Config.SwapChainMode.load();
-					if (Design::ComboRow("##draw3-swapchain", IA(renderingText.SwapChainMode.N).c_str(),
-						IA(renderingText.SwapChainMode.E).c_str(), "\ue7f4", swapChain,
-						{ IA(renderingText.PresentationMode.Automatic) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
-							IA(renderingText.SwapChainMode.Flip), IA(renderingText.SwapChainMode.BitBlt) },
-						restartRequired.c_str()))
-					{
-						draw3Config.SwapChainMode = swapChain;
-						QueueConfigWrite();
-					}
 					const bool ulwAlign = draw3Config.UlwCompositionAlign.load();
 					const bool dcompAlign = draw3Config.DcompCompositionAlign.load();
 					// 四档沿用两个后端原有配置，保留已保存的独立偏好。
@@ -4807,7 +4822,7 @@ SettingSessionCoroutine RunSettingSession()
 					const auto& alignText = renderingText.CompositionAlign;
 					if (Design::ComboRow("##draw3-composition-align", IA(alignText.N).c_str(),
 						nullptr, "\ue7f4", alignment,
-						{ IA(alignText.Always), IA(alignText.Off), IA(alignText.UlwOnly), IA(alignText.DcompOnly) },
+						{ IA(alignText.Always) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix), IA(alignText.Off), IA(alignText.UlwOnly), IA(alignText.DcompOnly) },
 						restartRequired.c_str(), true, true))
 					{
 						draw3Config.UlwCompositionAlign = alignment == 0 || alignment == 2;
@@ -5113,9 +5128,6 @@ SettingSessionCoroutine RunSettingSession()
 					if (!canvasFallback.presentationWarning.empty())
 						Design::Notice("##canvas-presentation-fallback", IA(I18nKey.SettingsUI.DebugSoftware.PresentationFallback).c_str(),
 							canvasFallback.presentationWarning.c_str(), ImFluentInfoSeverity_Warning);
-					if (!canvasFallback.chainWarning.empty())
-						Design::Notice("##canvas-swapchain-fallback", IA(I18nKey.SettingsUI.DebugSoftware.SwapChainFallback).c_str(),
-							canvasFallback.chainWarning.c_str(), ImFluentInfoSeverity_Warning);
 					{
 						// 输入方式回退与呈现回退同位置提示：首选（手选取偏好，自动取解析结果）→ 实际后端 + 失败原因。
 						using namespace Inkeys::Drawing::Draw3;

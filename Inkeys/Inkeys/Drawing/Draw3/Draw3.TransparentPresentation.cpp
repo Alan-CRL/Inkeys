@@ -61,7 +61,6 @@ namespace Inkeys::Drawing::Draw3
 		case TransparentPresentMode::UlwDirtyRect: return "UlwDirtyRect";
 		case TransparentPresentMode::DirectCompositionVisualTree: return "DirectCompositionVisualTree";
 		case TransparentPresentMode::DwmBlurBehind: return "Win7Dwm";
-		case TransparentPresentMode::DwmBlurBehind2: return "DwmBlurBehind2";
 		default: return "Unknown";
 		}
 	}
@@ -100,19 +99,9 @@ namespace Inkeys::Drawing::Draw3
 			return mode == TransparentPresentMode::DwmBlurBehind;
 		}
 
-		bool IsDwmBlurBehind2Mode(TransparentPresentMode mode)
-		{
-			return mode == TransparentPresentMode::DwmBlurBehind2;
-		}
-
-		bool IsDwmGlassMode(TransparentPresentMode mode)
-		{
-			return IsDwmBlurBehindMode(mode) || IsDwmBlurBehind2Mode(mode);
-		}
-
 		bool IsGpuMode(TransparentPresentMode mode)
 		{
-			return IsDirectCompositionMode(mode) || IsDwmGlassMode(mode);
+			return IsDirectCompositionMode(mode) || IsDwmBlurBehindMode(mode);
 		}
 
 		constexpr TransparentPresentMode FirstProductMode(std::optional<TransparentPresentMode> preferred, bool allowDirectComposition) noexcept
@@ -1374,40 +1363,6 @@ namespace Inkeys::Drawing::Draw3
 			}
 		};
 
-		struct DwmExtendedFramePresenter
-		{
-			HWND window = nullptr;
-
-			void Reset()
-			{
-				if (window && IsWindow(window))
-				{
-					const MARGINS margins = {};
-					(void)DwmExtendFrameIntoClientArea(window, &margins);
-				}
-				window = nullptr;
-			}
-
-			bool Update()
-			{
-				if (!window) return false;
-				BOOL enabled = FALSE;
-				HRESULT result = DwmIsCompositionEnabled(&enabled);
-				if (FAILED(result) || !enabled) return false;
-				MARGINS margins = { -1, -1, -1, -1 }; // -1 将玻璃扩展到整个客户区。
-				result = DwmExtendFrameIntoClientArea(window, &margins);
-				if (FAILED(result)) LogHResult("DwmExtendFrameIntoClientArea", result);
-				return SUCCEEDED(result);
-			}
-
-			bool Initialize(HWND inputWindow, const TransparentPresentationCallbacks& callbacks)
-			{
-				window = inputWindow;
-				if (!ApplyExternalWindowStyle(window, callbacks, false, false)) return false;
-				LogDwmModeDiagnostics("DwmBlurBehind2", window, "Initialize");
-				return Update();
-			}
-		};
 	}
 
 	bool IsWin7DwmAvailable() noexcept
@@ -1447,7 +1402,6 @@ namespace Inkeys::Drawing::Draw3
 		std::string deviceInformation;
 		const char* fallbackStage = nullptr;
 		HRESULT fallbackResult = S_OK;
-		bool sequentialSwapChain = false;
 		PresentationFallbackReport fallbackReport;
 		// 只对手选 Win7Dwm 降级生效：初始化成功但同一目标反复提交失败时终止无进展的恢复。
 		std::optional<TransparentOutputTarget> recoveredUlwTarget;
@@ -1716,8 +1670,6 @@ namespace Inkeys::Drawing::Draw3
 			fallbackStage = nullptr;
 			fallbackResult = S_OK;
 			fallbackReport.presentationWarning.clear();
-			// ULW 不建交换链：先前 GPU 尝试留下的 FLIP/SEQUENTIAL 降级提示已不描述当前输出。
-			if (!swapChain) fallbackReport.chainWarning.clear();
 			if (options.preferredMode && *options.preferredMode != mode)
 			{
 				fallbackReport.presentationWarning = std::string(TransparentPresentModeName(*options.preferredMode)) +
@@ -1765,7 +1717,6 @@ namespace Inkeys::Drawing::Draw3
 		UlwDirtyRectPresenter selectionUlwPresenter;
 		DirectCompositionPresenter directCompositionPresenter;
 		DwmBlurBehindPresenter dwmBlurPresenter;
-		DwmExtendedFramePresenter dwmExtendedPresenter;
 
 		bool ResetPresenters()
 		{
@@ -1773,7 +1724,6 @@ namespace Inkeys::Drawing::Draw3
 			selectionUlwPresenter.Reset();
 			const bool retired = directCompositionPresenter.Reset();
 			dwmBlurPresenter.Reset();
-			dwmExtendedPresenter.Reset();
 			presentFailureLogged = false;
 			presentSuccessLogged = false;
 			lastLoggedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
@@ -1921,27 +1871,18 @@ namespace Inkeys::Drawing::Draw3
 			description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
 			description.SampleDesc.Count = 1;
 			description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-			description.BufferCount = 2;
 			description.Scaling = DXGI_SCALING_STRETCH;
-			description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 			description.AlphaMode = IsDirectCompositionMode(mode) ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_UNSPECIFIED;
+			// 交换链类型由呈现方式硬性决定，没有用户偏好：DComp 只支持 FLIP；Win7 Aero 下 FLIP 链能创建且 Present 成功，
+			// 但 DWM 模糊合成读不到其内容而黑屏，Win7Dwm 一律使用 SEQUENTIAL 单缓冲。
+			const bool sequential = IsDwmBlurBehindMode(mode);
+			description.SwapEffect = sequential ? DXGI_SWAP_EFFECT_SEQUENTIAL : DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+			description.BufferCount = sequential ? 1 : 2;
 
-			const bool dcomp = IsDirectCompositionMode(mode);
-			HRESULT firstFailure = S_OK;
-			const char* createStep = SwapChainCreationStepName(mode, false);
-			// DComp 收到 SEQUENTIAL 偏好也先提交原始描述；仅 FLIP 链允许尝试帧延迟句柄。
-			const HRESULT result = CreatePreferredSwapChain(options.preferSequentialSwapChain, !dcomp, [&](bool sequential)
-			{
-				description.SwapEffect = sequential ? DXGI_SWAP_EFFECT_SEQUENTIAL : DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-				description.BufferCount = sequential ? 1 : 2;
-				if (dcomp && !sequential && !frameLatencyGate.Tripped() && TryCreateWaitableSwapChain(mode, description))
-					return S_OK;
-				return CreateSwapChainForMode(mode, description);
-			}, IsGraphicsDeviceLostError, [&](HRESULT hr)
-			{
-				firstFailure = hr;
-				LogHResult(createStep, hr);
-			});
+			// 仅 DComp 尝试帧延迟句柄；失败时退回普通链。
+			HRESULT result = S_OK;
+			if (!IsDirectCompositionMode(mode) || frameLatencyGate.Tripped() || !TryCreateWaitableSwapChain(mode, description))
+				result = CreateSwapChainForMode(mode, description);
 			if (FAILED(result) || !swapChain)
 			{
 				RecordFallback(SwapChainCreationStepName(mode, false), result);
@@ -1949,18 +1890,10 @@ namespace Inkeys::Drawing::Draw3
 			}
 			DXGI_SWAP_CHAIN_DESC1 actual{};
 			const HRESULT descResult = swapChain->GetDesc1(&actual);
-			if (FAILED(descResult) || (actual.SwapEffect != DXGI_SWAP_EFFECT_SEQUENTIAL && actual.SwapEffect != DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL))
+			if (FAILED(descResult) || actual.SwapEffect != description.SwapEffect)
 			{
 				RecordFallback("GetDesc1", FAILED(descResult) ? descResult : E_UNEXPECTED);
 				return false;
-			}
-			sequentialSwapChain = actual.SwapEffect == DXGI_SWAP_EFFECT_SEQUENTIAL;
-			fallbackReport.chainWarning.clear();
-			if (sequentialSwapChain != options.preferSequentialSwapChain)
-			{
-				fallbackReport.chainWarning = std::string(TransparentPresentModeName(mode)) +
-					(options.preferSequentialSwapChain ? " SEQUENTIAL → FLIP" : " FLIP → SEQUENTIAL") + " (" +
-					FailureDetail(FAILED(firstFailure) ? createStep : "GetDesc1", firstFailure) + ")";
 			}
 			LogSwapChainDescription(TransparentPresentModeName(mode), "Created", actual);
 			return true;
@@ -1995,8 +1928,6 @@ namespace Inkeys::Drawing::Draw3
 			case TransparentPresentMode::DwmBlurBehind:
 				dwmBlurPresenter.window = primaryWindow;
 				primaryInitialized = UpdateWin7Dwm(); break;
-			case TransparentPresentMode::DwmBlurBehind2:
-				primaryInitialized = dwmExtendedPresenter.Initialize(primaryWindow, callbacks); break;
 			default:
 				return false;
 			}
@@ -2203,7 +2134,6 @@ namespace Inkeys::Drawing::Draw3
 		impl_->deviceInformation.clear();
 		impl_->fallbackStage = nullptr;
 		impl_->fallbackResult = S_OK;
-		impl_->sequentialSwapChain = false;
 		impl_->fallbackReport = {};
 		impl_->recoveredUlwTarget.reset();
 		impl_->requestedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
@@ -2460,9 +2390,6 @@ namespace Inkeys::Drawing::Draw3
 		case TransparentPresentMode::DwmBlurBehind:
 			LogDwmModeDiagnostics("DwmBlurBehind", impl_->primaryWindow, "Resize");
 			succeeded = impl_->UpdateWin7Dwm(); break;
-		case TransparentPresentMode::DwmBlurBehind2:
-			LogDwmModeDiagnostics("DwmBlurBehind2", impl_->primaryWindow, "Resize");
-			succeeded = impl_->dwmExtendedPresenter.Update(); break;
 		default: break;
 		}
 		if (succeeded && sizeChanged)
@@ -2652,7 +2579,6 @@ namespace Inkeys::Drawing::Draw3
 	{
 		bool succeeded = true;
 		if (IsDwmBlurBehindMode(impl_->activeMode)) succeeded = impl_->UpdateWin7Dwm();
-		if (IsDwmBlurBehind2Mode(impl_->activeMode)) succeeded = impl_->dwmExtendedPresenter.Update();
 		impl_->directCompositionPresenter.phaseClock.Invalidate();
 		impl_->RefreshUlwCompositionState("composition-changed"); // WM_DWMCOMPOSITIONCHANGED / DPI 变化
 		if (!succeeded) impl_->SetFailure(IsDwmBlurBehindMode(impl_->activeMode) ? impl_->fallbackResult : E_FAIL);
@@ -2809,7 +2735,6 @@ namespace Inkeys::Drawing::Draw3
 		if (!impl_) return state;
 		const Impl& impl = *impl_;
 		state.mode = impl.activeMode;
-		state.sequentialSwapChain = impl.swapChain && impl.sequentialSwapChain;
 		state.warpDevice = impl.graphics && impl.graphics->driverType == D3D_DRIVER_TYPE_WARP;
 		state.waitableWait = IsDirectCompositionMode(impl.activeMode) &&
 			impl.frameLatencyWaitHandle && impl.frameLatencyGate.Enabled();

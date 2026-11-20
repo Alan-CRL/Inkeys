@@ -781,7 +781,7 @@
         {
           "N": "ホワイトボードのドラッグ慣性",
           "E": "ホワイトボードのドラッグモードで、離した後も滑らかに移動します。入力の種類ごとに設定できます。",
-          "TouchpadRequirement": "ホワイトボードのタッチパッド ジェスチャには、Windows 8.1 以降と高精度タッチパッドが必要です。",
+          "TouchpadRequirement": "タッチパッド ジェスチャには、Windows 8.1 以降と高精度タッチパッドが必要です。",
           "RtsNotice": "現在は RealTimeStylus のメッセージ入力を使用しているため、タッチパッドによるホワイトボードのドラッグには対応していません。",
           "RtsGestureUnavailable": "現在のシステムまたはデバイスでは、RealTimeStylus モードでこのジェスチャを使用できません。",
           "Mouse": "マウス",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "入力方式",
-        "E": "デバイスからの入力をどの方式で受け取るかを決めます。一部のオプションは、ホワイトボードのタッチパッド ジェスチャと競合する場合があります。",
+        "E": "デバイスからの入力をどの方式で受け取るかを決めます。一部のオプションは、タッチパッド ジェスチャと競合する場合があります。",
+        "RtsTouchpadNotice": "現在の入力方式（RealTimeStylus）は、Windows 8.1 と Windows 10 ではタッチパッド ジェスチャに対応していません。",
+        "PointerUnsupported": "Windows 7 は WM_POINTER に対応していません。自動的に RealTimeStylus を使用します。",
         "MouseCompatibility": "マウス互換入力",
         "RtsExtended": "RealTimeStylus（拡張プロパティ）",
         "RtsBasicXY": "RealTimeStylus（基本 X/Y）",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "デスクトップキャンバスの透過表示方式",
-        "Automatic": "自動"
-      },
-      "SwapChainMode":
-      {
-        "N": "デスクトップキャンバスのスワップチェーン",
-        "E": "UpdateLayeredWindow はスワップチェーンに対応していません。",
-        "Flip": "Flip スワップチェーン",
-        "BitBlt": "BitBlt スワップチェーン"
+        "Automatic": "自動",
+        "DcompUnsupported": "Windows 7 は DirectComposition に対応していません。自動的に UpdateLayeredWindow を使用します。",
+        "Win7dwmUnsupportedFormat": "Windows {0} は Win7dwm に対応していません。自動的に UpdateLayeredWindow を使用します。",
+        "Win7dwmAeroRequired": "Win7dwm は Aero テーマが有効な場合のみ使用できます。それ以外の場合は自動的に UpdateLayeredWindow を使用します。"
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "診断ログ出力",
       "CanvasInformation": "キャンバスの初期化情報",
       "PresentationFallback": "デスクトップキャンバスの代替表示方式",
-      "SwapChainFallback": "デスクトップキャンバスの代替スワップチェーン",
       "InputFallback": "代替の入力方式",
       "DisplayInformation": "ディスプレイと EDID"
     },

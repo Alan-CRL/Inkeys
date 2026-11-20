@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <windows.h>
 
@@ -22,15 +22,5 @@ namespace Inkeys::Drawing::Draw3
 		result = queryColor(&color, &opaque);
 		if (FAILED(result)) return result;
 		return opaque ? HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED) : S_OK;
-	}
-
-	template<class CreateChain, class DeviceLost, class RecordFallback>
-	HRESULT CreatePreferredSwapChain(bool sequential, bool fallbackSequential, CreateChain create, DeviceLost deviceLost, RecordFallback record)
-	{
-		const HRESULT first = create(sequential);
-		// 已选兼容链、创建成功或设备本身失效时，再试一遍没有意义。
-		if (sequential == fallbackSequential || SUCCEEDED(first) || deviceLost(first)) return first;
-		record(first);
-		return create(fallbackSequential);
 	}
 }

@@ -781,7 +781,7 @@
         {
           "N": "Trägheit beim Verschieben des Whiteboards",
           "E": "Im Verschiebemodus gleitet das Whiteboard nach dem Loslassen weiter. Für jede Eingabeart getrennt einstellbar.",
-          "TouchpadRequirement": "Touchpad-Gesten für das Whiteboard erfordern Windows 8.1 oder höher und ein Precision-Touchpad.",
+          "TouchpadRequirement": "Touchpad-Gesten erfordern Windows 8.1 oder höher und ein Precision-Touchpad.",
           "RtsNotice": "Derzeit wird die RealTimeStylus-Nachrichteneingabe verwendet; sie ist mit dem Verschieben des Whiteboards per Touchpad nicht kompatibel.",
           "RtsGestureUnavailable": "Diese Geste ist im RealTimeStylus-Modus auf dem aktuellen System oder Gerät nicht verfügbar.",
           "Mouse": "Maus",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "Eingabemethode",
-        "E": "Legt fest, wie Geräteeingaben empfangen werden. Einige Optionen können mit Touchpad-Gesten für das Whiteboard in Konflikt stehen.",
+        "E": "Legt fest, wie Geräteeingaben empfangen werden. Einige Optionen können mit Touchpad-Gesten in Konflikt stehen.",
+        "RtsTouchpadNotice": "Die aktuelle Eingabemethode (RealTimeStylus) unterstützt unter Windows 8.1 und Windows 10 keine Touchpad-Gesten.",
+        "PointerUnsupported": "Windows 7 unterstützt WM_POINTER nicht. Stattdessen wird automatisch RealTimeStylus verwendet.",
         "MouseCompatibility": "Maus-Kompatibilitätseingabe",
         "RtsExtended": "RealTimeStylus (erweiterte Eigenschaften)",
         "RtsBasicXY": "RealTimeStylus (einfache X/Y)",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "Transparenzmethode der Desktop-Zeichenfläche",
-        "Automatic": "Automatisch"
-      },
-      "SwapChainMode":
-      {
-        "N": "Swapchain der Desktop-Zeichenfläche",
-        "E": "UpdateLayeredWindow unterstützt keine Swapchains.",
-        "Flip": "Flip-Swapchain",
-        "BitBlt": "BitBlt-Swapchain"
+        "Automatic": "Automatisch",
+        "DcompUnsupported": "Windows 7 unterstützt DirectComposition nicht. Stattdessen wird automatisch UpdateLayeredWindow verwendet.",
+        "Win7dwmUnsupportedFormat": "Windows {0} unterstützt Win7dwm nicht. Stattdessen wird automatisch UpdateLayeredWindow verwendet.",
+        "Win7dwmAeroRequired": "Win7dwm ist nur mit einem Aero-Design verfügbar. Andernfalls wird automatisch UpdateLayeredWindow verwendet."
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "Diagnoseprotokollausgabe",
       "CanvasInformation": "Informationen zur Zeichenflächeninitialisierung",
       "PresentationFallback": "Ausweichmethode für die Darstellung der Desktop-Zeichenfläche",
-      "SwapChainFallback": "Ausweich-Swapchain für die Desktop-Zeichenfläche",
       "InputFallback": "Ausweichmethode für die Eingabe",
       "DisplayInformation": "Bildschirme und EDID"
     },

@@ -781,7 +781,7 @@
         {
           "N": "Quán tính kéo bảng trắng",
           "E": "Bảng tiếp tục trượt sau khi thả trong chế độ kéo. Có thể điều chỉnh riêng cho từng loại đầu vào.",
-          "TouchpadRequirement": "Cử chỉ bàn di chuột trên bảng trắng yêu cầu Windows 8.1 trở lên và bàn di chuột chính xác.",
+          "TouchpadRequirement": "Cử chỉ bàn di chuột yêu cầu Windows 8.1 trở lên và bàn di chuột chính xác.",
           "RtsNotice": "Hiện đang dùng nhập thông điệp RealTimeStylus, không tương thích với việc kéo bảng trắng bằng bàn di chuột.",
           "RtsGestureUnavailable": "Cử chỉ này không khả dụng ở chế độ RealTimeStylus trên hệ thống hoặc thiết bị hiện tại.",
           "Mouse": "Chuột",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "Phương thức nhập",
-        "E": "Xác định cách nhận đầu vào từ thiết bị. Một số tùy chọn có thể xung đột với cử chỉ bàn di chuột trên bảng trắng.",
+        "E": "Xác định cách nhận đầu vào từ thiết bị. Một số tùy chọn có thể xung đột với cử chỉ bàn di chuột.",
+        "RtsTouchpadNotice": "Phương thức nhập hiện tại (RealTimeStylus) không hỗ trợ cử chỉ bàn di chuột trên Windows 8.1 và Windows 10.",
+        "PointerUnsupported": "Windows 7 không hỗ trợ WM_POINTER. RealTimeStylus sẽ được dùng tự động.",
         "MouseCompatibility": "Nhập tương thích chuột",
         "RtsExtended": "RealTimeStylus (thuộc tính mở rộng)",
         "RtsBasicXY": "RealTimeStylus (X/Y cơ bản)",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "Phương thức hiển thị trong suốt của khung vẽ trên màn hình nền",
-        "Automatic": "Tự động"
-      },
-      "SwapChainMode":
-      {
-        "N": "Chuỗi hoán đổi của khung vẽ trên màn hình nền",
-        "E": "UpdateLayeredWindow không hỗ trợ chuỗi hoán đổi.",
-        "Flip": "Chuỗi hoán đổi Flip",
-        "BitBlt": "Chuỗi hoán đổi BitBlt"
+        "Automatic": "Tự động",
+        "DcompUnsupported": "Windows 7 không hỗ trợ DirectComposition. UpdateLayeredWindow sẽ được dùng tự động.",
+        "Win7dwmUnsupportedFormat": "Windows {0} không hỗ trợ Win7dwm. UpdateLayeredWindow sẽ được dùng tự động.",
+        "Win7dwmAeroRequired": "Win7dwm chỉ khả dụng khi bật chủ đề Aero. Nếu không, UpdateLayeredWindow sẽ được dùng tự động."
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "Đầu ra nhật ký chẩn đoán",
       "CanvasInformation": "Thông tin khởi tạo trang vẽ",
       "PresentationFallback": "Phương thức hiển thị dự phòng của khung vẽ trên màn hình nền",
-      "SwapChainFallback": "Chuỗi hoán đổi dự phòng của khung vẽ trên màn hình nền",
       "InputFallback": "Phương thức nhập dự phòng",
       "DisplayInformation": "Màn hình và EDID"
     },

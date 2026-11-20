@@ -595,13 +595,12 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			const Json::Value* jsonValue = TryGetValueAtPath(root, groupPath, name);
 			if constexpr (std::is_same_v<T, IdtAtomic<int>>)
 			{
-				if (path == "Experimental.Inkeys3.Draw3.PresentationMode" || path == "Experimental.Inkeys3.Draw3.SwapChainMode"
+				if (path == "Experimental.Inkeys3.Draw3.PresentationMode"
 					|| path == "Experimental.Inkeys3.Draw3.InputMode" || path == "Experimental.Inkeys3.Draw3.RenderAcceleration")
 				{
 					const bool presentation = path == "Experimental.Inkeys3.Draw3.PresentationMode";
 					const int maximum = presentation ? static_cast<int>(Inkeys::Draw3PresentationPreference::Ulw)
 						: path == "Experimental.Inkeys3.Draw3.InputMode" ? static_cast<int>(Inkeys::Draw3InputPreference::MouseCompatibility)
-						: path == "Experimental.Inkeys3.Draw3.SwapChainMode" ? static_cast<int>(Inkeys::Draw3SwapChainPreference::Sequential)
 						: static_cast<int>(Inkeys::Draw3RenderAccelerationPreference::Software);
 					if (jsonValue)
 					{
@@ -1127,7 +1126,10 @@ namespace Inkeys
 
 		Json::Value outputRoot = autoCleanEnabled ? Json::Value(Json::objectValue) : baseRoot;
 		OverlayDocument(outputRoot);
-		outputRoot["Experimental"]["Inkeys3"]["Draw3"].removeMember("EnableDirectComposition");
+		auto& draw3Node = outputRoot["Experimental"]["Inkeys3"]["Draw3"];
+		draw3Node.removeMember("EnableDirectComposition");
+		// 交换链类型已由呈现方式固定，旧偏好键不再写回。
+		draw3Node.removeMember("SwapChainMode");
 		// 边缘已改为输入设备固定策略；即使保留未知键，也不再写回已退役的三个开关。
 		auto& cursorNode = outputRoot["Drawing"]["Cursor"];
 		cursorNode.removeMember("MouseHighlightEdge");

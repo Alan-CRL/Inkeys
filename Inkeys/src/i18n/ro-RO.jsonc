@@ -781,7 +781,7 @@
         {
           "N": "Inerția glisării tablei albe",
           "E": "Tabla continuă să alunece după eliberare în modul de glisare. Se poate regla separat pentru fiecare tip de intrare.",
-          "TouchpadRequirement": "Gesturile touchpadului pe tablă necesită Windows 8.1 sau o versiune ulterioară și un touchpad de precizie.",
+          "TouchpadRequirement": "Gesturile touchpadului necesită Windows 8.1 sau o versiune ulterioară și un touchpad de precizie.",
           "RtsNotice": "Se utilizează în prezent introducerea prin mesaje RealTimeStylus, care nu este compatibilă cu glisarea tablei albe cu touchpadul.",
           "RtsGestureUnavailable": "Acest gest nu este disponibil în modul RealTimeStylus pe sistemul sau dispozitivul actual.",
           "Mouse": "Mouse",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "Metodă de introducere",
-        "E": "Stabilește modul în care este primită intrarea de la dispozitive. Unele opțiuni pot intra în conflict cu gesturile touchpadului pe tablă.",
+        "E": "Stabilește modul în care este primită intrarea de la dispozitive. Unele opțiuni pot intra în conflict cu gesturile touchpadului.",
+        "RtsTouchpadNotice": "Metoda de intrare curentă (RealTimeStylus) nu acceptă gesturi de touchpad pe Windows 8.1 și Windows 10.",
+        "PointerUnsupported": "Windows 7 nu acceptă WM_POINTER. Se va folosi automat RealTimeStylus.",
         "MouseCompatibility": "Intrare de compatibilitate cu mouse-ul",
         "RtsExtended": "RealTimeStylus (proprietăți extinse)",
         "RtsBasicXY": "RealTimeStylus (X/Y de bază)",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "Metoda de transparență a pânzei de pe desktop",
-        "Automatic": "Automat"
-      },
-      "SwapChainMode":
-      {
-        "N": "Lanțul de schimb al pânzei de pe desktop",
-        "E": "UpdateLayeredWindow nu acceptă lanțuri de schimb.",
-        "Flip": "Lanț de schimb Flip",
-        "BitBlt": "Lanț de schimb BitBlt"
+        "Automatic": "Automat",
+        "DcompUnsupported": "Windows 7 nu acceptă DirectComposition. Se va folosi automat UpdateLayeredWindow.",
+        "Win7dwmUnsupportedFormat": "Windows {0} nu acceptă Win7dwm. Se va folosi automat UpdateLayeredWindow.",
+        "Win7dwmAeroRequired": "Win7dwm este disponibil doar cu o temă Aero. În caz contrar, se va folosi automat UpdateLayeredWindow."
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "Jurnal de diagnosticare",
       "CanvasInformation": "Informații despre inițializarea pânzei",
       "PresentationFallback": "Metodă de prezentare de rezervă pentru pânza de pe desktop",
-      "SwapChainFallback": "Lanț de schimb de rezervă pentru pânza de pe desktop",
       "InputFallback": "Metodă de intrare de rezervă",
       "DisplayInformation": "Monitoare și EDID"
     },

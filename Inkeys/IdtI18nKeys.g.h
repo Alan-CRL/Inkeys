@@ -1071,6 +1071,8 @@ inline constexpr struct I18nKeyRoot
             {
                 const char* N = "SettingsUI/Performance/InputMode/N";
                 const char* E = "SettingsUI/Performance/InputMode/E";
+                const char* RtsTouchpadNotice = "SettingsUI/Performance/InputMode/RtsTouchpadNotice";
+                const char* PointerUnsupported = "SettingsUI/Performance/InputMode/PointerUnsupported";
                 const char* MouseCompatibility = "SettingsUI/Performance/InputMode/MouseCompatibility";
                 const char* RtsExtended = "SettingsUI/Performance/InputMode/RtsExtended";
                 const char* RtsBasicXY = "SettingsUI/Performance/InputMode/RtsBasicXY";
@@ -1086,14 +1088,10 @@ inline constexpr struct I18nKeyRoot
             {
                 const char* N = "SettingsUI/Performance/PresentationMode/N";
                 const char* Automatic = "SettingsUI/Performance/PresentationMode/Automatic";
+                const char* DcompUnsupported = "SettingsUI/Performance/PresentationMode/DcompUnsupported";
+                const char* Win7dwmUnsupportedFormat = "SettingsUI/Performance/PresentationMode/Win7dwmUnsupportedFormat";
+                const char* Win7dwmAeroRequired = "SettingsUI/Performance/PresentationMode/Win7dwmAeroRequired";
             } PresentationMode{};
-            struct Node__SettingsUI__Performance__SwapChainMode
-            {
-                const char* N = "SettingsUI/Performance/SwapChainMode/N";
-                const char* E = "SettingsUI/Performance/SwapChainMode/E";
-                const char* Flip = "SettingsUI/Performance/SwapChainMode/Flip";
-                const char* BitBlt = "SettingsUI/Performance/SwapChainMode/BitBlt";
-            } SwapChainMode{};
             struct Node__SettingsUI__Performance__CompositionAlign
             {
                 const char* N = "SettingsUI/Performance/CompositionAlign/N";
@@ -1516,7 +1514,6 @@ inline constexpr struct I18nKeyRoot
             const char* ConsoleSection = "SettingsUI/DebugSoftware/ConsoleSection";
             const char* CanvasInformation = "SettingsUI/DebugSoftware/CanvasInformation";
             const char* PresentationFallback = "SettingsUI/DebugSoftware/PresentationFallback";
-            const char* SwapChainFallback = "SettingsUI/DebugSoftware/SwapChainFallback";
             const char* InputFallback = "SettingsUI/DebugSoftware/InputFallback";
             const char* DisplayInformation = "SettingsUI/DebugSoftware/DisplayInformation";
         } DebugSoftware{};

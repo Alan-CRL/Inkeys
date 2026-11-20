@@ -371,6 +371,8 @@ int IdtTest::RunI18nLocaleTests()
 		std::string backend = "WM_POINTER", fallbackBackend = "RealTimeStylus";
 		formatted(I18nKey.SettingsUI.Performance.InputMode.FallbackFormat, backend.c_str(), backend, fallbackBackend);
 		formatted(I18nKey.SettingsUI.Performance.InputMode.FallbackFormat, fallbackBackend.c_str(), backend, fallbackBackend);
+		std::string windowsName = "8.1";
+		formatted(I18nKey.SettingsUI.Performance.PresentationMode.Win7dwmUnsupportedFormat, "8.1", windowsName);
 		{
 			// 设备性能看板：与 Setting.PerformanceDashboard.cpp 的实参类型一致（帧率文本为 std::string，可为“--”）。
 			int compute = 120, unlimited = 240;

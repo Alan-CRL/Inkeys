@@ -781,7 +781,7 @@
         {
           "N": "Whiteboard drag inertia",
           "E": "Keep gliding after release in whiteboard drag mode. Adjust each input type separately.",
-          "TouchpadRequirement": "Whiteboard touchpad gestures require Windows 8.1 or later and a precision touchpad.",
+          "TouchpadRequirement": "Touchpad gestures require Windows 8.1 or later and a precision touchpad.",
           "RtsNotice": "RealTimeStylus message input is currently in use; it is not compatible with touchpad whiteboard dragging.",
           "RtsGestureUnavailable": "This gesture is not available in RealTimeStylus mode on the current system or device.",
           "Mouse": "Mouse",
@@ -1067,7 +1067,9 @@
       "InputMode":
       {
         "N": "Input method",
-        "E": "Determines how device input is received. Some options may conflict with whiteboard touchpad gestures.",
+        "E": "Determines how device input is received. Some options may conflict with touchpad gestures.",
+        "RtsTouchpadNotice": "The current input method (RealTimeStylus) does not support touchpad gestures on Windows 8.1 and Windows 10.",
+        "PointerUnsupported": "Windows 7 does not support WM_POINTER. RealTimeStylus will be used automatically instead.",
         "MouseCompatibility": "Mouse compatibility input",
         "RtsExtended": "RealTimeStylus (extended properties)",
         "RtsBasicXY": "RealTimeStylus (basic X/Y)",
@@ -1082,14 +1084,10 @@
       "PresentationMode":
       {
         "N": "Desktop canvas transparency method",
-        "Automatic": "Automatic"
-      },
-      "SwapChainMode":
-      {
-        "N": "Desktop canvas swap chain",
-        "E": "UpdateLayeredWindow does not support swap chains.",
-        "Flip": "Flip swap chain",
-        "BitBlt": "BitBlt swap chain"
+        "Automatic": "Automatic",
+        "DcompUnsupported": "Windows 7 does not support DirectComposition. UpdateLayeredWindow will be used automatically instead.",
+        "Win7dwmUnsupportedFormat": "Windows {0} does not support Win7dwm. UpdateLayeredWindow will be used automatically instead.",
+        "Win7dwmAeroRequired": "Win7dwm is only available with an Aero theme. Otherwise, UpdateLayeredWindow will be used automatically."
       },
       "CompositionAlign":
       {
@@ -1513,7 +1511,6 @@
       "ConsoleSection": "Diagnostic log output",
       "CanvasInformation": "Canvas initialization information",
       "PresentationFallback": "Desktop canvas presentation fallback",
-      "SwapChainFallback": "Desktop canvas swap chain fallback",
       "InputFallback": "Input method fallback",
       "DisplayInformation": "Displays and EDID"
     },

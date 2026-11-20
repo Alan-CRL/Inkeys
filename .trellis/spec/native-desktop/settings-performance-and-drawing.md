@@ -26,14 +26,13 @@
 | Drawing.Laser.MultiTouchEnabled | false | 后续新 Laser Touch，受全局多指约束 |
 | Drawing.Laser.ParticlesEnabled | false，兼容字段 | 产品忽略启用值，构造与setter均强制关闭 |
 | Experimental.Inkeys3.Draw3.PresentationMode | 0；自动/DComp/Win7Dwm/ULW = 0/1/2/3 | 下次启动；缺少新键时将旧 EnableDirectComposition 的 false 映射为 ULW，true 映射为自动 |
-| Experimental.Inkeys3.Draw3.SwapChainMode | 0；自动/FLIP/SEQUENTIAL = 0/1/2 | 下次启动；自动目前按 FLIP（Win7Dwm 下 FLIP 的视觉正确性待实机确认）；DirectComposition 与 Win7Dwm 均尝试所选交换链，ULW 使用离屏纹理。该键未发布过旧编号，不做 0/1 旧值迁移 |
 | Experimental.Inkeys3.Draw3.RenderAcceleration | 0；自动/硬件加速/软件加速 = 0/1/2 | 下次启动；自动 = 硬件优先、失败回退 WARP；硬件加速 = 只用硬件，不回退；软件加速 = WARP。设备丢失恢复沿用同一策略。缺少新键时旧 EnableHardwareAcceleration=false 迁移为软件加速，true 或缺键为自动 |
 | Experimental.Inkeys3.Draw3.EnableWaitableWait | true | 下次启动（`configOnce` 快照），只控制是否等待帧延迟句柄，不改交换链类型 |
 | Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback | true | 下次启动（`configOnce` 快照）；只影响主画布 ULW：关闭 = 同步读回、不节流、不对齐（独立纹理与 SIMD 复制仍保留） |
 | Experimental.Inkeys3.Draw3.UlwCompositionAlign | true，性能页合成对齐下拉框 | 下次启动；异步读回开启时是否对齐 DWM 合成时机提交，与 DComp 键共同表示始终、关闭或仅指定后端 |
 | Experimental.Inkeys3.Draw3.DcompCompositionAlign | true，性能页合成对齐下拉框 | 下次启动；DComp 主画布连续绘制时按预计合成时刻微调下一帧起点，独立于 waitable 开关，改动通过 i 提示下次启动生效 |
 | Experimental.Inkeys3.Draw3.UnthrottledMouseMoveWhileDrawing | false | 即时：设置页写配置后必须调用 `SyncDraw3State()`，经 `CursorSettings` bit 44 下发到窗口线程 |
-| Experimental.Inkeys3.Draw3.InputMode | 0；自动/RealTimeStylus/WM_POINTER/鼠标兼容输入 = 0/1/2/3，越界按自动 | 下次启动（Host 启动时解析一次，不热切换）；手选直接尝试所选后端；自动时大屏触控模式（`Drawing.PaintDevice==0`）选 RTS，桌面交互模式 Win8.1/10 选 Pointer、其余选 RTS；Win7 选项置灰，已存 Pointer 按 RTS 解析。任一首选失败按 RTS 扩展→基础 XY→WM_POINTER→鼠标兼容回退（跳过已试项）。详见 `input-and-ink.md`“输入后端选择（第4步）” |
+| Experimental.Inkeys3.Draw3.InputMode | 0；自动/RealTimeStylus/WM_POINTER/鼠标兼容输入 = 0/1/2/3，越界按自动 | 下次启动（Host 启动时解析一次，不热切换）；手选直接尝试所选后端；自动时大屏触控模式（`Drawing.PaintDevice==0`）选 RTS，桌面交互模式 Win8.1/10 选 Pointer、其余选 RTS；Win7 上 WM_POINTER 仍可选（不置灰），按 RTS 解析。任一首选失败按 RTS 扩展→基础 XY→WM_POINTER→鼠标兼容回退（跳过已试项）。详见 `input-and-ink.md`“输入后端选择（第4步）” |
 | Drawing.LiveTaper.{Enabled,Mouse,Touch,Pen} | 全 true | 新笔锁存（普通笔 Down 时取 `Enabled && 设备项`），同笔实时、定稿与保存共用；与 PenTailCorrection 独立 |
 | Drawing.DevicePerformanceRecording | true | 即时：设置页写配置后直接调用 `Host::SetDevicePerformanceRecording`（不经 SyncDraw3State），启动时在 Host 创建绘制线程前下发；关闭后帧内不统计、不写盘 |
 
@@ -46,10 +45,10 @@
 - 粒子条目不显示toggle，仅保留BETA禁用说明；Controller构造配置true、setter请求true也始终关闭，不因旧配置恢复，重复请求不产生额外wake。保留算法/Shader/配置字段，不扩大为资源清理任务。
 - 绘制页先“绘图环境”（设备项）、后“通用”；移除统一新笔提示但保留每笔锁存。界面60FPS、画布120FPS、精准显示本地化推荐标记，数据值不变；侧栏性能与实验glyph对调，不改变路由。
 - 原硬件加速、DComp、兆芯兼容三项迁移至性能页并重启生效：硬件加速改为 RenderAcceleration 下拉，DComp 开关改为 PresentationMode 下拉（旧键仅在缺少新键时迁移），兆芯兼容继续使用原键。
-- 软件调试 → 画布初始化信息：标题下按需分别显示呈现方式与交换链回退警告。自动后端回退仅记录日志；主动指定后端失败才提示。正文展示实际状态。警告沿用黄色信息条，持有本代首次尝试的失败原因，外层窗口重建时传递。
-- 性能页三块顺序：“渲染”= `##draw3-acceleration`（画布渲染加速，只有 i 重启提示）→ 兆芯兼容；“高级设置”= `##draw3-unthrottled-mouse-move`（绘制时鼠标移动不受画布帧率限制，即时生效，无重启提示）；“底层设置”= `##draw3-presentation`（透明呈现方式）→ `##draw3-swapchain`（交换链）→ `##draw3-composition-align`（合成时机对齐）→ `##draw3-waitable-wait`（Waitable 模式下启用等待）→ `##draw3-ulw-async-readback`（UpdateLayeredWindow 模式下异步读回），均重启生效。waitable 行为合同见 `draw3-integration.md`“DComp waitable 帧延迟等待与熔断”；ULW 读回合同见同文件“ULW 独立纹理、异步读回与合成对齐”；鼠标选项合同见 `draw3-cursors.md`“绘制时光标跟随画布帧率”。
-- 性能页“底层设置”首行为 `##draw3-input-mode`（输入方式，重启生效）。说明行为固定用户文案 `InputMode.E`（“决定设备消息的输入方式，一些选项可能与白板的触控板手势冲突。”），不再拼接实际后端、大屏指定或重启提示（`NextInputBackendDiffers` 已删除）。实际后端与回退原因只在“软件调试 → 画布初始化输出”展示：`InputFallback` 非空时与呈现/交换链回退同位置显示警告条 `##canvas-input-fallback`（标题 `DebugSoftware.InputFallback`，正文“已从 {首选} 回退到 {实际}。”+ 各失败原因；首选取手选偏好，自动取解析结果）。`ComboRow/ComboBox` 支持单个 `disabledItem`（置灰、点击不提交、方向键/Home/End 跳过）。
-- 设置→绘制→白板：系统低于 Win11 且实际后端为 RTS 扩展/基础 XY 时，在“白板拖动惯性”上方用 `Design::Notice` 显示 RTS 不兼容触控板拖动；Win11 实际 RTS 且窗口注册不可用时改显示“当前系统或设备无法在 RealTimeStylus 模式下使用此手势”。惯性说明附带“需要 Win8.1+ 与精确式触控板”。
+- 软件调试 → 画布初始化信息：标题下按需显示呈现方式回退警告（交换链类型由呈现方式固定，没有交换链回退，2026-11-20 删除 `DebugSoftware.SwapChainFallback` 与 `PresentationFallbackReport::chainWarning`）。自动后端回退仅记录日志；主动指定后端失败才提示。正文展示实际状态。警告沿用黄色信息条，持有本代首次尝试的失败原因，外层窗口重建时传递。
+- 性能页三块顺序：“渲染”= `##draw3-acceleration`（画布渲染加速，只有 i 重启提示）→ 兆芯兼容；“高级设置”= `##draw3-unthrottled-mouse-move`（绘制时鼠标移动不受画布帧率限制，即时生效，无重启提示）；“底层设置”= `##draw3-presentation`（透明呈现方式）→ `##draw3-composition-align`（合成时机对齐，首项“始终（推荐）”）→ `##draw3-waitable-wait`（Waitable 模式下启用等待）→ `##draw3-ulw-async-readback`（UpdateLayeredWindow 模式下异步读回），均重启生效。所有选项在任何系统上都可选（便携版换系统后由启动链自动回退，全选自动为最佳），不置灰；行上方按条件显示 `Design::Notice`：不兼容组合/系统不支持用黄色警告，系统适用条件用蓝色信息。输入方式：手选 RTS → 信息 `InputMode.RtsTouchpadNotice`；Win7 手选 WM_POINTER → 警告 `InputMode.PointerUnsupported`。透明呈现：Win7（低于 6.2）选 DirectComposition → 警告 `PresentationMode.DcompUnsupported`；Win8+ 选 Win7dwm → 警告 `PresentationMode.Win7dwmUnsupportedFormat`（{0}=8/8.1/10/11，10.0 build≥22000 为 11）；Win7 选 Win7dwm → 信息 `PresentationMode.Win7dwmAeroRequired`。交换链设置项已删除（2026-11-20 用户决定）：DirectComposition 固定 FLIP，Win7dwm 固定 SEQUENTIAL（Win7 Aero 实机 FLIP 黑屏且无报错），ULW 不用交换链；旧配置键 `SwapChainMode` 读取时忽略、保存时退役。提示只看已保存的选项与本机系统版本，不看运行时实际回退。waitable 行为合同见 `draw3-integration.md`“DComp waitable 帧延迟等待与熔断”；ULW 读回合同见同文件“ULW 独立纹理、异步读回与合成对齐”；鼠标选项合同见 `draw3-cursors.md`“绘制时光标跟随画布帧率”。
+- 性能页“底层设置”首行为 `##draw3-input-mode`（输入方式，重启生效）。说明行为固定用户文案 `InputMode.E`（“决定设备消息的输入方式，一些选项可能与触控板手势冲突。”），不再拼接实际后端、大屏指定或重启提示（`NextInputBackendDiffers` 已删除）。实际后端与回退原因只在“软件调试 → 画布初始化输出”展示：`InputFallback` 非空时与呈现/交换链回退同位置显示警告条 `##canvas-input-fallback`（标题 `DebugSoftware.InputFallback`，正文“已从 {首选} 回退到 {实际}。”+ 各失败原因；首选取手选偏好，自动取解析结果）。`ComboRow/ComboBox` 支持单个 `disabledItem`（置灰、点击不提交、方向键/Home/End 跳过）。
+- 设置→绘制→白板：系统低于 Win11 且实际后端为 RTS 扩展/基础 XY 时，在“白板拖动惯性”上方用 `Design::Notice` 显示 RTS 不兼容触控板拖动；Win11 实际 RTS 且窗口注册不可用时改显示“当前系统或设备无法在 RealTimeStylus 模式下使用此手势”。“白板拖动惯性”上方常驻 ⓘ `CanvasPanInertia.TouchpadRequirement`（“触控板手势需要 Windows 8.1 或更高版本及精确式触控板。”）。
 - 绘制效果页“实时笔锋”位于“抬笔笔锋修正”之后，内联鼠标/触摸/笔；总开关关闭时子项原位置灰并保留勾选。启动与改值经 `Host::SetLiveTaperOptions` 整组发布。
 - `Drawing.FrameRate` 只在启动时选定 profile；设置页改档只写配置（带重启提示），当前会话帧循环仍按启动值运行。实机验证帧率相关行为时必须先重启再测。
 - 共享 Scheduler 保留原子请求、固定顺序、唯一 render owner、Idle/Continue/Retry 和设备恢复；帧率变更不制造永久渲染，也不修改动画倍率或输入采样。

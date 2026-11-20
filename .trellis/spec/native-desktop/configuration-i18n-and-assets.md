@@ -354,9 +354,10 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 `【用户要求，2026-11-20】` 设置项标题/说明/提示条是写给普通用户的，不是写给开发者的：
 
-- 说明只讲这个选项做什么、对用户有什么影响（例：输入方式 → “决定设备消息的输入方式，一些选项可能与白板的触控板手势冲突。”），不罗列当前运行状态、内部后端名称、解析来源（如“由大屏触控模式指定为 …”）或重启后将使用什么。
+- 说明只讲这个选项做什么、对用户有什么影响（例：输入方式 → “决定设备消息的输入方式，一些选项可能与触控板手势冲突。”），不罗列当前运行状态、内部后端名称、解析来源（如“由大屏触控模式指定为 …”）或重启后将使用什么。
 - 不写傻瓜式、非必要的说明；运行诊断、回退原因等技术细节放到“软件调试”页（如画布初始化输出的警告条）。
 - 说明要准确，避免歧义：适用条件只属于某一子功能时，单独用 ⓘ 信息条放在该功能旁（例：白板拖动惯性说明不再提“双指”，触控板手势的系统/硬件要求改为“白板拖动惯性”上方的 `CanvasPanInertia.TouchpadRequirement` 信息条）。
+- 提示条颜色：选项之间不兼容、系统不支持所选项用黄色警告 ⓘ；只是提示系统/环境适用条件用蓝色信息 ⓘ。选项不因系统不支持而置灰，由运行时自动回退。
 - 修改文案必须同步 20 语。
 
 `【直接确认】` 本地化连接符允许有意空串：仅当基准节点本身为 `""` 时，目标语言显式 `""` 通过 `sync/check`（例如中文 HeroJoin，英文对应空格）。缺失或非字符串节点、非空基准的空翻译、明确待翻译标记及基准变更仍沿用原校验；不得把所有空翻译一律视为完成。
@@ -782,4 +783,4 @@ main.json 新增 `Drawing.Whiteboard.PanInertia.{Enabled,Mouse,Touchpad,Touch,Pe
 
 ## 输入方式与实时笔锋偏好（第4步，2026-11-20）
 
-main.json 新增 `Experimental.Inkeys3.Draw3.InputMode`（`IdtAtomic<int>`，默认 0=自动，越界在读取时回到自动，与 PresentationMode 同一校验分支）和 `Drawing.LiveTaper.{Enabled,Mouse,Touch,Pen}`（`IdtAtomic<bool>`，默认全 true），均 NoUpload，旧配置缺项取默认。新文案键 `SettingsUI.Performance.InputMode.*`、`SettingsUI.Draw.General.LiveTaper.*`、`SettingsUI.Draw.General.CanvasPanInertia.{RtsNotice,RtsGestureUnavailable,TouchpadRequirement}`、`SettingsUI.DebugSoftware.InputFallback` 已补齐 20 语（2026-11-20 删除 `InputMode.{CurrentFormat,NextStartFormat,LargeScreenForced}`，新增 `InputMode.{E,FallbackFormat,MouseFailed}`）并由 `Scripts/i18n.ps1 sync/check` 生成头与 snapshot；`RealTimeStylus`、`WM_POINTER` 不翻译。行为合同见 [settings-performance-and-drawing.md](settings-performance-and-drawing.md) 与 [input-and-ink.md](input-and-ink.md#输入后端选择第4步2026-11-20)。
+main.json 新增 `Experimental.Inkeys3.Draw3.InputMode`（`IdtAtomic<int>`，默认 0=自动，越界在读取时回到自动，与 PresentationMode 同一校验分支）和 `Drawing.LiveTaper.{Enabled,Mouse,Touch,Pen}`（`IdtAtomic<bool>`，默认全 true），均 NoUpload，旧配置缺项取默认。新文案键 `SettingsUI.Performance.InputMode.*`、`SettingsUI.Draw.General.LiveTaper.*`、`SettingsUI.Draw.General.CanvasPanInertia.{RtsNotice,RtsGestureUnavailable,TouchpadRequirement}`、`SettingsUI.DebugSoftware.InputFallback` 已补齐 20 语（2026-11-20 删除 `InputMode.{CurrentFormat,NextStartFormat,LargeScreenForced}`，新增 `InputMode.{E,FallbackFormat,MouseFailed}`；同日新增 `InputMode.{RtsTouchpadNotice,PointerUnsupported}`、`PresentationMode.{DcompUnsupported,Win7dwmUnsupportedFormat,Win7dwmAeroRequired}`，随交换链设置项一并删除整个 `SwapChainMode.*` 与 `DebugSoftware.SwapChainFallback`，`InputMode.E` 与 `TouchpadRequirement` 去掉“白板的”）并由 `Scripts/i18n.ps1 sync/check` 生成头与 snapshot；`RealTimeStylus`、`WM_POINTER` 不翻译。行为合同见 [settings-performance-and-drawing.md](settings-performance-and-drawing.md) 与 [input-and-ink.md](input-and-ink.md#输入后端选择第4步2026-11-20)。
