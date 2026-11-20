@@ -224,21 +224,23 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 ### 1. Scope / Trigger
 
-修改 `UI.Bar.FixedButtonsA1` / `ExtensionButtons` / `FixedButtonsA2`、布局序列 codec、UI3 Bar 按钮注册、默认尺寸/显隐或 `Load()` 规范化时适用。该合同不包含设置界面的拖拽排序/显隐/改尺寸编辑。
+修改 `UI.Bar.FixedButtonsA1` / `ExtensionButtons` / `FixedButtonsA2`、布局序列 codec、UI3 Bar 按钮注册、默认尺寸/显隐、四段模型、启动导入或布局提交时适用。
 
 ### 2. Signatures
 
 - `ConfigSequence<T>::Snapshot() -> std::vector<T>`
 - `ConfigSequence<T>::Replace(std::vector<T>) -> void`
 - `ConfigSequenceAdapter<T>::ElementType / Snapshot(...) / Replace(...)`
-- `BarButtonSetClass::RegisterButton(id, button, allowMultiple, zone, defaultUserVisible=true, legacyField={}, legacyEnabled={}, categoryName={}, settingsName={}, closeMoreAfterAction=true) -> bool`
+- `BarButtonSetClass::RegisterButton(id, button, allowMultiple, zone, defaultUserVisible=true, categoryName={}, settingsName={}, closeMoreAfterAction=true) -> bool`
 - `BarButtonSetClass::RegisterLayoutMarker(id) -> bool`（只接受无实体的官方布局标识）
 - `BarButtonSetClass::TryGetRegistration(id, outRegistration) -> bool`
 - `BarButtonSetClass::GetExtensionRegistrations() -> std::vector<BarButtonRegistrationClass>`
 - `BarButtonSetClass::GetMoreButtonSnapshot() -> BarMoreButtonSnapshotClass`
 - `BarButtonSetClass::GetMoreButton() -> BarButtonClass*`
 - `BarButtonSetClass::RegisterBuiltInComponents() -> void`
-- `BarButtonSetClass::SyncLegacyExtensionButtons() -> void`
+- `Config::GetBarLayout()` 和 `ReplaceBarLayout(values, clearLegacy)` 整组读写三段。启动通过 `GetLegacyBarComponents()` 取得有序导入项。
+- `Inkeys.UI.Bar.LayoutModel` 提供 FromConfig、ToConfig、CanPlace、Move、Insert、Remove、RemoveAllOf、RemoveUserDividers、AutoAdd、Reset 和 ImportLegacy。
+- `BarButtonSetClass::InitializeBarLayout / ReadBarLayout / ApplyBarLayout / ConsumeLayoutReload` 连接配置、设置页和主栏帧。
 - `BarButtonSetClass::Load() -> void`
 
 ### 3. Contracts
@@ -247,34 +249,38 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
   - `UI.Bar.FixedButtonsA1`：`{ "Id": string, "Size": "twoTwo"|"twoOne"|"oneTwo"|"oneOne" }[]`
   - `UI.Bar.ExtensionButtons`：`{ "Id": string, "Size": ..., "Visible": bool }[]`，`Visible` 缺省 `true`
   - `UI.Bar.FixedButtonsA2`：同 A1 元素形态
-- 运行时渲染顺序恒为 `normalize(A1) + normalize(B) + normalize(A2)`。
-- **UI2/UI3 并行期覆盖规则**：启用 UI3 时，`Load()` 的运行时 B 不读取 `UI.Bar.ExtensionButtons`，而是按设置页固定顺序读取 16 个 `Inkeys::config.UI.Bar.ShortcutButton.*` 开关。该投影只存在于当前进程，不调用 `ExtensionButtons.Replace()`、新版 `Config::Write()` 或其他 B 区持久化入口；持久化 B 的排序与编辑能力留到移除 UI2 后恢复。
-- 内置组件注册 ID 使用非 `Inkeys.` 的稳定点分形式，例如 `Component.ShortcutButton.Appliance.Explorer`。注册项同时保存旧字段字符串、无参数开关读取器、设置页分类/名称、`UI` 类型 SVG 资源名（`comp*`，见 [bar-icons.md](bar-icons.md)）、栏内短文字和点击动作；注册顺序单独保存，不依赖 `unordered_map` 遍历顺序。
-- 设置页修改组件开关时，先更新 `Inkeys::config.UI.Bar.ShortcutButton.*` 并执行 `QueueConfigWrite()`，再在 UI3 下调用 `SyncLegacyExtensionButtons()` 和 Bar 渲染唤醒入口。打开开关按固定列表位置加入 B，关闭开关立即移除，其余组件相对顺序不变；UI2 的首个有效组件规则保持不变。
-- 运行时按钮列表整体替换为注册表持有的 `shared_ptr` 序列；两条交界 Divider 使用长期持有的独立对象。组件按钮各自使用本地状态，避免多个扩展按钮共享按压/选中状态。
-- 按钮图标载荷可为 SVG 或 PNG；内置组件自 2026-11 起全部为主题占位色 SVG，PNG 路径当前无内置使用者但保留。SVG 继续走主题着色和内容切换；PNG 复用 SVG 的布局/透明度动画状态并由 `UiPNGClass` 绘制。两者的 D2D 位图都属于当前 device generation；设备 epoch 切换或 `D2DERR_RECREATE_TARGET` 时，必须通过 `UIRendering::DiscardDeviceResources()` 重置 `svgMap`、`pngMap` 及注册按钮的 SVG/PNG 缓存，再由下一帧按原始 SVG 文本或 PNG 解码像素重新上传。
+- 注册后、首次 Load 前初始化布局。16 个旧开关仅供启动导入，按定义顺序前二追加 B1、其余追加 More。已有同 ID 可见副本保留，全部隐藏时原位启用首份。已有项占用导入序号。资源缺失不影响导入。
+- 导入与规范化共用一次整组替换和一次启动期保存（启动初始化不在渲染回调中，沿用旧 Load 的启动保存）。初始化完成前拒绝设置提交。默认布局无修正且全关时跳过保存。启动写失败保留完整内存布局、不设待写状态：磁盘仍有旧开关，下次启动按同一规则重新导入，其后任意完整配置写入也会带上新布局。启动与编辑由 `layoutApplyMutex` 串行化；渲染读取独立的已提交布局快照，不取该锁、不等待写盘。
+- 设置页按 B1/More 中的存在性显示组件开关（含隐藏）。打开时 AutoAdd 统计 B1 普通组件，包括重复、隐藏、缺席插件；少于两项追加 B1，否则追加 More。关闭时删除两段里全部同 ID 项。
+- ApplyBarLayout 核对 expected 后整组替换内存配置并发布已提交布局，**不写盘**：设置页运行在共享渲染线程，调用方在 `Applied` 后调用 `QueueConfigWrite()`，由设置业务 worker 写出最新完整配置（见 rendering-and-ui.md 的渲染线程写盘禁令）。返回 `Applied / Unchanged / Stale`；同值提交为 `Unchanged`；只清旧开关、布局不变时为 `Applied` 但不请求重载。布局实际变化时由 RenderFrame 在空闲检查前消费原子请求：先置命中暂停、递增布局代次，再 `Load()`。重置恢复 schema 三段并清空旧开关，保留显示偏好。
+- **重载期间的交互安全**：被替换的重复项实例进入退休列表，在下一次帧成功呈现、新命中表发布后才释放（避免地址复用让新克隆继承旧矩形），同时解除命中暂停。命中冻结时记录布局代次；暂停期间或代次在冻结中途变化时不给按钮命中。按下手势保存冻结时的代次，抬起时实例不在当前活动组或代次已变则不执行动作——即使两次提交合并后实例被复用也成立。不得用合成 `WM_CANCELMODE` 取消整个交互会话（会关闭颜色选择器等无关面板）。
+- 固定按钮和 Setting 使用注册单例。16 个内置组件和用户线按条目从注册原型克隆，绑定自身 localState。同段同 ID 的重复组在位置、数量和显隐均稳定时复用原实例。按下和悬停持有强引用，抬起核对源组，双击用弱引用核对原对象。
+- 内置组件注册 ID 使用非 `Inkeys.` 的稳定点分形式，例如 `Component.ShortcutButton.Appliance.Explorer`。注册项同时保存设置页分类/名称、`UI` 类型 SVG 资源名（`comp*`，见 [bar-icons.md](bar-icons.md)）、栏内短文字和点击动作；注册顺序单独保存，不依赖 `unordered_map` 遍历顺序。
+- 按钮图标载荷可为 SVG 或 PNG；内置组件自 2026-11 起全部为主题占位色 SVG，PNG 路径当前无内置使用者但保留。SVG 继续走主题着色和内容切换；PNG 复用 SVG 的布局/透明度动画状态并由 `UiPNGClass` 绘制。两者的 D2D 位图都属于当前 device generation；设备 epoch 切换或 `D2DERR_RECREATE_TARGET` 时，必须通过 `UIRendering::DiscardDeviceResources()` 重置 `svgMap`、`pngMap` 及注册按钮的 SVG/PNG 缓存，再由下一帧按原始 SVG 文本或 PNG 解码像素重新上传。缓存清理覆盖所有实例，包括等待下一成功帧释放的退休副本。
+- 本地化更新原型和活动副本（包括 More 和隐藏项）。设备丢失沿 NotifyFrameTargetDiscarded → ResetIconCaches 清理注册对象、所有当前副本、交界线和 More 的 SVG/PNG 位图，保留源载荷。
+
 - **按钮 ID 命名**：
   - 官方按钮必须以 `Inkeys.` 开头，当前形如 `Inkeys.Bar.Select`。
   - 扩展/插件/组件按钮**不得**使用 `Inkeys.` 前缀，且必须为点分 ID：至少两段，形如 `xxx.xxx` 或 `xxx.xxx.xxx`（不允许首尾 `.` 或空段）。
   - `RegisterButton` 按分区强制上述规则；Extension 仅额外允许已注册官方实体 `Inkeys.Bar.Setting`，布局标识必须走 `RegisterLayoutMarker`；B 区规范化时丢弃未注册官方前缀 ID 与非法点分格式。
 - A1 默认 required 与顺序：Select, Draw, Geometry, Eraser, Recall, Clean（**不含 Divider**）。
-- A2 默认 required 与顺序：`Whiteboard/twoOne`、`Freeze/twoOne`、`EndShow/twoTwo`；Setting 属于 Extension 的显式 More 项。旧 A2 若恰好是 Whiteboard/Freeze 的任一相对顺序，则保留该顺序并在末尾追加 EndShow；其他缺项、多余项或错区 ID 仍按严校验整区回默认。旧持久化 `Pierce` ID 仍退休，新 A2 配置不接受该 ID；分离式的独立穿透只作为运行时伴随按钮。
+- A2 默认 required 与顺序：`Whiteboard/twoOne`、`Freeze/twoTwo`、`EndShow/twoTwo`；Setting 默认位于 More。旧 A2 若恰好是 Whiteboard/Freeze 的任一相对顺序，则保留该顺序并在末尾追加 EndShow；其他缺项、多余项或错区 ID 仍按严校验整区回默认。旧持久化 `Pierce` ID 仍退休，新 A2 配置不接受该 ID；分离式的独立穿透只作为运行时伴随按钮。
 - A2 的 Freeze/Pierce 按“选择与穿透”合同运行时投影：合并式只显示可用 Freeze `twoTwo`；分离式在同一列显示上 Pierce `twoOne`、下 Freeze `twoOne`。空页 Selection 隐藏 Pierce 并放大可用 Freeze；Freeze 不可用时隐藏并把可用 Pierce 放大。Whiteboard 不提供 Pierce；Whiteboard/EndShow 沿现有工作区投影，隐藏的白板功能入口不因此开放。以上 `hide/size` 不改写 A2 持久化順序。
-- **交界分割线**：运行时注入 `Inkeys.Bar.Divider` 且**不写入**三区配置。当前虚拟投影始终包含 More 与 Setting，因此主栏恒按 `A1 | Divider | 最多两个 B 实体 | More | Divider | A2` 构建；旧组件全关时仍保留两条 Divider。Divider 保留 `oneTwo` 的两行布局占用，但只绘制 `1x50` DIP、圆角 `0.5` 的 Shape 细线并垂直居中；SurfaceFrame 填充透明度为 `0.30`，不得加载或绘制 SVG；PointLight 关闭主光并复用几何分隔线 `0.30` 的第三鼠标光强度。它不增加主栏横向宽度，而是居中复用上一组尾端已有的 `5` DIP 间隙；前组小按钮留下未填满列时必须先封列，再从新列排下一组，统一横坐标镜像继续保证左右布局对称。
+- **交界分割线**：运行时注入 `Inkeys.Bar.Divider` 且**不写入**三区配置。主栏按 `A1 | Divider | B1 全部可见实体 | More | Divider | A2` 排列。Divider 保留 `oneTwo` 的两行布局占用，但只绘制 `1x50` DIP、圆角 `0.5` 的 Shape 细线并垂直居中；SurfaceFrame 填充透明度为 `0.30`，不得加载或绘制 SVG；PointLight 关闭主光并复用几何分隔线 `0.30` 的第三鼠标光强度。它不增加主栏横向宽度，而是居中复用上一组尾端已有的 `5` DIP 间隙；前组小按钮留下未填满列时必须先封列，再从新列排下一组，统一横坐标镜像继续保证左右布局对称。
 - **交界分割线交互**：Divider 必须从主栏悬停动画推进、指针扫描及点击/按压命中入口显式排除。遗留 hover、pressed、pressScale 状态应恢复为 `None/None/1.0`；不得通过禁用 Shape 或把可见态 `frameLightPct` 清零来实现不可交互，否则会错误关闭第三鼠标光。
 - **固定 More 入口**：运行时在 B 末尾、`B|A2` Divider 前注入一个硬编码 More 按钮。它不登记到 `ExtensionButtons`，不进入配置；主栏折叠时隐藏，浮层打开时使用普通按钮的 `Selected` 视觉状态。
-- **MoreBoundary 标识**：`Inkeys.Bar.MoreBoundary` 是 Extension 中最多一个的无实体布局标识。它只定义旧组件前/后的分组边界：边界前最多两个旧组件进入主栏，其余进入 `forcedOverflow`；边界后进入 `explicitMore`。标识缺失时不自动补齐，规范化时固定输出注册默认尺寸与 `Visible=true`，不产生按钮实体。
-- **运行时投影顺序**：UI2/UI3 并行期间，旧组件开关按首次注册顺序建立活动栈；关闭项移除，重新启用或新启用项追加到栈尾。主栏仅保留前两个，More 浮层显示顺序为 `explicitMore` 后接 `forcedOverflow`，Setting 默认在显式组远端。运行时继续忽略并且不规范化/写回持久化 `ExtensionButtons`。
-- **More 浮层**：每个标准单元为 70 DIP，按 `twoTwo`/`twoOne`/`oneTwo`/`oneOne` 子网格近方形打包，最多五列；强制组靠近主栏，显式组在远端。仅两组均非空时绘制整行横向分割线，分割线跨过 X 侧栏并保持面板左右内边距一致。根面板从 More 按钮中心的 60×30 紧凑态展开，时长使用 `UiDefaultOperationDur`，几何使用 Back、透明度使用 Sine；子内容围绕完整面板中心等比缩放，按钮持续保存为主栏局部坐标并在隐藏时缩在 More 入口下方，补位到主栏时不得从远端飘入。面板先于主栏绘制，使收拢部分从主栏下层出现。关闭按钮位于按钮网格右侧窄栏的右上角，不额外增加顶部高度。主栏左右换边不改变逻辑顺序，上下展开仅翻转物理行方向。
+- 第一个 MoreBoundary 划分 B1/More，缺失则在所有有效项之后补标记，多余标记忽略。序列化固定为 twoTwo/true。Setting 跨两段恰好一个，首项强制可见，缺失时补在 More 末尾。
+- explicitMore 按 More 的原序发布可见且已注册的实体，forcedOverflow 恒为空。More 为空仍保留入口，已展开面板收起。
+- **More 浮层**：每个标准单元为 70 DIP，按 `twoTwo`/`twoOne`/`oneTwo`/`oneOne` 子网格近方形打包，最多五列。显式组沿用单组装箱。根面板从 More 按钮中心的 60×30 紧凑态展开，时长使用 `UiDefaultOperationDur`，几何使用 Back、透明度使用 Sine；子内容围绕完整面板中心等比缩放，按钮持续保存为主栏局部坐标并在隐藏时缩在 More 入口下方，补位到主栏时不得从远端飘入。面板先于主栏绘制，使收拢部分从主栏下层出现。关闭按钮位于按钮网格右侧窄栏的右上角，不额外增加顶部高度。主栏左右换边不改变逻辑顺序，上下展开仅翻转物理行方向。
 - **More 交互**：点击外部先关闭并继续处理同一鼠标消息；面板正文消费点击；X 复用独立按钮悬停填充、按下缩小、拖出取消与抬起关闭；浮层完全隐藏时直接同步内部按钮的填充、边框、图标和文字颜色，Selected 青色必须在下次展开前落稳。浮层按钮复用普通 `clickFunc`，默认按 `closeMoreAfterAction=true` 在回调前关闭，设为 false 时保持打开。打开绘制属性、几何、颜色/粗细子面板、主栏折叠或互斥面板时关闭 More。
 - **More 入口视觉**：三角图标比原尺寸略小并保持固定朝向，不随开关或上下换边旋转；浮层打开时 More 入口使用普通按钮的 `Selected` 状态，使背景、图标和文字切换为青色 Accent 高亮。浮层几何继续使用不截断的 Back 进度形成弹性展开，并与主栏锚点保留独立间隙。SVG 设备缓存与注册按钮一起在 device epoch 重建时清理。
-- **相邻分割线规则**：配置侧相邻 Divider 只保留一条；运行时通过“先判断 B 是否有可见项再注入”避免相邻交界线。不得对 `only` 单例按钮重复 `buttonList.Set` 重建列表（会 double-free）。
-- A1/A2 **严校验**：配置 Id 多重集合必须恰好等于该区 required 默认集合；缺项、多余/错区 ID、非法重复、字段类型错误 → **仅该区**重置为默认顺序。不做逐项补洞。配置中的 Divider 在 A 区先剥离再校验。
+- UserDivider 注册为 FixedA1 官方实体，oneTwo、可重复，在 A1/B1/A2 保序，允许连续；More 内丢弃。每条可见用户线独占 1 DIP 加 5 DIP 间距，隐藏项不推进游标。
+- A 区先移除历史 Divider。忽略允许重复项后的成员必须恰为 required 集合的排列，缺项、重复、错区、多余、未知或缺少必需注册描述时仅该区回完整默认。成功时按含用户线的原序写回注册尺寸。
 - A 区不持久化用户 Visible；A 元素若误带 `Visible` 则忽略并剥离写回。A 的默认 `userVisible` 仅来自注册写死值；Geometry 注册默认可见，但选择模式通过运行时 `hide` 隐藏。
-- `Size` 本轮只镜像注册默认；缺省/非法/非默认均纠正为注册默认并写回，**不**因 Size 触发 A 区整区重置。后续设置 UI 可开放用户改 Size。
+- 已注册条目的持久化 `Size` 恒为注册默认，schema 默认必须与注册默认一致；缺省/非法/非默认均纠正为注册默认并写回，**不**因 Size 触发 A 区整区重置。后续设置 UI 可开放用户改 Size。
 - B 区：顺序 + Visible；符合扩展 ID 规则的未知/已卸载插件 ID **永久保留**且不渲染；未注册的 `Inkeys.*` 与非法 ID 格式误入 B 时剔除；已注册官方 Setting、MoreBoundary 和扩展单例只取第一条。
-- 旧 `UI.Bar.ButtonLayout` 单数组：仅当三个新字段都缺失时拆分迁移；其中 Divider 丢弃不迁入；迁移后 A 仍走严校验，B 保留扩展项 Visible。
-- A1 仅将 `Select, Draw, Eraser, Geometry, Recall, Clean` 这一精确旧默认顺序迁移为当前默认；其他 required 集合的合法自定义排列保持原顺序。
+- 旧 `UI.Bar.ButtonLayout` 单数组：仅当三个新字段都缺失时拆分迁移；其中 Divider 丢弃不迁入；迁移后 A 仍走严校验，B 保留扩展项 Visible。含旧单数组的配置在首次启动可能写盘两次（拆分一次、布局初始化一次），此后收敛。
+- 仅在旧 ButtonLayout 拆分路径将 A1 的 `Select, Draw, Eraser, Geometry, Recall, Clean` 这一精确旧默认顺序迁移为当前默认；其他 required 集合的合法自定义排列保持原顺序。
 - 发版新增 A 区 required 官方按钮：旧配置缺新 ID → 该 A 区整区重置默认；不猜测新按钮插入点。
 - `ConfigSequence<T>` 快照在共享锁下生成；JSON 先完整解析到临时集合，成功后才在独占锁下整体替换。
 - `BarButtonClass::IsVisible()` 是唯一可见性消费入口。主栏注册/配置的基础尺寸与用户可见性独立于运行时有效 `size/hide`；`Load()` 只更新基准和成员，不能把配置默认写回已显示的动态尺寸。所有主栏有效尺寸、显隐及业务高亮/禁用统一由 `StateUpdate` 的最终计算/应用入口派生，A2几何不受文字/内容styleKey短路。组件、历史、计时器与外部工具刷新先更改数据状态并走统一刷新，不直接覆盖有效属性。构造默认、独立分页/属性按钮、指针反馈和渲染SetTar不属于该主栏业务写入口。
@@ -289,51 +295,39 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 | A 元素带 `Visible` | 忽略剥离，不整区重置 |
 | A/B `Size` 缺省/非法/非注册默认 | 纠正为注册默认，不因 Size 重置 A |
 | B `Visible` 缺失 | `true` |
-| B `Visible` 不是 bool | 整个 ExtensionButtons 字段回退默认（空数组） |
+| B `Visible` 不是 bool | 整个 ExtensionButtons 字段回退 [MoreBoundary, Setting] |
 | B 含未注册的 `Inkeys.*` 或非点分/空段 Id | 剔除；已注册 Setting/MoreBoundary 保留 |
 | B 未知插件 Id（合法扩展点分格式） | 保留不渲染 |
 | 旧 `ButtonLayout` 且无新字段 | 拆到 A1/B/A2；Divider 不迁入，交界运行时注入 |
 | 旧 A2 恰好为 Whiteboard/Freeze（任一顺序） | 保留相对顺序，在末尾追加 EndShow 并规范化默认尺寸 |
 | 旧 `ButtonLayout` 或 A2 含 `Inkeys.Bar.Pierce` | 迁移时丢弃；A2 最终按 Whiteboard/Freeze/EndShow required 集合严校验，不将 Pierce 注册为持久化布局实体 |
 | 已有任一新字段 | 不再读旧 `ButtonLayout` |
-| 旧组件全关 | 运行时仍显示 More；浮层仅含远端 Setting，无横向分割线 |
-| 相邻两条 Divider（运行时/配置） | 只保留一条 |
-| UI3 并行期且 `ExtensionButtons` 含已有数据 | 运行时忽略该数据且不改写；B 只反映旧组件开关 |
-| 任一旧组件开关 `false -> true` | 完成旧配置写入后，按注册顺序立即加入当前 UI3 B |
-| 任一旧组件开关 `true -> false` | 完成旧配置写入后，立即从当前 UI3 B 移除 |
-| 多个旧组件开关同时为 true | 全部显示，不受 UI2 单组件容量限制，顺序与设置页一致 |
-| D2D device epoch 切换或 `D2DERR_RECREATE_TARGET` | 释放所有面板和注册按钮 SVG/PNG 位图缓存；保留原始载荷供下一帧重建 |
-| `ExtensionButtons` 含 `MoreBoundary` 多次/带实体 | 只保留首个规范标识；不产生可点击按钮 |
-| 旧组件开关 `true -> false -> true` | 关闭时从主栏/More 移除，重新启用后追加到活动栈尾 |
+| 默认配置，旧开关全关 | B1 空，More 仅含 Setting，初始化无需保存 |
+| 连续用户线靠近固定线 | 每条可见用户线独占窄列，固定线仍占原间隙 |
+| 已有自定义布局并有旧开关 | 保留已有顺序与重复项，补入缺失项，开关清零后保存 |
+| B 内合法缺席插件或隐藏项 | 保留全部记录，没有可见网格 |
+| MoreBoundary 重复或缺失 | 规范输出唯一标记 |
+| 设备 epoch 更换 | 原型、当前副本和固定对象清理设备缓存，下一帧重建 |
 | More 面板打开时点击 X/外部/普通 More 按钮 | 分别关闭面板、关闭并继续原点击、切换独立展开目标 |
 | 主栏 Divider 前存在未填满的小按钮列 | 先结束该列，Divider 居中放入既有 5 DIP 间隙，下一组从新列开始且总宽度不因 Divider 增加 |
 | 指针经过或按下主栏 Divider | 不进入 hover/pressed/click 状态；纯 Shape 与独立第三光保持可见 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：仅打乱 A1 顺序后启动，顺序保留；B 中插件隐藏后重装仍在原位。
-- Good（并行期）：`ExtensionButtons` 保留未来排序数据，同时 UI3 按 16 个旧开关的固定顺序即时投影多个组件。
-- Base：无新区字段时 A1/A2 使用当前默认序；Geometry 注册默认可见并在选择模式运行时隐藏；旧组件开关全关时主栏无普通 B 实体，但 More 仍提供 Setting。
-- Bad：A1 缺少 Geometry 或混入 Pierce → A1 整区回默认，A2/B 不动。
-- Bad（并行期）：设置页只写旧开关却继续从持久化 `ExtensionButtons` 构建 B，导致 UI 与开关状态分叉。
+- B1 中四个显式组件全部上栏；More 中两份同 ID 保持顺序、独立状态。
+- 用户在新区排成历史 A1 顺序时保留；旧单数组中的同一精确排列迁移为默认。
+- A1 缺少 Geometry 即回默认，其他分区照常解析。
 
 ### 6. Tests Required
 
-- 验证 A 缺项/错区重置、Size 纠正、A 误带 Visible 剥离、B 未知 ID 保留、官方 ID 误入 B 剔除。
-- 验证旧 `ButtonLayout` 迁移与 `configOnce = config` 后三区一致。
-- 静态确认 16 个内置组件均已注册且顺序与设置页一致，16 个 toggle 写入后均触发 UI3 同步。
-- 验证 UI3 启动和 toggle 同步均不读取、替换或写回 `UI.Bar.ExtensionButtons`。
-- 手工验证 SVG/PNG 图标在 device epoch 重建后重新显示、组件 SVG 深浅主题着色、全部组件同时布局、toggle 即时增减，以及 UI2 首个有效组件行为。
-- 手工验证 0/1/2/3+ 个旧组件的主栏容量、MoreBoundary 两组顺序、分割线条件、上下展开物理行方向、与绘制属性一致的时长及 Back/Sine 动画、隐藏态 Selected 青色同步、More 固定小三角、右上角 X 悬停/按压/拖出，以及 `closeMoreAfterAction=false` 保持打开。
-- 手工验证主栏两条 Divider 保持 `oneTwo` 两行布局占用但只绘制垂直居中的 `1x50` DIP 纯 Shape，以及 `0.30` 填充/第三光强度、5 DIP 间隙居中、半列封列、左右镜像；指针经过/按下不产生背景、缩放或点击。
-- 执行 `git diff --check` 和完整 Solution `Debug|ARM64` 构建；Headless/静态断言确认旧 Whiteboard/Freeze 顺序迁移、A2 三态可见性、EndShow 单次业务投递、旧 Pierce 被迁移且新配置不接受；无自动化 UI 测试时记录未做运行验证。
+- H1–H5 覆盖放置矩阵、固定区回退、B 和真实 codec、增删重置及有序导入，使用私有文件验证重读、启动保存失败后的完整内存导入与后续完整写入。O2 另验证：重载后成功呈现前旧坐标不命中、成功呈现后恢复、按住期间合并重载后抬起不执行、同值提交不重载不递增代次、只清旧开关不重载。
+- H6 覆盖两档用户线中心距、半列、隐藏项、镜像与固定线。O1/O2 使用真实离屏按钮检查顺序、重复身份、独立状态、删除时的手势、文案、缓存和帧消费。
+- 完整 Debug|ARM64 构建、headless 与产品离屏验证。默认配置同环境比较场景集合、尺寸、BGRA 和 PNG 字节；真实窗口重启确认四组件、连续线与 More 重复项。
 
 ### 7. Wrong vs Correct
 
-- Wrong：继续用单数组表达固定区+插件区，或 A 缺项时猜测插入点补洞。
-- Correct：三区分存；A 非法整区重置；运行时始终 A1+B+A2；布局/命中统一 `IsVisible()`。
-- Wrong（UI2/UI3 并行期）：组件 toggle 改变时写入或重排持久化 `ExtensionButtons`。
-- Correct（UI2/UI3 并行期）：旧开关仍是唯一持久化来源，UI3 只重建当前进程的 B 序列；移除 UI2 后再恢复持久化 B 排序。
+- 设置编辑基于页内模型快照，提交时核对 expected，由 owner 合并重载。设置线程直接改列表会与帧内扫描竞争。
+- 强制容量会丢失用户指定的 B1 顺序；两项阈值仅用于 AutoAdd。
 
 ## Setting 主题偏好
 

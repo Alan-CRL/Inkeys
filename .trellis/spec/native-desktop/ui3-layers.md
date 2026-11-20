@@ -48,6 +48,7 @@
 | `Inkeys.UI.UI3.ListLayout` | 列表排布算法（Main / GroupedGrid / SingleRow） |
 | `Inkeys.UI.UI3.PanelStack` | 面板范围、命中几何、叠层与输入归属裁决 |
 | `Inkeys.UI.UI3.WakeSignal`、`Inkeys.UI.UI3.FramePacing` | 唤醒信号；帧节拍与动画时钟 |
+| `Inkeys.UI.UI3.DragSession` | 通用拖放状态机（阈值、接触 ID、点击/放下/取消），不依赖主栏与 ImGui（合同见 `settings-component-editor.md`） |
 | `Inkeys.UI.UI3.PresentationProbe` | 有限场景观察协议（`Ui3Finite*`、`Ui3Svg*`） |
 
 分区（`Inkeys.UI.UI3:<Name>`，只作为整体使用的重型运行时）：

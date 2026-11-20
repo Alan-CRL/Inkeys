@@ -30,6 +30,7 @@
 - [configuration-i18n-and-assets.md](configuration-i18n-and-assets.md)：配置模式、二十语言映射、菜单排序与热切换、国际化生成链及字体资源归属。
 - [settings-performance-and-drawing.md](settings-performance-and-drawing.md)：性能页、两套帧率、通用绘图每笔锁存和画布初始化信息合同。
 - [settings-attention-notes.md](settings-attention-notes.md)：设置说明下的信息提示、响应式测高、文案分离与无窗口专项。
+- [settings-component-editor.md](settings-component-editor.md)：设置组件页主栏编辑器：预览实例与共用绘制函数、UI3 拖放会话、设置宿主纹理/预乘合成/落点/取消、组件库页面。
 - [settings-navigation.md](settings-navigation.md)：设置页分类树、导航表（唯一数据源）、旧入口重定向、分组状态与空页约定。
 - [pen-haptics.md](pen-haptics.md)：笔触觉 Host 注入、设备绑定、UI3 接触凭据、失败回退与无窗口验证合同。
 - [pen-width.md](pen-width.md)：画笔DIP、设备预设身份、显示上下文、连续输出与配置迁移合同。
