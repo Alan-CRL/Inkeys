@@ -774,3 +774,7 @@ Correct：保留191为最小组，白板用332，并验证最终内嵌资源和�
 ## 白板拖动惯性偏好
 
 main.json 新增 `Drawing.Whiteboard.PanInertia.{Enabled,Mouse,Touchpad,Touch,Pen,PenTail}` 六个 `IdtAtomic<bool>` / NoUpload，默认依次 `{true,false,true,true,true,false}`。缺项及非法bool按schema默认，不为旧版固定Mouse惯性迁移为true；总关不覆盖五项。启动/设置经完整options→Host去重快照→DrawingController owner应用，写盘复用冻结FIFO；设置标题、说明及五类输入七键补齐20语并由既有sync/check生成头与snapshot。2026-11-12起PTP扩展暂时停用，Touchpad字段和界面偏好保留但不会产生触控板运动，不得据此宣称该设备可用。可执行合同与测试断言统一见 [canvas-pan.md](canvas-pan.md)。
+
+## 界面尺寸模式（小尺寸）
+
+- `Experimental.Inkeys3.UI3.SizeMode`（0 = 大尺寸默认，1 = 小尺寸，读入时校验）与 `StartupPreview.CachedStartupBarWidthDipCompact`（默认 352.5）。`UI.Bar.UseTaskbarHeightAsScaleBase` 默认改为 1（任务栏基础量，两档统一为 48 DIP）。设置项“界面尺寸”位于窗口和显示器 → 窗口 → 缩放分区首项。

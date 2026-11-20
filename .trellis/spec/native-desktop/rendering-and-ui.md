@@ -438,7 +438,7 @@ constexpr bool IsPptDirectionActionRepeatable(
 - 每个分页 HWND 独立持有 D2D target/`UIRendering`、Previous/Page/Next `BarButtonClass` 和输入状态；独立资源是正确边界，不允许复制按钮行为。Bottom 的 Previous/Page/Next/More 实例及列表成员跨 `PptCompact/WhiteboardExpanded` 稳定，More 使用共享隐藏布局与绘制层级收拢到 Next 下方并渐隐，不能清空目标矩形；退场不命中且反向重入续接当前呈现值。Middle 只切 `Hidden/PptCompact`。
 - `BarPageSurface` 只保存每窗分页列表、固定属性数组、PPT-only DragHandle 和公共指针状态的路由；不得保留动态 Widget 构建或独立视觉算法。标准按钮内部位置、hover/press、内容转换、draw、圆角 hit 和动画值调用上述 Bar 入口，适配器只把共享结果映射到本窗 damage/present。
 - 分页标准按钮的 SVG/PNG 位图与 renderer 字体/遮罩缓存按目标及设备代次持有，不构造完整主栏 owner。显式 `ReleaseDeviceResources()` 与成功的 epoch/target 隐式重建须清理相应设备资源；创建失败保留旧资源和待绘制 damage。只有内容、尺寸、颜色或设备域变化才重建对应资源，普通帧不得反复失效。
-- PPT 横纵分页默认统一使用白板同源的 `70x70 DIP` `2x2` 按钮：Bottom主体 `240x80 DIP`，Middle主体 `80x240 DIP`，保留 `10 DIP` Drag slot及 `5 DIP` 外边距/按钮间距。标准按钮尺寸与槽位来自共享 Bar 尺寸源；当前可见项及 Drag 槽的列表布局共同决定按钮目标和背景目标宽度，背景与按钮使用同一布局批次推进。分页仅在拓扑/尺寸目标变化时重算列表并缓存隐藏优先顺序；PageControl 通过非分配几何读取跟随背景当前尺寸，不维护独立宽高动画；`BarPptCompactPaginationEnabled=false` 禁用原32.5DIP路径，原紧凑布局、字体与分支继续保留。Drag 是 divider lane，与相邻 Arrow 直接相接、不增加第三个间距。Whiteboard 主体左侧 `305x80 DIP`（Previous/Page/Next/More）、右侧 `230x80 DIP`（Previous/Page/Next）；左侧菜单另按当前动画向上扩展同一 HWND 包络。
+- PPT 横纵分页默认统一使用白板同源的 `70x70 DIP` `2x2` 按钮：Bottom主体 `240x80 DIP`，Middle主体 `80x240 DIP`，保留 `10 DIP` Drag slot及 `5 DIP` 外边距/按钮间距。标准按钮尺寸与槽位来自共享 Bar 尺寸源；当前可见项及 Drag 槽的列表布局共同决定按钮目标和背景目标宽度，背景与按钮使用同一布局批次推进。分页仅在拓扑/尺寸目标变化时重算列表并缓存隐藏优先顺序；PageControl 通过非分配几何读取跟随背景当前尺寸，不维护独立宽高动画；原 `BarPptCompactPaginationEnabled` 开关与 32.5 DIP 硬编码分支已删除，小尺寸改走标准布局（见「UI3 界面尺寸模式」合同）。Drag 是 divider lane，与相邻 Arrow 直接相接、不增加第三个间距。Whiteboard 主体左侧 `305x80 DIP`（Previous/Page/Next/More）、右侧 `230x80 DIP`（Previous/Page/Next）；左侧菜单另按当前动画向上扩展同一 HWND 包络。
 - 分页背景的主题、圆角、边框、第一/第三光源、draw 与 dirty 直接复用 Main Bar 背景实现；PageControl 只提供子控件联合外框目标。外框必须读取 `BarMainBarCornerRadiusDip`，按钮必须读取 `ButtonCornerRadiusDip`，边框和内边距也读取主栏单一来源（当前为 `8/4/1/5 DIP`）；禁止 PageControl 镜像常量。分页外框和 Main Bar 外框都保持背景 Shape 默认 `frameCursorLightIntensityScale = 1.0`，不得误用按钮的 `ButtonCursorLightIntensity`。第三光源必须消费 Main Bar 发布的同一屏幕坐标、半径、强度和可见性快照；Surface 不得从本地 `WM_MOUSEMOVE` 创建淡入/淡出状态。
 - `DrawButtonVisual` 的显式 `inherit` 是按钮父坐标唯一真值。入口必须先同步 `button.inhX/inhY`，再通过 `ResolveButtonChildTopLeft` 解析 SVG、主文字和次文字；Main Bar dirty 与最终 draw 调用同一继承准备入口。禁止读取默认或上一帧父缓存后再把显式 `inherit` 只用于背景 Shape。
 - 四个 PageControl HWND 与 Bar HWND 共同构成第三光源的实际消息接收窗口集合。真实鼠标进入分页 HWND 时只通知 Main Bar 激活既有状态机；离开时由 Main Bar 根据 `WindowFromPoint` 决定 `Inside/Grace`。Raw Input 和 5 秒 timer 始终以 Bar HWND 为 owner；分页只发布成功呈现的屏幕边界用于 240px 邻域裁剪，隐藏或提交失败不得发布假边界。
@@ -1244,6 +1244,89 @@ RebaseBottomDockPresentedWindow(presentedAfterAbsorb);
 // Correct：同锁重基准成功映射、布局命中与 residual；真实屏幕位置保持。
 RebaseBottomDockPresentedWindow(presentedAfterAbsorb, {}, absorbedLayoutPixels);
 ~~~
+
+### UI3 界面尺寸模式（大尺寸 / 小尺寸）合同
+
+**范围**：`Experimental.Inkeys3.UI3.SizeMode`（0 = 大尺寸，默认；1 = 小尺寸），由设置 → 窗口和显示器 → 窗口 → 缩放分区首项“界面尺寸”切换。影响主栏、属性窗、状态指示器、翻页控件（PPT 与白板）、悬停提示和启动预览。
+
+**单一尺寸源**
+
+- `BarSizeMode` / `BarSizeMetrics` / `ResolveBarSizeMetrics(mode)`（`Bar.Metrics.cppm`）是唯一尺寸来源。
+- 大尺寸 `BarLargeSizeMetrics` 必须逐项等于原常量；以 `--ui3-golden-dump` 35 场景逐字节一致为回归门禁。
+- 小尺寸 `BarCompactSizeMetrics` 取值（2026-11-20 实机反馈修正 1 由 35 DIP 网格改为 42.5 DIP 网格）：
+  - 主栏高 42.5，圆角 8（与大尺寸一致）。
+  - 1×1 按钮 32.5，四周与相邻间距 5（与大尺寸相同），两格跨度 70。
+  - 主按钮 42.5×42.5，主按钮到主栏 5，附属面板间距 5，分割线高 28.5（32.5−4）。
+  - 吸附形变上限 12.75（24×42.5/80），任务栏基础量 48（与大尺寸统一）。
+  - 主按钮展开态超椭圆指数 5.14（大尺寸 10），使两档主按钮等效圆角均约 9.15 DIP（按对角线顶点与圆角矩形一致换算）；折叠态两档均为 3。
+- 小尺寸主栏分割线与大尺寸同语义：画在两按钮之间间隙正中，不额外占宽（单行布局中 `columnBoundary` 项不推进行宽）；橡皮属性面板的小尺寸分割线同样落在组间间隙正中。
+- 按钮预设不变：投影阶段把非分割线尺寸映射为 1×1（`IsCompactSizeBar`），列表布局以 `BarSizeMode` 求值。
+- 禁止在新代码里重新引入独立的 compact 常量或开关；旧 `BarPptCompactPaginationEnabled` 与 32.5 硬编码分支已删除。
+
+**落地与热切换**
+
+- 设置线程只写 `requestedSizeMode`（同时写回配置）。
+- 渲染线程在帧首把它落地为 `appliedSizeMode`；主栏拖动或直拖期间延后到松手。
+- 投影、输入与 PageControl 一律读 `AppliedSizeMode()`，不能读配置或 requested 值。
+- 落地帧依次执行：
+  - 关闭附属属性窗、More，以及白板菜单（`RequestWhiteboardMenuDismiss`）。
+  - 结算撤回外观，重新发布显示快照，通知 PageControl。
+- 主体高度 `mainBodyHeight` 走 UiValue 动画。倍率倒数与主体高度按同一进度线性插值，混合期间暂停任务栏重定向；动画中开始拖动时直接落到终值。
+
+**缩放基准**
+
+- “任务栏基础量”成为所有设备的默认值：两档统一为 48 DIP（大尺寸倍率 48/80，小尺寸倍率 48/42.5）。
+- “任务栏真实量”使主栏高度始终等于任务栏厚度：大尺寸倍率为厚度 ÷ 80，小尺寸为厚度 ÷ 42.5。
+- 入口：`ResolveUiScaleBase(..., baseHeightDip, basicQuantityDip)`。
+
+**小尺寸各部件**
+
+- **主栏**：单行，撤回/重做常驻主栏，不可用时置灰；精简选择态（选择且无墨迹）与大尺寸一致，两者都隐藏；小尺寸没有撤回弹窗（`ResolveRecallChrome(..., compactSize)`）。底栏模式提示、形状步骤栏与主栏分离，间距同附属面板。
+- **橡皮属性**：高 42.5，没有清空按钮；左侧是尺寸，右侧是“自动粗细”与“手掌橡皮”开关；尺寸预览超出面板时被裁剪；菜单宽度保持标准。
+- **形状/More**：1×1 网格。形状类别固定一整行列数（大尺寸 6 个 2×2、小尺寸 12 个 1×1，宽均为 445），图形不足一行时靠左，面板至少一整行宽，顶栏（类别分段 + 关闭）铺满面板内宽；类别绘制裁剪在命中裁剪外放宽一个间距以容纳角标。More 列数为 `min(10, ceil(sqrt(n)×1.5))`，且不超过单行实际项数（两组分行时取较多的一组）。
+- **1×1 角标**：1×1 按钮的角标中心落在按钮右上（倒转时右下）角点，可略微越出按钮；2×1 及以上保持内收 4 DIP，中间尺寸按最大边长线性过渡（`ResolveButtonBadgeGeometry`）。
+- **属性窗水平限位（两档通用）**：非居中底栏时，绘制属性、形状属性、橡皮属性与 More 面板不越过主按钮外侧边——主栏向右展开时面板左边不小于主按钮左边，向左展开时面板右边不大于主按钮右边；未越过时保持以入口居中，工作区夹取在限位之后执行。统一入口 `ClampBarAttributePanelLeft`，居中底栏判定 `IsCenteredBottomDock()`；主按钮矩形按静止边长计算，绘制属性按目标布局计算偏移，避免随按压或展开动画抖动。撤回弹窗以撤回按钮为中心且窄于主栏间距，天然不越界，未接入。
+- **状态指示器**：没有胶囊。
+  - 主按钮在绘制时向远离主栏一侧加宽并显示文字，节点几何不变；主图标位于加宽主按钮的外侧端（相对原中心偏移完整变宽量），文字位于图标与主栏之间。
+  - 方向在开始加宽时锁定，折叠态或主栏方向变化后重新判定；居中吸底时保持居中。
+  - 停靠方块与大尺寸同一逻辑：竖直中心落在主按钮超椭圆边框上、靠右端，可越出主按钮边框，但夹入窗口范围。
+  - 点击加宽区收起状态，扇形按 42.5×42.5 主按钮计算。
+- **翻页**：
+  - PPT 控件 160×42.5，竖向转置。箭头、加页、更多为 1×1，页码横向 2×1、竖向 1×2；拖动 lane 5，间距 5。
+  - 白板控件 155×42.5 / 192.5×42.5。
+  - 命中合同与 Scene 共用同一几何源（`ResolveBarPptStandardPaginationGeometry(..., mode)`）。
+  - 页码封顶 999；不显示状态词；页码一律立即换字。
+  - 小尺寸根外框按 `lround` 取整，与 `ResolveSurfaceLayout` 同源。否则长边为非整数 DIP（如白板 192.5）时呈现外框多 1 px，拖动到位判定与保存永远不成立。
+  - 拖动直移要求最后一次成功提交像素的档位与候选一致，且该档布局已落定（`committedCompact` / `committedCompactSettled`）。换档时置位 `compactTransitionPending`，采集到场景与外框都没有动画的帧才清除；不满足时走重绘。
+
+**悬停提示**（仅小尺寸，仅未按键的真实鼠标）
+
+- **输入线程**：每条轮询消息调用 `PublishHoverHintPointer()`，经交互反馈队列（固定身份去重）把“真实光标屏幕采样 + 主栏/More 命中按钮（带 More 标记）”投递到渲染线程的 `hoverHintSource`。
+  - 命中包含选中和禁用按钮，排除分割线与颜色块。
+  - 以下情况发布 `mouse=false`：按键、触摸及其他非鼠标移动消息；`WM_MOUSELEAVE`（小尺寸下未按键移动时注册 `TME_LEAVE`）；取消与捕获丢失。
+  - 渲染端门禁不成立时作废来源，门禁解除后须等新的鼠标命中。
+- **渲染线程**：文字依次取橡皮面板、形状面板、主栏按钮的 `HoverHintText()` / `name.content`，多行标签合并为单行。
+  - 计时：500 ms 后显示，到点前经 `PublishBarHoverHintDeadline` 由交互 worker 唤醒一帧；已显示时在按钮间切换直接换字。
+  - 定位：坐标按当帧原点（`monitorOrigin + bottomDockFrameTransitionTranslation`）换算。`ResolveBarHoverHintRect` 默认放在光标右上，放不下时翻到左侧或下方；可用区小于提示时先限尺寸，再夹进“工作区 ∩ 视口”。
+  - 绘制与脏区：固定脏区键 `HoverHint`；包络并入窗口内容（不进入可见内容缓存）；小尺寸以加入提示前的包络为基准常驻预留容量。
+- 以下期间不显示：折叠、拖动、主栏布局动画、形状面板时间线、More 开合、橡皮或形状面板开合动画、主栏隐藏。
+- 翻页控件、构造提示栏、绘制属性的笔型扩展与 More 关闭键不提示。
+
+**启动预览**
+
+- Mini 读取 `SizeMode`。小尺寸预览高度与折叠外形为 42.5、圆角 8，缩放基准按档位计算。
+- 两种尺寸分别缓存展开宽度：`CachedStartupBarWidthDip`（默认 470）和 `CachedStartupBarWidthDipCompact`（默认 352.5 = 42.5 + 5 + 8 键单行 305，分割线不占宽）。
+- 首帧通知同批发布宽度与档位，主线程按发布的档位写回对应字段；主按钮到主栏间距按档位取 10 或 5。
+- 大尺寸缓存仍拒绝小于 80 的宽度。
+
+**测试要求**
+
+- 大尺寸 golden 35 场景逐字节一致。
+- headless 覆盖：
+  - 尺寸度量与归一化、设置行，以及 `ResolveBarButtonListLayout` 小尺寸行。
+  - 底栏分离间距，橡皮、撤回小尺寸布局，状态指示器小尺寸文字、停靠与扇形。
+  - 翻页小尺寸合同、启动预览小尺寸尺寸与缓存、悬停提示定位。
+- GUI 实机验收由用户执行。
 
 ### UI3 共享设备、串行帧与光影缓存契约
 

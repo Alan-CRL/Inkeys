@@ -396,7 +396,7 @@ Wrong：所有控件等待浮条动画完毕，所有拖动 preserveMoveSamples=
 - `BarGeometryAttributePanel::ConsumeHoldWake(owner, now)`；共享 `ButtonFrameRing::Draw`（`Bar.ButtonFrameRing.h`）。
 
 ### 3. Contracts
-- 角标位于按钮外框右上内收 4DIP、直径 10DIP；`below` 0→1 在右上与右下之间插值（主栏 `primaryBar`，拖动中锁存）。显隐为 `progress`（默认操作时长一半，进场 EaseOutBack、离场 EaseInBack），以角标中心缩放并旋转（进场 -45°→0，离场 0→+45°）；旋转为独立 `angle` 动画值，仅自完全隐藏进场时直接设 -45°，中途反向从当前角度连续过渡；关闭动画直接终态。颜色/透明度跟随按钮图标；包络按旋转外接圆并入按钮 cull 与主栏 dirty。
+- 角标直径 10DIP；2×1 及以上按钮位于外框右上内收 4DIP，1×1 按钮中心落在外框右上角点（可略微越出按钮，2026-11-20 小尺寸实机反馈修正 1），中间尺寸按最大边长线性过渡；`below` 0→1 在右上与右下之间插值（主栏 `primaryBar`，拖动中锁存）。显隐为 `progress`（默认操作时长一半，进场 EaseOutBack、离场 EaseInBack），以角标中心缩放并旋转（进场 -45°→0，离场 0→+45°）；旋转为独立 `angle` 动画值，仅自完全隐藏进场时直接设 -45°，中途反向从当前角度连续过渡；关闭动画直接终态。颜色/透明度跟随按钮图标；包络按旋转外接圆并入按钮 cull 与主栏 dirty。
 - 固定只属于当前选择，仅会话内：直线/箭头恒固定且不记手动位；长按其它类别选中并固定，已手动固定的同一类别再长按取消；换到其他图形即清除，同图形参数与临时切笔保留。主栏几何按钮在已选图形工具且固定时显示角标，固定位并入 styleKey。
 - 长按：可选择类别 Down 记录起点；交互 owner 在 0.2s（第十轮由 0.5s 缩短）请求一次渲染，之后 render 按帧时间推进进度 `(t-.2)/.8`（由 HoldRingDelay/HoldCommitDelay 常量推导）；1.0s 由 owner 以 Down 时 revision 调用 `ToggleShapeToolPinIfRevision`。0.2s 前移出按钮/超过 5DIP 移动只中止长按（未离开按钮仍可短按）；进度环出现后任何中止都作废本次按下；取消/捕获丢失中止；进度环出现后未满抬起不选中不固定；Up 先于到期唤醒且已满 1.0s 时在 Up 内提交一次；完成后的 Up 不触发短按。提交被拒（revision 过期、面板/分类已变）时环不定格满格，按退出时间淡出；仓库无主动拒绝触觉，成功与被拒均不发长按触觉。
 - 进度环与页码加载环共用 `ButtonFrameRing`：边框内侧圆角路径、圆头、无轨道、IconPrimary；进度模式从顶边中点顺时针 0→整圈，不旋转，淡入淡出沿用 `PageLoadingStyle`。页码模式逐像素保持抽取前结果。环绘制失败只在本次长按内停止重试，新长按开始时（render 线程）清除失败标记并重置路径缓存。
@@ -484,3 +484,7 @@ Wrong：所有控件等待浮条动画完毕，所有拖动 preserveMoveSamples=
 `--ui3-geometry-attribute-test`：提示按钮触摸经主栏路由，启用按钮各一次意图、禁用按钮无意图。`--draw3-control-fence-test`、`--draw3-shape-core-test`、`--ui3-shape-editor-test`、`--ui3-input-worker-test` 等原回归全部保持。真实触摸点击主栏各面板须实机验收。
 `--draw3-shape-core-test` 增补真实 Touch 构造资格、晋升保护和 Up 解锁，以及对象编辑/仅焦点层的 Down 锁存、空闲 Shape 与普通 Pen/Eraser 资格；空闲 Polyline/Cuboid 首触建立构造后分别在 Down/Move 晋升，断言 owner 钩子在模型准备后、shape.Reset 前取消，失败/缺钩子不取消，清会话/占用/预览/完成状态且无图形历史；既有构造/编辑态即使提供可用候选和取消钩子也拒绝，取消旧会话不移除新会话。fixture 共用生产晋升与失焦 CPU 取消 helper，实际 Run 的 L0 清除和 UI 快照发布仅静态核对，需主代理构建/回归与真机确认；`--ui3-shape-editor-test` 增补按钮按下后插入一次呈现（按下本身未必请求新帧，属防御性修复）、旧代次 Up 一次激活、重复 Up 与跨场景取消。ConstructionComplete 会话号目前仅静态核对（现有 runtime fixture 不执行该按钮 dispatcher）；键盘操作已移除（2026-11-15 第十一轮，仅保留全局快捷键与 PPT 转发）。
 - 本轮移除 Bar 本地/形状编辑键盘路由与白板菜单 Esc；键盘操作已移除（2026-11-15 第十一轮，仅保留全局快捷键与 PPT 转发）。
+
+## 界面尺寸模式（小尺寸）
+
+- 小尺寸（`SizeMode=1`）：形状步骤栏与主栏分离，间距同附属面板（5 DIP）；形状类别为 1×1 网格，最多 12 列，类别不显示文字。详见 rendering-and-ui.md「UI3 界面尺寸模式」。

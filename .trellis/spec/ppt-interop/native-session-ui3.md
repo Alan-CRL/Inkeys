@@ -439,3 +439,7 @@ Correct：由页码外部变化统一覆盖翻页笔/键盘/滚轮，透明度�
 ### 4. Wrong vs Correct
 Wrong：隐藏后仍对每次发布 `ConfigurePagination`，或把交接期 switching 直接当作页面加载状态。
 Correct：淡出冻结最后可见内容；交接期 switching 只作输入门禁。
+
+## 界面尺寸模式（小尺寸）
+
+- 小尺寸（`SizeMode=1`）翻页：PPT 控件 160×42.5（竖向转置），白板控件 155/192.5×42.5；页码封顶 999，不显示状态词；根外框按 lround 取整；拖动直移要求已提交像素的档位一致且布局已落定。详见 native-desktop/rendering-and-ui.md「UI3 界面尺寸模式」。
