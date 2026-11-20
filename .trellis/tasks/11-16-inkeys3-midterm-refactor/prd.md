@@ -26,7 +26,7 @@
 | 第1步 | UI3 Bar 分层封装 | 未建 | — |
 | 第2步 | `11-17-win7-ulw-presentation` Draw3 透明画布呈现 | 保持开启（`refactoring/draw`） | 与第1步（`refactoring/drawpad-ui`）并行；原有 A `11-17-dcomp-waitable-latency`、B `11-17-ulw-texture-pipeline` 继续由第二步追踪，待 Win7 实机验证。 |
 | 第4步 | `11-19-draw3-input-backends` 输入后端、白板触控板拖动与实时笔锋 | 规划中（`refactoring/draw`） | 提前至第三步之前实施；详细规则见子任务的 11 月 19 日调查。 |
-| 第4步后续 | `11-20-draw3-canvas-gesture-fullscreen` 画布手势屏蔽与全屏窗口 | 规划中（`refactoring/draw`） | WM_POINTER 反馈关闭、鼠标兼容信息条、桌面 Drawpad 全屏与非全屏开关、ULW 单窗口选择态。 |
+| 第4步后续 | `11-20-draw3-canvas-gesture-fullscreen` 画布手势屏蔽与全屏窗口 | 已完成（5a516f31，真机通过，已归档） | WM_POINTER 反馈关闭、鼠标兼容信息条、桌面 Drawpad 全屏与非全屏开关、ULW 单窗口选择态。 |
 | 第3步 | 多画布与窗口架构 | 未建 | 排在第四步之后，架构未定案。 |
 | 第5步 | Draw3 4K 橡皮与漫游性能 | 未建 | P0 局部优化 + GPU 分段诊断可先行；另记（2026-11-18，第2步-B 讨论转入）：多矩形脏区——合成、ULW 的 GPU 拷贝与逐行复制只处理真正变化的几块（ULW `prcDirty` 只接受一个矩形，仍传并集；DComp `Present1` 可传多个脏矩形），对应调研文档 §4.4 |
 
