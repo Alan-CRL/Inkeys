@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/11-20-settings-bar-component-editor/prd.md", "reason": "父任务需求与已确认决定"}
+{"file": ".trellis/tasks/11-20-settings-bar-component-editor/design.md", "reason": "总体分层与数据合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 编码约定"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "构建与 Win7 兼容约束"}
+{"file": ".trellis/spec/native-desktop/ui3-layers.md", "reason": "UI3 四层边界"}
+{"file": ".trellis/spec/native-desktop/ui-pointer-session.md", "reason": "指针会话合同"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "主栏渲染合同"}
+{"file": ".trellis/spec/native-desktop/setting-motion.md", "reason": "设置页动效"}
+{"file": ".trellis/tasks/11-20-settings-bar-component-editor/research/codex-a-rendering.md", "reason": "渲染嵌入调研"}

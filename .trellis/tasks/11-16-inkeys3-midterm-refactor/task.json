@@ -22,7 +22,8 @@
     "11-16-logging-system-refactor",
     "11-16-ui3-layered-encapsulation",
     "11-19-debug-frame-rate-display",
-    "11-19-bar-width-jelly-distortion"
+    "11-19-bar-width-jelly-distortion",
+    "11-20-settings-bar-component-editor"
   ],
   "parent": null,
   "relatedFiles": [],

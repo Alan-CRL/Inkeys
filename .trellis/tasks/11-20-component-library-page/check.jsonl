@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/11-20-settings-bar-component-editor/prd.md", "reason": "父任务需求与已确认决定"}
+{"file": ".trellis/tasks/11-20-settings-bar-component-editor/design.md", "reason": "总体分层与数据合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 编码约定"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "构建与 Win7 兼容约束"}
+{"file": ".trellis/spec/native-desktop/settings-navigation.md", "reason": "设置导航与跳转"}
+{"file": ".trellis/spec/native-desktop/settings-attention-notes.md", "reason": "设置页说明/提示"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "i18n 规则"}
+{"file": ".trellis/spec/native-desktop/setting-motion.md", "reason": "设置页动效"}
