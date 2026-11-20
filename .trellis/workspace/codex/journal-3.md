@@ -731,3 +731,26 @@ Migrated live deploy.json/pptcom_configuration.json fields into Inkeys::Config w
 ### Status
 
 [OK] **Completed**
+
+
+## Session 198: UI3 小尺寸界面模式实机反馈修正与收尾
+<!-- trellis-session: v=2 fp=2d0f41c2148b31e3 -->
+
+**Date**: 2026-11-20
+**Task**: UI3 小尺寸界面模式实机反馈修正与收尾
+**Branch**: `refactoring/drawpad-ui`
+
+### Summary
+
+小尺寸改为 42.5 DIP 网格（间距 5、分割线居中不占宽、圆角 8、主按钮超椭圆指数 5.14）；界面尺寸设置移到窗口页缩放分区首项，两档任务栏基础量统一 48；修复主图标与状态文字重叠、停靠方块压边框、形状面板整行宽与顶栏铺满、More 列数、1x1 角标角点、精简选择态隐藏撤回重做；非居中底栏时属性窗不越过主按钮。golden 仅形状面板顶栏一处有意差异，几何/橡皮/headless 全通过，人工验证通过并归档父子任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `de0f5e5b` | feat(bar): add a compact UI size mode |
+| `b177ddc8` | docs(spec): record UI3 compact size mode contracts |
+
+### Status
+
+[OK] **Completed**

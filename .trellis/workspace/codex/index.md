@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 197
-- **Last Active**: 2026-11-19
+- **Total Sessions**: 198
+- **Last Active**: 2026-11-20
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~733 | Active |
+| `journal-3.md` | ~756 | Active |
 | `journal-2.md` | ~2054 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 198 | 2026-11-20 | UI3 小尺寸界面模式实机反馈修正与收尾 | `de0f5e5b`, `b177ddc8` | `refactoring/drawpad-ui` |
 | 197 | 2026-11-19 | 修复主栏宽度意外拉伸/压缩 | `83e41105`, `c2470ae3` | `refactoring/drawpad-ui` |
 | 195 | 2026-11-19 | 脏区调试帧率显示改造 | `72a430db`, `11c5212d` | `refactoring/drawpad-ui` |
 | 193 | 2026-11-19 | UI3 自动脏区提交与任务归档 | `24f7eee7`, `dbd3b850` | `refactoring/drawpad-ui` |
