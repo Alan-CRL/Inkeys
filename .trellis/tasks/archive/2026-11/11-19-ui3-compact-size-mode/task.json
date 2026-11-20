@@ -1,0 +1,33 @@
+{
+  "id": "ui3-compact-size-mode",
+  "name": "ui3-compact-size-mode",
+  "title": "UI3 小尺寸界面模式",
+  "description": "新增小尺寸（35 DIP 高）UI 模式：设置中切换，主栏与翻页控件按 1x1 布局，属性窗/指示器/吸附等适配",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-19",
+  "completedAt": "2026-11-20",
+  "branch": "refactoring/drawpad-ui",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-19-compact-c1-foundation",
+    "11-19-compact-c2-panels",
+    "11-19-compact-c3-status-indicator",
+    "11-19-compact-c4-pagination",
+    "11-19-compact-c5-tooltip",
+    "11-19-compact-c6-startup-preview"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

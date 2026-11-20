@@ -1,0 +1,16 @@
+{"file": ".trellis/tasks/11-19-ui3-compact-size-mode/research/main-bar-and-geometry.md", "reason": "主栏布局、主按钮、吸附居中、悬停提示现状与切入点"}
+{"file": ".trellis/tasks/11-19-ui3-compact-size-mode/research/panels-dock-prompt.md", "reason": "属性窗/More/底栏提示/步骤栏现状与切入点"}
+{"file": ".trellis/tasks/11-19-ui3-compact-size-mode/research/indicator-and-pagination.md", "reason": "状态指示器与翻页控件现状、文字容量估算"}
+{"file": ".trellis/tasks/11-19-ui3-compact-size-mode/research/settings-and-coupling.md", "reason": "设置页、配置、i18n、启动预览与测试耦合"}
+{"file": ".trellis/spec/native-desktop/ui3-layers.md", "reason": "UI3 四层责任、宿主合同与 golden 验证"}
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "Bar 渲染、吸附、提示条、状态指示器、翻页尺寸合同"}
+{"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "橡皮属性几何与预览裁剪合同"}
+{"file": ".trellis/spec/native-desktop/shapes.md", "reason": "形状面板与步骤栏嵌入合同"}
+{"file": ".trellis/spec/native-desktop/startup-preview.md", "reason": "启动预览尺寸与缓存宽度合同"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "main.json schema 与 i18n sync/check 流程"}
+{"file": ".trellis/spec/native-desktop/settings-attention-notes.md", "reason": "设置行说明与 note 文案规则"}
+{"file": ".trellis/spec/native-desktop/bar-theme-material.md", "reason": "主栏材质、圆角、主按钮视觉"}
+{"file": ".trellis/spec/native-desktop/ui-pointer-session.md", "reason": "鼠标/触摸来源会话与悬停门禁"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ module 与代码风格"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "完整 Solution Debug|ARM64 构建要求"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "验证与测试规范"}
