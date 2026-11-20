@@ -7975,6 +7975,44 @@ namespace
 			}
 			const auto licenseTitle=IA(d.LicenseTitle),licenseBody=IA(d.LicenseDescription);
 			drawRow(d.LicenseDescription,[&]{Design::Notice("##localized-license",licenseTitle.c_str(),licenseBody.c_str(),ImFluentInfoSeverity_Warning);});
+			// 组件库：专属 Tab 条目使用完整说明；“全部”卡片按最小宽度 220 DIP、固定高度 76 DIP 排版，
+			// 标题与最多两行精简说明都必须留在卡片内。
+			const struct {const char* title;const char* shortText;const char* description;const char* note=nullptr;} library[]{
+				{c.DividerTitle,c.DividerShort,c.DividerDescription},
+				{c.ExplorerTitle,c.ExplorerShort,c.ExplorerDescription},{c.TaskManagerTitle,c.TaskManagerShort,c.TaskManagerDescription},
+				{c.ControlPanelTitle,c.ControlPanelShort,c.ControlPanelDescription},{c.ShowDesktopTitle,c.ShowDesktopShort,c.ShowDesktopDescription},
+				{c.LockScreenTitle,c.LockScreenShort,c.LockScreenDescription},{c.EscapeTitle,c.EscapeShort,c.EscapeDescription},
+				{c.AltF4Title,c.AltF4Short,c.AltF4Description},
+				{c.IslandCaller1Title,c.IslandCaller1Short,c.IslandCaller1Description,c.IslandCallerRequirement},
+				{c.IslandCaller2Title,c.IslandCaller2Short,c.IslandCaller2Description,c.IslandCallerRequirement},
+				{c.SecRandom1Title,c.SecRandom1Short,c.SecRandom1Description,c.SecRandomUrlRequirement},
+				{c.SecRandom2Title,c.SecRandom2Short,c.SecRandom2Description,c.SecRandomIpcRequirement},
+				{c.SecRandom2CompatTitle,c.SecRandom2CompatShort,c.SecRandom2CompatDescription,c.SecRandomUrlRequirement},
+				{c.NamePickerTitle,c.NamePickerShort,c.NamePickerDescription,c.NamePickerRequirement},
+				{c.ClassIslandSettingsTitle,c.ClassIslandSettingsShort,c.ClassIslandSettingsDescription},
+				{c.ClassIslandProfileTitle,c.ClassIslandProfileShort,c.ClassIslandProfileDescription},
+				{c.ClassIslandSwapTitle,c.ClassIslandSwapShort,c.ClassIslandSwapDescription,c.ClassIslandSwapNote}
+			};
+			for(const auto& item:library)
+			{
+				const auto title=IA(item.title),shortText=IA(item.shortText),description=IA(item.description),note=item.note?IA(item.note):std::string{};
+				drawRow(item.description,[&]{Design::SettingRow("##localized-library-row",title.c_str(),description.c_str(),"\ue710",32.0F,32.0F,
+					[](const LayoutRect&){},Design::Card,Design::Stroke,0,IM_COL32_WHITE,false,item.note?note.c_str():nullptr);});
+				drawRow(item.shortText,[&]{
+					Design::ComponentCardSpec spec;spec.title=title.c_str();spec.description=shortText.c_str();spec.glyph="\ue710";spec.actionGlyph="\ue710";
+					checks.Expect(!Design::ComponentCard("##localized-library-card",spec,
+						{Design::Pixels(Design::ComponentCardMinimumWidth),Design::Pixels(Design::ComponentCardHeight)}),
+						"localized component card audit never triggers its action");});
+				// 卡片会裁剪越界文字，墨迹检查无法发现被截断的标题，因此直接断言排版余量：
+				// 最小卡片宽度下标题不超过两行，且标题之下至少还能完整显示一行精简说明。
+				const float textWidth=Design::ComponentCardTextWidth(Design::Pixels(Design::ComponentCardMinimumWidth));
+				const float titleHeight=Design::TextHeight(title.c_str(),textWidth);
+				const bool titleFits=titleHeight<=Design::Pixels(Design::BodyText.lineHeight)*2.0F+0.5F;
+				const bool descriptionFits=Design::Pixels(Design::ComponentCardHeight)-Design::Pixels(12.0F)*2.0F-titleHeight
+					>=Design::Pixels(Design::CaptionText.lineHeight)-0.5F;
+				if(!titleFits||!descriptionFits)std::cerr<<"[LocaleCard] "<<IA(I18nKey.Language)<<" key="<<item.title<<" width="<<width<<" scale="<<scale<<'\n';
+				checks.Expect(titleFits&&descriptionFits,"localized component card title fits two lines and leaves room for its summary");
+			}
 			const auto classIslandBody=IA(c.ClassIslandProtocolNote);
 			drawRow(c.ClassIslandProtocolNote,[&]{Design::Notice("##localized-classisland","ClassIsland",classIslandBody.c_str(),ImFluentInfoSeverity_Informational);});
 			const auto intervalTitle=IA(d.IntervalTitle),intervalDescription=IA(d.IntervalDescription);

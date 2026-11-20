@@ -42,6 +42,7 @@ import Inkeys.UI.RenderPipeline;
 import Inkeys.UI.PageControl;
 import Inkeys.UI.Freeze;
 import Inkeys.Other.Config;
+import Inkeys.UI.Bar.LayoutModel;
 import Inkeys.Text.Font;
 import Inkeys.Conv.Text;
 import Inkeys.UI.UI3.Material;
@@ -190,6 +191,264 @@ namespace Inkeys::UI::Bar
 			if(SUCCEEDED(hr))hr=frame->Commit();if(SUCCEEDED(hr))hr=encoder->Commit();
 			readable->Unmap();return hr;
 		}
+	}
+
+	static void TestBarLayoutProjection(const std::function<void(bool, const char*)>& expect,
+		const std::function<bool()>& frame)
+	{
+		auto& buttons = barUISet.barButtonSet;
+		auto original = buttons.MainLayoutSnapshot();
+		auto more = buttons.GetMoreButtonSnapshot();
+		expect(more.forcedOverflow.empty() && more.explicitMore.size() == 3 &&
+			more.explicitMore.front().get() == buttons.preset[(int)BarButtonPresetEnum::Setting],
+			"O1 explicit More contains Settings and both visible copies only");
+		if (more.explicitMore.size() != 3) return;
+		auto first = more.explicitMore[1], second = more.explicitMore[2];
+		expect(first->id == BarComponentId::Explorer && second->id == first->id && first != second &&
+			first->state == &first->localState && second->state == &second->localState, "O1 independent More instances");
+		barUISet.barState.moreExpanded = true;
+		bool presented = true;
+		for (int tick = 0; tick < 20 && presented; ++tick) presented = frame();
+		expect(presented, "O1 expanded More frame presented");
+		for (const auto& button : { first, second })
+		{
+			const auto bounds = Inkeys::UI::Bar::ResolveButtonHitSnapshot(*button,
+				{ button->button.inhX, button->button.inhY }).boundsDip;
+			const double zoom = barUISet.BottomDockPresentedSnapshot().zoom;
+			const POINT center{ barUISet.BottomDockRigidVisualX(static_cast<int>(std::lround((bounds.left + bounds.right) * zoom / 2))),
+				barUISet.BottomDockRigidVisualY(static_cast<int>(std::lround((bounds.top + bounds.bottom) * zoom / 2))) };
+			auto hit = HitPresentedLayoutButtonForTest(center);
+			expect(presented && hit == button, "O1 published More center hits its occurrence");
+			if (hit != button) continue;
+			SetButtonPressedVisual(*hit, true);
+			expect(hit->localState.emph == WidgetEmphasize::Pressed &&
+				(button == first ? second : first)->localState.emph != WidgetEmphasize::Pressed,
+				"O1 coordinate hit presses only its own local state");
+			SetButtonPressedVisual(*hit, false);
+		}
+		barUISet.barState.moreExpanded = false;
+		SetButtonPressedVisual(*first, true);
+		expect(first->state->emph == WidgetEmphasize::Pressed && second->state->emph != WidgetEmphasize::Pressed,
+			"O1 press affects only its occurrence");
+		SetButtonPressedVisual(*first, false);
+		buttons.Load();
+		expect(buttons.MainLayoutSnapshot() == original && buttons.GetMoreButtonSnapshot().explicitMore == more.explicitMore,
+			"O2 reload preserves main fingerprint and More identities");
+		for (auto size : { BarSizeMode::Compact, BarSizeMode::Large })
+		{
+			SetSizeMode(static_cast<int>(size));
+			expect(frame() && AppliedSizeMode() == size, "O1 size transition rendered");
+			auto layout = ResolveBarButtonListLayout(buttons.buttonList.Snapshot(), BarButtonListLayoutKind::Main, {}, size);
+			std::vector<double> centers, targets;
+			std::vector<std::string> ids;
+			for (const auto& placement : layout.placements)
+			{
+				if (placement.button->id == BarButtonId::UserDivider)
+				{
+					centers.push_back(placement.x);
+					targets.push_back(placement.button->button.x.tar);
+					expect(placement.width == 1 && placement.height == (size == BarSizeMode::Large ? 50 : 28.5),
+						"O1 actual divider dimensions");
+				}
+				if (IsExtensionBarButtonId(placement.button->id)) ids.push_back(placement.button->id);
+			}
+			expect(ids == std::vector<std::string>{ BarComponentId::Explorer, BarComponentId::Control,
+				BarComponentId::Desktop, BarComponentId::Taskmgr }, "O1 four explicit main components, no hidden or missing plugin slot");
+			expect(centers.size() == 2 && centers[1] - centers[0] == 6 && std::abs(targets[1] - targets[0]) == 6,
+				"O1 real main frame separates consecutive divider centers");
+		}
+	}
+
+	static void TestBarLayoutLifetime(const std::function<void(bool, const char*)>& expect,
+		const std::function<bool()>& frame)
+	{
+		auto& buttons = barUISet.barButtonSet;
+		auto model = buttons.ReadBarLayout();
+		auto more = buttons.GetMoreButtonSnapshot().explicitMore;
+		if (!model || more.size() != 3) { expect(false, "O2 lifetime fixture"); return; }
+		auto visible = buttons.buttonList.Snapshot();
+		for (const auto& item : more) visible.push_back(item);
+		std::vector<shared_ptr<BarButtonClass>> copies;
+		for (const auto& item : visible)
+			if (item->id == BarComponentId::Explorer) copies.push_back(item);
+		expect(copies.size() == 3, "O2 three registered Explorer clones");
+		expect(I18n::load(1, L"JSON", L"en-US"), "O2 change locale");
+		buttons.RefreshLocalizedText();
+		auto* dc = barUISet.specTarget.DeviceContext();
+		for (const auto& copy : copies)
+		{
+			expect(copy->name.content.GetTar() == IW(I18nKey.UI.Bar.Components.ExplorerLabel), "O2 localized cloned label");
+			expect(dc && copy->icon.CacheBitmap(dc, 20, 20, barUISet.spec.GetDeviceGeneration()) && copy->icon.cacheBitmap,
+				"O2 seed a real device cache per copy");
+		}
+		barUISet.specTarget.Discard();
+		for (const auto& copy : copies) expect(!copy->icon.cacheBitmap, "O2 every clone discards bitmap");
+		auto target = more.back();
+		int actions = 0;
+		target->clickFunc = [&] { ++actions; };
+		expect(ReplayMoreLayoutPress(target, [] {}) && actions == 1, "O2 control press activates live target");
+		auto next = RemoveAllOf(*model, BarComponentId::Explorer, buttons.GetLayoutCatalog());
+		expect(ReplayMoreLayoutPress(target, [&]
+		{
+			expect(buttons.ApplyBarLayout(*model, next) == BarButtonSetClass::ApplyResult::Applied &&
+				buttons.ApplyBarLayout(next, *model) == BarButtonSetClass::ApplyResult::Applied,
+				"O2 remove and restore before owner consumes");
+			expect(frame() && buttons.GetMoreButtonSnapshot().explicitMore == more, "O2 coalesced reload reuses pressed instance");
+		}) && actions == 1, "O2 coalesced reload cancels press despite reused identity");
+		auto final = next;
+		final[Segment::More].clear();
+		final[Segment::B1].push_back({ BarButtonId::Setting });
+		expect(ReplayMoreLayoutPress(target, [&]
+		{
+			expect(buttons.ApplyBarLayout(*model, next) == BarButtonSetClass::ApplyResult::Applied,
+				"O2 first save");
+			expect(buttons.ApplyBarLayout(*model, final) == BarButtonSetClass::ApplyResult::Stale,
+				"O2 stale editor rejected");
+			expect(buttons.ApplyBarLayout(next, final) == BarButtonSetClass::ApplyResult::Applied,
+				"O2 second save before frame");
+			// 已发布的紧凑悬停提示也可能仍持有被删项。
+			barUISet.hoverHintSource.main = target;
+			barUISet.hoverHintSource.more = true;
+			expect(frame() && !barUISet.hoverHintSource.main, "O2 owner consumes final layout and drops stale hover source");
+		}) && actions == 1, "O2 retired pressed target cannot activate on frozen Up");
+		target->clickFunc = {};
+		// ApplyBarLayout 不写盘；生产由设置业务队列写出最新完整配置，这里直接执行同一写入。
+		expect(config.Write(), "O2 queued full-config write");
+		Config restarted;
+		expect(restarted.ReadAll() && restarted.GetBarLayout() == ToConfig(final) &&
+			buttons.ReadBarLayout() == final && !buttons.GetMoreButtonSnapshot().HasButtons(),
+			"O2 final frame and disk agree with empty More");
+		std::vector<std::string> actual;
+		for (const auto& button : buttons.buttonList.Snapshot())
+			if (IsExtensionBarButtonId(button->id) || button->id == BarButtonId::Setting) actual.push_back(button->id);
+		expect(actual == std::vector<std::string>{ BarComponentId::Control, BarComponentId::Desktop,
+			BarComponentId::Taskmgr, BarButtonId::Setting }, "O2 last frame moved singleton Settings to B1");
+		std::weak_ptr<BarButtonClass> retired;
+		for (const auto& button : buttons.buttonList.Snapshot())
+			if (button->id == BarComponentId::Taskmgr) retired = button;
+		visible.clear();
+		auto withoutTaskmgr = RemoveAllOf(final, BarComponentId::Taskmgr, buttons.GetLayoutCatalog());
+		// 重载后、新命中表发布前，旧帧坐标不得命中任何按钮（含地址不变的单例 Setting）。
+		const auto presentedCenter = [](const shared_ptr<BarButtonClass>& button)
+		{
+			const auto bounds = Inkeys::UI::Bar::ResolveButtonHitSnapshot(*button,
+				{ button->button.inhX, button->button.inhY }).boundsDip;
+			const double zoom = barUISet.BottomDockPresentedSnapshot().zoom;
+			return POINT{ barUISet.BottomDockRigidVisualX(static_cast<int>(std::lround((bounds.left + bounds.right) * zoom / 2))),
+				barUISet.BottomDockRigidVisualY(static_cast<int>(std::lround((bounds.top + bounds.bottom) * zoom / 2))) };
+		};
+		shared_ptr<BarButtonClass> setting;
+		for (const auto& button : buttons.buttonList.Snapshot())
+			if (button->id == BarButtonId::Setting) setting = button;
+		const POINT settingCenter = setting ? presentedCenter(setting) : POINT{};
+		expect(setting && HitPresentedLayoutButtonForTest(settingCenter) == setting, "O2 presented Settings center hits before reload");
+		const auto generation = buttons.LayoutGeneration();
+		expect(buttons.ApplyBarLayout(final, withoutTaskmgr) == BarButtonSetClass::ApplyResult::Applied &&
+			buttons.ConsumeLayoutReload() && !retired.expired(), "O2 retired instance survives before presentation");
+		expect(buttons.LayoutGeneration() == generation + 1 && buttons.LayoutHitSuspended()
+			&& !HitPresentedLayoutButtonForTest(settingCenter), "O2 stale rectangle rejected until replacement frame publishes");
+		expect(frame() && retired.expired(), "O2 retired instance released after replacement frame");
+		expect(!buttons.LayoutHitSuspended() && setting && HitPresentedLayoutButtonForTest(presentedCenter(setting)) == setting,
+			"O2 hits resume after replacement frame");
+		// 同值提交不重载；只清旧开关时写配置但不重载主栏。
+		expect(buttons.ApplyBarLayout(withoutTaskmgr, withoutTaskmgr) == BarButtonSetClass::ApplyResult::Unchanged
+			&& !buttons.ConsumeLayoutReload() && buttons.LayoutGeneration() == generation + 1, "O2 same-value apply neither reloads nor bumps generation");
+		config.UI.Bar.ShortcutButton.Appliance.Explorer = true;
+		expect(buttons.ApplyBarLayout(withoutTaskmgr, withoutTaskmgr, true) == BarButtonSetClass::ApplyResult::Applied
+			&& !buttons.ConsumeLayoutReload() && config.GetLegacyBarComponents().empty(), "O2 legacy-only reset clears flags without reload");
+		expect(buttons.ApplyBarLayout(withoutTaskmgr, final) == BarButtonSetClass::ApplyResult::Applied && frame(),
+			"O2 restore final layout after retirement check");
+		config.UI.Bar.IconOrder = 3;
+		config.Experimental.Inkeys3.UI3.SizeMode = 1;
+		config.UI.Bar.ShortcutButton.Appliance.Control = true;
+		expect(buttons.ApplyBarLayout(final, Reset(), true) == BarButtonSetClass::ApplyResult::Applied && frame()
+			&& config.Write() && restarted.ReadAll() && restarted.GetBarLayout() == Config{}.GetBarLayout()
+			&& restarted.GetLegacyBarComponents().empty() && restarted.UI.Bar.IconOrder.load() == 3
+			&& restarted.Experimental.Inkeys3.UI3.SizeMode.load() == 1, "H4 real reset retains preferences and clears flags");
+	}
+
+	static void TestBarLayoutRestart(const std::function<void(bool, const char*)>& expect)
+	{
+		namespace fs = std::filesystem;
+		const auto root = fs::temp_directory_path() / (L"inkeys-bar-layout-" + std::to_wstring(GetCurrentProcessId())
+			+ L"-" + std::to_wstring(GetTickCount64()));
+		if (!fs::create_directory(root)) { expect(false, "unique private layout directory"); return; }
+		struct Restore
+		{
+			fs::path root;
+			std::wstring originalPath;
+			Config original;
+			~Restore()
+			{
+				config = original;
+				globalPath = originalPath;
+				std::error_code ignored;
+				fs::remove_all(root, ignored);
+			}
+		} restore{ root, globalPath };
+		restore.original = config;
+		config = Config{};
+		globalPath = root.wstring() + L"\\";
+		fs::create_directories(root / L"Inkeys/Config");
+		const fs::path file = config.GetFilePath();
+		{
+			BarButtonSetClass startup;
+			startup.PresetInitialization();
+			startup.InitializeBarLayout();
+			expect(!fs::exists(file), "H5 factory layout startup performs no write");
+		}
+		config.UI.Bar.ShortcutButton.Appliance.Explorer = true;
+		config.UI.Bar.ShortcutButton.Appliance.Control = true;
+		config.UI.Bar.ShortcutButton.System.Desktop = true;
+		{
+			BarButtonSetClass startup;
+			startup.PresetInitialization();
+			// 缺少注册资源仍须导入。把配置路径暂时放在普通文件下面，强制首次保存失败。
+			std::ofstream(root / L"blocked").put('x');
+			globalPath = (root / L"blocked").wstring() + L"\\";
+			startup.InitializeBarLayout();
+			auto model = startup.ReadBarLayout();
+			expect(model && (*model)[Segment::B1] == BarLayoutEntries{ { BarComponentId::Explorer }, { BarComponentId::Control } }
+				&& (*model)[Segment::More] == BarLayoutEntries{ { BarButtonId::Setting }, { BarComponentId::Desktop } }
+				&& config.GetLegacyBarComponents().empty(), "H5 failed save retains complete memory import");
+			globalPath = root.wstring() + L"\\";
+			if (!model) return;
+			// 启动保存失败不留待写状态：同值提交无变化，之后任意一次完整配置写入即带上已导入的布局。
+			expect(startup.ApplyBarLayout(*model, *model) == BarButtonSetClass::ApplyResult::Unchanged, "H5 same-value apply after failed startup save");
+			expect(config.Write(), "H5 later full-config write persists memory import");
+		}
+		Config reopened;
+		expect(reopened.ReadAll() && reopened.GetBarLayout() == config.GetBarLayout() &&
+			reopened.GetLegacyBarComponents().empty(), "H5 persisted retry reopens");
+		config = reopened;
+		{
+			BarButtonSetClass startup;
+			startup.PresetInitialization();
+			auto before = config.GetBarLayout();
+			if (!fs::is_regular_file(file)) { expect(false, "retry created private main.json"); return; }
+			auto time = fs::last_write_time(file);
+			startup.InitializeBarLayout();
+			expect(config.GetBarLayout() == before && fs::last_write_time(file) == time, "H5 second startup neither appends nor saves");
+		}
+		auto model = Reset();
+		model[Segment::B1] = { { BarComponentId::Explorer }, { BarButtonId::UserDivider, BarButtonSizeKind::OneTwo },
+			{ BarButtonId::UserDivider, BarButtonSizeKind::OneTwo }, { BarComponentId::Control }, { BarComponentId::Desktop },
+			{ BarComponentId::Taskmgr }, { "absent.plugin" }, { BarComponentId::Control, BarButtonSizeKind::TwoTwo, false } };
+		model[Segment::More].push_back({ BarComponentId::Explorer });
+		model[Segment::More].push_back({ BarComponentId::Explorer });
+		model[Segment::More].push_back({ BarComponentId::Control, BarButtonSizeKind::TwoTwo, false });
+		config.ReplaceBarLayout(ToConfig(model), true);
+		expect(config.Write() && reopened.ReadAll() && reopened.GetBarLayout() == ToConfig(model), "O1 disk fixture roundtrip");
+		config = reopened;
+		BarGoldenMainSceneHost host;
+		host.settled = [&](const auto& frame)
+		{
+			barUISet.barButtonSet.InitializeBarLayout();
+			TestBarLayoutProjection(expect, frame);
+			TestBarLayoutLifetime(expect, frame);
+			return true;
+		};
+		expect(RunGoldenMainSceneForHost(false, true, 1, host) == S_OK, "O1/O2 real offscreen frame host settles");
 	}
 
 	int RunEraserAttributeOffscreenTest()
@@ -691,13 +950,13 @@ namespace Inkeys::UI::Bar
 		}
 		expect(I18n::load(1,L"JSON",L"zh-CN"),"restore locale after live state labels");
 		owner.barButtonSet.RefreshLocalizedText();owner.barButtonSet.UpdateMainPresentation(GetStateModeSnapshot());
-		// 复用设置的真实组件同步链；业务 key 不变时不能覆写分离式的有效半高网格。
+		// 通过持久化布局触发组件刷新，验证分离式有效半高网格。
 		owner.barButtonSet.RegisterBuiltInComponents();
-		const bool savedExplorer=Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer.load();
-		Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer=false;
-		owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
-		Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer=true;
-		owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
+		const auto originalLayout = Inkeys::config.GetBarLayout();
+		auto explorerLayout = originalLayout;
+		explorerLayout.extension.insert(explorerLayout.extension.begin(), { Inkeys::BarComponentId::Explorer });
+		Inkeys::config.ReplaceBarLayout(explorerLayout, false);
+		owner.barButtonSet.Load();owner.UpdateRendering();
 		std::vector<BarButtonClass*> componentButtons;
 		for(int index=0;index<owner.barButtonSet.tot;++index)
 			componentButtons.push_back(owner.barButtonSet.buttonList.Get(index));
@@ -710,8 +969,8 @@ namespace Inkeys::UI::Bar
 			"component reload preserves stable Pierce/Freeze identities and adjacency");
 		expect(componentButtons.size()==stableButtons.size()+1,
 			"real Explorer component switch adds one toolbar member");
-		Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer=savedExplorer;
-		owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
+		Inkeys::config.ReplaceBarLayout(originalLayout, false);
+		owner.barButtonSet.Load();owner.UpdateRendering();
 		expect(SetSelectAndClickThroughMode(0) && GetStateModeSnapshot().StateModeSelect==StateModeSelectEnum::IdtPen
 			&& !pierceModeButton->IsVisible() && freezeModeButton->size==ButtonSizeEnum::twoTwo,
 			"combined setting immediately hides Pierce and enlarges Freeze");
@@ -863,19 +1122,22 @@ namespace Inkeys::UI::Bar
 				"PPT reveals the same Pierce member in the full slot");
 			Freeze::SetPresentationActive(false);SetPptPresentationActive(false);
 		}
-		// 真实旧组件0/1/2/3+增删：不执行组件动作，不启动Host或窗口。
+		// 真实 B1 组件 0/1/2/3+ 增删：不执行组件动作，不启动Host或窗口。
 		{
-			const auto savedShortcuts=Inkeys::config.UI.Bar.ShortcutButton;
+			const auto savedLayout = Inkeys::config.GetBarLayout();
 			const bool savedFold=owner.barState.fold;
-			Inkeys::config.UI.Bar.ShortcutButton={};
 			owner.barState.fold=false;
+			const char* ids[] = { Inkeys::BarComponentId::Explorer, Inkeys::BarComponentId::Taskmgr,
+				Inkeys::BarComponentId::Control, Inkeys::BarComponentId::Desktop };
 			const auto reload=[&](int count)
 			{
-				Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer=count>0;
-				Inkeys::config.UI.Bar.ShortcutButton.Appliance.Taskmgr=count>1;
-				Inkeys::config.UI.Bar.ShortcutButton.Appliance.Control=count>2;
-				Inkeys::config.UI.Bar.ShortcutButton.System.Desktop=count>3;
-				owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
+				auto values = savedLayout;
+				values.extension.clear();
+				for (int i = 0; i < count; ++i) values.extension.push_back({ ids[i] });
+				values.extension.push_back({ Inkeys::BarButtonId::MoreBoundary });
+				values.extension.push_back({ Inkeys::BarButtonId::Setting });
+				Inkeys::config.ReplaceBarLayout(std::move(values), false);
+				owner.barButtonSet.Load();owner.UpdateRendering();
 			};
 			const auto switchTool=[&](StateModeSelectEnum tool)
 			{
@@ -910,9 +1172,13 @@ namespace Inkeys::UI::Bar
 					&& (clearModeButton->state->state==WidgetState::Disable)==selectionEmpty,
 					"component matrix retains compact tools and Clear availability");
 				const auto more=owner.barButtonSet.GetMoreButtonSnapshot();
-				expect(owner.barButtonSet.tot==static_cast<int>(stableButtons.size())+std::min(count,2)
-					&& more.explicitMore.size()==1 && more.forcedOverflow.size()==static_cast<size_t>(std::max(0,count-2)),
-					"component capacity keeps two main members, explicit Settings and forced overflow");
+				std::vector<std::string> mainIds;
+				for (const auto& button : owner.barButtonSet.buttonList.Snapshot())
+					if (Inkeys::IsExtensionBarButtonId(button->id)) mainIds.push_back(button->id);
+				expect(owner.barButtonSet.tot==static_cast<int>(stableButtons.size())+count
+					&& mainIds == std::vector<std::string>(ids, ids + count)
+					&& more.explicitMore.size()==1 && more.explicitMore.front()->id==Inkeys::BarButtonId::Setting
+					&& more.forcedOverflow.empty(), "explicit B1 order and singleton Settings across component matrix");
 				const auto before=owner.barButtonSet.MainLayoutSnapshot();
 				owner.barButtonSet.Load();owner.UpdateRendering();
 				for(int repeat=0;repeat<3;++repeat)owner.UpdateRendering();
@@ -1013,8 +1279,8 @@ namespace Inkeys::UI::Bar
 			};
 			expect(fixedEqual(savedA1,Inkeys::config.UI.Bar.FixedButtonsA1.Snapshot())
 				&& fixedEqual(savedA2,Inkeys::config.UI.Bar.FixedButtonsA2.Snapshot()),"effective presentation never rewrites persisted A1/A2 sizes or order");
-			Inkeys::config.UI.Bar.ShortcutButton=savedShortcuts;
-			owner.barState.fold=savedFold;owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();expectStableButtons();
+			Inkeys::config.ReplaceBarLayout(savedLayout, false);
+			owner.barState.fold=savedFold;owner.barButtonSet.Load();owner.UpdateRendering();expectStableButtons();
 		}
 		// 用真实历史刷新和墙钟到期入口覆盖精简态，保留保护身份但不能再次显示按钮。
 		auto* undoModeButton=owner.barButtonSet.preset[(int)BarButtonPresetEnum::Recall];
@@ -1102,7 +1368,7 @@ namespace Inkeys::UI::Bar
 					"popup, drawing and workspace events only suppress popup while protecting main geometry");
 				owner.UpdateRendering();
 				expect(!owner.RecallChromeView().popupOpen,"unified view publishes suppressed popup identity");
-				owner.barButtonSet.SyncLegacyExtensionButtons();owner.UpdateRendering();
+				owner.barButtonSet.Load();owner.UpdateRendering();
 				expect(owner.barButtonSet.MainLayoutSnapshot()==protectedLayout,"component Load cannot reset a protected history identity");
 				const auto beforeExpiry=owner.barButtonSet.MainLayoutSnapshot();
 				{
@@ -3256,6 +3522,8 @@ namespace Inkeys::UI::Bar
 				frameTarget.Discard();
 			}
 		}
+		owner.specTarget.Discard();
+		TestBarLayoutRestart(expect);
 		owner.specTarget.Discard();RenderPipeline::Shutdown();CoUninitialize();
 		report<<"[EraserVisual] failures="<<failures<<'\n';return failures?1:0;
 	}

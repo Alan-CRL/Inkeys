@@ -1,14 +1,17 @@
 ﻿#include "../Inkeys/IdtConfiguration.h"
 
 #include <array>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <thread>
 #include <type_traits>
 #include <utility>
 
 import Inkeys.Other.Config;
+import Inkeys.UI.Bar.LayoutModel;
 import Inkeys.Conv.Text;
 
 namespace
@@ -27,6 +30,126 @@ namespace
 		std::string errors;
 		if (!Json::parseFromStream(reader, input, &result, &errors)) return {};
 		return result;
+	}
+	void TestBarLayoutFiles(const std::filesystem::path& file, int& failures)
+	{
+		using namespace Inkeys;
+		using namespace Inkeys::UI::Bar;
+		namespace Id = BarButtonId;
+		auto check = [&](bool ok, const char* message) { if (!Expect(ok, message)) ++failures; };
+		auto write = [&](const Json::Value& root)
+		{
+			std::ofstream output(file, std::ios::binary | std::ios::trunc);
+			output << Json::writeString(Json::StreamWriterBuilder{}, root);
+			check(output.good(), "private bar configuration fixture");
+		};
+		Json::Value old(Json::objectValue);
+		auto& oldArray = old["UI"]["Bar"]["ButtonLayout"];
+		for (const char* id : { Id::Select, Id::Draw, Id::Divider, Id::Eraser, Id::Geometry, Id::Recall, Id::Clean })
+			oldArray.append(Json::Value(Json::objectValue))["Id"] = id;
+		write(old);
+		Config cfg;
+		check(cfg.ReadMini({ "UI.Bar" }, true) && ReadJson(file) == old, "read-only mini does not split old layout");
+		check(cfg.ReadAll() && cfg.GetBarLayout().a1 == MakeDefaultFixedButtonsA1().Snapshot() &&
+			!ReadJson(file)["UI"]["Bar"].isMember("ButtonLayout"), "only old array migrates precise six-item order");
+		auto fresh = ToConfig(Reset());
+		auto oldOrder = fresh.a1;
+		std::swap(oldOrder[2], oldOrder[3]);
+		for (auto key : { "FixedButtonsA1", "ExtensionButtons", "FixedButtonsA2" })
+		{
+			auto root = old;
+			auto& arr = root["UI"]["Bar"][key] = Json::Value(Json::arrayValue);
+			if (std::string_view(key) == "FixedButtonsA1")
+				for (const auto& entry : oldOrder) arr.append(Json::Value(Json::objectValue))["Id"] = entry.Id;
+			write(root);
+			for (int restart = 0; restart < 2; ++restart)
+				check(cfg.ReadAll() && cfg.GetBarLayout().a1 == (std::string_view(key) == "FixedButtonsA1" ? oldOrder : fresh.a1)
+					&& ReadJson(file) == root, "any new field prevents legacy order migration");
+		}
+		for (int invalid = 0; invalid < 4; ++invalid)
+		{
+			Json::Value root(Json::objectValue);
+			auto& arr = root["UI"]["Bar"]["ExtensionButtons"];
+			arr.append(Json::Value(Json::objectValue))["Id"] = "valid.first";
+			Json::Value entry(Json::objectValue);
+			if (invalid == 0) entry = 42;
+			if (invalid == 1) entry["Id"] = "";
+			if (invalid == 2) entry["Id"] = 1;
+			if (invalid == 3) { entry["Id"] = "valid.last"; entry["Visible"] = 0; }
+			arr.append(entry);
+			write(root);
+			check(cfg.ReadAll() && cfg.GetBarLayout().extension == fresh.extension, "invalid element resets entire B field");
+		}
+		Json::Value legacy(Json::objectValue);
+		const char* ids[] = {
+			BarComponentId::Explorer,
+			BarComponentId::Taskmgr,
+			BarComponentId::Control,
+			BarComponentId::Desktop,
+			BarComponentId::LockWorkStation,
+			BarComponentId::Keyboardesc,
+			BarComponentId::KeyboardAltF4,
+			BarComponentId::IslandCaller1,
+			BarComponentId::IslandCaller2,
+			BarComponentId::SecRandom1,
+			BarComponentId::SecRandom2,
+			BarComponentId::SecRandom2Compat,
+			BarComponentId::NamePicker,
+			BarComponentId::ClassislandSettings,
+			BarComponentId::ClassislandProfile,
+			BarComponentId::ClassislandClassswap,
+		};
+		for (const char* id : ids)
+		{
+			// 用真实 JSON 字段逐一验证映射；全开不能发现两个读取器互换。
+			const std::string field = std::string(id).substr(std::string_view("Component.ShortcutButton.").size());
+			const auto dot = field.find('.');
+			auto setFlag = [&](Json::Value& document)
+			{
+				document["UI"]["Bar"]["ShortcutButton"][field.substr(0, dot)][field.substr(dot + 1)] = true;
+			};
+			Json::Value single(Json::objectValue);
+			setFlag(single);
+			write(single);
+			check(cfg.ReadAll() && cfg.GetLegacyBarComponents() == std::vector<std::string>{ id },
+				"individual old field selects its exact stable component");
+			setFlag(legacy);
+		}
+		auto& sample = legacy["UI"]["Bar"]["ExtensionButtons"].append(Json::Value(Json::objectValue));
+		sample["Id"] = "missing.sample"; sample["Size"] = "invalid"; sample["Visible"] = false;
+		write(legacy);
+		const std::vector<std::string> expectedIds(std::begin(ids), std::end(ids));
+		check(cfg.ReadAll() && cfg.GetLegacyBarComponents() == expectedIds &&
+			cfg.GetBarLayout().extension == BarLayoutEntries{ { "missing.sample", BarButtonSizeKind::TwoTwo, false } },
+			"schema flag mapping, codec size fallback and visibility");
+		auto before = cfg.GetBarLayout();
+		auto imported = ToConfig(ImportLegacy(FromConfig(before, {}), expectedIds));
+		// 另一个保存者只能写出旧组合或新组合。由独立 Config 重新读取每个实际文件。
+		for (int attempt = 0; attempt < 8; ++attempt)
+		{
+			write(legacy);
+			check(cfg.ReadAll(), "reload mixed legacy input");
+			std::atomic<bool> go{ false };
+			bool wrote = false;
+			std::thread writer([&] { while (!go.load()) std::this_thread::yield(); wrote = cfg.Write(); });
+			go.store(true);
+			cfg.ReplaceBarLayout(imported, true);
+			writer.join();
+			Config other;
+			check(wrote && other.ReadAll() &&
+				((other.GetBarLayout() == before && other.GetLegacyBarComponents() == expectedIds) ||
+				(other.GetBarLayout() == imported && other.GetLegacyBarComponents().empty())),
+				"concurrent Write sees complete old or new transaction");
+		}
+		check(cfg.Write(), "persist imported layout");
+		Config restarted;
+		check(restarted.ReadAll() && restarted.GetBarLayout() == imported && restarted.GetLegacyBarComponents().empty(),
+			"new configuration reopens all imported entries and cleared flags");
+		restarted.UI.Bar.IconOrder = 3;
+		restarted.Experimental.Inkeys3.UI3.SizeMode = 1;
+		restarted.ReplaceBarLayout(ToConfig(Reset()), true);
+		check(restarted.GetBarLayout() == fresh && restarted.UI.Bar.IconOrder.load() == 3 &&
+			restarted.Experimental.Inkeys3.UI3.SizeMode.load() == 1, "layout reset preserves display preferences");
 	}
 }
 
@@ -932,6 +1055,7 @@ int RunConfigMetadataTests()
 		assign(pan, { false, true, false, false, false, true }); pan.ResetToDefaults();
 		check(values(pan) == defaults, "inertia reset restores master and every device default");
 	}
+	TestBarLayoutFiles(file, failures);
 	std::cout << "Config metadata tests: " << failures << " failures\n";
 	return failures;
 }

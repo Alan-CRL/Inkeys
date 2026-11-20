@@ -1123,6 +1123,8 @@ namespace
 		std::optional<BarQueuedPointerSample> pointer;
 		bool sourceObserved = false;
 		std::shared_ptr<BarButtonClass> mainButtonHit;
+		// 命中冻结时刻的布局代次；按下手势以它为准，避免冻结后、处理前发生的重载被漏判。
+		std::uint64_t mainLayoutGeneration = 0;
 		bool mainHitFrozen = false, mainIdleHit = false;
 		bool fixtureSource = false;
 		bool forMain = false;
@@ -1141,6 +1143,7 @@ namespace
 		bool cancelled = false;
 		std::shared_ptr<BarButtonClass> currentButtonHit;
 		bool currentHitFrozen = false;
+		std::uint64_t currentLayoutGeneration = 0;
 		std::uint64_t currentCaptureTicket = 0, gestureCaptureTicket = 0;
 		Pointer::Touch::Identity currentTouchRoute, gestureTouchRoute;
 	};
@@ -1169,6 +1172,8 @@ namespace
 		event.mainHitFrozen = true;
 		for (;;)
 		{
+			// 先读代次、最后查暂停：两者之间发生的重载会让本次命中作废或在抬起时被代次拒绝。
+			const auto layoutGeneration = barUISet.barButtonSet.LayoutGeneration();
 			// mapping 与命中 maps 在同一奇偶发布边界内提交；读者不拼接跨帧的缩放和按钮。
 			const auto before = barUISet.BottomDockPresentedSnapshot();
 			event.mainButtonHit.reset();
@@ -1192,6 +1197,11 @@ namespace
 				for (const auto& button : barUISet.barButtonSet.buttonList.Snapshot())
 					if (button && barUISet.HitTestPresentedButton(*button, body.x / zoom, body.y / zoom))
 					{ event.mainButtonHit = button; break; }
+			// 布局已重载但新命中表尚未发布：旧矩形可能对应已移动或已替换的按钮，不给按钮命中。
+			if (barUISet.barButtonSet.LayoutHitSuspended()
+				|| barUISet.barButtonSet.LayoutGeneration() != layoutGeneration)
+				event.mainButtonHit.reset();
+			event.mainLayoutGeneration = layoutGeneration;
 			bool diagnosticBackground=false;
 			const auto shape=barUISet.shapeMap.find(BarUISetShapeEnum::MainBar);
 			if(shape!=barUISet.shapeMap.end()&&shape->second)
@@ -1308,6 +1318,7 @@ namespace
 			}
 			auto& context = *mainInteractionAwaitContext;
 			context.currentButtonHit = event.mainButtonHit; context.currentHitFrozen = event.mainHitFrozen;
+			context.currentLayoutGeneration = event.mainLayoutGeneration;
 			context.currentCaptureTicket = event.surface.captureTicket;
 			context.currentTouchRoute={event.surface.window,event.surface.touchRegistration,event.surface.touchRouteGeneration};
 			return true;
@@ -1837,6 +1848,7 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 		QueueInteractionVisualFeedback(&barHoverHintFeedbackIdentity, 0, [mouse, screen, more, main = std::move(main)]() mutable
 		{
 			auto& source = barUISet.hoverHintSource;
+			if (main && !barUISet.barButtonSet.IsActiveLayoutButton(main, more)) main.reset();
 			source.mouse = mouse; source.more = more; source.screen = screen; source.main = std::move(main);
 		});
 	}
@@ -1929,6 +1941,16 @@ bool TryReadBarPointerMessage(ExMessage& message, BYTE filter, HWND window,
 
 namespace Inkeys::UI::Bar
 {
+	shared_ptr<BarButtonClass> HitPresentedLayoutButtonForTest(POINT point)
+	{
+		SharedInputEnvelope event;
+		event.main.message = WM_LBUTTONDOWN;
+		event.main.x = static_cast<short>(point.x);
+		event.main.y = static_cast<short>(point.y);
+		FreezeMainPresentedButtonHit(event);
+		return event.mainButtonHit;
+	}
+
 	MainInteractionHandlerScope::MainInteractionHandlerScope()
 	{
 		std::lock_guard lock(mainInteractionHandlerMutex);
@@ -3720,6 +3742,43 @@ public:
 	{
 	}
 
+	static bool ReplayMoreLayoutPress(const shared_ptr<BarButtonClass>& button, const std::function<void()>& duringPress)
+	{
+		if (mainInteractionAwaitContext || !pendingMainInput.empty() || InteractionWorkerRunning()) return false;
+		Inkeys::UI::Bar::MainInteractionHandlerScope mainInput;
+		std::atomic<unsigned long long> pulse{ 0 };
+		BarInteractionSession session(::barUISet, pulse, {});
+		MainInteractionAwaitContext context;
+		struct Restore
+		{
+			~Restore() { mainInteractionAwaitContext = nullptr; pendingMainInput.clear(); }
+		} restore;
+		mainInteractionAwaitContext = &context;
+		context.currentButtonHit = button;
+		context.currentHitFrozen = true;
+		context.currentLayoutGeneration = ::barUISet.barButtonSet.LayoutGeneration();
+		session.barState.moreExpanded = true;
+		session.msg.category = EM_MOUSE;
+		session.msg.message = WM_LBUTTONDOWN;
+		session.msg.lbutton = true;
+		session.msg.x = session.msg.y = -30000;
+		session.hoveredMainBarButton = button;
+		auto press = session.HandleMorePointerStage();
+		press.Start();
+		if (press.Done() || !context.continuation) return false;
+		duringPress();
+		// 抬起保留旧帧的命中，必须由当前活动组的身份校验拒绝退休对象。
+		SharedInputEnvelope up;
+		up.main = session.msg;
+		up.main.message = WM_LBUTTONUP;
+		up.main.lbutton = false;
+		up.mainButtonHit = button;
+		up.mainHitFrozen = true;
+		pendingMainInput.push_back(std::move(up));
+		(void)PumpSharedInteraction(context, InteractionClock::now());
+		return press.Done();
+	}
+
 	static int RunThicknessFineDialProductionTest() noexcept
 	{
 		const char* stage = "fine-dial-startup-isolation";
@@ -4338,14 +4397,21 @@ private:
 	{
 		if (mainInteractionAwaitContext && mainInteractionAwaitContext->currentHitFrozen)
 			return mainInteractionAwaitContext->currentButtonHit.get() == &button;
+		if (barUISet.barButtonSet.LayoutHitSuspended()) return false;
 		const double zoom = (std::max)(0.000001, barUISet.BottomDockPresentedSnapshot().zoom);
 		return barUISet.HitTestPresentedButton(button, message.x / zoom, message.y / zoom);
 	}
-	void SetButtonPressed(BarButtonClass& button, bool pressed)
+	// 按下时的布局代次：冻结命中取入队时的值，未冻结路径取当前值。
+	std::uint64_t PressLayoutGeneration() const
 	{
-		auto retained = RetainButton(&button);
+		if (mainInteractionAwaitContext && mainInteractionAwaitContext->currentHitFrozen)
+			return mainInteractionAwaitContext->currentLayoutGeneration;
+		return barUISet.barButtonSet.LayoutGeneration();
+	}
+	void SetButtonPressed(const shared_ptr<BarButtonClass>& retained, bool pressed)
+	{
 		if (!retained) return;
-		QueueInteractionVisualFeedback(&button, 1, [retained = std::move(retained), pressed]
+		QueueInteractionVisualFeedback(retained.get(), 1, [retained, pressed]
 		{
 			SetButtonPressedVisual(*retained, pressed);
 			Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Bar);
@@ -4381,7 +4447,7 @@ private:
 	}
 	void StopMainBarButtonHover(BarButtonClass* button, bool immediate, bool preserveVisual = false)
 	{
-		auto retained = RetainButton(button);
+		auto retained = button == hoveredMainBarButton.get() ? hoveredMainBarButton : RetainButton(button);
 		if (!retained) return;
 		QueueInteractionVisualFeedback(button, 0, [retained = std::move(retained), immediate, preserveVisual]
 		{
@@ -5112,14 +5178,14 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 	BarInteractionStageResult FinishInteraction()
 	{
 		FinishBarPointerSession();
-		if (hoveredMainBarButton) StopMainBarButtonHover(hoveredMainBarButton, true);
+		if (hoveredMainBarButton) StopMainBarButtonHover(hoveredMainBarButton.get(), true);
 		if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
 			StopIndependentHover(hoveredIndependentButton, true);
 		for (const auto& button : barButtonSet.buttonList.Snapshot())
-			if (button) SetButtonPressed(*button, false);
+			if (button) SetButtonPressed(button, false);
 		const auto more = barButtonSet.GetMoreButtonSnapshot();
-		for (const auto& button : more.explicitMore) if (button) SetButtonPressed(*button, false);
-		for (const auto& button : more.forcedOverflow) if (button) SetButtonPressed(*button, false);
+		for (const auto& button : more.explicitMore) if (button) SetButtonPressed(button, false);
+		for (const auto& button : more.forcedOverflow) if (button) SetButtonPressed(button, false);
 		auto& draw = barState.drawAttributeBar;
 		draw.brush1Press = draw.softPenPress = draw.laserPress = draw.highlight1Press = false;
 		draw.penTypeExtensionPress = draw.penTypeFreeLinePress = false;
@@ -5196,7 +5262,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 		// 只消费成功呈现的指示器像素，并同步撤销下层控件候选状态。
 		if (hoveredMainBarButton)
 		{
-			StopMainBarButtonHover(hoveredMainBarButton, true);
+			StopMainBarButtonHover(hoveredMainBarButton.get(), true);
 			hoveredMainBarButton = nullptr;
 		}
 		if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
@@ -5209,9 +5275,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			auto button = retainedButton.get();
 			if (button && button->state
 				&& button->state->emph == WidgetEmphasize::Pressed)
-				SetButtonPressed(*button, false);
+				SetButtonPressed(retainedButton, false);
 		}
-		lastClickedMainBarButton = nullptr;
+		lastClickedMainBarButton.reset();
 		mainButtonGesture.Reset();
 		auto& draw = barState.drawAttributeBar;
 		draw.brush1Press = false;
@@ -5277,10 +5343,10 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 			CloseThicknessSlider(true);
 			UpdateRendering(false);
 		}
-		if (const auto retainedHover = RetainButton(hoveredMainBarButton); hoveredMainBarButton
+		if (const auto retainedHover = RetainButton(hoveredMainBarButton.get()); hoveredMainBarButton
 			&& (barState.fold || !retainedHover || !retainedHover->IsVisible()))
 		{
-			StopMainBarButtonHover(hoveredMainBarButton, true);
+			StopMainBarButtonHover(hoveredMainBarButton.get(), true);
 			hoveredMainBarButton = nullptr;
 		}
 		if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
@@ -5398,7 +5464,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				if (tooltipHoverChanged || sliderHoverChanged)
 					UpdateRendering(false);
 
-				BarButtonClass* currentHoveredButton = nullptr;
+				shared_ptr<BarButtonClass> currentHoveredButton;
 				// 普通按钮与 More 共用入队时锁存的成功呈现命中。
 				if (!barState.fold && !colorPickerOccludes
 					&& !penTypeMenuOccludes)
@@ -5415,7 +5481,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						if (isColorSelector) continue; // 颜色块自身就是内容，不把其填充色改成悬停灰色。
 						if (HitPresentedButton(*temp, msg))
 						{
-							currentHoveredButton = temp;
+							currentHoveredButton = retainedButton;
 							break;
 						}
 					}
@@ -5434,7 +5500,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 										continue;
 									if (HitPresentedButton(*button, msg))
 									{
-										currentHoveredButton = button.get();
+										currentHoveredButton = button;
 										break;
 									}
 								}
@@ -5446,9 +5512,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 				}
 				if (currentHoveredButton != hoveredMainBarButton)
 				{
-					StopMainBarButtonHover(hoveredMainBarButton, false);
+					StopMainBarButtonHover(hoveredMainBarButton.get(), false);
 					hoveredMainBarButton = currentHoveredButton;
-					StartMainBarButtonHover(hoveredMainBarButton);
+					StartMainBarButtonHover(hoveredMainBarButton.get());
 				}
 
 				IndependentHoverTargetEnum currentIndependentButton = IndependentHoverTargetEnum::None;
@@ -6080,11 +6146,12 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						continueFlag = false;
 						if (msg.message == WM_LBUTTONDOWN)
 						{
+							const auto pressGeneration = PressLayoutGeneration();
 							PointerGestureRecognizer pointerGesture;
 							const auto pointerIdentity = reinterpret_cast<std::uintptr_t>(button.get());
 							(void)pointerGesture.Update({ButtonPointerEvent::Down, InteractionClock::now(), 0, 0, pointerIdentity});
-							SetButtonPressed(*button, true);
-							StopMainBarButtonHover(hoveredMainBarButton, true, true);
+							SetButtonPressed(button, true);
+							StopMainBarButtonHover(hoveredMainBarButton.get(), true, true);
 							hoveredMainBarButton = nullptr;
 							UpdateRendering(false);
 							while (true)
@@ -6092,6 +6159,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								if (!(co_await AwaitNextBarInteractionMessage(
 									msg, EM_MOUSE, floating_window)))
 								{
+									SetButtonPressed(button, false);
 									co_return BarInteractionStageResult::Shutdown;
 								}
 								if (IsBarPointerCancelMessage(msg)) break;
@@ -6101,6 +6169,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								if (HasButtonGesture(pointer, GestureKind::Cancelled, pointerIdentity)) break;
 								if (msg.message == WM_LBUTTONUP && HasButtonGesture(pointer, GestureKind::Click, pointerIdentity))
 								{
+									// 按住期间布局已重载（即使实例被复用）或实例已被删除，都不执行动作。
+									if (!barButtonSet.IsActiveLayoutButton(button, true)
+										|| barButtonSet.LayoutGeneration() != pressGeneration) break;
 									// 默认先收起再执行，避免动作打开新窗口时浮层残留。
 									if (button->closeMoreAfterAction)
 										barState.moreExpanded = false;
@@ -6113,7 +6184,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									break;
 								}
 							}
-							SetButtonPressed(*button, false);
+							SetButtonPressed(button, false);
 							UpdateRendering(false);
 							SuppressHoverUntilPointerMove();
 							ClearBarInteractionMessages(EM_MOUSE, floating_window);
@@ -6266,8 +6337,11 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 						|| temp->state->state == WidgetState::Disable) continue;
 
 					// 双击第二击仍归属于第一击按钮，避免动画中按钮位移导致命中丢失。
+					// 首击之后布局已重载（含暂停期间）时不续接：旧位置可能已不是这个按钮。
 					bool doubleClickContinuation = msg.message == WM_LBUTTONDBLCLK
-						&& temp == lastClickedMainBarButton;
+						&& retainedButton == lastClickedMainBarButton.lock()
+						&& !barButtonSet.LayoutHitSuspended()
+						&& barButtonSet.LayoutGeneration() == lastClickedLayoutGeneration;
 					if (HitPresentedButton(*temp, msg) || doubleClickContinuation)
 					{
 						continueFlag = false;
@@ -6278,12 +6352,13 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 							if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(fixtureAction,
 								Inkeys::UI::Bar::Ui3FixtureActionPoint::Down)) co_return BarInteractionStageResult::Shutdown;
 							bool clickCompleted = false;
+							const auto pressGeneration = PressLayoutGeneration();
 							// 同一背景层先切换到按下状态；抬起后必须收到新的鼠标移动才能再次悬停。
 							const auto pointerIdentity = reinterpret_cast<std::uintptr_t>(temp);
 							(void)mainButtonGesture.Update({ButtonPointerEvent::Down, InteractionClock::now(), 0, 0,
 								pointerIdentity, GestureButton::Primary, doubleClickContinuation});
-							SetButtonPressed(*temp, true);
-							StopMainBarButtonHover(hoveredMainBarButton, true, true);
+							SetButtonPressed(retainedButton, true);
+							StopMainBarButtonHover(hoveredMainBarButton.get(), true, true);
 							hoveredMainBarButton = nullptr;
 							UpdateRendering(false);
 							while (true)
@@ -6291,6 +6366,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								if (!(co_await AwaitNextBarInteractionMessage(
 									msg, EM_MOUSE, floating_window)))
 								{
+									SetButtonPressed(retainedButton, false);
 									co_return BarInteractionStageResult::Shutdown;
 								}
 								if (IsBarPointerCancelMessage(msg)) break;
@@ -6305,6 +6381,9 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 									if (msg.message == WM_LBUTTONUP && !msg.lbutton
 										&& (doubleClick || HasButtonGesture(pointer, GestureKind::Click, pointerIdentity)))
 									{
+										// 协程等待抬起期间，布局可能已删除按下时持有的实例。
+										if (!barButtonSet.IsActiveLayoutButton(retainedButton, false)
+											|| barButtonSet.LayoutGeneration() != pressGeneration) break;
 										if (!Inkeys::UI::Bar::PermitAuthorizedFixtureAction(fixtureAction,
 											Inkeys::UI::Bar::Ui3FixtureActionPoint::Commit)) co_return BarInteractionStageResult::Shutdown;
 										Inkeys::UI::UI3::Ui3FiniteMutationScope finiteMutation(
@@ -6359,7 +6438,8 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 											Inkeys::UI::Bar::NotifyPptBusinessAction(); break;
 										default: break;
 										}
-										lastClickedMainBarButton = temp;
+										lastClickedMainBarButton = retainedButton;
+										lastClickedLayoutGeneration = pressGeneration;
 										clickCompleted = true;
 										UpdateRendering();
 
@@ -6369,7 +6449,7 @@ case IndependentHoverTargetEnum::DrawAttributeThicknessFine:
 								else break;
 							}
 							if (!clickCompleted) (void)mainButtonGesture.Update({ButtonPointerEvent::Cancel, InteractionClock::now()});
-							SetButtonPressed(*temp, false); UpdateRendering(false);
+							SetButtonPressed(retainedButton, false); UpdateRendering(false);
 							SuppressHoverUntilPointerMove();
 
 							// 成功点击后保留队列中的下一击；拖出取消时仍清理本轮残留消息。
@@ -8335,7 +8415,7 @@ public:
 			if (barUISet.constructionPrompt.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), &promptAccepted))
 			{
 				if (promptAccepted) AcceptBarButtonFeedback();
-				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
+				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton.get(), true); hoveredMainBarButton = nullptr; }
 				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
 				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }
 				continue;
@@ -8344,7 +8424,7 @@ public:
 			if(barUISet.statusIndicator.Pointer(barUISet,msg,IsBarPointerCancelMessage(msg),IsBarTouchPointerMessage(msg),&statusAccepted))
 			{
 				if(statusAccepted){AcceptBarButtonFeedback();SuppressHoverUntilPointerMove();}
-				if(hoveredMainBarButton){StopMainBarButtonHover(hoveredMainBarButton,true);hoveredMainBarButton=nullptr;}
+				if(hoveredMainBarButton){StopMainBarButtonHover(hoveredMainBarButton.get(),true);hoveredMainBarButton=nullptr;}
 				if(hoveredIndependentButton!=IndependentHoverTargetEnum::None)
 				{StopIndependentHover(hoveredIndependentButton,true);hoveredIndependentButton=IndependentHoverTargetEnum::None;}
 				continue;
@@ -8353,7 +8433,7 @@ public:
 			if (barUISet.geometryAttribute.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), IsBarTouchPointerMessage(msg), &auxiliaryButtonAccepted))
 			{
 				if (auxiliaryButtonAccepted) AcceptBarButtonFeedback();
-				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
+				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton.get(), true); hoveredMainBarButton = nullptr; }
 				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
 				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }
 				continue;
@@ -8362,7 +8442,7 @@ public:
 			if (barUISet.eraserAttribute.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), IsBarTouchPointerMessage(msg), &auxiliaryButtonAccepted))
 			{
 				if (auxiliaryButtonAccepted) AcceptBarButtonFeedback();
-				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
+				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton.get(), true); hoveredMainBarButton = nullptr; }
 				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
 				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }
 				continue;
@@ -8371,7 +8451,7 @@ public:
 			if (barUISet.recallAttribute.Pointer(barUISet, msg, IsBarPointerCancelMessage(msg), IsBarTouchPointerMessage(msg), &auxiliaryButtonAccepted))
 			{
 				if (auxiliaryButtonAccepted) AcceptBarButtonFeedback();
-				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton, true); hoveredMainBarButton = nullptr; }
+				if (hoveredMainBarButton) { StopMainBarButtonHover(hoveredMainBarButton.get(), true); hoveredMainBarButton = nullptr; }
 				if (hoveredIndependentButton != IndependentHoverTargetEnum::None)
 				{ StopIndependentHover(hoveredIndependentButton, true); hoveredIndependentButton = IndependentHoverTargetEnum::None; }
 				continue;
@@ -8483,10 +8563,11 @@ private:
 	std::uint64_t thicknessFineDialModeRevision = 0;
 
 	ExMessage msg{};
-	BarButtonClass* lastClickedMainBarButton = nullptr;
+	std::weak_ptr<BarButtonClass> lastClickedMainBarButton;
+	std::uint64_t lastClickedLayoutGeneration = 0;
 	// 原生双击历史与最后成功按钮同寿命；取消本次接触不清掉上一击归属。
 	PointerGestureRecognizer mainButtonGesture{[] { GestureConfig config; config.doubleClick = GestureDoubleClick::Native; return config; }()};
-	BarButtonClass* hoveredMainBarButton = nullptr;
+	shared_ptr<BarButtonClass> hoveredMainBarButton;
 	// 上一次发布的悬停提示来源是否为真实鼠标（为假时非鼠标消息不再重复投递）。
 	bool hoverHintPublished = false;
 	bool suppressHoverUntilPointerMove = false;
@@ -8520,6 +8601,11 @@ private:
 
 namespace Inkeys::UI::Bar
 {
+	bool ReplayMoreLayoutPress(const shared_ptr<BarButtonClass>& button, const std::function<void()>& duringPress)
+	{
+		return BarInteractionSession::ReplayMoreLayoutPress(button, duringPress);
+	}
+
 	int RunThicknessFineDialProductionTest() noexcept
 	{
 		return BarInteractionSession::RunThicknessFineDialProductionTest();

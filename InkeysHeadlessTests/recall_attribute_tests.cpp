@@ -431,7 +431,7 @@ int RunRecallAttributeTests()
 			&& buttons.find("ApplyRecallChromeVisualsLocked") == std::string::npos,
 			"history notifications and idle expiry only update business state, never main-button grids");
 		const auto loadBegin = buttons.find("void BarButtonSetClass::Load()");
-		const auto loadEnd = buttons.find("void BarButtonSetClass::SyncLegacyExtensionButtons()", loadBegin);
+		const auto loadEnd = buttons.find("void BarButtonSetClass::ResetIconCaches()", loadBegin);
 		expect(loadBegin != std::string::npos && loadEnd != std::string::npos
 			&& buttons.substr(loadBegin, loadEnd - loadBegin).find("ApplyMainPresentationLocked(GetStateModeSnapshot())") != std::string::npos,
 			"component Load ends with the same final projection");

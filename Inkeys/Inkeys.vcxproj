@@ -497,6 +497,7 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Design.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Typography.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.ComponentEditor.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Motion.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.PageTransition.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h" />
@@ -1026,6 +1027,7 @@
     <ClCompile Include="Inkeys\UI\UI3\UI3.Animation.cpp" />
     <ClCompile Include="Inkeys\UI\UI3\UI3.Animation.cppm" />
     <ClCompile Include="Inkeys\UI\UI3\UI3.FramePacing.cppm" />
+    <ClCompile Include="Inkeys\UI\UI3\UI3.DragSession.cppm" />
 	<ClCompile Include="Inkeys\UI\Bar\Bar.ToggleClickCoalescer.cppm" />
     <ClCompile Include="Inkeys\UI\UI3\UI3.WakeSignal.cppm" />
     <ClCompile Include="Inkeys\UI\UI3\UI3.Material.cppm" />
@@ -1045,6 +1047,8 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.SurfaceLayout.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.ContentInstance.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.ContentInstance.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.ShapeEditor.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.ConstructionPrompt.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cpp" />
@@ -1096,6 +1100,7 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.BottomDock.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.AutoCollapse.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.MainLayoutPolicy.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.LayoutModel.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.DisplayTransition.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.WindowGeometry.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.PresentDecision.cppm" />
@@ -1113,6 +1118,7 @@
     <ClCompile Include="Inkeys\UI\Freeze\Freeze.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Base.cppm" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Controls.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.ComponentEditor.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Shell.cpp" />

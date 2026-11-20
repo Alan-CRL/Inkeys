@@ -23,6 +23,7 @@ struct ListLayoutItem
 	std::optional<double> centerHeight;
 	bool columnBoundary = false;
 	double boundaryInsetX = 0.0;
+	bool exclusiveColumn = false;
 };
 
 struct ListLayoutGroupSpec

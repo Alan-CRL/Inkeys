@@ -5,6 +5,7 @@
 #include <vector>
 
 import Inkeys.UI.UI3.ListLayout;
+import Inkeys.UI.Bar.MainLayoutPolicy;
 
 using namespace Inkeys::UI::UI3;
 
@@ -161,6 +162,33 @@ namespace
 			Check(Placement(layout.placements[i], i, xs[i], ys[i], widths[i], heights[i], 0, 0, columns[i], rows[i], 0, i == 5 || i == 11),
 				"paired rows retain hidden cursor resets and caller supplied boundary geometry");
 	}
+	void TestUserDividerColumns()
+	{
+		for (bool compact : { false, true })
+		{
+			auto spec = Row();
+			if (!compact) { spec.kind = ListLayoutKind::GroupedGrid; spec.packing = ListGridPacking::PairedRows; }
+			auto line = Separator();
+			line.exclusiveColumn = !compact;
+			line.rowSpan = compact ? 1 : 2;
+			line.height = compact ? 28.5 : 50;
+			auto hidden = line; hidden.visible = false;
+			auto fixed = line; fixed.exclusiveColumn = false; fixed.columnBoundary = true; fixed.boundaryInsetX = 2.5;
+			const auto layout = ResolveListLayout({line, Item(), line, hidden, line, line, fixed, line}, spec);
+			Check(layout.placements.size() == 8 && layout.width == 72.5, "five visible lines each add six DIP");
+			if (layout.placements.size() != 8) continue;
+			constexpr std::array<double, 8> centers{5.5, 27.25, 49.0, 55.0, 55.0, 61.0, 64.0, 67.0};
+			for (size_t i = 0; i < centers.size(); ++i)
+			{
+				Check(layout.placements[i].x == centers[i], "line at head, half-column, fixed boundary and tail");
+				if (i != 1) Check(layout.placements[i].y == (compact ? 21.25 : 40), "line centered vertically");
+			}
+			using namespace Inkeys::UI::Bar;
+			Check(ResolveBarMainIconX(layout.placements[4].x, layout.width, BarIconOrder::RightToLeft, true) -
+				ResolveBarMainIconX(layout.placements[5].x, layout.width, BarIconOrder::RightToLeft, true) == 6,
+				"mirrored adjacent user lines stay separated");
+		}
+	}
 	void TestEmptyAndSeparators()
 	{
 		const auto row = ResolveListLayout({}, Row());
@@ -188,6 +216,6 @@ namespace
 
 int RunUi3ListLayoutTests()
 {
-	TestSingleRow(); TestCompactSingleRow(); TestFixedGrid(); TestGroupedGrid(); TestPairedRows(); TestEmptyAndSeparators();
+	TestSingleRow(); TestCompactSingleRow(); TestFixedGrid(); TestGroupedGrid(); TestPairedRows(); TestUserDividerColumns(); TestEmptyAndSeparators();
 	return failures;
 }

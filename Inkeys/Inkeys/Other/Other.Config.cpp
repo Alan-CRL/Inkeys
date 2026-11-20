@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <initializer_list>
+#include <iterator>
 #include <limits>
 #include <sstream>
 #include <string_view>
@@ -1168,6 +1169,57 @@ namespace Inkeys
 		return true;
 	}
 
+	BarLayoutConfigValues Config::GetBarLayout() const
+	{
+		std::shared_lock lock(rwMutex);
+		return { UI.Bar.FixedButtonsA1.Snapshot(), UI.Bar.ExtensionButtons.Snapshot(), UI.Bar.FixedButtonsA2.Snapshot() };
+	}
+
+	template<class Flags, class Visitor>
+	static void VisitLegacyBarComponents(Flags& flags, Visitor visit)
+	{
+		visit(BarComponentId::Explorer, flags.Appliance.Explorer);
+		visit(BarComponentId::Taskmgr, flags.Appliance.Taskmgr);
+		visit(BarComponentId::Control, flags.Appliance.Control);
+		visit(BarComponentId::Desktop, flags.System.Desktop);
+		visit(BarComponentId::LockWorkStation, flags.System.LockWorkStation);
+		visit(BarComponentId::Keyboardesc, flags.Keyboard.Keyboardesc);
+		visit(BarComponentId::KeyboardAltF4, flags.Keyboard.KeyboardAltF4);
+		visit(BarComponentId::IslandCaller1, flags.RollCall.IslandCaller1);
+		visit(BarComponentId::IslandCaller2, flags.RollCall.IslandCaller2);
+		visit(BarComponentId::SecRandom1, flags.RollCall.SecRandom1);
+		visit(BarComponentId::SecRandom2, flags.RollCall.SecRandom2);
+		visit(BarComponentId::SecRandom2Compat, flags.RollCall.SecRandom2Compat);
+		visit(BarComponentId::NamePicker, flags.RollCall.NamePicker);
+		visit(BarComponentId::ClassislandSettings, flags.Linkage.ClassislandSettings);
+		visit(BarComponentId::ClassislandProfile, flags.Linkage.ClassislandProfile);
+		visit(BarComponentId::ClassislandClassswap, flags.Linkage.ClassislandClassswap);
+	}
+
+	std::vector<std::string> Config::GetLegacyBarComponents() const
+	{
+		std::shared_lock lock(rwMutex);
+		std::vector<std::string> enabled;
+		VisitLegacyBarComponents(UI.Bar.ShortcutButton, [&](const char* id, const auto& flag)
+		{
+			if (flag.load()) enabled.emplace_back(id);
+		});
+		return enabled;
+	}
+
+	bool Config::ReplaceBarLayout(BarLayoutConfigValues values, bool clearLegacy)
+	{
+		// 与整份配置复制和保存互斥，避免读到部分导入的布局。
+		std::unique_lock lock(rwMutex);
+		UI.Bar.FixedButtonsA1.Replace(std::move(values.a1));
+		UI.Bar.ExtensionButtons.Replace(std::move(values.extension));
+		UI.Bar.FixedButtonsA2.Replace(std::move(values.a2));
+		bool cleared = false;
+		if (clearLegacy)
+			VisitLegacyBarComponents(UI.Bar.ShortcutButton, [&](const char*, auto& flag) { cleared |= flag.exchange(false); });
+		return cleared;
+	}
+
 	bool Config::TryMigrateLegacyBarButtonLayout(Json::Value& root)
 	{
 		if (!root.isObject() || !root.isMember("UI") || !root["UI"].isObject()) return false;
@@ -1240,6 +1292,19 @@ namespace Inkeys
 			else if (IsFixedButtonsA2Id(id)) fixedA2Json.append(makeFixedObject(id));
 			else extensionJson.append(makeExtensionObject(id, visible));
 			}
+
+		// 只有拆分旧数组时才识别旧出厂顺序；新区允许用户主动排成同一顺序。
+		const char* oldOrder[] = { BarButtonId::Select, BarButtonId::Draw, BarButtonId::Eraser,
+			BarButtonId::Geometry, BarButtonId::Recall, BarButtonId::Clean };
+		bool oldDefault = fixedA1Json.size() == std::size(oldOrder);
+		for (Json::ArrayIndex i = 0; oldDefault && i < fixedA1Json.size(); ++i)
+			oldDefault = fixedA1Json[i]["Id"].asString() == oldOrder[i];
+		if (oldDefault)
+		{
+			fixedA1Json.clear();
+			for (const auto& entry : MakeDefaultFixedButtonsA1().Snapshot())
+				fixedA1Json.append(makeFixedObject(entry.Id));
+		}
 
 		// 迁移结果写回文档节点；A 区是否合法由后续 Load 严校验决定。
 		barNode["FixedButtonsA1"] = fixedA1Json;

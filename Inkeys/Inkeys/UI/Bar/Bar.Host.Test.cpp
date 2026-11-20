@@ -37,6 +37,9 @@
 
 module Inkeys.UI.Bar;
 import :Main;
+import :ContentInstance;
+import Inkeys.UI.Bar.LayoutModel;
+import Inkeys.Other.Config;
 import :Theme;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Text.Font;
@@ -460,7 +463,516 @@ namespace Inkeys::UI::Bar
 			target.Discard();
 		}
 
-		void RunScene(const HostScene& scene, Report& report, const std::filesystem::path& directory)
+		// 三种目标各自拥有帧事务；外部宿主负责清屏和 EndDraw。
+		bool PaintPreview(BarContentInstance& instance, const PreviewFrame& frame, FrameTargetKind kind,
+			unsigned width, unsigned height, Frame& pixels, unsigned generationOffset = 0, bool failEndDraw = false, const wchar_t* ghostHint = nullptr)
+		{
+			FrameTarget target(instance.Renderer(),kind);
+			FrameTarget storage(FrameTargetKind::PlainBitmap);
+			auto epoch = Pipeline::GetDeviceEpoch();
+			if (generationOffset)
+			{
+				ComPtr<ID2D1Device> replacement;
+				auto factory = Pipeline::GetSharedAssets().d2dFactory;
+				if (FAILED(factory->CreateDevice(epoch.dxgiDevice.Get(),&replacement))) return false;
+				epoch.d2dDevice = replacement;
+				epoch.generation += generationOffset;
+			}
+			const bool external = kind == FrameTargetKind::ExternalContext;
+			if (FAILED((external ? storage : target).Ensure(epoch,width,height))) return false;
+			if (external && FAILED(target.AttachExternalContext(storage.DeviceContext(),epoch.generation,width,height))) return false;
+			auto* dc = target.DeviceContext();
+			if (external)
+			{
+				dc->BeginDraw();
+				dc->Clear(D2D1::ColorF(0,0.0f));
+			}
+			target.BeginFrame(dc,D2D1::RectF(0,0,static_cast<float>(width),static_cast<float>(height)));
+			const auto transform = ghostHint ? D2D1::Matrix3x2F::Identity() : D2D1::Matrix3x2F::Translation(3.0f,7.0f);
+			dc->SetTransform(transform);
+			const float dpi=ghostHint ? 96.f : 120.f;
+			dc->SetDpi(dpi,dpi);
+			bool ok = ghostHint ? SUCCEEDED(instance.DrawGhost(target,std::string(BarComponentId::Explorer),
+				{float(width/2),float(height/2)},ghostHint,false)) : SUCCEEDED(instance.Draw(target,frame));
+			D2D1_MATRIX_3X2_F returned{};
+			float dpiX, dpiY;
+			dc->GetTransform(&returned);
+			dc->GetDpi(&dpiX,&dpiY);
+			ok = ok && !std::memcmp(&transform,&returned,sizeof(returned)) && dpiX == dpi && dpiY == dpi;
+			dc->SetDpi(96,96);
+			dc->SetTransform(D2D1::Matrix3x2F::Identity());
+			target.FinishDrawCommands(dc);
+			// 故意制造 D2D 栈不匹配，让已发出命令的外部帧在 EndDraw 失败。
+			if (failEndDraw) dc->PopAxisAlignedClip();
+			HRESULT hr = target.EndFrame(dc);
+			if (external) { hr = dc->EndDraw(); target.NotifyExternalEndDraw(hr); }
+			instance.ConfirmFrame(frame.frameId,ok && SUCCEEDED(hr));
+			if (failEndDraw) return ok && FAILED(hr);
+			ok = ok && SUCCEEDED(hr);
+			ok = ok && ReadBitmap(dc,(external ? storage : target).TargetBitmap(),pixels);
+			target.Discard();
+			return ok;
+		}
+		void CheckMatchingBarButton(const HostScene& scene, const ReplayGeometry& replay,
+			const Frame& real, Report& report)
+		{
+			BarContentInstance preview;
+			auto model = barUISet.barButtonSet.ReadBarLayout();
+			// 离屏夹具直接调用 Load，走与生产 Load 相同的未提交模型回退。
+			if (!model) model = FromConfig(config.GetBarLayout(),barUISet.barButtonSet.GetLayoutCatalog());
+			report.Check(model && !(*model)[Segment::A1].empty(),"preview.match.model");
+			if (!model) return;
+			preview.SetLayout(*model,1);
+			PreviewInputs input;
+			input.width = 1200; input.height = 361; // 与实栏选择按钮的半像素纵向相位对齐。
+			input.targetHeight = BarLargeSizeMetrics.barHeight * scene.scale;
+			input.dynamicLighting = false;
+			input.time = std::chrono::steady_clock::time_point{} + std::chrono::seconds(2);
+			input.typography = MakeBarLocalizedTypographyServices().localizedTypography();
+			const auto assets = Pipeline::GetSharedAssets();
+			input.writeFactory = assets.dwriteFactory.Get(); input.fonts = assets.fontCollection.Get();
+			auto frame = preview.Advance(input);
+			Frame rendered;
+			const bool painted = PaintPreview(preview,frame,FrameTargetKind::PlainBitmap,1200,361,rendered);
+			report.Check(painted,"preview.match.render");
+			if (!painted) return;
+			const auto body = barUISet.shapeMap[BarUISetShapeEnum::MainBar];
+			const auto previewBody = preview.Geometry().body;
+			report.Check(std::abs(previewBody.bottom-previewBody.top-body->h.val*scene.scale)<0.01,
+				"preview.match.body-height");
+			// 比较与主按钮光锚无关的选择图标和标签；深色属性盘使用不同的遮挡关系。
+			if (!scene.drawAttribute)
+			{
+				const auto* select = barUISet.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Select)];
+				for (const auto& h : preview.Geometry().items)
+				{
+					if (!h.position || (*model)[h.position->segment][h.position->index].Id != BarButtonId::Select) continue;
+					auto origin = LayoutToTarget(replay.mapping,D2D1::Point2F(static_cast<float>(select->button.inhX),
+						static_cast<float>(select->button.inhY)));
+					Frame sample, reference;
+					constexpr LONG inset = 8;
+					const SIZE size{static_cast<LONG>(select->button.w.val)-2*inset,
+						static_cast<LONG>(select->button.h.val)-2*inset};
+					const bool cropped = Crop(real,{static_cast<LONG>(std::round(origin.x))+inset,
+						static_cast<LONG>(std::round(origin.y))+inset},size,reference)
+						&& Crop(rendered,{static_cast<LONG>(std::round(h.rect.left))+inset,
+							static_cast<LONG>(std::round(h.rect.top))+inset},size,sample);
+					if (cropped && sample.bytes!=reference.bytes)
+					{
+						report.text << "INFO preview.match origin=" << origin.x << "," << origin.y << " vs " << h.rect.left << "," << h.rect.top << '\n';
+						Dump(L"Build/ui3-host","preview-select",sample);
+						Dump(L"Build/ui3-host","real-select",reference);
+					}
+					report.Check(cropped && sample.bytes==reference.bytes,"preview.match.select-icon-label",Difference(reference,sample));
+					return;
+				}
+				report.Check(false,"preview.match.select-missing");
+			}
+		}
+
+		void CheckPreviewProjection(PreviewInputs input, Report& report)
+		{
+			struct RestoreAnimation
+			{
+				bool enabled = UiAnimationEnabled;
+				double rate = UiAnimationSpeedRate;
+				~RestoreAnimation() { UiAnimationEnabled = enabled; UiAnimationSpeedRate = rate; }
+			} restore;
+			UiAnimationEnabled = false;
+			auto model = Reset();
+			model[Segment::B1] = {{BarButtonId::UserDivider,BarButtonSizeKind::OneTwo},{BarButtonId::UserDivider,BarButtonSizeKind::OneTwo},
+				{BarComponentId::Explorer,BarButtonSizeKind::TwoTwo,false},{BarComponentId::Explorer},{BarButtonId::Setting}};
+			model[Segment::More].clear();
+			input.sizeMode = BarSizeMode::Compact;
+			input.presentation = true;
+			input.edgeLighting = false;
+			BarContentInstance instance;
+			instance.SetLayout(model,10);
+			instance.SetMoreExpanded(true);
+			Frame pixels;
+			auto paint = [&]
+			{
+				input.time += std::chrono::milliseconds(20);
+				auto frame = instance.Advance(input);
+				return PaintPreview(instance,frame,FrameTargetKind::PlainBitmap,1200,360,pixels);
+			};
+			auto count = [&](PreviewHitKind kind)
+			{
+				const auto& items = instance.Geometry().items;
+				return std::count_if(items.begin(),items.end(),[&](const auto& h){return h.kind==kind;});
+			};
+			report.Check(paint() && count(PreviewHitKind::UserDivider)==2 && count(PreviewHitKind::Boundary)==2
+				&& count(PreviewHitKind::Panel)==0 && count(PreviewHitKind::More)==1,"preview.dividers-empty-more");
+			report.Check(!instance.Renderer().SnapshotFrameLighting().edgeLightingEnabled,"preview.edge-off");
+			for (const auto& item:instance.Geometry().items)
+			{
+				if (item.kind!=PreviewHitKind::UserDivider) continue;
+				const auto previous=instance.Geometry();
+				const D2D1_POINT_2F sample{item.rect.right+previous.dividerReach*0.8f,(item.rect.top+item.rect.bottom)/2};
+				const auto before=instance.HitTest(sample);
+				auto narrow=input;
+				narrow.width=120;
+				const auto candidate=instance.Advance(narrow);
+				const bool failed=PaintPreview(instance,candidate,FrameTargetKind::ExternalContext,120,360,pixels,0,true);
+				const auto after=instance.HitTest(sample);
+				report.Check(failed && before.position && after.position && before.kind==PreviewHitKind::UserDivider
+					&& before.position->segment==after.position->segment && before.position->index==after.position->index
+					&& instance.Geometry().frameId==previous.frameId,"preview.failed-divider-reach");
+				break;
+			}
+			report.Check(paint(),"preview.restore-after-failure");
+			bool presentation = false, freeze = false, hidden = false;
+			std::optional<Position> recall;
+			for (const auto& h : instance.Geometry().items)
+			{
+				if (!h.position) continue;
+				const auto p = *h.position;
+				presentation |= model[p.segment][p.index].Id == BarButtonId::EndShow;
+				freeze |= model[p.segment][p.index].Id == BarButtonId::Freeze;
+				hidden |= p.segment == Segment::B1 && p.index==2;
+				if (h.kind==PreviewHitKind::Companion) recall=p;
+			}
+			report.Check(presentation && !freeze && !hidden,"preview.hidden-projection");
+			report.Check(recall && instance.Lift(*recall,10) && paint()
+				&& count(PreviewHitKind::Companion)==0,"preview.lift-recall-redo");
+			instance.CancelLift();
+			report.Check(paint() && count(PreviewHitKind::Companion)==1,"preview.restore-recall-redo");
+			for (int i=0;i<11;++i) model[Segment::More].push_back({BarComponentId::Explorer});
+			instance.SetLayout(model,11);
+			report.Check(paint() && count(PreviewHitKind::Panel)==1,"preview.wrapped-panel");
+			bool wrap = false;
+			const auto& gaps = instance.Geometry().gaps;
+			for (size_t i=1;i<gaps.size();++i)
+				if (gaps[i].position.segment==Segment::More && gaps[i-1].position.segment==Segment::More
+					&& gaps[i].position.index==gaps[i-1].position.index && gaps[i].start.y!=gaps[i-1].start.y) wrap=true;
+			report.Check(wrap,"preview.more-row-break");
+			Frame withoutBadge = pixels;
+			PreviewTestAccess::ShowGeometryBadge(instance);
+			report.Check(paint() && pixels.bytes!=withoutBadge.bytes,"preview.pinned-badge");
+			Frame newEpoch;
+			auto withBadge = instance.Advance(input);
+			report.Check(PaintPreview(instance,withBadge,FrameTargetKind::ExternalContext,1200,360,newEpoch,1)
+				&& newEpoch.bytes==pixels.bytes,"preview.more-badge-new-epoch");
+			const auto catalog = barUISet.barButtonSet.GetLayoutCatalog();
+			const Position dividerSource{Segment::B1,1};
+			bool preserved = false;
+			if (instance.Lift(dividerSource,11) && paint())
+				for (const auto& line : instance.Geometry().gaps)
+					if (line.position.segment==Segment::B1 && line.position.index==dividerSource.index)
+					{
+						auto same = Move(model,dividerSource,line.position,catalog);
+						preserved = same && *same == model;
+					}
+			report.Check(preserved,"preview.hidden-item-order");
+			instance.CancelLift();
+			report.Check(paint(),"preview.hidden-item-restored");
+			const Position source{Segment::B1,3};
+			report.Check(instance.Lift(source,11) && paint(),"preview.same-zone-lift");
+			bool movedRight = false;
+			for (const auto& line : instance.Geometry().gaps)
+			{
+				if (line.position.segment!=Segment::B1 || line.position.index!=model[Segment::B1].size()) continue;
+				const auto candidates = instance.InsertionGaps({(line.start.x+line.end.x)/2,(line.start.y+line.end.y)/2});
+				for (const auto& candidate : candidates)
+				{
+					if (candidate.position.segment!=Segment::B1 || candidate.position.index!=model[Segment::B1].size()) continue;
+					auto next = Move(model,source,candidate.position,catalog);
+					movedRight = next && (*next)[Segment::B1].back().Id==BarComponentId::Explorer
+						&& instance.Place(*next,candidate.position,11);
+					break;
+				}
+				break;
+			}
+			report.Check(movedRight,"preview.source-gap-after-hidden");
+			model = Reset();
+			model[Segment::B1] = {{BarComponentId::Explorer,BarButtonSizeKind::TwoOne},
+				{BarComponentId::Control,BarButtonSizeKind::TwoOne}};
+			input.sizeMode = BarSizeMode::Large;
+			instance.SetLayout(model,12);
+			instance.SetMoreExpanded(false);
+			report.Check(paint(),"preview.stacked-pair");
+			auto widthBefore = instance.Geometry().body;
+			const bool stackedGap = std::any_of(instance.Geometry().gaps.begin(),instance.Geometry().gaps.end(),
+				[](const auto& gap){return gap.position.segment==Segment::B1 && gap.start.y==gap.end.y;});
+			report.Check(stackedGap && instance.Lift({Segment::B1,0},12) && paint()
+				&& instance.Geometry().body.left==widthBefore.left,"preview.lift-half-column");
+			model = Reset();
+			instance.SetLayout(model,12);
+			instance.SetMoreExpanded(false);
+			input.sizeMode = BarSizeMode::Large;
+			instance.Suspend();
+			report.Check(instance.Geometry().items.empty(),"preview.suspended-hits");
+			report.Check(paint(),"preview.no-animation");
+			const auto original = instance.Geometry().body;
+			if (instance.Geometry().items.empty()) { report.Check(false,"preview.empty-layout"); return; }
+			const auto first = instance.Geometry().items.front().position;
+			report.Check(first && instance.Lift(*first,12) && paint()
+				&& instance.Geometry().body.left>original.left,"preview.snap-shrink");
+			instance.CancelLift();
+			report.Check(paint() && instance.Geometry().body.left==original.left,"preview.snap-cancel");
+			if (!first) return;
+			auto sampleRate = [&](double rate)
+			{
+				UiAnimationEnabled = true; UiAnimationSpeedRate = rate;
+				instance.Lift(*first,12);
+				// 静置后先取基准时刻，再量相同 dt 下的宽度变化。
+				input.time += std::chrono::seconds(5);
+				instance.Advance(input);
+				const bool ok = paint();
+				const auto left = instance.Geometry().body.left;
+				instance.CancelLift();
+				UiAnimationEnabled = false;
+				return ok && paint() ? left : -1.0f;
+			};
+			const auto slow = sampleRate(0.5), fast = sampleRate(2);
+			report.Check(slow>original.left && fast>slow,"preview.animation-rate");
+			input.height=80;
+			report.Check(paint(),"preview.constrained-host");
+			auto pose=[&] {
+				const auto r=instance.Geometry().body;
+				return std::pair{r.top,r.bottom-r.top};
+			};
+			const auto closed=pose();
+			UiAnimationEnabled=true; UiAnimationSpeedRate=1;
+			input.time+=std::chrono::seconds(5);
+			instance.SetMoreExpanded(true);
+			report.Check(paint() && pose()==closed,"preview.more-first-frame");
+			report.Check(paint() && pose().first>closed.first && pose().second<closed.second,"preview.more-mid-frame");
+			const auto mid=pose();
+			instance.SetMoreExpanded(false);
+			// 同一时刻反向，位置和比例必须连续。
+			input.time-=std::chrono::milliseconds(20);
+			report.Check(paint() && pose()==mid,"preview.more-reverse-frame");
+			for (int i=0;i<40;++i) paint();
+			report.Check(pose()==closed,"preview.more-close-end");
+			instance.SetMoreExpanded(true);
+			for (int i=0;i<40;++i) paint();
+			report.Check(pose().first>closed.first && pose().second<closed.second,"preview.more-open-end");
+		}
+
+		void CheckPreview(const HostScene& scene, Report& report, std::array<Frame,2>& lightSamples)
+		{
+			const auto assets = Pipeline::GetSharedAssets();
+			PreviewInputs input;
+			input.time = std::chrono::steady_clock::time_point{} + std::chrono::seconds(1);
+			input.width = 1200; input.height = 360;
+			input.writeFactory = assets.dwriteFactory.Get(); input.fonts = assets.fontCollection.Get();
+			CheckPreviewProjection(input,report);
+			auto model = Reset();
+			model[Segment::B1].push_back({BarComponentId::Explorer});
+			model[Segment::B1].push_back({BarComponentId::Explorer});
+			const auto catalog = barUISet.barButtonSet.GetLayoutCatalog();
+			const auto point = [](D2D1_RECT_F r){ return D2D1::Point2F((r.left+r.right)/2,(r.top+r.bottom)/2); };
+			auto check = [&](bool ok,const char* label){report.Check(ok,std::string(scene.name)+".preview."+label);};
+			for (const auto mode : {BarSizeMode::Large,BarSizeMode::Compact})
+			{
+				BarContentInstance a,b,control;
+				control.SetLayout(Reset(),9);
+				a.SetLayout(model,7); b.SetLayout(Reset(),9);
+				input.sizeMode = mode;
+				const auto af = a.Advance(input);
+				Frame plain, external, gdi;
+				const bool painted = PaintPreview(a,af,FrameTargetKind::PlainBitmap,1200,360,plain)
+					&& PaintPreview(a,af,FrameTargetKind::ExternalContext,1200,360,external,1)
+					&& PaintPreview(a,af,FrameTargetKind::GdiCompatibleBitmap,1200,360,gdi);
+				check(painted && plain.bytes == external.bytes && plain.bytes == gdi.bytes
+					&& std::any_of(plain.bytes.begin(),plain.bytes.end(),[](BYTE v){return v != 0;}),"targets");
+				Frame ghostPixels, bareGhost;
+				const bool ghostDrawn = PaintPreview(a,af,FrameTargetKind::ExternalContext,1200,360,bareGhost,0,false,L"")
+					&& PaintPreview(a,af,FrameTargetKind::ExternalContext,1200,360,ghostPixels,0,false,L"Hint");
+				bool hintVisible = false;
+				if (ghostDrawn && bareGhost.Valid() && ghostPixels.Valid())
+					for (size_t i=3;i<ghostPixels.bytes.size();i+=4)
+						if (bareGhost.bytes[i]==0 && ghostPixels.bytes[i]>64) { hintVisible=true; break; }
+				check(hintVisible && ghostPixels.bytes[(180*1200+600)*4+3]>0 && ghostPixels.bytes[3]==0,"ghost-and-hint");
+				auto& lightSample = lightSamples[static_cast<size_t>(mode)];
+				if (!scene.dark) lightSample = plain;
+				else check(lightSample.Valid() && lightSample.bytes!=plain.bytes,"theme-pixels");
+				auto insideBudget = [](const Frame& image, const PreviewFrame& frame)
+				{
+					if (!image.Valid()) return false;
+					for (unsigned y=0;y<image.height;++y)
+						for (unsigned x=0;x<image.width;++x)
+							if (image.bytes[(y*image.width+x)*4+3] &&
+								(x==0 || y==0 || x+1==image.width || y+1==image.height ||
+								 x+1<frame.bounds.left || x>frame.bounds.right || y+1<frame.bounds.top || y>frame.bounds.bottom))
+								return false;
+					return true;
+				};
+				check(insideBudget(plain,af),"shadow-bounds");
+				if (!scene.dark && plain.Valid())
+				{
+					const auto body = a.Geometry().body;
+					const auto x = static_cast<unsigned>((body.left+body.right)/2);
+					auto alpha = [&](unsigned y){ return plain.bytes[(y*plain.width+x)*4+3]; };
+					const auto bottom = static_cast<unsigned>(std::ceil(body.bottom));
+					check(bottom+18<plain.height && alpha(bottom+1)>alpha(bottom+18),"shadow-decay");
+				}
+				const double realZoom = barUISet.barStyle.configZoom;
+				barUISet.barStyle.configZoom = realZoom*1.5;
+				Frame zoomed;
+				const auto afterZoom = a.Advance(input);
+				bool zoomOk = PaintPreview(a,afterZoom,FrameTargetKind::PlainBitmap,1200,360,zoomed);
+				barUISet.barStyle.configZoom = realZoom;
+				check(zoomOk && zoomed.bytes==plain.bytes,"desktop-zoom-independent");
+				check(PreviewTestAccess::OwnsInactiveActions(a), "clone-ownership");
+				const auto initial = a.Geometry();
+				check(std::abs(initial.body.bottom-initial.body.top-input.targetHeight)<0.01
+					&& std::abs(initial.body.left+initial.body.right-input.width)<0.01,"scale-center");
+				auto duplicate = std::find_if(initial.items.begin(),initial.items.end(),[](const PreviewHit& h)
+					{ return h.position && h.position->segment == Segment::B1 && h.position->index == 1; });
+				if (duplicate == initial.items.end()) {check(false,"duplicate"); continue;}
+				auto source = a.HitTest(point(duplicate->rect));
+				check(source.position && source.position->segment == Segment::B1 && source.position->index == 1,"duplicate-hit");
+				if (!source.position) continue;
+				auto other = input;
+				other.width = 240;
+				other.pointer = D2D1::Point2F(10,20); other.pointerSerial = 1;
+				other.time += std::chrono::milliseconds(1);
+				const auto bf = b.Advance(other);
+				const auto cf = control.Advance(other);
+				Frame before,after;
+				check(PaintPreview(b,bf,FrameTargetKind::PlainBitmap,240,360,before) && bf.scale < af.scale
+					&& b.Geometry().body.left >= 0 && b.Geometry().body.right <= 240,"narrow");
+				Frame expected;
+				check(PaintPreview(control,cf,FrameTargetKind::PlainBitmap,240,360,expected)
+					&& expected.bytes == before.bytes,"control-first");
+				if (b.Geometry().items.empty()) { check(false,"narrow-layout"); continue; }
+				const auto bState = PreviewTestAccess::ButtonState(b);
+				const auto bSerial = b.Renderer().FontFrameSerial();
+				const auto bLight = b.Renderer().SnapshotFrameLighting();
+				check(a.Lift(*source.position,7),"lift");
+				auto local = input;
+				local.time += std::chrono::milliseconds(16);
+				local.pointer = D2D1::Point2F(100,90); local.pointerSerial = 3;
+				a.SetMoreExpanded(true);
+				auto advance = [&]
+				{
+					local.time += std::chrono::milliseconds(40);
+					return a.Advance(local);
+				};
+				PreviewFrame moving;
+				for (int i = 0; i < 24; ++i) moving = advance();
+				check(PaintPreview(a,moving,FrameTargetKind::PlainBitmap,1200,360,after),"lift-render");
+				check(a.Geometry().body.right-a.Geometry().body.left < initial.body.right-initial.body.left,"shrink");
+				check(insideBudget(after,moving),"panel-bounds");
+				auto query = [&](Position wanted)->std::optional<Position>
+				{
+					for (const auto& candidate : a.Geometry().gaps)
+					{
+						if (candidate.position.segment != wanted.segment || candidate.position.index != wanted.index) continue;
+						for (const auto& gap : a.InsertionGaps(D2D1::Point2F((candidate.start.x+candidate.end.x)/2,
+							(candidate.start.y+candidate.end.y)/2)))
+							if (gap.position.segment == wanted.segment && gap.position.index == wanted.index) return gap.position;
+					}
+					return {};
+				};
+				auto panelHit = std::find_if(a.Geometry().items.begin(),a.Geometry().items.end(),
+					[](const auto& h){return h.kind==PreviewHitKind::Close;});
+				check(panelHit!=a.Geometry().items.end() && a.HitTest(point(panelHit->rect)).kind==PreviewHitKind::Close,"more-close");
+				const auto gap = query({Segment::More,model[Segment::More].size()});
+				const auto moved = gap ? Move(model,*source.position,*gap,catalog) : std::nullopt;
+				check(moved && moved->operator[](Segment::More).back().Id == BarComponentId::Explorer
+					&& !a.Place(*moved,*gap,6) && a.Place(*moved,*gap,7),"more-move");
+				if (!moved) continue;
+				a.SetLayout(*moved,8);
+				moving = advance();
+				check(PaintPreview(a,moving,FrameTargetKind::ExternalContext,1200,360,after),"place-render");
+				const auto destination = query({Segment::B1,0});
+				const auto inserted = destination ? Insert(*moved,BarComponentId::Explorer,*destination,catalog) : std::nullopt;
+				check(inserted && (*inserted)[Segment::B1].size()==2 && a.Place(*inserted,*destination,8),"insert");
+				// 模拟预览宿主切主题；恢复后对照另一实例之前的同一帧。
+				Frame originalTheme;
+				for (int step=0; step<24; ++step) moving = advance();
+				const bool originalPainted = PaintPreview(a,moving,FrameTargetKind::PlainBitmap,1200,360,originalTheme);
+				const auto surface = a.Geometry().body;
+				barUISet.barStyle.darkStyle = !scene.dark;
+				auto opposite = advance();
+				Frame themed;
+				bool switched = PaintPreview(a,opposite,FrameTargetKind::PlainBitmap,1200,360,themed);
+				barUISet.barStyle.darkStyle = scene.dark;
+				const size_t surfacePixel = (size_t(surface.top+2)*1200 + size_t((surface.left+surface.right)/2))*4;
+				check(originalPainted && switched && originalTheme.Valid() && themed.Valid()
+					&& std::memcmp(originalTheme.bytes.data()+surfacePixel,themed.bytes.data()+surfacePixel,3)!=0,"theme-switch");
+				const auto light = b.Renderer().SnapshotFrameLighting();
+				check(PreviewTestAccess::ButtonState(b)==bState && b.Renderer().FontFrameSerial()==bSerial && light.cursorLight.x==bLight.cursorLight.x
+					&& light.primaryLight.y==bLight.primaryLight.y && b.Geometry().frameId==bf.frameId
+					&& PaintPreview(b,bf,FrameTargetKind::ExternalContext,240,360,after) && before.bytes==after.bytes,"independent");
+				for (unsigned step = 0; step < 3; ++step)
+				{
+					other.time += std::chrono::milliseconds(15);
+					other.pointer = point(b.Geometry().items.front().rect);
+					++other.pointerSerial;
+					const auto actualFrame = b.Advance(other);
+					a.Advance(local);
+					const auto controlFrame = control.Advance(other);
+					check(PaintPreview(control,controlFrame,FrameTargetKind::PlainBitmap,240,360,expected)
+						&& PaintPreview(b,actualFrame,FrameTargetKind::ExternalContext,240,360,after)
+						&& after.bytes == expected.bytes && PreviewTestAccess::ButtonState(b)==PreviewTestAccess::ButtonState(control)
+						&& b.Renderer().FontFrameSerial()==control.Renderer().FontFrameSerial(),"interleaved-frame");
+				}
+				local.pointer.reset();
+				local.iconOrder = 3;
+				a.SetMoreExpanded(false);
+				for (int i=0;i<24;++i) moving = advance();
+				check(PaintPreview(a,moving,FrameTargetKind::PlainBitmap,1200,360,after),"rtl-render");
+				const auto restored = a.Geometry();
+				if (restored.items.empty()) { check(false,"rtl-layout"); continue; }
+				auto find = [](const PreviewGeometry& geometry, PreviewHitKind kind)
+				{
+					return std::find_if(geometry.items.begin(),geometry.items.end(),[&](const auto& h){return h.kind==kind;});
+				};
+				check(find(restored,PreviewHitKind::Panel)==restored.items.end()
+					&& restored.items.front().rect.left > restored.items.back().rect.right,"rtl-folded");
+				auto target = restored.items.front();
+				check(target.position && a.Lift(*target.position,8),"rtl-lift");
+				for (int i=0;i<3;++i) moving = advance();
+				check(PaintPreview(a,moving,FrameTargetKind::PlainBitmap,1200,360,after) &&
+					a.Geometry().body.left > restored.body.left,"lift-in-flight");
+				a.CancelLift();
+				for (int i=0;i<24;++i) moving = advance();
+				check(PaintPreview(a,moving,FrameTargetKind::PlainBitmap,1200,360,after)
+					&& std::abs(a.Geometry().body.left-restored.body.left)<0.01,"cancel");
+				if (a.Geometry().items.empty()) { check(false,"cancel-layout"); continue; }
+				const auto confirmed = a.Geometry().frameId;
+				local.pointer = point(a.Geometry().items.front().rect);
+				++local.pointerSerial;
+				const auto hover = advance();
+				check(hover.hintDeadline.has_value(),"hover-deadline");
+				if (hover.hintDeadline)
+				{
+					local.time = *hover.hintDeadline - std::chrono::milliseconds(1);
+					const auto early = a.Advance(local);
+					Frame earlyPixels, shownPixels;
+					check(early.hintDeadline && PaintPreview(a,early,FrameTargetKind::PlainBitmap,1200,360,earlyPixels),"hover-499ms");
+					local.time += std::chrono::milliseconds(1);
+					const auto due = a.Advance(local);
+					auto differsAt = [&](int x,int y) {
+						if (!earlyPixels.Valid() || !shownPixels.Valid() || x<0 || y<0 || x>=1200 || y>=360) return false;
+						const size_t offset = (size_t(y)*1200+x)*4;
+						return std::memcmp(earlyPixels.bytes.data()+offset,shownPixels.bytes.data()+offset,4)!=0;
+					};
+					const auto hint = PreviewTestAccess::HintBounds(a);
+					check(!due.hintDeadline && PaintPreview(a,due,FrameTargetKind::PlainBitmap,1200,360,shownPixels)
+						&& shownPixels.bytes!=earlyPixels.bytes && differsAt(int(hint.left+4),int((hint.top+hint.bottom)/2))
+						&& !differsAt(1,1) && insideBudget(shownPixels,due),"hover-500ms");
+					local.mouse = false;
+					check(!advance().hintDeadline,"touch");
+				}
+				auto previous = a.Geometry().frameId;
+				FrameTarget unbound;
+				moving = advance();
+				check(FAILED(a.Draw(unbound,moving)),"invalid-target");
+				local.width = 600;
+				moving = advance();
+				check(PaintPreview(a,moving,FrameTargetKind::ExternalContext,600,360,after,0,true),"end-draw-failed");
+				a.ConfirmFrame(confirmed,true);
+				check(a.Geometry().frameId==previous,"failed-frame");
+			}
+		}
+
+		void RunScene(const HostScene& scene, Report& report, const std::filesystem::path& directory,
+			std::array<Frame,2>& lightSamples)
 		{
 			auto& owner = barUISet;
 			const std::string prefix = std::string(scene.name) + '.';
@@ -522,6 +1034,7 @@ namespace Inkeys::UI::Bar
 			host.settled = [&](const std::function<bool()>& renderFrame)
 			{
 				phasesReached = true;
+				CheckPreview(scene,report,lightSamples);
 				// 第二宿主在场景静止后才建立：三个各有自己的新绘制器与帧目标。
 				plain.emplace(owner, FrameTargetKind::PlainBitmap, true);
 				external.emplace(owner, FrameTargetKind::ExternalContext, true);
@@ -536,6 +1049,7 @@ namespace Inkeys::UI::Bar
 				const Frame externalFirst = external->Pixels();
 				const Frame externalNoClipFirst = externalNoClip->Pixels();
 				const ReplayGeometry first = geometry;
+				CheckMatchingBarButton(scene,first,plainFirst,report);
 				const auto epoch = Pipeline::GetDeviceEpoch();
 
 				// 检查 1：第二宿主（普通位图形态 + 新绘制器）经内容绘制入口画入。
@@ -871,10 +1385,11 @@ namespace Inkeys::UI::Bar
 				const bool assets = SUCCEEDED(Pipeline::InitializeFontCollection(IdtFontFileLoader::GetLoader(),
 					IdtFontCollectionLoader::GetLoader(), fonts));
 				report.Check(assets, "font-collection", "font collection initialization failed");
+				std::array<Frame,2> lightSamples;
 				if (assets)
 					for (const auto& scene : HostScenes)
 					{
-						try { RunScene(scene, report, directory); }
+						try { RunScene(scene, report, directory, lightSamples); }
 						catch (...) { report.Check(false, std::string(scene.name) + ".exception", "scene or output exception"); }
 					}
 				if (assets)

@@ -75,9 +75,11 @@ import Inkeys.Other.Inputs;
 import Inkeys.Conv.Text;
 import Inkeys.Helper.CrashHandler;
 import Inkeys.Other.Config;
+import Inkeys.UI.Bar.LayoutModel;
 import Inkeys.Window;
 import Inkeys.UI.MessageBox;
 import Inkeys.UI.StartupPlacement;
+#include "Setting.ComponentEditor.h"
 
 using namespace Inkeys::UI::UI3;
 
@@ -1549,12 +1551,6 @@ namespace
 	SettingSessionCoroutine settingSession;
 }
 
-static void SyncUi3BuiltInComponents()
-{
-	barUISet.barButtonSet.SyncLegacyExtensionButtons();
-	barUISet.UpdateRendering();
-}
-
 // 软件构建信息
 // signal1
 struct
@@ -2390,6 +2386,11 @@ SettingSessionCoroutine RunSettingSession()
 		int settingTab = 0;
 		int settingPlugInTab = 0;
 		int settingLinkageTab = 0;
+		// 组件页：组件库 Tab 与“恢复默认布局”两段式确认（3 秒内再次点击才执行，离开页面即复位）。
+		int componentLibraryTab = 0;
+		bool componentResetArmed = false;
+		double componentResetArmedAt = 0.0;
+		int componentPageFrame = -2;
 		Design::DrawingSubpage drawingSubpage = Design::DrawingSubpage::Overview;
 		Inkeys::UI::Setting::Design::NavigationState navigationState;
 		Design::NavigationDestination destination;
@@ -4278,88 +4279,193 @@ SettingSessionCoroutine RunSettingSession()
 				{
 					const auto& component = I18nKey.SettingsUI.Component;
 					Design::PageHeader(IA(component.N).c_str());
-					auto renderComponentToggle = [&](const char* id, const char* title,
-						const char* description, const char* glyph, IdtAtomic<bool>& stored)
+					Inkeys::UI::Setting::ComponentEditor::Draw(contentWindow, QueueConfigWrite);
+					using namespace Inkeys::UI::Bar;
+					auto& buttons = barUISet.barButtonSet;
+					auto layout = buttons.ReadBarLayout();
+					const auto catalog = buttons.GetLayoutCatalog();
+					// 提交一次编辑：设置页运行在共享渲染线程，Applied 后交设置业务队列写盘；
+					// 过期快照丢弃本次操作。之后统一重读已发布的规范布局。
+					auto applyLayout = [&](const BarLayoutModel& next, bool resetLegacy = false)
 					{
-						bool value = stored;
-						if (Design::ToggleRow(id, title, description, glyph, value))
+						if (!layout) return;
+						const auto result = buttons.ApplyBarLayout(*layout, next, resetLegacy);
+						if (result == decltype(result)::Applied) QueueConfigWrite();
+						layout = buttons.ReadBarLayout();
+					};
+					const int componentFrame = ImGui::GetFrameCount();
+					if (componentPageFrame != componentFrame - 1 || ImGui::GetTime() - componentResetArmedAt > 3.0)
+						componentResetArmed = false;
+					componentPageFrame = componentFrame;
+
+					if (Design::NavigationRow("component-shortcut", IA(component.ShortcutTitle).c_str(),
+						IA(component.ShortcutDescription).c_str(), "\ue737"))
+						navigateTo({ Design::PageId::Window, Design::Section::WindowLayout });
+					const std::string resetLabel = IA(componentResetArmed ? component.ResetConfirm : component.ResetButton);
+					if (Design::ButtonRow("component-reset", IA(component.ResetTitle).c_str(),
+						IA(component.ResetDescription).c_str(), "\ue72c", resetLabel.c_str(), componentResetArmed) && layout)
+					{
+						if (componentResetArmed)
 						{
-							stored = value;
-							QueueConfigWrite();
-							SyncUi3BuiltInComponents();
+							// 重置同时清空旧组件开关，结果与全新配置初始化一致；不改尺寸、排列等显示偏好。
+							applyLayout(Reset(), true);
+							componentResetArmed = false;
 						}
-					};
-					auto componentSection = [&](const char* title)
+						else
+						{
+							componentResetArmed = true;
+							componentResetArmedAt = ImGui::GetTime();
+						}
+					}
+
+					// 组件库目录：分类 0 为内置（只出现在“全部”首小节），1–5 与 Tab 1–5 一一对应。
+					struct ComponentEntry
 					{
-						Design::SectionHeader(title);
+						const char* id;
+						int group;
+						const char* glyph;
+						const char* title;
+						const char* shortText;
+						const char* description;
+						const char* note;
+					};
+					const ComponentEntry entries[]
+					{
+						{ Inkeys::BarButtonId::UserDivider, 0, "\ue738", component.DividerTitle, component.DividerShort, component.DividerDescription, nullptr },
+						{ Inkeys::BarComponentId::Explorer, 1, "\ue838", component.ExplorerTitle, component.ExplorerShort, component.ExplorerDescription, nullptr },
+						{ Inkeys::BarComponentId::Taskmgr, 1, "\ue9d9", component.TaskManagerTitle, component.TaskManagerShort, component.TaskManagerDescription, nullptr },
+						{ Inkeys::BarComponentId::Control, 1, "\ue713", component.ControlPanelTitle, component.ControlPanelShort, component.ControlPanelDescription, nullptr },
+						{ Inkeys::BarComponentId::Desktop, 1, "\ue7f4", component.ShowDesktopTitle, component.ShowDesktopShort, component.ShowDesktopDescription, nullptr },
+						{ Inkeys::BarComponentId::LockWorkStation, 1, "\ue72e", component.LockScreenTitle, component.LockScreenShort, component.LockScreenDescription, nullptr },
+						{ Inkeys::BarComponentId::Keyboardesc, 1, "\ue765", component.EscapeTitle, component.EscapeShort, component.EscapeDescription, nullptr },
+						{ Inkeys::BarComponentId::KeyboardAltF4, 1, "\ue765", component.AltF4Title, component.AltF4Short, component.AltF4Description, nullptr },
+						{ Inkeys::BarComponentId::IslandCaller1, 2, "\ue716", component.IslandCaller1Title, component.IslandCaller1Short, component.IslandCaller1Description, component.IslandCallerRequirement },
+						{ Inkeys::BarComponentId::IslandCaller2, 2, "\ue716", component.IslandCaller2Title, component.IslandCaller2Short, component.IslandCaller2Description, component.IslandCallerRequirement },
+						{ Inkeys::BarComponentId::SecRandom1, 3, "\ue716", component.SecRandom1Title, component.SecRandom1Short, component.SecRandom1Description, component.SecRandomUrlRequirement },
+						{ Inkeys::BarComponentId::SecRandom2, 3, "\ue716", component.SecRandom2Title, component.SecRandom2Short, component.SecRandom2Description, component.SecRandomIpcRequirement },
+						{ Inkeys::BarComponentId::SecRandom2Compat, 3, "\ue716", component.SecRandom2CompatTitle, component.SecRandom2CompatShort, component.SecRandom2CompatDescription, component.SecRandomUrlRequirement },
+						{ Inkeys::BarComponentId::NamePicker, 4, "\ue716", component.NamePickerTitle, component.NamePickerShort, component.NamePickerDescription, component.NamePickerRequirement },
+						{ Inkeys::BarComponentId::ClassislandSettings, 5, "\ue713", component.ClassIslandSettingsTitle, component.ClassIslandSettingsShort, component.ClassIslandSettingsDescription, nullptr },
+						{ Inkeys::BarComponentId::ClassislandProfile, 5, "\ue70f", component.ClassIslandProfileTitle, component.ClassIslandProfileShort, component.ClassIslandProfileDescription, nullptr },
+						{ Inkeys::BarComponentId::ClassislandClassswap, 5, "\ue70f", component.ClassIslandSwapTitle, component.ClassIslandSwapShort, component.ClassIslandSwapDescription, component.ClassIslandSwapNote },
+					};
+					auto isDivider = [](const char* id) { return std::string_view(id) == Inkeys::BarButtonId::UserDivider; };
+					// 组件看 B1/More（含隐藏）；用户分割线看 A1/B1/A2。
+					auto present = [&](const char* id)
+					{
+						if (!layout) return false;
+						auto any = [&](Segment segment)
+						{
+							return std::ranges::any_of((*layout)[segment], [&](const auto& entry) { return entry.Id == id; });
+						};
+						return isDivider(id) ? any(Segment::A1) || any(Segment::B1) || any(Segment::A2)
+							: any(Segment::B1) || any(Segment::More);
+					};
+					// 无实例：“+”按 AutoAdd 加入（B1 已有 ≥2 个组件时进 More）；有实例：删除全部。分割线没有“+”。
+					auto actionGlyph = [&](const ComponentEntry& entry) -> const char*
+					{
+						if (present(entry.id)) return "\ue74d";
+						return isDivider(entry.id) ? nullptr : "\ue710";
+					};
+					auto runAction = [&](const ComponentEntry& entry)
+					{
+						if (!layout) return;
+						if (present(entry.id))
+							applyLayout(isDivider(entry.id) ? RemoveUserDividers(*layout) : RemoveAllOf(*layout, entry.id, catalog));
+						else if (!isDivider(entry.id))
+							if (auto next = AutoAdd(*layout, entry.id, catalog)) applyLayout(*next);
+					};
+					const std::string addTooltip = IA(component.AddTooltip), removeTooltip = IA(component.RemoveTooltip);
+					auto beginDrag = [&](const ComponentEntry& entry)
+					{
+						Inkeys::UI::Setting::ComponentEditor::BeginLibraryDrag(entry.id, ImGui::GetIO().MousePos,
+							ImGui::GetIO().MouseSource == ImGuiMouseSource_TouchScreen);
 					};
 
-					componentSection(IA(component.SoftwareSection).c_str());
-					renderComponentToggle("component-explorer", IA(component.ExplorerTitle).c_str(), nullptr,
-						"\ue838",
-						Inkeys::config.UI.Bar.ShortcutButton.Appliance.Explorer);
-					renderComponentToggle("component-taskmgr", IA(component.TaskManagerTitle).c_str(), nullptr,
-						"\ue9d9",
-						Inkeys::config.UI.Bar.ShortcutButton.Appliance.Taskmgr);
-					renderComponentToggle("component-control", IA(component.ControlPanelTitle).c_str(), nullptr,
-						"\ue713",
-						Inkeys::config.UI.Bar.ShortcutButton.Appliance.Control);
-
-					componentSection(IA(component.SystemSection).c_str());
-					renderComponentToggle("component-desktop", IA(component.ShowDesktopTitle).c_str(), nullptr,
-						"\ue7f4",
-						Inkeys::config.UI.Bar.ShortcutButton.System.Desktop);
-					renderComponentToggle("component-lock", IA(component.LockScreenTitle).c_str(), nullptr,
-						"\ue72e",
-						Inkeys::config.UI.Bar.ShortcutButton.System.LockWorkStation);
-
-					componentSection(IA(component.KeyboardSection).c_str());
-					renderComponentToggle("component-escape", IA(component.EscapeTitle).c_str(), nullptr,
-						"\ue765",
-						Inkeys::config.UI.Bar.ShortcutButton.Keyboard.Keyboardesc);
-					renderComponentToggle("component-alt-f4", IA(component.AltF4Title).c_str(), nullptr,
-						"\ue765",
-						Inkeys::config.UI.Bar.ShortcutButton.Keyboard.KeyboardAltF4);
-
-					componentSection(IA(component.RollCallSection).c_str());
-					renderComponentToggle("component-island-caller-1",
-						IA(component.IslandCaller1Title).c_str(),
-						IA(component.IslandCallerRequirement).c_str(),
-						"\ue716",
-						Inkeys::config.UI.Bar.ShortcutButton.RollCall.IslandCaller1);
-					renderComponentToggle("component-island-caller-2",
-						IA(component.IslandCaller2Title).c_str(),
-						IA(component.IslandCallerRequirement).c_str(),
-						"\ue716",
-						Inkeys::config.UI.Bar.ShortcutButton.RollCall.IslandCaller2);
-					renderComponentToggle("component-sec-random-1", IA(component.SecRandom1Title).c_str(),
-						IA(component.SecRandomUrlRequirement).c_str(), "\ue716",
-						Inkeys::config.UI.Bar.ShortcutButton.RollCall.SecRandom1);
-					renderComponentToggle("component-sec-random-2", IA(component.SecRandom2Title).c_str(),
-						IA(component.SecRandomIpcRequirement).c_str(), "\ue716",
-						Inkeys::config.UI.Bar.ShortcutButton.RollCall.SecRandom2);
-					renderComponentToggle("component-sec-random-compat",
-						IA(component.SecRandom2CompatTitle).c_str(), IA(component.SecRandomUrlRequirement).c_str(), "\ue716",
-						Inkeys::config.UI.Bar.ShortcutButton.RollCall.SecRandom2Compat);
-					renderComponentToggle("component-name-picker", IA(component.NamePickerTitle).c_str(),
-						IA(component.NamePickerRequirement).c_str(), "\ue716",
-						Inkeys::config.UI.Bar.ShortcutButton.RollCall.NamePicker);
-
-					componentSection(IA(component.ClassIslandSection).c_str());
-					Design::Notice("##classisland-protocol-notice",
-						"ClassIsland",
-						IA(component.ClassIslandProtocolNote).c_str(),
-						ImFluentInfoSeverity_Informational);
-					renderComponentToggle("component-classisland-settings",
-						IA(component.ClassIslandSettingsTitle).c_str(), nullptr, "\ue713",
-						Inkeys::config.UI.Bar.ShortcutButton.Linkage.ClassislandSettings);
-					renderComponentToggle("component-classisland-profile",
-						IA(component.ClassIslandProfileTitle).c_str(), nullptr, "\ue70f",
-						Inkeys::config.UI.Bar.ShortcutButton.Linkage.ClassislandProfile);
-					renderComponentToggle("component-classisland-swap",
-						IA(component.ClassIslandSwapTitle).c_str(),
-						IA(component.ClassIslandSwapNote).c_str(), "\ue70f",
-						Inkeys::config.UI.Bar.ShortcutButton.Linkage.ClassislandClassswap);
+					Design::SectionHeader(IA(component.AddSection).c_str());
+					const std::vector<std::string> tabs{ IA(component.TabAll), IA(component.TabDesktop),
+						"IslandCaller", "SecRandom", "NamePicker", "ClassIsland" };
+					componentLibraryTab = std::clamp(componentLibraryTab, 0, static_cast<int>(tabs.size()) - 1);
+					Design::TabStrip("component-library-tabs", tabs, componentLibraryTab);
+					if (componentLibraryTab == 0)
+					{
+						// “全部”：按分类小节排列的矩形卡片网格，说明使用精简文案。
+						const std::string groupTitles[]{ IA(component.BuiltinSection), tabs[1], tabs[2], tabs[3], tabs[4], tabs[5] };
+						const float gap = Design::Pixels(Design::ComponentCardGap), minimumWidth = Design::Pixels(Design::ComponentCardMinimumWidth),
+							cardHeight = Design::Pixels(Design::ComponentCardHeight);
+						for (int group = 0; group < 6; ++group)
+						{
+							Design::Text(groupTitles[group].c_str(), ImFluentTextStyle_BodyStrong);
+							const float available = ImGui::GetContentRegionAvail().x;
+							const int columns = (std::max)(1, static_cast<int>((available + gap) / (minimumWidth + gap)));
+							const float cardWidth = std::floor((available - gap * static_cast<float>(columns - 1)) / static_cast<float>(columns));
+							ImVec2 rowOrigin = ImGui::GetCursorScreenPos();
+							int column = 0;
+							for (const auto& entry : entries)
+							{
+								if (entry.group != group) continue;
+								const std::string title = IA(entry.title), shortText = IA(entry.shortText);
+								const char* glyph = actionGlyph(entry);
+								Design::ComponentCardSpec spec;
+								spec.title = title.c_str();
+								spec.description = shortText.c_str();
+								spec.glyph = entry.glyph;
+								spec.actionGlyph = glyph;
+								spec.actionTooltip = present(entry.id) ? removeTooltip.c_str() : addTooltip.c_str();
+								spec.actionEnabled = layout.has_value();
+								ImGui::SetCursorScreenPos({ rowOrigin.x + static_cast<float>(column) * (cardWidth + gap), rowOrigin.y });
+								bool dragStarted = false;
+								if (Design::ComponentCard(entry.id, spec, { cardWidth, cardHeight }, layout ? &dragStarted : nullptr)) runAction(entry);
+								// 越过阈值后交给预览宿主：浮起的是按当前尺寸样式绘制的按钮图标。
+								if (dragStarted) beginDrag(entry);
+								if (++column == columns)
+								{
+									column = 0;
+									rowOrigin.y += cardHeight + gap;
+								}
+							}
+							if (column > 0) rowOrigin.y += cardHeight + gap;
+							// 卡片逐个 Dummy 已登记内容范围；这里把光标放回网格下方并补一个零尺寸项。
+							ImGui::SetCursorScreenPos({ rowOrigin.x, rowOrigin.y + Design::Pixels(8.0F) });
+							ImGui::Dummy({ 0.0F, 0.0F });
+						}
+					}
+					else
+					{
+						// 专属 Tab：整行条目，说明使用完整段落，前置条件放在补充说明。
+						if (componentLibraryTab == 5)
+							Design::Notice("##classisland-protocol-notice", "ClassIsland",
+								IA(component.ClassIslandProtocolNote).c_str(), ImFluentInfoSeverity_Informational);
+						for (const auto& entry : entries)
+						{
+							if (entry.group != componentLibraryTab) continue;
+							const std::string title = IA(entry.title), description = IA(entry.description);
+							const std::string note = entry.note ? IA(entry.note) : std::string{};
+							const char* glyph = actionGlyph(entry);
+							const std::string& tooltip = present(entry.id) ? removeTooltip : addTooltip;
+							const ImVec2 rowTop = ImGui::GetCursorScreenPos();
+							const float rowWidth = ImGui::GetContentRegionAvail().x;
+							bool actionHovered = false;
+							Design::SettingRow(entry.id, title.c_str(), description.c_str(), entry.glyph, 32.0F, 32.0F,
+								[&](const Inkeys::UI::Setting::LayoutRect& bounds)
+								{
+									if (!glyph) return;
+									ImFluent::BeginDisabled(!layout);
+									const bool clicked = Design::IconButton("##action", glyph, { bounds.Width(), bounds.Height() });
+									ImFluent::EndDisabled();
+									actionHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+									if (actionHovered) ImFluent::SetItemTooltip("%s", tooltip.c_str());
+									if (clicked) runAction(entry);
+								}, Design::Card, Design::Stroke, 0, IM_COL32_WHITE, false, note.empty() ? nullptr : note.c_str());
+							// 整行（操作键之外）作为拖动源；行尾间隙不计入。
+							const float rowBottom = ImGui::GetCursorScreenPos().y - Design::Pixels(Design::RowGap);
+							ImGui::PushID(entry.id);
+							const bool rowDrag = layout && Design::DragSourceOverlay("##row-drag", rowTop,
+								{ rowTop.x + rowWidth, rowBottom }, actionHovered);
+							ImGui::PopID();
+							if (rowDrag) beginDrag(entry);
+						}
+					}
 					break;
 				}
 				// 联动

@@ -42,6 +42,7 @@
 
 module Inkeys.UI.Bar;
 import :Main;
+import :ContentInstance;
 import :Scene;
 import Inkeys.UI.UI3;
 import :Scene;
@@ -1863,12 +1864,12 @@ void PrepareBarMainButtonVisuals(BarRenderLoopState& state,
 	state.visualMoreLive.clear();
 	const auto mainBar = state.shapeMap.find(BarUISetShapeEnum::MainBar);
 	if (mainBar == state.shapeMap.end() || !mainBar->second) return;
-	auto live = [&](BarButtonClass* button, bool moreItem)
+	auto live = [&](const std::shared_ptr<BarButtonClass>& button, bool moreItem)
 		{
 			if (!button) return;
 			(void)Inkeys::UI::UI3::PrepareButtonVisualInheritance(*button,
 				button->button.Inherit(UiInheritEnum::CenterFromTopLeft, *mainBar->second));
-			const void* key = button;
+			const void* key = button.get();
 			(moreItem ? state.visualMoreLive : state.visualMainLive).insert(key);
 			auto& ids = moreItem ? state.visualMoreButtons : state.visualMainButtons;
 			if (ids.contains(key)) return;
@@ -1889,9 +1890,22 @@ void PrepareBarMainButtonVisuals(BarRenderLoopState& state,
 					inner(sample);
 				}, name));
 		};
-	for (const auto& button : mainButtons) live(button.get(), false);
-	for (const auto& button : moreButtons.explicitMore) live(button.get(), true);
-	for (const auto& button : moreButtons.forcedOverflow) live(button.get(), true);
+	for (const auto& button : mainButtons) live(button, false);
+	for (const auto& button : moreButtons.explicitMore) live(button, true);
+	for (const auto& button : moreButtons.forcedOverflow) live(button, true);
+	// 采样回调持有本帧对象；注销退休项时登记表保留旧像素包络并释放强引用。
+	auto retire = [&](auto& registered, const auto& active)
+	{
+		if (registered.size() == active.size()) return;
+		std::erase_if(registered, [&](const auto& entry)
+		{
+			if (active.contains(entry.first)) return false;
+			state.visualPanels.Remove(entry.second);
+			return true;
+		});
+	};
+	retire(state.visualMainButtons, state.visualMainLive);
+	retire(state.visualMoreButtons, state.visualMoreLive);
 }
 
 void PrepareBarPanelVisuals(BarRenderLoopState& state, BarUISetClass& owner, double frameZoom,
@@ -5489,215 +5503,17 @@ for (size_t i = 0; i < 3; ++i)
 			{ open ? UiCurveEnum::EaseOutSine : UiCurveEnum::EaseInSine,
 				open ? UiCurveEnum::EaseOutSine : UiCurveEnum::EaseInSine,
 				0.0, false });
-		const auto packed = Inkeys::UI::Bar::ResolveBarButtonListLayout(snapshot.explicitMore,
-			Inkeys::UI::Bar::BarButtonListLayoutKind::GroupedGrid, snapshot.forcedOverflow, state.sizeMode);
-		const auto& placements = packed.placements;
-		const int subColumns = packed.subColumns, explicitRows = packed.explicitRows,
-			totalRows = packed.totalRows;
-		const bool showDivider = packed.showDivider;
-
-		constexpr double one = ButtonOneSideDip;
-		// 小尺寸网格间距取档位参数（现与大尺寸同为 5），面板内边距与关闭栏保持原样。
-		const bool compactMore = state.sizeMode == BarSizeMode::Compact;
-		const double moreGap = compactMore ? state.sizeMetrics.gap : BarMorePanelGap;
-		const double step = ButtonOneSideDip + (compactMore ? state.sizeMetrics.gap : ButtonGapDip);
-		double contentWidth = subColumns * one
-			+ max(0, subColumns - 1) * moreGap;
-		double gridHeight = totalRows * one
-			+ max(0, totalRows - 1) * moreGap
-			+ (showDivider ? BarMorePanelSeparatorGap : 0.0);
-		double panelWidth = contentWidth + BarMorePanelPadding * 2.0
-			+ BarMorePanelCloseSideWidth;
-		double panelHeight = BarMorePanelPadding * 2.0 + gridHeight;
-		double compactWidth = BarMorePanelCompactWidth;
-		double compactHeight = BarMorePanelCompactHeight;
-		double rawProgress = static_cast<double>(state.morePanelProgress.val);
-		double opacityProgress = clamp(
-			static_cast<double>(state.morePanelOpacity.val), 0.0, 1.0);
-		bool settleHiddenButtonVisuals = !open
-			&& state.morePanelProgress.IsSame() && state.morePanelOpacity.IsSame()
-			&& rawProgress <= 0.000001;
-		// 根面板从 More 按钮中心的紧凑态展开，和绘制属性/几何面板共享锚点语义。
-		double scale = max(0.01, BarMorePanelCompactScale
-			+ (1.0 - BarMorePanelCompactScale) * rawProgress);
-		// 字号取整只看面板最终姿态，不能追逐每帧 SetDirect 的当前展开尺寸。
-		const double fontTargetScale = max(0.01, BarMorePanelCompactScale
-			+ (1.0 - BarMorePanelCompactScale) * state.morePanelProgress.tar);
-		double logicalWindowWidth = frameZoom > 0.0
-			? static_cast<double>(state.barWindow.w) / frameZoom : panelWidth;
-		double logicalWindowHeight = frameZoom > 0.0
-			? static_cast<double>(state.barWindow.h) / frameZoom : panelHeight;
-		double anchorX = moreButton
-			? moreButton->button.inhX + moreButton->button.w.val / 2.0
-			: logicalWindowWidth / 2.0;
-		double anchorY = moreButton
-			? moreButton->button.inhY + moreButton->button.h.val / 2.0
-			: logicalWindowHeight / 2.0;
-		// 非居中底栏：面板不越过主按钮外侧边，未越过时仍以 More 按钮居中；窗口夹取在其后。
-		double expandedAnchorX = anchorX;
+		std::optional<Inkeys::UI::Bar::MoreSideLimit> limit;
 		if (!owner_.IsCenteredBottomDock())
 		{
-			const auto moreMainButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
-			const double mainHalf = state.mainButtonBaseSize / 2.0;
-			expandedAnchorX = Inkeys::UI::Bar::ClampBarAttributePanelLeft(anchorX - panelWidth / 2.0, panelWidth,
-				moreMainButton->x.val - mainHalf, moreMainButton->x.val + mainHalf,
-				static_cast<bool>(state.barState.widgetPosition.mainBar)) + panelWidth / 2.0;
+			const auto mainButton = state.superellipseMap[BarUISetSuperellipseEnum::MainButton];
+			const double half = state.mainButtonBaseSize / 2.0;
+			limit = { mainButton->x.val - half, mainButton->x.val + half, static_cast<bool>(state.barState.widgetPosition.mainBar) };
 		}
-		double expandedCenterX = clamp(expandedAnchorX,
-			BarMorePanelPadding + panelWidth / 2.0,
-			max(BarMorePanelPadding + panelWidth / 2.0,
-				logicalWindowWidth - BarMorePanelPadding - panelWidth / 2.0));
-		double direction = side ? 1.0 : -1.0;
-		// 大尺寸相对 More 按钮边缘留 12；小尺寸与其他属性窗一致，相对主栏边缘留同一间隙。
-		double expandedCenterY = anchorY + direction * (compactMore
-			? state.shapeMap[BarUISetShapeEnum::MainBar]->h.val / 2.0 + state.sizeMetrics.attachedGap + panelHeight / 2.0
-			: (moreButton ? moreButton->button.h.val / 2.0 : 35.0)
-				+ BarMorePanelAnchorGap + panelHeight / 2.0);
-		expandedCenterY = clamp(expandedCenterY,
-			BarMorePanelPadding + panelHeight / 2.0,
-			max(BarMorePanelPadding + panelHeight / 2.0,
-				logicalWindowHeight - BarMorePanelPadding - panelHeight / 2.0));
-		double panelCenterX = anchorX
-			+ (expandedCenterX - anchorX) * rawProgress;
-		double panelCenterY = anchorY
-			+ (expandedCenterY - anchorY) * rawProgress;
-		double displayWidth = max(1.0,
-			compactWidth + (panelWidth - compactWidth) * rawProgress);
-		double displayHeight = max(1.0,
-			compactHeight + (panelHeight - compactHeight) * rawProgress);
-		panel->x.SetDirect(panelCenterX);
-		panel->y.SetDirect(panelCenterY);
-		panel->w.SetDirect(displayWidth);
-		panel->h.SetDirect(displayHeight);
-		panel->rw->SetDirect(8.0 * scale);
-		panel->rh->SetDirect(8.0 * scale);
-		panel->ft->SetDirect(scale);
-		panel->fill->SetDirect(GetThemeColor(ThemeColorEnum::Surface));
-		panel->frame->SetDirect(GetThemeColor(ThemeColorEnum::SurfaceFrame));
-		panel->pct.SetDirect(BarDrawAttributeSurfaceOpacity * opacityProgress);
-		panel->framePct->SetDirect(0.18 * opacityProgress);
-		panel->UpInh(UiInheritClass(
-			panelCenterX - displayWidth / 2.0,
-			panelCenterY - displayHeight / 2.0));
-		// 子内容围绕完整面板中心统一缩放，避免紧凑态被非等比的根面板宽高拉偏。
-		auto ScalePanelContentX = [&](double logicalX)
-			{
-				return panelCenterX + (logicalX - panelWidth / 2.0) * scale;
-			};
-		auto ScalePanelContentY = [&](double logicalY)
-			{
-				return panelCenterY + (logicalY - panelHeight / 2.0) * scale;
-			};
-		double panelCenterInMainBarX = moreButton
-			? moreButton->button.x.val + panelCenterX - anchorX
-			: panelCenterX
-				- state.shapeMap[BarUISetShapeEnum::MainBar]->inhX;
-		double panelCenterInMainBarY = moreButton
-			? moreButton->button.y.val + panelCenterY - anchorY
-			: panelCenterY
-				- state.shapeMap[BarUISetShapeEnum::MainBar]->inhY;
-
-		close->w.SetDirect(30.0 * scale);
-		close->h.SetDirect(30.0 * scale);
-		close->rw->SetDirect(4.0 * scale);
-		close->rh->SetDirect(4.0 * scale);
-		// X 位于按钮区域右侧窄栏的右上角，关闭时不增加面板高度。
-		close->x.SetDirect(ScalePanelContentX(
-			panelWidth - BarMorePanelCloseSideWidth / 2.0));
-		close->y.SetDirect(ScalePanelContentY(
-			BarMorePanelPadding + 15.0));
-		// 图标透明度继续跟随面板进度，按钮入口只接管背景反馈。
-		Inkeys::UI::UI3::RetargetFixedButtonVisual(state.barStyle.darkStyle,
-			{*close, nullptr, nullptr, &state.moreClosePressScale, &state.moreCloseHoverStage},
-			open, true, false, state.barState.moreClosePress, UiDefaultOperationDur);
-		close->UpInh(UiInheritClass(
-			close->x.val - close->w.val / 2.0,
-			close->y.val - close->h.val / 2.0));
-		closeSvg->x.SetDirect(close->x.val);
-		closeSvg->y.SetDirect(close->y.val);
-		closeSvg->SetWH(18.0 * scale, 18.0 * scale);
-		closeSvg->color1->SetDirect(GetThemeColor(ThemeColorEnum::IconPrimary));
-		closeSvg->pct.SetDirect(opacityProgress);
-		closeSvg->UpInh(UiInheritClass(
-			closeSvg->x.val - closeSvg->w.val / 2.0,
-			closeSvg->y.val - closeSvg->h.val / 2.0));
-
-		double explicitBlockHeight = explicitRows > 0
-			? explicitRows * one + max(0, explicitRows - 1) * moreGap
-			: 0.0;
-		double dividerLogicalY = explicitBlockHeight
-			+ (moreGap + BarMorePanelSeparatorGap) / 2.0;
-		double dividerPhysicalY = side
-			? gridHeight - dividerLogicalY : dividerLogicalY;
-		// 分割线忽略 X 侧栏，直接延伸到面板两侧的等距内边距。
-		divider->w.SetDirect(
-			(panelWidth - BarMorePanelPadding * 2.0) * scale);
-		divider->h.SetDirect(scale);
-		divider->x.SetDirect(ScalePanelContentX(panelWidth / 2.0));
-		divider->y.SetDirect(ScalePanelContentY(
-			BarMorePanelPadding + dividerPhysicalY));
-		divider->pct.SetDirect(showDivider ? 0.30 * opacityProgress : 0.0);
-		divider->UpInh(UiInheritClass(
-			divider->x.val - divider->w.val / 2.0,
-			divider->y.val - divider->h.val / 2.0));
-
-		for (const auto& placement : placements)
-		{
-			BarButtonClass* button = placement.button.get();
-			if (!button) continue;
-			double width = (placement.columnSpan == 2 ? ButtonTwoSideDip : one);
-			double height = (placement.rowSpan == 2 ? ButtonTwoSideDip : one);
-			if (button->size == ButtonSizeEnum::oneTwo) width = 10.0;
-			double logicalX = BarMorePanelPadding
-				+ placement.column * step + width / 2.0;
-			double logicalY = placement.row * step;
-			if (showDivider && placement.forced)
-				logicalY += BarMorePanelSeparatorGap;
-			double physicalY = side
-				? gridHeight - logicalY - height : logicalY;
-			double localCenterY = BarMorePanelPadding
-				+ physicalY + height / 2.0;
-			// 始终保存主栏局部坐标：收起后按钮缩在 More 入口下方，补位时不会从远端飘入。
-			button->button.x.SetDirect(panelCenterInMainBarX
-				+ (logicalX - panelWidth / 2.0) * scale);
-			button->button.y.SetDirect(panelCenterInMainBarY
-				+ (localCenterY - panelHeight / 2.0) * scale);
-			if (button->size == ButtonSizeEnum::oneTwo)
-			{
-				button->button.w.SetDirect(width * scale);
-				button->button.h.SetDirect(height * scale);
-				button->icon.pct.SetDirect(0.0); button->name.pct.SetDirect(0.0);
-				continue;
-			}
-			const auto kind = button->size == ButtonSizeEnum::oneOne
-				? ButtonVisualLayoutKind::StandardOneOne
-				: button->size == ButtonSizeEnum::twoOne
-					? ButtonVisualLayoutKind::StandardTwoOne : ButtonVisualLayoutKind::StandardTwoTwo;
-			Inkeys::UI::Bar::ConfigureButtonVisualTargets(*button, kind,
-				UiDefaultOperationDur, scale, true, nullopt, fontTargetScale);
-			const bool enabled = button->state->state != WidgetState::Disable;
-			const bool selected = button->state->state == WidgetState::Selected;
-			Inkeys::UI::Bar::RetargetButtonInteractionVisual(*button, open,
-				enabled, selected, UiDefaultOperationDur);
-			if (settleHiddenButtonVisuals)
-			{
-				button->button.fill->SetDirect(GetThemeColor(selected
-					? ThemeColorEnum::SelectedFill : ThemeColorEnum::PressedFill));
-				const COLORREF color = GetThemeColor(selected
-					? ThemeColorEnum::Accent : ThemeColorEnum::TextPrimary);
-				const COLORREF iconColor = GetThemeColor(selected
-					? ThemeColorEnum::Accent : ThemeColorEnum::IconPrimary);
-				button->button.frame->SetDirect(color);
-				if (button->icon.color1) button->icon.color1->SetDirect(iconColor);
-				if (button->icon.color2) button->icon.color2->SetDirect(iconColor);
-				button->name.color.SetDirect(color);
-			}
-			const double contentOpacity = opacityProgress * (enabled ? 1.0 : GetThemeDisabledContentOpacity());
-			button->icon.pct.SetDirect(contentOpacity);
-			button->name.pct.SetDirect(button->size == ButtonSizeEnum::oneOne ? 0.0 : contentOpacity);
-			button->lastDrawX = button->button.x.val;
-			button->lastDrawY = button->button.y.val;
-		}
+		Inkeys::UI::Bar::PositionContentMore({ panel.get(), divider.get(), close.get(), closeSvg.get(), state.moreClosePressScale },
+			moreButton, *state.shapeMap[BarUISetShapeEnum::MainBar], snapshot, state.sizeMode,
+			state.morePanelProgress, state.morePanelOpacity, open, side, state.barWindow.w, state.barWindow.h,
+			frameZoom, limit, state.barStyle.darkStyle, state.barState.moreClosePress, state.moreCloseHoverStage, state.spec);
 	}
 
 }
@@ -9741,80 +9557,18 @@ bool presetButton = button.presetIndex >= 0;
 				owner_.eraserAttribute.Draw(contentRenderer, barDeviceContext);
 				owner_.recallAttribute.Draw(contentRenderer, barDeviceContext);
 
-				// More 必须先画、主栏后画，收拢部分才会从主栏下层自然出现。
-				auto DrawMainBar = [&]()
-				{
-					contentRenderer.SetResidentIdleFade(state.pptIdleFade.val);
-					SetBodyTransform();
-					auto obj = BarUISetShapeEnum::MainBar;
-					owner_.mainPanel.BindFrame(*state.shapeMap[obj]);
-					owner_.mainPanel.DrawFrame(contentRenderer, barDeviceContext, UiInheritClass(
-							state.shapeMap[obj]->inhX, state.shapeMap[obj]->inhY),
-						&state.current, true);
-
-					// 退场按钮先画，收拢时由仍可见的前驱覆盖，不改变列表与命中顺序。
-					// 主栏图标/文字属于常驻内容，受用户内容透明度控制；选中底板等形状不受影响。
-					contentRenderer.SetResidentContentOpacity(GetThemeResidentContentOpacity());
-					for (const bool visible : { false, true })
-					{
-						size_t layoutIndex = 0;
-						for (const auto& button : *content.mainButtons)
-						{
-							if (!button) continue;
-							const bool frameVisible = state.mainBarLayoutSnapshot->at(layoutIndex++).visible;
-							if (frameVisible != visible) continue;
-							const auto inherit = button->button.Inherit(CenterFromTopLeft,
-								*state.shapeMap[BarUISetShapeEnum::MainBar]);
-							DrawButtonVisual(contentRenderer, barDeviceContext, *button, inherit);
-						}
-					}
-					contentRenderer.SetResidentContentOpacity(1.0);
-					contentRenderer.SetResidentIdleFade(0);
-				};
-
-				// 更多按钮保留主栏局部坐标，浮层自身仍只按上下展开方向翻转物理行。
-				auto morePanel = state.shapeMap[BarUISetShapeEnum::MorePanel];
-				if (morePanel && morePanel->pct.val > 0.000001)
-				{
-					owner_.morePanel.BindFrame(*morePanel);
-					owner_.morePanel.DrawFrame(contentRenderer, barDeviceContext,
-						UiInheritClass(morePanel->inhX, morePanel->inhY),
-						&state.current, true);
-					auto moreDivider = state.shapeMap[
-						BarUISetShapeEnum::MorePanelDivider];
-					if (moreDivider && moreDivider->pct.val > 0.000001)
-						contentRenderer.Shape(barDeviceContext, *moreDivider,
-							UiInheritClass(moreDivider->inhX,
-								moreDivider->inhY));
-
-					auto DrawMoreButton = [&](BarButtonClass* button)
-						{
-							if (!button || button->icon.pct.val <= 0.000001) return;
-							UiInheritClass buttonInherit = button->button.Inherit(
-								CenterFromTopLeft,
-								*state.shapeMap[BarUISetShapeEnum::MainBar]);
-							DrawButtonVisual(contentRenderer, barDeviceContext,
-								*button, buttonInherit);
-						};
-					const BarMoreButtonSnapshotClass moreSnapshot = content.moreButtons
-						? *content.moreButtons : state.barButtonSet.GetMoreButtonSnapshot();
-					for (const shared_ptr<BarButtonClass>& button :
-						moreSnapshot.explicitMore)
-						DrawMoreButton(button.get());
-					for (const shared_ptr<BarButtonClass>& button :
-						moreSnapshot.forcedOverflow)
-						DrawMoreButton(button.get());
-
-					auto moreClose = state.shapeMap[
-						BarUISetShapeEnum::MorePanelCloseHit];
-					auto moreCloseSvg = state.svgMap[BarUISetSvgEnum::MorePanelClose];
-					if (moreClose && moreCloseSvg)
-						Inkeys::UI::UI3::DrawFixedButtonVisual(contentRenderer, barDeviceContext,
-							{*moreClose, moreCloseSvg.get(), nullptr, &state.moreClosePressScale},
-							{UiInheritClass(moreClose->inhX, moreClose->inhY),
-								UiInheritClass(moreCloseSvg->inhX, moreCloseSvg->inhY), UiInheritClass(0.0, 0.0), std::nullopt});
-				}
-				DrawMainBar();
+				// More 在刚性姿态下先画，收拢时由主栏覆盖。
+				auto body = state.shapeMap[BarUISetShapeEnum::MainBar];
+				auto more = state.shapeMap[BarUISetShapeEnum::MorePanel];
+				if (more && more->pct.val > 0.000001)
+					Inkeys::UI::Bar::DrawContentMore(contentRenderer, barDeviceContext, owner_.morePanel,
+						{ more.get(), state.shapeMap[BarUISetShapeEnum::MorePanelDivider].get(),
+						  state.shapeMap[BarUISetShapeEnum::MorePanelCloseHit].get(),
+						  state.svgMap[BarUISetSvgEnum::MorePanelClose].get(), state.moreClosePressScale },
+						*body, content.moreButtons ? *content.moreButtons : state.barButtonSet.GetMoreButtonSnapshot(), &state.current);
+				SetBodyTransform();
+				Inkeys::UI::Bar::DrawContentBody(contentRenderer, barDeviceContext, owner_.mainPanel,
+					*body, *content.mainButtons, *state.mainBarLayoutSnapshot, &state.current, state.pptIdleFade.val);
 			}
 			{ /**/ }
 
@@ -10467,30 +10221,9 @@ bool presetButton = button.presetIndex >= 0;
 		if (state.hoverHintShown && !state.hoverHintText.empty())
 		{
 			SetBaseTransform();
-			const auto& r = state.hoverHintRect;
-			const double radius = BarCompactSizeMetrics.barCornerRadius;
-			auto& surface = state.hoverHintShape.emplace(0.0, 0.0, (r.right - r.left) / frameZoom, (r.bottom - r.top) / frameZoom,
-				radius, radius, ButtonFrameThicknessDip,
-				GetThemeColor(ThemeColorEnum::Surface), GetThemeColor(ThemeColorEnum::SurfaceFrame));
-			surface.enable.Initialization(true);
-			surface.pct.Initialization(BarMainBarFillOpacity);
-			surface.framePct = UiPctClass(GetThemeSurfaceFrameOpacity(BarMainBarFrameOpacity));
-			surface.themeSurface = true;
-			surface.lightMaterial = state.barLightMaterial.val;
-			contentRenderer.Shape(barDeviceContext, surface, UiInheritClass(r.left / frameZoom, r.top / frameZoom));
-			IDWriteTextFormat* hintFormat = state.barMedia.formatCache->GetFormat(
-				contentRenderer.GetFontFamily(), contentRenderer.ResolveFontSize(barDeviceContext,
-					Inkeys::UI::Bar::BarHoverHintFontSizeDip * frameZoom, Inkeys::UI::Bar::BarHoverHintFontSizeDip),
-				content.fontCollection, DWRITE_FONT_WEIGHT_NORMAL,
-				DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, contentRenderer.GetTextLocale(),
-				DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-			if (auto hintBrush = contentRenderer.GetFrameSolidColorBrush(barDeviceContext,
-				GetThemeColor(ThemeColorEnum::TextPrimary), 1.0); hintBrush && hintFormat)
-				(Inkeys::UI::UI3::ObserveUi3SvgUnknownWrite(barDeviceContext), barDeviceContext)->DrawTextW(
-					state.hoverHintText.c_str(), static_cast<UINT32>(state.hoverHintText.size()), hintFormat,
-					D2D1::RectF(static_cast<FLOAT>(r.left), static_cast<FLOAT>(r.top),
-						static_cast<FLOAT>(r.right), static_cast<FLOAT>(r.bottom)),
-					hintBrush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+			Inkeys::UI::Bar::DrawContentHint(contentRenderer, barDeviceContext, state.hoverHintRect,
+				state.hoverHintText, frameZoom, state.barLightMaterial.val, state.hoverHintShape,
+				*state.barMedia.formatCache, content.fontCollection);
 		}
 	}
 }
@@ -13383,6 +13116,7 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 			owner_.recallAttribute.CommitPresented();
 			owner_.bottomDockPresentedMappingSerial.fetch_add(
 				1, memory_order_release);
+			state.barButtonSet.ReleaseRetiredLayoutInstances();
 			// 第三光源接受区也只消费完整成功事务对应的几何。
 			owner_.RefreshBorderCursorVisibleRegions();
 			directDragTransaction.Commit();
@@ -13568,6 +13302,13 @@ BarRenderLoopCoordinator::RenderFrame(
 	// 进程退出由主线程在客户端同步注销后统一停管线，Bar 不能抢先终止共享线程。
 	if (offSignal) return FrameResult::Idle;
 	auto& state = *state_;
+	if (state.barButtonSet.ConsumeLayoutReload())
+	{
+		owner_.hoverHintSource.main.reset();
+		// 仅 More 的顺序改变时主栏尺寸可以不变，仍需提交新的内容。
+		state.unclassifiedDamagePending = true;
+		state.presentDecision.RequireVisualRetry();
+	}
 	if (owner_.RefreshLocalizedTypography())
 	{
 		// 语言只更换文案与度量，不重新初始化交互和业务状态。

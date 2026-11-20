@@ -36,6 +36,8 @@ int RunMessageTests();
 int RunUi3InputTests();
 int RunUi3GestureTests();
 int RunUi3ProgressTests();
+int RunDragSessionTests();
+int RunBarLayoutModelTests();
 int RunUi3ListLayoutTests();
 int RunUi3PanelStackTests();
 int RunWindowTests();
@@ -1862,6 +1864,8 @@ int main(int argc, char** argv)
 	failureCount += RunUi3InputTests();
 	failureCount += RunUi3GestureTests();
 	failureCount += RunUi3ProgressTests();
+	failureCount += RunDragSessionTests();
+	failureCount += RunBarLayoutModelTests();
 	failureCount += RunUi3ListLayoutTests();
 	failureCount += RunUi3PanelStackTests();
 	failureCount += RunMessageBoxTests(runWindowTests);

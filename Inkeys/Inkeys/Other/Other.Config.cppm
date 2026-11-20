@@ -71,6 +71,7 @@ export namespace Inkeys
 
 	namespace BarButtonId
 	{
+		inline constexpr char UserDivider[] = "Inkeys.Bar.UserDivider";
 		inline constexpr char Divider[] = "Inkeys.Bar.Divider";
 		inline constexpr char MoreBoundary[] = "Inkeys.Bar.MoreBoundary";
 		inline constexpr char Select[] = "Inkeys.Bar.Select";
@@ -97,6 +98,7 @@ export namespace Inkeys
 		// A1/A2 固定区：只存 Id 与 Size；Visible 不进配置。
 		struct BarFixedButtonLayoutEntry
 		{
+			bool operator==(const BarFixedButtonLayoutEntry&) const = default;
 			std::string Id;
 			BarButtonSizeKind Size = BarButtonSizeKind::TwoTwo;
 		};
@@ -104,10 +106,42 @@ export namespace Inkeys
 		// B 扩展区：Id + Size + 用户显隐。
 		struct BarExtensionButtonLayoutEntry
 		{
+			bool operator==(const BarExtensionButtonLayoutEntry&) const = default;
 			std::string Id;
 			BarButtonSizeKind Size = BarButtonSizeKind::TwoTwo;
 			bool Visible = true;
 		};
+
+		struct BarLayoutConfigValues
+		{
+			std::vector<BarFixedButtonLayoutEntry> a1;
+			std::vector<BarExtensionButtonLayoutEntry> extension;
+			std::vector<BarFixedButtonLayoutEntry> a2;
+			bool operator==(const BarLayoutConfigValues& other) const
+			{
+				return a1 == other.a1 && extension == other.extension && a2 == other.a2;
+			}
+		};
+
+		namespace BarComponentId
+		{
+			inline constexpr char Explorer[] = "Component.ShortcutButton.Appliance.Explorer";
+			inline constexpr char Taskmgr[] = "Component.ShortcutButton.Appliance.Taskmgr";
+			inline constexpr char Control[] = "Component.ShortcutButton.Appliance.Control";
+			inline constexpr char Desktop[] = "Component.ShortcutButton.System.Desktop";
+			inline constexpr char LockWorkStation[] = "Component.ShortcutButton.System.LockWorkStation";
+			inline constexpr char Keyboardesc[] = "Component.ShortcutButton.Keyboard.Keyboardesc";
+			inline constexpr char KeyboardAltF4[] = "Component.ShortcutButton.Keyboard.KeyboardAltF4";
+			inline constexpr char IslandCaller1[] = "Component.ShortcutButton.RollCall.IslandCaller1";
+			inline constexpr char IslandCaller2[] = "Component.ShortcutButton.RollCall.IslandCaller2";
+			inline constexpr char SecRandom1[] = "Component.ShortcutButton.RollCall.SecRandom1";
+			inline constexpr char SecRandom2[] = "Component.ShortcutButton.RollCall.SecRandom2";
+			inline constexpr char SecRandom2Compat[] = "Component.ShortcutButton.RollCall.SecRandom2Compat";
+			inline constexpr char NamePicker[] = "Component.ShortcutButton.RollCall.NamePicker";
+			inline constexpr char ClassislandSettings[] = "Component.ShortcutButton.Linkage.ClassislandSettings";
+			inline constexpr char ClassislandProfile[] = "Component.ShortcutButton.Linkage.ClassislandProfile";
+			inline constexpr char ClassislandClassswap[] = "Component.ShortcutButton.Linkage.ClassislandClassswap";
+		}
 
 		// 兼容旧单数组 ButtonLayout 的读取形态（仅迁移使用）。
 		struct BarLegacyButtonLayoutEntry
@@ -173,7 +207,7 @@ export namespace Inkeys
 
 		inline BarButtonSizeKind DefaultSizeForBarButtonId(std::string_view id)
 		{
-			if (id == BarButtonId::Divider) return BarButtonSizeKind::OneTwo;
+			if (id == BarButtonId::Divider || id == BarButtonId::UserDivider) return BarButtonSizeKind::OneTwo;
 			if (id == BarButtonId::Whiteboard || id == BarButtonId::Freeze)
 				return BarButtonSizeKind::TwoOne;
 			return BarButtonSizeKind::TwoTwo;
@@ -265,7 +299,7 @@ inline ConfigSequence<BarFixedButtonLayoutEntry> MakeDefaultFixedButtonsA1()
 		{
 			return {
 				{ BarButtonId::Whiteboard, BarButtonSizeKind::TwoOne },
-				{ BarButtonId::Freeze, BarButtonSizeKind::TwoOne },
+				{ BarButtonId::Freeze, BarButtonSizeKind::TwoTwo },
 				{ BarButtonId::EndShow, BarButtonSizeKind::TwoTwo },
 			};
 		}
@@ -703,6 +737,10 @@ namespace Inkeys
 	public:
 		Inkeys::Config& operator=(const Inkeys::Config& other);
 
+		BarLayoutConfigValues GetBarLayout() const;
+		std::vector<std::string> GetLegacyBarComponents() const;
+		// 返回是否清除了旧开关，布局相同的重置也据此决定是否保存。
+		bool ReplaceBarLayout(BarLayoutConfigValues values, bool clearLegacy);
 		bool ReadAll();
 		// 最近一次 ReadAll 读到的原文件是否含该点分路径（区分“键缺失”与“值为默认”，供一次性迁移）。
 		[[nodiscard]] bool ReadAllHasValue(std::string_view dottedPath) const;

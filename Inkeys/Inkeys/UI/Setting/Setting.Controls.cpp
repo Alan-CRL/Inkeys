@@ -2472,6 +2472,134 @@ namespace Inkeys::UI::Setting::Design
 		return clicked;
 	}
 
+	bool TabStrip(const char* id, const std::vector<std::string>& labels, int& selected)
+	{
+		PageBlockScope motion(id);
+		const ImVec2 origin = ImGui::GetCursorScreenPos();
+		const float available = (std::max)(1.0F, ImGui::GetContentRegionAvail().x);
+		const float height = Pixels(36.0F), padding = Pixels(12.0F), gap = Pixels(4.0F);
+		ImDrawList* draw = ImGui::GetWindowDrawList();
+		bool changed = false;
+		float x = 0.0F, y = 0.0F;
+		ImGui::PushID(id);
+		for (int index = 0; index < static_cast<int>(labels.size()); ++index)
+		{
+			const float textWidth = TextWidth(labels[index].c_str());
+			const float width = textWidth + padding * 2.0F;
+			// 标签按顺序排布，放不下时整项换行，不截断文字。
+			if (x > 0.0F && x + width > available) { x = 0.0F; y += height + gap; }
+			const ImVec2 position{ origin.x + x, origin.y + y };
+			const bool active = index == selected;
+			ImGui::SetCursorScreenPos(position);
+			ImGui::PushID(index);
+			// 与标题栏导航按钮同一套无边框 Fluent Button，只换正文字号与选中下划线。
+			ImFluent::PushFont(ImFluentTextStyle_Body, BodyText.size);
+			ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));
+			ImFluent::PushStyleColor(ImFluentCol_ControlFillSecondary, GetPalette().subtleHover);
+			ImFluent::PushStyleColor(ImFluentCol_ControlFillTertiary, GetPalette().subtlePressed);
+			ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
+			ImFluent::PushStyleColor(ImFluentCol_ElevationControlTop, IM_COL32(0, 0, 0, 0));
+			ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
+			ImFluent::PushStyleColor(ImFluentCol_TextPrimary, active ? TextPrimary : TextSecondary);
+			const std::string stableLabel = labels[index] + "###tab";
+			if (ImFluent::Button(stableLabel.c_str(), { width, height }) && !active)
+			{
+				selected = index;
+				changed = true;
+			}
+			ImFluent::PopStyleColor(7);
+			ImFluent::PopFont();
+			ImGui::PopID();
+			if (active)
+			{
+				const float lineWidth = (std::max)(Pixels(16.0F), textWidth * 0.6F);
+				const float left = position.x + (width - lineWidth) * 0.5F;
+				draw->AddRectFilled({ left, position.y + height - Pixels(3.0F) }, { left + lineWidth, position.y + height },
+					Accent, Pixels(1.5F));
+			}
+			x += width + gap;
+		}
+		ImGui::PopID();
+		ImGui::SetCursorScreenPos(origin);
+		ImGui::Dummy({ available, y + height + Pixels(RowGap) });
+		return changed;
+	}
+
+	bool DragSourceOverlay(const char* id, const ImVec2& min, const ImVec2& max, bool skip)
+	{
+		const ImVec2 cursor = ImGui::GetCursorScreenPos();
+		bool started = false;
+		if (!skip && max.x > min.x && max.y > min.y)
+		{
+			ImGui::SetCursorScreenPos(min);
+			ImGui::InvisibleButton(id, { max.x - min.x, max.y - min.y });
+			const auto& io = ImGui::GetIO();
+			const float threshold = Pixels(io.MouseSource == ImGuiMouseSource_Mouse ? 4.0F : 10.0F);
+			started = ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, threshold);
+		}
+		ImGui::SetCursorScreenPos(cursor);
+		return started;
+	}
+
+	float ComponentCardTextWidth(float cardWidth)
+	{
+		// 左：内边距 + 32 DIP 图标 + 内边距；右：内边距 + 28 DIP 操作键 + 4 DIP 间隔。
+		return (std::max)(1.0F, cardWidth - Pixels(12.0F) * 3.0F - Pixels(32.0F) - Pixels(28.0F + 4.0F));
+	}
+
+	bool ComponentCard(const char* id, const ComponentCardSpec& spec, const ImVec2& size, bool* dragStarted)
+	{
+		const ImVec2 origin = ImGui::GetCursorScreenPos();
+		const ImVec2 bottom{ origin.x + size.x, origin.y + size.y };
+		ImDrawList* draw = ImGui::GetWindowDrawList();
+		DrawCardSurface(draw, origin, bottom, Card, Stroke, Pixels(4.0F));
+		const float padding = Pixels(12.0F), iconSize = Pixels(32.0F), actionSize = Pixels(28.0F);
+		const bool hasAction = spec.actionGlyph && *spec.actionGlyph;
+		if (spec.glyph && *spec.glyph)
+			ImFluent::DrawIcon(spec.glyph, { origin.x + padding, origin.y + (size.y - iconSize) * 0.5F },
+				{ origin.x + padding + iconSize, origin.y + (size.y + iconSize) * 0.5F }, 24.0F, TextPrimary);
+		const float textLeft = origin.x + padding * 2.0F + iconSize;
+		// 无论有无操作键都按同一文字宽度排版，“+”与垃圾桶切换时文字不跳动。
+		const float textWidth = ComponentCardTextWidth(size.x);
+		const float textRight = textLeft + textWidth;
+		// 标题最多两行；说明按卡片剩余高度显示（最多两行），卡片高度固定，网格不会错位。
+		const float titleHeight = (std::min)(TextHeight(spec.title, textWidth), Pixels(BodyText.lineHeight) * 2.0F);
+		const float lineHeight = Pixels(CaptionText.lineHeight);
+		const float descriptionRoom = (std::max)(0.0F, size.y - padding * 2.0F - titleHeight);
+		const float descriptionLines = (std::min)(2.0F, std::floor(descriptionRoom / lineHeight));
+		const float descriptionHeight = (std::min)(TextHeight(spec.description, textWidth, ImFluentTextStyle_Caption), lineHeight * descriptionLines);
+		const float contentTop = origin.y + (std::max)(padding, (size.y - titleHeight - descriptionHeight) * 0.5F);
+		// 卡片高度固定：标题与说明都裁剪在卡片内，超长文案不会压到下一张卡片。
+		draw->PushClipRect(origin, bottom, true);
+		TextAt(spec.title, { textLeft, contentTop }, textWidth);
+		if (spec.description && *spec.description)
+		{
+			draw->PushClipRect({ textLeft, contentTop + titleHeight }, { textRight, contentTop + titleHeight + descriptionHeight }, true);
+			TextAt(spec.description, { textLeft, contentTop + titleHeight }, textWidth, ImFluentTextStyle_Caption, TextSecondary);
+			draw->PopClipRect();
+		}
+		draw->PopClipRect();
+		bool clicked = false, actionHovered = false;
+		ImGui::PushID(id);
+		if (hasAction)
+		{
+			ImGui::SetCursorScreenPos({ bottom.x - padding * 0.5F - actionSize, origin.y + padding * 0.5F });
+			ImFluent::BeginDisabled(!spec.actionEnabled);
+			clicked = IconButton("##action", spec.actionGlyph, { actionSize, actionSize });
+			ImFluent::EndDisabled();
+			actionHovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+			if (spec.actionTooltip && *spec.actionTooltip && actionHovered)
+				ImFluent::SetItemTooltip("%s", spec.actionTooltip);
+		}
+		ImGui::SetCursorScreenPos(origin);
+		const bool drag = dragStarted && DragSourceOverlay("##drag", origin, bottom, actionHovered);
+		if (dragStarted) *dragStarted = drag;
+		ImGui::PopID();
+		ImGui::SetCursorScreenPos(origin);
+		ImGui::Dummy(size);
+		return clicked;
+	}
+
 	bool Notice(const char* id, const char* title, const char* description,
 		ImFluentInfoSeverity severity, const char* actionLabel)
 	{

@@ -461,6 +461,7 @@ namespace ImFluent
     // INKEYS PATCH: 独立图标字体及显式 pane 中的导航条目复用同一控件实现。
     IMGUI_API void SetIconFont( ImFont * font );
     IMGUI_API void DrawIcon( const char * glyph, const ImVec2 & min, const ImVec2 & max, float size_dip, ImU32 color );
+    IMGUI_API void DrawIcon( ImDrawList * draw_list, const char * glyph, const ImVec2 & min, const ImVec2 & max, float size_dip, ImU32 color );
     IMGUI_API bool NavItemEx( const char * id, const char * label, bool selected, const char * glyph, bool compact );
 
     IMGUI_API void PushFluentStyle();

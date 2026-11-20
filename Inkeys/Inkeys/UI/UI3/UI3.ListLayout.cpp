@@ -116,6 +116,13 @@ ListLayoutResult ResolveListLayout(const std::vector<ListLayoutItem>& items,
 			}
 			width = x;
 		}
+		else if (item.exclusiveColumn)
+		{
+			// 可见窄列封闭前一半列；隐藏项不能推动后续按钮。
+			p.x = width + p.width / 2.0;
+			p.y = gap + two / 2.0;
+			if (visible) { width += p.width + gap; x = width; y = gap; }
+		}
 		else if (item.columnBoundary)
 		{
 			if (visible) { x = width; y = gap; }

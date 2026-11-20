@@ -203,6 +203,7 @@ namespace Inkeys::UI::Bar
 		// 初始化 按钮 们
 		barUISet.barButtonSet.PresetInitialization();
 		barUISet.barButtonSet.RegisterBuiltInComponents();
+		barUISet.barButtonSet.InitializeBarLayout();
 		{
 			barUISet.barButtonSet.Load();
 			barUISet.barButtonSet.StateUpdate();

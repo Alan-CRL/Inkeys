@@ -1,4 +1,4 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
@@ -775,6 +775,34 @@ namespace
 	}
 
 	// 整块透明度：组内重叠控件先按原 alpha 合成，再整体乘透明度；参考值为“无块背景”与“完整块”逐通道插值。
+	void CheckPreviewBlend(Checks& checks, Offscreen& renderer)
+	{
+		// 半透明红色先预乘到 BGRA 纹理，再与直接绘制的同色方块逐通道对照。
+		const uint32_t texel=0x80800000;
+		D3D11_TEXTURE2D_DESC desc{};
+		desc.Width=desc.Height=desc.ArraySize=desc.MipLevels=desc.SampleDesc.Count=1;
+		desc.Format=DXGI_FORMAT_B8G8R8A8_UNORM;
+		desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+		D3D11_SUBRESOURCE_DATA data{&texel,4,0};
+		ComPtr<ID3D11Texture2D> texture;
+		ComPtr<ID3D11ShaderResourceView> view;
+		if (!checks.Result(renderer.device->CreateTexture2D(&desc,&data,&texture),"preview premultiplied texture")
+			|| !checks.Result(renderer.device->CreateShaderResourceView(texture.Get(),nullptr,&view),"preview sample view")) return;
+		ImGui_ImplDX11_NewFrame(); ImGui::NewFrame();
+		auto* list=ImGui::GetForegroundDrawList();
+		list->AddRectFilled({0,0},{60,20},IM_COL32(0,128,255,255));
+		list->AddRectFilled({0,0},{20,20},IM_COL32(255,0,0,128));
+		list->AddCallback(ImGui_ImplDX11_PremultipliedBegin,nullptr);
+		list->AddImage((ImTextureID)(uintptr_t)view.Get(),{20,0},{40,20});
+		list->AddCallback(ImGui_ImplDX11_PremultipliedEnd,nullptr);
+		list->AddRectFilled({40,0},{60,20},IM_COL32(255,0,0,128));
+		ImGui::Render();
+		Pixels pixels;
+		if (renderer.Submit(checks,ImGui::GetDrawData(),&pixels))
+			checks.Expect(pixels[10*Width+10]==pixels[10*Width+30] && pixels[10*Width+30]==pixels[10*Width+50]
+				&& (pixels[10*Width+30]&255)==128,"premultiplied image matches direct draw and restores blend");
+	}
+
 	void CheckOpacityGroups(Checks& checks, Offscreen& renderer)
 	{
 		auto& io = ImGui::GetIO();
@@ -2004,6 +2032,7 @@ int RunSettingHomeWarpProbe(ImFont* regular, ImFont* strong, ImFont* icons)
 	CheckBackendFailures(checks, renderer);
 	CheckAlpha8Uploads(checks, renderer, regular);
 	CheckIndependentPixelShader(checks, renderer);
+	CheckPreviewBlend(checks, renderer);
 	CheckOpacityGroups(checks, renderer);
 	CheckEntryScrollbarContinuity(checks,renderer);
 	for (bool dark : { false, true })

@@ -189,6 +189,29 @@ namespace Inkeys::UI::Setting::Design
 		const char* glyph, std::initializer_list<ButtonSpec> buttons, const char* note = nullptr);
 	bool NavigationRow(const char* id, const char* title, const char* description,
 		const char* glyph, ImTextureID iconTexture = 0, ImU32 iconTint = IM_COL32_WHITE, const char* note = nullptr);
+	// 一行文字标签，选中项下方画强调色短下划线；一行放不下时换行。返回是否切换。
+	bool TabStrip(const char* id, const std::vector<std::string>& labels, int& selected);
+	struct ComponentCardSpec
+	{
+		const char* title = nullptr;
+		const char* description = nullptr;
+		const char* glyph = nullptr;
+		const char* actionGlyph = nullptr; // 为空时不显示右上角操作键。
+		const char* actionTooltip = nullptr;
+		bool actionEnabled = true;
+	};
+	// 组件库卡片网格的尺寸（DIP）：最小宽度、固定高度、间距。标题最多两行，说明按剩余高度显示一到两行。
+	inline constexpr float ComponentCardMinimumWidth = 260.0F;
+	inline constexpr float ComponentCardHeight = 96.0F;
+	inline constexpr float ComponentCardGap = 8.0F;
+	// 给定卡片物理宽度时，标题与说明可用的文字宽度（物理像素）；页面与多语言排版测试共用。
+	float ComponentCardTextWidth(float cardWidth);
+	// 组件库“全部”页的矩形卡片；size 为物理像素。返回右上角操作键是否被点击；
+	// dragStarted 非空时，按住卡片其他区域越过拖动阈值的那一帧置为 true。
+	bool ComponentCard(const char* id, const ComponentCardSpec& spec, const ImVec2& size, bool* dragStarted = nullptr);
+	// 在已绘制的卡片/行区域上覆盖一个无形按钮作为拖动源，越过阈值（鼠标 4、触摸/笔 10 DIP）时返回 true。
+	// skip 为 true（操作键正被悬停）时不提交覆盖层，保证操作键可点击；成为活动项后页面拖动滚动不会接管。
+	bool DragSourceOverlay(const char* id, const ImVec2& min, const ImVec2& max, bool skip);
 	bool Notice(const char* id, const char* title, const char* description,
 		ImFluentInfoSeverity severity = ImFluentInfoSeverity_Informational,
 		const char* actionLabel = nullptr);

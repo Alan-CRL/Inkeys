@@ -1,4 +1,4 @@
-// dear imgui: Renderer Backend for DirectX11
+﻿// dear imgui: Renderer Backend for DirectX11
 // This needs to be used along with a Platform Backend (e.g. Win32)
 
 // Implemented features:
@@ -36,6 +36,8 @@ IMGUI_IMPL_API void     ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data);
 IMGUI_IMPL_API long     ImGui_ImplDX11_GetLastResult();
 // [Inkeys] 整块透明度哨兵：Begin/End 之间的命令先按原 alpha 合成到透明离屏目标，再整体乘透明度回写。
 // UserCallbackData 保存 float 位模式；只有本 backend 识别，含哨兵的 DrawData 不能交给其他 renderer。
+#define ImGui_ImplDX11_PremultipliedBegin   ((ImDrawCallback)(-18))
+#define ImGui_ImplDX11_PremultipliedEnd     ((ImDrawCallback)(-19))
 #define ImGui_ImplDX11_OpacityGroupBegin    ((ImDrawCallback)(-16))
 #define ImGui_ImplDX11_OpacityGroupEnd      ((ImDrawCallback)(-24))
 IMGUI_IMPL_API bool     ImGui_ImplDX11_SupportsOpacityGroups();

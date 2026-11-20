@@ -22,6 +22,7 @@ export import Inkeys.UI.UI3.Animation;
 export import Inkeys.UI.UI3.Metrics;
 export import Inkeys.UI.UI3.WakeSignal;
 export import Inkeys.UI.UI3.FramePacing;
+export import Inkeys.UI.UI3.DragSession;
 export import Inkeys.UI.UI3.Material;
 export import Inkeys.UI.UI3.DirtyRegion;
 export import Inkeys.UI.UI3.VisualDirty;

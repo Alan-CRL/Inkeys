@@ -97,6 +97,7 @@
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.BottomDock.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.AutoCollapse.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.MainLayoutPolicy.cppm" />
+    <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.LayoutModel.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.DisplayTransition.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.WindowGeometry.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.PresentDecision.cppm" />
@@ -129,6 +130,7 @@
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.Metrics.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.SurfaceLayout.cppm" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\UI3\UI3.FramePacing.cppm" />
+    <ClCompile Include="..\Inkeys\Inkeys\UI\UI3\UI3.DragSession.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\Bar\Bar.ToggleClickCoalescer.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\UI3\UI3.WakeSignal.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\RenderPipeline\RenderPipeline.cppm" />
@@ -277,6 +279,8 @@
 	<ClCompile Include="ui3_input_tests.cpp" />
 	<ClCompile Include="ui3_gesture_tests.cpp" />
 	<ClCompile Include="ui3_progress_tests.cpp" />
+	<ClCompile Include="bar_layout_model_tests.cpp" />
+	<ClCompile Include="drag_session_tests.cpp" />
 	<ClCompile Include="ui3_list_layout_tests.cpp" />
 	<ClCompile Include="ui3_panel_stack_tests.cpp" />
 	<ClCompile Include="window_tests.cpp" />

@@ -3,6 +3,8 @@
 #include "../../../IdtMain.h"
 #include "../../../IdtState.h"
 
+#include <array>
+#include <atomic>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -13,6 +15,7 @@ export module Inkeys.UI.Bar:Button;
 export import Inkeys.UI.UI3;
 import :State;
 import Inkeys.Other.Config;
+import Inkeys.UI.Bar.LayoutModel;
 
 using namespace Inkeys::UI::UI3;
 
@@ -112,8 +115,6 @@ enum class BarButtonLayoutZoneEnum : int
 		// 注册时写死的默认尺寸/用户显隐；A 区配置不可改 Visible，Size 本轮也纠正回这里。
 		ButtonSizeEnum defaultSize = ButtonSizeEnum::twoTwo;
 		bool defaultUserVisible = true;
-		std::string legacyField;
-		function<bool()> legacyEnabled;
 		wstring categoryName;
 		wstring settingsName;
 		bool closeMoreAfterAction = true;
@@ -161,8 +162,6 @@ bool RegisterButton(
 			bool allowMultiple,
 			BarButtonLayoutZoneEnum zone,
 			bool defaultUserVisible = true,
-			const std::string& legacyField = {},
-		function<bool()> legacyEnabled = {},
 		const wstring& categoryName = {},
 		const wstring& settingsName = {},
 		bool closeMoreAfterAction = true);
@@ -182,7 +181,20 @@ bool RegisterButton(
 		void ExecuteClearClick(bool doubleClickContinuation);
 
 		void Load();
-		void SyncLegacyExtensionButtons();
+		// Applied 只表示内存配置与主栏已更新；写盘由调用方经设置业务队列完成（渲染线程不得同步写盘）。
+		enum class ApplyResult { Applied, Unchanged, Stale };
+		Inkeys::UI::Bar::BarLayoutCatalog GetLayoutCatalog() const;
+		std::optional<Inkeys::UI::Bar::BarLayoutModel> ReadBarLayout() const;
+		ApplyResult ApplyBarLayout(const Inkeys::UI::Bar::BarLayoutModel& expected,
+			const Inkeys::UI::Bar::BarLayoutModel& next, bool resetLegacy = false);
+		void InitializeBarLayout();
+		bool ConsumeLayoutReload();
+		void ReleaseRetiredLayoutInstances();
+		bool IsActiveLayoutButton(const shared_ptr<BarButtonClass>& button, bool inMore) const;
+		// 每次实际重载布局递增；按下时记录命中冻结时刻的值，抬起时不一致则不执行动作。
+		[[nodiscard]] std::uint64_t LayoutGeneration() const noexcept { return layoutGeneration.load(std::memory_order_acquire); }
+		// 重载后到新命中表成功发布前，旧帧矩形可能指向已移动或已替换的按钮，期间拒绝按钮命中。
+		[[nodiscard]] bool LayoutHitSuspended() const noexcept { return layoutHitSuspended.load(std::memory_order_acquire); }
 		void ResetIconCaches();
 
 	protected:
@@ -194,19 +206,6 @@ bool RegisterButton(
 		void PresetHoming(const StateModeClass& stateMode);
 		static Inkeys::BarButtonSizeKind ToConfigSize(ButtonSizeEnum size);
 		static ButtonSizeEnum ToRuntimeSize(Inkeys::BarButtonSizeKind size);
-		static bool IsExactFixedZonePermutation(
-			const std::vector<Inkeys::BarFixedButtonLayoutEntry>& configured,
-			const std::vector<Inkeys::BarFixedButtonLayoutEntry>& defaults);
-		std::vector<Inkeys::BarFixedButtonLayoutEntry> NormalizeFixedZone(
-			const std::vector<Inkeys::BarFixedButtonLayoutEntry>& configured,
-			const std::vector<Inkeys::BarFixedButtonLayoutEntry>& defaults,
-			BarButtonLayoutZoneEnum zone);
-std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
-				const std::vector<Inkeys::BarExtensionButtonLayoutEntry>& configured);
-			void AppendFixedButtons(
-				const std::vector<Inkeys::BarFixedButtonLayoutEntry>& entries,
-				vector<shared_ptr<BarButtonClass>>& activeButtons);
-		vector<shared_ptr<BarButtonClass>> GetLegacyExtensionButtons();
 			// 交界分割线仅进运行时列表，不写回配置。
 			void AppendBoundaryDivider(
 				vector<shared_ptr<BarButtonClass>>& activeButtons,
@@ -228,15 +227,31 @@ std::vector<Inkeys::BarExtensionButtonLayoutEntry> NormalizeExtensionZone(
 		shared_ptr<BarButtonClass> mainCanvasDebugButton;
 		mutable mutex moreSnapshotMutex;
 		BarMoreButtonSnapshotClass moreSnapshot;
-		mutex legacyOrderMutex;
-		vector<std::string> legacyActiveOrder;
-		bool legacyOrderInitialized = false;
+		mutable mutex layoutCommitMutex;
+		std::optional<Inkeys::UI::Bar::BarLayoutModel> committedLayout;
+		// 串行化启动导入与编辑提交（校验 expected → 替换 → 发布）；不覆盖磁盘写入。
+		mutex layoutApplyMutex;
+		std::atomic<bool> reloadPending{ false };
+		std::atomic<std::uint64_t> layoutGeneration{ 0 };
+		std::atomic<bool> layoutHitSuspended{ false };
+		struct Instance
+		{
+			size_t index;
+			bool visible;
+			shared_ptr<BarButtonClass> button;
+		};
+		using InstanceGroups = unordered_map<std::string, vector<Instance>>;
+		std::array<InstanceGroups, 4> instances;
+		vector<shared_ptr<BarButtonClass>> retiredInstances;
 		bool clearAttemptedForDoubleClick = false;
 		bool clearAcceptedForDoubleClick = false;
 	};
 
 namespace Inkeys::UI::Bar
 {
+	shared_ptr<BarButtonClass> HitPresentedLayoutButtonForTest(POINT point);
+	// 离屏回归驱动真实 More 按下/抬起协程，允许在两条消息之间提交布局。
+	bool ReplayMoreLayoutPress(const shared_ptr<BarButtonClass>& button, const std::function<void()>& duringPress);
 	// 补上主栏默认值后转调 UI3 入口。
 	bool StartButtonHoverVisual(BarButtonClass& button) noexcept;
 	bool StopButtonHoverVisual(BarButtonClass& button, bool immediate,

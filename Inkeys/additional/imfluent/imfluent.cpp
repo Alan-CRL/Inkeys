@@ -2499,7 +2499,14 @@ void ImFluent::SetIconFont( ImFont * font )
 void ImFluent::DrawIcon( const char * glyph, const ImVec2 & min,
     const ImVec2 & max, float size_dip, ImU32 color )
 {
-    if ( !glyph || !*glyph ) return;
+    DrawIcon( ImGui::GetWindowDrawList(), glyph, min, max, size_dip, color );
+}
+
+// 指定绘制列表：前景/背景层上的图标需要与同层底板保持先后顺序。
+void ImFluent::DrawIcon( ImDrawList * draw_list, const char * glyph, const ImVec2 & min,
+    const ImVec2 & max, float size_dip, ImU32 color )
+{
+    if ( !draw_list || !glyph || !*glyph ) return;
     ImGui::PushFont( g_Ctx.IconFont ? g_Ctx.IconFont : ImGui::GetFont(), size_dip );
     unsigned int codepoint = 0;
     ImTextCharFromUtf8( &codepoint, glyph, NULL );
@@ -2508,7 +2515,7 @@ void ImFluent::DrawIcon( const char * glyph, const ImVec2 & min,
     {
         const ImVec2 origin( ( min.x + max.x - shape->X0 - shape->X1 ) * 0.5f,
             ( min.y + max.y - shape->Y0 - shape->Y1 ) * 0.5f );
-        ImGui::GetWindowDrawList()->AddText( ImGui::GetFont(), ImGui::GetFontSize(), origin, color, glyph );
+        draw_list->AddText( ImGui::GetFont(), ImGui::GetFontSize(), origin, color, glyph );
     }
     ImGui::PopFont();
 }

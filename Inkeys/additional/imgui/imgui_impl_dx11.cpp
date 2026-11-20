@@ -1,4 +1,4 @@
-// dear imgui: Renderer Backend for DirectX11
+﻿// dear imgui: Renderer Backend for DirectX11
 // This needs to be used along with a Platform Backend (e.g. Win32)
 
 // Implemented features:
@@ -629,6 +629,12 @@ void ImGui_ImplDX11_RenderDrawData(ImDrawData* draw_data)
                     automaticPixelShader = true;
                     selectedPixelShader = bd->pPixelShader;
                 }
+                else if (pcmd->UserCallback == ImGui_ImplDX11_PremultipliedBegin || pcmd->UserCallback == ImGui_ImplDX11_PremultipliedEnd)
+                {
+                    // D2D 纹理已预乘；恢复 ImGui 混合后再绘制后续普通控件。
+                    device->OMSetBlendState(pcmd->UserCallback == ImGui_ImplDX11_PremultipliedBegin ?
+                        bd->pGroupCompositeBlend : bd->pBlendState, nullptr, 0xffffffff);
+                }
                 else if (pcmd->UserCallback == ImGui_ImplDX11_OpacityGroupBegin)
                 {
                     // 组内命令按原混合画入清零的透明层，得到整块的预乘 RGBA。
@@ -989,6 +995,12 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
         if (!ImGui_ImplDX11_CheckResult(bd->pd3dDevice->CreateBlendState(&desc, &bd->pBlendState)))
         { ImGui_ImplDX11_InvalidateDeviceObjects(); return false; }
     }
+
+    D3D11_BLEND_DESC premultiplied;
+    bd->pBlendState->GetDesc(&premultiplied);
+    premultiplied.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+    if (!ImGui_ImplDX11_CheckResult(bd->pd3dDevice->CreateBlendState(&premultiplied, &bd->pGroupCompositeBlend)))
+    { ImGui_ImplDX11_InvalidateDeviceObjects(); return false; }
 
     // Create the rasterizer state
     {
