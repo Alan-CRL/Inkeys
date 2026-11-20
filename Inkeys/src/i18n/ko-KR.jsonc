@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "여러 손가락으로 그리기",
-          "E": "여러 손가락으로 동시에 쓰거나 그릴 수 있습니다. 끄면 한 손가락의 그리기에만 반응합니다."
+          "E": "여러 손가락으로 동시에 쓰거나 그립니다. 도구별로 설정할 수 있습니다.",
+          "Pen": "그리기",
+          "Highlighter": "형광펜",
+          "Laser": "레이저 포인터",
+          "Eraser": "지우개",
+          "Shape": "도형(한 획)"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "레이저 포인터",
-        "MultiTouch":
-        {
-          "N": "여러 손가락 레이저",
-          "E": "BETA: 여러 손가락으로 레이저 포인터를 동시에 사용할 수 있습니다."
-        },
         "Particles":
         {
           "N": "레이저 입자 효과",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "현재 그리기 화면의 크기 기준을 아직 사용할 수 없어 면적 예시를 표시할 수 없습니다.",
           "EnabledTools": "적용 도구",
           "ParallelWritingMultiTouchNote": "여러 손가락 그리기가 꺼져 있어 지우면서 동시에 쓸 수 없습니다.",
-          "ParallelWritingLaserMultiTouchNote": "여러 손가락 레이저가 꺼져 있어 레이저에서는 지우면서 동시에 쓸 수 없습니다.",
+          "ParallelWritingLaserMultiTouchNote": "다중 손가락 그리기에서 레이저 포인터가 선택되지 않아 레이저 포인터에서는 지우면서 쓰기가 작동하지 않습니다.",
           "ParallelWriting": "지우면서 동시에 쓰기",
           "ParallelWritingDescription": "손바닥 지우개를 켜면 근처의 터치 쓰기만 끝나고 근처에서 새로 닿는 입력은 막힙니다. 다른 위치에서는 계속 쓸 수 있습니다. 두 명 이상이 동시에 쓸 때 적합합니다.",
           "CursorNoticeTitle": "밝기와 무늬는 커서 설정을 따릅니다",

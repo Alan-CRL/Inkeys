@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "Vẽ bằng nhiều ngón",
-          "E": "Viết hoặc vẽ bằng nhiều ngón tay cùng lúc. Khi tắt, chỉ nhận nét vẽ bằng một ngón."
+          "E": "Viết hoặc vẽ bằng nhiều ngón tay cùng lúc. Có thể điều chỉnh riêng cho từng công cụ.",
+          "Pen": "Vẽ",
+          "Highlighter": "Bút nhớ dòng",
+          "Laser": "Bút laser",
+          "Eraser": "Tẩy",
+          "Shape": "Hình (một nét)"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "Bút laser",
-        "MultiTouch":
-        {
-          "N": "Laser nhiều ngón",
-          "E": "BETA: Dùng bút laser bằng nhiều ngón tay cùng lúc."
-        },
         "Particles":
         {
           "N": "Hạt hiệu ứng laser",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "Chưa có thước đo của màn hình vẽ hiện tại nên chưa thể hiển thị ví dụ diện tích.",
           "EnabledTools": "Công cụ áp dụng",
           "ParallelWritingMultiTouchNote": "Đã tắt vẽ nhiều ngón nên không thể vừa viết vừa tẩy.",
-          "ParallelWritingLaserMultiTouchNote": "Đã tắt laser nhiều ngón nên không thể vừa viết vừa tẩy với bút laser.",
+          "ParallelWritingLaserMultiTouchNote": "Bút laser chưa được chọn cho vẽ nhiều ngón, nên tính năng vừa xóa vừa viết không hoạt động với bút laser.",
           "ParallelWriting": "Bật vừa viết vừa tẩy",
           "ParallelWritingDescription": "Khi bật tẩy bằng lòng bàn tay, chỉ nét viết cảm ứng ở gần bị kết thúc và các lần chạm mới quanh đó bị chặn; ở vị trí khác vẫn có thể viết tiếp. (Dành cho hai hoặc nhiều người cùng viết.)",
           "CursorNoticeTitle": "Chế độ sáng tối và họa tiết theo cài đặt con trỏ",

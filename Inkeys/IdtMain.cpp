@@ -867,7 +867,9 @@ namespace
 				drawingDefaults.UI.FrameRate != 60 || drawingDefaults.Drawing.FrameRate != 120 ||
 				!drawingDefaults.Drawing.MultiTouchEnabled || !drawingDefaults.Drawing.PenTailCorrectionEnabled ||
 				drawingDefaults.Drawing.InkPredictionMode != 2 || drawingDefaults.Drawing.Laser.MultiTouchEnabled ||
-				drawingDefaults.Drawing.Laser.ParticlesEnabled) return 1;
+				drawingDefaults.Drawing.Laser.ParticlesEnabled || !drawingDefaults.Drawing.MultiTouchTools.Pen ||
+				!drawingDefaults.Drawing.MultiTouchTools.Highlighter || !drawingDefaults.Drawing.MultiTouchTools.Eraser ||
+				!drawingDefaults.Drawing.MultiTouchTools.Shape) return 1;
 			for (const int frameRate : { 30, 60, 120, 240 })
 				for (const int prediction : { 0, 1, 2 })
 				{
@@ -3233,6 +3235,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::Drawing::Draw3::ProductHost().SetGeneralDrawingOptions(
 				config.Drawing.MultiTouchEnabled, config.Drawing.PenTailCorrectionEnabled,
 				config.Drawing.InkPredictionMode.load());
+			const auto& multiTouchTools = config.Drawing.MultiTouchTools;
+			Inkeys::Drawing::Draw3::ProductHost().SetMultiTouchToolOptions(multiTouchTools.Pen.load(),
+				multiTouchTools.Highlighter.load(), multiTouchTools.Eraser.load(), multiTouchTools.Shape.load());
 			const auto& liveTaper = config.Drawing.LiveTaper;
 			Inkeys::Drawing::Draw3::ProductHost().SetLiveTaperOptions(
 				liveTaper.Enabled.load(), liveTaper.Mouse.load(), liveTaper.Touch.load(), liveTaper.Pen.load());

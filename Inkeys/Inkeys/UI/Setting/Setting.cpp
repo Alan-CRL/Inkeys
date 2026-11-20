@@ -4008,18 +4008,37 @@ SettingSessionCoroutine RunSettingSession()
 					else
 					{
 						Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Touch.N).c_str());
-						multiTouchChanged = Design::ToggleRow("##draw-multi-touch",
-							IA(I18nKey.SettingsUI.Draw.General.MultiTouch.N).c_str(),
-							IA(I18nKey.SettingsUI.Draw.General.MultiTouch.E).c_str(), "\ue7c9", multiTouchEnabled);
+						// 按工具的子项内联在总开关下方；总开关关闭时原位禁用并保留各自选择。激光笔子项沿用 Laser.MultiTouchEnabled。
+						auto& multiTouchTools = drawingOptions.MultiTouchTools;
+						bool multiTouchPen = multiTouchTools.Pen.load(), multiTouchHighlighter = multiTouchTools.Highlighter.load();
+						bool multiTouchLaser = drawingOptions.Laser.MultiTouchEnabled.load();
+						bool multiTouchEraser = multiTouchTools.Eraser.load(), multiTouchShape = multiTouchTools.Shape.load();
+						bool multiTouchPenChanged = false, multiTouchHighlighterChanged = false, multiTouchLaserChanged = false;
+						bool multiTouchEraserChanged = false, multiTouchShapeChanged = false;
+						const auto& multiTouchKeys = I18nKey.SettingsUI.Draw.General.MultiTouch;
+						const auto multiTouchToolRows = Design::InlineCheckboxes("##draw-multi-touch-tools", {
+							{ IA(multiTouchKeys.Pen), &multiTouchPen, &multiTouchPenChanged },
+							{ IA(multiTouchKeys.Highlighter), &multiTouchHighlighter, &multiTouchHighlighterChanged },
+							{ IA(multiTouchKeys.Laser), &multiTouchLaser, &multiTouchLaserChanged },
+							{ IA(multiTouchKeys.Eraser), &multiTouchEraser, &multiTouchEraserChanged },
+							{ IA(multiTouchKeys.Shape), &multiTouchShape, &multiTouchShapeChanged } }, nullptr, multiTouchEnabled);
+						multiTouchChanged = Design::ToggleRow("##draw-multi-touch", IA(multiTouchKeys.N).c_str(),
+							IA(multiTouchKeys.E).c_str(), "\ue7c9", multiTouchEnabled, nullptr, &multiTouchToolRows);
 						commitGeneralDrawingOptions();
-						bool laserMultiTouchEnabled = drawingOptions.Laser.MultiTouchEnabled;
-						const bool laserMultiTouchChanged = multiTouchEnabled
-							&& Design::ToggleRow("##draw-laser-multi-touch", IA(I18nKey.SettingsUI.Draw.Laser.MultiTouch.N).c_str(),
-								IA(I18nKey.SettingsUI.Draw.Laser.MultiTouch.E).c_str(), "\ue7c9", laserMultiTouchEnabled);
-						if (laserMultiTouchChanged)
+						if (multiTouchPenChanged || multiTouchHighlighterChanged || multiTouchEraserChanged || multiTouchShapeChanged)
 						{
-							drawingOptions.Laser.MultiTouchEnabled = laserMultiTouchEnabled;
-							Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(laserMultiTouchEnabled, false);
+							multiTouchTools.Pen = multiTouchPen;
+							multiTouchTools.Highlighter = multiTouchHighlighter;
+							multiTouchTools.Eraser = multiTouchEraser;
+							multiTouchTools.Shape = multiTouchShape;
+							Inkeys::Drawing::Draw3::ProductHost().SetMultiTouchToolOptions(
+								multiTouchPen, multiTouchHighlighter, multiTouchEraser, multiTouchShape);
+							QueueConfigWrite();
+						}
+						if (multiTouchLaserChanged)
+						{
+							drawingOptions.Laser.MultiTouchEnabled = multiTouchLaser;
+							Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(multiTouchLaser, false);
 							QueueConfigWrite();
 						}
 						bool reconnectEnabled = Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect;

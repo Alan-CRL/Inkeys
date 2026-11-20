@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "Desenare cu mai multe degete",
-          "E": "Permite scrierea sau desenarea simultană cu mai multe degete. Când este dezactivată, se acceptă doar desenarea cu un singur deget."
+          "E": "Scrie sau desenează cu mai multe degete simultan. Se poate regla separat pentru fiecare instrument.",
+          "Pen": "Desen",
+          "Highlighter": "Evidențiator",
+          "Laser": "Indicator laser",
+          "Eraser": "Radieră",
+          "Shape": "Forme (o singură trăsătură)"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "Indicator laser",
-        "MultiTouch":
-        {
-          "N": "Laser cu mai multe degete",
-          "E": "BETA: permite folosirea indicatorului laser cu mai multe degete simultan."
-        },
         "Particles":
         {
           "N": "Particule pentru indicatorul laser",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "Scara ecranului de desenare curent nu este disponibilă, deci exemplele de suprafață nu pot fi afișate încă.",
           "EnabledTools": "Instrumente vizate",
           "ParallelWritingMultiTouchNote": "Desenarea cu mai multe degete este dezactivată, deci scrierea simultană cu ștergerea nu poate funcționa.",
-          "ParallelWritingLaserMultiTouchNote": "Intrarea laser cu mai multe degete este dezactivată, deci scrierea simultană cu ștergerea nu funcționează pentru laser.",
+          "ParallelWritingLaserMultiTouchNote": "Indicatorul laser nu este selectat pentru desenarea cu mai multe degete, așa că scrierea în timp ce ștergi nu funcționează cu indicatorul laser.",
           "ParallelWriting": "Activare scriere în timpul ștergerii",
           "ParallelWritingDescription": "Activarea radierei cu palma încheie doar scrierea tactilă din apropiere și blochează atingerile noi în jurul ei; în alte zone se poate scrie în continuare. (Pentru două sau mai multe persoane care scriu împreună.)",
           "CursorNoticeTitle": "Tema și modelul urmează setările cursorului",

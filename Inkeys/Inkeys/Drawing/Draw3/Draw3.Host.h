@@ -444,6 +444,8 @@ namespace Inkeys::Drawing::Draw3
 		void SetInterruptedStrokeReconnectDevices(bool touch, bool penTail) noexcept;
 		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled, int predictionMode) noexcept;
 		void SetLiveTaperOptions(bool enabled, bool mouse, bool touch, bool pen) noexcept;
+		// 多指绘图按工具的子项（激光笔由 SetLaserOptions 发布）；只在通用多指总开关开启时生效。
+		void SetMultiTouchToolOptions(bool pen, bool highlighter, bool eraser, bool shape) noexcept;
 		void SetCanvasPanInertiaOptions(CanvasPanInertiaOptions options) noexcept;
 		void SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept;
 		void SetPalmEraserOptions(const PalmEraser::Settings& options);

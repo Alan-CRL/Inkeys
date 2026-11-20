@@ -499,6 +499,8 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<LiveTaperOptions> liveTaperOptions{ LiveTaperOptions{} };
 		std::optional<LiveTaperOptions> appliedLiveTaperOptions;
 		std::atomic_uint32_t laserOptions = 0;
+		std::atomic_uint32_t multiTouchTools = kMultiTouchToolsAll;
+		uint32_t appliedMultiTouchTools = UINT32_MAX;
 		std::atomic_uint32_t canvasPanInertiaOptions = CanvasPanInertiaOptions{}.Encode();
 		uint32_t appliedCanvasPanInertiaOptions = UINT32_MAX;
 		uint32_t appliedGeneralDrawingOptions = UINT32_MAX;
@@ -1839,6 +1841,12 @@ namespace Inkeys::Drawing::Draw3
 						static_cast<InkPredictionMode>((general >> 2) & 3u));
 					appliedGeneralDrawingOptions = general;
 				}
+				const uint32_t tools = multiTouchTools.load(std::memory_order_acquire);
+				if (tools != appliedMultiTouchTools)
+				{
+					drawing->SetMultiTouchToolOptions(tools);
+					appliedMultiTouchTools = tools;
+				}
 				const uint32_t savedLaser = laserOptions.load(std::memory_order_acquire);
 				const uint32_t effectiveLaser = (savedLaser & 2u) | ((general & 1u) ? savedLaser & 1u : 0u);
 				if (effectiveLaser != appliedLaserOptions)
@@ -2384,7 +2392,7 @@ namespace Inkeys::Drawing::Draw3
 								presentation, configuration, observer, runtimeMetrics.session.get(), &haptics, &hapticClicks,
 								&devicePerformance);
 							// 新 Controller 必须重新消费期望值，不能沿用上一代的已应用缓存。
-							appliedGeneralDrawingOptions = appliedLaserOptions = appliedCanvasPanInertiaOptions = UINT32_MAX;
+							appliedGeneralDrawingOptions = appliedLaserOptions = appliedCanvasPanInertiaOptions = appliedMultiTouchTools = UINT32_MAX;
 							appliedLiveTaperOptions.reset();
 							appliedPalmEraserOptions.reset();
 							appliedCanvasDebugOptions = UINT32_MAX;
@@ -3154,6 +3162,15 @@ namespace Inkeys::Drawing::Draw3
 		const uint32_t mode = predictionMode >= 0 && predictionMode <= 2 ? static_cast<uint32_t>(predictionMode) : 2u;
 		const uint32_t next = (multiTouchEnabled ? 1u : 0u) | (penTailCorrectionEnabled ? 2u : 0u) | (mode << 2);
 		if (impl_->generalDrawingOptions.exchange(next, std::memory_order_acq_rel) != next)
+			(void)impl_->input.PublishControlWake();
+	}
+
+	void Host::SetMultiTouchToolOptions(bool pen, bool highlighter, bool eraser, bool shape) noexcept
+	{
+		// 四个子项同代发布；总开关不清子项，等值发布不打断帧节拍。
+		const uint32_t next = (pen ? kMultiTouchToolPen : 0u) | (highlighter ? kMultiTouchToolHighlighter : 0u) |
+			(eraser ? kMultiTouchToolEraser : 0u) | (shape ? kMultiTouchToolShape : 0u);
+		if (impl_->multiTouchTools.exchange(next, std::memory_order_acq_rel) != next)
 			(void)impl_->input.PublishControlWake();
 	}
 

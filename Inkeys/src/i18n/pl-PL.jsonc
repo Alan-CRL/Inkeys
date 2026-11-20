@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "Rysowanie wieloma palcami",
-          "E": "Pisz lub rysuj wieloma palcami jednocześnie. Po wyłączeniu obsługiwane jest rysowanie tylko jednym palcem."
+          "E": "Pisz lub rysuj kilkoma palcami jednocześnie. Ustawienia są niezależne dla każdego narzędzia.",
+          "Pen": "Rysowanie",
+          "Highlighter": "Zakreślacz",
+          "Laser": "Laser",
+          "Eraser": "Gumka",
+          "Shape": "Kształty (jedno pociągnięcie)"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "Wskaźnik laserowy",
-        "MultiTouch":
-        {
-          "N": "Laser obsługiwany wieloma palcami",
-          "E": "BETA: używaj wskaźnika laserowego wieloma palcami jednocześnie."
-        },
         "Particles":
         {
           "N": "Cząsteczki wskaźnika laserowego",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "Skala bieżącego ekranu rysowania jest jeszcze niedostępna, więc nie można wyświetlić przykładów powierzchni.",
           "EnabledTools": "Dotyczy narzędzi",
           "ParallelWritingMultiTouchNote": "Rysowanie wieloma palcami jest wyłączone, więc pisanie podczas wymazywania nie działa.",
-          "ParallelWritingLaserMultiTouchNote": "Laser obsługiwany wieloma palcami jest wyłączony, więc pisanie podczas wymazywania nie działa ze wskaźnikiem laserowym.",
+          "ParallelWritingLaserMultiTouchNote": "Wskaźnik laserowy nie jest wybrany do rysowania wieloma palcami, więc pisanie podczas wymazywania nie działa ze wskaźnikiem laserowym.",
           "ParallelWriting": "Włącz pisanie podczas wymazywania",
           "ParallelWritingDescription": "Uruchomienie gumki dłonią kończy tylko pisanie dotykiem w jej pobliżu i blokuje tam nowe dotknięcia; w innych miejscach można dalej pisać. (Dla co najmniej dwóch osób piszących jednocześnie.)",
           "CursorNoticeTitle": "Motyw i wzór są zgodne z ustawieniami kursora",

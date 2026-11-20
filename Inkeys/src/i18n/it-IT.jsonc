@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "Disegno con più dita",
-          "E": "Scrivi o disegna con più dita contemporaneamente. Se disattivato, viene accettato il disegno con un solo dito."
+          "E": "Scrivi o disegna con più dita contemporaneamente. Regolabile per ogni strumento.",
+          "Pen": "Disegno",
+          "Highlighter": "Evidenziatore",
+          "Laser": "Penna laser",
+          "Eraser": "Gomma",
+          "Shape": "Forme (un solo tratto)"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "Puntatore laser",
-        "MultiTouch":
-        {
-          "N": "Laser con più dita",
-          "E": "BETA: usa il puntatore laser con più dita contemporaneamente."
-        },
         "Particles":
         {
           "N": "Particelle del puntatore laser",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "La scala dello schermo di disegno non è ancora disponibile: impossibile mostrare gli esempi dell'area.",
           "EnabledTools": "Strumenti interessati",
           "ParallelWritingMultiTouchNote": "Il disegno con più dita è disattivato: la scrittura durante la cancellazione non può funzionare.",
-          "ParallelWritingLaserMultiTouchNote": "Il laser con più dita è disattivato: la scrittura durante la cancellazione non può funzionare con la penna laser.",
+          "ParallelWritingLaserMultiTouchNote": "Il puntatore laser non è selezionato per il disegno con più dita, quindi scrivere mentre si cancella non funziona con il puntatore laser.",
           "ParallelWriting": "Consenti scrittura durante la cancellazione",
           "ParallelWritingDescription": "Attivando la gomma con il palmo si interrompe solo la scrittura touch vicina e si bloccano nuovi tocchi nei dintorni; altrove si può continuare a scrivere. (Per due o più persone che scrivono insieme.)",
           "CursorNoticeTitle": "Tema e motivo seguono le impostazioni del puntatore",

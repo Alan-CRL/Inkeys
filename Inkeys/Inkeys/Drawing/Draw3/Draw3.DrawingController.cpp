@@ -5409,6 +5409,21 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		}
 
+		// 多指绘图按批次工具查子项（总开关由调用方判断）。激光笔另由 IgnoreAdditionalLaserTouch 按原时机拒收，
+		// 这里放行；需要两步及以上的构造图形一律单指，不依赖构造会话稍后的单接触拒收。
+		bool ToolAllowsMultiTouch(DrawingTool tool, uint32_t tools, bool multiStageShape) noexcept
+		{
+			switch (tool)
+			{
+			case DrawingTool::Pen:
+			case DrawingTool::HardPen: return (tools & kMultiTouchToolPen) != 0;
+			case DrawingTool::Highlighter: return (tools & kMultiTouchToolHighlighter) != 0;
+			case DrawingTool::Eraser: return (tools & kMultiTouchToolEraser) != 0;
+			case DrawingTool::Laser: return true;
+			default: return !IsShapeDrawingTool(tool) || (!multiStageShape && (tools & kMultiTouchToolShape) != 0);
+			}
+		}
+
 		bool IgnoreAdditionalLaserTouch(ContactInputCoordinator& input, ContactHandle handle,
 			DrawingTool batchTool, InputDeviceType deviceType,
 			bool hasActiveLaserTouchContact, bool laserMultiTouchEnabled) noexcept
@@ -12663,6 +12678,18 @@ namespace Inkeys::Drawing::Draw3
 		check(allIgnoredRetired, "ignored Up/Cancel automatically retire without consuming slots");
 		check(generationAdvanced, "ignored slot reuses a new generation without ABA");
 		check(firstPreserved, "first Laser Touch remains active throughout ignored contacts");
+		// 多指子项：各工具只看自己的位；激光笔交给专用门；多步构造图形无论子项一律单指。
+		check(ToolAllowsMultiTouch(DrawingTool::Pen, kMultiTouchToolPen, false) &&
+			ToolAllowsMultiTouch(DrawingTool::HardPen, kMultiTouchToolPen, false) &&
+			!ToolAllowsMultiTouch(DrawingTool::Pen, kMultiTouchToolsAll & ~kMultiTouchToolPen, false) &&
+			!ToolAllowsMultiTouch(DrawingTool::Highlighter, kMultiTouchToolPen, false) &&
+			ToolAllowsMultiTouch(DrawingTool::Eraser, kMultiTouchToolEraser, false) &&
+			ToolAllowsMultiTouch(DrawingTool::Laser, 0u, false) &&
+			ToolAllowsMultiTouch(DrawingTool::Shape, kMultiTouchToolShape, false) &&
+			ToolAllowsMultiTouch(DrawingTool::SolidLine, kMultiTouchToolShape, false) &&
+			!ToolAllowsMultiTouch(DrawingTool::OutlineRectangle, kMultiTouchToolPen, false) &&
+			!ToolAllowsMultiTouch(DrawingTool::Shape, kMultiTouchToolsAll, true),
+			"multi-touch tool options gate each tool and keep multi-stage shapes single-touch");
 		const uint64_t recycledBeforeClosing = input.DiagnosticsSnapshot().recycled;
 		if (input.PublishDown(tablet, 100, InputDeviceType::Touch,
 			sample(40.0f, ContactPhase::Down)))
@@ -15372,6 +15399,11 @@ namespace Inkeys::Drawing::Draw3
 		laserMultiTouchDrawingEnabled_.store(enabled, std::memory_order_release);
 	}
 
+	void DrawingController::SetMultiTouchToolOptions(uint32_t tools) noexcept
+	{
+		multiTouchTools_.store(tools & kMultiTouchToolsAll, std::memory_order_release);
+	}
+
 	bool DrawingController::GetLaserMultiTouchDrawingEnabled() const noexcept
 	{
 		return laserMultiTouchDrawingEnabled_.load(std::memory_order_acquire);
@@ -17680,9 +17712,18 @@ namespace Inkeys::Drawing::Draw3
 					if (metricsState_) metricsState_->Invalidate(registeredMetricKey, ContentMetricInvalidationReason::InitRejected);
 					return false;
 				}
+				// 多步构造图形以本次落笔的图形预设或任一活动触摸构造为准，任一为多步即只允许单指。
+				bool multiStageShapeBatch = batchTool == DrawingTool::Shape &&
+					draw3::shapes::GetToolCapabilities(downVisualStyle.shapeTool.preset).multiStage;
+				for (const RuntimeStroke* candidate : active)
+					if (candidate && !candidate->ended && candidate->metricDeviceType == InputDeviceType::Touch &&
+						candidate->shape.generic && draw3::shapes::GetToolCapabilities(candidate->shape.tool.preset).multiStage)
+						multiStageShapeBatch = true;
+				const bool multiTouchAllowed = generalOptions.multiTouchEnabled && ToolAllowsMultiTouch(batchTool,
+					multiTouchTools_.load(std::memory_order_acquire), multiStageShapeBatch);
 				// 真实匹配且模型接续成功已在上方接管返回；失败/不匹配才按新独立笔判定。
 				if (RejectIndependentTouch(input_, touchContacts, handle, deviceType,
-					hasActiveTouch, generalOptions.multiTouchEnabled))
+					hasActiveTouch, multiTouchAllowed))
 				{
 					if (metricsState_) metricsState_->Invalidate(MetricKey(handle), ContentMetricInvalidationReason::InitRejected);
 					registerRejectedTouchCursor(handle, tool, down);

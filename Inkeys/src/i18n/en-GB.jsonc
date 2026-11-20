@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "Multi-finger drawing",
-          "E": "Write or draw with several fingers at the same time. When disabled, only single-finger drawing is accepted."
+          "E": "Write or draw with several fingers at the same time. Adjust each tool separately.",
+          "Pen": "Drawing",
+          "Highlighter": "Highlighter",
+          "Laser": "Laser Pen",
+          "Eraser": "Eraser",
+          "Shape": "Shapes (single stroke)"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "Laser pointer",
-        "MultiTouch":
-        {
-          "N": "Multi-finger laser pointer",
-          "E": "BETA: Use the laser pointer with several fingers at the same time."
-        },
         "Particles":
         {
           "N": "Laser pointer particles",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "The current drawing screen's scale is unavailable, so area examples cannot be shown yet.",
           "EnabledTools": "Applicable tools",
           "ParallelWritingMultiTouchNote": "Multi-touch drawing is off, so writing while erasing cannot take effect.",
-          "ParallelWritingLaserMultiTouchNote": "Multi-touch laser input is off, so writing while erasing cannot take effect with the laser pen.",
+          "ParallelWritingLaserMultiTouchNote": "Laser Pen is not selected for multi-finger drawing, so writing while erasing does not work with the Laser Pen.",
           "ParallelWriting": "Enable writing while erasing",
           "ParallelWritingDescription": "Activating the palm eraser only ends touch writing near it and blocks new touches there; writing elsewhere can continue. (For two or more people writing together.)",
           "CursorNoticeTitle": "Theme and pattern follow the cursor settings",

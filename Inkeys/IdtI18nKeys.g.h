@@ -758,6 +758,11 @@ inline constexpr struct I18nKeyRoot
                 {
                     const char* N = "SettingsUI/Draw/General/MultiTouch/N";
                     const char* E = "SettingsUI/Draw/General/MultiTouch/E";
+                    const char* Pen = "SettingsUI/Draw/General/MultiTouch/Pen";
+                    const char* Highlighter = "SettingsUI/Draw/General/MultiTouch/Highlighter";
+                    const char* Laser = "SettingsUI/Draw/General/MultiTouch/Laser";
+                    const char* Eraser = "SettingsUI/Draw/General/MultiTouch/Eraser";
+                    const char* Shape = "SettingsUI/Draw/General/MultiTouch/Shape";
                 } MultiTouch{};
                 struct Node__SettingsUI__Draw__General__PenTailCorrection
                 {
@@ -797,11 +802,6 @@ inline constexpr struct I18nKeyRoot
             struct Node__SettingsUI__Draw__Laser
             {
                 const char* N = "SettingsUI/Draw/Laser/N";
-                struct Node__SettingsUI__Draw__Laser__MultiTouch
-                {
-                    const char* N = "SettingsUI/Draw/Laser/MultiTouch/N";
-                    const char* E = "SettingsUI/Draw/Laser/MultiTouch/E";
-                } MultiTouch{};
                 struct Node__SettingsUI__Draw__Laser__Particles
                 {
                     const char* N = "SettingsUI/Draw/Laser/Particles/N";

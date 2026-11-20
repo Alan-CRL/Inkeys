@@ -20,10 +20,11 @@
 | --- | --- | --- |
 | UI.FrameRate | 60；30/60 | 共享界面后续批次，设置/主栏/翻页同一节拍 |
 | Drawing.FrameRate | 120；30/60/120/240 | 下次启动，完整 profile，不仅改等待时间 |
-| Drawing.MultiTouchEnabled | true | 新独立 Touch 绘图准入 |
+| Drawing.MultiTouchEnabled | true | 多指绘图总开关：新独立 Touch 绘图准入 |
+| Drawing.MultiTouchTools.{Pen,Highlighter,Eraser,Shape} | 全 true | 多指绘图按工具子项（2026-11-20），总开关开启时按批次工具判定新独立 Touch；Pen 含 HardPen，Shape 含旧直线/矩形与一笔画通用图形；需要两步及以上的构造图形一律单指 |
 | Drawing.PenTailCorrectionEnabled | true | 新笔锁存，完成态拟合读取该笔值 |
 | Drawing.InkPredictionMode | 2；0/1/2 | 新笔锁存，0=Disabled、1=StrokeEnd、2=Kalman |
-| Drawing.Laser.MultiTouchEnabled | false | 后续新 Laser Touch，受全局多指约束 |
+| Drawing.Laser.MultiTouchEnabled | false | 多指绘图的“激光笔”子项：后续新 Laser Touch，受全局多指约束 |
 | Drawing.Laser.ParticlesEnabled | false，兼容字段 | 产品忽略启用值，构造与setter均强制关闭 |
 | Experimental.Inkeys3.Draw3.PresentationMode | 0；自动/DComp/Win7Dwm/ULW = 0/1/2/3 | 下次启动；缺少新键时将旧 EnableDirectComposition 的 false 映射为 ULW，true 映射为自动 |
 | Experimental.Inkeys3.Draw3.RenderAcceleration | 0；自动/硬件加速/软件加速 = 0/1/2 | 下次启动；自动 = 硬件优先、失败回退 WARP；硬件加速 = 只用硬件，不回退；软件加速 = WARP。设备丢失恢复沿用同一策略。缺少新键时旧 EnableHardwareAcceleration=false 迁移为软件加速，true 或缺键为自动 |
@@ -49,6 +50,7 @@
 - 性能页三块顺序：“渲染”= `##draw3-acceleration`（画布渲染加速，只有 i 重启提示）→ 兆芯兼容；“高级设置”= `##draw3-unthrottled-mouse-move`（绘制时鼠标移动不受画布帧率限制，即时生效，无重启提示）；“底层设置”= `##draw3-presentation`（透明呈现方式）→ `##draw3-composition-align`（合成时机对齐，首项“始终（推荐）”）→ `##draw3-waitable-wait`（Waitable 模式下启用等待）→ `##draw3-ulw-async-readback`（UpdateLayeredWindow 模式下异步读回），均重启生效。所有选项在任何系统上都可选（便携版换系统后由启动链自动回退，全选自动为最佳），不置灰；行上方按条件显示 `Design::Notice`：不兼容组合/系统不支持用黄色警告，系统适用条件用蓝色信息。输入方式：手选 RTS → 信息 `InputMode.RtsTouchpadNotice`；Win7 手选 WM_POINTER → 警告 `InputMode.PointerUnsupported`。透明呈现：Win7（低于 6.2）选 DirectComposition → 警告 `PresentationMode.DcompUnsupported`；Win8+ 选 Win7dwm → 警告 `PresentationMode.Win7dwmUnsupportedFormat`（{0}=8/8.1/10/11，10.0 build≥22000 为 11）；Win7 选 Win7dwm → 信息 `PresentationMode.Win7dwmAeroRequired`。交换链设置项已删除（2026-11-20 用户决定）：DirectComposition 固定 FLIP，Win7dwm 固定 SEQUENTIAL（Win7 Aero 实机 FLIP 黑屏且无报错），ULW 不用交换链；旧配置键 `SwapChainMode` 读取时忽略、保存时退役。提示只看已保存的选项与本机系统版本，不看运行时实际回退。waitable 行为合同见 `draw3-integration.md`“DComp waitable 帧延迟等待与熔断”；ULW 读回合同见同文件“ULW 独立纹理、异步读回与合成对齐”；鼠标选项合同见 `draw3-cursors.md`“绘制时光标跟随画布帧率”。
 - 性能页“底层设置”首行为 `##draw3-input-mode`（输入方式，重启生效）。说明行为固定用户文案 `InputMode.E`（“决定设备消息的输入方式，一些选项可能与触控板手势冲突。”），不再拼接实际后端、大屏指定或重启提示（`NextInputBackendDiffers` 已删除）。实际后端与回退原因只在“软件调试 → 画布初始化输出”展示：`InputFallback` 非空时与呈现/交换链回退同位置显示警告条 `##canvas-input-fallback`（标题 `DebugSoftware.InputFallback`，正文“已从 {首选} 回退到 {实际}。”+ 各失败原因；首选取手选偏好，自动取解析结果）。`ComboRow/ComboBox` 支持单个 `disabledItem`（置灰、点击不提交、方向键/Home/End 跳过）。
 - 设置→绘制→白板：系统低于 Win11 且实际后端为 RTS 扩展/基础 XY 时，在“白板拖动惯性”上方用 `Design::Notice` 显示 RTS 不兼容触控板拖动；Win11 实际 RTS 且窗口注册不可用时改显示“当前系统或设备无法在 RealTimeStylus 模式下使用此手势”。“白板拖动惯性”上方常驻 ⓘ `CanvasPanInertia.TouchpadRequirement`（“触控板手势需要 Windows 8.1 或更高版本及精确式触控板。”）。
+- 绘制页“触摸”分区的 `##draw-multi-touch` 是多指绘图总开关，下方内联 `##draw-multi-touch-tools`：绘制/荧光笔/激光笔/橡皮/图形（一笔画），总开关关闭时原位禁用并保留勾选（同实时笔锋）。激光笔项写 `Laser.MultiTouchEnabled` 并经 `SetLaserOptions` 发布，其余四项经 `Host::SetMultiTouchToolOptions` 整组发布；原独立行 `##draw-laser-multi-touch` 与 `Draw.Laser.MultiTouch` 文案已删除。
 - 绘制效果页“实时笔锋”位于“抬笔笔锋修正”之后，内联鼠标/触摸/笔；总开关关闭时子项原位置灰并保留勾选。启动与改值经 `Host::SetLiveTaperOptions` 整组发布。
 - `Drawing.FrameRate` 只在启动时选定 profile；设置页改档只写配置（带重启提示），当前会话帧循环仍按启动值运行。实机验证帧率相关行为时必须先重启再测。
 - 共享 Scheduler 保留原子请求、固定顺序、唯一 render owner、Idle/Continue/Retry 和设备恢复；帧率变更不制造永久渲染，也不修改动画倍率或输入采样。

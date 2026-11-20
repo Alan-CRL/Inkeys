@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "複数の指で描画",
-          "E": "複数の指による同時の手書き・描画を許可します。オフの場合は1本の指だけに反応します。"
+          "E": "複数の指で同時に書いたり描いたりできます。ツールごとに設定できます。",
+          "Pen": "描画",
+          "Highlighter": "蛍光ペン",
+          "Laser": "レーザー",
+          "Eraser": "消しゴム",
+          "Shape": "図形（一筆描き）"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "レーザーポインター",
-        "MultiTouch":
-        {
-          "N": "複数の指でレーザーを操作",
-          "E": "BETA：複数の指でレーザーポインターを同時に使えます。"
-        },
         "Particles":
         {
           "N": "レーザーの粒子効果",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "描画先画面のサイズ情報がまだ利用できないため、面積の例を表示できません。",
           "EnabledTools": "対象ツール",
           "ParallelWritingMultiTouchNote": "複数の指での描画が無効なため、消去と描画を同時に行えません。",
-          "ParallelWritingLaserMultiTouchNote": "複数の指でのレーザー操作が無効なため、レーザーでは消去と描画を同時に行えません。",
+          "ParallelWritingLaserMultiTouchNote": "複数指での描画にレーザーが選択されていないため、レーザーでは書きながら消す機能が使えません。",
           "ParallelWriting": "消去と描画を同時に行う",
           "ParallelWritingDescription": "手のひら消しゴムの起動時は、その近くのタッチ書き込みだけを終了し、近くでの新しいタッチを受け付けません。他の場所では書き続けられます。2人以上で同時に書く場合に適しています。",
           "CursorNoticeTitle": "明暗と模様はカーソル設定に従います",

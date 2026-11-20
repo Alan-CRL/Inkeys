@@ -498,6 +498,13 @@ GROUP(UI, \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MultiTouchEnabled, true) \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PenTailCorrectionEnabled, true) \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, InkPredictionMode, 2) \
+		/* 多指绘图按工具的子项，只在 MultiTouchEnabled 开启时生效；激光笔子项沿用 Laser.MultiTouchEnabled。 */ \
+		GROUP(MultiTouchTools, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Pen, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Highlighter, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Eraser, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Shape, true) \
+		) \
 		GROUP(LiveTaper, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enabled, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Mouse, true) \

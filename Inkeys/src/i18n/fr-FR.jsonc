@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "Dessiner avec plusieurs doigts",
-          "E": "Écrire ou dessiner avec plusieurs doigts à la fois. Si désactivé, un seul doigt peut dessiner."
+          "E": "Écrire ou dessiner avec plusieurs doigts à la fois. Réglable pour chaque outil.",
+          "Pen": "Dessin",
+          "Highlighter": "Surligneur",
+          "Laser": "Pointeur laser",
+          "Eraser": "Gomme",
+          "Shape": "Formes (un seul tracé)"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "Pointeur laser",
-        "MultiTouch":
-        {
-          "N": "Laser avec plusieurs doigts",
-          "E": "BETA : utiliser le pointeur laser avec plusieurs doigts à la fois."
-        },
         "Particles":
         {
           "N": "Particules du pointeur laser",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "L’échelle de l’écran de dessin actuel est indisponible ; les exemples de surface ne peuvent pas encore être affichés.",
           "EnabledTools": "Outils concernés",
           "ParallelWritingMultiTouchNote": "Le dessin à plusieurs doigts est désactivé ; dessiner pendant le gommage est donc indisponible.",
-          "ParallelWritingLaserMultiTouchNote": "Le laser à plusieurs doigts est désactivé ; dessiner au laser pendant le gommage est donc indisponible.",
+          "ParallelWritingLaserMultiTouchNote": "Le pointeur laser n’est pas sélectionné pour le dessin à plusieurs doigts : écrire en effaçant ne fonctionne donc pas avec le pointeur laser.",
           "ParallelWriting": "Autoriser le dessin pendant le gommage",
           "ParallelWritingDescription": "L’activation de la gomme avec la paume n’arrête que l’écriture tactile à proximité et bloque les nouveaux contacts autour d’elle ; ailleurs, l’écriture peut continuer. Pour écrire à plusieurs en même temps.",
           "CursorNoticeTitle": "Le thème et le motif suivent les réglages du curseur",

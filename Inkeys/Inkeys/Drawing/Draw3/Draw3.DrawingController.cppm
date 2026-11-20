@@ -119,6 +119,10 @@ export namespace Inkeys::Drawing::Draw3
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。
+	// 多指绘图按工具的子项位；激光笔仍由 SetLaserMultiTouchDrawingEnabled 控制。
+	inline constexpr uint32_t kMultiTouchToolPen = 1u, kMultiTouchToolHighlighter = 2u,
+		kMultiTouchToolEraser = 4u, kMultiTouchToolShape = 8u, kMultiTouchToolsAll = 15u;
+
 	class DrawingController
 	{
 	public:
@@ -175,6 +179,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool GetLaserParticlesEnabled() const noexcept;
 		// 控制激光笔是否接受同时按下的多根 Touch；只影响之后开始的 contact。
 		void SetLaserMultiTouchDrawingEnabled(bool enabled) noexcept;
+		// 多指绘图按工具的子项（kMultiTouchTool* 位）；只影响之后开始的 contact，总开关仍在通用偏好。
+		void SetMultiTouchToolOptions(uint32_t tools) noexcept;
 		bool GetLaserMultiTouchDrawingEnabled() const noexcept;
 		// 设置最后一根激光笔抬起后的满亮留存秒数；只接受有限非负值。
 		bool SetLaserHoldDurationSeconds(double seconds) noexcept;
@@ -225,6 +231,7 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<uint64_t> cursorSettings_ = 0;
 		std::atomic<bool> laserParticlesEnabled_ = false;
 		std::atomic<bool> laserMultiTouchDrawingEnabled_ = false;
+		std::atomic<uint32_t> multiTouchTools_ = kMultiTouchToolsAll;
 		std::atomic<double> laserHoldDurationSeconds_ = 1.0;
 		mutable std::mutex historyCachePolicyMutex_;
 		UndoCachePolicy undoCachePolicy_ = {};

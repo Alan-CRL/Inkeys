@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "多指绘图",
-          "E": "允许多个手指同时书写或绘图。关闭后，仅响应单指绘图。"
+          "E": "允许多个手指同时书写或绘图。可按工具单独调整。",
+          "Pen": "绘制",
+          "Highlighter": "荧光笔",
+          "Laser": "激光笔",
+          "Eraser": "橡皮",
+          "Shape": "图形（一笔画）"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "激光笔",
-        "MultiTouch":
-        {
-          "N": "多指激光笔",
-          "E": "BETA：允许多个手指同时使用激光笔。"
-        },
         "Particles":
         {
           "N": "激光笔粒子效果",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "当前绘制屏幕的标尺尚不可用，暂时无法显示面积示例。",
           "EnabledTools": "适用工具",
           "ParallelWritingMultiTouchNote": "多指绘图已关闭，边擦边写无法生效。",
-          "ParallelWritingLaserMultiTouchNote": "多指激光笔已关闭，边擦边写在激光笔下无法生效。",
+          "ParallelWritingLaserMultiTouchNote": "多指绘图未勾选激光笔，边擦边写在激光笔下无法生效。",
           "ParallelWriting": "启用边擦边写",
           "ParallelWritingDescription": "激活手掌橡皮时仅结束其附近的触摸书写，并阻止在其附近落笔；其他位置可继续书写。（适用于双人或多人书写时）",
           "CursorNoticeTitle": "明暗与纹样跟随光标设置",

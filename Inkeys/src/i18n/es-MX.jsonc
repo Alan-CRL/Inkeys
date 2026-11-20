@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "Dibujar con varios dedos",
-          "E": "Escribir o dibujar con varios dedos a la vez. Si se desactiva, solo se permite dibujar con un dedo."
+          "E": "Escribe o dibuja con varios dedos a la vez. Se puede ajustar por herramienta.",
+          "Pen": "Dibujo",
+          "Highlighter": "Resaltador",
+          "Laser": "Puntero láser",
+          "Eraser": "Borrador",
+          "Shape": "Formas (un solo trazo)"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "Puntero láser",
-        "MultiTouch":
-        {
-          "N": "Láser con varios dedos",
-          "E": "BETA: usar el puntero láser con varios dedos a la vez."
-        },
         "Particles":
         {
           "N": "Partículas del puntero láser",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "No se conoce la escala de la pantalla de dibujo actual, por lo que aún no se pueden mostrar los ejemplos de área.",
           "EnabledTools": "Herramientas compatibles",
           "ParallelWritingMultiTouchNote": "El dibujo con varios dedos está desactivado, por lo que no se puede escribir mientras se borra.",
-          "ParallelWritingLaserMultiTouchNote": "La entrada láser con varios dedos está desactivada, por lo que no se puede escribir con el láser mientras se borra.",
+          "ParallelWritingLaserMultiTouchNote": "El puntero láser no está seleccionado para dibujar con varios dedos, por lo que escribir mientras borras no funciona con el puntero láser.",
           "ParallelWriting": "Permitir escribir mientras se borra",
           "ParallelWritingDescription": "Al activar el borrador con la palma solo se detiene la escritura táctil cercana y se bloquean nuevos toques a su alrededor; en otras zonas se puede seguir escribiendo. Para que varias personas escriban a la vez.",
           "CursorNoticeTitle": "El tema y el patrón siguen la configuración del cursor",

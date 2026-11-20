@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "Mit mehreren Fingern zeichnen",
-          "E": "Mit mehreren Fingern gleichzeitig schreiben oder zeichnen. Deaktiviert wird nur Zeichnen mit einem Finger angenommen."
+          "E": "Mit mehreren Fingern gleichzeitig schreiben oder zeichnen. Für jedes Werkzeug getrennt einstellbar.",
+          "Pen": "Zeichnen",
+          "Highlighter": "Textmarker",
+          "Laser": "Laserpointer",
+          "Eraser": "Radierer",
+          "Shape": "Formen (ein Strich)"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "Laserpointer",
-        "MultiTouch":
-        {
-          "N": "Laserpointer mit mehreren Fingern",
-          "E": "BETA: Laserpointer mit mehreren Fingern gleichzeitig verwenden."
-        },
         "Particles":
         {
           "N": "Laserpointer-Partikel",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "Die Skalierung des aktuellen Zeichenbildschirms ist nicht verfügbar; Flächenbeispiele können daher noch nicht angezeigt werden.",
           "EnabledTools": "Gültige Werkzeuge",
           "ParallelWritingMultiTouchNote": "Zeichnen mit mehreren Fingern ist aus; gleichzeitiges Schreiben und Radieren ist daher nicht verfügbar.",
-          "ParallelWritingLaserMultiTouchNote": "Die Mehrfinger-Lasereingabe ist aus; gleichzeitiges Schreiben und Radieren ist mit dem Laser daher nicht verfügbar.",
+          "ParallelWritingLaserMultiTouchNote": "Der Laserpointer ist für das Zeichnen mit mehreren Fingern nicht ausgewählt, daher funktioniert Schreiben beim Radieren mit dem Laserpointer nicht.",
           "ParallelWriting": "Schreiben während des Radierens erlauben",
           "ParallelWritingDescription": "Der Handflächenradierer beendet beim Aktivieren nur Touch-Eingaben in seiner Nähe und blockiert dort neues Aufsetzen; an anderen Stellen kann weitergeschrieben werden. Für mehrere gleichzeitig schreibende Personen.",
           "CursorNoticeTitle": "Farbschema und Muster folgen den Zeigereinstellungen",

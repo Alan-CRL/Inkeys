@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "Menggambar dengan banyak jari",
-          "E": "Tulis atau gambar dengan beberapa jari sekaligus. Saat nonaktif, hanya gambar dengan satu jari yang diterima."
+          "E": "Menulis atau menggambar dengan beberapa jari sekaligus. Atur setiap alat secara terpisah.",
+          "Pen": "Menggambar",
+          "Highlighter": "Penyorot",
+          "Laser": "Pena Laser",
+          "Eraser": "Penghapus",
+          "Shape": "Bentuk (satu goresan)"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "Penunjuk laser",
-        "MultiTouch":
-        {
-          "N": "Laser banyak jari",
-          "E": "BETA: Gunakan laser dengan beberapa jari sekaligus."
-        },
         "Particles":
         {
           "N": "Partikel laser",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "Skala layar gambar saat ini belum tersedia sehingga contoh luas belum dapat ditampilkan.",
           "EnabledTools": "Alat yang berlaku",
           "ParallelWritingMultiTouchNote": "Menggambar multisentuh nonaktif, sehingga menulis sambil menghapus tidak dapat diterapkan.",
-          "ParallelWritingLaserMultiTouchNote": "Laser multisentuh nonaktif, sehingga menulis sambil menghapus tidak berlaku pada pena laser.",
+          "ParallelWritingLaserMultiTouchNote": "Penunjuk laser tidak dipilih untuk menggambar dengan banyak jari, jadi menulis sambil menghapus tidak berfungsi dengan penunjuk laser.",
           "ParallelWriting": "Aktifkan menulis sambil menghapus",
           "ParallelWritingDescription": "Mengaktifkan penghapus telapak tangan hanya mengakhiri tulisan sentuh di dekatnya dan memblokir sentuhan baru di sekitarnya; menulis di tempat lain tetap dapat dilanjutkan. (Untuk dua orang atau lebih yang menulis bersama.)",
           "CursorNoticeTitle": "Tema dan pola mengikuti pengaturan kursor",

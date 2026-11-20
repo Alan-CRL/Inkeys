@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "多指繪圖",
-          "E": "允許多個手指同時書寫或繪圖。關閉後，僅回應單指繪圖。"
+          "E": "允許多隻手指同時書寫或繪圖。可按工具個別調整。",
+          "Pen": "繪圖",
+          "Highlighter": "螢光筆",
+          "Laser": "鐳射筆",
+          "Eraser": "擦膠",
+          "Shape": "圖形（一筆畫）"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "鐳射筆",
-        "MultiTouch":
-        {
-          "N": "多指鐳射筆",
-          "E": "BETA：允許多個手指同時使用鐳射筆。"
-        },
         "Particles":
         {
           "N": "鐳射筆粒子效果",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "目前繪圖屏幕的標尺尚不可用，暫時無法顯示面積範例。",
           "EnabledTools": "適用工具",
           "ParallelWritingMultiTouchNote": "多指繪圖已關閉，邊擦邊寫無法生效。",
-          "ParallelWritingLaserMultiTouchNote": "多指鐳射筆已關閉，邊擦邊寫在鐳射筆下無法生效。",
+          "ParallelWritingLaserMultiTouchNote": "多指繪圖未勾選雷射筆，邊擦邊寫在雷射筆下無法生效。",
           "ParallelWriting": "啟用邊擦邊寫",
           "ParallelWritingDescription": "啟用手掌擦膠時只會結束其附近的觸控書寫，並阻止在其附近落筆；其他位置可繼續書寫。（適用於雙人或多人書寫時）",
           "CursorNoticeTitle": "明暗與紋樣跟隨游標設定",

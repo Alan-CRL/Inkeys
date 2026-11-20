@@ -754,7 +754,12 @@
         "MultiTouch":
         {
           "N": "Desenhar com vários dedos",
-          "E": "Permite escrever ou desenhar com vários dedos ao mesmo tempo. Quando desativado, aceita apenas um dedo."
+          "E": "Escreva ou desenhe com vários dedos ao mesmo tempo. Ajuste cada ferramenta separadamente.",
+          "Pen": "Desenho",
+          "Highlighter": "Marca-texto",
+          "Laser": "Laser",
+          "Eraser": "Borracha",
+          "Shape": "Formas (um traço)"
         },
         "PenTailCorrection":
         {
@@ -794,11 +799,6 @@
       "Laser":
       {
         "N": "Apontador laser",
-        "MultiTouch":
-        {
-          "N": "Laser com vários dedos",
-          "E": "BETA: permite usar o apontador laser com vários dedos ao mesmo tempo."
-        },
         "Particles":
         {
           "N": "Partículas do laser",
@@ -943,7 +943,7 @@
           "PreviewUnavailable": "As informações de dimensão da tela de desenho ainda não estão disponíveis para mostrar um exemplo da área.",
           "EnabledTools": "Ferramentas compatíveis",
           "ParallelWritingMultiTouchNote": "O desenho com vários dedos está desativado. Não é possível apagar e escrever ao mesmo tempo.",
-          "ParallelWritingLaserMultiTouchNote": "O laser com vários dedos está desativado. Não é possível apagar e escrever ao mesmo tempo com o laser.",
+          "ParallelWritingLaserMultiTouchNote": "O ponteiro laser não está selecionado para desenho com vários dedos, então escrever enquanto apaga não funciona com o ponteiro laser.",
           "ParallelWriting": "Permitir apagar e escrever ao mesmo tempo",
           "ParallelWritingDescription": "Ao ativar a borracha com a palma, apenas a escrita por toque próxima é encerrada e novos toques ao redor são bloqueados; em outros lugares é possível continuar escrevendo. Útil quando duas ou mais pessoas escrevem ao mesmo tempo.",
           "CursorNoticeTitle": "O tema e o padrão seguem as configurações do ponteiro",
