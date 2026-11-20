@@ -47,7 +47,7 @@
 
 - 新绘制子页PalmEraser紧跟笔速橡皮入口，复用子页PushID/导航/返回/滚动；不增加根侧栏或改变笔速齿轮的打开目标。
 - 页标题→条件Warning→基本设置（首项总开关）→窗口下拉→面积倍率及同条目重置→像素预览→精细控制（七工具勾选、边擦边写）→手掌橡皮大小（粗细计算方式下拉+当前方式i；仅动态显示：大小计算方式下拉〔选项随生效形状，首项推荐，i显示当前形状〕、擦除大小倍率滑块+图标重置）→橡皮光标（i信息块+形状预览选择）；无介绍块。150ms显示推荐后缀；reset只改倍率，关总开关仍可编辑偏好。
-- 边擦边写行的标准i仅在ParallelWriting=true且全局多指或激光多指关闭时显示。读取Drawing.MultiTouchEnabled及Drawing.Laser.MultiTouchEnabled的当帧只读draft，不改变偏好；全局关闭优先提示全部无法生效，否则只提示激光笔下无法生效（文案为“多指绘图未勾选激光笔…”，2026-11-20 多指激光笔并入多指绘图子项）。两个多指均开或边擦边写关时无提示，不额外受手掌总开关影响。
+- 边擦边写行的标准i仅在ParallelWriting=true且全局多指或激光多指关闭时显示。读取Drawing.MultiTouchEnabled及Drawing.Laser.MultiTouchEnabled的当帧只读draft，不改变偏好；两种情况统一提示“需要开启多指绘图，否则边擦边写无法生效。”（2026-11-20 多指激光笔并入多指绘图子项后合并为一条 `ParallelWritingMultiTouchNote`，删除 `ParallelWritingLaserMultiTouchNote`）。两个多指均开或边擦边写关时无提示，不额外受手掌总开关影响。
 - Brush现在可勾选且保存，默认true；无Brush工具选择功能不意味着把偏好灰显。Shape统一映射已有几何工具，工具类别不按DrawingTool枚举位置推断。
 - 预览与识别同用已应用绘图输出快照；根据同一阈值显示单个主题accent色圆角矩形描边（不填充），默认1:1；左上角悬浮Combo可选1:1、4:3、2:1、1:2。比例是页面状态，不写入偏好；Combo悬浮于边框上方，不挤占矩形布局或换行；按用户确认保留原控件透明度，允许边框透出，不另加不透明底色。图形直接用像素，文字留白正常UI缩放；边框未撑满时独立水平居中，下拉仍在预览左上角，超宽可横向查看；不能缩小伪装实尺。阈值说明仅保留调倍率的用户说明；下方复用标准SettingRow note显示i及当前比例/倍率的cm×cm和px×px。可信物理面积由同一参考像素面积乘mm/px的面积换算给draft；估算仅px，未发布不虚构尺寸。
 - Warning以已应用Palm预览scale.available/estimated和已发布monitor判定，EDID失败明确仍可使用；未发布不伪报故障。预览横向-only子视图局部使用ImGui::BeginChild及既有DIP scrollbar样式，避免通用纵向补间将横轨压为零；不改全局Controls。

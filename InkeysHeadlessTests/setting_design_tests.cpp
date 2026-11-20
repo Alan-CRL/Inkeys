@@ -3227,10 +3227,10 @@ namespace
 				draft.enabled = master; draft.parallelWriting = parallel;
 				draft.multiTouchEnabled = multiTouch; draft.laserMultiTouchEnabled = laserMultiTouch;
 				const bool shouldShow = parallel && (!multiTouch || !laserMultiTouch);
-				expectedNote = !shouldShow ? "" : IA(!multiTouch ? palmKeys.ParallelWritingMultiTouchNote : palmKeys.ParallelWritingLaserMultiTouchNote);
+				expectedNote = !shouldShow ? "" : IA(palmKeys.ParallelWritingMultiTouchNote);
 				for (int pass = 0; pass < 2; ++pass) frame = draw(outside, false);
 				checks.Expect(frame.noteVisible == shouldShow && (!shouldShow || frame.noteMatches),
-					"parallel-writing note follows both multi-touch flags, prioritizes global drawing and ignores the palm master switch");
+					"parallel-writing note follows both multi-touch flags with one message and ignores the palm master switch");
 				checks.Expect(noEdits(frame.events) && draft.enabled == master && draft.parallelWriting == parallel
 					&& draft.multiTouchEnabled == multiTouch && draft.laserMultiTouchEnabled == laserMultiTouch,
 					"conditional parallel-writing guidance never edits any preference");

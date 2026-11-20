@@ -983,12 +983,9 @@ namespace Inkeys::UI::Setting::Design
 			{ IA(I18nKey.UI.Bar.MainButtons.GeometryLabel), &draft.tools[5], &events.toolsChanged[5] },
 			{ IA(pen.BrushLabel), &draft.tools[6], &events.toolsChanged[6] } });
 		std::string parallelNote;
-		// 全局多指关闭时优先说明；提示不依赖手掌总开关，也不替用户修改其他偏好。
-		if (draft.parallelWriting)
-		{
-			if (!draft.multiTouchEnabled) parallelNote = IA(palm.ParallelWritingMultiTouchNote);
-			else if (!draft.laserMultiTouchEnabled) parallelNote = IA(palm.ParallelWritingLaserMultiTouchNote);
-		}
+		// 多指总开关或激光笔子项关闭时统一提示；不依赖手掌总开关，也不替用户修改其他偏好。
+		if (draft.parallelWriting && (!draft.multiTouchEnabled || !draft.laserMultiTouchEnabled))
+			parallelNote = IA(palm.ParallelWritingMultiTouchNote);
 		events.parallelWritingChanged = ToggleRow("##palm-eraser-parallel", IA(palm.ParallelWriting).c_str(),
 			IA(palm.ParallelWritingDescription).c_str(), "\ue7c9", draft.parallelWriting, parallelNote.c_str());
 		SectionHeader(IA(palm.SizeSection).c_str());

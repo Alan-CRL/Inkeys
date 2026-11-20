@@ -946,7 +946,6 @@ inline constexpr struct I18nKeyRoot
                     const char* PreviewUnavailable = "SettingsUI/Draw/Eraser/PalmEraser/PreviewUnavailable";
                     const char* EnabledTools = "SettingsUI/Draw/Eraser/PalmEraser/EnabledTools";
                     const char* ParallelWritingMultiTouchNote = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingMultiTouchNote";
-                    const char* ParallelWritingLaserMultiTouchNote = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingLaserMultiTouchNote";
                     const char* ParallelWriting = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWriting";
                     const char* ParallelWritingDescription = "SettingsUI/Draw/Eraser/PalmEraser/ParallelWritingDescription";
                     const char* CursorNoticeTitle = "SettingsUI/Draw/Eraser/PalmEraser/CursorNoticeTitle";
