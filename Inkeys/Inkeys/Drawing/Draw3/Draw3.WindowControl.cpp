@@ -200,6 +200,7 @@ namespace Inkeys::Drawing::Draw3
 			decltype(&GetPointerDevice) device;
 			decltype(&GetPointerDeviceRects) rects;
 			decltype(&RegisterPointerDeviceNotifications) notifications;
+			decltype(&SetWindowFeedbackSetting) feedback; // Win8+；Win7 为空。
 		};
 
 		const PointerDrawingApi& DrawingPointerApi() noexcept
@@ -210,10 +211,57 @@ namespace Inkeys::Drawing::Draw3
 					reinterpret_cast<decltype(&GetPointerTouchInfo)>(GetProcAddress(user32, "GetPointerTouchInfo")),
 					reinterpret_cast<decltype(&GetPointerDevice)>(GetProcAddress(user32, "GetPointerDevice")),
 					reinterpret_cast<decltype(&GetPointerDeviceRects)>(GetProcAddress(user32, "GetPointerDeviceRects")),
-					reinterpret_cast<decltype(&RegisterPointerDeviceNotifications)>(GetProcAddress(user32, "RegisterPointerDeviceNotifications"))
+					reinterpret_cast<decltype(&RegisterPointerDeviceNotifications)>(GetProcAddress(user32, "RegisterPointerDeviceNotifications")),
+					reinterpret_cast<decltype(&SetWindowFeedbackSetting)>(GetProcAddress(user32, "SetWindowFeedbackSetting"))
 				};
 			}();
 			return api;
+		}
+
+		// Pointer 栈的触摸/笔可视反馈（按下圈、拖尾、长按圈等）不受 Tablet 旧属性控制，需按窗口单独关闭。
+		constexpr FEEDBACK_TYPE kSuppressedPointerFeedback[] = {
+			FEEDBACK_TOUCH_CONTACTVISUALIZATION, FEEDBACK_TOUCH_TAP, FEEDBACK_TOUCH_DOUBLETAP,
+			FEEDBACK_TOUCH_PRESSANDHOLD, FEEDBACK_TOUCH_RIGHTTAP, FEEDBACK_GESTURE_PRESSANDTAP,
+			FEEDBACK_PEN_BARRELVISUALIZATION, FEEDBACK_PEN_TAP, FEEDBACK_PEN_DOUBLETAP,
+			FEEDBACK_PEN_PRESSANDHOLD, FEEDBACK_PEN_RIGHTTAP };
+
+		// 返回成功关闭的项（按数组下标置位）；API 缺失时返回 0，不报错。
+		std::uint32_t SuppressPointerFeedback(HWND window) noexcept
+		{
+			const auto feedback = DrawingPointerApi().feedback;
+			if (!feedback || !window) return 0;
+			std::uint32_t suppressed = 0;
+			DWORD firstError = ERROR_SUCCESS;
+			const BOOL disabled = FALSE;
+			for (std::size_t i = 0; i < std::size(kSuppressedPointerFeedback); ++i)
+			{
+				if (feedback(window, kSuppressedPointerFeedback[i], 0, sizeof(disabled), &disabled))
+					suppressed |= 1u << i;
+				else if (firstError == ERROR_SUCCESS && (firstError = GetLastError()) == ERROR_SUCCESS)
+					firstError = ERROR_GEN_FAILURE;
+			}
+			if (firstError != ERROR_SUCCESS) LogWin32Error("Draw3.PointerFeedback.Set", firstError);
+			return suppressed;
+		}
+
+		// 只恢复本对象关闭过的项；size=0、NULL 表示回到系统默认。失败项保留在位掩码中，下次 stop/销毁再试。
+		void RestorePointerFeedback(HWND window, std::uint32_t& suppressed) noexcept
+		{
+			const auto feedback = DrawingPointerApi().feedback;
+			if (!suppressed || !feedback || !window || !IsWindow(window))
+			{
+				suppressed = 0; // 窗口已失效时设置随之消失，无需保留。
+				return;
+			}
+			DWORD firstError = ERROR_SUCCESS;
+			for (std::size_t i = 0; i < std::size(kSuppressedPointerFeedback); ++i)
+			{
+				if (!(suppressed & (1u << i))) continue;
+				if (feedback(window, kSuppressedPointerFeedback[i], 0, 0, nullptr)) suppressed &= ~(1u << i);
+				else if (firstError == ERROR_SUCCESS && (firstError = GetLastError()) == ERROR_SUCCESS)
+					firstError = ERROR_GEN_FAILURE;
+			}
+			if (firstError != ERROR_SUCCESS) LogWin32Error("Draw3.PointerFeedback.Restore", firstError);
 		}
 
 		struct PointerDetails
@@ -2801,6 +2849,9 @@ namespace Inkeys::Drawing::Draw3
 					const std::uint32_t held = ((GetKeyState(VK_LBUTTON) & 0x8000) ? decltype(mouseInput_)::Left : 0u) |
 						((GetKeyState(VK_RBUTTON) & 0x8000) ? decltype(mouseInput_)::Right : 0u);
 					pointerInputSelected_ = pointerRequested;
+					// 只有实际选中 Pointer 后端才关闭系统反馈；RTS 与鼠标兼容模式保持系统默认。
+					if (pointerRequested && !pointerFeedbackSuppressed_)
+						pointerFeedbackSuppressed_ = SuppressPointerFeedback(window);
 					mouseStartTick_ = GetTickCount();
 					mouseInput_.Start(held);
 					mouseOwnerStopped_.store(false, std::memory_order_release);
@@ -2811,6 +2862,7 @@ namespace Inkeys::Drawing::Draw3
 			else if (mouseDispatchDepth_ == 0 && wParam == Detail::kMouseInputStop)
 			{
 				mouseInput_.CloseAdmission();
+				RestorePointerFeedback(window, pointerFeedbackSuppressed_);
 				if (pointerInputSelected_)
 				{
 					pointerInputSelected_ = false;
@@ -2980,6 +3032,7 @@ namespace Inkeys::Drawing::Draw3
 			if (message == WM_DESTROY)
 			{
 				// 下方已有的 DM 销毁分支会提前返回，先在 owner 确认两条输入均已停止。
+				RestorePointerFeedback(window, pointerFeedbackSuppressed_);
 				pointerInputSelected_ = false;
 				pointerPenRangeId_ = 0;
 				pointerDevices_.clear();

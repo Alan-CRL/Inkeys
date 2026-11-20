@@ -389,6 +389,8 @@ namespace Inkeys::ConfigDetail
 GROUP(UI, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, FrameRate, 60) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, TopSleepTime, 3) \
+			/* 桌面/PPT 绘制时 Drawpad 保留底行与 NonRude（兼容自动隐藏任务栏升起，但无法屏蔽边缘手势）；默认全屏。 */ \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DesktopCanvasNonFullscreen, false) \
 			GROUP(Setting, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DarkMode, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, EntryAnimation, 1) \

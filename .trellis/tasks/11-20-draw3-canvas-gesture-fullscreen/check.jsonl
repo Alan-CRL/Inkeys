@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 宿主、窗口附着与呈现方式合同"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "输入后端与触点收尾约束"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "性能页输入方式与呈现条件信息条"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "配置项、i18n 流程与信息条严重度规则"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 编码约定"}
+{"file": ".trellis/spec/native/platform-and-resources.md", "reason": "透明呈现方式与窗口平台约束"}
+{"file": ".trellis/tasks/11-20-draw3-canvas-gesture-fullscreen/research/codex-r1-r3.md", "reason": "R1–R3 调查：反馈设置、信息条、底行策略与开关"}
+{"file": ".trellis/tasks/11-20-draw3-canvas-gesture-fullscreen/research/codex-r4.md", "reason": "R4 调查：ULW 单窗口选择态、穿透与回退"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "验证与测试要求"}

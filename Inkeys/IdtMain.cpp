@@ -869,7 +869,7 @@ namespace
 				drawingDefaults.Drawing.InkPredictionMode != 2 || drawingDefaults.Drawing.Laser.MultiTouchEnabled ||
 				drawingDefaults.Drawing.Laser.ParticlesEnabled || !drawingDefaults.Drawing.MultiTouchTools.Pen ||
 				!drawingDefaults.Drawing.MultiTouchTools.Highlighter || !drawingDefaults.Drawing.MultiTouchTools.Eraser ||
-				!drawingDefaults.Drawing.MultiTouchTools.Shape) return 1;
+				!drawingDefaults.Drawing.MultiTouchTools.Shape || drawingDefaults.UI.DesktopCanvasNonFullscreen) return 1;
 			for (const int frameRate : { 30, 60, 120, 240 })
 				for (const int prediction : { 0, 1, 2 })
 				{
@@ -3895,6 +3895,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 
 		auto& windowService = Inkeys::Window::GetService();
+		// 窗口创建时的首次画布策略即按该偏好应用。
+		windowService.SetDrawpadNonFullscreen(configOnce.UI.DesktopCanvasNonFullscreen.load());
 		auto RefreshWindowHandles = [&]()
 			{
 				magnifierWindow = windowService.Handle(Inkeys::Window::WindowRole::MagnifierHost);

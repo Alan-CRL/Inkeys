@@ -2411,7 +2411,8 @@ namespace Inkeys::Drawing::Draw3
 							startupStage = "Draw3 first frame";
 							// 首帧清屏和所有 Renderer 访问均发生在 Draw3 绘制线程。
 							PumpBridgeState();
-							presentation.SetOutputTarget(window.SelectionMode()
+							presentation.SetOutputTarget(window.SelectionMode() &&
+								PresentModeUsesAuxiliarySelection(presentation.ActiveMode())
 								? TransparentOutputTarget::SelectionUlw
 								: TransparentOutputTarget::PrimaryDrawpad);
 							DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=first-frame attempt target="

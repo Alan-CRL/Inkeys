@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include <objbase.h>
 #include <shobjidl.h>
@@ -877,6 +877,21 @@ namespace Inkeys::Window
 				return overlayFullscreen_.load(std::memory_order_acquire);
 			}
 
+			void SetDrawpadSelectionNonFullscreen(bool enabled) noexcept
+			{
+				if (drawpadSelectionNonFullscreen_.exchange(enabled, std::memory_order_acq_rel) == enabled) return;
+				canvasPolicyRefreshRequested_.store(true, std::memory_order_release);
+				if (overlayEvent_) SetEvent(overlayEvent_);
+			}
+
+			void SetDrawpadNonFullscreen(bool enabled) noexcept
+			{
+				if (drawpadNonFullscreen_.exchange(enabled, std::memory_order_acq_rel) == enabled) return;
+				// 启动前只记值，创建时的首次策略即按此应用；运行中唤醒 overlay owner 重算。
+				canvasPolicyRefreshRequested_.store(true, std::memory_order_release);
+				if (overlayEvent_) SetEvent(overlayEvent_);
+			}
+
 		[[nodiscard]] bool PublishNativeEvent(NativeEventMailbox& mailbox, WindowRole role)
 		{
 			if (!running_.load(std::memory_order_acquire) || shutdownRequested_.load(std::memory_order_acquire)) return false;
@@ -1384,10 +1399,28 @@ namespace Inkeys::Window
 					// 在途回滚的槽等既有 250ms 期限；不能因其最新候选仍排队而自唤醒忙转。
 					if (Detail::CandidatePumpHasWork(candidateMailbox_.PendingMask(), retiring | candidateLeaseBlocked_) && overlayEvent_) SetEvent(overlayEvent_);
 				}
+				// 偏好变化只改策略键；按键差异重算，不置 canvasPolicyDirty_（它会连带重做激活样式）。
+				// 刷新责任保留到真正成功；工作区恢复期间推迟，避免随后的快照恢复覆盖新策略。
+				if (!settingGroup && canvasPolicyRefreshRequested_.exchange(false, std::memory_order_acq_rel))
+					canvasPolicyRefreshPending_ = true;
+				if (!settingGroup && canvasPolicyRefreshPending_ && !commandRecovery_[0].has_value()
+					&& !token.stop_requested() && !shutdownRequested_.load(std::memory_order_acquire)
+					&& (!canvasPolicyRetry_ || std::chrono::steady_clock::now() >= canvasPolicyRetryAt_))
+				{
+					if (EnsureCanvasPolicy(whiteboardWindowMode_.load(std::memory_order_acquire)))
+						canvasPolicyRefreshPending_ = false;
+					else
+					{
+						// 完整事务成功回滚时会停止内部重试；这里继续以既有 250ms 退避重试最新偏好。
+						canvasPolicyRetry_ = true;
+						canvasPolicyRetryAt_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+					}
+				}
 				if (!settingGroup && canvasPolicyRetry_ && !token.stop_requested()
 					&& !shutdownRequested_.load(std::memory_order_acquire)
-					&& std::chrono::steady_clock::now() >= canvasPolicyRetryAt_)
-					(void)EnsureCanvasPolicy(whiteboardWindowMode_.load(std::memory_order_acquire));
+					&& std::chrono::steady_clock::now() >= canvasPolicyRetryAt_
+					&& EnsureCanvasPolicy(whiteboardWindowMode_.load(std::memory_order_acquire)))
+					canvasPolicyRefreshPending_ = false; // 成功即已按最新偏好应用，两个入口共用清账。
 			}
 
 				FailPendingCommands(queue);
@@ -2721,7 +2754,7 @@ namespace Inkeys::Window
 					Detail::CanvasRegion region;
 					return Checked(Detail::BuildCanvasRegion(keys[i], policy.originalRegion.Get(), region)
 						&& SetCanvasNonRude(keys[i].hwnd,
-							Detail::CanvasNonRudeValue(whiteboard, policy.originalNonRude))
+							Detail::CanvasNonRudeValue(keys[i].keepNonFullscreen, policy.originalNonRude))
 						&& Current() && SetCanvasRegion(keys[i].hwnd, region.Get()));
 				}
 				bool ApplyScene() noexcept
@@ -2791,7 +2824,10 @@ namespace Inkeys::Window
 				if (!hwnd) continue;
 				if (!record.canvasPolicy.initialized || !IsWindow(hwnd))
 					return failClosed(ERROR_INVALID_WINDOW_HANDLE);
-				Detail::CanvasPolicyKey key{ .hwnd = hwnd, .whiteboard = whiteboard };
+				Detail::CanvasPolicyKey key{ .hwnd = hwnd, .whiteboard = whiteboard,
+					.keepNonFullscreen = Detail::ResolveCanvasKeepNonFullscreen(whiteboard,
+						role == WindowRole::DrawpadPresentation, drawpadNonFullscreen_.load(std::memory_order_acquire)
+						|| drawpadSelectionNonFullscreen_.load(std::memory_order_acquire)) };
 				MONITORINFO monitor{ sizeof(monitor) };
 				if (!GetWindowRect(hwnd, &key.bounds)
 					|| !GetMonitorInfoW(MonitorFromRect(&key.bounds, MONITOR_DEFAULTTONEAREST), &monitor))
@@ -2814,6 +2850,44 @@ namespace Inkeys::Window
 			{
 				canvasPolicyRetry_ = false;
 				return true;
+			}
+			// 只有全屏意图变化（非全屏开关、ULW 单窗口选择态）时原位改 region/NonRude，
+			// 不走下方先双窗隐藏的事务，避免切换闪烁；任一步失败再回退到完整事务。
+			if (!geometryChanged && !changeStyle)
+			{
+				bool inPlace = true;
+				for (std::size_t i = 0; inPlace && i < count; ++i)
+				{
+					const auto& applied = operations.records[i]->canvasPolicy.applied;
+					inPlace = !Detail::CanvasPolicyNeedsUpdate(applied, operations.keys[i])
+						|| Detail::CanvasPolicyDiffersOnlyInFullscreen(applied, operations.keys[i]);
+				}
+				bool appliedInPlace = inPlace;
+				for (std::size_t i = 0; appliedInPlace && i < count; ++i)
+				{
+					auto& policy = operations.records[i]->canvasPolicy;
+					if (!Detail::CanvasPolicyNeedsUpdate(policy.applied, operations.keys[i])) continue;
+					if (!operations.Capture(i)) appliedInPlace = false;
+					else if (operations.Apply(i)) policy.applied = operations.keys[i];
+					else
+					{
+						// 属性与区域可能只改了一半；回滚也失败时旧状态不可信：清空 applied，并按“几何已变”走完整事务，
+						// 失败时保持隐藏与原显隐意图并重试，不能把半应用状态当回滚基线重新显示。
+						if (!operations.Restore(i))
+						{
+							policy.applied.reset();
+							geometryChanged = true;
+						}
+						appliedInPlace = false;
+					}
+				}
+				if (appliedInPlace)
+				{
+					canvasPolicyRetry_ = false;
+					SetLastError(ERROR_SUCCESS);
+					return true;
+				}
+				operations.error = ERROR_SUCCESS;
 			}
 			// 已有 dirty 时旧样式同样不可信，回滚期间也不能短暂揭开画布。
 			const auto result = Detail::ApplyCanvasPairTransaction(count, operations,
@@ -3163,7 +3237,7 @@ namespace Inkeys::Window
 				if (!Detail::BuildCanvasRegion(*record.canvasPolicy.applied, record.canvasPolicy.originalRegion.Get(), expected)
 					|| !ReadCanvasRegion(Handle(role), actual)
 					|| (expected.Get() ? !actual.Get() || !EqualRgn(expected.Get(), actual.Get()) : actual.Get() != nullptr)
-					|| GetPropW(Handle(role), Detail::CanvasNonRudeProperty) != Detail::CanvasNonRudeValue(prepared.policy.whiteboard, record.canvasPolicy.originalNonRude)) return false;
+					|| GetPropW(Handle(role), Detail::CanvasNonRudeProperty) != Detail::CanvasNonRudeValue(record.canvasPolicy.applied->keepNonFullscreen, record.canvasPolicy.originalNonRude)) return false;
 			}
 			return true;
 		}
@@ -3277,7 +3351,8 @@ namespace Inkeys::Window
 				{
 					const auto& policy = command.workspacePolicy;
 					const auto desired = policy.hideDrawpad || policy.minimized ? DrawpadSurfaceVisibility::Hidden
-						: (!policy.whiteboard && policy.selectionMode ? DrawpadSurfaceVisibility::Presentation : DrawpadSurfaceVisibility::Primary);
+						: (!policy.whiteboard && policy.selectionMode && policy.auxiliarySelection
+							? DrawpadSurfaceVisibility::Presentation : DrawpadSurfaceVisibility::Primary);
 					for (const auto role : {WindowRole::DrawpadPresentation, WindowRole::Drawpad})
 					{
 						if (!Current()) return false;
@@ -3743,7 +3818,8 @@ namespace Inkeys::Window
 				if (command.workspacePolicy.whiteboard) allowShow(WindowRole::Freeze);
 				if (!command.workspacePolicy.hideDrawpad && !command.workspacePolicy.minimized)
 				{
-					allowShow(!command.workspacePolicy.whiteboard && command.workspacePolicy.selectionMode ? WindowRole::DrawpadPresentation : WindowRole::Drawpad);
+					allowShow(!command.workspacePolicy.whiteboard && command.workspacePolicy.selectionMode
+						&& command.workspacePolicy.auxiliarySelection ? WindowRole::DrawpadPresentation : WindowRole::Drawpad);
 					if (command.workspacePolicy.whiteboard || !command.workspacePolicy.selectionMode)
 						safetyOverrides_[RoleIndex(WindowRole::Drawpad)].AllowInput(command.workspacePrepared.primary.generation);
 				}
@@ -4496,9 +4572,15 @@ namespace Inkeys::Window
 			if (visibility != DrawpadSurfaceVisibility::Hidden && !EnsureCanvasPolicy(
 				whiteboardWindowMode_.load(std::memory_order_acquire)))
 				return complete(false, GetLastError());
-			if (visibility != DrawpadSurfaceVisibility::Primary && GetCapture() == primary)
+			// ULW 单窗口选择态主画布保持可见但已穿透：WS_EX_TRANSPARENT 不会解除既有捕获，同样要释放。
+			const bool primaryPassesThrough = visibility == DrawpadSurfaceVisibility::Primary
+				&& !whiteboardWindowMode_.load(std::memory_order_acquire)
+				&& (GetWindowLongPtrW(primary, GWL_EXSTYLE) & WS_EX_TRANSPARENT) != 0;
+			// 窗口保持可见时 Pointer 隐式捕获仍会递交按住中的 Move；在 owner 线程同步取消画布接触（并释放鼠标捕获）。
+			if (primaryPassesThrough) (void)SendMessageW(primary, WM_CANCELMODE, 0, 0);
+			if ((visibility != DrawpadSurfaceVisibility::Primary || primaryPassesThrough) && GetCapture() == primary)
 			{
-				// 仅释放本次要撤下的主画布捕获，不向主栏或分页控件广播取消消息。
+				// 仅释放本次要撤下（或转为穿透）的主画布捕获，不向主栏或分页控件广播取消消息。
 				if (!ReleaseCapture() && GetCapture() == primary)
 				{
 					const DWORD error = GetLastError();
@@ -4783,6 +4865,10 @@ namespace Inkeys::Window
 			bool canvasPolicyApplying_ = false;
 			bool canvasPolicyRetry_ = false;
 			std::chrono::steady_clock::time_point canvasPolicyRetryAt_{};
+			std::atomic_bool drawpadNonFullscreen_ = false; // 设置“桌面画布绘制时使用非全屏窗口”。
+			std::atomic_bool drawpadSelectionNonFullscreen_ = false; // ULW 单窗口选择态由 Drawpad 承担穿透。
+			std::atomic_bool canvasPolicyRefreshRequested_ = false;
+			bool canvasPolicyRefreshPending_ = false; // 仅 overlay owner thread 使用。
 			std::atomic_bool whiteboardGroupMinimized_ = false;
 			std::array<bool, RoleCount> whiteboardVisibleBeforeMinimize_{};
 		};
@@ -5064,6 +5150,8 @@ namespace Inkeys::Window
 			return impl_->SetOverlayFullscreen(fullscreen, std::move(stillDesired));
 		}
 		bool Service::OverlayFullscreen() const noexcept { return impl_->OverlayFullscreen(); }
+		void Service::SetDrawpadNonFullscreen(bool enabled) noexcept { impl_->SetDrawpadNonFullscreen(enabled); }
+		void Service::SetDrawpadSelectionNonFullscreen(bool enabled) noexcept { impl_->SetDrawpadSelectionNonFullscreen(enabled); }
 		bool Service::PromotePptWindow(WindowRole role) { return impl_->PromotePptWindow(role); }
 		bool Service::BindMessages(WindowRole role, const Message::BindOptions& options) { return impl_->BindMessages(role, options); }
 	bool Service::UnbindMessages(WindowRole role) { return impl_->UnbindMessages(role); }

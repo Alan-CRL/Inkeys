@@ -710,12 +710,14 @@ namespace
 	{
 		if (!runtime.firstFrameReady || runtime.workspace != workspace)
 			return false;
+		const bool auxiliaryAvailable =
+			Inkeys::Drawing::Draw3::HostModeUsesAuxiliarySelection(runtime.presentationMode);
 		const auto expectedTarget =
 			Inkeys::Drawing::Draw3::Bridge::SelectionUsesAuxiliaryOutput(
-				runtime.selectionMode, workspace)
+				runtime.selectionMode, workspace, auxiliaryAvailable)
 			? Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
 			: Inkeys::Drawing::Draw3::HostOutputTarget::PrimaryDrawpad;
-		if (workspace != Workspace::Whiteboard && runtime.selectionMode &&
+		if (workspace != Workspace::Whiteboard && runtime.selectionMode && auxiliaryAvailable &&
 			!runtime.currentPageHasContent && !runtime.auxiliaryFullFrameClean)
 			return false;
 		return runtime.requestedOutputTarget == expectedTarget &&
@@ -1111,6 +1113,9 @@ namespace
 			draw3PresentationRetryPending.store(!released, std::memory_order_release);
 			return released ? Draw3PresentationReconcileResult::Applied : Draw3PresentationReconcileResult::Retry;
 		}
+		// 回到绘制态时先撤销 ULW 单窗口选择态的底行策略，再关闭穿透（进入选择态的挖底行在显隐提交后发布）。
+		if (!desired.selectionMode && !WhiteboardTransactionActive())
+			Inkeys::Window::GetService().SetDrawpadSelectionNonFullscreen(false);
 		// 白板进出期间由相位机暂时改穿透；稳定态必须跟当前选择模式，不能停在离场时的那一次。
 		if (!WhiteboardTransactionActive() && !SyncDrawpadClickThrough(desired.selectionMode,
 			[revision = desired.revision, modeRevision]() noexcept
@@ -1186,7 +1191,8 @@ namespace
 		}
 		else switch (Inkeys::Drawing::Draw3::ResolveDrawpadPresentationSurface(
 			selectionMode, runtime.currentPageHasContent,
-			runtime.auxiliaryFullFrameClean))
+			runtime.auxiliaryFullFrameClean,
+			Inkeys::Drawing::Draw3::HostModeUsesAuxiliarySelection(runtime.presentationMode)))
 		{
 		case Inkeys::Drawing::Draw3::DrawpadPresentationSurface::Primary:
 			visibility = Inkeys::Window::DrawpadSurfaceVisibility::Primary; break;
@@ -1241,6 +1247,9 @@ namespace
 			}
 			draw3PresentationExitRefreshPending = false;
 		}
+		// ULW 单窗口选择态：Drawpad 保留底行与 NonRude，兼容自动隐藏任务栏升起；绘制态恢复全屏策略。
+		service.SetDrawpadSelectionNonFullscreen(!whiteboard && selectionMode &&
+			!Inkeys::Drawing::Draw3::HostModeUsesAuxiliarySelection(runtime.presentationMode));
 		// 仅原生 owner 成对显隐成功且场景仍匹配后，通知绘制 owner 回收隐藏辅助窗的读回像素。
 		if (visibility != Inkeys::Window::DrawpadSurfaceVisibility::Presentation &&
 			runtime.auxiliaryReadbackPayloadBytes != 0)
@@ -4632,7 +4641,9 @@ void StateMonitoring()
 		const bool safeRelease = stoppedOrFatalSafetyExit || protectedExit;
 		const WorkspaceWindowPolicy policy{ request.revision, request.desired == Workspace::Whiteboard,
 			desired.selectionMode, basicControl || safeRelease || (!request.minimized && request.desired != Workspace::Whiteboard &&
-				desired.selectionMode && snapshot.workspace == request.desired && !snapshot.currentPageHasContent && snapshot.auxiliaryFullFrameClean), request.minimized };
+				desired.selectionMode && snapshot.workspace == request.desired && !snapshot.currentPageHasContent && snapshot.auxiliaryFullFrameClean
+				&& Inkeys::Drawing::Draw3::HostModeUsesAuxiliarySelection(snapshot.presentationMode)), request.minimized,
+			Inkeys::Drawing::Draw3::HostModeUsesAuxiliarySelection(snapshot.presentationMode) };
 		const auto nativeGuard = [epoch = request.revision, safeRelease, expected = snapshot.recovery,
 			revision = desired.revision, generation = snapshot.hostGeneration, request, desired, preparedSession]() noexcept
 		{
@@ -4705,7 +4716,8 @@ void StateMonitoring()
 		}
 		if (!guard()) continue;
 
-		const auto& output = Bridge::SelectionUsesAuxiliaryOutput(desired.selectionMode, request.desired)
+		const auto& output = Bridge::SelectionUsesAuxiliaryOutput(desired.selectionMode, request.desired,
+			Inkeys::Drawing::Draw3::HostModeUsesAuxiliarySelection(snapshot.presentationMode))
 			? prepared->presentation.bounds : prepared->primary.bounds;
 		if (!WorkspaceTargetReady(request, desired, snapshot, basicControl, safeRelease, output))
 		{

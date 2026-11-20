@@ -1391,6 +1391,9 @@ namespace
 		else if (preference == InputPreference::Pointer && !SupportsPointerInput(version.majorVersion, version.minorVersion))
 			Design::Notice("##draw3-input-pointer-unsupported", IA(text.PointerUnsupported).c_str(), nullptr,
 				ImFluentInfoSeverity_Warning);
+		// 鼠标兼容是可选的降级方式而非不兼容组合，用信息级别说明它放弃的能力。
+		else if (preference == InputPreference::MouseCompatibility)
+			Design::Notice("##draw3-input-mouse-compat", IA(text.MouseCompatibilityNotice).c_str(), nullptr);
 		if (Design::ComboRow("##draw3-input-mode", IA(text.N).c_str(), description.c_str(), "\ue7c9",
 			selected, items, restartRequired.c_str(), true, true))
 		{
@@ -3352,6 +3355,7 @@ SettingSessionCoroutine RunSettingSession()
 					draft.startupEffect = static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(
 						Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Effect.load()));
 					draft.allowMultipleInstances = Inkeys::config.Config.AllowMultipleInstances;
+					draft.desktopCanvasNonFullscreen = Inkeys::config.UI.DesktopCanvasNonFullscreen;
 					{
 						auto& status = Inkeys::config.Experimental.Inkeys3.UI3.StatusIndicator;
 						draft.statusIndicator = status.Enable;
@@ -3616,6 +3620,14 @@ SettingSessionCoroutine RunSettingSession()
 						{
 							Inkeys::config.UI.Bar.RightClickClose = draft.rightClickClose;
 							QueueConfigWrite();
+						}
+						if (events.desktopCanvasNonFullscreenChanged
+							&& Inkeys::config.UI.DesktopCanvasNonFullscreen != draft.desktopCanvasNonFullscreen)
+						{
+							Inkeys::config.UI.DesktopCanvasNonFullscreen = draft.desktopCanvasNonFullscreen;
+							QueueConfigWrite();
+							// 立即生效：窗口服务按新策略重算 Drawpad 底行与 NonRude。
+							Inkeys::Window::GetService().SetDrawpadNonFullscreen(draft.desktopCanvasNonFullscreen);
 						}
 					}
 					if (destination.section == Design::Section::LogsLog)

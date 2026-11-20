@@ -1,4 +1,4 @@
-#include <windows.h>
+﻿#include <windows.h>
 #include "../Inkeys/Inkeys/UI/Setting/Setting.Layout.h"
 
 #include <array>
@@ -364,19 +364,42 @@ int RunCanvasPolicyTests()
 	const HWND generation = reinterpret_cast<HWND>(static_cast<UINT_PTR>(1));
 	CanvasPolicyKey key{ generation, screen, screen, false };
 	const RECT originalBounds = key.bounds;
-	for (const bool whiteboard : { false, false, true }) // Desktop、PPT、Whiteboard。
-	{
-		key.whiteboard = whiteboard;
-		CanvasRegion region;
-		check(BuildCanvasRegion(key, nullptr, region), "build scene region");
-		check(!region.Get() || PtInRegion(region.Get(), 17, 1078), "penultimate physical row retained");
-		check(whiteboard ? !region.Get() : !PtInRegion(region.Get(), 17, 1079),
-			"only desktop/ppt exclude last physical row");
-		check(CanvasNonRudeValue(whiteboard, nullptr) ==
-			(whiteboard ? nullptr : reinterpret_cast<HANDLE>(TRUE)), "scene NonRude intent");
-		check(EqualRect(&key.bounds, &originalBounds), "policy preserves full HWND/client geometry");
-	}
+	// 角色 × 开关：白板恒全屏；辅助前置窗恒保留底行；Drawpad 仅在“非全屏”开关开启时保留。
+	for (const bool whiteboard : { false, true })
+		for (const bool presentationSurface : { false, true })
+			for (const bool drawpadNonFullscreen : { false, true })
+			{
+				const bool keep = ResolveCanvasKeepNonFullscreen(whiteboard, presentationSurface, drawpadNonFullscreen);
+				check(keep == (!whiteboard && (presentationSurface || drawpadNonFullscreen)),
+					"canvas keep-non-fullscreen matrix");
+				key.whiteboard = whiteboard;
+				key.keepNonFullscreen = keep;
+				CanvasRegion region;
+				check(BuildCanvasRegion(key, nullptr, region), "build scene region");
+				check(!region.Get() || PtInRegion(region.Get(), 17, 1078), "penultimate physical row retained");
+				check(keep ? !PtInRegion(region.Get(), 17, 1079) : !region.Get(),
+					"only non-fullscreen canvases exclude last physical row");
+				check(CanvasNonRudeValue(keep, nullptr) ==
+					(keep ? reinterpret_cast<HANDLE>(TRUE) : nullptr), "scene NonRude intent");
+				check(EqualRect(&key.bounds, &originalBounds), "policy preserves full HWND/client geometry");
+			}
+	check(!ResolveCanvasKeepNonFullscreen(false, false, false),
+		"desktop/ppt Drawpad defaults to fullscreen so edge gestures can be suppressed");
 	key.whiteboard = false;
+	key.keepNonFullscreen = true;
+	auto fullscreenKey = key;
+	fullscreenKey.keepNonFullscreen = false;
+	check(fullscreenKey != key, "toggling the non-fullscreen preference invalidates the applied policy");
+	check(CanvasPolicyDiffersOnlyInFullscreen(std::optional<CanvasPolicyKey>(key), fullscreenKey)
+		&& !CanvasPolicyDiffersOnlyInFullscreen(std::optional<CanvasPolicyKey>(key), key)
+		&& !CanvasPolicyDiffersOnlyInFullscreen(std::nullopt, fullscreenKey),
+		"only a fullscreen-intent change qualifies for the in-place policy update");
+	{
+		auto moved = fullscreenKey;
+		moved.bounds.top -= 40;
+		check(!CanvasPolicyDiffersOnlyInFullscreen(std::optional<CanvasPolicyKey>(key), moved),
+			"geometry changes still use the hidden pair transaction");
+	}
 	const RECT expected{ 0, 1079, 1920, 1080 };
 	const RECT excluded = CanvasBottomExclusion(key);
 	check(EqualRect(&excluded, &expected), "negative monitor origin uses window-local physical row");
@@ -409,6 +432,7 @@ int RunCanvasPolicyTests()
 			CanvasRegion restored;
 			auto whiteboardKey = key;
 			whiteboardKey.whiteboard = true;
+			whiteboardKey.keepNonFullscreen = false;
 			check(BuildCanvasRegion(whiteboardKey, original.Get(), restored)
 				&& EqualRgn(restored.Get(), original.Get()), "whiteboard copies original shape");
 		}

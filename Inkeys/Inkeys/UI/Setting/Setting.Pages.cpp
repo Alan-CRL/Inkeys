@@ -1629,6 +1629,9 @@ namespace Inkeys::UI::Setting::Design
 			IA(I18nKey.SettingsUI.Regular.Behavior.TopWindow.K_30s) });
 		events.rightClickCloseChanged = ToggleRow("right-click-close", IA(I18nKey.SettingsUI.Regular.Behavior.RightClickClose).c_str(),
 			IA(I18nKey.SettingsUI.Regular.Behavior.RightClickCloseE).c_str(), "\ue8b2", draft.rightClickClose);
+		events.desktopCanvasNonFullscreenChanged = ToggleRow("desktop-canvas-non-fullscreen",
+			IA(I18nKey.SettingsUI.Regular.Behavior.DesktopCanvasNonFullscreen).c_str(), nullptr, "\ue740",
+			draft.desktopCanvasNonFullscreen);
 	}
 
 	static void RenderStatusIndicator(GeneralDraft& draft, GeneralEvents& events)

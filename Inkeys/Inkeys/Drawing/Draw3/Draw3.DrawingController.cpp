@@ -21852,13 +21852,17 @@ namespace Inkeys::Drawing::Draw3
 			shapePreviewSlot.BeginFrame();
 			const bool selectionMode = window_.SelectionMode();
 			refreshCanvasPanMode();
-			const bool selectionUsesAuxiliary =
-				Bridge::SelectionUsesAuxiliaryOutput(selectionMode, activeWorkspace);
+			const bool auxiliaryOutputAvailable =
+				PresentModeUsesAuxiliarySelection(presentation_.ActiveMode());
+			const bool selectionUsesAuxiliary = Bridge::SelectionUsesAuxiliaryOutput(
+				selectionMode, activeWorkspace, auxiliaryOutputAvailable);
 			const TransparentOutputTarget expectedOutputTarget = selectionUsesAuxiliary
 				? TransparentOutputTarget::SelectionUlw
 				: TransparentOutputTarget::PrimaryDrawpad;
-			const bool outputTargetChanged = appliedSelectionMode != selectionMode ||
-				presentation_.RequestedOutputTarget() != expectedOutputTarget;
+			// ULW 单窗口切换选择态时目标不变：只记模式，不重发目标、不强制整帧（穿透样式由窗口服务切换）。
+			const bool selectionModeChanged = appliedSelectionMode != selectionMode;
+			const bool outputTargetChanged = presentation_.RequestedOutputTarget() != expectedOutputTarget ||
+				(selectionModeChanged && auxiliaryOutputAvailable);
 			if (outputTargetChanged)
 			{
 				presentation_.SetOutputTarget(expectedOutputTarget);
@@ -21867,6 +21871,9 @@ namespace Inkeys::Drawing::Draw3
 				appliedSelectionMode = selectionMode;
 				auxiliaryCleanVerificationPending = selectionUsesAuxiliary;
 			}
+			else if (selectionModeChanged) appliedSelectionMode = selectionMode;
+			// 全帧净化校验只服务辅助窗的空页隐藏；主窗承担选择态时不能据此每帧强制整帧。
+			if (!selectionUsesAuxiliary) auxiliaryCleanVerificationPending = false;
 			// 选择模式整段释放高精度计时器；进入绘制模式时只尝试一次。
 			// 白板移动模式的平移/惯性活动期保持 1 ms 计时器，否则帧节拍会抖动。
 			timerPeriod.SetSelectionMode(SelectionReleasesTimerPeriod(selectionMode, canvasPan.Active()));
@@ -21941,6 +21948,14 @@ namespace Inkeys::Drawing::Draw3
 
 				window_.SetGpuTransparentComposition(
 					presentation_.IsGpuTransparentComposition());
+				// 回退到 ULW 后辅助 presenter 不再建立：本帧就把辅助目标改回主画布，避免向未建的辅助窗提交。
+				if (!PresentModeUsesAuxiliarySelection(presentation_.ActiveMode()) &&
+					presentation_.RequestedOutputTarget() == TransparentOutputTarget::SelectionUlw)
+				{
+					presentation_.SetOutputTarget(TransparentOutputTarget::PrimaryDrawpad);
+					auxiliaryCleanVerificationPending = false;
+					forceFullPresent = true;
+				}
 				RECT clientRect = {};
 				if (GetClientRect(window_.Handle(), &clientRect) &&
 					clientRect.right > clientRect.left && clientRect.bottom > clientRect.top)
@@ -24030,7 +24045,9 @@ namespace Inkeys::Drawing::Draw3
 				// 排除一次性重帧、模式切换帧、桌面/PPT 选择模式辅助输出（白板移动模式也是选择模式但仍输出主画布，
 				// 漫游就在其中，不能排除）、画布调试可视化（标记自身有光栅开销）。
 				std::uint32_t dimensions = 0;
-				if (devicePerformance_ && !performanceHeavyFrame && !outputTargetChanged && !selectionUsesAuxiliary &&
+				// 桌面/PPT 选择态（含 ULW 单窗口由主窗承担时）同样不计入。
+				const bool computerSelection = selectionMode && activeWorkspace != Bridge::Workspace::Whiteboard;
+				if (devicePerformance_ && !performanceHeavyFrame && !outputTargetChanged && !computerSelection &&
 					canvasDebugOptions_.load(std::memory_order_acquire) != 3u && devicePerformance_->RecordingEnabled())
 				{
 					dimensions = performanceFrameDimensions;

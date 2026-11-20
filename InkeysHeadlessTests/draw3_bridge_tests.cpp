@@ -894,11 +894,34 @@ namespace
 		if (!Expect(!DrawpadPresentationReady(desired, ready),
 			"new PPT target rejects old same-mode ready identity")) ++failures;
 
-		if (!Expect(SelectionUsesAuxiliaryOutput(true, Workspace::Desktop)
-			&& SelectionUsesAuxiliaryOutput(true, Workspace::Presentation)
-			&& !SelectionUsesAuxiliaryOutput(true, Workspace::Whiteboard)
-			&& !SelectionUsesAuxiliaryOutput(false, Workspace::Whiteboard),
+		if (!Expect(SelectionUsesAuxiliaryOutput(true, Workspace::Desktop, true)
+			&& SelectionUsesAuxiliaryOutput(true, Workspace::Presentation, true)
+			&& !SelectionUsesAuxiliaryOutput(true, Workspace::Whiteboard, true)
+			&& !SelectionUsesAuxiliaryOutput(false, Workspace::Whiteboard, true),
 			"whiteboard selection stays on the primary drawpad")) ++failures;
+		if (!Expect(!SelectionUsesAuxiliaryOutput(true, Workspace::Desktop, false)
+			&& !SelectionUsesAuxiliaryOutput(true, Workspace::Presentation, false)
+			&& HostModeUsesAuxiliarySelection(HostPresentationMode::DirectCompositionVisualTree)
+			&& HostModeUsesAuxiliarySelection(HostPresentationMode::DwmBlurBehind)
+			&& HostModeUsesAuxiliarySelection(HostPresentationMode::Automatic)
+			&& !HostModeUsesAuxiliarySelection(HostPresentationMode::UlwDirtyRect),
+			"ULW presenter keeps desktop/ppt selection on the primary drawpad")) ++failures;
+		{
+			ProductState desired;
+			desired.selectionMode = true;
+			desired.workspace = Workspace::Desktop;
+			HostRuntimeSnapshot ulw;
+			ulw.firstFrameReady = true;
+			ulw.selectionMode = true;
+			ulw.workspace = Workspace::Desktop;
+			ulw.presentationMode = HostPresentationMode::UlwDirtyRect;
+			ulw.requestedOutputTarget = ulw.readyOutputTarget = HostOutputTarget::PrimaryDrawpad;
+			if (!Expect(DrawpadPresentationReady(desired, ulw),
+				"ULW single-window selection is ready on the primary target")) ++failures;
+			ulw.requestedOutputTarget = ulw.readyOutputTarget = HostOutputTarget::SelectionUlw;
+			if (!Expect(!DrawpadPresentationReady(desired, ulw),
+				"stale auxiliary ready is rejected once ULW owns selection")) ++failures;
+		}
 		// 只有白板移动模式平移画布；桌面/PPT 的 Selection 与所有绘制工具都不平移。
 		if (!Expect(MoveModePansCanvas(true, Workspace::Whiteboard)
 			&& !MoveModePansCanvas(false, Workspace::Whiteboard)
@@ -907,18 +930,23 @@ namespace
 			&& !MoveModePansCanvas(false, Workspace::Desktop)
 			&& !MoveModePansCanvas(false, Workspace::Presentation),
 			"only whiteboard Move mode pans the canvas")) ++failures;
-		if (!Expect(ResolveDrawpadPresentationSurface(true, false, true) ==
+		if (!Expect(ResolveDrawpadPresentationSurface(true, false, true, true) ==
 			DrawpadPresentationSurface::Hidden,
 			"clean empty selection hides both drawpad surfaces")) ++failures;
-		if (!Expect(ResolveDrawpadPresentationSurface(true, false, false) ==
+		if (!Expect(ResolveDrawpadPresentationSurface(true, false, false, true) ==
 			DrawpadPresentationSurface::Presentation,
 			"empty selection waits for full-frame clean")) ++failures;
-		if (!Expect(ResolveDrawpadPresentationSurface(true, true, false) ==
+		if (!Expect(ResolveDrawpadPresentationSurface(true, true, false, true) ==
 			DrawpadPresentationSurface::Presentation,
 			"content selection uses the auxiliary surface")) ++failures;
-		if (!Expect(ResolveDrawpadPresentationSurface(false, false, true) ==
+		if (!Expect(ResolveDrawpadPresentationSurface(false, false, true, true) ==
 			DrawpadPresentationSurface::Primary,
 			"drawing mode uses the primary surface")) ++failures;
+		if (!Expect(ResolveDrawpadPresentationSurface(true, false, true, false) ==
+			DrawpadPresentationSurface::Primary
+			&& ResolveDrawpadPresentationSurface(true, true, false, false) ==
+			DrawpadPresentationSurface::Primary,
+			"ULW selection keeps the click-through primary drawpad visible")) ++failures;
 	}
 
 	void TestPageRuntimeRevisionPolicy(int& failures)

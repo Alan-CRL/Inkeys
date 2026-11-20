@@ -231,6 +231,12 @@ namespace Inkeys::Drawing::Draw3
 		DwmBlurBehind,
 	};
 
+	// 实际后端为 ULW 时由主窗承担选择态；初始化前（Automatic）沿用辅助窗语义。
+	constexpr bool HostModeUsesAuxiliarySelection(HostPresentationMode mode) noexcept
+	{
+		return mode != HostPresentationMode::UlwDirtyRect;
+	}
+
 	enum class HostOutputTarget : std::uint8_t
 	{
 		PrimaryDrawpad,

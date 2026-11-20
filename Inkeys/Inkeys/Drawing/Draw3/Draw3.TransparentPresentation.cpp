@@ -1695,7 +1695,7 @@ namespace Inkeys::Drawing::Draw3
 					// ULW 不建交换链：最终目标是独立纹理，经 Staging 读回到 DIB 交给 UpdateLayeredWindow。
 					D3D11_TEXTURE2D_DESC finalDescription{};
 					renderer->backBufferTexture->GetDesc(&finalDescription);
-					text << "主画布呈现：UpdateLayeredWindow (ULW)\n辅助前置表面：UpdateLayeredWindow (ULW)\n最终目标：独立纹理 "
+					text << "主画布呈现：UpdateLayeredWindow (ULW)\n辅助前置表面：由画布承担\n最终目标：独立纹理 "
 						<< finalDescription.Width << "×" << finalDescription.Height << " BGRA8\n读回模式："
 						<< (options.enableUlwAsyncReadback && !ulwAsyncFused ? "异步（自适应，最多领先一帧）" : "同步")
 						<< "\nDWM 合成：" << (dwmComposing ? "开启" : "关闭") << "  刷新间隔：" << std::fixed
@@ -1932,6 +1932,8 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 			if (!primaryInitialized) return false;
+			// ULW 主窗自身承担选择态，辅助前置窗不建 presenter（HWND 仍在窗口链中，保持隐藏）。
+			if (!PresentModeUsesAuxiliarySelection(activeMode) && !options.initializeAuxiliaryForUlw) return true;
 			// 辅助窗保留固定样式/设备借用，像素在真正需要辅助 Present 时才建立。
 			if (selectionUlwPresenter.Initialize(selectionWindow,
 				graphics->device.Get(), graphics->context.Get(), width, height, false)) return true;

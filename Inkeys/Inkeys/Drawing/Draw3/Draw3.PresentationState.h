@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Draw3.Host.h"
 
@@ -18,7 +18,7 @@ namespace Inkeys::Drawing::Draw3
 		const HostRuntimeSnapshot& runtime) noexcept
 	{
 		const auto target = Bridge::SelectionUsesAuxiliaryOutput(
-			desired.selectionMode, desired.workspace)
+			desired.selectionMode, desired.workspace, HostModeUsesAuxiliarySelection(runtime.presentationMode))
 			? HostOutputTarget::SelectionUlw : HostOutputTarget::PrimaryDrawpad;
 		return runtime.firstFrameReady && !runtime.commandScenePending &&
 			runtime.selectionMode == desired.selectionMode &&
@@ -78,9 +78,10 @@ namespace Inkeys::Drawing::Draw3
 
 	constexpr DrawpadPresentationSurface ResolveDrawpadPresentationSurface(
 		bool selectionMode, bool currentPageHasContent,
-		bool auxiliaryFullFrameClean) noexcept
+		bool auxiliaryFullFrameClean, bool auxiliaryAvailable) noexcept
 	{
-		if (!selectionMode) return DrawpadPresentationSurface::Primary;
+		// ULW 单窗口：选择态 Drawpad 保持可见并穿透，空页也不隐藏（内容为空即全透明）。
+		if (!selectionMode || !auxiliaryAvailable) return DrawpadPresentationSurface::Primary;
 		return !currentPageHasContent && auxiliaryFullFrameClean
 			? DrawpadPresentationSurface::Hidden
 			: DrawpadPresentationSurface::Presentation;

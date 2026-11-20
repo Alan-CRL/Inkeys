@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <windows.h>
 
@@ -10,9 +10,18 @@ namespace Inkeys::Window::Detail
 {
 	inline constexpr wchar_t CanvasNonRudeProperty[] = L"NonRudeHWND";
 
-	[[nodiscard]] inline HANDLE CanvasNonRudeValue(bool whiteboard, HANDLE original) noexcept
+	// keepNonFullscreen：挖掉底行并声明 NonRude，让 Explorer 不把画布当全屏（自动隐藏任务栏才能升起）。
+	[[nodiscard]] inline HANDLE CanvasNonRudeValue(bool keepNonFullscreen, HANDLE original) noexcept
 	{
-		return whiteboard ? original : reinterpret_cast<HANDLE>(TRUE);
+		return keepNonFullscreen ? reinterpret_cast<HANDLE>(TRUE) : original;
+	}
+
+	// 白板恒为全屏；桌面/PPT 的辅助前置窗恒保留底行；Drawpad 默认全屏以屏蔽边缘手势，
+	// 仅在用户开启“绘制时使用非全屏窗口”时保留底行。
+	[[nodiscard]] constexpr bool ResolveCanvasKeepNonFullscreen(
+		bool whiteboard, bool presentationSurface, bool drawpadNonFullscreen) noexcept
+	{
+		return !whiteboard && (presentationSurface || drawpadNonFullscreen);
 	}
 
 	// 故障期间后到的隐藏命令优先于旧显隐快照，防止重试重新揭开已撤下的表面。
@@ -60,10 +69,12 @@ namespace Inkeys::Window::Detail
 		RECT bounds{};
 		RECT monitor{};
 		bool whiteboard = false;
+		bool keepNonFullscreen = false; // 由 ResolveCanvasKeepNonFullscreen 解析。
 
 		[[nodiscard]] bool operator==(const CanvasPolicyKey& other) const noexcept
 		{
 			return hwnd == other.hwnd && whiteboard == other.whiteboard
+				&& keepNonFullscreen == other.keepNonFullscreen
 				&& EqualRect(&bounds, &other.bounds) && EqualRect(&monitor, &other.monitor);
 		}
 	};
@@ -74,10 +85,20 @@ namespace Inkeys::Window::Detail
 		return !applied || *applied != target;
 	}
 
+	// 同一 HWND、几何与场景不变，只有全屏意图变化：可在可见窗口上原位改 region/NonRude。
+	[[nodiscard]] inline bool CanvasPolicyDiffersOnlyInFullscreen(
+		const std::optional<CanvasPolicyKey>& applied, const CanvasPolicyKey& target) noexcept
+	{
+		if (!applied || applied->keepNonFullscreen == target.keepNonFullscreen) return false;
+		auto same = *applied;
+		same.keepNonFullscreen = target.keepNonFullscreen;
+		return same == target;
+	}
+
 	// 只裁屏幕最后一物理行的交集；保留 HWND/client 尺寸及文档、RTS 标尺。
 	[[nodiscard]] inline RECT CanvasBottomExclusion(const CanvasPolicyKey& key) noexcept
 	{
-		if (key.whiteboard || key.monitor.bottom <= key.monitor.top) return {};
+		if (!key.keepNonFullscreen || key.monitor.bottom <= key.monitor.top) return {};
 		const RECT row{ key.monitor.left, key.monitor.bottom - 1,
 			key.monitor.right, key.monitor.bottom };
 		RECT intersection{};

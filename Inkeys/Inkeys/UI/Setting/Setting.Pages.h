@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Setting.Controls.h"
 #include "Setting.HomeBrand.h"
@@ -328,6 +328,7 @@ namespace Inkeys::UI::Setting::Design
 		bool animation = true;
 		float animationRate = 1.0F;
 		bool dynamicEdgeLighting = false;
+		bool desktopCanvasNonFullscreen = false;
 		int startupPlacement = 0;
 		int taskbarScaleBase = 0;
 		int selectMode = 0, iconOrder = 0, expansionDirection = 1;
@@ -372,6 +373,7 @@ namespace Inkeys::UI::Setting::Design
 		bool edgeLightingChanged = false;
 		bool topIntervalChanged = false;
 		bool rightClickCloseChanged = false;
+		bool desktopCanvasNonFullscreenChanged = false;
 		bool safetyModeChanged = false;
 		bool allowMultipleInstancesChanged = false;
 		bool startupPreviewChanged = false;

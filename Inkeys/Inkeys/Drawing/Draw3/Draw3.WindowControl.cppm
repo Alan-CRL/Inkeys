@@ -347,6 +347,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool HandlePointerContact(HWND window, UINT message, UINT32 id, bool cancelled,
 			const POINTER_PEN_INFO* pen, const POINTER_TOUCH_INFO* touch, UINT32 cursorId, int64_t qpc);
 		bool pointerInputSelected_ = false; // 仅 HWND owner 在鼠标启停屏障中切换。
+		std::uint32_t pointerFeedbackSuppressed_ = 0; // 已关闭的系统反馈项位掩码，仅 HWND owner 改写。
 		std::atomic_bool pointerStartRequested_ = false;
 		std::vector<PointerDevice> pointerDevices_;
 		std::vector<PointerContact> pointerContacts_;

@@ -188,10 +188,11 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		return !target.slideId && target.slideIds.empty();
 	}
 
+	// auxiliaryAvailable：主呈现实际为 ULW 时为 false，选择态由 Drawpad 自身切换穿透承担，不用辅助前置窗。
 	constexpr bool SelectionUsesAuxiliaryOutput(
-		bool selectionMode, Workspace workspace) noexcept
+		bool selectionMode, Workspace workspace, bool auxiliaryAvailable) noexcept
 	{
-		return selectionMode && workspace != Workspace::Whiteboard;
+		return selectionMode && workspace != Workspace::Whiteboard && auxiliaryAvailable;
 	}
 
 	// 白板的“移动”（Selection）模式才平移画布；桌面/PPT 的 Selection 仍是穿透的电脑操作。

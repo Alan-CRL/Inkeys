@@ -1069,10 +1069,12 @@ namespace Inkeys::Drawing::Draw3
 						state.currentPageHasContent == hasContent &&
 						state.contentRevision > before.contentRevision &&
 						state.presentedContentRevision == state.contentRevision &&
-						state.requestedOutputTarget == HostOutputTarget::SelectionUlw &&
-						state.readyOutputTarget == HostOutputTarget::SelectionUlw &&
+						state.requestedOutputTarget == (HostModeUsesAuxiliarySelection(state.presentationMode)
+							? HostOutputTarget::SelectionUlw : HostOutputTarget::PrimaryDrawpad) &&
+						state.readyOutputTarget == state.requestedOutputTarget &&
 						state.readyOutputRevision == state.requestedOutputRevision &&
-						(hasContent || state.auxiliaryFullFrameClean);
+						(hasContent || !HostModeUsesAuxiliarySelection(state.presentationMode) ||
+							state.auxiliaryFullFrameClean);
 				}, 3s);
 				if (!Check(contentWake && settled,
 					"Selection page content revision reaches the presented ULW frame", failures))
@@ -1090,9 +1092,21 @@ namespace Inkeys::Drawing::Draw3
 					return false;
 				}
 				const auto state = ProductHost().RuntimeSnapshot();
+				const bool auxiliary = HostModeUsesAuxiliarySelection(state.presentationMode);
 				const auto surface = ResolveDrawpadPresentationSurface(
 					state.selectionMode, state.currentPageHasContent,
-					state.auxiliaryFullFrameClean);
+					state.auxiliaryFullFrameClean, auxiliary);
+				if (!auxiliary)
+				{
+					// ULW 单窗口：选择态由穿透的主 Drawpad 承担，空页也保持主窗可见、辅助窗隐藏。
+					const bool shown = surface == DrawpadPresentationSurface::Primary &&
+						service.SetClickThrough(Inkeys::Window::WindowRole::Drawpad, true) &&
+						service.SetDrawpadSurfaceVisibility(Inkeys::Window::DrawpadSurfaceVisibility::Primary) &&
+						IsWindowVisible(drawpad) && !IsWindowVisible(presentation);
+					const bool hidden = service.SetDrawpadSurfaceVisibility(
+						Inkeys::Window::DrawpadSurfaceVisibility::Hidden);
+					return Check(shown && hidden, name, failures);
+				}
 				const auto expected = hasContent
 					? Inkeys::Window::DrawpadSurfaceVisibility::Presentation
 					: Inkeys::Window::DrawpadSurfaceVisibility::Hidden;
@@ -1290,28 +1304,33 @@ namespace Inkeys::Drawing::Draw3
 				GetWindow(drawpad, GW_OWNER) == presentation &&
 				GetWindow(presentation, GW_OWNER) == freeze,
 				"Drawpad remains owned by Presentation below Freeze", failures);
-			modeSucceeded &= Check(WaitUntil([]
+			// 产品 ULW 由穿透的主 Drawpad 承担桌面选择态：目标恒为主画布、选择态切换不推进 revision。
+			(void)WaitUntil([] { return ProductHost().RuntimeSnapshot().firstFrameReady; });
+			const bool ulwSingleWindow = ProductHost().RuntimeSnapshot().presentationMode == HostPresentationMode::UlwDirtyRect;
+			const HostOutputTarget selectionTarget = ulwSingleWindow
+				? HostOutputTarget::PrimaryDrawpad : HostOutputTarget::SelectionUlw;
+			modeSucceeded &= Check(WaitUntil([selectionTarget, ulwSingleWindow]
 			{
 				const auto state = ProductHost().RuntimeSnapshot();
 				return state.selectionMode &&
-					state.requestedOutputTarget == HostOutputTarget::SelectionUlw &&
-					state.readyOutputTarget == HostOutputTarget::SelectionUlw &&
+					state.requestedOutputTarget == selectionTarget &&
+					state.readyOutputTarget == selectionTarget &&
 					state.readyOutputRevision == state.requestedOutputRevision &&
 					state.presentedContentRevision == state.contentRevision &&
-					state.auxiliaryFullFrameClean;
-			}), "initial selection ULW target completes a clean frame", failures);
+					(ulwSingleWindow || state.auxiliaryFullFrameClean);
+			}), "initial selection target completes a frame", failures);
 			const auto initialSelection = ProductHost().RuntimeSnapshot();
 			Bridge::ProductState drawingState{};
 			drawingState.selectionMode = false;
 			PublishProductState(drawingState);
-			modeSucceeded &= Check(WaitUntil([initialSelection]
+			modeSucceeded &= Check(WaitUntil([initialSelection, ulwSingleWindow]
 			{
 				const auto state = ProductHost().RuntimeSnapshot();
 				return !state.selectionMode &&
 					state.requestedOutputTarget == HostOutputTarget::PrimaryDrawpad &&
 					state.readyOutputTarget == HostOutputTarget::PrimaryDrawpad &&
 					state.readyOutputRevision == state.requestedOutputRevision &&
-					state.requestedOutputRevision > initialSelection.requestedOutputRevision &&
+					(ulwSingleWindow || state.requestedOutputRevision > initialSelection.requestedOutputRevision) &&
 					state.presentedContentRevision == state.contentRevision;
 			}), "drawing mode preheats the primary target before readiness", failures);
 			const auto primaryReady = ProductHost().RuntimeSnapshot();
@@ -1327,30 +1346,49 @@ namespace Inkeys::Drawing::Draw3
 			// Selection 输出尚未就绪时保留旧表面，正常交接不制造双隐藏空档。
 			modeSucceeded &= Check(IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
 				"pending Selection keeps the previous primary frame visible", failures);
-			modeSucceeded &= Check(WaitUntil([primaryReady]
+			modeSucceeded &= Check(WaitUntil([primaryReady, selectionTarget, ulwSingleWindow]
 			{
 				const auto state = ProductHost().RuntimeSnapshot();
 				return state.selectionMode &&
-					state.requestedOutputTarget == HostOutputTarget::SelectionUlw &&
-					state.readyOutputTarget == HostOutputTarget::SelectionUlw &&
+					state.requestedOutputTarget == selectionTarget &&
+					state.readyOutputTarget == selectionTarget &&
 					state.readyOutputRevision == state.requestedOutputRevision &&
-					state.requestedOutputRevision > primaryReady.requestedOutputRevision &&
+					(ulwSingleWindow ? state.requestedOutputRevision == primaryReady.requestedOutputRevision
+						: state.requestedOutputRevision > primaryReady.requestedOutputRevision) &&
 					state.presentedContentRevision == state.contentRevision &&
-					state.auxiliaryFullFrameClean;
-			}), "selection mode advances generation and restores clean ULW", failures);
-			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
-				Inkeys::Window::DrawpadSurfaceVisibility::Presentation) &&
-				!IsWindowVisible(drawpad) && IsWindowVisible(presentation) &&
-				(static_cast<DWORD>(GetWindowLongPtrW(presentation, GWL_EXSTYLE)) &
-					(WS_EX_LAYERED | WS_EX_TRANSPARENT)) ==
-					(WS_EX_LAYERED | WS_EX_TRANSPARENT),
-				"ready Selection restores only the layered through surface", failures);
-			modeSucceeded &= Check(SendMessageW(drawpad, kHiddenCaptureProbeMessage, 0, 0) == 0,
-				"ready Selection handoff releases primary capture on its owner thread", failures);
+					(ulwSingleWindow || state.auxiliaryFullFrameClean);
+			}), ulwSingleWindow ? "ULW selection keeps the primary target without re-targeting"
+				: "selection mode advances generation and restores clean ULW", failures);
+			if (ulwSingleWindow)
+			{
+				// 与产品稳定态一致：先穿透再提交 Primary，可见的穿透主窗也必须释放既有捕获。
+				modeSucceeded &= Check(service.SetClickThrough(Inkeys::Window::WindowRole::Drawpad, true) &&
+					service.SetDrawpadSurfaceVisibility(Inkeys::Window::DrawpadSurfaceVisibility::Primary) &&
+					IsWindowVisible(drawpad) && !IsWindowVisible(presentation) &&
+					(static_cast<DWORD>(GetWindowLongPtrW(drawpad, GWL_EXSTYLE)) & WS_EX_TRANSPARENT) != 0,
+					"ULW Selection keeps the click-through primary Drawpad visible", failures);
+				modeSucceeded &= Check(SendMessageW(drawpad, kHiddenCaptureProbeMessage, 0, 0) == 0,
+					"ULW Selection releases primary capture on its owner thread", failures);
+			}
+			else
+			{
+				modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
+					Inkeys::Window::DrawpadSurfaceVisibility::Presentation) &&
+					!IsWindowVisible(drawpad) && IsWindowVisible(presentation) &&
+					(static_cast<DWORD>(GetWindowLongPtrW(presentation, GWL_EXSTYLE)) &
+						(WS_EX_LAYERED | WS_EX_TRANSPARENT)) ==
+						(WS_EX_LAYERED | WS_EX_TRANSPARENT),
+					"ready Selection restores only the layered through surface", failures);
+				modeSucceeded &= Check(SendMessageW(drawpad, kHiddenCaptureProbeMessage, 0, 0) == 0,
+					"ready Selection handoff releases primary capture on its owner thread", failures);
+			}
 			modeSucceeded &= Check(service.SetDrawpadSurfaceVisibility(
 				Inkeys::Window::DrawpadSurfaceVisibility::Hidden) &&
 				!IsWindowVisible(drawpad) && !IsWindowVisible(presentation),
 				"Selection transition restores hidden offscreen windows", failures);
+			if (ulwSingleWindow)
+				modeSucceeded &= Check(service.SetClickThrough(Inkeys::Window::WindowRole::Drawpad, false),
+					"ULW test restores primary Drawpad input before command exercises", failures);
 
 			if (exerciseCommands)
 			{
@@ -2929,6 +2967,7 @@ namespace Inkeys::Drawing::Draw3
 				options.requiredMode = TransparentPresentMode::UlwDirtyRect;
 				options.allowDirectComposition = false;
 				options.enableHardwareAcceleration = false;
+				options.initializeAuxiliaryForUlw = true; // 产品 ULW 不用辅助窗；这里只借 ULW 环境验证辅助读回生命周期。
 				if (!Check(presentation.Initialize(drawpad, auxiliary, graphics, renderer, size, size,
 					{ &style, &ApplyDrawpadStyle }, options),
 					"auxiliary lifecycle initializes production presenter", failures)) return 1;
@@ -3007,7 +3046,8 @@ namespace Inkeys::Drawing::Draw3
 					"presenter recovery stays lazy for auxiliary pixels", failures);
 			}
 
-			// 下半段经过真实 Host 的 General wake，检查回收不会唤起空白 Present 重建循环。
+			// 下半段经过真实 Host：产品 ULW 由穿透的主 Drawpad 承担桌面选择态（2026-11-20），
+			// 选择态往返不切辅助目标、不分配辅助像素、不推进输出 revision（不强制整帧）。
 			Bridge::ProductState state;
 			state.workspace = Bridge::Workspace::Desktop;
 			state.selectionMode = true;
@@ -3017,60 +3057,36 @@ namespace Inkeys::Drawing::Draw3
 			options.enableHardwareAcceleration = false;
 			const HostStyleCallbacks callbacks{ &style, &ApplyDrawpadStyle };
 			if (!Check(StartProduct(drawpad, auxiliary, callbacks, options),
-				"start real auxiliary lifecycle Host", failures)) return 1;
-			const auto waitForClean = [&]
+				"start real ULW single-window Host", failures)) return 1;
+			const auto waitForPrimary = [](bool selection)
 			{
-				return WaitUntil([]
+				return WaitUntil([selection]
 				{
 					const auto snapshot = ProductHost().RuntimeSnapshot();
 					return snapshot.firstFrameReady && snapshot.lastPresentSucceeded &&
-						snapshot.requestedOutputTarget == HostOutputTarget::SelectionUlw &&
-						snapshot.readyOutputTarget == HostOutputTarget::SelectionUlw &&
+						snapshot.selectionMode == selection &&
+						snapshot.presentationMode == HostPresentationMode::UlwDirtyRect &&
+						snapshot.requestedOutputTarget == HostOutputTarget::PrimaryDrawpad &&
+						snapshot.readyOutputTarget == HostOutputTarget::PrimaryDrawpad &&
 						snapshot.requestedOutputRevision == snapshot.readyOutputRevision &&
-						snapshot.contentRevision == snapshot.presentedContentRevision &&
-						snapshot.auxiliaryFullFrameClean && snapshot.auxiliaryReadbackPayloadBytes != 0;
+						snapshot.contentRevision == snapshot.presentedContentRevision;
 				});
 			};
-			if (!Check(waitForClean(), "Host receives real auxiliary clean and residency", failures)) return 1;
-			auto snapshot = ProductHost().RuntimeSnapshot();
-			const auto cleanRevision = snapshot.readyOutputRevision;
-			const auto cleanContent = snapshot.presentedContentRevision;
-			if (!Check(service.SetDrawpadSurfaceVisibility(Inkeys::Window::DrawpadSurfaceVisibility::Hidden),
-				"native owner acknowledges hidden Host auxiliary surface", failures)) return 1;
-			auto stale = snapshot;
-			++stale.hostGeneration;
-			ProductHost().AcknowledgeAuxiliarySurfaceHidden(stale);
-			std::this_thread::sleep_for(50ms);
-			Check(ProductHost().RuntimeSnapshot().auxiliaryReadbackPayloadBytes != 0,
-				"stale Host generation does not release the current frame", failures);
-			ProductHost().AcknowledgeAuxiliarySurfaceHidden(ProductHost().RuntimeSnapshot());
-			if (!Check(WaitUntil([] { return ProductHost().RuntimeSnapshot().auxiliaryReadbackPayloadBytes == 0; }),
-				"General control wake retires auxiliary pixels", failures)) return 1;
-			const auto afterRelease = ProductHost().RuntimeSnapshot();
-			Check(afterRelease.readyOutputRevision == cleanRevision &&
-				afterRelease.presentedContentRevision == cleanContent && afterRelease.auxiliaryFullFrameClean,
-				"Host resource retirement does not fabricate or invalidate ready/clean state", failures);
-			ProductHost().AcknowledgeAuxiliarySurfaceHidden(afterRelease);
-			std::this_thread::sleep_for(150ms);
-			Check(ProductHost().RuntimeSnapshot().auxiliaryReadbackPayloadBytes == 0 &&
-				ProductHost().RuntimeSnapshot().presentCount == afterRelease.presentCount,
-				"blank General wake stays idle: no Present/rebuild/retire feedback loop", failures);
+			if (!Check(waitForPrimary(true), "ULW selection starts on the primary Drawpad target", failures)) return 1;
+			const auto selectionReady = ProductHost().RuntimeSnapshot();
+			Check(selectionReady.auxiliaryReadbackPayloadBytes == 0,
+				"ULW selection allocates no auxiliary pixels", failures);
+			Check(!IsWindowVisible(auxiliary), "ULW keeps the auxiliary HWND hidden", failures);
 			state.selectionMode = false;
 			PublishProductState(state);
-			if (!Check(WaitUntil([]
-			{
-				const auto current = ProductHost().RuntimeSnapshot();
-				return !current.selectionMode && current.readyOutputTarget == HostOutputTarget::PrimaryDrawpad &&
-					current.readyOutputRevision == current.requestedOutputRevision && current.lastPresentSucceeded;
-			}), "Host switches back to real Primary frame", failures)) return 1;
-			Check(ProductHost().RuntimeSnapshot().auxiliaryReadbackPayloadBytes == 0,
-				"Primary visual work leaves auxiliary pixels unallocated", failures);
+			if (!Check(waitForPrimary(false), "ULW drawing mode stays on the primary target", failures)) return 1;
 			state.selectionMode = true;
 			PublishProductState(state);
-			if (!Check(waitForClean(), "Host auxiliary reentry recreates and really presents", failures)) return 1;
-			ProductHost().AcknowledgeAuxiliarySurfaceHidden(ProductHost().RuntimeSnapshot());
-			Check(WaitUntil([] { return ProductHost().RuntimeSnapshot().auxiliaryReadbackPayloadBytes == 0; }),
-				"Host auxiliary reentry can be retired again", failures);
+			if (!Check(waitForPrimary(true), "ULW selection reentry stays on the primary target", failures)) return 1;
+			const auto reentered = ProductHost().RuntimeSnapshot();
+			Check(reentered.requestedOutputRevision == selectionReady.requestedOutputRevision &&
+				reentered.auxiliaryReadbackPayloadBytes == 0,
+				"ULW selection round trip neither re-targets nor allocates auxiliary pixels", failures);
 			StopProduct();
 			Check(ProductHost().RuntimeSnapshot().auxiliaryReadbackPayloadBytes == 0,
 				"Host shutdown reports no remaining auxiliary pixels", failures);
@@ -3080,7 +3096,7 @@ namespace Inkeys::Drawing::Draw3
 			Report("FAIL", error.what());
 			return 1;
 		}
-		if (failures == 0) Report("PASS", "auxiliary readback lazy allocation, retirement and reentry");
+		if (failures == 0) Report("PASS", "auxiliary readback lazy allocation, retirement and ULW single-window selection");
 		return failures == 0 ? 0 : 1;
 	}
 

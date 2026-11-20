@@ -33,6 +33,12 @@ export namespace Inkeys::Drawing::Draw3
 	inline constexpr TransparentPresentMode kPreferredTransparentPresentMode =
 		TransparentPresentMode::DirectCompositionVisualTree;
 
+	// ULW 主窗本身就是分层窗口，选择态改由它切换 WS_EX_TRANSPARENT 承担，不建辅助前置 presenter。
+	inline constexpr bool PresentModeUsesAuxiliarySelection(TransparentPresentMode mode) noexcept
+	{
+		return mode != TransparentPresentMode::UlwDirtyRect;
+	}
+
 	enum class TransparentOutputTarget : std::uint8_t
 	{
 		PrimaryDrawpad,
@@ -84,6 +90,8 @@ export namespace Inkeys::Drawing::Draw3
 		// 异步读回开启且 DWM 合成时，ULW 提交对齐合成时机；无界面配置键，用于实机开/关对照。
 		bool enableUlwCompositionAlign = true;
 		bool enableDcompCompositionAlign = true;
+		// 仅隐藏窗口测试：ULW 下仍建辅助 presenter，用无 DComp 的 WARP 环境覆盖 DComp/Win7Dwm 共用的辅助读回生命周期。
+		bool initializeAuxiliaryForUlw = false;
 	};
 
 	// ULW 异步读回在帧开头/空闲前的完成结果：阻塞 Map 计入等待而非工作耗时。

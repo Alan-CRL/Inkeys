@@ -722,6 +722,7 @@ inline constexpr struct I18nKeyRoot
                 } TopWindow{};
                 const char* RightClickClose = "SettingsUI/Regular/Behavior/RightClickClose";
                 const char* RightClickCloseE = "SettingsUI/Regular/Behavior/RightClickCloseE";
+                const char* DesktopCanvasNonFullscreen = "SettingsUI/Regular/Behavior/DesktopCanvasNonFullscreen";
                 const char* DrawingRetract = "SettingsUI/Regular/Behavior/DrawingRetract";
                 const char* ErasingRetract = "SettingsUI/Regular/Behavior/ErasingRetract";
                 const char* DraggingRetract = "SettingsUI/Regular/Behavior/DraggingRetract";
@@ -1072,6 +1073,7 @@ inline constexpr struct I18nKeyRoot
                 const char* E = "SettingsUI/Performance/InputMode/E";
                 const char* RtsTouchpadNotice = "SettingsUI/Performance/InputMode/RtsTouchpadNotice";
                 const char* PointerUnsupported = "SettingsUI/Performance/InputMode/PointerUnsupported";
+                const char* MouseCompatibilityNotice = "SettingsUI/Performance/InputMode/MouseCompatibilityNotice";
                 const char* MouseCompatibility = "SettingsUI/Performance/InputMode/MouseCompatibility";
                 const char* RtsExtended = "SettingsUI/Performance/InputMode/RtsExtended";
                 const char* RtsBasicXY = "SettingsUI/Performance/InputMode/RtsBasicXY";

@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include <windows.h>
 
@@ -86,6 +86,8 @@ export namespace Inkeys::Window
 		bool selectionMode = true;
 		bool hideDrawpad = false;
 		bool minimized = false;
+		// 主呈现实际为 ULW 时为 false：桌面/PPT 选择态由穿透的 Drawpad 承担，交接不显示辅助前置窗。
+		bool auxiliarySelection = true;
 		bool operator==(const WorkspaceWindowPolicy&) const = default;
 	};
 	struct WorkspaceWindowSurface
@@ -395,6 +397,10 @@ export namespace Inkeys::Window
 			// 无焦点 overlay 不会被 Explorer 当成普通全屏窗；显式标记后任务栏才会让出。
 			[[nodiscard]] bool SetOverlayFullscreen(bool fullscreen, std::function<bool()> stillDesired = {});
 			[[nodiscard]] bool OverlayFullscreen() const noexcept;
+			// 桌面/PPT 的 Drawpad 默认全屏（屏蔽边缘手势）；开启后保留底行与 NonRude，兼容自动隐藏任务栏升起。
+			void SetDrawpadNonFullscreen(bool enabled) noexcept;
+			// ULW 单窗口下 Drawpad 自己承担选择态时，同样保留底行与 NonRude（由 Draw3 呈现协调按实际后端发布）。
+			void SetDrawpadSelectionNonFullscreen(bool enabled) noexcept;
 			[[nodiscard]] bool PromotePptWindow(WindowRole role);
 		[[nodiscard]] bool RequestPromotePptWindow(WindowRole role);
 		[[nodiscard]] bool RequestTopmostRefreshAsync();
