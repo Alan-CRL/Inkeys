@@ -24,8 +24,8 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 	inline constexpr double kContactLingerMs = 1000.0;      // 抬起后保留的时间。
 
 	enum class ContactKind : std::uint8_t { Touch, Pen, PenEraser, MouseLeft, MouseRight };
-	// 输入通路：与 Host 的 HostInputMode 数值一致（0 未知/不可用，1 RTS 扩展属性，2 RTS 基础 X/Y，3 Win32 鼠标兼容）。
-	enum class InputPath : std::uint8_t { Unknown = 0, RtsExtended = 1, RtsBasicXY = 2, Win32Mouse = 3 };
+	// 输入通路：与 Host 的 HostInputMode 数值一致（0 未知/不可用，1 RTS 扩展属性，2 RTS 基础 X/Y，3 Win32 鼠标兼容，4 WM_POINTER）。
+	enum class InputPath : std::uint8_t { Unknown = 0, RtsExtended = 1, RtsBasicXY = 2, Win32Mouse = 3, Pointer = 4 };
 	// 接触生命周期阶段，与 ContactPhase 同序（Unknown 表示尚无快照）。
 	enum class ContactStage : std::uint8_t { Unknown, Down, Move, Up, Cancelled };
 	// 设备来源分类，与 SpeedEraser::SourceKind 同序，但本单元不依赖它。

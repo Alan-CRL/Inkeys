@@ -761,6 +761,14 @@
           "N": "Chỉnh nét cuối khi nhấc bút",
           "E": "Giảm các đoạn gấp đột ngột ở cuối nét khi nhấc bút, giúp nét kết thúc tự nhiên hơn."
         },
+        "LiveTaper":
+        {
+          "N": "Thon đầu nét trực tiếp",
+          "E": "Đầu nét bút thon dần khi di chuyển và trở lại bình thường khi dừng. Có thể bật hoặc tắt riêng cho từng thiết bị đầu vào.",
+          "Mouse": "Chuột",
+          "Touch": "Cảm ứng",
+          "Pen": "Bút"
+        },
         "InkPrediction":
         {
           "N": "Dự đoán nét mực",
@@ -773,6 +781,9 @@
         {
           "N": "Quán tính kéo bảng trắng",
           "E": "Bảng tiếp tục trượt sau khi thả trong chế độ kéo. Có thể điều chỉnh riêng cho từng loại đầu vào.",
+          "TouchpadRequirement": "Cử chỉ bàn di chuột trên bảng trắng yêu cầu Windows 8.1 trở lên và bàn di chuột chính xác.",
+          "RtsNotice": "Hiện đang dùng nhập thông điệp RealTimeStylus, không tương thích với việc kéo bảng trắng bằng bàn di chuột.",
+          "RtsGestureUnavailable": "Cử chỉ này không khả dụng ở chế độ RealTimeStylus trên hệ thống hoặc thiết bị hiện tại.",
           "Mouse": "Chuột",
           "Touchpad": "Bàn di chuột",
           "Touch": "Cảm ứng",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "Cài đặt nâng cao",
       "LowLevelSection": "Cài đặt cấp thấp",
+      "InputMode":
+      {
+        "N": "Phương thức nhập",
+        "E": "Xác định cách nhận đầu vào từ thiết bị. Một số tùy chọn có thể xung đột với cử chỉ bàn di chuột trên bảng trắng.",
+        "MouseCompatibility": "Nhập tương thích chuột",
+        "RtsExtended": "RealTimeStylus (thuộc tính mở rộng)",
+        "RtsBasicXY": "RealTimeStylus (X/Y cơ bản)",
+        "Unavailable": "Không khả dụng",
+        "FallbackFormat": "Đã chuyển từ {0} sang {1}.",
+        "PointerUnavailableOnOs": "Hệ thống hiện tại không hỗ trợ WM_POINTER.",
+        "PointerInitFailed": "Khởi tạo WM_POINTER không thành công.",
+        "RtsExtendedFailed": "Khởi tạo thuộc tính mở rộng RealTimeStylus không thành công.",
+        "RtsFailed": "Khởi tạo RealTimeStylus không thành công.",
+        "MouseFailed": "Khởi tạo nhập tương thích chuột không thành công."
+      },
       "PresentationMode":
       {
         "N": "Phương thức hiển thị trong suốt của khung vẽ trên màn hình nền",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "Thông tin khởi tạo trang vẽ",
       "PresentationFallback": "Phương thức hiển thị dự phòng của khung vẽ trên màn hình nền",
       "SwapChainFallback": "Chuỗi hoán đổi dự phòng của khung vẽ trên màn hình nền",
+      "InputFallback": "Phương thức nhập dự phòng",
       "DisplayInformation": "Màn hình và EDID"
     },
     "Update":

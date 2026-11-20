@@ -1,5 +1,6 @@
 ﻿#include "Draw3.DiagnosticOutput.h"
 #include "Draw3.Host.h"
+#include "../../../IdtStart.h"
 #include "Draw3.PresentationState.h"
 #include "Draw3.HapticDiagnostics.h"
 #include "Draw3.Product.h"
@@ -470,14 +471,16 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
-		void CaptureCanvasInputInformation(HostInputMode selected) noexcept
+		void CaptureCanvasInputInformation(HostInputMode selected, bool triedRts) noexcept
 		{
 			try
 			{
 				const char* name = selected == HostInputMode::RtsExtended ? "RealTimeStylus (RTS，扩展属性)" :
 					selected == HostInputMode::RtsBasicXY ? "RealTimeStylus (RTS，基础 X/Y)" :
-					selected == HostInputMode::Win32Mouse ? "Win32 鼠标兼容回退" : "不可用";
-				const std::string information = std::string("输入后端：") + name + "\n" + stylus.StartupInformation();
+					selected == HostInputMode::Pointer ? "WM_POINTER" :
+					selected == HostInputMode::Win32Mouse ? (triedRts ? "Win32 鼠标兼容回退" : "Win32 鼠标兼容") : "不可用";
+				std::string information = std::string("输入后端：") + name;
+				if (triedRts) information += "\n" + stylus.StartupInformation();
 				UpdateCanvasInformation(nullptr, nullptr, &information);
 			}
 			catch (...) {} // 诊断分配失败不使已就绪的输入后端变成失败。
@@ -493,6 +496,8 @@ namespace Inkeys::Drawing::Draw3
 		uint32_t appliedInterruptedStrokeReconnectDevices = UINT32_MAX;
 		// 一份原子快照保存通用偏好；绘制 owner 应用，不能跨线程借用 Controller。
 		std::atomic_uint32_t generalDrawingOptions = 3u | (2u << 2);
+		std::atomic<LiveTaperOptions> liveTaperOptions{ LiveTaperOptions{} };
+		std::optional<LiveTaperOptions> appliedLiveTaperOptions;
 		std::atomic_uint32_t laserOptions = 0;
 		std::atomic_uint32_t canvasPanInertiaOptions = CanvasPanInertiaOptions{}.Encode();
 		uint32_t appliedCanvasPanInertiaOptions = UINT32_MAX;
@@ -615,7 +620,17 @@ namespace Inkeys::Drawing::Draw3
 		bool exitAutoSavePrepared = false;
 		std::atomic_bool whiteboardExitDurable = true;
 		bool graphicsReady = false;
-		std::atomic<HostInputMode> inputMode = HostInputMode::Disabled;
+		struct alignas(8) InputRun
+		{
+			InputPreference preference = InputPreference::Automatic;
+			bool largeScreen = false;
+			InputPreference resolved = InputPreference::Automatic;
+			HostInputMode actual = HostInputMode::Disabled;
+			InputFallback fallback = InputFallback::None;
+			TouchpadAvailability touchpad = TouchpadAvailability::BackendDisabled;
+		};
+		// 同一次启动的偏好、实际结果和回退原因一起发布给调试板与设置页。
+		std::atomic<InputRun> inputRun{InputRun{}};
 		std::atomic_bool inputStopping = false;
 		bool inputDecision = false;
 		bool inputSucceeded = false;
@@ -1456,7 +1471,8 @@ namespace Inkeys::Drawing::Draw3
 				value.inputSource.contextId!=0;
 			if(newlyEnabled || (touch && value.inputSource!=self->lastTouchAreaMetadataSource))
 				self->touchAreaMetadataPending=true;
-			if(self->inputMode.load(std::memory_order_acquire) != HostInputMode::Win32Mouse &&
+			const auto mode = self->inputRun.load(std::memory_order_acquire).actual;
+			if(mode != HostInputMode::Win32Mouse && mode != HostInputMode::Pointer &&
 				self->touchAreaMetadataPending && (newlyEnabled ||
 				now-self->lastTouchAreaMetadataTrace>=std::chrono::seconds(1)))
 			{
@@ -1800,7 +1816,7 @@ namespace Inkeys::Drawing::Draw3
 					appliedCanvasDebugOptions = canvasDebug;
 				}
 				// 输入通路只在启动/回退时变化；与 HostInputMode 数值一致，仅供调试板显示。
-				const uint32_t inputPath = static_cast<uint32_t>(inputMode.load(std::memory_order_acquire));
+				const uint32_t inputPath = static_cast<uint32_t>(inputRun.load(std::memory_order_acquire).actual);
 				if (inputPath != appliedCanvasDebugInputMode)
 				{
 					drawing->SetCanvasDebugInputMode(static_cast<uint8_t>(inputPath));
@@ -1811,6 +1827,12 @@ namespace Inkeys::Drawing::Draw3
 				{
 					drawing->SetCanvasPanInertiaOptions(CanvasPanInertiaOptions::Decode(panInertia));
 					appliedCanvasPanInertiaOptions = panInertia;
+				}
+				const auto taper = liveTaperOptions.load(std::memory_order_acquire);
+				if (!appliedLiveTaperOptions || *appliedLiveTaperOptions != taper)
+				{
+					drawing->SetLiveTaperOptions(taper);
+					appliedLiveTaperOptions = taper;
 				}
 				const uint32_t general = generalDrawingOptions.load(std::memory_order_acquire);
 				if (general != appliedGeneralDrawingOptions)
@@ -2142,7 +2164,14 @@ namespace Inkeys::Drawing::Draw3
 			PrepareRuntimeMetrics(options);
 			// 上一代 Stop 尾部可能留下普通唤醒；新 Bridge 不能消费旧 marker。
 			input.ResetForNextRun();
-			inputMode.store(HostInputMode::Disabled, std::memory_order_release);
+			const auto version = GetWindowsVersion();
+			InputRun run{ options.inputPreference, options.largeScreenTouchMode,
+				ResolveInputBackend(options.inputPreference, options.largeScreenTouchMode,
+					version.majorVersion, version.minorVersion, version.buildNumber) };
+			if (run.preference == InputPreference::Pointer &&
+				!SupportsPointerInput(version.majorVersion, version.minorVersion))
+				run.fallback = InputFallback::PointerUnavailableOnOs;
+			inputRun.store(run, std::memory_order_release);
 			inputStopping.store(false, std::memory_order_release);
 			bridge.Reset();
 			firstFrameReady.store(false, std::memory_order_release);
@@ -2360,6 +2389,7 @@ namespace Inkeys::Drawing::Draw3
 								&devicePerformance);
 							// 新 Controller 必须重新消费期望值，不能沿用上一代的已应用缓存。
 							appliedGeneralDrawingOptions = appliedLaserOptions = appliedCanvasPanInertiaOptions = UINT32_MAX;
+							appliedLiveTaperOptions.reset();
 							appliedPalmEraserOptions.reset();
 							appliedCanvasDebugOptions = UINT32_MAX;
 							appliedInterruptedStrokeReconnectDevices = UINT32_MAX;
@@ -2532,41 +2562,89 @@ namespace Inkeys::Drawing::Draw3
 		bool inputInitialized = false;
 		try
 		{
-			const bool stylusInitialized = stylus.Initialize(hwnd, input, &window, failedCleanup);
-			HostInputMode selected = HostInputMode::Disabled;
-			if (stylusInitialized)
+			bool triedRts = false;
+			const auto addFallback = [&](InputFallback reason) noexcept
 			{
-				selected = stylus.UsesBasicPacketDescription()
-					? HostInputMode::RtsBasicXY : HostInputMode::RtsExtended;
-				stylus.EnableContactPublication();
-				inputInitialized = true;
-			}
-			else
+				run.fallback = static_cast<InputFallback>(static_cast<unsigned>(run.fallback) |
+					static_cast<unsigned>(reason));
+			};
+			run.actual = StartInputAndNavigation(version.majorVersion, version.minorVersion, version.buildNumber,
+				run.touchpad, run.resolved, [&]
 			{
-				// Initialize false 只表示 RTS 已完整停产；窗口 owner 确认后再打开输入门。
-				if (!window.SetMouseCompatibilityEnabled(true))
+				if (window.StartPointerInput()) return true;
+				// 窗口 owner 必须确认 Pointer 和配套鼠标已停产，再开放 RTS。
+				if (!window.StopPointerInput())
 				{
 					failedCleanup.BeginKnownFailure();
-					RecordHostStartupFailure("Win32 mouse fallback initialization");
-					if (!window.SetMouseCompatibilityEnabled(false))
-						failedCleanup.FailUnprovenProducerStop();
+					failedCleanup.FailUnprovenProducerStop();
 				}
-				else
+				addFallback(InputFallback::PointerInitFailed);
+				return false;
+			}, [&]
+			{
+				triedRts = true;
+				if (!stylus.Initialize(hwnd, input, &window, failedCleanup))
 				{
-					selected = HostInputMode::Win32Mouse;
-					inputInitialized = true;
-					DiagnosticOutput::Text(DiagnosticOutput::Stream::Error,
-						"[Draw3] RTS unavailable; Win32 mouse compatibility input enabled\n");
+					addFallback(InputFallback::RtsFailed);
+					return HostInputMode::Disabled;
 				}
-			}
-			inputMode.store(selected, std::memory_order_release);
-			CaptureCanvasInputInformation(selected);
-			const char* modeName = selected == HostInputMode::RtsExtended ? "RtsExtended" :
-				selected == HostInputMode::RtsBasicXY ? "RtsBasicXY" :
-				selected == HostInputMode::Win32Mouse ? "Win32Mouse" : "Disabled";
+				const bool basic = stylus.UsesBasicPacketDescription();
+				if (basic) addFallback(InputFallback::RtsExtendedFailed);
+				stylus.EnableContactPublication();
+				return basic ? HostInputMode::RtsBasicXY : HostInputMode::RtsExtended;
+			}, [&]
+			{
+				if (window.SetMouseCompatibilityEnabled(true))
+				{
+					if (triedRts) DiagnosticOutput::Text(DiagnosticOutput::Stream::Error,
+						"[Draw3] RTS unavailable; Win32 mouse compatibility input enabled\n");
+					return true;
+				}
+				// 手选鼠标兼容失败后还会继续尝试 RTS/Pointer，此处不能提前启动失败截止或记录启动失败；
+				// 全部生产者都失败时由下方统一记录并 BeginKnownFailure。
+				if (!window.SetMouseCompatibilityEnabled(false))
+				{
+					failedCleanup.BeginKnownFailure();
+					failedCleanup.FailUnprovenProducerStop();
+				}
+				addFallback(InputFallback::MouseFailed);
+				return false;
+			}, [&](TouchpadEntry entry)
+			{
+				const auto result = window.StartTouchpadNavigation(entry);
+				// 超时可能发生在 owner 调用中，须确认残留入口已退休后才继续使用绘制生产者。
+				if (result != TouchpadAvailability::Ok && !window.StopTouchpadNavigation())
+				{
+					failedCleanup.BeginKnownFailure();
+					failedCleanup.FailUnprovenProducerStop();
+				}
+				return result;
+			});
+			inputInitialized = run.actual != HostInputMode::Disabled;
+			inputRun.store(run, std::memory_order_release);
+			CaptureCanvasInputInformation(run.actual, triedRts);
+			const char* modeName = run.actual == HostInputMode::RtsExtended ? "RtsExtended" :
+				run.actual == HostInputMode::RtsBasicXY ? "RtsBasicXY" :
+				run.actual == HostInputMode::Pointer ? "Pointer" :
+				run.actual == HostInputMode::Win32Mouse ? "Win32Mouse" : "Disabled";
 			DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "[Draw3] Input initialization result="
-				<< (inputInitialized ? "ready" : "failed") << " input_mode=" << modeName << std::endl;
-			if (!inputInitialized) failedCleanup.BeginKnownFailure();
+				<< (inputInitialized ? "ready" : "failed") << " input_mode=" << modeName
+				<< " preference=" << InputPreferenceName(run.preference)
+				<< " large_screen=" << run.largeScreen << " os=" << version.majorVersion << '.'
+				<< version.minorVersion << '.' << version.buildNumber << " resolved=" << InputPreferenceName(run.resolved)
+				<< " fallback="
+				<< (run.fallback == InputFallback::None ? "none" : "")
+				<< (HasInputFallback(run.fallback, InputFallback::PointerUnavailableOnOs) ? "[PointerUnavailableOnOs]" : "")
+				<< (HasInputFallback(run.fallback, InputFallback::PointerInitFailed) ? "[PointerInitFailed]" : "")
+				<< (HasInputFallback(run.fallback, InputFallback::RtsExtendedFailed) ? "[RtsExtendedFailed]" : "")
+				<< (HasInputFallback(run.fallback, InputFallback::RtsFailed) ? "[RtsFailed]" : "")
+				<< (HasInputFallback(run.fallback, InputFallback::MouseFailed) ? "[MouseFailed]" : "")
+				<< " touchpad=" << static_cast<unsigned>(run.touchpad) << std::endl;
+			if (!inputInitialized)
+			{
+				RecordHostStartupFailure("Draw3 input initialization (all backends failed)");
+				failedCleanup.BeginKnownFailure();
+			}
 			if (inputInitialized && startOptions.startupMilestone)
 				startOptions.startupMilestone(startOptions.startupContext,
 					HostStartupStage::InputReady);
@@ -2654,7 +2732,10 @@ namespace Inkeys::Drawing::Draw3
 				startOptions.failedCleanup.FailUnprovenProducerStop();
 			}
 			stylus.Shutdown();
-			inputMode.store(HostInputMode::Disabled, std::memory_order_release);
+			auto stopped = inputRun.load(std::memory_order_acquire);
+			stopped.actual = HostInputMode::Disabled;
+			stopped.touchpad = TouchpadAvailability::BackendDisabled;
+			inputRun.store(stopped, std::memory_order_release);
 		}
 
 		void Stop() noexcept
@@ -2794,7 +2875,14 @@ namespace Inkeys::Drawing::Draw3
 		snapshot.lastPresentSucceeded =
 			impl_->lastPresentSucceeded.load(std::memory_order_acquire);
 		snapshot.presentationMode = impl_->presentationMode.load(std::memory_order_acquire);
-		snapshot.inputMode = impl_->inputMode.load(std::memory_order_acquire);
+		const auto run = impl_->inputRun.load(std::memory_order_acquire);
+		snapshot.inputPreference = run.preference;
+		snapshot.largeScreenForcedRts = run.largeScreen && run.preference == InputPreference::Automatic;
+		snapshot.resolvedInputBackend = run.resolved;
+		snapshot.inputMode = run.actual;
+		snapshot.inputFallback = run.fallback;
+		snapshot.touchpadGestureAvailable = run.touchpad == TouchpadAvailability::Ok;
+		snapshot.touchpadGestureAvailability = run.touchpad;
 		snapshot.presentCount = impl_->presentCount.load(std::memory_order_acquire);
 		snapshot.successfulPresentCount =
 			impl_->successfulPresentCount.load(std::memory_order_acquire);
@@ -3070,6 +3158,14 @@ namespace Inkeys::Drawing::Draw3
 		const uint32_t mode = predictionMode >= 0 && predictionMode <= 2 ? static_cast<uint32_t>(predictionMode) : 2u;
 		const uint32_t next = (multiTouchEnabled ? 1u : 0u) | (penTailCorrectionEnabled ? 2u : 0u) | (mode << 2);
 		if (impl_->generalDrawingOptions.exchange(next, std::memory_order_acq_rel) != next)
+			(void)impl_->input.PublishControlWake();
+	}
+
+	void Host::SetLiveTaperOptions(bool enabled, bool mouse, bool touch, bool pen) noexcept
+	{
+		// 一次发布整组偏好，让落笔始终读取同一次设置变化的结果。
+		const LiveTaperOptions next{ enabled, mouse, touch, pen };
+		if (impl_->liveTaperOptions.exchange(next, std::memory_order_acq_rel) != next)
 			(void)impl_->input.PublishControlWake();
 	}
 

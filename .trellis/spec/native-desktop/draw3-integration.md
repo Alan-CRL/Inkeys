@@ -650,7 +650,7 @@ Correct：`Present -> 拷贝入槽 + Flush -> 背压完成上一条 -> 即时模
 - 已知限制：绘制设备或笔宽上下文变化也会 bump revision 并静默退出可视化模式，A1 按钮状态下次 Bar 刷新才同步。
 - 可视化与选择/绘制/橡皮/几何/穿透互斥：底层虽借用一个标注工具身份让 Draw3 收到接触，Bar 在可视化期间必须把这些工具按钮显示为未选中（`ApplyMainPresentationLocked`、各 `Update*ButtonStyle`、`PresetHoming`、橡皮属性栏），且它们的点击处理不能把“底层身份 == 当前工具”当作已选中（否则只会展开属性栏而不 bump revision，无法退出）。打开“画布调试”开关会自动进入可视化（`SetCanvasDebugEnabled` → `EnterCanvasDebugVisualLocked`）；启动时已持久化为开启则不自动进入。
 - 实现细节与探测接触合同见 `native/runtime-and-rendering.md` 同名场景。
-- 调试板接触表读取的是绘制线程的 `ContactSnapshot`:`source.kind` → `Src`,`record->TabletContextId()/ContactId()` → `Id`,整体输入通路取自 Host 的 `HostInputMode`(经 `SetCanvasDebugInputMode` 下发,数值 1/2/3 = RTS 扩展/RTS 基础 X/Y/Win32 鼠标)。鼠标兼容通路的 contact 没有 RTS 编号。速度在 Overlay 内由相邻快照测得,不是管线里的估计值。
+- 调试板接触表读取的是绘制线程的 `ContactSnapshot`:`source.kind` → `Src`,`record->TabletContextId()/ContactId()` → `Id`,整体输入通路取自 Host 的 `HostInputMode`(经 `SetCanvasDebugInputMode` 下发,数值 1/2/3/4 = RTS 扩展/RTS 基础 X/Y/Win32 鼠标/WM_POINTER)。鼠标兼容通路与 WM_POINTER 的 contact 没有 RTS 编号；Pointer 模式下真实鼠标仍显示为 Win32 通路。速度在 Overlay 内由相邻快照测得,不是管线里的估计值。
 - 调试板位置:锚点为“最大板子(全部列、满行数)在画布内居中”的左上角,`left = max(0, (canvasW - capacityW) / 2)`、`top = max(0, (canvasH - capacityH) / 2)`;内容变化只改右端、下端,不要再按当前尺寸居中(否则每次增减行整块板子会跳动并扩大脏区)。输入到上屏延迟在 `Present` 成功且非调试自刷新帧之后用 `OnPresented(QPC)` 结算。
 
 ## 产品停机时的导航 owner 握手（2026-11-14）

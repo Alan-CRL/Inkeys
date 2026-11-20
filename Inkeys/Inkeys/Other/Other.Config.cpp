@@ -596,10 +596,11 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 			if constexpr (std::is_same_v<T, IdtAtomic<int>>)
 			{
 				if (path == "Experimental.Inkeys3.Draw3.PresentationMode" || path == "Experimental.Inkeys3.Draw3.SwapChainMode"
-					|| path == "Experimental.Inkeys3.Draw3.RenderAcceleration")
+					|| path == "Experimental.Inkeys3.Draw3.InputMode" || path == "Experimental.Inkeys3.Draw3.RenderAcceleration")
 				{
 					const bool presentation = path == "Experimental.Inkeys3.Draw3.PresentationMode";
 					const int maximum = presentation ? static_cast<int>(Inkeys::Draw3PresentationPreference::Ulw)
+						: path == "Experimental.Inkeys3.Draw3.InputMode" ? static_cast<int>(Inkeys::Draw3InputPreference::MouseCompatibility)
 						: path == "Experimental.Inkeys3.Draw3.SwapChainMode" ? static_cast<int>(Inkeys::Draw3SwapChainPreference::Sequential)
 						: static_cast<int>(Inkeys::Draw3RenderAccelerationPreference::Software);
 					if (jsonValue)

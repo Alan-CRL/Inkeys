@@ -761,6 +761,14 @@
           "N": "Corectarea capătului la ridicarea creionului",
           "E": "Reduce frângerile bruște de la sfârșitul trăsăturii când ridicați creionul, pentru o încheiere mai naturală."
         },
+        "LiveTaper":
+        {
+          "N": "Subțierea în timp real a vârfului",
+          "E": "Capătul liniei se subțiază în timpul mișcării și revine la normal când te oprești. Poate fi activat sau dezactivat pentru fiecare dispozitiv de intrare.",
+          "Mouse": "Mouse",
+          "Touch": "Atingere",
+          "Pen": "Stilou"
+        },
         "InkPrediction":
         {
           "N": "Predicția cernelii",
@@ -773,6 +781,9 @@
         {
           "N": "Inerția glisării tablei albe",
           "E": "Tabla continuă să alunece după eliberare în modul de glisare. Se poate regla separat pentru fiecare tip de intrare.",
+          "TouchpadRequirement": "Gesturile touchpadului pe tablă necesită Windows 8.1 sau o versiune ulterioară și un touchpad de precizie.",
+          "RtsNotice": "Se utilizează în prezent introducerea prin mesaje RealTimeStylus, care nu este compatibilă cu glisarea tablei albe cu touchpadul.",
+          "RtsGestureUnavailable": "Acest gest nu este disponibil în modul RealTimeStylus pe sistemul sau dispozitivul actual.",
           "Mouse": "Mouse",
           "Touchpad": "Touchpad",
           "Touch": "Atingere",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "Setări avansate",
       "LowLevelSection": "Setări de nivel scăzut",
+      "InputMode":
+      {
+        "N": "Metodă de introducere",
+        "E": "Stabilește modul în care este primită intrarea de la dispozitive. Unele opțiuni pot intra în conflict cu gesturile touchpadului pe tablă.",
+        "MouseCompatibility": "Intrare de compatibilitate cu mouse-ul",
+        "RtsExtended": "RealTimeStylus (proprietăți extinse)",
+        "RtsBasicXY": "RealTimeStylus (X/Y de bază)",
+        "Unavailable": "Indisponibil",
+        "FallbackFormat": "S-a revenit de la {0} la {1}.",
+        "PointerUnavailableOnOs": "Sistemul actual nu acceptă WM_POINTER.",
+        "PointerInitFailed": "Inițializarea WM_POINTER a eșuat.",
+        "RtsExtendedFailed": "Inițializarea proprietăților extinse RealTimeStylus a eșuat.",
+        "RtsFailed": "Inițializarea RealTimeStylus a eșuat.",
+        "MouseFailed": "Inițializarea intrării de compatibilitate cu mouse-ul a eșuat."
+      },
       "PresentationMode":
       {
         "N": "Metoda de transparență a pânzei de pe desktop",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "Informații despre inițializarea pânzei",
       "PresentationFallback": "Metodă de prezentare de rezervă pentru pânza de pe desktop",
       "SwapChainFallback": "Lanț de schimb de rezervă pentru pânza de pe desktop",
+      "InputFallback": "Metodă de intrare de rezervă",
       "DisplayInformation": "Monitoare și EDID"
     },
     "Update":

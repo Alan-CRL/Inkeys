@@ -761,6 +761,14 @@
           "N": "Pen-up tip correction",
           "E": "Reduce abrupt bends at the end of a stroke when lifting the pen for a more natural finish."
         },
+        "LiveTaper":
+        {
+          "N": "Live tip taper",
+          "E": "The end of the stroke tapers while moving and recovers when you pause. Can be turned on or off per input device.",
+          "Mouse": "Mouse",
+          "Touch": "Touch",
+          "Pen": "Pen"
+        },
         "InkPrediction":
         {
           "N": "Ink prediction",
@@ -773,6 +781,9 @@
         {
           "N": "Whiteboard drag inertia",
           "E": "Keep gliding after release in whiteboard drag mode. Adjust each input type separately.",
+          "TouchpadRequirement": "Whiteboard touchpad gestures require Windows 8.1 or later and a precision touchpad.",
+          "RtsNotice": "RealTimeStylus message input is currently in use; it is not compatible with touchpad whiteboard dragging.",
+          "RtsGestureUnavailable": "This gesture is not available in RealTimeStylus mode on the current system or device.",
           "Mouse": "Mouse",
           "Touchpad": "Touchpad",
           "Touch": "Touch",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "Advanced settings",
       "LowLevelSection": "Low-level settings",
+      "InputMode":
+      {
+        "N": "Input method",
+        "E": "Determines how device input is received. Some options may conflict with whiteboard touchpad gestures.",
+        "MouseCompatibility": "Mouse compatibility input",
+        "RtsExtended": "RealTimeStylus (extended properties)",
+        "RtsBasicXY": "RealTimeStylus (basic X/Y)",
+        "Unavailable": "Unavailable",
+        "FallbackFormat": "Fell back from {0} to {1}.",
+        "PointerUnavailableOnOs": "The current system does not support WM_POINTER.",
+        "PointerInitFailed": "WM_POINTER initialization failed.",
+        "RtsExtendedFailed": "RealTimeStylus extended properties initialization failed.",
+        "RtsFailed": "RealTimeStylus initialization failed.",
+        "MouseFailed": "Mouse compatibility input initialization failed."
+      },
       "PresentationMode":
       {
         "N": "Desktop canvas transparency method",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "Canvas initialization information",
       "PresentationFallback": "Desktop canvas presentation fallback",
       "SwapChainFallback": "Desktop canvas swap chain fallback",
+      "InputFallback": "Input method fallback",
       "DisplayInformation": "Displays and EDID"
     },
     "Update":

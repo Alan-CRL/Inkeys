@@ -1,13 +1,18 @@
-#ifndef NOMINMAX
+﻿#ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.RtsStartup.h"
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.MouseInput.h"
 
 #include <atomic>
+#include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 import Inkeys.Drawing.Draw3.contact_input;
@@ -28,6 +33,224 @@ namespace
 	{
 		fatalPublications.fetch_add(1, std::memory_order_relaxed);
 		return GetTickCount64() + 15000;
+	}
+
+	void TestInputResolution(int& failures)
+	{
+		using P = InputPreference;
+		struct Case { int major, minor, build; P expected[4]; };
+		// 每一行直接列出四种偏好的金值，覆盖 Win10/11 的构建号边界。
+		const Case systems[] = {
+			{ 6, 1, 7601, { P::RealTimeStylus, P::RealTimeStylus, P::RealTimeStylus, P::MouseCompatibility } },
+			{ 6, 2, 9200, { P::RealTimeStylus, P::RealTimeStylus, P::Pointer, P::MouseCompatibility } },
+			{ 6, 3, 9600, { P::Pointer, P::RealTimeStylus, P::Pointer, P::MouseCompatibility } },
+			{ 10, 0, 21999, { P::Pointer, P::RealTimeStylus, P::Pointer, P::MouseCompatibility } },
+			{ 10, 0, 22000, { P::RealTimeStylus, P::RealTimeStylus, P::Pointer, P::MouseCompatibility } }
+		};
+		for (const auto& system : systems)
+			for (const bool largeScreen : { false, true })
+				for (int i = 0; i < 4; ++i)
+				{
+					const auto selected = ResolveInputBackend(static_cast<P>(i), largeScreen,
+						system.major, system.minor, system.build);
+					// 大屏触控模式只约束自动选择；手动选择照常按偏好解析。
+					const auto expected = largeScreen && static_cast<P>(i) == P::Automatic
+						? P::RealTimeStylus : system.expected[i];
+					if (!Expect(selected == expected,
+						"OS, large-screen mode and stored preference resolve at startup")) ++failures;
+				}
+	}
+
+	void TestInputSettingsStatus(int& failures)
+	{
+		using M = HostInputMode;
+		// 每种实际模式分别覆盖 Win11 分界。
+		struct Case { M actual; bool noticeBefore11; };
+		const Case cases[] = {
+			{ M::Disabled, false },
+			{ M::RtsExtended, true },
+			{ M::RtsBasicXY, true },
+			{ M::Pointer, false },
+			{ M::Win32Mouse, false }
+		};
+		for (const auto& test : cases)
+		{
+			for (const auto [major, build] : { std::pair{ 6, 7601 }, std::pair{ 6, 9600 }, std::pair{ 10, 21999 } })
+				if (!Expect(ShowWhiteboardRtsNotice(major, build, test.actual) == test.noticeBefore11,
+					"pre-Windows 11 notice depends only on the initialized RTS mode")) ++failures;
+			if (!Expect(!ShowWhiteboardRtsNotice(10, 22000, test.actual) && !ShowWhiteboardRtsNotice(11, 1, test.actual),
+				"Windows 11 and later hide the legacy whiteboard notice")) ++failures;
+		}
+	}
+
+	void TestBackendFallback(int& failures)
+	{
+		using P = InputPreference;
+		using M = HostInputMode;
+		struct Case { P selected; bool supported, pointer; M rts; bool mouse; M actual; const char* order; };
+		// 首选失败后固定按 RTS → WM_POINTER → 鼠标兼容 回退并跳过已试项；不支持 Pointer 的系统不调用它。
+		const Case cases[] = {
+			{ P::Pointer, true, true, M::Disabled, false, M::Pointer, "P" },
+			{ P::Pointer, true, false, M::RtsExtended, true, M::RtsExtended, "PR" },
+			{ P::Pointer, true, false, M::RtsBasicXY, true, M::RtsBasicXY, "PR" },
+			{ P::Pointer, true, false, M::Disabled, true, M::Win32Mouse, "PRM" },
+			{ P::RealTimeStylus, true, true, M::RtsExtended, true, M::RtsExtended, "R" },
+			{ P::RealTimeStylus, true, true, M::Disabled, true, M::Pointer, "RP" },
+			{ P::RealTimeStylus, true, false, M::Disabled, true, M::Win32Mouse, "RPM" },
+			{ P::RealTimeStylus, false, true, M::Disabled, true, M::Win32Mouse, "RM" },
+			{ P::MouseCompatibility, true, true, M::RtsExtended, true, M::Win32Mouse, "M" },
+			{ P::MouseCompatibility, true, true, M::RtsExtended, false, M::RtsExtended, "MR" },
+			{ P::MouseCompatibility, true, true, M::Disabled, false, M::Pointer, "MRP" },
+			{ P::MouseCompatibility, true, false, M::Disabled, false, M::Disabled, "MRP" },
+			{ P::MouseCompatibility, false, true, M::Disabled, false, M::Disabled, "MR" }
+		};
+		for (const auto& test : cases)
+		{
+			std::string calls;
+			const auto actual = StartInputBackend(test.selected, test.supported,
+				[&]() { calls += 'P'; return test.pointer; },
+				[&]() { calls += 'R'; return test.rts; },
+				[&]() { calls += 'M'; return test.mouse; });
+			if (!Expect(actual == test.actual && calls == test.order,
+				"failed input producer falls through in order; successful selection ends attempts")) ++failures;
+		}
+	}
+
+	void TestTouchpadStartup(int& failures)
+	{
+		using E = TouchpadEntry;
+		using M = HostInputMode;
+		using A = TouchpadAvailability;
+		struct System { int major, minor, build; E pointer, rts; };
+		for (const auto& os : { System{6, 1, 7601, E::None, E::None}, System{6, 2, 9200, E::None, E::None},
+			System{6, 3, 9600, E::DirectManipulation, E::None}, System{10, 0, 21999, E::DirectManipulation, E::None},
+			System{10, 0, 22000, E::DirectManipulation, E::WindowRegistration} })
+		{
+			for (auto mode : { M::Pointer, M::RtsExtended, M::RtsBasicXY, M::Win32Mouse, M::Disabled })
+			{
+				const E expected = mode == M::Pointer ? os.pointer : IsRtsInput(mode) ? os.rts : E::None;
+				if (!Expect(SelectTouchpadEntry(os.major, os.minor, os.build, mode) == expected,
+					"navigation matrix uses the actual backend and Windows version")) ++failures;
+
+				// 注入生产启动编排；小写 p/r/m 表示回调确已就绪，D/W 是实际创建入口的调用。
+				// 不支持 WM_POINTER 的系统跳过 Pointer 回调，因此 Pointer 生产者不可能就绪。
+				const bool pointerSupported = SupportsPointerInput(os.major, os.minor);
+				const M ready = mode == M::Pointer && !pointerSupported ? M::Disabled : mode;
+				std::string order;
+				A result{};
+				auto actual = StartInputAndNavigation(os.major, os.minor, os.build, result, InputPreference::Pointer,
+					[&] { order += 'P'; if (mode != M::Pointer) return false; order += 'p'; return true; },
+					[&] { order += 'R'; if (!IsRtsInput(mode)) return M::Disabled; order += 'r'; return mode; },
+					[&] { order += 'M'; if (mode != M::Win32Mouse) return false; order += 'm'; return true; },
+					[&](E entry) { order += entry == E::DirectManipulation ? 'D' : 'W'; return A::Ok; });
+				std::string sequence = ready == M::Pointer ? "Pp" : IsRtsInput(ready) ? "PRr" :
+					ready == M::Win32Mouse ? "PRMm" : "PRM";
+				if (!pointerSupported) sequence.erase(0, 1);
+				const E readyEntry = ready == mode ? expected : E::None;
+				if (readyEntry == E::DirectManipulation) sequence += 'D';
+				if (readyEntry == E::WindowRegistration) sequence += 'W';
+				const auto reason = readyEntry != E::None ? A::Ok : os.pointer == E::None ? A::OsTooOld :
+					IsRtsInput(ready) ? A::RtsOnLegacyOs : A::BackendDisabled;
+				if (!Expect(actual == ready && order == sequence && result == reason,
+					"native initialization follows producer readiness and fallback, including failed startup")) ++failures;
+			}
+		}
+		for (auto failure : { A::RegistrationUnavailable, A::InitFailed })
+		{
+			A result{};
+			const auto actual = StartInputAndNavigation(10, 0, 26300, result, InputPreference::RealTimeStylus,
+				[] { return false; }, [] { return M::RtsBasicXY; }, [] { return false; },
+				[&](E) { return failure; });
+			if (!Expect(result == failure && actual == M::RtsBasicXY, "gesture failure preserves ready RTS")) ++failures;
+		}
+	}
+
+	void TestRtsStylusAngles(int& failures)
+	{
+		// 生产 RTS 解码直接调用这份头文件公式；RealtimeStylus 模块不进无窗口工程。
+		constexpr float pi = 3.14159265358979323846f;
+		auto check = [&](bool condition, const char* name) { if (!Expect(condition, name)) ++failures; };
+		auto approx = [](float a, float b) { return std::abs(a - b) < 0.0001f; };
+		struct Direction { float x, y, orientation; };
+		const Direction directions[] = { { pi * 0.25f, 0.0f, 0.0f }, { 0.0f, pi * 0.25f, pi * 0.5f },
+			{ -pi * 0.25f, 0.0f, pi }, { 0.0f, -pi * 0.25f, pi * 1.5f } };
+		for (const auto& direction : directions)
+		{
+			const auto angles = DecodeStylusAngles(false, 0.0f, 0.0f, direction.x, direction.y);
+			check(approx(angles.tilt, pi * 0.25f) && approx(angles.orientation, direction.orientation),
+				"RTS +Y tilt points away from the user; four cardinal directions map to model radians");
+		}
+		const auto vertical = DecodeStylusAngles(false, 0.0f, 0.0f, 0.0f, 0.0f);
+		check(vertical.tilt == 0.0f && vertical.orientation == 0.0f, "RTS vertical pen keeps tilt 0 and bearing 0");
+		for (const float altitude : { pi / 3.0f, -pi / 3.0f })
+		{
+			const auto angles = DecodeStylusAngles(true, pi * 0.5f, altitude, 0.0f, 0.0f);
+			check(approx(angles.tilt, pi / 6.0f) && approx(angles.orientation, pi * 1.5f),
+				"RTS signed altitude keeps tilt magnitude; inverted flag stays independent");
+		}
+		const float missing = std::numeric_limits<float>::quiet_NaN();
+		const auto unknown = DecodeStylusAngles(false, 0.0f, 0.0f, missing, missing);
+		check(unknown.tilt < 0.0f && unknown.orientation < 0.0f, "RTS missing axes leave pose unknown");
+		const float wrapped = WrapStylusOrientation(-1.0e-8f);
+		check(wrapped >= 0.0f && wrapped < pi * 2.0f, "tiny negative bearing wraps into [0, 2pi)");
+	}
+
+	void TestPointerFields(int& failures)
+	{
+		namespace P = Inkeys::Drawing::Draw3::PointerInput;
+		auto check = [&](bool condition, const char* name) { if (!Expect(condition, name)) ++failures; };
+		check(P::Pressure(false, 512) == -1.0f && P::Pressure(true, 0) == 0.0f &&
+			P::Pressure(true, 512) == 0.5f && P::Pressure(true, 1024) == 1.0f,
+			"pressure distinguishes missing data and real zero");
+		constexpr float quarterTurn = 1.57079632679f;
+		struct Direction { int x, y, quarters; };
+		const Direction directions[] = { { 45, 0, 0 }, { 0, -45, 1 }, { -45, 0, 2 }, { 0, 45, 3 } };
+		for (const auto& direction : directions)
+		{
+			const auto angles = P::Tilt(true, true, direction.x, direction.y);
+			check(std::abs(angles.tilt - quarterTurn / 2) < 0.0001f &&
+				std::abs(angles.orientation - direction.quarters * quarterTurn) < 0.0001f,
+				"Pointer Y grows toward the user; four cardinal directions map to model radians");
+		}
+		const auto diagonal = P::Tilt(true, true, 45, 45);
+		check(std::abs(diagonal.tilt - 0.9553166f) < 0.0001f &&
+			std::abs(diagonal.orientation - 5.4977871f) < 0.0001f, "both axes contribute to the pen projection");
+		for (const bool x : { false, true })
+			for (const bool y : { false, true })
+			{
+				const auto angles = P::Tilt(x, y, 0, 0);
+				check(angles.tilt == (x && y ? 0.0f : -1.0f) && angles.orientation == (x && y ? 0.0f : -1.0f),
+					"missing axes are unknown; an upright pen keeps tilt 0 and bearing 0 like RTS");
+			}
+		const auto edge = P::Tilt(true, true, 90, 1);
+		check(edge.orientation >= 0.0f && edge.orientation < 6.2831853f, "near-+X bearing never rounds to 2pi");
+		const RECT area{ -20, -40, -4, -16 };
+		const auto sample = P::ContactArea(true, area, 1.5f, 0.5f);
+		check(sample.rawWidth == 16 && sample.rawHeight == 24 && sample.widthPx == 24 &&
+			sample.heightPx == 12 && sample.units == SpeedEraser::ContactAreaUnits::CanvasPixels,
+			"contact lengths preserve raw pixels and scale without translation");
+		check(P::ContactArea(false, area).units == SpeedEraser::ContactAreaUnits::Missing &&
+			P::ContactArea(true, RECT{ 0, 0, 0, 3 }).units == SpeedEraser::ContactAreaUnits::Missing &&
+			P::ContactArea(true, RECT{ 0, 0, 3, -1 }).units == SpeedEraser::ContactAreaUnits::Missing,
+			"missing and degenerate rectangles have no usable area");
+		// 负屏幕原点、两轴不同倍率及非零设备原点，原始整数像素允许小数映射通过。
+		const POINT raw{ -81, 210 }, hm{ 139, 242 }, origin{ -100, 180 };
+		const RECT device{ 100, 200, 300, 600 }, display{ -100, 200, 0, 300 };
+		const auto mapped = P::MapPosition(raw, hm, origin, &device, &display);
+		check(mapped.x == 19.5f && mapped.y == 30.5f, "subpixel HIMETRIC affine mapping in signed client space");
+		const auto rawFallback = [&](POINT metric, const RECT* from, const RECT* to)
+		{
+			const auto position = P::MapPosition(raw, metric, origin, from, to);
+			return position.x == 19 && position.y == 30;
+		};
+		const RECT degenerate{ 100, 200, 100, 600 };
+		check(rawFallback(hm, nullptr, nullptr) && rawFallback(hm, &degenerate, &display) &&
+			rawFallback({ 260, 242 }, &device, &display) && rawFallback({ 301, 242 }, &device, &display),
+			"unavailable, degenerate, offset and out-of-device mappings use raw pixels");
+		check(P::PerformanceCount(91, 0, 100) == 91 && P::PerformanceCount(91, 90, 100) == 91 &&
+			P::PerformanceCount(0, 0, 100) == 0 && P::PerformanceCount(91, 91, 100) == 0 &&
+			P::PerformanceCount(90, 91, 100) == 0 && P::PerformanceCount(101, 91, 100) == 0 &&
+			P::PerformanceCount(91, 0, 0) == 0, "only plausible strictly advancing pointer clocks are available");
 	}
 
 	void TestAttemptSequence(FailureStage firstFailure, bool basicSucceeds, int& failures)
@@ -246,6 +469,12 @@ namespace
 int RunDraw3RtsStartupTests()
 {
 	int failures = 0;
+	TestInputResolution(failures);
+	TestInputSettingsStatus(failures);
+	TestBackendFallback(failures);
+	TestTouchpadStartup(failures);
+	TestRtsStylusAngles(failures);
+	TestPointerFields(failures);
 	TestAttemptSequence(FailureStage::None, true, failures);
 	TestAttemptSequence(FailureStage::PacketDescription, true, failures);
 	TestAttemptSequence(FailureStage::Enable, true, failures); // 现场 Set 成功、Enable=E_INVALIDARG。

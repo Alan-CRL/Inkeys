@@ -761,6 +761,14 @@
           "N": "Strichkorrektur beim Abheben",
           "E": "Abrupte Knicke am Strichende beim Abheben des Stifts für einen natürlicheren Abschluss verringern."
         },
+        "LiveTaper":
+        {
+          "N": "Live-Strichverjüngung",
+          "E": "Das Strichende wird beim Bewegen allmählich dünner und kehrt beim Absetzen zurück. Für jedes Eingabegerät einzeln ein- oder ausschaltbar.",
+          "Mouse": "Maus",
+          "Touch": "Touch",
+          "Pen": "Stift"
+        },
         "InkPrediction":
         {
           "N": "Strichvorhersage",
@@ -773,6 +781,9 @@
         {
           "N": "Trägheit beim Verschieben des Whiteboards",
           "E": "Im Verschiebemodus gleitet das Whiteboard nach dem Loslassen weiter. Für jede Eingabeart getrennt einstellbar.",
+          "TouchpadRequirement": "Touchpad-Gesten für das Whiteboard erfordern Windows 8.1 oder höher und ein Precision-Touchpad.",
+          "RtsNotice": "Derzeit wird die RealTimeStylus-Nachrichteneingabe verwendet; sie ist mit dem Verschieben des Whiteboards per Touchpad nicht kompatibel.",
+          "RtsGestureUnavailable": "Diese Geste ist im RealTimeStylus-Modus auf dem aktuellen System oder Gerät nicht verfügbar.",
           "Mouse": "Maus",
           "Touchpad": "Touchpad",
           "Touch": "Touch",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "Erweiterte Einstellungen",
       "LowLevelSection": "Systemnahe Einstellungen",
+      "InputMode":
+      {
+        "N": "Eingabemethode",
+        "E": "Legt fest, wie Geräteeingaben empfangen werden. Einige Optionen können mit Touchpad-Gesten für das Whiteboard in Konflikt stehen.",
+        "MouseCompatibility": "Maus-Kompatibilitätseingabe",
+        "RtsExtended": "RealTimeStylus (erweiterte Eigenschaften)",
+        "RtsBasicXY": "RealTimeStylus (einfache X/Y)",
+        "Unavailable": "Nicht verfügbar",
+        "FallbackFormat": "Von {0} auf {1} ausgewichen.",
+        "PointerUnavailableOnOs": "Das aktuelle System unterstützt WM_POINTER nicht.",
+        "PointerInitFailed": "Die Initialisierung von WM_POINTER ist fehlgeschlagen.",
+        "RtsExtendedFailed": "Die Initialisierung der erweiterten RealTimeStylus-Eigenschaften ist fehlgeschlagen.",
+        "RtsFailed": "Die Initialisierung von RealTimeStylus ist fehlgeschlagen.",
+        "MouseFailed": "Die Initialisierung der Maus-Kompatibilitätseingabe ist fehlgeschlagen."
+      },
       "PresentationMode":
       {
         "N": "Transparenzmethode der Desktop-Zeichenfläche",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "Informationen zur Zeichenflächeninitialisierung",
       "PresentationFallback": "Ausweichmethode für die Darstellung der Desktop-Zeichenfläche",
       "SwapChainFallback": "Ausweich-Swapchain für die Desktop-Zeichenfläche",
+      "InputFallback": "Ausweichmethode für die Eingabe",
       "DisplayInformation": "Bildschirme und EDID"
     },
     "Update":

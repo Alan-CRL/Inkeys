@@ -263,14 +263,6 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
-	double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
-		double configuredLiveTipDurationSeconds) noexcept
-	{
-		// 硬件压感本身形成粗细变化，普通笔 L0 不再叠加实时笔锋。
-		if (widthMode == StrokeWidthMode::HardwarePressure) return 0.0;
-		return std::max(0.0, configuredLiveTipDurationSeconds);
-	}
-
 	StrokeWidthMode ResolveStrokeWidthMode(InputDeviceType deviceType,
 		InputWidthModeSettings settings, float downPressure) noexcept
 	{

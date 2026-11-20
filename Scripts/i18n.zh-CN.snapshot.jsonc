@@ -761,6 +761,14 @@
           "N": "抬笔笔锋修正",
           "E": "减少抬笔时笔迹末端的突兀折线，使收笔更自然。"
         },
+        "LiveTaper":
+        {
+          "N": "实时笔锋",
+          "E": "移动时笔迹末端逐渐收细，停笔后恢复。可按输入设备单独开关。",
+          "Mouse": "鼠标",
+          "Touch": "触摸",
+          "Pen": "笔"
+        },
         "InkPrediction":
         {
           "N": "墨迹预测",
@@ -773,6 +781,9 @@
         {
           "N": "白板拖动惯性",
           "E": "在白板拖动模式下，松开后继续滑动。可按输入类型单独调整。",
+          "TouchpadRequirement": "白板的触控板手势需要 Windows 8.1 或更高版本及精确式触控板。",
+          "RtsNotice": "当前使用的是 RealTimeStylus 消息输入，不兼容触控板白板拖动。",
+          "RtsGestureUnavailable": "当前系统或设备无法在 RealTimeStylus 模式下使用此手势。",
           "Mouse": "鼠标",
           "Touchpad": "触控板",
           "Touch": "触摸",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "高级设置",
       "LowLevelSection": "底层设置",
+      "InputMode":
+      {
+        "N": "输入方式",
+        "E": "决定设备消息的输入方式，一些选项可能与白板的触控板手势冲突。",
+        "MouseCompatibility": "鼠标兼容输入",
+        "RtsExtended": "RealTimeStylus（扩展属性）",
+        "RtsBasicXY": "RealTimeStylus（基础 X/Y）",
+        "Unavailable": "不可用",
+        "FallbackFormat": "已从 {0} 回退到 {1}。",
+        "PointerUnavailableOnOs": "当前系统不支持 WM_POINTER。",
+        "PointerInitFailed": "WM_POINTER 初始化失败。",
+        "RtsExtendedFailed": "RealTimeStylus 扩展属性初始化失败。",
+        "RtsFailed": "RealTimeStylus 初始化失败。",
+        "MouseFailed": "鼠标兼容输入初始化失败。"
+      },
       "PresentationMode":
       {
         "N": "桌面画布透明呈现方式",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "画布初始化信息",
       "PresentationFallback": "桌面画布透明呈现方式已回退",
       "SwapChainFallback": "桌面画布交换链已回退",
+      "InputFallback": "输入方式已回退",
       "DisplayInformation": "显示器与 EDID"
     },
     "Update":

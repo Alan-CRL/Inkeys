@@ -134,6 +134,7 @@ export namespace Inkeys::Drawing::Draw3
 		InputWidthModeSettings GetInputWidthModeSettings() const noexcept;
 		// 通用偏好成组发布，仅由之后开始的独立笔画锁存。
 		void SetCanvasPanInertiaOptions(CanvasPanInertiaOptions options) noexcept;
+		void SetLiveTaperOptions(LiveTaperOptions options) noexcept;
 		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled,
 			InkPredictionMode predictionMode) noexcept;
 		// 控制倒转 Pen 是否在画笔/荧光笔下临时作为橡皮；只影响之后开始的笔画。
@@ -147,7 +148,7 @@ export namespace Inkeys::Drawing::Draw3
 		// 画布调试：enabled 为设置开关，visual 为可视化模式（visual 仅在 enabled 时生效）。
 		// 可视化模式下新 contact 不建笔、不擦除、不触发手掌橡皮、不写历史，只登记为调试探测接触。
 		void SetCanvasDebugOptions(bool enabled, bool visual) noexcept;
-		// 整体输入通路（与 HostInputMode 数值一致：0 不可用，1 RTS 扩展，2 RTS 基础 X/Y，3 Win32 鼠标），仅用于调试板显示。
+		// 整体输入通路（与 HostInputMode 数值一致：0 不可用，1 RTS 扩展，2 RTS 基础 X/Y，3 Win32 鼠标，4 WM_POINTER），仅用于调试板显示。
 		void SetCanvasDebugInputMode(uint8_t mode) noexcept;
 		bool GetCanvasDebugEnabled() const noexcept;
 		bool GetCanvasDebugVisual() const noexcept;
@@ -207,6 +208,7 @@ export namespace Inkeys::Drawing::Draw3
 		InputWidthModeSettingsState inputWidthModeSettings_;
 		// 位0/1为多指/尾修正，位2..3为预测模式；默认开/开/Kalman。
 		std::atomic<uint32_t> generalDrawingOptions_ = 11;
+		LiveTaperOptions liveTaperOptions_; // 绘制 owner 更新，新笔 Down 锁存。
 		std::atomic<uint32_t> canvasPanInertiaOptions_ = CanvasPanInertiaOptions{}.Encode();
 		PalmEraser::Settings palmEraserOptions_;
 		std::atomic<EraserShape> eraserShape_ = EraserShape::Circle;

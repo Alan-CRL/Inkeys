@@ -1,4 +1,8 @@
-﻿#include <algorithm>
+﻿#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -15,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.TouchpadInput.h"
 #include "../Inkeys/Inkeys/Drawing/Draw3/Draw3.WhiteboardPattern.h"
 #include "../Inkeys/Inkeys/UI/Whiteboard/Whiteboard.PatternFollow.h"
 
@@ -48,6 +53,77 @@ namespace
 			Within(value, expected - tolerance, expected + tolerance, name);
 		}
 	};
+
+	void TestTouchpadInteractionOutput(Checks& check)
+	{
+		using Phase = TouchpadNavigationPhase;
+		Detail::TouchpadNavigationBridge bridge;
+		bridge.enabled.store(true);
+		Detail::TouchpadInteractionOutput output(bridge);
+		std::vector<TouchpadNavigationSample> samples;
+		std::int64_t qpc = 100;
+		auto emit = [&](INTERACTION_FLAGS flags, float dx, float dy)
+		{
+			INTERACTION_CONTEXT_OUTPUT value{};
+			value.interactionId = INTERACTION_ID_MANIPULATION;
+			value.interactionFlags = flags;
+			value.x = 6400; value.y = -3200; // 系统补发的 Down 即使离当前触点很远也不是位移。
+			value.arguments.manipulation.delta.translationX = dx;
+			value.arguments.manipulation.delta.translationY = dy;
+			return output.Apply(value, ++qpc);
+		};
+		output.Begin(3);
+		POINTER_INFO info{};
+		info.frameId = 10;
+		info.pointerId = 31;
+		check(output.NewFrame(info), "first touchpad pointer opens a frame");
+		info.pointerId = 32;
+		check(!output.NewFrame(info), "second pointer of same frame does not feed frame history again");
+		info.frameId = 11;
+		check(output.NewFrame(info), "next frame is accepted");
+		POINTER_TOUCH_INFO history[6]{};
+		history[0].pointerInfo.frameId = 11;
+		history[2].pointerInfo.frameId = 10;
+		history[4].pointerInfo.frameId = 9;
+		check(output.NewHistoryFrames(history, 3, 2) == 1, "coalesced history feeds only the previously unseen frames");
+		emit(INTERACTION_FLAG_BEGIN, 0, 0);
+		bridge.Drain(samples);
+		check(samples.size() == 1 && samples[0].phase == Phase::Running && samples[0].cumulativeX == 0 &&
+			samples[0].cumulativeY == 0, "back-filled Down produces no absolute-position jump");
+		emit(INTERACTION_FLAG_NONE, 12.5f, -7);
+		emit(INTERACTION_FLAG_INERTIA, 4, 2);
+		emit(INTERACTION_FLAG_INERTIA | INTERACTION_FLAG_END, 1, -1);
+		bridge.Drain(samples);
+		check(samples.size() == 3 && samples[0].cumulativeX == 12.5 && samples[0].cumulativeY == -7 &&
+			samples[1].phase == Phase::Inertia && samples[2].phase == Phase::Ready &&
+			samples[2].cumulativeX == 17.5 && samples[2].cumulativeY == -6 && samples[2].admissionRevision == 3,
+			"screen-pixel deltas accumulate once through the final native inertia sample");
+
+		for (const bool midGlide : { false, true })
+		{
+			bridge.inertiaAllowed.store(true);
+			output.Begin(4);
+			emit(INTERACTION_FLAG_BEGIN, 1, 2);
+			if (midGlide) emit(INTERACTION_FLAG_INERTIA, 3, 4);
+			bridge.inertiaAllowed.store(false);
+			check(!emit(INTERACTION_FLAG_INERTIA, 100, 100), "disabling inertia requests native stop");
+			bridge.Drain(samples);
+			check(!samples.empty() && samples.back().phase == Phase::Cancelled &&
+				samples.back().cumulativeX == (midGlide ? 4 : 1) && !bridge.Active(),
+				"disabled glide preserves held motion and rejects release or mid-glide delta");
+
+			bridge.inertiaAllowed.store(true);
+			output.Begin(5);
+			emit(INTERACTION_FLAG_BEGIN, 6, 7);
+			if (midGlide) emit(INTERACTION_FLAG_INERTIA, 2, 3);
+			bridge.enabled.store(false);
+			bridge.Cancel();
+			bridge.enabled.store(true);
+			check(!emit(INTERACTION_FLAG_END, 100, 100), "late old-epoch callback cannot revive a gesture");
+			bridge.Drain(samples);
+			check(samples.empty() && !bridge.Active(), "tool change drops queued held and inertial transforms");
+		}
+	}
 
 	void Info(const std::string& text)
 	{
@@ -3055,6 +3131,7 @@ namespace
 int RunDraw3CanvasPanTests()
 {
 	Checks check;
+	TestTouchpadInteractionOutput(check);
 	TestFlingBooster(check);
 	TestFlingController(check);
 	TestGestureDispatchAndSlop(check);

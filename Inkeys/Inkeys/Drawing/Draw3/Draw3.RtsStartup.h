@@ -1,9 +1,137 @@
-#pragma once
+﻿#pragma once
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <windows.h>
 #include "../../Helper/FailedCleanupDeadline.h"
+
+namespace Inkeys::Drawing::Draw3
+{
+	enum class InputPreference : std::uint8_t { Automatic, RealTimeStylus, Pointer, MouseCompatibility };
+
+	enum class HostInputMode : std::uint8_t
+	{
+		Disabled, RtsExtended, RtsBasicXY, Win32Mouse, Pointer
+	};
+
+	enum class InputFallback : std::uint8_t
+	{
+		None = 0, PointerUnavailableOnOs = 1, PointerInitFailed = 2,
+		RtsExtendedFailed = 4, RtsFailed = 8, MouseFailed = 16
+	};
+
+	constexpr const char* InputPreferenceName(InputPreference value) noexcept
+	{
+		switch (value)
+		{
+		case InputPreference::Automatic: return "Automatic";
+		case InputPreference::RealTimeStylus: return "RealTimeStylus";
+		case InputPreference::Pointer: return "Pointer";
+		case InputPreference::MouseCompatibility: return "MouseCompatibility";
+		default: return "Unknown";
+		}
+	}
+
+	constexpr bool HasInputFallback(InputFallback reasons, InputFallback reason) noexcept
+	{
+		return (static_cast<unsigned>(reasons) & static_cast<unsigned>(reason)) != 0;
+	}
+
+	constexpr bool SupportsPointerInput(int major, int minor) noexcept
+	{
+		return major > 6 || (major == 6 && minor >= 2);
+	}
+
+	constexpr InputPreference ResolveInputBackend(InputPreference preference, bool largeScreen,
+		int major, int minor, int build) noexcept
+	{
+		switch (preference)
+		{
+		case InputPreference::RealTimeStylus:
+		case InputPreference::MouseCompatibility:
+			return preference;
+		case InputPreference::Pointer:
+			// 手动选择直接尝试；系统不支持 WM_POINTER 时按回退链从 RTS 开始。
+			return SupportsPointerInput(major, minor) ? preference : InputPreference::RealTimeStylus;
+		default: break;
+		}
+		// 大屏触控模式只约束自动选择，手动选择优先。
+		if (largeScreen) return InputPreference::RealTimeStylus;
+		return (major == 6 && minor == 3) || (major == 10 && minor == 0 && build < 22000)
+			? InputPreference::Pointer : InputPreference::RealTimeStylus;
+	}
+
+	constexpr bool IsRtsInput(HostInputMode actual) noexcept
+	{
+		return actual == HostInputMode::RtsExtended || actual == HostInputMode::RtsBasicXY;
+	}
+
+	enum class TouchpadEntry : std::uint8_t { None, DirectManipulation, WindowRegistration };
+	enum class TouchpadAvailability : std::uint8_t
+	{
+		BackendDisabled, OsTooOld, RtsOnLegacyOs, RegistrationUnavailable, InitFailed, Ok
+	};
+
+	constexpr TouchpadEntry SelectTouchpadEntry(int major, int minor, int build, HostInputMode actual) noexcept
+	{
+		if (major < 6 || (major == 6 && minor < 3)) return TouchpadEntry::None;
+		if (actual == HostInputMode::Pointer) return TouchpadEntry::DirectManipulation;
+		if (IsRtsInput(actual) && (major > 10 || (major == 10 && build >= 22000)))
+			return TouchpadEntry::WindowRegistration;
+		return TouchpadEntry::None;
+	}
+
+	constexpr bool ShowWhiteboardRtsNotice(int major, int build, HostInputMode actual) noexcept
+	{
+		// Host 初始化完成前只发布 Disabled；警告只看最终启用的生产者。
+		return IsRtsInput(actual) && major > 0 && (major < 10 || (major == 10 && build < 22000));
+	}
+
+	// 每个失败回调必须先证明对应生产者已停产，才能进入下一项。
+	// 先试解析结果；失败后按 RTS（扩展→基础 XY，由 rts 回调内部完成）→ WM_POINTER → 鼠标兼容 回退，
+	// 跳过已尝试项；系统不支持 WM_POINTER 时不调用 pointer。
+	template<class TryPointer, class TryRts, class TryMouse>
+	HostInputMode StartInputBackend(InputPreference resolved, bool pointerSupported,
+		TryPointer&& pointer, TryRts&& rts, TryMouse&& mouse)
+	{
+		const auto attempt = [&](InputPreference backend) -> HostInputMode
+		{
+			switch (backend)
+			{
+			case InputPreference::RealTimeStylus: return rts();
+			case InputPreference::Pointer:
+				return pointerSupported && pointer() ? HostInputMode::Pointer : HostInputMode::Disabled;
+			case InputPreference::MouseCompatibility:
+				return mouse() ? HostInputMode::Win32Mouse : HostInputMode::Disabled;
+			default: return HostInputMode::Disabled;
+			}
+		};
+		if (const auto mode = attempt(resolved); mode != HostInputMode::Disabled) return mode;
+		for (const auto backend : { InputPreference::RealTimeStylus, InputPreference::Pointer,
+			InputPreference::MouseCompatibility })
+		{
+			if (backend == resolved) continue;
+			if (const auto mode = attempt(backend); mode != HostInputMode::Disabled) return mode;
+		}
+		return HostInputMode::Disabled;
+	}
+
+	template<class TryPointer, class TryRts, class TryMouse, class StartNavigation>
+	HostInputMode StartInputAndNavigation(int major, int minor, int build, TouchpadAvailability& availability,
+		InputPreference resolved, TryPointer pointer, TryRts rts, TryMouse mouse, StartNavigation start)
+	{
+		// 所有回退均已结束，只有实际就绪的生产者可以触发窗口 owner 初始化。
+		const auto actual = StartInputBackend(resolved, SupportsPointerInput(major, minor), pointer, rts, mouse);
+		const auto entry = SelectTouchpadEntry(major, minor, build, actual);
+		if (entry != TouchpadEntry::None) availability = start(entry);
+		else if (major < 6 || (major == 6 && minor < 3)) availability = TouchpadAvailability::OsTooOld;
+		else if (IsRtsInput(actual)) availability = TouchpadAvailability::RtsOnLegacyOs;
+		else availability = TouchpadAvailability::BackendDisabled;
+		return actual;
+	}
+}
 
 namespace Inkeys::Drawing::Draw3::RtsStartup
 {
@@ -206,4 +334,46 @@ namespace Inkeys::Drawing::Draw3::RtsStartup
 		HANDLE drained_ = nullptr;
 		DWORD error_ = ERROR_SUCCESS;
 	};
+}
+
+namespace Inkeys::Drawing::Draw3::RtsStartup
+{
+	struct StylusAngles
+	{
+		float tilt = -1.0f;
+		float orientation = -1.0f;
+	};
+
+	// 纯换算放在头文件，生产 RTS 解码与无窗口测试共用同一份公式。
+	inline float WrapStylusOrientation(float angle) noexcept
+	{
+		constexpr float twoPi = 3.14159265358979323846f * 2.0f;
+		angle = std::fmod(angle, twoPi);
+		if (angle < 0.0f) angle += twoPi;
+		// 极小负角加 2π 后 float 舍入可能恰为 2π，超出模型的 [0, 2π) 约定。
+		return angle >= twoPi ? 0.0f : angle;
+	}
+
+	inline StylusAngles DecodeStylusAngles(bool hasAzimuthAltitude,
+		float azimuth, float altitude, float xTilt, float yTilt) noexcept
+	{
+		constexpr float pi = 3.14159265358979323846f;
+		constexpr float halfPi = pi * 0.5f;
+		constexpr float tiltLimit = halfPi - 0.0001f;
+		StylusAngles result;
+		if (hasAzimuthAltitude && std::isfinite(azimuth) && std::isfinite(altitude))
+		{
+			// RTS 倒置笔的仰角为负，倾斜幅度取仰角的绝对值再求余角。
+			result.tilt = halfPi - std::clamp(std::abs(altitude), 0.0f, halfPi);
+			result.orientation = WrapStylusOrientation(pi * 2.0f - azimuth);
+			return result;
+		}
+		if (!std::isfinite(xTilt) || !std::isfinite(yTilt)) return result;
+		const float xProjection = std::tan(std::clamp(xTilt, -tiltLimit, tiltLimit));
+		const float yProjection = std::tan(std::clamp(yTilt, -tiltLimit, tiltLimit));
+		result.tilt = std::clamp(std::atan(std::hypot(xProjection, yProjection)), 0.0f, halfPi);
+		// RTS 正 Y 倾角朝屏幕上方，对应模型从 +X 逆时针转向 +π/2。
+		result.orientation = WrapStylusOrientation(std::atan2(yProjection, xProjection));
+		return result;
+	}
 }

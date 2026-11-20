@@ -761,6 +761,14 @@
           "N": "ストローク終端の補正",
           "E": "ペンを離すときに筆跡の末端が不自然に折れるのを抑え、自然な書き終わりにします。"
         },
+        "LiveTaper":
+        {
+          "N": "リアルタイム筆先テーパー",
+          "E": "動かしている間、筆跡の終端が徐々に細くなり、止めると元に戻ります。入力デバイスごとにオン/オフできます。",
+          "Mouse": "マウス",
+          "Touch": "タッチ",
+          "Pen": "ペン"
+        },
         "InkPrediction":
         {
           "N": "筆跡の予測",
@@ -773,6 +781,9 @@
         {
           "N": "ホワイトボードのドラッグ慣性",
           "E": "ホワイトボードのドラッグモードで、離した後も滑らかに移動します。入力の種類ごとに設定できます。",
+          "TouchpadRequirement": "ホワイトボードのタッチパッド ジェスチャには、Windows 8.1 以降と高精度タッチパッドが必要です。",
+          "RtsNotice": "現在は RealTimeStylus のメッセージ入力を使用しているため、タッチパッドによるホワイトボードのドラッグには対応していません。",
+          "RtsGestureUnavailable": "現在のシステムまたはデバイスでは、RealTimeStylus モードでこのジェスチャを使用できません。",
           "Mouse": "マウス",
           "Touchpad": "タッチパッド",
           "Touch": "タッチ",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "詳細設定",
       "LowLevelSection": "低レベル設定",
+      "InputMode":
+      {
+        "N": "入力方式",
+        "E": "デバイスからの入力をどの方式で受け取るかを決めます。一部のオプションは、ホワイトボードのタッチパッド ジェスチャと競合する場合があります。",
+        "MouseCompatibility": "マウス互換入力",
+        "RtsExtended": "RealTimeStylus（拡張プロパティ）",
+        "RtsBasicXY": "RealTimeStylus（基本 X/Y）",
+        "Unavailable": "利用不可",
+        "FallbackFormat": "{0} から {1} に切り替えました。",
+        "PointerUnavailableOnOs": "現在のシステムは WM_POINTER に対応していません。",
+        "PointerInitFailed": "WM_POINTER の初期化に失敗しました。",
+        "RtsExtendedFailed": "RealTimeStylus 拡張プロパティの初期化に失敗しました。",
+        "RtsFailed": "RealTimeStylus の初期化に失敗しました。",
+        "MouseFailed": "マウス互換入力の初期化に失敗しました。"
+      },
       "PresentationMode":
       {
         "N": "デスクトップキャンバスの透過表示方式",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "キャンバスの初期化情報",
       "PresentationFallback": "デスクトップキャンバスの代替表示方式",
       "SwapChainFallback": "デスクトップキャンバスの代替スワップチェーン",
+      "InputFallback": "代替の入力方式",
       "DisplayInformation": "ディスプレイと EDID"
     },
     "Update":

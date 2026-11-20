@@ -761,6 +761,14 @@
           "N": "Correção do fim do traço",
           "E": "Reduz dobras bruscas no final do traço ao levantar a caneta, deixando o acabamento mais natural."
         },
+        "LiveTaper":
+        {
+          "N": "Afilamento da ponta em tempo real",
+          "E": "A ponta do traço afina durante o movimento e se recupera quando você para. Pode ser ativado ou desativado por dispositivo de entrada.",
+          "Mouse": "Mouse",
+          "Touch": "Toque",
+          "Pen": "Caneta"
+        },
         "InkPrediction":
         {
           "N": "Previsão dos traços",
@@ -773,6 +781,9 @@
         {
           "N": "Inércia ao arrastar o quadro branco",
           "E": "O quadro continua deslizando após soltar no modo de arraste. Ajuste cada tipo de entrada separadamente.",
+          "TouchpadRequirement": "Os gestos do touchpad no quadro exigem Windows 8.1 ou posterior e um touchpad de precisão.",
+          "RtsNotice": "A entrada de mensagens RealTimeStylus está em uso e não é compatível com o arraste do quadro pelo touchpad.",
+          "RtsGestureUnavailable": "Este gesto não está disponível no modo RealTimeStylus no sistema ou dispositivo atual.",
           "Mouse": "Mouse",
           "Touchpad": "Touchpad",
           "Touch": "Toque",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "Configurações avançadas",
       "LowLevelSection": "Configurações de baixo nível",
+      "InputMode":
+      {
+        "N": "Método de entrada",
+        "E": "Define como a entrada dos dispositivos é recebida. Algumas opções podem entrar em conflito com os gestos do touchpad no quadro.",
+        "MouseCompatibility": "Entrada de compatibilidade com mouse",
+        "RtsExtended": "RealTimeStylus (propriedades estendidas)",
+        "RtsBasicXY": "RealTimeStylus (X/Y básico)",
+        "Unavailable": "Indisponível",
+        "FallbackFormat": "Alternado de {0} para {1}.",
+        "PointerUnavailableOnOs": "O sistema atual não oferece suporte a WM_POINTER.",
+        "PointerInitFailed": "Falha ao inicializar WM_POINTER.",
+        "RtsExtendedFailed": "Falha ao inicializar as propriedades estendidas do RealTimeStylus.",
+        "RtsFailed": "Falha ao inicializar o RealTimeStylus.",
+        "MouseFailed": "Falha ao inicializar a entrada de compatibilidade com mouse."
+      },
       "PresentationMode":
       {
         "N": "Método de transparência da tela da área de trabalho",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "Informações de inicialização do desenho",
       "PresentationFallback": "Método de apresentação alternativo da tela da área de trabalho",
       "SwapChainFallback": "Cadeia de troca alternativa da tela da área de trabalho",
+      "InputFallback": "Método de entrada alternativo",
       "DisplayInformation": "Monitores e EDID"
     },
     "Update":

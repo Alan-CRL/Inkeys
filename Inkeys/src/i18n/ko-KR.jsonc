@@ -761,6 +761,14 @@
           "N": "획 끝 보정",
           "E": "펜을 뗄 때 획 끝이 갑자기 꺾이는 현상을 줄여 자연스럽게 마무리합니다."
         },
+        "LiveTaper":
+        {
+          "N": "실시간 필획 끝 테이퍼",
+          "E": "움직이는 동안 필획 끝이 점점 가늘어지고, 멈추면 원래대로 돌아옵니다. 입력 장치별로 켜거나 끌 수 있습니다.",
+          "Mouse": "마우스",
+          "Touch": "터치",
+          "Pen": "펜"
+        },
         "InkPrediction":
         {
           "N": "필기 예측",
@@ -773,6 +781,9 @@
         {
           "N": "화이트보드 드래그 관성",
           "E": "화이트보드 드래그 모드에서 손을 뗀 후에도 계속 이동합니다. 입력 유형별로 설정할 수 있습니다.",
+          "TouchpadRequirement": "화이트보드 터치패드 제스처를 사용하려면 Windows 8.1 이상과 정밀 터치패드가 필요합니다.",
+          "RtsNotice": "현재 RealTimeStylus 메시지 입력을 사용 중이며 터치패드 화이트보드 드래그와 호환되지 않습니다.",
+          "RtsGestureUnavailable": "현재 시스템 또는 장치에서는 RealTimeStylus 모드에서 이 제스처를 사용할 수 없습니다.",
           "Mouse": "마우스",
           "Touchpad": "터치패드",
           "Touch": "터치",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "고급 설정",
       "LowLevelSection": "저수준 설정",
+      "InputMode":
+      {
+        "N": "입력 방식",
+        "E": "장치 입력을 받는 방식을 결정합니다. 일부 옵션은 화이트보드 터치패드 제스처와 충돌할 수 있습니다.",
+        "MouseCompatibility": "마우스 호환 입력",
+        "RtsExtended": "RealTimeStylus(확장 속성)",
+        "RtsBasicXY": "RealTimeStylus(기본 X/Y)",
+        "Unavailable": "사용할 수 없음",
+        "FallbackFormat": "{0}에서 {1}(으)로 대체되었습니다.",
+        "PointerUnavailableOnOs": "현재 시스템은 WM_POINTER를 지원하지 않습니다.",
+        "PointerInitFailed": "WM_POINTER 초기화에 실패했습니다.",
+        "RtsExtendedFailed": "RealTimeStylus 확장 속성 초기화에 실패했습니다.",
+        "RtsFailed": "RealTimeStylus 초기화에 실패했습니다.",
+        "MouseFailed": "마우스 호환 입력 초기화에 실패했습니다."
+      },
       "PresentationMode":
       {
         "N": "데스크톱 캔버스 투명 표시 방식",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "캔버스 초기화 정보",
       "PresentationFallback": "데스크톱 캔버스 대체 표시 방식",
       "SwapChainFallback": "데스크톱 캔버스 대체 스왑 체인",
+      "InputFallback": "대체 입력 방식",
       "DisplayInformation": "디스플레이 및 EDID"
     },
     "Update":

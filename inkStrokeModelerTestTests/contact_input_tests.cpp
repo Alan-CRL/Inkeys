@@ -473,6 +473,13 @@ namespace
 			true, pi * 0.5f, pi * 0.25f, 0.0f, 0.0f);
 		TEST_CHECK(state, NearlyEqual(direct.tilt, pi * 0.25f));
 		TEST_CHECK(state, NearlyEqual(direct.orientation, pi * 1.5f));
+		for (const float altitude : { pi / 3.0f, -pi / 3.0f })
+		{
+			const auto angles = draw3::DecodeRtsStylusAnglesForTesting(
+				true, pi * 0.5f, altitude, 0.0f, 0.0f);
+			TEST_CHECK(state, NearlyEqual(angles.tilt, pi / 6.0f));
+			TEST_CHECK(state, NearlyEqual(angles.orientation, pi * 1.5f));
+		}
 		const draw3::RtsStylusAnglesForTesting xTilt = draw3::DecodeRtsStylusAnglesForTesting(
 			false, 0.0f, 0.0f, pi * 0.25f, 0.0f);
 		TEST_CHECK(state, NearlyEqual(xTilt.tilt, pi * 0.25f));
@@ -480,7 +487,18 @@ namespace
 		const draw3::RtsStylusAnglesForTesting yTilt = draw3::DecodeRtsStylusAnglesForTesting(
 			false, 0.0f, 0.0f, 0.0f, pi * 0.25f);
 		TEST_CHECK(state, NearlyEqual(yTilt.tilt, pi * 0.25f));
-		TEST_CHECK(state, NearlyEqual(yTilt.orientation, pi * 1.5f));
+		TEST_CHECK(state, NearlyEqual(yTilt.orientation, pi * 0.5f));
+		const auto negativeX = draw3::DecodeRtsStylusAnglesForTesting(
+			false, 0.0f, 0.0f, -pi * 0.25f, 0.0f);
+		TEST_CHECK(state, NearlyEqual(negativeX.tilt, pi * 0.25f));
+		TEST_CHECK(state, NearlyEqual(negativeX.orientation, pi));
+		const auto negativeY = draw3::DecodeRtsStylusAnglesForTesting(
+			false, 0.0f, 0.0f, 0.0f, -pi * 0.25f);
+		TEST_CHECK(state, NearlyEqual(negativeY.tilt, pi * 0.25f));
+		TEST_CHECK(state, NearlyEqual(negativeY.orientation, pi * 1.5f));
+		const auto vertical = draw3::DecodeRtsStylusAnglesForTesting(
+			false, 0.0f, 0.0f, 0.0f, 0.0f);
+		TEST_CHECK(state, vertical.tilt == 0.0f && vertical.orientation == 0.0f);
 		const draw3::RtsStylusAnglesForTesting unknown = draw3::DecodeRtsStylusAnglesForTesting(
 			false, 0.0f, 0.0f, NAN, NAN);
 		TEST_CHECK(state, unknown.tilt < 0.0f);

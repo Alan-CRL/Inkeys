@@ -12,6 +12,7 @@
 #include <mutex>
 #include <vector>
 #include "Draw3.TouchpadNavigation.h"
+#include "Draw3.RtsStartup.h"
 #include <windows.h>
 #include "Draw3.Bridge.h"
 #include "Draw3.HapticRequest.h"
@@ -26,7 +27,7 @@ import Inkeys.Drawing.Draw3.auto_save;
 import Inkeys.Drawing.Draw3.pen_cursor;
 export import Inkeys.Drawing.Draw3.presentation_auto_save;
 
-namespace Inkeys::Drawing::Draw3 { class TouchpadNavigationOwner; }
+namespace Inkeys::Drawing::Draw3 { class TouchpadNavigationOwner; class TouchpadInteractionOwner; }
 
 export namespace Inkeys::Drawing::Draw3
 {
@@ -170,8 +171,11 @@ export namespace Inkeys::Drawing::Draw3
 #endif
 		// mode 启闭通过 HWND owner 同步确认；返回前旧鼠标 producer 已停止。
 		bool SetMouseCompatibilityEnabled(bool enabled) noexcept;
+		bool StartPointerInput() noexcept;
+		bool StopPointerInput() noexcept;
 		void CloseMouseInputAdmission() noexcept;
 		// DM 仅由 HWND owner 调用，绘制线程只交换带 epoch 的累计位移。
+		TouchpadAvailability StartTouchpadNavigation(TouchpadEntry entry) noexcept;
 		void SetTouchpadNavigationEnabled(bool enabled, bool inertiaAllowed) noexcept;
 		void CancelTouchpadNavigation(std::int64_t takeoverQpc = 0) noexcept;
 		void RequestTouchpadNavigationUpdate() noexcept;
@@ -321,6 +325,35 @@ export namespace Inkeys::Drawing::Draw3
 
 	private:
 		LRESULT HandleWindowMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+		struct PointerDevice
+		{
+			HANDLE handle = nullptr;
+			SpeedEraser::InputSource source;
+			RECT deviceRect{}, displayRect{};
+		};
+		struct PointerContact
+		{
+			UINT32 pointerId = 0;
+			HANDLE device = nullptr;
+			InputDeviceType type = InputDeviceType::Touch;
+			ContactSnapshot last;
+			uint64_t performanceCount = 0, penToken = 0;
+			int64_t downQpc = 0;
+		};
+		PointerDevice& PointerDeviceFor(HANDLE handle, InputDeviceType type);
+		void FinishPointerContact(std::size_t index, ContactPhase phase, int64_t qpc,
+			uint64_t performance = 0, UINT32 mask = 0) noexcept;
+		void CancelPointerContacts(HANDLE device = nullptr) noexcept;
+		bool HandlePointerContact(HWND window, UINT message, UINT32 id, bool cancelled,
+			const POINTER_PEN_INFO* pen, const POINTER_TOUCH_INFO* touch, UINT32 cursorId, int64_t qpc);
+		bool pointerInputSelected_ = false; // 仅 HWND owner 在鼠标启停屏障中切换。
+		std::atomic_bool pointerStartRequested_ = false;
+		std::vector<PointerDevice> pointerDevices_;
+		std::vector<PointerContact> pointerContacts_;
+		uint32_t nextPointerContext_ = 0;
+		UINT32 pointerPenRangeId_ = 0; // 迟到的旧笔终态不能清除新笔的悬停和触觉。
+		uint64_t nextPointerToken_ = uint64_t{1} << 63; // 与 RTS 从 1 起分配的反馈凭据分开。
+
 		void CancelMouseInput(HWND window, bool captureLost = false) noexcept;
 		void ReleaseMouseCapture(HWND window) noexcept;
 		void HandleCompatibilityMouse(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
@@ -334,7 +367,7 @@ export namespace Inkeys::Drawing::Draw3
 		void SetPointerPenContactSuppressed(bool suppressed) noexcept;
 		void FinishPenCursorClear(bool changed) noexcept;
 		void PublishPenCursorSampleImpl(const DrawingCursorSample& sample,
-			uint64_t token, bool fromRts) noexcept;
+			uint64_t token, bool fromRts, uint32_t pointerContactId = 0) noexcept;
 		void NotifyTouchContactBegin(bool trackActiveContact,
 			uint32_t touchBarrierTick) noexcept;
 		void PublishMouseCursorSample(const DrawingCursorSample& sample) noexcept;
@@ -369,6 +402,8 @@ export namespace Inkeys::Drawing::Draw3
 			std::make_shared<Detail::TouchpadNavigationBridge>();
 		// 以下 COM holder 只由 owner 创建/清理，Host 必须取得 Stop 确认后才能销毁本对象。
 		std::shared_ptr<TouchpadNavigationOwner> touchpadNavigationOwner_;
+		std::shared_ptr<TouchpadInteractionOwner> touchpadInteractionOwner_;
+		std::atomic<TouchpadEntry> touchpadEntry_ = TouchpadEntry::None;
 		std::atomic_bool touchpadNavigationAllowed_ = true;
 		std::atomic_bool touchpadNavigationEnabled_ = false;
 		std::atomic_bool touchpadNavigationInertia_ = true;

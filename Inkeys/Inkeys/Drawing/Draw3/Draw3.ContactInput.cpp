@@ -23,6 +23,19 @@ module Inkeys.Drawing.Draw3.contact_input;
 
 namespace Inkeys::Drawing::Draw3
 {
+	bool LiveTaperOptions::Allows(InputDeviceType device) const noexcept
+	{
+		if (!enabled) return false;
+		switch (device)
+		{
+		case InputDeviceType::MouseLeft:
+		case InputDeviceType::MouseRight: return mouse;
+		case InputDeviceType::Touch: return touch;
+		case InputDeviceType::Pen: return pen; // 倒置笔沿用同一个设备项。
+		default: return false;
+		}
+	}
+
 	namespace
 	{
 		constexpr size_t kContactSlotsPerBlock = 32;

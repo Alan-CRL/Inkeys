@@ -44,6 +44,23 @@ namespace
 		return snapshot;
 	}
 
+	void TestLiveTaperDevices(int& failures)
+	{
+		for (unsigned mask = 0; mask < 16; ++mask)
+		{
+			const bool enabled = (mask & 1u) != 0;
+			const bool mouse = (mask & 2u) != 0;
+			const bool touch = (mask & 4u) != 0;
+			const bool pen = (mask & 8u) != 0;
+			const LiveTaperOptions options{ enabled, mouse, touch, pen };
+			if (!Expect(options.Allows(InputDeviceType::MouseLeft) == (enabled && mouse) &&
+				options.Allows(InputDeviceType::MouseRight) == (enabled && mouse) &&
+				options.Allows(InputDeviceType::Touch) == (enabled && touch) &&
+				options.Allows(InputDeviceType::Pen) == (enabled && pen),
+				"live taper follows master and contact device")) ++failures;
+		}
+	}
+
 	void TestContactLifecycle(int& failures)
 	{
 		ContactInputCoordinator input;
@@ -2474,6 +2491,7 @@ int RunDraw3ContactInputTests()
 	TestTouchpadNavigationRetirement(failures);
 	TestTouchpadNavigationBridge(failures);
 	TestContactLifecycle(failures);
+	TestLiveTaperDevices(failures);
 	TestNavigationHistory(failures);
 	TestNavigationHistoryOverflow(failures);
 	TestNavigationUrgentFrameWake(failures);

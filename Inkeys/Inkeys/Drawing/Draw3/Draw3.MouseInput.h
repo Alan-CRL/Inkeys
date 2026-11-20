@@ -1,7 +1,12 @@
 ﻿#pragma once
 
 #include <atomic>
+#include <cmath>
 #include <cstdint>
+#include <numbers>
+#include <windows.h>
+
+#include "Draw3.SpeedEraser.h"
 
 namespace Inkeys::Drawing::Draw3::Detail
 {
@@ -153,4 +158,81 @@ namespace Inkeys::Drawing::Draw3::Detail
 		std::uint32_t admissionHeldButtons_ = 0;
 		Snapshot last_{};
 	};
+}
+
+namespace Inkeys::Drawing::Draw3::PointerInput
+{
+	inline float Pressure(bool valid, uint32_t pressure) noexcept
+	{
+		return valid && pressure <= 1024 ? pressure / 1024.0f : -1.0f;
+	}
+
+	struct Angles { float tilt = -1.0f, orientation = -1.0f; };
+
+	inline Angles Tilt(bool validX, bool validY, int tiltX, int tiltY) noexcept
+	{
+		if (!validX || !validY || tiltX < -90 || tiltX > 90 || tiltY < -90 || tiltY > 90)
+			return {};
+		// 直立笔投影无方向；与 RTS 一致给 0，避免首包 −1 使 Modeler 整笔方位未知。
+		if (!tiltX && !tiltY) return { 0.0f, 0.0f };
+		constexpr double radians = std::numbers::pi / 180.0;
+		const double x = std::tan(tiltX * radians);
+		const double y = std::tan(tiltY * radians);
+		// Pointer 的正 Y 指向使用者；模型方位角从 +X 逆时针计。
+		double orientation = std::atan2(-y, x);
+		if (orientation < 0.0) orientation += 2.0 * std::numbers::pi;
+		// double 转 float 可能恰好舍入为 2π，超出模型的 [0, 2π) 约定。
+		float bearing = static_cast<float>(orientation);
+		if (bearing >= static_cast<float>(2.0 * std::numbers::pi)) bearing = 0.0f;
+		return { static_cast<float>(std::atan(std::hypot(x, y))), bearing };
+	}
+
+	inline SpeedEraser::ContactAreaSample ContactArea(bool valid, const RECT& rect,
+		float scaleX = 1.0f, float scaleY = 1.0f) noexcept
+	{
+		if (!valid || rect.right <= rect.left || rect.bottom <= rect.top ||
+			!(scaleX > 0.0f) || !(scaleY > 0.0f)) return {};
+		const float w = static_cast<float>(static_cast<double>(rect.right) - rect.left);
+		const float h = static_cast<float>(static_cast<double>(rect.bottom) - rect.top);
+		if (!std::isfinite(w * scaleX) || !std::isfinite(h * scaleY)) return {};
+		return { w, h, w * scaleX, h * scaleY, SpeedEraser::ContactAreaUnits::CanvasPixels };
+	}
+
+	struct Position { float x, y; };
+
+	inline Position MapPosition(POINT rawPixel, POINT rawHimetric, POINT clientOrigin,
+		const RECT* device, const RECT* display) noexcept
+	{
+		double x = rawPixel.x, y = rawPixel.y;
+		if (device && display && device->right > device->left && device->bottom > device->top &&
+			display->right > display->left && display->bottom > display->top &&
+			rawHimetric.x >= device->left && rawHimetric.x <= device->right &&
+			rawHimetric.y >= device->top && rawHimetric.y <= device->bottom &&
+			rawPixel.x >= display->left && rawPixel.x < display->right &&
+			rawPixel.y >= display->top && rawPixel.y < display->bottom)
+		{
+			const auto mapAxis = [](LONG value, LONG from, LONG to, LONG start, LONG end)
+			{
+				return start + (static_cast<double>(value) - from) *
+					(static_cast<double>(end) - start) / (static_cast<double>(to) - from);
+			};
+			const double mx = mapAxis(rawHimetric.x, device->left, device->right, display->left, display->right);
+			const double my = mapAxis(rawHimetric.y, device->top, device->bottom, display->top, display->bottom);
+			// 转屏、驱动映射或显示拓扑不一致时，以同包的带符号原始像素为准。
+			if (mx < display->right && my < display->bottom &&
+				std::abs(mx - x) <= 1.0 && std::abs(my - y) <= 1.0)
+			{
+				x = mx;
+				y = my;
+			}
+		}
+		return { static_cast<float>(x - clientOrigin.x), static_cast<float>(y - clientOrigin.y) };
+	}
+
+	inline uint64_t PerformanceCount(uint64_t current, uint64_t previous, int64_t arrivalQpc) noexcept
+	{
+		// 相等、倒退及晚于到达时刻的样本无法用来测量采样延迟。
+		return arrivalQpc > 0 && current > previous && current <= static_cast<uint64_t>(arrivalQpc)
+			? current : 0;
+	}
 }

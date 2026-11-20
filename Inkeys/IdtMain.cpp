@@ -3233,6 +3233,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::Drawing::Draw3::ProductHost().SetGeneralDrawingOptions(
 				config.Drawing.MultiTouchEnabled, config.Drawing.PenTailCorrectionEnabled,
 				config.Drawing.InkPredictionMode.load());
+			const auto& liveTaper = config.Drawing.LiveTaper;
+			Inkeys::Drawing::Draw3::ProductHost().SetLiveTaperOptions(
+				liveTaper.Enabled.load(), liveTaper.Mouse.load(), liveTaper.Touch.load(), liveTaper.Pen.load());
 			const auto& panInertia = config.Drawing.Whiteboard.PanInertia;
 			Inkeys::Drawing::Draw3::ProductHost().SetCanvasPanInertiaOptions({
 				panInertia.Enabled.load(), panInertia.Mouse.load(), panInertia.Touchpad.load(),
@@ -3937,6 +3940,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		};
 		Inkeys::Drawing::Draw3::HostStartOptions draw3StartOptions{};
 		draw3StartOptions.frameRate = configOnce.Drawing.FrameRate;
+		draw3StartOptions.inputPreference = static_cast<Inkeys::Drawing::Draw3::InputPreference>(draw3Config.InputMode.load());
+		draw3StartOptions.largeScreenTouchMode = config.Drawing.PaintDevice == 0;
 		// 启动时捕获设备偏好；呈现回退和设备恢复沿用本代快照。
 		{
 			using AccelerationPreference = Inkeys::Draw3RenderAccelerationPreference;

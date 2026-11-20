@@ -352,6 +352,13 @@ SetDebugOptions(config.Debug.Enable, config.Debug.ShowFrameRate);
 
 因此，文案变更应：先改基准 JSONC，再按任务授权运行 `sync`、处理翻译标记、运行 `check`，并审查所有生成差异。只审计时使用 `check`；`sync` 会写文件，不能在未授权的只读/文档任务中执行。不要手工编辑 `IdtI18nKeys.g.h`。
 
+`【用户要求，2026-11-20】` 设置项标题/说明/提示条是写给普通用户的，不是写给开发者的：
+
+- 说明只讲这个选项做什么、对用户有什么影响（例：输入方式 → “决定设备消息的输入方式，一些选项可能与白板的触控板手势冲突。”），不罗列当前运行状态、内部后端名称、解析来源（如“由大屏触控模式指定为 …”）或重启后将使用什么。
+- 不写傻瓜式、非必要的说明；运行诊断、回退原因等技术细节放到“软件调试”页（如画布初始化输出的警告条）。
+- 说明要准确，避免歧义：适用条件只属于某一子功能时，单独用 ⓘ 信息条放在该功能旁（例：白板拖动惯性说明不再提“双指”，触控板手势的系统/硬件要求改为“白板拖动惯性”上方的 `CanvasPanInertia.TouchpadRequirement` 信息条）。
+- 修改文案必须同步 20 语。
+
 `【直接确认】` 本地化连接符允许有意空串：仅当基准节点本身为 `""` 时，目标语言显式 `""` 通过 `sync/check`（例如中文 HeroJoin，英文对应空格）。缺失或非字符串节点、非空基准的空翻译、明确待翻译标记及基准变更仍沿用原校验；不得把所有空翻译一律视为完成。
 
 实验选项的控制台诊断由旧 `SettingsUI/Experimental/ConsoleOutput/TouchArea` 文案键和 `Experimental.Inkeys3.ConsoleOutput.TouchArea` 保存键继续承载；扩大输出内容时只更新全部支持语言的可见名称/说明，不改键以保留已有用户选择。
@@ -771,4 +778,8 @@ Correct：保留191为最小组，白板用332，并验证最终内嵌资源和�
 
 ## 白板拖动惯性偏好
 
-main.json 新增 `Drawing.Whiteboard.PanInertia.{Enabled,Mouse,Touchpad,Touch,Pen,PenTail}` 六个 `IdtAtomic<bool>` / NoUpload，默认依次 `{true,false,true,true,true,false}`。缺项及非法bool按schema默认，不为旧版固定Mouse惯性迁移为true；总关不覆盖五项。启动/设置经完整options→Host去重快照→DrawingController owner应用，写盘复用冻结FIFO；设置标题、说明及五类输入七键补齐20语并由既有sync/check生成头与snapshot。2026-11-12起PTP扩展暂时停用，Touchpad字段和界面偏好保留但不会产生触控板运动，不得据此宣称该设备可用。可执行合同与测试断言统一见 [canvas-pan.md](canvas-pan.md)。
+main.json 新增 `Drawing.Whiteboard.PanInertia.{Enabled,Mouse,Touchpad,Touch,Pen,PenTail}` 六个 `IdtAtomic<bool>` / NoUpload，默认依次 `{true,false,true,true,true,false}`。缺项及非法bool按schema默认，不为旧版固定Mouse惯性迁移为true；总关不覆盖五项。启动/设置经完整options→Host去重快照→DrawingController owner应用，写盘复用冻结FIFO；设置标题、说明及五类输入七键补齐20语并由既有sync/check生成头与snapshot。2026-11-20第4步起触控板惯性随实际后端可用（Pointer+DM、Win11 RTS+窗口注册），Win8.1/10 实际 RTS 时仍不产生触控板运动。可执行合同与测试断言统一见 [canvas-pan.md](canvas-pan.md)。
+
+## 输入方式与实时笔锋偏好（第4步，2026-11-20）
+
+main.json 新增 `Experimental.Inkeys3.Draw3.InputMode`（`IdtAtomic<int>`，默认 0=自动，越界在读取时回到自动，与 PresentationMode 同一校验分支）和 `Drawing.LiveTaper.{Enabled,Mouse,Touch,Pen}`（`IdtAtomic<bool>`，默认全 true），均 NoUpload，旧配置缺项取默认。新文案键 `SettingsUI.Performance.InputMode.*`、`SettingsUI.Draw.General.LiveTaper.*`、`SettingsUI.Draw.General.CanvasPanInertia.{RtsNotice,RtsGestureUnavailable,TouchpadRequirement}`、`SettingsUI.DebugSoftware.InputFallback` 已补齐 20 语（2026-11-20 删除 `InputMode.{CurrentFormat,NextStartFormat,LargeScreenForced}`，新增 `InputMode.{E,FallbackFormat,MouseFailed}`）并由 `Scripts/i18n.ps1 sync/check` 生成头与 snapshot；`RealTimeStylus`、`WM_POINTER` 不翻译。行为合同见 [settings-performance-and-drawing.md](settings-performance-and-drawing.md) 与 [input-and-ink.md](input-and-ink.md#输入后端选择第4步2026-11-20)。

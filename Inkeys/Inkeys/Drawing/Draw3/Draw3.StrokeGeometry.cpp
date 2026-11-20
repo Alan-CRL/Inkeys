@@ -254,6 +254,7 @@ namespace Inkeys::Drawing::Draw3
 		constexpr int kVisualStableRequiredFrames = 3;
 		constexpr float kMaxDiameterChangePerBaseDiameterPerSecond = 3.0f;
 		constexpr float kMaxRadiusChangePerPixel = 0.35f;
+		constexpr float kHardwarePressureTaperStrength = 0.50f;
 		// L0 笔锋只做公切线安全投影，允许比稳定笔宽更快收细，但仍严格小于 1。
 		constexpr float kCapsuleRadiusSlope = 0.95f;
 		constexpr float kHighlighterDuplicateDistancePx = 0.25f;
@@ -394,7 +395,8 @@ namespace Inkeys::Drawing::Draw3
 			double liveTipDurationSeconds, const ActiveStroke& stroke,
 			bool includePrediction, std::optional<size_t>* changedSegment = nullptr)
 		{
-			if (points.empty() || liveTipDurationSeconds <= 0.0) return 0.0;
+			// 本笔落笔时关闭实时笔锋：尾部倍率恒为 1，笔身宽度照常。
+			if (!stroke.liveTaperEnabled || points.empty() || liveTipDurationSeconds <= 0.0) return 0.0;
 			const double endTime = points.back().time;
 			const double tipStartTime = endTime - liveTipDurationSeconds;
 			size_t firstTipIndex = points.size() - 1;
@@ -448,7 +450,10 @@ namespace Inkeys::Drawing::Draw3
 					++index;
 				}
 				const float progress = static_cast<float>((nextArcLength - taperStart) / effectiveLength);
-				points[index].r *= LerpFloat(1.0f, tipScale, SmoothStep01(progress));
+				const float scale = LerpFloat(1.0f, tipScale, SmoothStep01(progress));
+				// 仅在派生尾段对限幅后的局部压感半径叠加半强度笔锋。
+				points[index].r *= stroke.widthMode == StrokeWidthMode::HardwarePressure
+					? 1.0f - kHardwarePressureTaperStrength * (1.0f - scale) : scale;
 				arcLength = nextArcLength;
 			}
 			return effectiveLength;
@@ -1301,12 +1306,13 @@ namespace Inkeys::Drawing::Draw3
 				check( cache.tailRawCount == 1 && cache.tailRawSamples[0].position.x == 202, "local finalization contract");
 				cache.predictionMode = InkPredictionMode::Disabled;
 				cache.penTailCorrectionEnabled = false;
+				cache.liveTaperEnabled = false;
 				cache.tailInputDiagnostic.enabled = true;
 				cache.tailInputDiagnostic.snapshots = 5; cache.tailInputDiagnostic.generation = 7;
 				cache.tailInputDiagnostic.upStatus = 0;
 				cache.Reset(5, 100, StrokeWidthMode::Fixed);
 				check( cache.tailRawCount == 0 && cache.tailModelBoundaryCount == 0, "reset clears bounded model/raw history");
-				check(cache.predictionMode == kActivePredictionMode && cache.penTailCorrectionEnabled,
+				check(cache.predictionMode == kActivePredictionMode && cache.penTailCorrectionEnabled && cache.liveTaperEnabled,
 					"pooled Reset clears prior drawing options");
 				check(!cache.tailInputDiagnostic.enabled && !cache.tailInputDiagnostic.snapshots &&
 					!cache.tailInputDiagnostic.generation && cache.tailInputDiagnostic.upStatus == -1, "reset clears diagnostic provenance");
@@ -1627,10 +1633,82 @@ namespace Inkeys::Drawing::Draw3
 				ActiveStroke stroke(10, 500, mode);
 				stroke.realPoints = { {100,100,5,0}, {140,100,5,0.04f} };
 				stroke.lastMovementInputTime = stroke.logicalInputTime = 0.04;
-				rebuild(stroke, mode == StrokeWidthMode::HardwarePressure ? ResolveLiveTipTaperDurationSeconds(mode, 0.055) : 0.0);
-				check(samePoints(stroke.realPoints, stroke.l0DrawPoints), "hardware pressure and disabled taper stay unchanged");
+				rebuild(stroke, 0);
+				check(samePoints(stroke.realPoints, stroke.l0DrawPoints), "zero-duration taper keeps the original widths");
 				std::vector<InkPoint> tail; BuildCompletedPenTail(stroke, 0, tail);
 				check(samePoints(stroke.realPoints, tail), "disabled completed geometry stays unchanged");
+			}
+			// 同一匀速直角轨迹重放四种笔身；末尾 55ms 内含六段等长线段，足以完全展开笔锋。
+			struct WidthCase { StrokeWidthMode mode; float pressure; bool varied; };
+			const WidthCase widthCases[] = {
+				{ StrokeWidthMode::HardwarePressure, 0.10f, false },
+				{ StrokeWidthMode::HardwarePressure, 0.80f, false },
+				{ StrokeWidthMode::HardwarePressure, 0.10f, true },
+				{ StrokeWidthMode::SimulatedPressure, 0.10f, false }
+			};
+			for (const auto test : widthCases)
+			{
+				ActiveStroke stroke(10, 500, test.mode);
+				for (int i = 0; i <= 68; ++i)
+				{
+					auto& result = stroke.modeledResults.emplace_back();
+					result.position = ink::stroke_model::Vec2(100.f + 8 * (std::min)(i, 64),
+						100.f + 8 * (std::max)(0, i - 64));
+					result.time = ink::stroke_model::Time(i * 0.008);
+					result.pressure = test.varied && i >= 48 && i <= 64 ? 0.80f : test.pressure;
+					stroke.logicalInputTime = stroke.lastMovementInputTime = result.time.Value();
+					AppendNewModeledPoints(stroke, 1000.f);
+					if (i == 0)
+					{
+						rebuild(stroke);
+						check(samePoints(stroke.l0DrawPoints, stroke.realPoints), "a single pressure dot keeps its local width");
+					}
+				}
+				const auto body = stroke.realPoints;
+				if (test.varied)
+					check(body[64].r > body.front().r && body.back().r < body[64].r,
+						"limited pressure width follows light-heavy-light at constant speed");
+				const bool hardware = test.mode == StrokeWidthMode::HardwarePressure;
+				rebuild(stroke);
+				const auto moving = stroke.l0DrawPoints;
+				bool matchesCurve = moving.size() == body.size();
+				for (size_t i = 0; matchesCurve && i < body.size(); ++i)
+				{
+					const double u = i <= 62 ? 0.0 : double(i - 62) / 6.0;
+					const double scale = 1.0 - (hardware ? 0.35 : 0.7) * u * u * (3.0 - 2.0 * u);
+					matchesCurve = close(moving[i].r, body[i].r * scale) &&
+						moving[i].x == body[i].x && moving[i].y == body[i].y;
+				}
+				check(matchesCurve && safeContour(moving, false), "each local radius follows its width-mode taper through the corner");
+				if (hardware && !test.varied)
+				{
+					const bool light = test.pressure == 0.10f;
+					check(close(body.back().r * 2, light ? 3.2 : 11.6) &&
+						close(moving.back().r * 2, light ? 2.08 : 7.54),
+						"fully extended hardware tip retains 65 percent of settled pressure width");
+				}
+				rebuild(stroke);
+				check(samePoints(stroke.l0DrawPoints, moving) && samePoints(stroke.realPoints, body),
+					"repeated L0 rebuild neither compounds taper nor overwrites pressure or speed widths");
+				for (const double age : {0.0, 0.080})
+				{
+					LockPenTerminalState(stroke, stroke.lastMovementInputTime + age,
+						{body.back().x, body.back().y}, {body.back().x, body.back().y});
+					rebuild(stroke);
+					check(samePoints(stroke.l0DrawPoints, age == 0.0 ? moving : body),
+						"fast lift keeps moving geometry and settled lift restores every local width");
+					std::vector<InkPoint> completed;
+					const auto stored = FinalizeStoredStroke(stroke, {}, 0.055, completed);
+					check(stored && samePoints(completed, stroke.l0DrawPoints) && storedMatches(*stored, {}, completed),
+						"physical lift stores exactly the final live positions and widths");
+					ClearPenTerminalState(stroke);
+				}
+				stroke.liveTaperEnabled = false;
+				rebuild(stroke);
+				std::vector<InkPoint> completed;
+				BuildCompletedPenTail(stroke, 0.055, completed);
+				check(samePoints(body, stroke.l0DrawPoints) && samePoints(body, completed),
+					"device taper disabled keeps pressure-only or speed-only geometry through completion");
 			}
 			{
 				ActiveStroke marker(50, 500, StrokeWidthMode::Fixed, true);
@@ -1749,6 +1827,7 @@ namespace Inkeys::Drawing::Draw3
 							radius,duration,dwell,original.size(),stroke.tailRawCount,arcRepaired);
 					}
 			int modelCases = 0;
+			int baselineCases = 0;
 			int resumeCases = 0;
 			double maximumSettleAge = 0;
 			size_t maximumOutputs = 0;
@@ -1756,9 +1835,11 @@ namespace Inkeys::Drawing::Draw3
 				StrokeTimingProfileId::Fps120, StrokeTimingProfileId::Fps240 })
 				for (const auto prediction : { InkPredictionMode::Disabled, InkPredictionMode::StrokeEnd, InkPredictionMode::Kalman })
 					for (const float speed : { 25.0f, 500.0f, 1500.0f })
-						for (const auto mode : { StrokeWidthMode::Fixed, StrokeWidthMode::SimulatedPressure })
+						for (const auto mode : { StrokeWidthMode::Fixed, StrokeWidthMode::SimulatedPressure,
+							StrokeWidthMode::HardwarePressure })
 						{
 							++modelCases;
+							if (mode != StrokeWidthMode::HardwarePressure) ++baselineCases;
 							auto config = CreateStrokeModelConfiguration(96, profileId);
 							const auto& profile = config.timingProfile;
 							const double frame = 1.0 / profile.target_fps;
@@ -1842,7 +1923,8 @@ namespace Inkeys::Drawing::Draw3
 							check(settleAge >= 0 && settleAge <= 0.2 + 0.000001 && stroke.idleFrozen && *stroke.liveTipLength == 0,
 								"real model settles by 200ms then normal-width visuals freeze");
 							// 一半用真实模型续画，覆盖同向、直角、反向；其余保留停稳后真实 kUp。
-							const bool resumed = (modelCases / 2) % 2 != 0;
+							// 新增硬件压感复用同组模拟笔的场景，保留原有各档的续画/停稳 Up 覆盖。
+							const bool resumed = (baselineCases / 2) % 2 != 0;
 							if (resumed)
 							{
 								++resumeCases;
@@ -1913,6 +1995,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		predictionMode = kActivePredictionMode;
 		penTailCorrectionEnabled = true;
+		liveTaperEnabled = true;
 		tailInputDiagnostic = {}; // 运行时复用不得保留上一接触的输入归属或计数。
 		modeledResults.clear();
 		modelScratch.clear();

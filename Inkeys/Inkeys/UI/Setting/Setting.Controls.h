@@ -115,9 +115,9 @@ namespace Inkeys::UI::Setting::Design
 		std::vector<std::string> items;
 	};
 	bool ComboBox(const char* label, int* value, const std::vector<std::string>& items,
-		BelowComboMotion* motion = nullptr, std::uint64_t revision = 0);
+		BelowComboMotion* motion = nullptr, std::uint64_t revision = 0, int disabledItem = -1);
 	bool ComboBox(const char* label, int* value, const char* const items[], int count, ImGuiComboFlags flags = 0,
-		BelowComboMotion* motion = nullptr, std::uint64_t revision = 0);
+		BelowComboMotion* motion = nullptr, std::uint64_t revision = 0, int disabledItem = -1);
 	bool Slider(const char* label, float* value, float minimum, float maximum,
 		const char* format = "%.2f", ImGuiSliderFlags flags = 0);
 	bool SliderInt(const char* label, int* value, int minimum, int maximum,
@@ -169,7 +169,7 @@ namespace Inkeys::UI::Setting::Design
 	InlineRowContent InlinePreviewSelector(const char* id, std::vector<PreviewSelectorGroup> groups);
 	bool ComboRow(const char* id, const char* title, const char* description,
 		const char* glyph, int& value, const std::vector<std::string>& items, const char* note = nullptr, bool showNoteIcon = true,
-		bool keepNoteAsInfo = false);
+		bool keepNoteAsInfo = false, int disabledItem = -1);
 	// 与 ComboRow 相同，但在下拉框左侧预留一块预览区；preview 收到该区域的物理像素矩形。
 	bool ComboPreviewRow(const char* id, const char* title, const char* description,
 		const char* glyph, int& value, const std::vector<std::string>& items,

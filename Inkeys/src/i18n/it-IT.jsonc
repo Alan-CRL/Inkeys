@@ -761,6 +761,14 @@
           "N": "Correzione finale del tratto",
           "E": "Riduci le pieghe improvvise alla fine del tratto quando sollevi la penna, per una chiusura più naturale."
         },
+        "LiveTaper":
+        {
+          "N": "Assottigliamento live del tratto",
+          "E": "L’estremità del tratto si assottiglia durante il movimento e si ripristina quando ci si ferma. Può essere attivato o disattivato per ogni dispositivo di input.",
+          "Mouse": "Mouse",
+          "Touch": "Tocco",
+          "Pen": "Penna"
+        },
         "InkPrediction":
         {
           "N": "Previsione del tratto",
@@ -773,6 +781,9 @@
         {
           "N": "Inerzia del trascinamento della lavagna",
           "E": "La lavagna continua a scorrere dopo il rilascio in modalità trascinamento. Regolabile per ogni tipo di input.",
+          "TouchpadRequirement": "I gesti del touchpad sulla lavagna richiedono Windows 8.1 o versione successiva e un touchpad di precisione.",
+          "RtsNotice": "È in uso l’input a messaggi RealTimeStylus, non compatibile con il trascinamento della lavagna con il touchpad.",
+          "RtsGestureUnavailable": "Questo gesto non è disponibile in modalità RealTimeStylus sul sistema o dispositivo attuale.",
           "Mouse": "Mouse",
           "Touchpad": "Touchpad",
           "Touch": "Tocco",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "Impostazioni avanzate",
       "LowLevelSection": "Impostazioni di basso livello",
+      "InputMode":
+      {
+        "N": "Metodo di input",
+        "E": "Determina come viene ricevuto l’input dei dispositivi. Alcune opzioni potrebbero entrare in conflitto con i gesti del touchpad sulla lavagna.",
+        "MouseCompatibility": "Input di compatibilità mouse",
+        "RtsExtended": "RealTimeStylus (proprietà estese)",
+        "RtsBasicXY": "RealTimeStylus (X/Y di base)",
+        "Unavailable": "Non disponibile",
+        "FallbackFormat": "Ripiego da {0} a {1}.",
+        "PointerUnavailableOnOs": "Il sistema attuale non supporta WM_POINTER.",
+        "PointerInitFailed": "Inizializzazione di WM_POINTER non riuscita.",
+        "RtsExtendedFailed": "Inizializzazione delle proprietà estese di RealTimeStylus non riuscita.",
+        "RtsFailed": "Inizializzazione di RealTimeStylus non riuscita.",
+        "MouseFailed": "Inizializzazione dell’input di compatibilità mouse non riuscita."
+      },
       "PresentationMode":
       {
         "N": "Metodo di trasparenza della tela del desktop",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "Informazioni di inizializzazione della tela",
       "PresentationFallback": "Metodo di presentazione alternativo della tela del desktop",
       "SwapChainFallback": "Catena di scambio alternativa della tela del desktop",
+      "InputFallback": "Metodo di input alternativo",
       "DisplayInformation": "Schermi ed EDID"
     },
     "Update":

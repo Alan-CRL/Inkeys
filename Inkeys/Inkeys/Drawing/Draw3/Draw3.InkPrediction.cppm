@@ -349,9 +349,6 @@ export namespace Inkeys::Drawing::Draw3
 		const ink::stroke_model::KalmanPredictorParams& kalmanPredictorParams,
 		InkPredictionMode mode = kActivePredictionMode);
 	// 为普通笔 contact 按设备设置解析本笔固定的宽度来源。
-	// HardwarePressure 普通笔禁用 L0 实时笔锋；其余宽度模式沿用配置时长。
-	double ResolveLiveTipTaperDurationSeconds(StrokeWidthMode widthMode,
-		double configuredLiveTipDurationSeconds) noexcept;
 	StrokeWidthMode ResolveStrokeWidthMode(InputDeviceType deviceType,
 		InputWidthModeSettings settings, float downPressure) noexcept;
 	// 判断倒转 Pen 是否请求把当前可绘制工具覆盖为橡皮。
@@ -486,6 +483,7 @@ export namespace Inkeys::Drawing::Draw3
 		// 落笔时锁存；设置切换与断触续接均不能改写本笔的预测和完成态修正。
 		InkPredictionMode predictionMode = kActivePredictionMode;
 		bool penTailCorrectionEnabled = true;
+		bool liveTaperEnabled = true; // 落笔时按设备锁存，实时显示和最终保存共用。
 		EraserShape eraserShape = EraserShape::Circle;
 		TailInputDiagnostic tailInputDiagnostic;
 		std::vector<ink::stroke_model::Result> modeledResults;

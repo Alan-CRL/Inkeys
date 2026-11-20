@@ -2014,6 +2014,70 @@ namespace
 		Design::ApplyPalette(false);
 	}
 
+	void CheckDisabledComboRowItem(Checks& checks, float scale)
+	{
+		auto& io = ImGui::GetIO();
+		const auto oldFlags = io.ConfigFlags;
+		const auto oldSize = io.DisplaySize;
+		const bool oldTrickle = io.ConfigInputTrickleEventQueue;
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+		io.ConfigInputTrickleEventQueue = false;
+		io.DisplaySize = { 640 * scale, 420 * scale };
+		ImGuiWindow* host = nullptr;
+		ImGuiID comboId = 0, popupId = 0;
+		int selected = 0, changes = 0;
+		auto draw = [&](ImVec2 mouse = { -100, -100 }, bool down = false) {
+			io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+			ImGui::NewFrame();
+			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##disabled-combo-row", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+			host = ImGui::GetCurrentWindow();
+			ImGui::PushID("##input"); comboId = ImGui::GetID("##select"); ImGui::PopID();
+			popupId = ImHashStr("##fl_cb_popup", 0, comboId);
+			if (Design::ComboRow("##input", "Input", nullptr, nullptr, selected,
+				{ "Automatic", "RealTimeStylus", "WM_POINTER", "Mouse" }, nullptr, true, false, 2)) ++changes;
+			ImGui::End(); ImGui::Render();
+		};
+		auto key = [&](ImGuiKey value) {
+			io.AddKeyEvent(value, true); draw(); io.AddKeyEvent(value, false); draw(); draw();
+		};
+		auto open = [&] {
+			ImGui::FocusWindow(host);
+			ImGui::SetNavID(comboId, ImGuiNavLayer_Main, host->NavRootFocusScopeId, ImRect{});
+			GImGui->NavCursorVisible = true;
+			key(ImGuiKey_F4);
+		};
+		draw(); draw(); open();
+		ImGuiWindow* popup = nullptr;
+		for (const auto& entry : GImGui->OpenPopupStack)
+			if (entry.PopupId == popupId) popup = entry.Window;
+		checks.Expect(popup && popup->Active, "ComboRow opens with its disabled item still in the list");
+		if (popup && popup->Active)
+		{
+			const float height = ImFluent::FluentDpx(ImFluent::GetStyle().ControlHeight);
+			const auto start = popup->DC.CursorStartPos;
+			const float pointerTop = start.y + 2 * (height + ImGui::GetStyle().ItemSpacing.y);
+			auto disabledColor = ImGui::ColorConvertU32ToFloat4(ImFluent::GetColorU32(ImFluentCol_TextPrimary));
+			disabledColor.w *= ImGui::GetStyle().DisabledAlpha;
+			const ImU32 disabledText = ImGui::GetColorU32(disabledColor);
+			bool greyed = false;
+			for (const auto& vertex : popup->DrawList->VtxBuffer)
+				if (vertex.pos.y >= pointerTop && vertex.pos.y < pointerTop + height && vertex.col == disabledText) greyed = true;
+			checks.Expect(greyed, "disabled Pointer label is drawn with the disabled text opacity");
+			const ImVec2 pointerItem(start.x + 24 * scale, pointerTop + height / 2);
+			draw(pointerItem); draw(pointerItem, true); draw(pointerItem);
+			checks.Expect(selected == 0 && changes == 0 && ImGui::IsPopupOpen(popupId, ImGuiPopupFlags_AnyPopupLevel),
+				"clicking the disabled Pointer row neither commits nor closes the popup");
+			if (!GImGui->OpenPopupStack.empty()) ImGui::ClosePopupToLevel(0, true);
+			draw(); open();
+			key(ImGuiKey_Home); key(ImGuiKey_DownArrow); key(ImGuiKey_DownArrow); key(ImGuiKey_Enter);
+			checks.Expect(selected == 3 && changes == 1 && !ImGui::IsPopupOpen(popupId, ImGuiPopupFlags_AnyPopupLevel),
+				"keyboard navigation skips Pointer and commits mouse compatibility once");
+		}
+		if (!GImGui->OpenPopupStack.empty()) ImGui::ClosePopupToLevel(0, true);
+		io.ConfigFlags = oldFlags; io.ConfigInputTrickleEventQueue = oldTrickle; io.DisplaySize = oldSize;
+	}
+
 	struct FlatSample
 	{
 		ImVec4 visible{};
@@ -8556,6 +8620,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 			CheckBelowComboPopup(checks, fonts[0], fonts[1], fonts.back(), scale);
 			for (auto backdrop : { BackdropMode::Solid, BackdropMode::Acrylic })
 				CheckComboBoxInteraction(checks, fonts[0], scale, backdrop);
+			CheckDisabledComboRowItem(checks, scale);
 			CheckDragScrolling(checks, fonts[0], fonts[1], scale);
 			CheckCursorPageControls(checks, fonts[0], fonts[1], fonts.back(), scale);
 			continue;
@@ -8670,6 +8735,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 		CheckDrawData(checks);
 		for (auto backdrop : { BackdropMode::Solid, BackdropMode::Acrylic })
 			CheckComboBoxInteraction(checks, fonts[0], scale, backdrop);
+		CheckDisabledComboRowItem(checks, scale);
 		CheckDrawData(checks);
 		CheckMultilineRowAnimations(checks, fonts, fontDirectory, scale);
 		CheckSettingAttentionRows(checks,fonts,scale);

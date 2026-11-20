@@ -2,7 +2,7 @@
 
 ## Goal
 
-统筹 Inkeys3 中期重构的六步路线：先建立可诊断的日志基座，再逐步整理 UI3 分层、Win7 ULW 呈现、多画布与窗口架构、输入后端以及 Draw3 4K 性能。总任务持有来源需求、任务地图、跨子任务约束和最终集成验收；本身不直接作为实现目标。
+统筹 Inkeys3 中期重构的六步路线：先建立可诊断的日志基座，再逐步整理 UI3 分层、Win7 ULW 呈现、输入后端、多画布与窗口架构以及 Draw3 4K 性能。总任务持有来源需求、任务地图、跨子任务约束和最终集成验收；本身不直接作为实现目标。
 
 ## 来源资料（已存档于 `research/`）
 
@@ -24,9 +24,9 @@
 | 第0步 | `11-16-logging-system-refactor` 日志系统重构 | 已完成（cfe8329d、f8990ad6，已归档） | 本轮核心：重建日志框架、规范现有日志、设置页日志选项、调试输出转日志、PptCOM 共用输出 |
 | 第0步后续 | 白板切换失败诊断闭环 | 未建 | 依赖第0步日志基座；对应调研文档 §4 / P0 清单 |
 | 第1步 | UI3 Bar 分层封装 | 未建 | — |
-| 第2步 | `11-17-win7-ulw-presentation` Draw3 透明画布呈现：交换链等待与 ULW 流水线 | 规划中（分支 `refactoring/draw`） | 与第1步（`refactoring/drawpad-ui`）并行；子任务 A `11-17-dcomp-waitable-latency`（先做）、B `11-17-ulw-texture-pipeline` |
-| 第3步 | 多画布与窗口架构 | 未建 | 需求梳理阶段，架构未定案 |
-| 第4步 | 输入后端（WM_POINTER / DM） | 未建 | — |
+| 第2步 | `11-17-win7-ulw-presentation` Draw3 透明画布呈现 | 保持开启（`refactoring/draw`） | 与第1步（`refactoring/drawpad-ui`）并行；原有 A `11-17-dcomp-waitable-latency`、B `11-17-ulw-texture-pipeline` 继续由第二步追踪，待 Win7 实机验证。 |
+| 第4步 | `11-19-draw3-input-backends` 输入后端、白板触控板拖动与实时笔锋 | 规划中（`refactoring/draw`） | 提前至第三步之前实施；详细规则见子任务的 11 月 19 日调查。 |
+| 第3步 | 多画布与窗口架构 | 未建 | 排在第四步之后，架构未定案。 |
 | 第5步 | Draw3 4K 橡皮与漫游性能 | 未建 | P0 局部优化 + GPU 分段诊断可先行；另记（2026-11-18，第2步-B 讨论转入）：多矩形脏区——合成、ULW 的 GPU 拷贝与逐行复制只处理真正变化的几块（ULW `prcDirty` 只接受一个矩形，仍传并集；DComp `Present1` 可传多个脏矩形），对应调研文档 §4.4 |
 
 子任务按需创建；树结构不代表依赖关系，依赖写在各子任务的 `prd.md` / `implement.md` 中。

@@ -761,6 +761,14 @@
           "N": "Koreksi ujung saat angkat pena",
           "E": "Kurangi tekukan mendadak pada ujung goresan saat mengangkat pena agar akhir goresan lebih alami."
         },
+        "LiveTaper":
+        {
+          "N": "Ujung goresan menirus langsung",
+          "E": "Ujung goresan menirus saat bergerak dan kembali normal saat berhenti. Dapat diaktifkan atau dinonaktifkan untuk setiap perangkat input.",
+          "Mouse": "Mouse",
+          "Touch": "Sentuhan",
+          "Pen": "Pena"
+        },
         "InkPrediction":
         {
           "N": "Prediksi tinta",
@@ -773,6 +781,9 @@
         {
           "N": "Inersia seret papan tulis",
           "E": "Terus meluncur setelah dilepas dalam mode seret papan tulis. Atur setiap jenis input secara terpisah.",
+          "TouchpadRequirement": "Gestur touchpad pada papan tulis memerlukan Windows 8.1 atau lebih baru dan touchpad presisi.",
+          "RtsNotice": "Saat ini input pesan RealTimeStylus sedang digunakan; tidak kompatibel dengan seret papan tulis menggunakan touchpad.",
+          "RtsGestureUnavailable": "Gestur ini tidak tersedia dalam mode RealTimeStylus pada sistem atau perangkat saat ini.",
           "Mouse": "Mouse",
           "Touchpad": "Touchpad",
           "Touch": "Sentuhan",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "Pengaturan lanjutan",
       "LowLevelSection": "Pengaturan tingkat rendah",
+      "InputMode":
+      {
+        "N": "Metode input",
+        "E": "Menentukan cara input perangkat diterima. Beberapa opsi mungkin bertentangan dengan gestur touchpad pada papan tulis.",
+        "MouseCompatibility": "Input kompatibilitas mouse",
+        "RtsExtended": "RealTimeStylus (properti tambahan)",
+        "RtsBasicXY": "RealTimeStylus (X/Y dasar)",
+        "Unavailable": "Tidak tersedia",
+        "FallbackFormat": "Beralih dari {0} ke {1}.",
+        "PointerUnavailableOnOs": "Sistem saat ini tidak mendukung WM_POINTER.",
+        "PointerInitFailed": "Inisialisasi WM_POINTER gagal.",
+        "RtsExtendedFailed": "Inisialisasi properti tambahan RealTimeStylus gagal.",
+        "RtsFailed": "Inisialisasi RealTimeStylus gagal.",
+        "MouseFailed": "Inisialisasi input kompatibilitas mouse gagal."
+      },
       "PresentationMode":
       {
         "N": "Metode transparansi kanvas desktop",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "Info inisialisasi kanvas",
       "PresentationFallback": "Metode presentasi cadangan untuk kanvas desktop",
       "SwapChainFallback": "Rantai pertukaran cadangan untuk kanvas desktop",
+      "InputFallback": "Metode input cadangan",
       "DisplayInformation": "Layar dan EDID"
     },
     "Update":

@@ -2,7 +2,7 @@
 
 ## 1. Scope / Trigger
 
-适用于Draw3白板Selection移动模式的MouseLeft、Touch、Pen/PenTail。接触输入保留已修复的连续手势正确性和呈现节拍；Surface Pro 11触摸正常不表示旧距离/时长最优。2026-11-13收尾移除未被产品使用的Chromium参考估速器与PhysicsBased/Legacy曲线，当前只保留可靠尾段估速和向量摩擦。2026-11-12起PTP双指扩展暂时停用：本机探针证明RTS与DM在同一HWND的Activate/Enable存在输入委托冲突，独立DM HWND也无法跨窗SetContact；`TouchpadNavigationOwner::Initialize`必须在任何COM/Activate之前按quarantine返回，不得只Disable viewport或盲目重建RTS。下文Touchpad/DM类型、Owner和数值测试是保留的停用实现与未来前端参考，不是当前真实输入能力；配置字段及设置偏好保持，但不产生PTP运动。2026-11-13起接入可信物理尺度及设备profile；触控板按压拖动独立识别、绘制模式漫游和缩放继续延后。绘制latest mailbox、页面存储、Freeze/背景与呈现树保持。
+适用于Draw3白板Selection移动模式的MouseLeft、Touch、Pen/PenTail。接触输入保留已修复的连续手势正确性和呈现节拍；Surface Pro 11触摸正常不表示旧距离/时长最优。2026-11-13收尾移除未被产品使用的Chromium参考估速器与PhysicsBased/Legacy曲线，当前只保留可靠尾段估速和向量摩擦。2026-11-12起PTP双指扩展曾整体停用，2026-11-20第4步起改为按实际后端启用（见下文“配置与按后端启用的触控板入口”）；以下为当时原因：本机探针证明RTS与DM在同一HWND的Activate/Enable存在输入委托冲突，独立DM HWND也无法跨窗SetContact；因此RTS实际后端时`TouchpadNavigationOwner::Initialize`仍必须在任何COM/Activate之前返回，不得只Disable viewport或盲目重建RTS；下文DM细则只在实际WM_POINTER后端时生效，真机能力待验收。2026-11-13起接入可信物理尺度及设备profile；触控板按压拖动独立识别、绘制模式漫游和缩放继续延后。绘制latest mailbox、页面存储、Freeze/背景与呈现树保持。
 
 ## 2. Signatures
 
@@ -76,9 +76,9 @@
 - RTS每Down进程内唯一token随binding直到Up/Cancel/重置/失败发布/OutOfRange/Shutdown。窗口精确唯一查询{raw tcid,cid,sourceGeneration,原样DownQPC}，碰撞/缺失/表满保守不纠正但不丢core输入；旧token/epoch/key/handle不能清新笔。Pointer cursor/range不证明同一次Down，RTS裁决不全局清Pointer-local latch。
 - 身份选择与mailbox Publish/Clear在同一短锁截面；实际光标/橡皮通过组合读取取配对抑制状态。UI/触觉/wake在锁外，普通Move不分配、不新增control wake；旧sink默认转发不改变latest样本格式。
 
-### 配置与已停用的触控板 DM 前端
+### 配置与按后端启用的触控板入口
 
-- 当前运行合同是`kTouchpadDirectManipulationQuarantined=true`：`TouchpadNavigationOwner::Initialize`在写窗口、COM初始化、CreateViewport和Activate之前返回`false`，诊断记录`action=quarantined reason=rts-dm-hwnd-conflict`；没有已初始化owner需要退休。下列DM/Owner细则只描述保留的停用实现及其无窗口模型，不能作为重新启用或系统共存证明。
+- 2026-11-20（第4步）起隔离改为按实际后端：`TouchpadNavigationOwner::Initialize(window, pointerReady)` 在实际后端不是 WM_POINTER 时于任何 COM/Activate 之前返回 `false`，RTS 同 HWND 仍禁止 DM；实际 Pointer（Win8.1+）时启用下列 DM 细则。Win11 实际 RTS 改用 `TouchpadInteractionOwner`（窗口级触控板注册 + Interaction Context，同一 `TouchpadNavigationBridge`），Win8.1/10 实际 RTS 不创建任何导航入口。入口在生产者就绪后初始化；合同细节见 [input-and-ink.md](input-and-ink.md#输入后端选择第4步2026-11-20)。真机共存与 Win8.1 命中链仍待验收。
 
 - 设置→绘制→通用有“白板拖动惯性”总开关，下方内联鼠标/触控板/触摸/笔/笔（笔尾）；默认仅鼠标和笔尾无惯性。总关收起但保留子值，允许子项全关；启动及用户Changed经Host同代快照应用，仅变化发布control wake，异步保存到main.json。
 - 关闭惯性只裁决最后释放/boost，不丢真实Move/Up；非末指Up仍参与方向仲裁。热禁停止对应coast并清残余，held继续平移，重开不复活旧曲线；纯kernel样本默认true不能代替产品五类默认。Mouse手感矩阵须显式开启Mouse惯性。
@@ -122,7 +122,7 @@
 | SetContact S_OK但系统未Running | 不建held，四类接触仍可准入，BEGIN只开泵/停旧coast |
 | 关联后初始/重复READY先到 | 不提前关闭候选；后续BEGIN→Running仍可识别 |
 | BEGIN但未识别→END | 真实END释放泵和候选，不用静默超时猜Up |
-| 当前PTP/DM初始化或hit-test | quarantine在任何COM/Activate前返回不可用；不建立native运动，原RTS接触保持；viewport选项不再被当作共存保证 |
+| PTP/DM初始化或hit-test | 实际后端不是WM_POINTER时在任何COM/Activate前返回不可用，不建立native运动，原RTS接触保持；实际Pointer时按本节DM细则启用；viewport选项不被当作共存保证 |
 | Pan内高频Mouse纯位置流 | mailbox保持最新，无额外cursor control标记/generation，不提前打断活动deadline |
 | Mouse状态边沿/退出Pan | 仍及时唤醒；非Pan应用光标恢复既有位置重绘 |
 | 关闭诊断 | 无CanvasPan记录，不增加高频格式化 |
@@ -147,7 +147,7 @@
 - `--draw3-diagnostic-output-test`验证生产gate启用/关闭、文件sink字节与LastError；config测试验证默认、往返、copy、ReadMini、非法bool、reset与NoUpload；i18n check覆盖20语。
 - Pen/尾真实生产入环与生命周期、五类默认/同帧混源release门控、逆序非重叠/热禁真实末源、native历史/interval gap/同QPC/旧admission/接手裁剪及held热开必须经过生产probe；真实Event DuplicateHandle与retirement失败重试使用同一生产routine。Debug大型Rig用堆持有，不通过改工程栈或少测来绕过溢出。
 - 设置`--no-window --setting-general-only`及真实Config元数据覆盖六bool默认/往返/非法/ReadMini/Reset/NoUpload、父关保留子项/单击ID/显隐禁交互/窄宽布局；二十语言全部校验。
-- 当前前端回归必须由`RunTouchpadIngressProductionProbe`断言DM quarantine仍启用，并保留停用实现的setup/关联/interaction/状态测试及四类真实Coordinator接触回归；这些只防止隔离被无意撤销，不证明PTP可用。未来重新启用前必须执行真实RTS/DM注册与接触探针；独立HWND初始化、直接PublishHiddenTestTouchpadNavigation或只断言选项位均不够。
+- `RunTouchpadIngressProductionProbe` 现断言 Pointer 未就绪时 DM 初始化在创建 COM 资源前被拒（2026-11-20 前为永久 quarantine），并保留停用实现的setup/关联/interaction/状态测试及四类真实Coordinator接触回归；这些只防止RTS下误建DM，不证明PTP可用。宣称某系统组合可用前必须执行真实注册与接触探针；独立HWND初始化、直接PublishHiddenTestTouchpadNavigation或只断言选项位均不够。
 - 新增真实resolver/ContactInput→Pending→有序决策→窗口token路径回归：各轴/DPI/旋转、>16顺序Down、坏终态/重复逆frame、排队物理失效、双publisher配对及ABA。不能只测公式或空样本的否定断言。
 - 屏幕笔到达簇回归重放2026-11-14用户日志的五个完整手势（不补造截断key75）；覆盖毫米/回退profile的非零可靠释放、滑行实际推进、末端异常跳跃、同簇反向、全段压缩、stale Up及原Indirect/Touch行为。
 - 时序/质量回归：共同10MHz时钟的240/960Hz与cap两侧、19ms空档后的末尾簇、Touch两单位、低速量化、单末点/静止后jump/重复平台、持续加速与减速、反向/stale/取消；真实非零旧coast→质量限幅必须boosted=selected，纯cap限幅仍保持续甩资格。旧“超cap即清窗”异常断言按新合同改，普通Indirect基准单独比较。
@@ -168,11 +168,11 @@ Wrong：只放开Pen准入却未进producer导航环；用latest Running/队列p
 Correct：同一producer predicate贯通Pen历史；按实际时间区间/真值sourceKey/admissionRevision裁决；COM责任退休且最外层完成后用独立句柄最后通知。
 
 Wrong：把MANUALUPDATE当输入隔离，把SetContact S_OK当Running，或只有桥接器注入测试就声称设备链已通。
-Correct：当前在任何DM COM/Activate之前执行quarantine，保留RTS接触；未来只有在真实注册与接触探针证明共存后才能启用替代前端，不能把flags、SetContact或无窗口模型当作系统级修复。
+Correct：RTS实际后端时在任何DM COM/Activate之前拒绝DM，保留RTS接触；DM只随实际WM_POINTER后端启用，Win11 RTS改用窗口级注册+IC；真机共存与命中链仍需探针验收，不能把flags、SetContact或无窗口模型当作系统级修复。
 
 ## 8. 已完成交付与后续任务入口
 
-2026-11-13用户确认当前机惯性合适，旧参考模型清理与有序输入优化已完成；完整构建及七项无窗口回归、2240条场景和整份探针输出等价检查见[归档收尾记录](../../tasks/archive/2026-11/11-08-chromium-touch-fling/cleanup-validation-2026-11-13.md)。两个拖动任务均已completed；归档不表示其它硬件/系统/光学性能已全部实测。尺度适配已在独立任务[11-13-whiteboard-pan-scale-device](../../tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/prd.md)获批实现，验证状态见其[记录](../../tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/validation.md)；旧scale-stage草案“精确保留本机距离”和“笔不平移”已失效。触控板及新输入后端仍按[未来路线](../../tasks/archive/2026-11/11-08-chromium-touch-fling/research/input-backend-future-plan-2026-11-13.md)延期，不解除quarantine。
+2026-11-13用户确认当前机惯性合适，旧参考模型清理与有序输入优化已完成；完整构建及七项无窗口回归、2240条场景和整份探针输出等价检查见[归档收尾记录](../../tasks/archive/2026-11/11-08-chromium-touch-fling/cleanup-validation-2026-11-13.md)。两个拖动任务均已completed；归档不表示其它硬件/系统/光学性能已全部实测。尺度适配已在独立任务[11-13-whiteboard-pan-scale-device](../../tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/prd.md)获批实现，验证状态见其[记录](../../tasks/archive/2026-11/11-13-whiteboard-pan-scale-device/validation.md)；旧scale-stage草案“精确保留本机距离”和“笔不平移”已失效。触控板及新输入后端已由第4步任务`11-19-draw3-input-backends`按实际后端接入（2026-11-20），原[未来路线](../../tasks/archive/2026-11/11-08-chromium-touch-fling/research/input-backend-future-plan-2026-11-13.md)仅作历史对照。
 
 Wrong：按Register/publication先选整帧单位，或重复frame走admissionFailed清零；Pointer继承lastKnownSource就当同一次RTS Down。
 Correct：有序Down唯一准入、逐段canonical DIP；重复帧在Drain前no-op；真实token精确身份确认，无法桥接的Pointer保守独立。

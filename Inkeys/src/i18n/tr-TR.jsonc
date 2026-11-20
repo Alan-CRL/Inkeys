@@ -761,6 +761,14 @@
           "N": "Kalem kalkışında uç düzeltme",
           "E": "Daha doğal bir bitiş için kalem kaldırılırken çizginin ucundaki ani kırılmaları azaltın."
         },
+        "LiveTaper":
+        {
+          "N": "Canlı kalem ucu inceltme",
+          "E": "Hareket sırasında çizginin ucu giderek incelir, durduğunuzda eski haline döner. Her giriş aygıtı için ayrı ayrı açılıp kapatılabilir.",
+          "Mouse": "Fare",
+          "Touch": "Dokunma",
+          "Pen": "Kalem"
+        },
         "InkPrediction":
         {
           "N": "Mürekkep tahmini",
@@ -773,6 +781,9 @@
         {
           "N": "Beyaz tahta sürükleme eylemsizliği",
           "E": "Beyaz tahta sürükleme modunda bırakıldıktan sonra kaymaya devam eder. Her giriş türü ayrı ayrı ayarlanabilir.",
+          "TouchpadRequirement": "Beyaz tahtadaki dokunmatik yüzey hareketleri için Windows 8.1 veya üzeri ve hassas dokunmatik yüzey gerekir.",
+          "RtsNotice": "Şu anda RealTimeStylus ileti girişi kullanılıyor; bu giriş, dokunmatik yüzeyle beyaz tahta sürüklemeyle uyumlu değildir.",
+          "RtsGestureUnavailable": "Bu hareket, geçerli sistemde veya aygıtta RealTimeStylus modunda kullanılamaz.",
           "Mouse": "Fare",
           "Touchpad": "Dokunmatik yüzey",
           "Touch": "Dokunma",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "Gelişmiş ayarlar",
       "LowLevelSection": "Alt düzey ayarlar",
+      "InputMode":
+      {
+        "N": "Giriş yöntemi",
+        "E": "Cihaz girişinin nasıl alınacağını belirler. Bazı seçenekler, beyaz tahtadaki dokunmatik yüzey hareketleriyle çakışabilir.",
+        "MouseCompatibility": "Fare uyumluluk girişi",
+        "RtsExtended": "RealTimeStylus (genişletilmiş özellikler)",
+        "RtsBasicXY": "RealTimeStylus (temel X/Y)",
+        "Unavailable": "Kullanılamıyor",
+        "FallbackFormat": "{0} yerine {1} kullanıldı.",
+        "PointerUnavailableOnOs": "Geçerli sistem WM_POINTER’ı desteklemiyor.",
+        "PointerInitFailed": "WM_POINTER başlatılamadı.",
+        "RtsExtendedFailed": "RealTimeStylus genişletilmiş özellikleri başlatılamadı.",
+        "RtsFailed": "RealTimeStylus başlatılamadı.",
+        "MouseFailed": "Fare uyumluluk girişi başlatılamadı."
+      },
       "PresentationMode":
       {
         "N": "Masaüstü tuvali saydam sunum yöntemi",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "Tuval başlatma bilgisi",
       "PresentationFallback": "Masaüstü tuvali yedek sunum yöntemi",
       "SwapChainFallback": "Masaüstü tuvali yedek takas zinciri",
+      "InputFallback": "Yedek giriş yöntemi",
       "DisplayInformation": "Ekranlar ve EDID"
     },
     "Update":

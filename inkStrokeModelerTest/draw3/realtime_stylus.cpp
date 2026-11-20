@@ -167,7 +167,8 @@ namespace draw3
 			DecodedStylusAngles result;
 			if (hasAzimuthAltitude && std::isfinite(azimuth) && std::isfinite(altitude))
 			{
-				result.tilt = kHalfPi - std::clamp(altitude, 0.0f, kHalfPi);
+				// RTS 倒置笔的仰角为负，倾斜幅度取仰角的绝对值再求余角。
+				result.tilt = kHalfPi - std::clamp(std::abs(altitude), 0.0f, kHalfPi);
 				result.orientation = WrapOrientation(kTwoPi - azimuth);
 				return result;
 			}
@@ -175,7 +176,8 @@ namespace draw3
 			const float xProjection = std::tan(std::clamp(xTilt, -kTiltLimit, kTiltLimit));
 			const float yProjection = std::tan(std::clamp(yTilt, -kTiltLimit, kTiltLimit));
 			result.tilt = std::clamp(std::atan(std::hypot(xProjection, yProjection)), 0.0f, kHalfPi);
-			result.orientation = WrapOrientation(std::atan2(-yProjection, xProjection));
+			// RTS 正 Y 倾角朝屏幕上方，对应模型从 +X 逆时针转向 +π/2。
+			result.orientation = WrapOrientation(std::atan2(yProjection, xProjection));
 			return result;
 		}
 

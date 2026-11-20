@@ -54,6 +54,7 @@ export namespace Inkeys
 	}
 
 	enum class Draw3PresentationPreference { Automatic, DirectComposition, Win7Dwm, Ulw };
+	enum class Draw3InputPreference { Automatic, RealTimeStylus, Pointer, MouseCompatibility };
 	// 自动目前固定使用 Flip；Win7Dwm 等路径确认后再按呈现方式选择。
 	enum class Draw3SwapChainPreference { Automatic, Flip, Sequential };
 	// 自动：硬件优先、失败回退 WARP；硬件加速：只用硬件、失败不回退；软件加速：直接使用 WARP。
@@ -499,6 +500,12 @@ GROUP(UI, \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MultiTouchEnabled, true) \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PenTailCorrectionEnabled, true) \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, InkPredictionMode, 2) \
+		GROUP(LiveTaper, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enabled, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Mouse, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Touch, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Pen, true) \
+		) \
 		/* 设备性能看板：关闭后绘制线程不累加、不写盘；数据只存本机 Inkeys/Memory，不上传。 */ \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DevicePerformanceRecording, true) \
 		GROUP(AutoSave, \
@@ -582,6 +589,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, InterruptedStrokeReconnectPenTail, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, TouchContactAreaAssistance, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PresentationMode, static_cast<int>(Draw3PresentationPreference::Automatic)) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, InputMode, static_cast<int>(Draw3InputPreference::Automatic)) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, SwapChainMode, static_cast<int>(Draw3SwapChainPreference::Automatic)) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, RenderAcceleration, static_cast<int>(Draw3RenderAccelerationPreference::Automatic)) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableZhaoxinCompatibility, true) \

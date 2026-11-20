@@ -761,6 +761,14 @@
           "N": "Correction de fin de trait",
           "E": "Réduire les courbures brusques en fin de trait au lever du stylo pour un tracé plus naturel."
         },
+        "LiveTaper":
+        {
+          "N": "Effilage dynamique du trait",
+          "E": "L’extrémité du trait s’effile pendant le mouvement et se rétablit à l’arrêt. Peut être activé ou désactivé pour chaque périphérique de saisie.",
+          "Mouse": "Souris",
+          "Touch": "Tactile",
+          "Pen": "Stylet"
+        },
         "InkPrediction":
         {
           "N": "Prédiction du trait",
@@ -773,6 +781,9 @@
         {
           "N": "Inertie du déplacement du tableau blanc",
           "E": "Le tableau continue de glisser après le relâchement en mode déplacement. Réglable pour chaque type de saisie.",
+          "TouchpadRequirement": "Les gestes du pavé tactile sur le tableau blanc nécessitent Windows 8.1 ou version ultérieure et un pavé tactile de précision.",
+          "RtsNotice": "La saisie par messages RealTimeStylus est actuellement utilisée ; elle n’est pas compatible avec le déplacement du tableau blanc au pavé tactile.",
+          "RtsGestureUnavailable": "Ce geste n’est pas disponible en mode RealTimeStylus sur ce système ou cet appareil.",
           "Mouse": "Souris",
           "Touchpad": "Pavé tactile",
           "Touch": "Tactile",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "Paramètres avancés",
       "LowLevelSection": "Paramètres de bas niveau",
+      "InputMode":
+      {
+        "N": "Méthode de saisie",
+        "E": "Détermine la façon dont les saisies des périphériques sont reçues. Certaines options peuvent entrer en conflit avec les gestes du pavé tactile sur le tableau blanc.",
+        "MouseCompatibility": "Saisie de compatibilité souris",
+        "RtsExtended": "RealTimeStylus (propriétés étendues)",
+        "RtsBasicXY": "RealTimeStylus (X/Y de base)",
+        "Unavailable": "Indisponible",
+        "FallbackFormat": "Repli de {0} vers {1}.",
+        "PointerUnavailableOnOs": "Le système actuel ne prend pas en charge WM_POINTER.",
+        "PointerInitFailed": "Échec de l’initialisation de WM_POINTER.",
+        "RtsExtendedFailed": "Échec de l’initialisation des propriétés étendues de RealTimeStylus.",
+        "RtsFailed": "Échec de l’initialisation de RealTimeStylus.",
+        "MouseFailed": "Échec de l’initialisation de la saisie de compatibilité souris."
+      },
       "PresentationMode":
       {
         "N": "Mode de transparence du canevas du bureau",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "Informations d’initialisation du canevas",
       "PresentationFallback": "Mode de présentation de secours du canevas du bureau",
       "SwapChainFallback": "Chaîne d’échange de secours du canevas du bureau",
+      "InputFallback": "Mode de saisie de secours",
       "DisplayInformation": "Écrans et EDID"
     },
     "Update":

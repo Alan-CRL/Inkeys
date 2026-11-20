@@ -32,6 +32,17 @@ export namespace Inkeys::Drawing::Draw3
 		MouseRight = 3
 	};
 
+	struct LiveTaperOptions
+	{
+		bool enabled = true;
+		bool mouse = true;
+		bool touch = true;
+		bool pen = true;
+
+		bool operator==(const LiveTaperOptions&) const noexcept = default;
+		bool Allows(InputDeviceType device) const noexcept;
+	};
+
 	// 标识 contact 最新的一致生命周期快照。
 	enum class ContactPhase : uint32_t
 	{

@@ -9,6 +9,8 @@
 #include <windowsx.h>
 #include <dwmapi.h>
 #include <directmanipulation.h>
+#include <dbt.h>
+#include "Draw3.RtsStartup.h"
 #include <wrl.h>
 #include <objbase.h>
 #include <tpcshrd.h>
@@ -20,6 +22,8 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <optional>
+#include <stdexcept>
 #include <mutex>
 #include <utility>
 #include <tchar.h> // Tablet Pen Service 属性宏仍使用 _T。
@@ -42,8 +46,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		constexpr UINT kApplySystemCursorMessage = WM_APP + 1;
 		using Detail::kTouchpadNavigationMessage;
-		// DM 与 RTS 在同一 HWND 上争用输入委托；替代触控板前端完成前不得激活这套 COM 路径。
-		constexpr bool kTouchpadDirectManipulationQuarantined = true;
+		constexpr UINT kStartTouchpadNavigationMessage = WM_APP + 0x3D6;
 		std::atomic<UINT_PTR> nextTouchpadNavigationIdentity = 0;
 		constexpr LONG_PTR kPromotedPointerSignatureMask = 0xFFFFFF00;
 		constexpr LONG_PTR kPromotedPointerSignature = 0xFF515700;
@@ -184,6 +187,35 @@ namespace Inkeys::Drawing::Draw3
 			return getPointerType;
 		}
 
+		GetPointerPenInfoFunction ResolveGetPointerPenInfo() noexcept
+		{
+			static const auto getPen = reinterpret_cast<GetPointerPenInfoFunction>(
+				GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetPointerPenInfo"));
+			return getPen;
+		}
+
+		struct PointerDrawingApi
+		{
+			decltype(&GetPointerTouchInfo) touch;
+			decltype(&GetPointerDevice) device;
+			decltype(&GetPointerDeviceRects) rects;
+			decltype(&RegisterPointerDeviceNotifications) notifications;
+		};
+
+		const PointerDrawingApi& DrawingPointerApi() noexcept
+		{
+			static const auto api = [] {
+				const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+				return PointerDrawingApi{
+					reinterpret_cast<decltype(&GetPointerTouchInfo)>(GetProcAddress(user32, "GetPointerTouchInfo")),
+					reinterpret_cast<decltype(&GetPointerDevice)>(GetProcAddress(user32, "GetPointerDevice")),
+					reinterpret_cast<decltype(&GetPointerDeviceRects)>(GetProcAddress(user32, "GetPointerDeviceRects")),
+					reinterpret_cast<decltype(&RegisterPointerDeviceNotifications)>(GetProcAddress(user32, "RegisterPointerDeviceNotifications"))
+				};
+			}();
+			return api;
+		}
+
 		struct PointerDetails
 		{
 			bool typeKnown = false;
@@ -199,16 +231,11 @@ namespace Inkeys::Drawing::Draw3
 			bool cancelled = false;
 		};
 
-		PointerDetails QueryPointerDetails(uint32_t pointerId) noexcept
+		PointerDetails QueryPointerDetails(uint32_t pointerId, POINTER_PEN_INFO* drawingPen = nullptr) noexcept
 		{
 			PointerDetails details;
 			// Win7 没有 Pointer Pen API，必须动态解析，缺失时继续使用当前工具。
-			static const GetPointerPenInfoFunction getPointerPenInfo = []() noexcept
-				{
-					const HMODULE user32 = GetModuleHandleW(L"user32.dll");
-					return user32 ? reinterpret_cast<GetPointerPenInfoFunction>(
-						GetProcAddress(user32, "GetPointerPenInfo")) : nullptr;
-				}();
+			const auto getPointerPenInfo = ResolveGetPointerPenInfo();
 			const GetPointerTypeFunction getPointerType = ResolveGetPointerType();
 			if (!getPointerType || !getPointerType(pointerId, &details.type)) return details;
 			details.typeKnown = true;
@@ -238,6 +265,7 @@ namespace Inkeys::Drawing::Draw3
 				penInfo.pointerInfo.pointerType != PT_PEN) return details;
 			details.cancelled = (penInfo.pointerInfo.pointerFlags & POINTER_FLAG_CANCELED) != 0;
 			details.penInfoKnown = true;
+			if (drawingPen) *drawingPen = penInfo;
 			// 只被动读取 tablet cursor；旧系统缺少 API 时仅省略触觉，不改输入或光标。
 			using GetPointerCursorIdFunction = BOOL(WINAPI*)(UINT32, UINT32*);
 			static const auto getPointerCursorId = []() noexcept
@@ -377,9 +405,10 @@ namespace Inkeys::Drawing::Draw3
 	public:
 		explicit TouchpadNavigationOwner(std::shared_ptr<Detail::TouchpadNavigationBridge> bridge, ContactInputCoordinator* input)
 			: bridge_(std::move(bridge)), frontend_(*bridge_), input_(input) {}
-		bool Initialize(HWND window)
+		bool Initialize(HWND window, bool pointerReady)
 		{
-			if (kTouchpadDirectManipulationQuarantined)
+			// 同一 HWND 的输入委托只能交给已就绪的 Pointer 后端。
+			if (!pointerReady)
 			{
 				LogCanvasPan("touchpad-init action=quarantined reason=rts-dm-hwnd-conflict");
 				return false;
@@ -405,6 +434,11 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (SUCCEEDED(result)) result = manager_->Activate(window);
 			if (SUCCEEDED(result)) { retirement_.managerActivated = true; result = viewport_->Enable(); }
+			if (SUCCEEDED(result))
+			{
+				viewportEnabled_ = bridge_->enabled.load();
+				if (!viewportEnabled_) result = viewport_->Disable();
+			}
 			if (FAILED(result))
 			{
 				LogCanvasPan("touchpad-init result=0x%08lx action=unavailable", static_cast<unsigned long>(result));
@@ -425,20 +459,23 @@ namespace Inkeys::Drawing::Draw3
 			if (bridge_->Active() && !bridge_->Running() && !bridge_->inertiaAllowed.load())
 			{ EndInertia(); return; }
 			if (bridge_->NeedsUpdate() && !Admitted()) { Cancel(); return; }
-			if (frontend_.Epoch() != epoch || !bridge_->enabled.load(std::memory_order_acquire))
+			const bool enabled = bridge_->enabled.load(std::memory_order_acquire);
+			// 重新进入拖动时必须主动 Enable；已禁用的 viewport 不能依靠下一次命中来启动。
+			if (frontend_.Epoch() != epoch || enabled != viewportEnabled_)
 			{
 				frontend_.Reset(epoch);
-				viewport_->Stop(); viewport_->Disable();
+				viewport_->Stop(); viewport_->Disable(); viewportEnabled_ = false;
 				RECT rect{};
 				if (GetClientRect(window_, &rect) && rect.right > 0 && rect.bottom > 0)
 				{
 					rect_ = rect;
 					if (FAILED(viewport_->SetViewportRect(&rect_))) { failed_ = true; Cancel(); return; }
 				}
-				if (!Reset()) { Cancel(); return; }
-				if (bridge_->enabled.load(std::memory_order_acquire))
+				if (enabled)
 				{
-					if (FAILED(viewport_->Enable())) { failed_ = true; Cancel(); }
+					if (FAILED(viewport_->Enable())) { failed_ = true; Cancel(); return; }
+					viewportEnabled_ = true;
+					if (!Reset()) Cancel();
 				}
 			}
 		}
@@ -456,7 +493,7 @@ namespace Inkeys::Drawing::Draw3
 				bridge_->Running() ? 1u : 0u, bridge_->NeedsUpdate() ? 1u : 0u);
 			if (!accepted)
 			{
-				if (!frontend_.Accepting()) { viewport_->Stop(); viewport_->Disable(); }
+				if (!frontend_.Accepting()) StopViewport();
 				return false;
 			}
 			Update(); return true;
@@ -501,16 +538,26 @@ namespace Inkeys::Drawing::Draw3
 			x_ = y_ = 0.0;
 			return true;
 		}
+		void StopViewport()
+		{
+			if (!viewport_) return;
+			viewport_->Stop();
+			if (failed_ || !bridge_->enabled.load() || !Reset())
+			{
+				viewport_->Disable();
+				viewportEnabled_ = false;
+			}
+		}
 		void Cancel()
 		{
 			frontend_.Cancel();
-			if (viewport_) { viewport_->Stop(); viewport_->Disable(); }
+			StopViewport();
 		}
 		void EndInertia()
 		{
 			// 不提升 epoch/清空队列：禁惯性不能吞掉尚未消费的 Running 末点。
 			Publish(TouchpadNavigationPhase::Cancelled);
-			if (viewport_) { viewport_->Stop(); viewport_->Disable(); if (!Reset()) Cancel(); }
+			StopViewport();
 		}
 		void Publish(TouchpadNavigationPhase phase)
 		{
@@ -519,7 +566,7 @@ namespace Inkeys::Drawing::Draw3
 			if (phase == TouchpadNavigationPhase::Inertia && !bridge_->inertiaAllowed.load()) { EndInertia(); return; }
 			LARGE_INTEGER qpc{}; QueryPerformanceCounter(&qpc);
 			if (!frontend_.PublishStatus(phase, x_, y_, qpc.QuadPart))
-			{ viewport_->Stop(); viewport_->Disable(); }
+				StopViewport();
 		}
 		void Interaction(DIRECTMANIPULATION_INTERACTION_TYPE interaction)
 		{
@@ -547,7 +594,7 @@ namespace Inkeys::Drawing::Draw3
 				if (!bridge_->inertiaAllowed.load(std::memory_order_acquire))
 				{
 					Publish(TouchpadNavigationPhase::Ready);
-					viewport_->Stop(); viewport_->Disable(); if (!Reset()) Cancel(); return;
+					StopViewport(); return;
 				}
 				Publish(TouchpadNavigationPhase::Inertia);
 			}
@@ -587,7 +634,209 @@ namespace Inkeys::Drawing::Draw3
 		double x_ = 0.0, y_ = 0.0;
 		Detail::TouchpadNavigationRetirement retirement_;
 		bool uninitialize_ = false;
-		bool resetting_ = false, failed_ = false, initialized_ = false;
+		bool resetting_ = false, failed_ = false, initialized_ = false, viewportEnabled_ = false;
+	};
+
+	class TouchpadInteractionOwner
+	{
+	public:
+		TouchpadInteractionOwner(Detail::TouchpadNavigationBridge& bridge, ContactInputCoordinator& input)
+			: bridge_(bridge), input_(input), output_(bridge) {}
+
+		TouchpadAvailability Initialize(HWND window)
+		{
+			window_ = window;
+			if (!api_.Load()) return TouchpadAvailability::RegistrationUnavailable;
+			const INTERACTION_CONTEXT_CONFIGURATION pan{ INTERACTION_ID_MANIPULATION,
+				INTERACTION_CONFIGURATION_FLAG_MANIPULATION | INTERACTION_CONFIGURATION_FLAG_MANIPULATION_TRANSLATION_X |
+				INTERACTION_CONFIGURATION_FLAG_MANIPULATION_TRANSLATION_Y |
+				INTERACTION_CONFIGURATION_FLAG_MANIPULATION_MULTIPLE_FINGER_PANNING |
+				INTERACTION_CONFIGURATION_FLAG_MANIPULATION_TRANSLATION_INERTIA };
+			if (FAILED(api_.create(&context_)) || FAILED(api_.configure(context_, 1, &pan)) ||
+				FAILED(api_.property(context_, INTERACTION_CONTEXT_PROPERTY_FILTER_POINTERS, FALSE)) ||
+				FAILED(api_.property(context_, INTERACTION_CONTEXT_PROPERTY_MEASUREMENT_UNITS, 1)) ||
+				FAILED(api_.translation(context_, TRANSLATION_PARAMETER_MAX_CONTACT_COUNT, 2)) ||
+				FAILED(api_.translation(context_, TRANSLATION_PARAMETER_MIN_CONTACT_COUNT, 2)) ||
+				FAILED(api_.callback(context_, OnOutput, this)))
+				return TouchpadAvailability::InitFailed;
+			// 最后才向 USER32 接管窗口，任何前置失败都不改变 RTS 消息路由。
+			registered_ = api_.registration(window_, TRUE) != FALSE;
+			if (!registered_) LogCanvasPan("touchpad-register failed error=%lu", GetLastError());
+			return registered_ ? TouchpadAvailability::Ok : TouchpadAvailability::RegistrationUnavailable;
+		}
+
+		bool Shutdown()
+		{
+			Stop();
+			if (registered_ && IsWindow(window_) && !api_.registration(window_, FALSE)) return false;
+			registered_ = false;
+			if (context_ && FAILED(api_.destroy(context_))) return false;
+			context_ = nullptr;
+			return true;
+		}
+
+		void Update()
+		{
+			if (recognizing_ && (!Admitted() || (output_.Gliding() && !bridge_.inertiaAllowed.load()))) Stop();
+		}
+
+		// 有值表示该消息属于触控板；false 让未接管的序列全程走系统默认处理。
+		std::optional<bool> Message(UINT message, WPARAM param, bool moveMode)
+		{
+			if (!registered_) return std::nullopt;
+			if (message == WM_TIMER && timer_ && param == timer_)
+			{
+				Update();
+				if (timer_)
+				{
+					if (FAILED(api_.inertia(context_))) stopPending_ = true;
+					FinishOutput();
+				}
+				return true;
+			}
+			if (message == Detail::kStopContentInertia || message == Detail::kEndContentInertia)
+			{
+				// 系统要求立即停止：先作废本代已排队的惯性位移，再结束识别。
+				if (output_.Gliding()) { bridge_.Cancel(); Stop(); }
+				return true;
+			}
+			const UINT32 id = GET_POINTERID_WPARAM(param);
+			if (message == WM_POINTERCAPTURECHANGED)
+			{
+				if (!std::erase(contacts_, id)) return std::nullopt;
+				Stop();
+				return consume_;
+			}
+			if (message == WM_TIMER) return std::nullopt;
+			const bool tracked = std::find(contacts_.begin(), contacts_.end(), id) != contacts_.end();
+			POINTER_INFO info{};
+			const bool known = api_.info(id, &info) != FALSE;
+			if (known && info.pointerType != PT_TOUCHPAD)
+			{
+				// 丢失终态的旧 ID 可能已复用于笔或触摸，必须放行新设备的首包。
+				if (tracked) { std::erase(contacts_, id); Stop(); }
+				return std::nullopt;
+			}
+			if (!known && !tracked) return std::nullopt;
+			if (message == WM_POINTERLEAVE || message == WM_POINTERENTER)
+			{
+				if (tracked && IS_POINTER_CANCELED_WPARAM(param))
+				{
+					std::erase(contacts_, id);
+					Stop();
+				}
+				return tracked && consume_;
+			}
+			if (message == WM_POINTERDOWN && !tracked)
+			{
+				// 设备变化或丢失终态后已不存在的指针不再阻止新序列开始。
+				std::erase_if(contacts_, [this](UINT32 contact) { POINTER_INFO stale{}; return api_.info(contact, &stale) == FALSE; });
+				if (contacts_.empty())
+				{
+					Stop();
+					consume_ = moveMode && bridge_.enabled.load() && !input_.AdmissionBlocked();
+					if (consume_)
+					{
+						output_.Begin(input_.AdmissionRevision());
+						recognizing_ = true;
+					}
+				}
+				contacts_.push_back(id);
+			}
+			else if (!tracked) return false;
+			if (message == WM_POINTERUP) std::erase(contacts_, id);
+			if (!consume_) return false;
+			// 已接管序列即使中途换工具也消费到 Up，不能从中途交回系统再提升滚轮。
+			if (!moveMode || !known || (info.pointerFlags & POINTER_FLAG_CANCELED) || !Admitted()) Stop();
+			if (recognizing_ && output_.NewFrame(info))
+			{
+				if (!ProcessFrame(id)) stopPending_ = true;
+				FinishOutput();
+			}
+			return true;
+		}
+
+		void DeviceChanged()
+		{
+			// 只停止识别；已接管序列继续消费到终态，不能把尾包交回默认处理。
+			Stop();
+		}
+	private:
+		static std::int64_t Now() noexcept
+		{ LARGE_INTEGER now{}; QueryPerformanceCounter(&now); return now.QuadPart; }
+
+		bool Admitted() const noexcept
+		{ return !input_.AdmissionBlocked() && output_.Current(input_.AdmissionRevision()); }
+
+		bool ProcessFrame(UINT32 id)
+		{
+			UINT32 frames = 0, pointers = 0;
+			if (!api_.history(id, &frames, &pointers, nullptr) || !frames || !pointers ||
+				frames > (std::numeric_limits<UINT32>::max)() / pointers) return false;
+			try
+			{
+				std::vector<POINTER_TOUCH_INFO> raw(static_cast<std::size_t>(frames) * pointers);
+				if (!api_.history(id, &frames, &pointers, raw.data())) return false;
+				if (!frames || !pointers || static_cast<std::uint64_t>(frames) * pointers > raw.size()) return false;
+				frames = output_.NewHistoryFrames(raw.data(), frames, pointers);
+				if (!frames) return true;
+				std::vector<POINTER_TYPE_INFO> typed(static_cast<std::size_t>(frames) * pointers);
+				// 保留系统要求的逆时序、每帧的全部触点和设备相对坐标。
+				for (std::size_t i = 0; i < typed.size(); ++i)
+				{
+					if (raw[i].pointerInfo.pointerType != PT_TOUCHPAD) return false;
+					typed[i].type = PT_TOUCHPAD;
+					typed[i].touchInfo = raw[i];
+				}
+				return SUCCEEDED(api_.frames(context_, frames, pointers, typed.data()));
+			}
+			catch (const std::bad_alloc&) { return false; }
+			catch (const std::length_error&) { return false; }
+		}
+
+		static void CALLBACK OnOutput(void* data, const INTERACTION_CONTEXT_OUTPUT* value)
+		{
+			auto& self = *static_cast<TouchpadInteractionOwner*>(data);
+			if (self.recognizing_ && !self.stopPending_ &&
+				(!self.Admitted() || !self.output_.Apply(*value, Now()))) self.stopPending_ = true;
+		}
+		void FinishOutput()
+		{
+			// 等识别回调退栈再 Stop 或启动时钟，避免在同一 context 内重入处理输入。
+			if (stopPending_ || !Admitted()) { Stop(); return; }
+			if (!output_.Gliding()) { StopTimer(); return; }
+			if (!timer_)
+			{
+				timer_ = SetTimer(window_, reinterpret_cast<UINT_PTR>(this), 15, nullptr);
+				if (!timer_) { Stop(); return; }
+				if (api_.report) api_.report(window_, TRUE);
+			}
+		}
+		void StopTimer()
+		{
+			if (!timer_) return;
+			KillTimer(window_, timer_);
+			timer_ = 0;
+			if (api_.report) api_.report(window_, FALSE);
+		}
+		void Stop()
+		{
+			const bool active = std::exchange(recognizing_, false);
+			output_.End(Now());
+			stopPending_ = false;
+			StopTimer();
+			if (active) api_.stop(context_);
+		}
+
+		Detail::TouchpadNavigationBridge& bridge_;
+		ContactInputCoordinator& input_;
+		Detail::TouchpadInteractionOutput output_;
+		Detail::TouchpadInteractionApi api_;
+		HWND window_ = nullptr;
+		HINTERACTIONCONTEXT context_ = nullptr;
+		UINT_PTR timer_ = 0;
+		std::vector<UINT32> contacts_;
+		bool registered_ = false, consume_ = false, recognizing_ = false, stopPending_ = false;
 	};
 
 	WindowController::~WindowController()
@@ -603,6 +852,7 @@ namespace Inkeys::Drawing::Draw3
 		if (externalWindow_.load(std::memory_order_acquire)) return false;
 		mouseSelectionMode_.ResetWorkspace();
 		touchpadNavigationIdentity_.store(nextTouchpadNavigationIdentity.fetch_add(1, std::memory_order_acq_rel) + 1);
+		touchpadEntry_.store(TouchpadEntry::None, std::memory_order_release);
 		touchpadNavigationAllowed_.store(true, std::memory_order_release);
 		touchpadNavigationStoppedEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 		if (!touchpadNavigationStoppedEvent_) return false;
@@ -737,8 +987,9 @@ namespace Inkeys::Drawing::Draw3
 		};
 		try
 		{
-			check(kTouchpadDirectManipulationQuarantined,
-				"DM initialization remains quarantined from the RTS canvas HWND");
+			TouchpadNavigationOwner refused(std::make_shared<Detail::TouchpadNavigationBridge>(), nullptr);
+			check(!refused.Initialize(nullptr, false) && !refused.NeedsCleanup(),
+				"DM refuses initialization before COM when the pointer producer is not ready");
 			struct Viewport
 			{
 				unsigned configured = 0, options = 0;
@@ -848,6 +1099,26 @@ namespace Inkeys::Drawing::Draw3
 			(touchpadNavigationIdentity_.load() << 1u) | 1u, reinterpret_cast<LPARAM>(this));
 	}
 
+	TouchpadAvailability WindowController::StartTouchpadNavigation(TouchpadEntry entry) noexcept
+	{
+		const HWND window = Handle();
+		if (!window || !touchpadNavigationAllowed_.load() || entry == TouchpadEntry::None)
+			return TouchpadAvailability::InitFailed;
+		touchpadEntry_.store(entry);
+		touchpadNavigationOwnerStopped_.store(false);
+		const WPARAM identity = touchpadNavigationIdentity_.load();
+		const LPARAM target = reinterpret_cast<LPARAM>(this);
+		// 新入口在 HWND owner 同步完成初始化，实际返回值随生产者结果一起发布。
+		DWORD_PTR result = 0;
+		if (GetWindowThreadProcessId(window, nullptr) == GetCurrentThreadId())
+			result = HandleExternalMessage(window, kStartTouchpadNavigationMessage, identity, target);
+		else if (!SendMessageTimeoutW(window, kStartTouchpadNavigationMessage, identity, target,
+			SMTO_BLOCK | SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT, 5000, &result)) return TouchpadAvailability::InitFailed;
+		if (result == static_cast<DWORD_PTR>(TouchpadAvailability::Ok)) return TouchpadAvailability::Ok;
+		return result == static_cast<DWORD_PTR>(TouchpadAvailability::RegistrationUnavailable)
+			? TouchpadAvailability::RegistrationUnavailable : TouchpadAvailability::InitFailed;
+	}
+
 	void WindowController::SetTouchpadNavigationEnabled(bool enabled, bool inertiaAllowed) noexcept
 	{
 		enabled = enabled && touchpadNavigationAllowed_.load(std::memory_order_acquire);
@@ -880,6 +1151,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		// 本 attach 代永久封口；drawing 尚未退出时逐帧 SetEnabled 也不能重新开 producer。
 		touchpadNavigationAllowed_.store(false, std::memory_order_release);
+		touchpadEntry_.store(TouchpadEntry::None);
 		touchpadNavigationEnabled_.store(false, std::memory_order_release);
 		touchpadNavigationBridge_->enabled.store(false, std::memory_order_release);
 		touchpadNavigationBridge_->Cancel();
@@ -941,11 +1213,250 @@ namespace Inkeys::Drawing::Draw3
 		mouseInput_.CloseAdmission();
 	}
 
+	WindowController::PointerDevice& WindowController::PointerDeviceFor(HANDLE handle, InputDeviceType type)
+	{
+		for (auto& item : pointerDevices_)
+			if (item.handle == handle) return item;
+
+		PointerDevice item;
+		item.handle = handle;
+		auto& source = item.source;
+		source.contextId = ++nextPointerContext_;
+		source.generation = source.contextId;
+		const auto& api = DrawingPointerApi();
+		POINTER_DEVICE_INFO info{};
+		if (api.device(handle, &info))
+		{
+			SpeedEraser::SourceKind kind = SpeedEraser::SourceKind::Unknown;
+			switch (info.pointerDeviceType)
+			{
+			case POINTER_DEVICE_TYPE_INTEGRATED_PEN: kind = SpeedEraser::SourceKind::IntegratedPen; break;
+			case POINTER_DEVICE_TYPE_EXTERNAL_PEN: kind = SpeedEraser::SourceKind::ExternalPen; break;
+			case POINTER_DEVICE_TYPE_TOUCH: kind = SpeedEraser::SourceKind::Touch; break;
+			case POINTER_DEVICE_TYPE_TOUCH_PAD: kind = SpeedEraser::SourceKind::TouchPad; break;
+			}
+			const bool mapped = api.rects && api.rects(handle, &item.deviceRect, &item.displayRect) &&
+				item.deviceRect.right > item.deviceRect.left && item.deviceRect.bottom > item.deviceRect.top &&
+				item.displayRect.right > item.displayRect.left && item.displayRect.bottom > item.displayRect.top;
+			if (!mapped)
+			{
+				// 失败的 API 调用可能改写输出参数；禁止以后用这些矩形作亚像素转换。
+				item.deviceRect = {};
+				item.displayRect = {};
+			}
+			source.kind = SpeedEraser::ClassifySource(static_cast<uint32_t>(type), true, false, false,
+				kind, true, false, mapped && !info.monitor);
+			source.recognition = source.kind == SpeedEraser::SourceKind::Unknown ?
+				SpeedEraser::SourceRecognition::Conflict : SpeedEraser::SourceRecognition::PointerCursor;
+			if (mapped && source.kind != SpeedEraser::SourceKind::Unknown)
+			{
+				source.mappedMonitor = reinterpret_cast<uintptr_t>(info.monitor);
+				source.mappedLeft = item.displayRect.left;
+				source.mappedTop = item.displayRect.top;
+				source.mappedWidth = item.displayRect.right - item.displayRect.left;
+				source.mappedHeight = item.displayRect.bottom - item.displayRect.top;
+			}
+		}
+		return pointerDevices_.emplace_back(item);
+	}
+
+	namespace
+	{
+		void TracePointerPacket(UINT32 id, const ContactSnapshot& snapshot, uint64_t performance,
+			UINT32 mask, bool published) noexcept
+		{
+			if (!CursorDiagnosticsEnabled()) return;
+			LARGE_INTEGER now{};
+			QueryPerformanceCounter(&now);
+			RecordCursorDiagnostic("pointer-input tcid=%u cid=%u phase=%u mask=0x%x performance=%llu arrival=%lld publish=%lld published=%u",
+				snapshot.source.contextId, id, static_cast<unsigned>(snapshot.phase), mask,
+				static_cast<unsigned long long>(performance), static_cast<long long>(snapshot.qpc),
+				static_cast<long long>(now.QuadPart), published ? 1u : 0u);
+		}
+	}
+
+	void WindowController::FinishPointerContact(std::size_t index, ContactPhase phase, int64_t qpc,
+		uint64_t performance, UINT32 mask) noexcept
+	{
+		auto contact = pointerContacts_[index];
+		pointerContacts_.erase(pointerContacts_.begin() + index);
+		auto& snapshot = contact.last;
+		snapshot.qpc = qpc;
+		snapshot.phase = phase;
+		const bool cancelled = phase == ContactPhase::Cancelled;
+		if (auto* input = inputCoordinator_.load(std::memory_order_acquire))
+		{
+			const bool published = cancelled ?
+				input->PublishCancelled(snapshot.source.contextId, contact.pointerId, snapshot) :
+				input->PublishUp(snapshot.source.contextId, contact.pointerId, snapshot);
+			TracePointerPacket(contact.pointerId, snapshot, performance, mask, published);
+		}
+		if (contact.type == InputDeviceType::Touch) NotifyTouchContactEnd();
+		else
+		{
+			NotifyPenFeedbackContact({ contact.penToken, snapshot.source.contextId, contact.pointerId,
+				snapshot.source.generation, contact.downQpc, cancelled ? PenFeedbackPhase::Cancelled : PenFeedbackPhase::Up });
+			ClearPenCursorSampleForContact(contact.penToken);
+			if (cancelled)
+			{
+				if (suppressedPenPointerId_.load(std::memory_order_acquire) == contact.pointerId)
+				{
+					suppressedPenPointerId_.store(0, std::memory_order_release);
+					SetPointerPenContactSuppressed(false);
+				}
+				if (pointerPenRangeId_ == contact.pointerId)
+				{
+					pointerPenRangeId_ = 0;
+					RequestHapticPointerLeave();
+				}
+			}
+		}
+	}
+
+	void WindowController::CancelPointerContacts(HANDLE device) noexcept
+	{
+		LARGE_INTEGER now{};
+		QueryPerformanceCounter(&now);
+		for (auto i = pointerContacts_.size(); i > 0; --i)
+			if (!device || pointerContacts_[i - 1].device == device)
+				FinishPointerContact(i - 1, ContactPhase::Cancelled, now.QuadPart);
+	}
+
+	bool WindowController::HandlePointerContact(HWND window, UINT message, UINT32 id, bool cancelled,
+		const POINTER_PEN_INFO* pen, const POINTER_TOUCH_INFO* touch, UINT32 cursorId, int64_t qpc)
+	{
+		auto it = std::find_if(pointerContacts_.begin(), pointerContacts_.end(),
+			[id](const auto& c) { return c.pointerId == id; });
+		const POINTER_INFO* info = pen ? &pen->pointerInfo : touch ? &touch->pointerInfo : nullptr;
+		cancelled = cancelled || (info && (info->pointerFlags & POINTER_FLAG_CANCELED));
+		const bool down = message == WM_POINTERDOWN;
+		const bool up = message == WM_POINTERUP;
+		const bool live = it != pointerContacts_.end();
+		const bool switched = live && info && (info->sourceDevice != it->device ||
+			(pen != nullptr) != (it->type == InputDeviceType::Pen));
+		if (live && (down || cancelled || switched || (!info && up)))
+		{
+			const auto performance = cancelled && info && !switched ?
+				PointerInput::PerformanceCount(info->PerformanceCount, it->performanceCount, qpc) : 0;
+			const UINT32 mask = pen ? pen->penMask : touch ? touch->touchMask : 0;
+			FinishPointerContact(it - pointerContacts_.begin(), ContactPhase::Cancelled, qpc, performance, mask);
+			it = pointerContacts_.end();
+		}
+		if (!info || cancelled) return live || info;
+		if (!down && it == pointerContacts_.end()) return up || (info->pointerFlags & POINTER_FLAG_INCONTACT);
+		if (!up && !(info->pointerFlags & POINTER_FLAG_INCONTACT))
+		{
+			if (it != pointerContacts_.end())
+				FinishPointerContact(it - pointerContacts_.begin(), ContactPhase::Cancelled, qpc);
+			return live;
+		}
+		auto* input = inputCoordinator_.load(std::memory_order_acquire);
+		if (!input) return true;
+		if (down && (!mouseInput_.Open() ||
+			static_cast<LONG>(static_cast<DWORD>(GetMessageTime()) - mouseStartTick_) < 0)) return true;
+		POINT origin{};
+		if (!ClientToScreen(window, &origin))
+		{
+			if (up) FinishPointerContact(it - pointerContacts_.begin(), ContactPhase::Cancelled, qpc);
+			return true;
+		}
+
+		const auto type = pen ? InputDeviceType::Pen : InputDeviceType::Touch;
+		const auto& device = PointerDeviceFor(info->sourceDevice, type);
+		if (device.source.kind == SpeedEraser::SourceKind::TouchPad) return true;
+		ContactSnapshot snapshot;
+		snapshot.qpc = qpc;
+		snapshot.phase = down ? ContactPhase::Down : up ? ContactPhase::Up : ContactPhase::Move;
+		snapshot.source = down ? device.source : it->last.source;
+		if (down) snapshot.source.cursorId = cursorId;
+		const auto point = PointerInput::MapPosition(info->ptPixelLocationRaw, info->ptHimetricLocationRaw,
+			origin, pen ? &device.deviceRect : nullptr, pen ? &device.displayRect : nullptr);
+		snapshot.position = { point.x, point.y };
+		const UINT32 mask = pen ? pen->penMask : touch->touchMask;
+		if (pen)
+		{
+			snapshot.pressure = PointerInput::Pressure((mask & PEN_MASK_PRESSURE) != 0, pen->pressure);
+			const auto angles = PointerInput::Tilt((mask & PEN_MASK_TILT_X) != 0,
+				(mask & PEN_MASK_TILT_Y) != 0, pen->tiltX, pen->tiltY);
+			snapshot.tilt = angles.tilt;
+			snapshot.orientation = angles.orientation;
+			snapshot.isInvertedCursor = (pen->penFlags & (PEN_FLAG_INVERTED | PEN_FLAG_ERASER)) != 0;
+		}
+		else
+		{
+			const auto area = PointerInput::ContactArea((mask & TOUCH_MASK_CONTACTAREA) != 0, touch->rcContactRaw);
+			snapshot.rawContactSize = { area.rawWidth, area.rawHeight };
+			snapshot.contactSize = { area.widthPx, area.heightPx };
+			snapshot.contactAreaUnits = area.units;
+		}
+
+		const auto performance = PointerInput::PerformanceCount(info->PerformanceCount,
+			down ? 0 : it->performanceCount, qpc);
+		if (down)
+		{
+			// 先保留终态所需的绑定；同一 pointerId 可在 Up 后用于下一笔。
+			pointerContacts_.push_back({ id, info->sourceDevice, type, snapshot, performance,
+				pen ? ++nextPointerToken_ : 0, qpc });
+			it = pointerContacts_.end() - 1;
+			if (pen) NotifyPenFeedbackContact({ it->penToken, snapshot.source.contextId, id,
+				snapshot.source.generation, qpc, PenFeedbackPhase::Down });
+			const bool published = input->PublishDown(snapshot.source.contextId, id, type, snapshot);
+			TracePointerPacket(id, snapshot, performance, mask, published);
+			if (!published)
+			{
+				if (pen) NotifyPenFeedbackContact({ it->penToken, snapshot.source.contextId, id,
+					snapshot.source.generation, qpc, PenFeedbackPhase::Cancelled });
+				pointerContacts_.erase(it);
+				return true;
+			}
+			if (touch) NotifyTouchContactBegin(true, static_cast<DWORD>(GetMessageTime()));
+		}
+		else
+		{
+			it->last = snapshot;
+			if (performance) it->performanceCount = performance;
+			if (up)
+			{
+				FinishPointerContact(it - pointerContacts_.begin(), ContactPhase::Up, qpc, performance, mask);
+				return true;
+			}
+			const bool published = input->PublishMove(snapshot.source.contextId, id, snapshot);
+			TracePointerPacket(id, snapshot, performance, mask, published);
+		}
+		if (pen)
+		{
+			DrawingCursorSample sample;
+			sample.x = point.x;
+			sample.y = point.y;
+			sample.valid = sample.inContact = true;
+			sample.inverted = snapshot.isInvertedCursor;
+			sample.source = snapshot.source;
+			sample.qpc = qpc;
+			PublishPenCursorSampleImpl(sample, it->penToken, true, id);
+		}
+		return true;
+	}
+
+	bool WindowController::StartPointerInput() noexcept
+	{
+		const auto& api = DrawingPointerApi();
+		if (!ResolveGetPointerType() || !ResolveGetPointerPenInfo() || !api.touch || !api.device || !api.notifications)
+			return false;
+		pointerStartRequested_.store(true, std::memory_order_release);
+		return SetMouseCompatibilityEnabled(true);
+	}
+
+	bool WindowController::StopPointerInput() noexcept
+	{
+		return SetMouseCompatibilityEnabled(false);
+	}
+
 	bool WindowController::SetMouseCompatibilityEnabled(bool enabled) noexcept
 	{
 		mouseStartAllowed_.store(enabled, std::memory_order_release);
 		if (!enabled)
 		{
+			pointerStartRequested_.store(false, std::memory_order_release);
 			CloseMouseInputAdmission();
 			if (mouseOwnerStopped_.load(std::memory_order_acquire)) return true;
 		}
@@ -1176,6 +1687,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (!mouseSelectionMode_.SetSelection(enabled))
 			return;
+		if (!enabled && touchpadEntry_.load() != TouchpadEntry::None) CancelTouchpadNavigation();
 		// 静止切换也要清理旧瞬态并刷新本窗口光标，不等待下一条移动消息。
 		RequestDrawingCursorRender();
 		QueueSystemCursorRefresh();
@@ -1189,7 +1701,9 @@ namespace Inkeys::Drawing::Draw3
 
 	void WindowController::SetCanvasPanWorkspace(bool whiteboard) noexcept
 	{
+		const bool leaving = !whiteboard && CanvasPanMode();
 		mouseSelectionMode_.SetWhiteboard(whiteboard);
+		if (leaving && touchpadEntry_.load() != TouchpadEntry::None) CancelTouchpadNavigation();
 	}
 
 	bool WindowController::AutoSaveEnabled() const noexcept
@@ -1723,7 +2237,7 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	void WindowController::PublishPenCursorSampleImpl(const DrawingCursorSample& inputSample,
-		uint64_t token, bool fromRts) noexcept
+		uint64_t token, bool fromRts, uint32_t pointerContactId) noexcept
 	{
 		DrawingCursorSample sample = inputSample;
 		DrawingCursorSample previous;
@@ -1737,7 +2251,7 @@ namespace Inkeys::Drawing::Draw3
 				if (found != penFeedbackContacts_.rend())
 				{
 					if (found->terminal || found->contact.tabletContextId != inputSample.source.contextId ||
-						found->contact.cursorId != inputSample.source.cursorId ||
+						found->contact.cursorId != (pointerContactId ? pointerContactId : inputSample.source.cursorId) ||
 						found->contact.sourceGeneration != inputSample.source.generation) return;
 					suppressed = found->suppressed;
 				}
@@ -2278,12 +2792,15 @@ namespace Inkeys::Drawing::Draw3
 			bool succeeded = false;
 			if (mouseDispatchDepth_ == 0 && wParam == Detail::kMouseInputStart)
 			{
+				const bool pointerRequested = pointerStartRequested_.load(std::memory_order_acquire);
 				if (inputCoordinator_.load(std::memory_order_acquire) &&
 					mouseStartAllowed_.load(std::memory_order_acquire) &&
-					!mouseCompatibilitySelected_.load(std::memory_order_acquire))
+					!mouseCompatibilitySelected_.load(std::memory_order_acquire) &&
+					(!pointerRequested || DrawingPointerApi().notifications(window, FALSE)))
 				{
 					const std::uint32_t held = ((GetKeyState(VK_LBUTTON) & 0x8000) ? decltype(mouseInput_)::Left : 0u) |
 						((GetKeyState(VK_RBUTTON) & 0x8000) ? decltype(mouseInput_)::Right : 0u);
+					pointerInputSelected_ = pointerRequested;
 					mouseStartTick_ = GetTickCount();
 					mouseInput_.Start(held);
 					mouseOwnerStopped_.store(false, std::memory_order_release);
@@ -2294,6 +2811,14 @@ namespace Inkeys::Drawing::Draw3
 			else if (mouseDispatchDepth_ == 0 && wParam == Detail::kMouseInputStop)
 			{
 				mouseInput_.CloseAdmission();
+				if (pointerInputSelected_)
+				{
+					pointerInputSelected_ = false;
+					pointerPenRangeId_ = 0;
+					CancelPointerContacts();
+					pointerDevices_.clear();
+					RequestHapticPointerLeave();
+				}
 				CancelMouseInput(window);
 				if (GetCapture() != window)
 				{
@@ -2308,6 +2833,44 @@ namespace Inkeys::Drawing::Draw3
 			if (mouseOwnerControlEvents_[operationIndex]) SetEvent(mouseOwnerControlEvents_[operationIndex]);
 			return succeeded ? 1 : 0;
 		}
+		struct TouchpadDispatch
+		{
+			WindowController& self; HWND window;
+			TouchpadDispatch(WindowController& controller, HWND hwnd) : self(controller), window(hwnd)
+			{ ++self.touchpadDispatchDepth_; }
+			~TouchpadDispatch() { self.FinishTouchpadNavigationDispatch(window); }
+		};
+		if (message == kStartTouchpadNavigationMessage)
+		{
+			if (lParam != reinterpret_cast<LPARAM>(this) || wParam != touchpadNavigationIdentity_.load() ||
+				touchpadDispatchDepth_ || !touchpadNavigationAllowed_.load() ||
+				touchpadNavigationOwner_ || touchpadInteractionOwner_) return 0;
+			TouchpadDispatch dispatch(*this, window);
+			auto* input = inputCoordinator_.load(std::memory_order_acquire);
+			if (!input) return 0;
+			const auto entry = touchpadEntry_.load();
+			auto result = TouchpadAvailability::InitFailed;
+			try
+			{
+				if (entry == TouchpadEntry::DirectManipulation)
+				{
+					auto owner = std::make_shared<TouchpadNavigationOwner>(touchpadNavigationBridge_, input);
+					const bool ready = owner->Initialize(window, pointerInputSelected_);
+					if (ready || owner->NeedsCleanup()) touchpadNavigationOwner_ = std::move(owner);
+					if (ready) result = TouchpadAvailability::Ok;
+				}
+				else if (entry == TouchpadEntry::WindowRegistration && !pointerInputSelected_)
+				{
+					auto owner = std::make_shared<TouchpadInteractionOwner>(*touchpadNavigationBridge_, *input);
+					result = owner->Initialize(window);
+					if (result == TouchpadAvailability::Ok || !owner->Shutdown())
+						touchpadInteractionOwner_ = std::move(owner);
+				}
+			}
+			catch (const std::bad_alloc&) { result = TouchpadAvailability::InitFailed; }
+			LogCanvasPan("touchpad-init entry=%u result=%u", static_cast<unsigned>(entry), static_cast<unsigned>(result));
+			return static_cast<LRESULT>(result);
+		}
 		if (message == kTouchpadNavigationMessage)
 		{
 			if (lParam != reinterpret_cast<LPARAM>(this) ||
@@ -2320,26 +2883,17 @@ namespace Inkeys::Drawing::Draw3
 				return 0;
 			}
 			touchpadNavigationPosted_.store(false, std::memory_order_release);
-			++touchpadDispatchDepth_;
-			struct Scope
-			{
-				WindowController& self; HWND window;
-				~Scope() { self.FinishTouchpadNavigationDispatch(window); }
-			} scope{ *this, window };
+			TouchpadDispatch dispatch(*this, window);
 			if (stop || !touchpadNavigationAllowed_.load(std::memory_order_acquire))
 			{
-				const bool succeeded = !touchpadNavigationOwner_ || touchpadNavigationOwner_->Shutdown();
-				if (succeeded) touchpadNavigationOwner_.reset();
+				const bool succeeded = (!touchpadNavigationOwner_ || touchpadNavigationOwner_->Shutdown()) &&
+					(!touchpadInteractionOwner_ || touchpadInteractionOwner_->Shutdown());
+				if (succeeded) { touchpadNavigationOwner_.reset(); touchpadInteractionOwner_.reset(); }
 				touchpadStopSucceeded_ = succeeded;
 				touchpadStopCompletionPending_ = true;
 				return succeeded ? 1 : 0;
 			}
-			if (!touchpadNavigationOwner_ && touchpadNavigationEnabled_.load(std::memory_order_acquire))
-			{
-				auto owner = std::make_shared<TouchpadNavigationOwner>(touchpadNavigationBridge_, inputCoordinator_.load(std::memory_order_acquire));
-				const bool initialized = owner->Initialize(window);
-				if (initialized || owner->NeedsCleanup()) touchpadNavigationOwner_ = std::move(owner);
-			}
+			if (touchpadInteractionOwner_) touchpadInteractionOwner_->Update();
 			if (auto owner = touchpadNavigationOwner_) owner->Update();
 			return 1;
 		}
@@ -2349,24 +2903,13 @@ namespace Inkeys::Drawing::Draw3
 			const auto getType = ResolveGetPointerType();
 			const UINT32 pointer = GET_POINTERID_WPARAM(wParam);
 			const auto* input = inputCoordinator_.load(std::memory_order_acquire);
-			const bool admitted = !touchpadDispatchDepth_ && CanvasPanMode() &&
+			const bool admitted = pointerInputSelected_ && touchpadNavigationOwner_ && !touchpadDispatchDepth_ && CanvasPanMode() &&
 				touchpadNavigationAllowed_.load(std::memory_order_acquire) &&
 				touchpadNavigationEnabled_.load(std::memory_order_acquire) && input && !input->AdmissionBlocked();
 			const bool typeKnown = admitted && getType && getType(pointer, &type);
 			const bool accepted = Detail::DispatchTouchpadHitTest(admitted, typeKnown, type, pointer, [&](UINT32 id)
 			{
-				++touchpadDispatchDepth_;
-				struct Scope
-				{
-					WindowController& self; HWND window;
-					~Scope() { self.FinishTouchpadNavigationDispatch(window); }
-				} scope{ *this, window };
-				if (!touchpadNavigationOwner_)
-				{
-					auto owner = std::make_shared<TouchpadNavigationOwner>(touchpadNavigationBridge_, inputCoordinator_.load(std::memory_order_acquire));
-					const bool initialized = owner->Initialize(window);
-					if (initialized || owner->NeedsCleanup()) touchpadNavigationOwner_ = std::move(owner);
-				}
+				TouchpadDispatch dispatch(*this, window);
 				const auto owner = touchpadNavigationOwner_;
 				const bool associated = owner && owner->Contact(id);
 				if (associated) NotifyCanvasContactDown();
@@ -2378,8 +2921,78 @@ namespace Inkeys::Drawing::Draw3
 				type != PT_TOUCHPAD ? "other-input-preserved" : "association-failed");
 			return 0; // 不允许非触控板经默认处理自动进入正在运行的 DM viewport。
 		}
+		const bool deviceChanged = (message == WM_POINTERDEVICECHANGE && wParam != PDC_ARRIVAL) ||
+			(message == WM_DEVICECHANGE && (wParam == DBT_DEVNODES_CHANGED || wParam == DBT_DEVICEREMOVECOMPLETE));
+		if (deviceChanged && (touchpadInteractionOwner_ || touchpadNavigationOwner_))
+		{
+			CancelTouchpadNavigation();
+			if (touchpadInteractionOwner_ && !touchpadDispatchDepth_)
+			{
+				TouchpadDispatch dispatch(*this, window);
+				touchpadInteractionOwner_->DeviceChanged();
+			}
+		}
+		if (touchpadInteractionOwner_ && !touchpadDispatchDepth_ &&
+			(message == WM_TIMER || message == Detail::kStopContentInertia || message == Detail::kEndContentInertia ||
+				message == WM_POINTERDOWN || message == WM_POINTERUPDATE || message == WM_POINTERUP ||
+				message == WM_POINTERENTER || message == WM_POINTERLEAVE || message == WM_POINTERCAPTURECHANGED))
+		{
+			TouchpadDispatch dispatch(*this, window);
+			if (const auto handled = touchpadInteractionOwner_->Message(message, wParam, CanvasPanMode()))
+				return *handled ? 0 : DefWindowProcW(window, message, wParam, lParam);
+		}
+		if (pointerInputSelected_)
+		{
+			if (message == WM_POINTERDEVICECHANGE)
+			{
+				// 设备移除或映射变化会使已锁存的物理矩形失效。无设备句柄时全部失效。
+				if (wParam != PDC_ARRIVAL)
+				{
+					const HANDLE device = reinterpret_cast<HANDLE>(lParam);
+					const bool known = std::any_of(pointerDevices_.begin(), pointerDevices_.end(),
+						[device](const auto& item) { return item.handle == device; });
+					CancelPointerContacts(known ? device : nullptr);
+					std::erase_if(pointerDevices_, [&](const auto& item) { return !known || item.handle == device; });
+				}
+				return 0;
+			}
+			if (message == WM_POINTERCAPTURECHANGED ||
+				((message == WM_POINTERLEAVE || message == WM_POINTERENTER) && IS_POINTER_CANCELED_WPARAM(wParam)))
+			{
+				const auto id = GET_POINTERID_WPARAM(wParam);
+				auto it = std::find_if(pointerContacts_.begin(), pointerContacts_.end(),
+					[id](const auto& item) { return item.pointerId == id; });
+				if (it != pointerContacts_.end())
+				{
+					LARGE_INTEGER now{};
+					QueryPerformanceCounter(&now);
+					FinishPointerContact(it - pointerContacts_.begin(), ContactPhase::Cancelled, now.QuadPart);
+					return 0;
+				}
+				if (message == WM_POINTERCAPTURECHANGED)
+				{
+					if (pointerPenRangeId_ != id) return 0;
+					pointerPenRangeId_ = 0;
+				}
+			}
+			if (message == WM_CANCELMODE || message == WM_DESTROY || message == WM_CLOSE)
+				CancelPointerContacts();
+			if (message == WM_DESTROY)
+			{
+				// 下方已有的 DM 销毁分支会提前返回，先在 owner 确认两条输入均已停止。
+				pointerInputSelected_ = false;
+				pointerPenRangeId_ = 0;
+				pointerDevices_.clear();
+				RequestHapticPointerLeave();
+				mouseInput_.CloseAdmission();
+				CancelMouseInput(window);
+				mouseCompatibilitySelected_.store(false, std::memory_order_release);
+				if (!mouseDispatchDepth_ && GetCapture() != window)
+					mouseOwnerStopped_.store(true, std::memory_order_release);
+			}
+		}
 		// SetContact 造成的 pointer capture 改变是 DM 接管，不是整手势取消。
-		if (message == WM_CANCELMODE || message == WM_KILLFOCUS || message == WM_DESTROY ||
+		if (message == WM_CANCELMODE || message == WM_KILLFOCUS || message == WM_CLOSE || message == WM_DESTROY ||
 			message == WM_SIZE || (message == WM_SHOWWINDOW && !wParam) ||
 			(message == WM_ACTIVATE && LOWORD(wParam) == WA_INACTIVE) ||
 			(message == WM_WINDOWPOSCHANGED && lParam &&
@@ -2399,7 +3012,7 @@ namespace Inkeys::Drawing::Draw3
 		if (compatibility)
 		{
 			// Pointer 整个生命周期交默认处理，系统提供的单点鼠标提升只走下面一条 producer。
-			if (message >= WM_NCPOINTERUPDATE && message <= WM_POINTERROUTEDRELEASED)
+			if (!pointerInputSelected_ && message >= WM_NCPOINTERUPDATE && message <= WM_POINTERROUTEDRELEASED)
 				return DefWindowProcW(window, message, wParam, lParam);
 			if (message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ||
 				message == WM_RBUTTONDOWN || message == WM_RBUTTONUP || message == WM_MOUSEMOVE)
@@ -2410,6 +3023,14 @@ namespace Inkeys::Drawing::Draw3
 					explicit DispatchScope(unsigned& value) noexcept : depth(value) { ++depth; }
 					~DispatchScope() { --depth; }
 				} dispatch(mouseDispatchDepth_);
+				if (pointerInputSelected_)
+				{
+					// Pointer 已直接消费笔/触摸；只按提升签名和消息来源剔除残余提升消息。
+					// 不用触摸时间屏障：同 tick 的真实鼠标 Up 被吞会留下按键位和捕获。
+					const auto source = CurrentInputMessageSource().deviceType;
+					if (IsPromotedPointerMouseMessage(GetMessageExtraInfo()) ||
+						source == IMDT_TOUCH || source == IMDT_PEN) return 0;
+				}
 				HandleCompatibilityMouse(window, message, wParam, lParam);
 				return 0;
 			}
@@ -2465,12 +3086,32 @@ namespace Inkeys::Drawing::Draw3
 					static_cast<unsigned long long>(hapticIngressUpdatesOmitted_));
 				hapticIngressUpdatesOmitted_ = 0;
 			}
+			// Pointer 模式下笔/触摸序列全程由本窗口消费，不交默认处理。
+			if (pointerInputSelected_ && message == WM_POINTERCAPTURECHANGED) return 0;
 			break;
 
 		case WM_POINTERLEAVE:
 		{
 			const uint32_t pointerId = static_cast<uint32_t>(LOWORD(wParam));
 			const PointerDetails details = QueryPointerDetails(pointerId);
+			if (pointerInputSelected_)
+			{
+				if (details.cancelled)
+				{
+					LARGE_INTEGER now{};
+					QueryPerformanceCounter(&now);
+					HandlePointerContact(window, message, pointerId, true, nullptr, nullptr, 0, now.QuadPart);
+				}
+				if (pointerPenRangeId_ != pointerId)
+				{
+					// 类型查询失败时仍以本窗口登记的绑定为准，已接管的序列不能落入默认处理。
+					const bool tracked = std::any_of(pointerContacts_.begin(), pointerContacts_.end(),
+						[pointerId](const auto& contact) { return contact.pointerId == pointerId; });
+					if (tracked || details.type == PT_TOUCH || details.type == PT_PEN) return 0;
+					break;
+				}
+				pointerPenRangeId_ = 0;
+			}
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			lastCursorTracePointerId_.store(pointerId, std::memory_order_release);
 			lastCursorTracePointerType_.store(
@@ -2529,6 +3170,7 @@ namespace Inkeys::Drawing::Draw3
 			TraceCursorState("WM_POINTERLEAVE", pointerId, details.type,
 				details.typeKnown, true);
 #endif
+			if (pointerInputSelected_) return 0;
 			break;
 		}
 		case WM_POINTERENTER:
@@ -2536,9 +3178,26 @@ namespace Inkeys::Drawing::Draw3
 		case WM_POINTERDOWN:
 		case WM_POINTERUP:
 		{
-			if (message == WM_POINTERDOWN) NotifyCanvasContactDown();
+			// 与鼠标共用 owner 停止屏障；通知 UI 时即使重入也不能在外层退栈前确认停产。
+			struct PointerDispatchScope
+			{
+				unsigned* depth;
+				~PointerDispatchScope() { if (depth) --*depth; }
+			} dispatch{ pointerInputSelected_ ? &mouseDispatchDepth_ : nullptr };
+			if (dispatch.depth) ++*dispatch.depth;
+			LARGE_INTEGER arrival{};
+			POINTER_PEN_INFO penInfo{};
+			POINTER_TOUCH_INFO touchInfo{};
+			bool touchKnown = false;
+			if (pointerInputSelected_) QueryPerformanceCounter(&arrival);
 			const uint32_t pointerId = static_cast<uint32_t>(LOWORD(wParam));
-			const PointerDetails details = QueryPointerDetails(pointerId);
+			if (!pointerInputSelected_ && message == WM_POINTERDOWN) NotifyCanvasContactDown();
+			const PointerDetails details = QueryPointerDetails(pointerId, pointerInputSelected_ ? &penInfo : nullptr);
+			if (pointerInputSelected_ && details.type == PT_TOUCH)
+				touchKnown = DrawingPointerApi().touch(pointerId, &touchInfo) &&
+					touchInfo.pointerInfo.pointerType == PT_TOUCH;
+			if (pointerInputSelected_ && message == WM_POINTERDOWN &&
+				(details.type == PT_PEN || details.type == PT_TOUCH)) NotifyCanvasContactDown();
 #if defined(DRAW3_RTS_DIAGNOSTICS)
 			lastCursorTracePointerId_.store(pointerId, std::memory_order_release);
 			lastCursorTracePointerType_.store(
@@ -2569,7 +3228,7 @@ namespace Inkeys::Drawing::Draw3
 						touchClientPosition.x, touchClientPosition.y);
 				}
 			}
-			if (ShouldClearMouseCursorSampleForPointerEvent(
+			if (!pointerInputSelected_ && ShouldClearMouseCursorSampleForPointerEvent(
 				pointerEventType, message == WM_POINTERDOWN))
 			{
 				// Pointer 仅作 message-time barrier fallback；活跃计数由 RTS 权威生命周期维护。
@@ -2590,11 +3249,13 @@ namespace Inkeys::Drawing::Draw3
 					touchPanActive_.load(std::memory_order_acquire),
 					realMouseTakeoverDuringTouchPan_.load(std::memory_order_acquire)));
 			}
+			if (pointerInputSelected_ && details.type == PT_PEN && message != WM_POINTERUP &&
+				!details.cancelled && !IS_POINTER_CANCELED_WPARAM(wParam)) pointerPenRangeId_ = pointerId;
 			if (message == WM_POINTERUP && penPointer)
 			{
 				penCompatibilityMouseContactSuppressed_.store(false,
 					std::memory_order_release);
-				ClearPenCursorSample(); // 终态坐标不能冒充 Hover；新 Update/InAir 会重新发布。
+				if (!pointerInputSelected_) ClearPenCursorSample(); // Pointer 绘制按本笔 token 清除。
 				if (suppressedPenPointerId_.load(std::memory_order_acquire) == 0 ||
 					suppressedPenPointerId_.load(std::memory_order_relaxed) == pointerId)
 				{
@@ -2613,11 +3274,16 @@ namespace Inkeys::Drawing::Draw3
 					SetPointerPenContactSuppressed(true);
 				}
 				POINT clientPosition = details.screenPosition;
-				if (ScreenToClient(window, &clientPosition))
+				if ((!pointerInputSelected_ || !penInContact) && ScreenToClient(window, &clientPosition))
 				{
 					DrawingCursorSample sample;
 					sample.x = static_cast<float>(clientPosition.x);
 					sample.y = static_cast<float>(clientPosition.y);
+					if (pointerInputSelected_ && details.penInfoKnown)
+					{
+						sample.source = PointerDeviceFor(penInfo.pointerInfo.sourceDevice, InputDeviceType::Pen).source;
+						sample.source.cursorId = details.cursorId;
+					}
 					sample.valid = true;
 					sample.inverted = details.eraserHint;
 					sample.inContact = penInContact;
@@ -2627,7 +3293,7 @@ namespace Inkeys::Drawing::Draw3
 					PublishPenCursorSample(sample);
 				}
 			}
-			if (penPointer && details.cancelled)
+			if (!pointerInputSelected_ && penPointer && details.cancelled)
 			{
 				RequestHapticPointerLeave();
 				RequestControlWake();
@@ -2721,6 +3387,20 @@ namespace Inkeys::Drawing::Draw3
 				details.typeKnown,
 				message == WM_POINTERDOWN || message == WM_POINTERUP);
 #endif
+			if (pointerInputSelected_ && (message != WM_POINTERENTER || details.cancelled))
+			{
+				const bool consumed = HandlePointerContact(window, message, pointerId,
+					details.cancelled || IS_POINTER_CANCELED_WPARAM(wParam),
+					details.penInfoKnown ? &penInfo : nullptr, touchKnown ? &touchInfo : nullptr,
+					details.cursorId, arrival.QuadPart);
+				if (message == WM_POINTERDOWN && details.type == PT_TOUCH &&
+					std::none_of(pointerContacts_.begin(), pointerContacts_.end(),
+						[pointerId](const auto& contact) { return contact.pointerId == pointerId; }))
+					NotifyTouchContactBegin(false, static_cast<DWORD>(GetMessageTime()));
+				// 已识别但读取失败的接触也不能交给 DefWindowProc 提升成另一条鼠标笔迹。
+				if (consumed) return 0;
+			}
+			if (pointerInputSelected_ && (details.type == PT_PEN || details.type == PT_TOUCH)) return 0;
 			break;
 		}
 

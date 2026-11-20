@@ -1,0 +1,3 @@
+{"file":".trellis/spec/native-desktop/input-and-ink.md","reason":"核对 Draw3 触点、模型、预测与输入线程约束"}
+{"file":".trellis/spec/native-desktop/settings-performance-and-drawing.md","reason":"核对性能与绘图设置、呈现和真实设备验收约定"}
+{"file":".trellis/tasks/11-19-draw3-input-backends/research/第4步 Inkeys3_WM_POINTER输入与白板触控板拖动调查_20261119.md","reason":"采用本轮确认的输入矩阵、姿态与笔锋契约"}

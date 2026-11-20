@@ -37,7 +37,7 @@ Draw3 Host 在图形资源准备后才选择 RTS 或 Win32Mouse 输入，退出�
 ### 3. Contracts
 - Touch Down 临时接管视觉归属为 Touch，隐藏系统箭头与旧 Pen/Mouse 主光标；持久 `cursorOwner_` 不写 Touch。Touch Up/Cancel 不恢复旧 Hover，直到可确认的新 Pen 样本或真实 Mouse/TouchPad 消息接管。各活动 Touch 橡皮圆环仍按自己的 runtime 生成，Up 后随 runtime 清除。
 - Touch Pan 已由真实 Mouse 接管时，后续 Touch 指头不清 Mouse 样本；Pan 结束后若 Mouse 样本仍有效，保留 Mouse 归属。Pen 新 Hover/Contact 解除 Touch 抑制，Win7 不依赖新 Pointer API 才能恢复笔光标。2026-11-06 起 Touch Pan 只指白板移动模式下由 Touch 持有且仍有手按住的画布平移（`SetTouchPanActive` 由 `CanvasPanInput::TouchPanHeld()` 驱动）；鼠标左键拖动平移不进入该状态，保持系统箭头，平移合同见 [runtime-and-rendering.md](../native/runtime-and-rendering.md#scenario-free-canvas-navigation-and-predictive-recovery)。
-- 2026-11-08多设备续接：移动模式加入Pen/PenTail真实导航，IsNavigationDevice同一producer predicate接受Pen Down/Move/终态，绘制latest保持；合法Pen不被suppressed误计或持续mailbox自我Stop，hover不急停。Touch持有互斥/笔suppression与可靠尾段保持。2026-11-12确认DM与RTS同HWND Activate/Enable冲突可破坏原接触链，故当前PTP双指扩展停用，WindowController禁止DM owner进入COM/Activate；不得把INPUT/EXPLICITHITTEST、SetContact或独立DM HWND初始化成功当作RTS共存证明。Mouse/Touch/Pen/PenTail继续使用既有RTS producer；设置及保留数值协议见[平移规范](canvas-pan.md)。
+- 2026-11-08多设备续接：移动模式加入Pen/PenTail真实导航，IsNavigationDevice同一producer predicate接受Pen Down/Move/终态，绘制latest保持；合法Pen不被suppressed误计或持续mailbox自我Stop，hover不急停。Touch持有互斥/笔suppression与可靠尾段保持。2026-11-12确认DM与RTS同HWND Activate/Enable冲突可破坏原接触链，故曾停用PTP双指扩展（RTS 同 HWND 至今仍禁止 DM owner 进入 COM/Activate）；不得把INPUT/EXPLICITHITTEST、SetContact或独立DM HWND初始化成功当作RTS共存证明。Mouse/Touch/Pen/PenTail继续使用既有RTS producer；设置及保留数值协议见[平移规范](canvas-pan.md)。2026-11-20第4步起该停用改为按实际后端：DM只在实际后端为WM_POINTER时创建，Win11+RTS改走窗口级触控板注册+Interaction Context，详见下文“输入后端选择（第4步）”与[平移规范](canvas-pan.md)。
 - 2026-11-13尺度与身份续接：MotionContext在有序Down选择，可信直接Touch/屏幕Pen用mm，其它或失效用DIP，回退仍考虑桌面/大屏模式。producer完整contact发布与绘制latest保持；RTS binding新增每Down稳定PenFeedbackContact token旁路，失败/取消/终态独立闭合。窗口RTS权威结果不借lastKnownSource清Pointer-local latch，样本/身份/抑制发布与组合读取同短锁，UI/触觉在锁外；具体API、fallback和测试合同集中在[平移规范](canvas-pan.md)。
 - Touch/Pen 提升的 `WM_MOUSE*` 先用 promoted 签名、消息时间屏障与可用的 `INPUT_MESSAGE_SOURCE.deviceType` 过滤；`IMDT_MOUSE/IMDT_TOUCHPAD` 可立即接管。Win7 来源不可用时保留 RTS Touch 与旧过滤链，不使用固定延时压制真实鼠标。
 - API 成功返回 `device=IMDT_UNAVAILABLE + origin=IMO_SYSTEM` 的 `WM_MOUSEMOVE` 在触摸抑制仍有效或持久owner为Pen时必须拒绝；Pen清样本后仍受保护。不论按键位、触点坐标是否一致或距离 Touch/Pen终态多久，均不创建 Mouse 样本、不改变 owner。明确 Mouse/TouchPad 来源继续走既有接管策略。
@@ -120,7 +120,7 @@ Headless 覆盖有效视觉归属、Touch 系统箭头显隐、兼容 Mouse 消�
 ### 2. Signatures
 
 - `RealTimeStylusInput::Initialize / UsesBasicPacketDescription / EnableContactPublication / Shutdown`；生产共享编排和 callback lease 位于 `Draw3.RtsStartup.h`。
-- `HostInputMode::{Disabled,RtsExtended,RtsBasicXY,Win32Mouse}`；`HostStartupStage::InputReady` 对应 `Milestone::Draw3InputReady`，保持原进度槽/权重。
+- `HostInputMode::{Disabled,RtsExtended,RtsBasicXY,Win32Mouse,Pointer}`（数值 0–4，定义移至 `Draw3.RtsStartup.h`，与 `CanvasDebug::InputPath` 同值）；`HostStartupStage::InputReady` 对应 `Milestone::Draw3InputReady`，保持原进度槽/权重。
 - `WindowController::SetMouseCompatibilityEnabled / CloseMouseInputAdmission` 和 `Draw3.MouseInput.h` 的生产鼠标状态；只向现有 ContactInputCoordinator 发布。
 
 ### 3. Contracts
@@ -156,6 +156,19 @@ Good：扩展Enable失败→X/Y成功；或两档失败→鼠标就绪并经原C
 ### 7. Wrong vs Correct
 
 Wrong：依赖旧Facade转发或把RTS false改为true放行。Correct：选择真实输入后端、完成旧producer停产，并通过同一Contact/Controller/历史保存链。通用进程自动重启不是本合同的替代。
+
+
+## 输入后端选择（第4步，2026-11-20）
+
+任务：`.trellis/tasks/11-19-draw3-input-backends`。真机验收（Win8.1 PTP 命中链、Win10 Pointer+DM、Win11 RTS 同窗共存、延迟对比）尚未执行，下列合同只由代码与无窗口测试证明。
+
+- 解析：`ResolveInputBackend(preference, largeScreen, major, minor, build)`（`Draw3.RtsStartup.h`）只在 Host 启动时调用一次。手动选择优先并直接尝试（2026-11-20 用户纠正：大屏触控模式不再覆盖手选）；手选 Pointer 在 6.2 以下系统解析为 RTS 并记 `PointerUnavailableOnOs`。自动：大屏触控模式→RTS；桌面交互模式在 Win8.1/10（build<22000）选 Pointer，其余（Win7/8.0/11）选 RTS。运行期改偏好或大屏模式只影响下次启动。
+- 启动链：`StartInputAndNavigation` → `StartInputBackend`：先试解析结果，失败（停产已证明）后按固定链 RTS 扩展→基础 XY→WM_POINTER→鼠标兼容回退并跳过已试项；系统不支持 WM_POINTER 时不调用 Pointer。鼠标兼容回调失败只证明停产并记 `MouseFailed`，不在链中途 `BeginKnownFailure`/`RecordHostStartupFailure`（否则后续 RTS 初始化会落入失败截止）；全部失败后统一记录并启动失败截止。停产无法证明走 `[[noreturn]] FailUnprovenProducerStop`。Host 以 `InputRun`（偏好、大屏、解析结果、实际模式、`InputFallback` 位标志、触控板可用性）原子发布快照，启动日志一行记录全部字段（含 `touchpad=` 可用性枚举值）。
+- RTS 姿态：纯公式 `RtsStartup::DecodeStylusAngles`。双轴分支方位 `wrap(atan2(+tan(y), tan(x)))`（RTS 正 Y 远离用户）；直接角分支倾角 `π/2 − |altitude|`（倒置笔负仰角得到正确幅度，倒置标志独立）；两轴均 0 时倾角 0、方位 0（不传 −1，避免 Modeler 整笔方位未知）；`WrapStylusOrientation` 把 float 舍入到 2π 的值归 0。
+- Pointer producer（`WindowController`，`pointerInputSelected_`）：所有 WM_POINTER API 经 `GetProcAddress`，不调用 `EnableMouseInPointer`。PT_PEN/PT_TOUCH 只读当前消息（不回放历史）；`ptPixelLocationRaw` 减客户区原点，笔另用 HIMETRIC + `GetPointerDeviceRects` 浮点映射并以 1 px 偏差校验，失败退回像素。压力 mask 有效 /1024（合法 0 保留），缺失 −1；双轴 mask 都有效才算姿态（Pointer 正 Y 朝向用户，方位 `atan2(−y,x)`），缺任一轴两项 −1；触摸 `rcContactRaw` 同时填 raw 与画布宽高（`ContactAreaUnits::CanvasPixels`）。`PEN_FLAG_INVERTED|ERASER` → `isInvertedCursor`。Up/取消/捕获变化/设备变化/销毁/停止均只发布一次终态。已接管的笔/触摸序列（含 `WM_POINTERCAPTURECHANGED`、类型查询失败但已登记的 `WM_POINTERLEAVE`）一律返回 0，不交默认处理；真实鼠标仍走 Win32 兼容 producer，只按提升签名与 `IMDT_TOUCH/IMDT_PEN` 剔除提升消息，不用触摸时间屏障（否则吞掉同 tick 的真实鼠标 Up）。模型时间仍用到达 QPC；`PerformanceCount`、到达、发布、消费 QPC 只进诊断。
+- 诊断时间：RTS 的 `entry-qpc` 是回调入口时刻（Down/Up 的 arrival 行与三类回调的发布结果行都带；高频 Packets 只在抽样的发布结果行记录，不另写 arrival 行），`arrival-qpc` 是快照（模型）时间，`publish-qpc` 是发布调用返回后的时刻、可能晚于消费。入口至消费：RTS 用 `entry-qpc → consume-qpc`，Pointer 用 `pointer-input` 行的 `arrival`（消息到达 QPC）→ `consume-qpc`，`PerformanceCount` 另列。
+- 触控板入口（`SelectTouchpadEntry`）：Win8.1+ 实际 Pointer → 现有 DM owner（`Initialize(window, pointerReady)` 在任何 COM 前拒绝非 Pointer）；Win11 实际 RTS → `TouchpadInteractionOwner`（`RegisterTouchpadCapableWindow`、`GetPointerFrameTouchpadInfoHistory`、ninput 序号 2507 的 `ProcessPointerFramesInteractionContext2`，均手写声明并动态解析）；其余无入口。入口只在生产者就绪、回退结束后初始化。IC 是唯一惯性源；`WM_STOPINERTIA/WM_ENDINERTIA`（0x023B/0x023C）先 `bridge.Cancel()` 作废已排队位移再停止；设备变化只停识别、已接管序列继续消费到终态，新 Down 前清除已不存在的指针 ID。
+- 实时笔锋：普通笔 Down 锁存 `LiveTaperOptions::Allows(device)`（左右键→Mouse，笔尾→Pen）。`HardwarePressure` 笔恢复 55 ms 时窗，逐点倍率 `1 − 0.50 × (1 − M)` 乘在已限幅的局部压感半径上（充分展开保留 65%）；其余宽度模式沿用原曲线；关闭即倍率 1。实时尾长缓存与定稿沿用原 `liveTipLength` 语义，不另设“真实尾长”。
 
 ## 历史 Draw2 笔画生命周期
 
@@ -740,7 +753,7 @@ Win7 输入已发布并被 controller 消费，而连续笔/橡皮操作的 ULW 
 - 停笔的显示年龄以最近真实运动和既有预测时间参考计算，合成model输出不能刷新年龄。有效长度按现有T平滑压缩并以上一帧长度封顶；真实Move/新Down/Reset解除旧限制。实际位置变化及成功重连须明确清除长度缓存，不能只比较时间值，因为不同真实Move可具有相同QPC时间戳。前段恢复笔身宽度，剩余过渡整体重算，不能以恢复为粗半径的圆头直接覆盖旧细尾。
 - 压缩边界在段内时只对派生几何加入插值连接点，不改`realPoints`、基础压感/速度估算、L1前缀或CPU/GPU结构布局。旧/新L0 bounds共同进入dirty。
 - 活动态、完成尾段及Stored使用同一形状求解；缓存的长度/时间须与运动及显示时间兼容。较晚live帧的缓存不得污染较早物理Up；Up锁定后延迟处理不继续老化，长停同位Up不重新收尖。
-- 硬件压感、HardPen及禁用taper的工具沿用现有行为；没有新配置或UInk格式迁移。
+- HardPen及禁用taper的工具沿用现有行为；没有UInk格式迁移。硬件压感普通笔自2026-11-20起按“输入后端选择（第4步）”叠加半强度笔锋，并受 `Drawing.LiveTaper` 每笔锁存开关控制。
 
 ### 4. Validation & Error Matrix
 | 条件 | 必需行为 |

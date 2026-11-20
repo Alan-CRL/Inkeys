@@ -240,6 +240,7 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 			case InputPath::RtsExtended: name = "RTS"; break;
 			case InputPath::RtsBasicXY: name = "RTS-XY"; break;
 			case InputPath::Win32Mouse: name = "Win32"; break;
+			case InputPath::Pointer: name = "WM_POINTER"; break;
 			default: break;
 			}
 			std::snprintf(out, n, "%s", name);
@@ -872,6 +873,7 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 			case InputPath::RtsExtended: path = "RTS extended"; break;
 			case InputPath::RtsBasicXY: path = "RTS basic X/Y"; break;
 			case InputPath::Win32Mouse: path = "Win32 mouse"; break;
+			case InputPath::Pointer: path = "WM_POINTER"; break;
 			default: break;
 			}
 			DrawGlyphs(surface, coverage, cw, ch, left, y, "Input", kDim);

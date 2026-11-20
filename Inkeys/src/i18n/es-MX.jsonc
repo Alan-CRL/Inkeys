@@ -761,6 +761,14 @@
           "N": "Corrección al levantar el lápiz",
           "E": "Reducir los giros bruscos al final del trazo al levantar el lápiz para lograr un acabado más natural."
         },
+        "LiveTaper":
+        {
+          "N": "Afinado de trazo en tiempo real",
+          "E": "El extremo del trazo se afina al moverse y se recupera al detenerse. Se puede activar o desactivar por dispositivo de entrada.",
+          "Mouse": "Mouse",
+          "Touch": "Toque",
+          "Pen": "Lápiz"
+        },
         "InkPrediction":
         {
           "N": "Predicción del trazo",
@@ -773,6 +781,9 @@
         {
           "N": "Inercia al arrastrar la pizarra",
           "E": "La pizarra sigue deslizándose al soltar en el modo de arrastre. Se puede ajustar por tipo de entrada.",
+          "TouchpadRequirement": "Los gestos del panel táctil en la pizarra requieren Windows 8.1 o posterior y un panel táctil de precisión.",
+          "RtsNotice": "Se está usando la entrada de mensajes de RealTimeStylus, que no es compatible con el arrastre de la pizarra con el panel táctil.",
+          "RtsGestureUnavailable": "Este gesto no está disponible en el modo RealTimeStylus en el sistema o dispositivo actual.",
           "Mouse": "Mouse",
           "Touchpad": "Panel táctil",
           "Touch": "Toque",
@@ -1053,6 +1064,21 @@
       },
       "AdvancedSection": "Configuración avanzada",
       "LowLevelSection": "Configuración de bajo nivel",
+      "InputMode":
+      {
+        "N": "Método de entrada",
+        "E": "Determina cómo se recibe la entrada de los dispositivos. Algunas opciones pueden entrar en conflicto con los gestos del panel táctil en la pizarra.",
+        "MouseCompatibility": "Entrada de compatibilidad con mouse",
+        "RtsExtended": "RealTimeStylus (propiedades extendidas)",
+        "RtsBasicXY": "RealTimeStylus (X/Y básico)",
+        "Unavailable": "No disponible",
+        "FallbackFormat": "Se cambió de {0} a {1}.",
+        "PointerUnavailableOnOs": "El sistema actual no admite WM_POINTER.",
+        "PointerInitFailed": "Error al inicializar WM_POINTER.",
+        "RtsExtendedFailed": "Error al inicializar las propiedades extendidas de RealTimeStylus.",
+        "RtsFailed": "Error al inicializar RealTimeStylus.",
+        "MouseFailed": "Error al inicializar la entrada de compatibilidad con mouse."
+      },
       "PresentationMode":
       {
         "N": "Método de transparencia del lienzo de escritorio",
@@ -1488,6 +1514,7 @@
       "CanvasInformation": "Información de inicialización del lienzo",
       "PresentationFallback": "Método de presentación alternativo del lienzo de escritorio",
       "SwapChainFallback": "Cadena de intercambio alternativa del lienzo de escritorio",
+      "InputFallback": "Método de entrada alternativo",
       "DisplayInformation": "Pantallas y EDID"
     },
     "Update":

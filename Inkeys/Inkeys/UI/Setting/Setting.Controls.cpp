@@ -1756,7 +1756,7 @@ namespace Inkeys::UI::Setting::Design
 
 	}
 
-	bool ComboBox( const char * label, int * current_item, const char * const items[], int items_count, ImGuiComboFlags flags, BelowComboMotion* motion, std::uint64_t revision )
+	bool ComboBox( const char * label, int * current_item, const char * const items[], int items_count, ImGuiComboFlags flags, BelowComboMotion* motion, std::uint64_t revision, int disabledItem )
 	{
 	    ControlFontScope font;
 	    using namespace ImFluent;
@@ -1957,11 +1957,14 @@ namespace Inkeys::UI::Setting::Design
 	        scrollbar.Finish(popup_host);
 	        if (motion && !decoration) motion->selected = current_item ? *current_item : -1;
 	        if (decoration) ImGui::BringWindowToDisplayFront(popup_host);
+	        // Home/End 手动设置焦点，也要跳过置灰项。
+	        const int firstEnabled = disabledItem == 0 ? 1 : 0;
+	        const int lastEnabled = disabledItem == items_count - 1 ? items_count - 2 : items_count - 1;
 	        int focus_only = -1;
-	        if ( !decoration && gctx.NavWindow == popup_host && gctx.NavId != 0 )
+	        if ( !decoration && gctx.NavWindow == popup_host && gctx.NavId != 0 && firstEnabled <= lastEnabled )
 	        {
-	            if ( IsChordPressedOwned( actions.FirstItem, popup_id, false ) ) focus_only = 0;
-	            if ( IsChordPressedOwned( actions.LastItem, popup_id, false ) ) focus_only = items_count - 1;
+	            if ( IsChordPressedOwned( actions.FirstItem, popup_id, false ) ) focus_only = firstEnabled;
+	            if ( IsChordPressedOwned( actions.LastItem, popup_id, false ) ) focus_only = lastEnabled;
 	        }
 	        const float row_advance = h + ImGui::GetStyle().ItemSpacing.y;
 	        ImGuiListClipper clipper;
@@ -1977,7 +1980,10 @@ namespace Inkeys::UI::Setting::Design
 	                    continue;
 	                ImGui::PushID( i );
 	                const bool sel = decoration ? motion->selected == i : (current_item && *current_item == i);
-	                if ( ImFluent::Selectable( items[ i ], sel, NULL, h ) && !decoration )
+	                if ( i == disabledItem ) ImGui::BeginDisabled();
+	                const bool pressed = ImFluent::Selectable( items[ i ], sel, NULL, h );
+	                if ( i == disabledItem ) ImGui::EndDisabled();
+	                if ( pressed && !decoration && i != disabledItem )
 	                {
 	                    if ( current_item )
 	                        *current_item = i;
@@ -1986,9 +1992,9 @@ namespace Inkeys::UI::Setting::Design
 	                    ImGui::CloseCurrentPopup();
 	                }
 	                const auto item_id = gctx.LastItemData.ID;
-	                if ( sel && !decoration ) ImGui::SetItemDefaultFocus();
-	                if ( i == 0 ) ConsumeNavArrow( item_id, ImGuiDir_Up );
-	                if ( i == items_count - 1 ) ConsumeNavArrow( item_id, ImGuiDir_Down );
+	                if ( sel && !decoration && i != disabledItem ) ImGui::SetItemDefaultFocus();
+	                if ( i == firstEnabled ) ConsumeNavArrow( item_id, ImGuiDir_Up );
+	                if ( i == lastEnabled ) ConsumeNavArrow( item_id, ImGuiDir_Down );
 	                if ( i == focus_only )
 	                {
 	                    ImGui::SetFocusID( item_id, popup_host );
@@ -2016,11 +2022,11 @@ namespace Inkeys::UI::Setting::Design
 	    return changed;
 	}
 
-	bool ComboBox(const char* label, int* value, const std::vector<std::string>& items, BelowComboMotion* motion, std::uint64_t revision)
+	bool ComboBox(const char* label, int* value, const std::vector<std::string>& items, BelowComboMotion* motion, std::uint64_t revision, int disabledItem)
 	{
 		std::vector<const char*> views;
 		for (const auto& item : items) views.push_back(item.c_str());
-		return ComboBox(label, value, views.data(), static_cast<int>(views.size()), 0, motion, revision);
+		return ComboBox(label, value, views.data(), static_cast<int>(views.size()), 0, motion, revision, disabledItem);
 	}
 
 	bool Slider(const char* label, float* value, float minimum, float maximum,
@@ -2344,14 +2350,14 @@ namespace Inkeys::UI::Setting::Design
 
 	bool ComboRow(const char* id, const char* title, const char* description,
 		const char* glyph, int& value, const std::vector<std::string>& items, const char* note, bool showNoteIcon,
-		bool keepNoteAsInfo)
+		bool keepNoteAsInfo, int disabledItem)
 	{
 		float width = 160.0F;
 		for (const auto& item : items)
 			width = (std::max)(width, ControlTextWidth(item.c_str()) / Pixels(1.0F) + 48.0F);
 		bool changed = false;
 		SettingRow(id, title, description, glyph, (std::min)(320.0F, width), ControlHeight,
-			[&](const LayoutRect&) { changed = ComboBox("##select", &value, items); }, Card, Stroke, 0, IM_COL32_WHITE, false, note, showNoteIcon,
+			[&](const LayoutRect&) { changed = ComboBox("##select", &value, items, nullptr, 0, disabledItem); }, Card, Stroke, 0, IM_COL32_WHITE, false, note, showNoteIcon,
 			nullptr, keepNoteAsInfo);
 		return changed;
 	}

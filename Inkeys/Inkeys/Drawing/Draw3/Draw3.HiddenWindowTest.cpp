@@ -1,4 +1,4 @@
-#include "Draw3.HiddenWindowTest.h"
+﻿#include "Draw3.HiddenWindowTest.h"
 #include "Draw3.Product.h"
 #include "Draw3.TouchpadNavigation.h"
 #include "Draw3.Presentation.h"
@@ -177,11 +177,15 @@ namespace Inkeys::Drawing::Draw3
 			if (!Check(controller.SetMouseCompatibilityEnabled(true),
 				"compatibility producer starts on its HWND owner", failures)) return false;
 			// GetMessageTime 是生产路径的旧代次屏障；使用新排队消息，不伪造时间或调用私有处理函数。
-			const DWORD started = GetTickCount();
-			const auto tickDeadline = std::chrono::steady_clock::now() + 1s;
-			while (GetTickCount() == started && std::chrono::steady_clock::now() < tickDeadline)
-				std::this_thread::sleep_for(1ms);
-			if (!Check(GetTickCount() != started, "compatibility fixture obtains a new message-time generation", failures)) return false;
+			const auto waitForInputTick = [&]()
+			{
+				const DWORD started = GetTickCount();
+				const auto tickDeadline = std::chrono::steady_clock::now() + 1s;
+				while (GetTickCount() == started && std::chrono::steady_clock::now() < tickDeadline)
+					std::this_thread::sleep_for(1ms);
+				return Check(GetTickCount() != started, "compatibility fixture obtains a new message-time generation", failures);
+			};
+			if (!waitForInputTick()) return false;
 			const auto deadline = std::chrono::steady_clock::now() + 20s;
 			const auto dispatch = [&](UINT message, WPARAM buttons, LPARAM position)
 			{
@@ -326,6 +330,29 @@ namespace Inkeys::Drawing::Draw3
 			dispatch(WM_LBUTTONUP, 0, MAKELPARAM(30, 40));
 			Check(input.DiagnosticsSnapshot().occupiedSlots == 0 && GetCapture() != window && !IsWindowVisible(window),
 				"compatibility fixture ends without slots capture or visible UI", failures);
+			if (!Check(controller.SetMouseCompatibilityEnabled(false), "stop mouse before Pointer start", failures)) return false;
+			if (controller.StartPointerInput())
+			{
+				if (!waitForInputTick()) return false;
+				controller.SetSelectionMode(false);
+				dispatch(WM_LBUTTONUP, 0, MAKELPARAM(30, 40));
+				// 使用同一个提升签名对照前面的纯鼠标用例；此时不应生成接触。
+				const auto extra = SetMessageExtraInfo(static_cast<LPARAM>(0xFF515700u));
+				SendMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(30, 40));
+				SetMessageExtraInfo(extra);
+				contact = takeDown();
+				Check(!contact, "Pointer mode rejects promoted mouse Down", failures);
+				releaseUnexpected(contact);
+				dispatch(WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(30, 40));
+				contact = takeDown();
+				Check(phaseAt(contact, ContactPhase::Down, 30, 40), "Pointer mode accepts ordinary mouse Down", failures);
+				const auto terminals = input.DiagnosticsSnapshot().terminalPublished;
+				Check(controller.StopPointerInput() && phaseAt(contact, ContactPhase::Cancelled, 30, 40) &&
+					input.DiagnosticsSnapshot().terminalPublished == terminals + 1,
+					"Pointer stop closes its companion mouse contact once", failures);
+				if (contact) input.Recycle(contact);
+			}
+			else Report("SKIP", "Pointer mouse coexistence: backend could not initialize");
 			return failures == beforeFailures;
 		}
 
@@ -348,10 +375,11 @@ namespace Inkeys::Drawing::Draw3
 		bool CheckHiddenControllerMousePan(HWND drawpad, HiddenViewportObservation& viewport,
 			int& failures)
 		{
-			// 生产只在 RTS 初始化失败时选 Win32Mouse；不关闭 RTS、不把合成 mailbox 注入冒充鼠标消息。
-			if (ProductHost().RuntimeSnapshot().inputMode != HostInputMode::Win32Mouse)
+			// Pointer 和纯鼠标模式都使用真实的 WM_MOUSE 生产者。
+			const auto inputMode = ProductHost().RuntimeSnapshot().inputMode;
+			if (inputMode != HostInputMode::Win32Mouse && inputMode != HostInputMode::Pointer)
 			{
-				Report("SKIP", "real-controller WM_MOUSE pan: Host selected RTS, no safe force-Win32 option");
+				Report("SKIP", "real-controller WM_MOUSE pan: Win32 mouse producer is inactive");
 				return true;
 			}
 			if constexpr (!kWhiteboardPatternOwnedByFreeze)

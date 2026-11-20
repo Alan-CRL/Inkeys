@@ -5,6 +5,7 @@
 #include "Draw3.HapticRequest.h"
 #include "Draw3.Shortcut.h"
 #include "Draw3.MouseInput.h"
+#include "Draw3.RtsStartup.h"
 #include "Draw3.CanvasPanSettings.h"
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.PalmEraser.h"
@@ -237,14 +238,6 @@ namespace Inkeys::Drawing::Draw3
 		SelectionUlw,
 	};
 
-	enum class HostInputMode : std::uint8_t
-	{
-		Disabled,
-		RtsExtended,
-		RtsBasicXY,
-		Win32Mouse,
-	};
-
 	enum class HostStartupStage : std::uint8_t
 	{
 		WindowAttached,
@@ -297,6 +290,8 @@ namespace Inkeys::Drawing::Draw3
 		bool enableUlwCompositionAlign = true;
 		bool enableDcompCompositionAlign = true;
 		int frameRate = 120; // 仅在启动时选择画布模型参数组。
+		InputPreference inputPreference = InputPreference::Automatic;
+		bool largeScreenTouchMode = false;
 	};
 
 	// 只供显式 hidden caller 读取 worker 事实，不加到普通帧/RuntimeSnapshot 热路。
@@ -347,6 +342,12 @@ namespace Inkeys::Drawing::Draw3
 		bool lastPresentSucceeded = false;
 		HostPresentationMode presentationMode = HostPresentationMode::Automatic;
 		HostInputMode inputMode = HostInputMode::Disabled;
+		InputPreference inputPreference = InputPreference::Automatic;
+		bool largeScreenForcedRts = false;
+		InputPreference resolvedInputBackend = InputPreference::Automatic;
+		InputFallback inputFallback = InputFallback::None;
+		bool touchpadGestureAvailable = false;
+		TouchpadAvailability touchpadGestureAvailability = TouchpadAvailability::BackendDisabled;
 		std::uint64_t presentCount = 0;
 		std::uint64_t successfulPresentCount = 0;
 		std::uint64_t partialPresentCount = 0;
@@ -444,6 +445,7 @@ namespace Inkeys::Drawing::Draw3
 		// 断触接续适用的设备：触摸 / 笔尾（橡皮端）；只在总开关开启时生效，默认两者都开。
 		void SetInterruptedStrokeReconnectDevices(bool touch, bool penTail) noexcept;
 		void SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled, int predictionMode) noexcept;
+		void SetLiveTaperOptions(bool enabled, bool mouse, bool touch, bool pen) noexcept;
 		void SetCanvasPanInertiaOptions(CanvasPanInertiaOptions options) noexcept;
 		void SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept;
 		void SetPalmEraserOptions(const PalmEraser::Settings& options);

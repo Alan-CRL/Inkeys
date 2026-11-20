@@ -15,6 +15,7 @@
 #include "../../../IdtMagnification.h"
 #include "../../../IdtOther.h"
 #include "../../../IdtPlug-in.h"
+#include "../../../IdtStart.h"
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Bridge.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
@@ -1369,6 +1370,30 @@ namespace
 	{
 		// 设置渲染与 Draw3 都会提交；worker 执行时写出最新配置，无需在入队时冻结快照。
 		QueueBusiness({ SettingBusinessKind::WriteConfig });
+	}
+
+	void RenderDraw3InputMode(const IdtSysVersionStruct& version, const string& restartRequired)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		const auto& text = I18nKey.SettingsUI.Performance.InputMode;
+		auto& saved = Inkeys::config.Experimental.Inkeys3.Draw3.InputMode;
+		const auto preference = static_cast<InputPreference>(saved.load());
+		const vector<string> items{
+			IA(I18nKey.SettingsUI.Performance.PresentationMode.Automatic) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+			"RealTimeStylus", "WM_POINTER", IA(text.MouseCompatibility) };
+		// 说明只面向用户；实际后端与回退原因在“软件调试”画布初始化输出中展示。
+		const string description = IA(text.E);
+		const int disabledItem = SupportsPointerInput(version.majorVersion, version.minorVersion)
+			? -1 : static_cast<int>(InputPreference::Pointer);
+		int selected = static_cast<int>(preference);
+		// Win7 上只把已保存的 Pointer 显示为自动，打开设置不会改写配置。
+		if (selected == disabledItem) selected = static_cast<int>(InputPreference::Automatic);
+		if (Design::ComboRow("##draw3-input-mode", IA(text.N).c_str(), description.c_str(), "\ue7c9",
+			selected, items, restartRequired.c_str(), true, true, disabledItem))
+		{
+			saved = selected;
+			QueueConfigWrite();
+		}
 	}
 
 	void QueuePptComWriteSetting()
@@ -2889,6 +2914,7 @@ SettingSessionCoroutine RunSettingSession()
 				if ((contentPage != settingTabEnum::tab3 || drawingSubpage != Design::DrawingSubpage::Cursor) &&
 					cursorOpacitySavePending.exchange(false))
 					QueueConfigWrite();
+				static const auto inputOsVersion = GetWindowsVersion();
 				switch (contentPage)
 				{
 					// 主页
@@ -3946,6 +3972,28 @@ SettingSessionCoroutine RunSettingSession()
 							IA(I18nKey.SettingsUI.Draw.General.PenTailCorrection.E).c_str(), "\uedc6", penTailCorrectionEnabled);
 						commitGeneralDrawingOptions();
 
+						auto& taper = drawingOptions.LiveTaper;
+						bool taperEnabled = taper.Enabled.load(), mouse = taper.Mouse.load();
+						bool touch = taper.Touch.load(), pen = taper.Pen.load();
+						bool mouseChanged = false, touchChanged = false, penChanged = false;
+						const auto& taperKeys = I18nKey.SettingsUI.Draw.General.LiveTaper;
+						// 不提供收起动画 ID，主开关关闭时设备项留在原位，只禁用交互。
+						const auto taperDevices = Design::InlineCheckboxes("##draw-live-taper-devices", {
+							{ IA(taperKeys.Mouse), &mouse, &mouseChanged },
+							{ IA(taperKeys.Touch), &touch, &touchChanged },
+							{ IA(taperKeys.Pen), &pen, &penChanged } }, nullptr, taperEnabled);
+						const bool taperChanged = Design::ToggleRow("##draw-live-taper", IA(taperKeys.N).c_str(),
+							IA(taperKeys.E).c_str(), "\uedc6", taperEnabled, nullptr, &taperDevices);
+						if (taperChanged || mouseChanged || touchChanged || penChanged)
+						{
+							taper.Enabled = taperEnabled;
+							taper.Mouse = mouse;
+							taper.Touch = touch;
+							taper.Pen = pen;
+							Inkeys::Drawing::Draw3::ProductHost().SetLiveTaperOptions(taperEnabled, mouse, touch, pen);
+							QueueConfigWrite();
+						}
+
 						Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Laser.N).c_str());
 						// 粒子效果暂不可用，仅保留说明，不提供启用入口。
 						ImGui::BeginDisabled();
@@ -4003,6 +4051,17 @@ SettingSessionCoroutine RunSettingSession()
 							Design::NavigateDrawingSubpage(navigationState, drawingSubpage, Design::DrawingSubpage::Cursor);
 
 						Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.WhiteboardSection).c_str());
+						if (Inkeys::Drawing::Draw3::ShowWhiteboardRtsNotice(
+							inputOsVersion.majorVersion, inputOsVersion.buildNumber, canvasRuntime.inputMode))
+							Design::Notice("##whiteboard-rts-input",
+								IA(I18nKey.SettingsUI.Draw.General.CanvasPanInertia.RtsNotice).c_str(), nullptr);
+						else if (Inkeys::Drawing::Draw3::IsRtsInput(canvasRuntime.inputMode) &&
+							(canvasRuntime.touchpadGestureAvailability == Inkeys::Drawing::Draw3::TouchpadAvailability::RegistrationUnavailable ||
+							 canvasRuntime.touchpadGestureAvailability == Inkeys::Drawing::Draw3::TouchpadAvailability::InitFailed))
+							Design::Notice("##whiteboard-rts-touchpad-unavailable",
+								IA(I18nKey.SettingsUI.Draw.General.CanvasPanInertia.RtsGestureUnavailable).c_str(), nullptr);
+						Design::Notice("##whiteboard-touchpad-requirement",
+							IA(I18nKey.SettingsUI.Draw.General.CanvasPanInertia.TouchpadRequirement).c_str(), nullptr);
 						auto& panPreferences = drawingOptions.Whiteboard.PanInertia;
 						Inkeys::Drawing::Draw3::CanvasPanInertiaOptions panInertia{
 							panPreferences.Enabled.load(), panPreferences.Mouse.load(), panPreferences.Touchpad.load(),
@@ -4719,6 +4778,7 @@ SettingSessionCoroutine RunSettingSession()
 					}
 
 					Design::SectionHeader(IA(renderingText.LowLevelSection).c_str());
+					RenderDraw3InputMode(inputOsVersion, restartRequired);
 					int presentation = draw3Config.PresentationMode.load();
 					if (Design::ComboRow("##draw3-presentation", IA(renderingText.PresentationMode.N).c_str(),
 						nullptr, "\ue7f4", presentation,
@@ -5056,6 +5116,49 @@ SettingSessionCoroutine RunSettingSession()
 					if (!canvasFallback.chainWarning.empty())
 						Design::Notice("##canvas-swapchain-fallback", IA(I18nKey.SettingsUI.DebugSoftware.SwapChainFallback).c_str(),
 							canvasFallback.chainWarning.c_str(), ImFluentInfoSeverity_Warning);
+					{
+						// 输入方式回退与呈现回退同位置提示：首选（手选取偏好，自动取解析结果）→ 实际后端 + 失败原因。
+						using namespace Inkeys::Drawing::Draw3;
+						const auto& inputText = I18nKey.SettingsUI.Performance.InputMode;
+						const auto inputRuntime = ProductHost().RuntimeSnapshot();
+						if (inputRuntime.inputFallback != InputFallback::None)
+						{
+							const auto preferenceName = [&](InputPreference value) -> string
+							{
+								switch (value)
+								{
+								case InputPreference::RealTimeStylus: return IA(inputText.RtsExtended);
+								case InputPreference::Pointer: return "WM_POINTER";
+								case InputPreference::MouseCompatibility: return IA(inputText.MouseCompatibility);
+								default: return IA(inputText.Unavailable);
+								}
+							};
+							string actualName;
+							switch (inputRuntime.inputMode)
+							{
+							case HostInputMode::RtsExtended: actualName = IA(inputText.RtsExtended); break;
+							case HostInputMode::RtsBasicXY: actualName = IA(inputText.RtsBasicXY); break;
+							case HostInputMode::Pointer: actualName = "WM_POINTER"; break;
+							case HostInputMode::Win32Mouse: actualName = IA(inputText.MouseCompatibility); break;
+							default: actualName = IA(inputText.Unavailable); break;
+							}
+							const string preferredName = preferenceName(inputRuntime.inputPreference != InputPreference::Automatic
+								? inputRuntime.inputPreference : inputRuntime.resolvedInputBackend);
+							string warning;
+							try { warning = vformat(IA(inputText.FallbackFormat), make_format_args(preferredName, actualName)); }
+							catch (const format_error&) { warning = preferredName + " → " + actualName; }
+							// 失败原因是位标志，同一次启动可能连续降级多项。
+							for (const auto& [reason, key] : {
+								pair{ InputFallback::PointerUnavailableOnOs, inputText.PointerUnavailableOnOs },
+								pair{ InputFallback::PointerInitFailed, inputText.PointerInitFailed },
+								pair{ InputFallback::RtsExtendedFailed, inputText.RtsExtendedFailed },
+								pair{ InputFallback::RtsFailed, inputText.RtsFailed },
+								pair{ InputFallback::MouseFailed, inputText.MouseFailed } })
+								if (HasInputFallback(inputRuntime.inputFallback, reason)) warning += " " + IA(key);
+							Design::Notice("##canvas-input-fallback", IA(I18nKey.SettingsUI.DebugSoftware.InputFallback).c_str(),
+								warning.c_str(), ImFluentInfoSeverity_Warning);
+						}
+					}
 					// 复用只读文本卡片的测量排版，独立ID避免与下方EDID卡片共享状态。
 					ImGui::PushID("canvas-initialization");
 					Design::RenderEdidCard(canvasInformation.c_str());

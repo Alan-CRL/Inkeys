@@ -229,6 +229,64 @@ int RunConfigMetadataTests()
 		output << Json::writeString(builder, document);
 		check(static_cast<bool>(output), "write mode input fixture");
 	};
+	{
+		Inkeys::Config inputConfig;
+		auto& preference = inputConfig.Experimental.Inkeys3.Draw3.InputMode;
+		check(preference.load() == 0, "input preference defaults to automatic");
+		for (const int mode : { 0, 1, 2, 3 })
+		{
+			preference = mode;
+			check(inputConfig.Write(), "write input preference");
+			const auto value = ReadJson(file)["Experimental"]["Inkeys3"]["Draw3"]["InputMode"];
+			check(value.isInt() && value.asInt() == mode, "persist selected input preference");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll() && restarted.Experimental.Inkeys3.Draw3.InputMode.load() == mode,
+				"restart restores selected input preference");
+		}
+		writeModeDocument(Json::Value(Json::objectValue));
+		check(inputConfig.ReadAll() && preference.load() == 0, "missing input preference defaults to automatic");
+		for (const int invalid : { -1, 4 })
+		{
+			Json::Value document(Json::objectValue);
+			document["Experimental"]["Inkeys3"]["Draw3"]["InputMode"] = invalid;
+			writeModeDocument(document);
+			preference = 2;
+			check(inputConfig.ReadAll() && preference.load() == 0, "invalid input preference defaults to automatic");
+		}
+	}
+	{
+		Inkeys::Config taperConfig;
+		auto& taper = taperConfig.Drawing.LiveTaper;
+		const auto values = [](const Inkeys::Config& source) {
+			const auto& saved = source.Drawing.LiveTaper;
+			return std::array<bool, 4>{ saved.Enabled.load(), saved.Mouse.load(), saved.Touch.load(), saved.Pen.load() };
+		};
+		constexpr std::array<bool, 4> defaults{ true, true, true, true };
+		check(values(taperConfig) == defaults, "live taper and all devices default on");
+		for (unsigned mask = 0; mask < 16; ++mask)
+		{
+			const std::array<bool, 4> expected{ (mask & 1u) != 0, (mask & 2u) != 0,
+				(mask & 4u) != 0, (mask & 8u) != 0 };
+			taper.Enabled = expected[0];
+			taper.Mouse = expected[1];
+			taper.Touch = expected[2];
+			taper.Pen = expected[3];
+			check(taperConfig.Write(), "write independent live taper preferences");
+			Inkeys::Config restarted;
+			check(restarted.ReadAll() && values(restarted) == expected,
+				"restart retains all device choices with the live taper master on or off");
+		}
+		Json::Value legacy(Json::objectValue);
+		legacy["Drawing"]["PenTailCorrectionEnabled"] = false;
+		writeModeDocument(legacy);
+		taper.Enabled = false; taper.Mouse = false; taper.Touch = false; taper.Pen = false;
+		check(taperConfig.ReadAll() && values(taperConfig) == defaults && !taperConfig.Drawing.PenTailCorrectionEnabled.load(),
+			"missing live taper group defaults on independently of pen tail correction");
+		legacy["Drawing"]["LiveTaper"]["Touch"] = false;
+		writeModeDocument(legacy);
+		check(taperConfig.ReadAll() && values(taperConfig) == std::array<bool, 4>{ true, true, false, true },
+			"missing live taper leaves default on beside an explicitly disabled device");
+	}
 	// 使用真实 schema 和写盘链验证字体实验偏好，不接受数值/字符串伪装成 bool。
 	{
 		constexpr const char* fontPath = "Experimental.Inkeys3.UI3.AllowFractionalFontSize";

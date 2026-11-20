@@ -49,9 +49,6 @@ namespace Inkeys::Drawing::Draw3
 		constexpr ULONG kMaximumPacketPropertyCount = 256;
 		constexpr float kUnknownStylusValue = -1.0f;
 		constexpr float kPi = 3.14159265358979323846f;
-		constexpr float kHalfPi = kPi * 0.5f;
-		constexpr float kTwoPi = kPi * 2.0f;
-		constexpr float kTiltLimit = kHalfPi - 0.0001f;
 		const std::array<GUID, 9> kExtendedPacketProperties = {
 			GUID_PACKETPROPERTY_GUID_X,
 			GUID_PACKETPROPERTY_GUID_Y,
@@ -162,29 +159,12 @@ namespace Inkeys::Drawing::Draw3
 			return std::isfinite(radians);
 		}
 
-		float WrapOrientation(float angle) noexcept
-		{
-			angle = std::fmod(angle, kTwoPi);
-			if (angle < 0.0f) angle += kTwoPi;
-			return angle;
-		}
-
 		DecodedStylusAngles DecodeStylusAngles(bool hasAzimuthAltitude,
 			float azimuth, float altitude, float xTilt, float yTilt) noexcept
 		{
-			DecodedStylusAngles result;
-			if (hasAzimuthAltitude && std::isfinite(azimuth) && std::isfinite(altitude))
-			{
-				result.tilt = kHalfPi - std::clamp(altitude, 0.0f, kHalfPi);
-				result.orientation = WrapOrientation(kTwoPi - azimuth);
-				return result;
-			}
-			if (!std::isfinite(xTilt) || !std::isfinite(yTilt)) return result;
-			const float xProjection = std::tan(std::clamp(xTilt, -kTiltLimit, kTiltLimit));
-			const float yProjection = std::tan(std::clamp(yTilt, -kTiltLimit, kTiltLimit));
-			result.tilt = std::clamp(std::atan(std::hypot(xProjection, yProjection)), 0.0f, kHalfPi);
-			result.orientation = WrapOrientation(std::atan2(-yProjection, xProjection));
-			return result;
+			const auto decoded = RtsStartup::DecodeStylusAngles(
+				hasAzimuthAltitude, azimuth, altitude, xTilt, yTilt);
+			return { decoded.tilt, decoded.orientation };
 		}
 
 		SizeF DecodeContactSize(InputDeviceType deviceType, LONG rawWidth, LONG rawHeight,
@@ -1234,12 +1214,14 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE StylusDown(IRealTimeStylus* source, const StylusInfo* stylusInfo,
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
+				// 回调入口时刻：与快照到达时间分列，衡量入口到解码/发布/消费的前段耗时。
+				const int64_t entryQpc = CursorDiagnosticsEnabled() ? QueryQpc() : 0;
 				RtsStartup::CallbackGate::Lease callback(callbackGate_);
 				if (!callback) return S_OK;
 				const auto allowContactDown = contactPublication_.CaptureDown();
 
 				// 产品构建不启用旧 RTS 宏；通过有界 Cursor 队列观察真实输入到达与发布。
-				RecordInputDiagnostic("Down", "arrival", stylusInfo, nullptr, nullptr, false, 1, propertyCount);
+				RecordInputDiagnostic("Down", "arrival", stylusInfo, nullptr, nullptr, false, 1, propertyCount, 0, entryQpc);
 				if (!source || !stylusInfo || !packet)
 				{
 					RecordInputDiagnostic("Down", "invalid-argument", stylusInfo);
@@ -1335,6 +1317,7 @@ namespace Inkeys::Drawing::Draw3
 						return coordinator_.PublishDown(
 							stylusInfo->tcid, stylusInfo->cid, deviceType, snapshot);
 				});
+				const int64_t publishQpc = published && CursorDiagnosticsEnabled() ? QueryQpc() : 0;
 				if (!published)
 				{
 					const auto* failedBinding = activeBindings_.Find(stylusInfo->tcid, stylusInfo->cid);
@@ -1348,17 +1331,19 @@ namespace Inkeys::Drawing::Draw3
 					packet, &snapshot, true, published, S_OK, 0, deviceType, true);
 #endif
 				RecordInputDiagnostic("Down", published ? "published" : "publish-failed",
-					stylusInfo, decoder, &snapshot, published, 1, propertyCount);
+					stylusInfo, decoder, &snapshot, published, 1, propertyCount, publishQpc, entryQpc);
 				return published ? S_OK : E_OUTOFMEMORY;
 			}
 
 			HRESULT STDMETHODCALLTYPE StylusUp(IRealTimeStylus*, const StylusInfo* stylusInfo,
 				ULONG propertyCount, LONG* packet, LONG**) override
 			{
+				// 回调入口时刻：与快照到达时间分列，衡量入口到解码/发布/消费的前段耗时。
+				const int64_t entryQpc = CursorDiagnosticsEnabled() ? QueryQpc() : 0;
 				RtsStartup::CallbackGate::Lease callback(callbackGate_);
 				if (!callback) return S_OK;
 
-				RecordInputDiagnostic("Up", "arrival", stylusInfo, nullptr, nullptr, false, 1, propertyCount);
+				RecordInputDiagnostic("Up", "arrival", stylusInfo, nullptr, nullptr, false, 1, propertyCount, 0, entryQpc);
 				if (!stylusInfo)
 				{
 					RecordInputDiagnostic("Up", "invalid-argument", stylusInfo);
@@ -1421,6 +1406,7 @@ namespace Inkeys::Drawing::Draw3
 						stylusInfo->tcid, stylusInfo->cid, snapshot);
 				else
 					published = coordinator_.PublishUp(stylusInfo->tcid, stylusInfo->cid, snapshot);
+				const int64_t publishQpc = published && CursorDiagnosticsEnabled() ? QueryQpc() : 0;
 				activeBindings_.Erase(stylusInfo->tcid, stylusInfo->cid);
 				if (bindingKnown)
 					NotifyRtsTouchContactEnd(bindingDeviceType, drawingCursorSink_);
@@ -1429,7 +1415,7 @@ namespace Inkeys::Drawing::Draw3
 					packet, &snapshot, true, published);
 #endif
 				RecordInputDiagnostic("Up", published ? "published" : "publish-failed",
-					stylusInfo, decoder, &snapshot, published, 1, propertyCount);
+					stylusInfo, decoder, &snapshot, published, 1, propertyCount, publishQpc, entryQpc);
 				return S_OK;
 			}
 
@@ -1475,6 +1461,8 @@ namespace Inkeys::Drawing::Draw3
 			HRESULT STDMETHODCALLTYPE Packets(IRealTimeStylus*, const StylusInfo* stylusInfo,
 				ULONG packetCount, ULONG packetBufferLength, LONG* packets, ULONG*, LONG**) override
 			{
+				// 回调入口时刻：与快照到达时间分列，衡量入口到解码/发布/消费的前段耗时。
+				const int64_t entryQpc = CursorDiagnosticsEnabled() ? QueryQpc() : 0;
 				RtsStartup::CallbackGate::Lease callback(callbackGate_);
 				if (!callback) return S_OK;
 
@@ -1523,6 +1511,7 @@ namespace Inkeys::Drawing::Draw3
 						stylusInfo->tcid, stylusInfo->cid, snapshot);
 				else
 					published = coordinator_.PublishMove(stylusInfo->tcid, stylusInfo->cid, snapshot);
+				const int64_t publishQpc = published && tracePacket ? QueryQpc() : 0;
 				PublishPenCursor(decoder, stylusInfo, true, snapshot);
 				if (CanvasPanDiagnosticsEnabled() && decoder->deviceType != InputDeviceType::Pen)
 					LogCanvasPan("rts-batch context=%u cursor=%u reported=%lu retained=1 published=%u sample-qpc=%lld timestamp=callback-arrival",
@@ -1533,7 +1522,7 @@ namespace Inkeys::Drawing::Draw3
 					lastPacket, &snapshot, true, published);
 #endif
 				if (tracePacket) RecordInputDiagnostic("Packets", published ? "published" : "publish-failed",
-					stylusInfo, decoder, &snapshot, published, packetCount, propertyCount);
+					stylusInfo, decoder, &snapshot, published, packetCount, propertyCount, publishQpc, entryQpc);
 				return S_OK;
 			}
 
@@ -1673,16 +1662,18 @@ namespace Inkeys::Drawing::Draw3
 			void RecordInputDiagnostic(const char* event, const char* reason,
 				const StylusInfo* stylusInfo, const RtsContextDecoder* decoder = nullptr,
 				const ContactSnapshot* snapshot = nullptr, bool published = false,
-				ULONG packetCount = 1, ULONG propertyCount = 0) noexcept
+				ULONG packetCount = 1, ULONG propertyCount = 0, int64_t publishQpc = 0, int64_t entryQpc = 0) noexcept
 			{
 				if (!CursorDiagnosticsEnabled()) return;
-				RecordCursorDiagnostic("rts-input event=%s reason=%s tcid=%u cid=%u deviceKnown=%u device=%u decoded=%u published=%u packets=%u properties=%u x=%.1f y=%.1f",
+				RecordCursorDiagnostic("rts-input event=%s reason=%s tcid=%u cid=%u deviceKnown=%u device=%u decoded=%u published=%u packets=%u properties=%u x=%.1f y=%.1f entry-qpc=%lld arrival-qpc=%lld publish-qpc=%lld",
 					event, reason, stylusInfo ? static_cast<unsigned>(stylusInfo->tcid) : 0u,
 					stylusInfo ? static_cast<unsigned>(stylusInfo->cid) : 0u,
 					decoder ? 1u : 0u, decoder ? static_cast<unsigned>(decoder->deviceType) : 0u,
 					snapshot ? 1u : 0u, published ? 1u : 0u,
 					static_cast<unsigned>(packetCount), static_cast<unsigned>(propertyCount),
-					snapshot ? snapshot->position.x : 0.0f, snapshot ? snapshot->position.y : 0.0f);
+					snapshot ? snapshot->position.x : 0.0f, snapshot ? snapshot->position.y : 0.0f,
+					static_cast<long long>(entryQpc), static_cast<long long>(snapshot ? snapshot->qpc : 0),
+					static_cast<long long>(publishQpc));
 			}
 
 			bool ShouldRecordInputPacket() noexcept

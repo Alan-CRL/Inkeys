@@ -107,8 +107,9 @@ namespace Inkeys::Drawing::Draw3
 
 		ink::stroke_model::StrokeModelParams LatchStrokeDrawingOptions(ActiveStroke& stroke,
 			const StrokeModelConfiguration& configuration, bool eraser,
-			const GeneralDrawingOptionsSnapshot& options)
+			const GeneralDrawingOptionsSnapshot& options, bool liveTaperEnabled)
 		{
+			stroke.liveTaperEnabled = liveTaperEnabled;
 			stroke.penTailCorrectionEnabled = options.penTailCorrectionEnabled;
 			stroke.predictionMode = eraser ? InkPredictionMode::Disabled : options.predictionMode;
 			auto params = configuration.modelParams;
@@ -6950,7 +6951,7 @@ namespace Inkeys::Drawing::Draw3
 			candidate.selectedTool = candidate.tool = DrawingTool::Pen;
 			ResetNominalStroke(candidate, 5, config, StrokeWidthMode::Fixed);
 			const auto params = LatchStrokeDrawingOptions(candidate.stroke, config, false,
-				DecodeGeneralDrawingOptions(EncodeGeneralDrawingOptions(true, true, InkPredictionMode::Disabled)));
+				DecodeGeneralDrawingOptions(EncodeGeneralDrawingOptions(true, true, InkPredictionMode::Disabled)), true);
 			check(candidate.stroke.modeler.Reset(params).ok(), "A uses its original predictor model");
 			const auto modelInput = [](ink::stroke_model::Input::EventType event, float x, double time)
 			{
@@ -9718,6 +9719,36 @@ namespace Inkeys::Drawing::Draw3
 					"gap takeover clips cancelled future pad intervals, preserves earlier overlap history, and cannot let a rejected Down retire accepted contacts");
 			}
 
+			for (const bool glide : { false, true })
+			{
+				auto storage = std::make_unique<Rig>();
+				auto& rig = *storage;
+				rig.Frame(8);
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 12, -3, Rig::Qpc(12));
+				rig.Frame(16);
+				const auto phase = glide ? TouchpadNavigationPhase::Inertia : TouchpadNavigationPhase::Running;
+				rig.window.PublishHiddenTestTouchpadNavigation(phase, 24, -6, Rig::Qpc(20));
+				rig.Frame(24);
+				const float x = rig.ViewportX(), y = rig.ViewportY();
+				rig.window.PublishHiddenTestTouchpadNavigation(phase, 40, -10, Rig::Qpc(28));
+				rig.window.SetSelectionMode(false);
+				rig.Frame(32);
+				rig.window.PublishHiddenTestTouchpadNavigation(TouchpadNavigationPhase::Running, 60, 10, Rig::Qpc(36));
+				rig.Frame(40);
+				check(x == -24 && y == 6 && rig.ViewportX() == x && rig.ViewportY() == y &&
+					!rig.pan.Active() && rig.strokeDowns.empty(), "leaving Move drops queued native motion and later pad input");
+				const auto device = glide ? InputDeviceType::Pen : InputDeviceType::Touch;
+				const auto tablet = glide ? Rig::kPenTablet : Rig::kTouchTablet;
+				rig.Down(tablet, 1, device, 123, 234, 44);
+				rig.Frame(48);
+				check(rig.strokeDowns.size() == 1 && rig.strokeDowns.front().record->DeviceType() == device &&
+					rig.strokeDowns.front().record->DownSnapshot().position.x == 123 &&
+					rig.strokeDowns.front().record->DownSnapshot().position.y == 234 &&
+					rig.ViewportX() == x && rig.ViewportY() == y, "first ordinary Down retains its stroke route and location");
+				rig.Up(tablet, 1, 123, 234, 52);
+				for (auto handle : rig.strokeDowns) rig.input.Recycle(handle);
+			}
+
 			// ---- 单指 Touch 与鼠标左键：Locked 后内容 1:1 跟手 ----
 			for (const InputDeviceType device : { InputDeviceType::Touch, InputDeviceType::MouseLeft })
 			{
@@ -12465,7 +12496,9 @@ namespace Inkeys::Drawing::Draw3
 			{
 				uint32_t desired = EncodeGeneralDrawingOptions(true, tailCorrection, mode);
 				ActiveStroke oldStroke(5, config.expectedSpeed), nextStroke(5, config.expectedSpeed);
-				const auto params = LatchStrokeDrawingOptions(oldStroke, config, false, DecodeGeneralDrawingOptions(desired));
+				LiveTaperOptions taperOptions;
+				const auto params = LatchStrokeDrawingOptions(oldStroke, config, false, DecodeGeneralDrawingOptions(desired),
+					taperOptions.Allows(InputDeviceType::Pen));
 				check(oldStroke.modeler.Reset(params).ok(), "per-stroke selected predictor resets");
 				const auto input = [](ink::stroke_model::Input::EventType event, float x, double time)
 				{
@@ -12476,10 +12509,14 @@ namespace Inkeys::Drawing::Draw3
 					"selected predictor accepts Down");
 				const auto nextMode = mode == InkPredictionMode::Disabled ? InkPredictionMode::Kalman : InkPredictionMode::Disabled;
 				desired = EncodeGeneralDrawingOptions(false, !tailCorrection, nextMode);
-				const auto nextParams = LatchStrokeDrawingOptions(nextStroke, config, false, DecodeGeneralDrawingOptions(desired));
+				taperOptions.pen = false;
+				const auto nextParams = LatchStrokeDrawingOptions(nextStroke, config, false, DecodeGeneralDrawingOptions(desired),
+					taperOptions.Allows(InputDeviceType::Pen));
 				check(nextStroke.modeler.Reset(nextParams).ok() && nextStroke.predictionMode == nextMode &&
 					nextStroke.penTailCorrectionEnabled != tailCorrection, "next independent stroke receives new options");
 				ClearPenTerminalState(oldStroke); // 真实接续只清终态，不得重读全局希望值。
+				check(oldStroke.liveTaperEnabled && !nextStroke.liveTaperEnabled,
+					"changing the pen device option affects only the next independent stroke");
 				check(oldStroke.predictionMode == mode && oldStroke.penTailCorrectionEnabled == tailCorrection,
 					"active and reconnected stroke retain Down options");
 				for (int sample = 1; sample <= 12; ++sample)
@@ -12493,7 +12530,7 @@ namespace Inkeys::Drawing::Draw3
 				check(oldStroke.modeler.Update(input(ink::stroke_model::Input::EventType::kUp, 40, .07), oldStroke.modeledResults).ok(),
 					"all prediction modes retain normal real Up completion");
 				ActiveStroke eraser(5, config.expectedSpeed);
-				const auto eraserParams = LatchStrokeDrawingOptions(eraser, config, true, DecodeGeneralDrawingOptions(desired));
+				const auto eraserParams = LatchStrokeDrawingOptions(eraser, config, true, DecodeGeneralDrawingOptions(desired), false);
 				check(eraser.predictionMode == InkPredictionMode::Disabled && eraser.modeler.Reset(eraserParams).ok(),
 					"eraser retains disabled prediction independently of user mode");
 			}
@@ -14443,6 +14480,78 @@ namespace Inkeys::Drawing::Draw3
 					runtime->stroke.realPoints = activePen.stroke.realPoints;
 					return runtime;
 				};
+				// 用独立空页对照同一物理截止帧的 L0、正常提交、异常保存与 UInk 重载。
+				auto* taperCanvas = emptyDesktop.PageAt(0)->GetOrCreateCanvas(kDefaultDeviceKey);
+				check(taperCanvas != nullptr, "prepare hardware taper round-trip canvas");
+				if (taperCanvas)
+				{
+					std::vector<std::vector<InkPoint>> terminalFrames;
+					for (bool enabled : { true, false })
+					for (double upTime : { 0.020, 0.100 })
+					for (const auto mode : { StoredStrokeCommitMode::NormalUp, StoredStrokeCommitMode::Fatal })
+					{
+						auto pen = makeRejected(DrawingTool::Pen);
+						pen->ownerWorkspaceGuid = emptyDesktop.WorkspaceGuid();
+						pen->ownerPageGuid = emptyDesktop.PageAt(0)->PageGuid();
+						pen->viewport = taperCanvas->Viewport();
+						pen->ended = mode == StoredStrokeCommitMode::NormalUp;
+						auto& stroke = pen->stroke;
+						stroke.widthMode = StrokeWidthMode::HardwarePressure;
+						stroke.liveTaperEnabled = enabled;
+						stroke.realPoints = { stroke.inputStartPoint, { 48, 58, 2.5f, 0.010f },
+							{ 55, 65, 2.5f, 0.020f } };
+						stroke.lastMovementInputTime = 0.020;
+						stroke.logicalInputTime = upTime;
+						RebuildL0DrawPoints(stroke, 0.055, StrokeShape::RoundCapsule, 100, 100);
+						terminalFrames.push_back(stroke.l0DrawPoints);
+						const float expectedRadius = enabled && upTime == 0.020 ? 1.625f : 2.5f;
+						check(!stroke.l0DrawPoints.empty() && std::abs(stroke.l0DrawPoints.back().r - expectedRadius) < 0.0001f,
+							"hardware taper terminal frame keeps physical lift width");
+						if (pen->ended)
+						{
+							LockPenTerminalState(stroke, upTime, {55, 65}, {55, 65});
+							stroke.logicalInputTime += 1.0; // 模拟延迟提交，仍取物理 Up 时间。
+						}
+						else stroke.predictedPoints.push_back({ 500, 600, 2.5f, 0.120f });
+						const auto committed = CommitRuntimeStoredStrokeCpu(*pen, emptyDesktop,
+							emptyRuntimes, 0, 0.055, mode, [&] { return nextToken++; });
+						check(committed.has_value(), "commit the same hardware taper cutoff through both CPU paths");
+					}
+					const auto matchesFrame = [](const auto& points, const std::vector<InkPoint>& frame)
+					{
+						if (points.size() != frame.size()) return false;
+						for (size_t i = 0; i < frame.size(); ++i)
+							if (points[i].x != frame[i].x || points[i].y != frame[i].y ||
+								points[i].width != 2.0f * frame[i].r) return false;
+						return true;
+					};
+					const auto committedStrokes = taperCanvas->Strokes();
+					check(committedStrokes.size() == terminalFrames.size(), "each terminal frame commits one stroke");
+					if (committedStrokes.size() == terminalFrames.size())
+						for (size_t i = 0; i < terminalFrames.size(); ++i)
+							check(matchesFrame(committedStrokes[i].Points(), terminalFrames[i]),
+								"normal and interrupted CPU commits preserve every real L0 point");
+					using namespace draw3::uink;
+					const auto reload = [&]() -> std::optional<Draw3UInkExportSnapshot>
+					{
+						if (!capture(Bridge::Workspace::Desktop, DesktopAutoSaveTrigger::Exit,
+							true, emptySource, presentationSource) || !captured.snapshot) return std::nullopt;
+						const auto exported = ExportDraw3SnapshotToUInk(*captured.snapshot);
+						if (!exported.document) return std::nullopt;
+						const auto encoded = EncodeUInkDocument(*exported.document);
+						if (encoded.status != UInkEncodeStatus::Success) return std::nullopt;
+						const auto decoded = DecodeUInk(encoded.bytes);
+						if (decoded.status != UInkReadStatus::Complete || !decoded.document) return std::nullopt;
+						return ImportDraw3UInkDocument(*decoded.document).snapshot;
+					}();
+					const bool loaded = reload && reload->canvases.size() == 1 &&
+						reload->canvases.front().strokes.size() == terminalFrames.size();
+					check(loaded, "reload real hardware taper strokes from encoded UInk bytes");
+					if (loaded)
+						for (size_t i = 0; i < terminalFrames.size(); ++i)
+							check(matchesFrame(reload->canvases.front().strokes[i].points, terminalFrames[i]),
+								"UInk preserves all terminal positions and widths exactly");
+				}
 				auto cancelled = makeRejected(DrawingTool::Pen);
 				cancelled->cancelled = true;
 				check(!CommitRuntimeStoredStrokeCpu(*cancelled, desktop, desktopRuntimes,
@@ -15205,6 +15314,11 @@ namespace Inkeys::Drawing::Draw3
 	void DrawingController::SetCanvasPanInertiaOptions(CanvasPanInertiaOptions options) noexcept
 	{
 		canvasPanInertiaOptions_.store(options.Encode(), std::memory_order_release);
+	}
+
+	void DrawingController::SetLiveTaperOptions(LiveTaperOptions options) noexcept
+	{
+		liveTaperOptions_ = options;
 	}
 
 	void DrawingController::SetGeneralDrawingOptions(bool multiTouchEnabled, bool penTailCorrectionEnabled,
@@ -16491,16 +16605,17 @@ namespace Inkeys::Drawing::Draw3
 			}
 			out.terminal = snapshot.phase == ContactPhase::Up || snapshot.phase == ContactPhase::Cancelled;
 			const bool mouse = type == InputDeviceType::MouseLeft || type == InputDeviceType::MouseRight;
-			out.hasRtsIds = !mouse;
+			const uint8_t mode = canvasDebugInputMode_.load(std::memory_order_acquire);
+			out.hasRtsIds = !mouse && mode != 4;
 			out.contactId = handle.record->ContactId();
 			out.previousContactId = previousContactId;
-			// 鼠标只可能来自 Win32 兼容通路；其余设备走 RTS，扩展/基础由 Host 整体选定。
+			// Pointer 模式仍通过 Win32 兼容通路接收真实鼠标。
 			if (mouse) out.path = CanvasDebug::InputPath::Win32Mouse;
 			else
 			{
-				const uint8_t mode = canvasDebugInputMode_.load(std::memory_order_acquire);
 				out.path = mode == 1 ? CanvasDebug::InputPath::RtsExtended
-					: mode == 2 ? CanvasDebug::InputPath::RtsBasicXY : CanvasDebug::InputPath::Unknown;
+					: mode == 2 ? CanvasDebug::InputPath::RtsBasicXY
+					: mode == 4 ? CanvasDebug::InputPath::Pointer : CanvasDebug::InputPath::Unknown;
 			}
 			switch (snapshot.source.kind)
 			{
@@ -16606,7 +16721,8 @@ namespace Inkeys::Drawing::Draw3
 				const uint8_t inputMode = canvasDebugInputMode_.load(std::memory_order_acquire);
 				params.inputPath = inputMode == 1 ? CanvasDebug::InputPath::RtsExtended
 					: inputMode == 2 ? CanvasDebug::InputPath::RtsBasicXY
-					: inputMode == 3 ? CanvasDebug::InputPath::Win32Mouse : CanvasDebug::InputPath::Unknown;
+					: inputMode == 3 ? CanvasDebug::InputPath::Win32Mouse
+					: inputMode == 4 ? CanvasDebug::InputPath::Pointer : CanvasDebug::InputPath::Unknown;
 			}
 			RECT dirty = overlay.Update(params);
 
@@ -17060,11 +17176,23 @@ namespace Inkeys::Drawing::Draw3
 			return changed;
 		};
 
+		const auto traceInputConsumption = [](ContactHandle handle, const ContactSnapshot& sample)
+		{
+			if (!CursorDiagnosticsEnabled()) return;
+			LARGE_INTEGER consumed = {};
+			QueryPerformanceCounter(&consumed);
+			RecordCursorDiagnostic("input-consume tcid=%u cid=%u generation=%llu phase=%u arrival-qpc=%lld consume-qpc=%lld",
+				handle.record->TabletContextId(), handle.record->ContactId(),
+				static_cast<unsigned long long>(handle.generation), static_cast<unsigned>(sample.phase),
+				static_cast<long long>(sample.qpc), consumed.QuadPart);
+		};
+
 		auto initializeStroke = [&](ContactHandle handle) -> bool
 			{
 				if (!handle.record || handle.record->Generation() != handle.generation) return false;
 				const ContactSnapshot down = handle.record->DownSnapshot();
 				const EraserShape downEraserShape = eraserShape_.load(std::memory_order_acquire);
+				traceInputConsumption(handle, down);
 				const InputDeviceType deviceType = handle.record->DeviceType();
 				const auto generalOptions = DecodeGeneralDrawingOptions(
 					generalDrawingOptions_.load(std::memory_order_acquire));
@@ -17691,7 +17819,8 @@ namespace Inkeys::Drawing::Draw3
 				runtime->stroke.captureTerminalTrace = observer_.penDiagnostics != nullptr;
 				// 成功断触接续已在上方返回，只有真正新笔才锁存此时偏好。
 				const auto modelParams = LatchStrokeDrawingOptions(runtime->stroke, configuration_,
-					runtime->tool == DrawingTool::Eraser, generalOptions);
+					runtime->tool == DrawingTool::Eraser, generalOptions,
+					runtime->tool == DrawingTool::Pen && liveTaperOptions_.Allows(deviceType));
 				if (palmObservationOnly)
 				{
 					// 仅观察面积的 Touch 仍沿原 Runtime/route 生命周期，但从未开始普通模型。
@@ -18024,6 +18153,7 @@ namespace Inkeys::Drawing::Draw3
 				ContactSnapshot snapshot;
 				if (!input_.TryReadSnapshot(runtime.handle, snapshot) ||
 					snapshot.sequence == runtime.lastConsumedSequence) return false;
+				traceInputConsumption(runtime.handle, snapshot);
 				NoteTailInputSnapshot(runtime, snapshot); // 必须先保存 Up 之前的已消费位置。
 				runtime.lastConsumedSequence = snapshot.sequence;
 				runtime.lastInputSnapshot = snapshot;
@@ -19650,8 +19780,7 @@ namespace Inkeys::Drawing::Draw3
 					try
 					{
 						const double tipSeconds = runtime->tool == DrawingTool::Pen
-							? ResolveLiveTipTaperDurationSeconds(runtime->stroke.widthMode,
-								configuration_.liveTipDurationSeconds) : 0.0;
+							? configuration_.liveTipDurationSeconds : 0.0;
 						const char* commitReason = "unknown";
 						const auto result = CommitRuntimeStoredStrokeCpu(*runtime, *document_,
 							pageRuntimeStates, currentPageIndex_, tipSeconds,
@@ -23038,13 +23167,9 @@ namespace Inkeys::Drawing::Draw3
 				const bool highlighter = runtime->tool == DrawingTool::Highlighter;
 				if (!eraser)
 					otherLiveLayerNeedsRebuild = true;
-				// 保护窗口仍按配置 live-tip 时长推进 L1；taper 仅在非硬件压感普通笔上叠加。
+				// L1 始终保护整个尾窗；L0 根据落笔时锁存的设置决定是否收尖。
 				const double liveTipProtectionSeconds =
 					eraser || highlighter || hardPen ? 0.0 : configuration_.liveTipDurationSeconds;
-				const double liveTipTaperSeconds = eraser || highlighter || hardPen
-					? 0.0
-					: ResolveLiveTipTaperDurationSeconds(
-						stroke.widthMode, configuration_.liveTipDurationSeconds);
 				stroke.lastL0Rect = stroke.currentL0Rect;
 				stroke.logicalInputTime = std::max(stroke.logicalInputTime,
 					QpcDeltaSeconds(frameQpc.QuadPart, runtime->qpcOrigin, qpcFrequency));
@@ -23088,7 +23213,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 				else if (!runtime->ended)
 				{
-					RebuildL0DrawPoints(stroke, liveTipTaperSeconds,
+					RebuildL0DrawPoints(stroke, liveTipProtectionSeconds,
 						StrokeShape::RoundCapsule, size.width, size.height);
 				}
 				else
@@ -23246,8 +23371,7 @@ namespace Inkeys::Drawing::Draw3
 					if (!runtime->cancelled)
 					{
 						const double completedTipTaperSeconds = runtime->tool == DrawingTool::Pen
-							? ResolveLiveTipTaperDurationSeconds(runtime->stroke.widthMode,
-								configuration_.liveTipDurationSeconds) : 0.0;
+							? configuration_.liveTipDurationSeconds : 0.0;
 						const auto metricsBeforeWrite = metricsState_ ? metricsSignature(size.width, size.height) : ContentMetricRasterSignature{};
 						const auto committed = document_
 							? CommitRuntimeStoredStrokeCpu(*runtime, *document_, pageRuntimeStates,

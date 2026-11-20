@@ -764,6 +764,14 @@ inline constexpr struct I18nKeyRoot
                     const char* N = "SettingsUI/Draw/General/PenTailCorrection/N";
                     const char* E = "SettingsUI/Draw/General/PenTailCorrection/E";
                 } PenTailCorrection{};
+                struct Node__SettingsUI__Draw__General__LiveTaper
+                {
+                    const char* N = "SettingsUI/Draw/General/LiveTaper/N";
+                    const char* E = "SettingsUI/Draw/General/LiveTaper/E";
+                    const char* Mouse = "SettingsUI/Draw/General/LiveTaper/Mouse";
+                    const char* Touch = "SettingsUI/Draw/General/LiveTaper/Touch";
+                    const char* Pen = "SettingsUI/Draw/General/LiveTaper/Pen";
+                } LiveTaper{};
                 struct Node__SettingsUI__Draw__General__InkPrediction
                 {
                     const char* N = "SettingsUI/Draw/General/InkPrediction/N";
@@ -776,6 +784,9 @@ inline constexpr struct I18nKeyRoot
                 {
                     const char* N = "SettingsUI/Draw/General/CanvasPanInertia/N";
                     const char* E = "SettingsUI/Draw/General/CanvasPanInertia/E";
+                    const char* TouchpadRequirement = "SettingsUI/Draw/General/CanvasPanInertia/TouchpadRequirement";
+                    const char* RtsNotice = "SettingsUI/Draw/General/CanvasPanInertia/RtsNotice";
+                    const char* RtsGestureUnavailable = "SettingsUI/Draw/General/CanvasPanInertia/RtsGestureUnavailable";
                     const char* Mouse = "SettingsUI/Draw/General/CanvasPanInertia/Mouse";
                     const char* Touchpad = "SettingsUI/Draw/General/CanvasPanInertia/Touchpad";
                     const char* Touch = "SettingsUI/Draw/General/CanvasPanInertia/Touch";
@@ -1056,6 +1067,21 @@ inline constexpr struct I18nKeyRoot
             } RenderAcceleration{};
             const char* AdvancedSection = "SettingsUI/Performance/AdvancedSection";
             const char* LowLevelSection = "SettingsUI/Performance/LowLevelSection";
+            struct Node__SettingsUI__Performance__InputMode
+            {
+                const char* N = "SettingsUI/Performance/InputMode/N";
+                const char* E = "SettingsUI/Performance/InputMode/E";
+                const char* MouseCompatibility = "SettingsUI/Performance/InputMode/MouseCompatibility";
+                const char* RtsExtended = "SettingsUI/Performance/InputMode/RtsExtended";
+                const char* RtsBasicXY = "SettingsUI/Performance/InputMode/RtsBasicXY";
+                const char* Unavailable = "SettingsUI/Performance/InputMode/Unavailable";
+                const char* FallbackFormat = "SettingsUI/Performance/InputMode/FallbackFormat";
+                const char* PointerUnavailableOnOs = "SettingsUI/Performance/InputMode/PointerUnavailableOnOs";
+                const char* PointerInitFailed = "SettingsUI/Performance/InputMode/PointerInitFailed";
+                const char* RtsExtendedFailed = "SettingsUI/Performance/InputMode/RtsExtendedFailed";
+                const char* RtsFailed = "SettingsUI/Performance/InputMode/RtsFailed";
+                const char* MouseFailed = "SettingsUI/Performance/InputMode/MouseFailed";
+            } InputMode{};
             struct Node__SettingsUI__Performance__PresentationMode
             {
                 const char* N = "SettingsUI/Performance/PresentationMode/N";
@@ -1491,6 +1517,7 @@ inline constexpr struct I18nKeyRoot
             const char* CanvasInformation = "SettingsUI/DebugSoftware/CanvasInformation";
             const char* PresentationFallback = "SettingsUI/DebugSoftware/PresentationFallback";
             const char* SwapChainFallback = "SettingsUI/DebugSoftware/SwapChainFallback";
+            const char* InputFallback = "SettingsUI/DebugSoftware/InputFallback";
             const char* DisplayInformation = "SettingsUI/DebugSoftware/DisplayInformation";
         } DebugSoftware{};
         struct Node__SettingsUI__Update
