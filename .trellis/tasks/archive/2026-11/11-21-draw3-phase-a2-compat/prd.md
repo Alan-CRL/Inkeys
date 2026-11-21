@@ -169,3 +169,11 @@
 - `0xD002` 共享渲染管线失败：预览与普通两条路径共用一条中英文案，附 Win7 KB2670838 安装提示（www.inkeys.top/win7）。
 - Win7dwm 合成时机对齐：新增独立配置键 `Experimental.Inkeys3.Draw3.Win7DwmCompositionAlign`（默认 true，旧配置缺键时取 `Ulw && Dcomp`）；下拉框五档“始终/关闭/仅 UpdateLayeredWindow/仅 Win7dwm/仅 DirectComposition”；`FramePhaseAdjustMs` 中与 DComp 共用 `DcompPhaseAdjustMs`，时钟取 `DwmGetCompositionTimingInfo`；设备性能签名新增可选字段 `win7DwmCompositionAlign`（键后缀 `-walign`）。Win7 实机效果待验证（看 `[Draw3Diag][win7dwm-align]` 日志）。
 - 验证：Debug|ARM64 完整构建、`InkeysHeadlessTests --no-window`、`--draw3-control-fence-test`、`--draw3-device-policy-test` 通过；`i18n.ps1 check` 通过。
+- 实机验证（2026-11-21 用户确认通过）：上述追加修改；Win7 SP1 WARP 机器上 `[Draw3Diag][win7dwm-align]` 正常输出（valid=1，周期约 16.68 ms）。
+
+## 追加修改（2026-11-22，GPU 偏好与侧栏箭头）
+
+- 起因：Win7 Optimus 笔记本（HD 3000 FL10_1 + GT 630M FL11_0）硬件设备只在默认核显上尝试，失败后落到 WARP（调查见父任务 `research/实机日志问题记录_置顶_Win7卡顿_Optimus_2026-11-21.md` §3）。
+- 性能页新增“GPU 偏好”（`##draw3-adapter-preference`，配置键 `Experimental.Inkeys3.Draw3.AdapterPreference`，0 自动 / 1 优先核心显卡 / 2 优先独立显卡，重启生效）：Draw3 硬件尝试改为枚举适配器（跳过软件适配器），自动按枚举顺序、优先某类时先该类后另一类，第一个能建出 11_0 设备的即采用，全部失败再按 RenderAcceleration 回退 WARP；分类优先 D3DKMT 混合显卡标志（Win8+），否则独占显存 ≤ 512 MiB 为核显。UI3 RenderPipeline 固定 WARP，不受影响。
+- 设置侧栏分组行右侧的展开箭头（`##group-chevron`）悬停/按下改用侧栏 subtle 反馈色，与导航项、汉堡按钮一致（原为普通按钮近白填色）。
+- 验证：Debug|ARM64 完整构建、`InkeysHeadlessTests --no-window`、`--draw3-device-policy-test`（新增分类与尝试顺序用例）、`i18n.ps1 check` 通过；用户 2026-11-22 人工验证通过。
