@@ -116,6 +116,52 @@ namespace
 		}
 	}
 
+	void TestRtsHresultFallbackToMouse(int& failures)
+	{
+		using P = InputPreference;
+		using M = HostInputMode;
+		struct Case
+		{
+			int major, minor, build;
+			P preference, resolved;
+			AttemptResult extendedFailure;
+			const char* order;
+			const char* name;
+		};
+		const Case cases[] = {
+			{ 10, 0, 19045, P::Automatic, P::Pointer, { FailureStage::Create, REGDB_E_CLASSNOTREG },
+				"PREM", "Wine-like automatic startup tries Pointer and RTS Create once before mouse" },
+			{ 6, 1, 7601, P::Automatic, P::RealTimeStylus, { FailureStage::Create, REGDB_E_CLASSNOTREG },
+				"REM", "Windows 7 automatic startup skips unsupported Pointer after RTS Create fails" },
+			{ 10, 0, 19045, P::RealTimeStylus, P::RealTimeStylus, { FailureStage::InputConfiguration, E_INVALIDARG },
+				"REBPM", "explicit RTS exhausts both profiles before trying Pointer and mouse" }
+		};
+		for (const auto& test : cases)
+		{
+			const auto resolved = ResolveInputBackend(test.preference, false, test.major, test.minor, test.build);
+			std::string calls;
+			const auto actual = StartInputBackend(resolved, SupportsPointerInput(test.major, test.minor),
+				[&] { calls += 'P'; return false; },
+				[&]
+				{
+					// 在后端回退中走真实的 profile 选择，只注入 COM 边界的 HRESULT。
+					calls += 'R';
+					const bool ready = InitializeWithFallback({},
+						[&](PacketProfile profile, Inkeys::Shutdown::FailedCleanupSignal)
+						{
+							calls += profile == PacketProfile::Extended ? 'E' : 'B';
+							return profile == PacketProfile::Extended ? test.extendedFailure
+								: AttemptResult{ FailureStage::Enable, E_INVALIDARG };
+						},
+						[]() noexcept {},
+						[](PacketProfile, const AttemptResult&) {});
+					return ready ? M::RtsExtended : M::Disabled;
+				},
+				[&] { calls += 'M'; return true; });
+			if (!Expect(resolved == test.resolved && actual == M::Win32Mouse && calls == test.order, test.name)) ++failures;
+		}
+	}
+
 	void TestTouchpadStartup(int& failures)
 	{
 		using E = TouchpadEntry;
@@ -472,6 +518,7 @@ int RunDraw3RtsStartupTests()
 	TestInputResolution(failures);
 	TestInputSettingsStatus(failures);
 	TestBackendFallback(failures);
+	TestRtsHresultFallbackToMouse(failures);
 	TestTouchpadStartup(failures);
 	TestRtsStylusAngles(failures);
 	TestPointerFields(failures);
