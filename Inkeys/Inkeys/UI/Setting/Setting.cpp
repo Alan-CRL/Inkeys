@@ -5190,7 +5190,10 @@ SettingSessionCoroutine RunSettingSession()
 #endif
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.CanvasInformation).c_str());
 					Inkeys::Drawing::Draw3::PresentationFallbackReport canvasFallback;
-					const auto canvasInformation = Inkeys::Drawing::Draw3::ProductHost().CanvasInformation(&canvasFallback);
+					auto canvasInformation = Inkeys::Drawing::Draw3::ProductHost().CanvasInformation(&canvasFallback);
+					// 进程级 GPU 调度类与电源节流不属于画布 owner，取最近一次应用的缓存结果拼在末尾；显示与复制共用同一字符串。
+					if (!canvasInformation.empty() && canvasInformation.back() != '\n') canvasInformation += '\n';
+					canvasInformation += Inkeys::Helper::FormatProcessSchedulingInformation(Inkeys::Helper::LastProcessSchedulingResult());
 					if (!canvasFallback.presentationWarning.empty())
 						Design::Notice("##canvas-presentation-fallback", IA(I18nKey.SettingsUI.DebugSoftware.PresentationFallback).c_str(),
 							canvasFallback.presentationWarning.c_str(), ImFluentInfoSeverity_Warning);

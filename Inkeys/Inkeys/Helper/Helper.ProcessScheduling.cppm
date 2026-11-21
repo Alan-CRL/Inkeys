@@ -2,7 +2,10 @@
 
 #include "../../IdtMain.h"
 
+#include <array>
+#include <cstdio>
 #include <mutex>
+#include <string>
 
 export module Inkeys.Helper.ProcessScheduling;
 
@@ -19,14 +22,63 @@ export namespace Inkeys::Helper
 		bool throttlingApiAvailable = false;
 		bool throttlingApplied = false;
 		unsigned long throttlingError = 0;
+		int requestedClass = -1;
+		int appliedClass = -1;
+		// 当前应生效的类：本次有成功请求时取它，本次全部失败时沿用上一次的（系统保持原类不变），仅用于读回失败时显示。
+		int currentClass = -1;
+		int attemptCount = 0;
+		bool disablePowerThrottlingRequested = false;
+		bool valid = false;
+	};
+
+	struct SchedulingAttemptResult
+	{
+		int appliedClass = -1;
+		int attempts = 0;
+		long statuses[3]{};
+		int classes[3]{};
+		long lastStatus = 0;
 	};
 
 	GpuSchedulingTier NormalizeGpuSchedulingTier(int value) noexcept;
 	// 档位到 D3DKMT_SCHEDULINGPRIORITYCLASS 值：NORMAL=2、HIGH=4、REALTIME=5。
 	int GpuSchedulingClassForTier(GpuSchedulingTier tier) noexcept;
+	int SchedulingFallbackRoute(GpuSchedulingTier tier, int (&out)[3]) noexcept;
+	// 本次全部请求失败时系统保持原类，诊断沿用上一次的当前类；有成功请求时取成功的类。
+	constexpr int NextCurrentSchedulingClass(int appliedClass, int previousCurrentClass) noexcept
+	{
+		return appliedClass >= 0 ? appliedClass : previousCurrentClass;
+	}
+
+	template<class SetFn>
+	SchedulingAttemptResult RunSchedulingFallback(GpuSchedulingTier tier, SetFn&& set) noexcept
+	{
+		int route[3]{};
+		const int count = SchedulingFallbackRoute(tier, route);
+		SchedulingAttemptResult result;
+		for (int i = 0; i < count; ++i)
+		{
+			const int schedulingClass = route[i];
+			const long status = set(schedulingClass);
+			result.classes[i] = schedulingClass;
+			result.statuses[i] = status;
+			result.lastStatus = status;
+			++result.attempts;
+			// NTSTATUS 非负即成功；读回只用于展示，不能触发降档。
+			if (status >= 0)
+			{
+				result.appliedClass = schedulingClass;
+				break;
+			}
+		}
+		return result;
+	}
+
 	// 把档位与电源节流应用到当前进程。线程安全、不抛异常；参数与上次相同时跳过系统调用并返回上次结果。
 	// disablePowerThrottling=true 显式关闭执行速度节流；false 交还系统默认（不是强制节流）。
 	ProcessSchedulingResult ApplyProcessScheduling(GpuSchedulingTier tier, bool disablePowerThrottling) noexcept;
+	ProcessSchedulingResult LastProcessSchedulingResult() noexcept;
+	std::string FormatProcessSchedulingInformation(const ProcessSchedulingResult& result) noexcept;
 }
 
 namespace
@@ -66,9 +118,7 @@ namespace
 	}
 
 	std::mutex applyMutex;
-	bool hasApplied = false;
 	Inkeys::Helper::GpuSchedulingTier lastTier = Inkeys::Helper::GpuSchedulingTier::Balanced;
-	bool lastDisableThrottling = false;
 	Inkeys::Helper::ProcessSchedulingResult lastResult;
 }
 
@@ -90,15 +140,70 @@ namespace Inkeys::Helper
 		}
 	}
 
+	int SchedulingFallbackRoute(GpuSchedulingTier tier, int (&out)[3]) noexcept
+	{
+		const int requested = GpuSchedulingClassForTier(tier);
+		int count = 0;
+		out[count++] = requested;
+		if (requested == kSchedulingClassRealtime) out[count++] = kSchedulingClassHigh;
+		if (requested != kSchedulingClassNormal) out[count++] = kSchedulingClassNormal;
+		return count;
+	}
+
+	ProcessSchedulingResult LastProcessSchedulingResult() noexcept
+	{
+		std::lock_guard lock(applyMutex);
+		return lastResult;
+	}
+
+	std::string FormatProcessSchedulingInformation(const ProcessSchedulingResult& result) noexcept
+	{
+		try
+		{
+			if (!result.valid) return "GPU 调度类：尚未应用\n电源节流：尚未应用\n";
+
+			// 优先显示系统读回值；读回失败时标明显示的是最近一次成功请求。
+			const int schedulingClass = result.priorityReadBack >= 0 ? result.priorityReadBack : result.currentClass;
+			std::string text = "GPU 调度类：";
+			if (schedulingClass >= 0)
+			{
+				constexpr std::array names{ "IDLE", "BELOW_NORMAL", "NORMAL", "ABOVE_NORMAL", "HIGH", "REALTIME" };
+				const char* name = schedulingClass < static_cast<int>(names.size()) ? names[schedulingClass] : "未知";
+				text += fmt::format("{} ({})", name, schedulingClass);
+				if (result.priorityReadBack < 0) text += "（未读回）";
+			}
+			else
+				text += "不可用";
+
+			text += "\n电源节流：";
+			if (!result.throttlingApiAvailable ||
+				(!result.throttlingApplied && result.throttlingError == ERROR_INVALID_PARAMETER))
+				text += "不支持（需 Windows 10 1709 及以上）";
+			else if (result.throttlingApplied)
+				text += result.disablePowerThrottlingRequested ? "已关闭执行速度节流" : "系统默认";
+			else
+				text += fmt::format("设置失败（错误码 {}）", result.throttlingError);
+			text += '\n';
+			return text;
+		}
+		catch (...)
+		{
+			return {};
+		}
+	}
+
 	ProcessSchedulingResult ApplyProcessScheduling(GpuSchedulingTier tier, bool disablePowerThrottling) noexcept
 	{
 		tier = NormalizeGpuSchedulingTier(static_cast<int>(tier));
 		std::lock_guard lock(applyMutex);
-		if (hasApplied && tier == lastTier && disablePowerThrottling == lastDisableThrottling) return lastResult;
+		if (lastResult.valid && tier == lastTier && disablePowerThrottling == lastResult.disablePowerThrottlingRequested)
+			return lastResult;
 
 		ProcessSchedulingResult result;
+		result.requestedClass = GpuSchedulingClassForTier(tier);
+		result.disablePowerThrottlingRequested = disablePowerThrottling;
+		SchedulingAttemptResult attempts;
 		const HANDLE process = GetCurrentProcess();
-		const int schedulingClass = GpuSchedulingClassForTier(tier);
 
 		// GPU 调度类：Win11 实测 NORMAL/HIGH 在节流状态下实际优先级都是 1，REALTIME 为 23（与 DWM 同级）。
 		if (const HMODULE gdi32 = GetModuleHandleW(L"gdi32.dll"))
@@ -108,7 +213,13 @@ namespace Inkeys::Helper
 			if (setClass)
 			{
 				result.priorityApiAvailable = true;
-				result.priorityStatus = setClass(process, schedulingClass);
+				attempts = RunSchedulingFallback(tier, [&](int schedulingClass) noexcept
+				{
+					return setClass(process, schedulingClass);
+				});
+				result.priorityStatus = attempts.lastStatus;
+				result.appliedClass = attempts.appliedClass;
+				result.attemptCount = attempts.attempts;
 			}
 			int readBack = -1;
 			if (getClass && getClass(process, &readBack) == 0) result.priorityReadBack = readBack;
@@ -132,16 +243,26 @@ namespace Inkeys::Helper
 			}
 		}
 
+		// 至多三次尝试，每项为单数字类值、冒号及 32 位 NTSTATUS。
+		char attemptLog[40]{};
+		int offset = 0;
+		for (int i = 0; i < attempts.attempts; ++i)
+		{
+			offset += std::snprintf(attemptLog + offset, sizeof(attemptLog) - offset, "%s%d:0x%08lx",
+				i == 0 ? "" : ",", attempts.classes[i], static_cast<unsigned long>(attempts.statuses[i]));
+		}
+
 		const OsVersion os = QueryOsVersion();
 		Inkeys::Log::Info(Inkeys::Log::Module::Draw3,
-			"进程调度 tier={} class={} disableThrottling={} priorityApi={} status={:#010x} readBack={} throttlingApi={} throttlingApplied={} throttlingError={} os={}.{}.{}",
-			TierName(tier), schedulingClass, disablePowerThrottling, result.priorityApiAvailable,
-			static_cast<unsigned long>(result.priorityStatus), result.priorityReadBack,
+			"进程调度 tier={} requested={} attempts={} applied={} readBack={} disableThrottling={} priorityApi={} status={:#010x} throttlingApi={} throttlingApplied={} throttlingError={} os={}.{}.{}",
+			TierName(tier), result.requestedClass, result.attemptCount ? attemptLog : "none",
+			result.appliedClass, result.priorityReadBack, disablePowerThrottling, result.priorityApiAvailable,
+			static_cast<unsigned long>(result.priorityStatus),
 			result.throttlingApiAvailable, result.throttlingApplied, result.throttlingError, os.major, os.minor, os.build);
 
-		hasApplied = true;
+		result.currentClass = NextCurrentSchedulingClass(result.appliedClass, lastResult.currentClass);
+		result.valid = true;
 		lastTier = tier;
-		lastDisableThrottling = disablePowerThrottling;
 		lastResult = result;
 		return result;
 	}

@@ -59,6 +59,73 @@ int RunConfigMetadataTests()
 			Inkeys::Helper::NormalizeGpuSchedulingTier(3) == GpuSchedulingTier::Balanced, "out-of-range gpu scheduling tier falls back to balanced");
 	}
 
+	{
+		using Inkeys::Helper::GpuSchedulingTier;
+		using Inkeys::Helper::RunSchedulingFallback;
+		const auto verifyFallback = [&](GpuSchedulingTier tier, int successClass, int expectedCount,
+			const std::array<int, 3>& expected, const char* name)
+		{
+			std::array<int, 3> calls{};
+			int callCount = 0;
+			// 使用正数成功状态，覆盖 NTSTATUS 非负即成功的判定。
+			const auto result = RunSchedulingFallback(tier, [&](int schedulingClass) noexcept
+			{
+				if (callCount < static_cast<int>(calls.size())) calls[callCount] = schedulingClass;
+				++callCount;
+				return schedulingClass == successClass ? 1L : -1L;
+			});
+			bool recorded = true;
+			for (int i = 0; i < expectedCount; ++i)
+				recorded &= result.classes[i] == expected[i] &&
+					result.statuses[i] == (expected[i] == successClass ? 1L : -1L);
+			check(callCount == expectedCount && calls == expected && recorded &&
+				result.attempts == expectedCount && result.appliedClass == successClass &&
+				result.lastStatus == (successClass >= 0 ? 1L : -1L), name);
+		};
+		verifyFallback(GpuSchedulingTier::Performance, 4, 2, { 5, 4 }, "performance stops at high after realtime fails");
+		verifyFallback(GpuSchedulingTier::Performance, 5, 1, { 5 }, "performance stops at realtime on success");
+		verifyFallback(GpuSchedulingTier::Performance, -1, 3, { 5, 4, 2 }, "performance records all three failures in order");
+		verifyFallback(GpuSchedulingTier::Balanced, 2, 2, { 4, 2 }, "balanced falls from high to normal");
+		verifyFallback(GpuSchedulingTier::Balanced, 4, 1, { 4 }, "balanced stops at high on success");
+		verifyFallback(GpuSchedulingTier::Standard, -1, 1, { 2 }, "standard attempts only normal even on failure");
+	}
+
+	{
+		using Inkeys::Helper::FormatProcessSchedulingInformation;
+		Inkeys::Helper::ProcessSchedulingResult result;
+		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：尚未应用\n电源节流：尚未应用\n",
+			"scheduling information before first apply");
+		result.valid = true;
+		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：不可用\n电源节流：不支持（需 Windows 10 1709 及以上）\n",
+			"scheduling information without a class or throttling API");
+		result.priorityReadBack = 2;
+		result.appliedClass = 4;
+		result.currentClass = 4; // 读回失败时显示当前应生效的类（含本次全部失败而沿用上次成功的情况）
+		result.throttlingApiAvailable = true;
+		result.throttlingApplied = true;
+		result.disablePowerThrottlingRequested = true;
+		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：NORMAL (2)\n电源节流：已关闭执行速度节流\n",
+			"scheduling information prefers readback and shows disabled execution speed throttling");
+		result.priorityReadBack = -1;
+		result.disablePowerThrottlingRequested = false;
+		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：HIGH (4)（未读回）\n电源节流：系统默认\n",
+			"scheduling information uses applied class when readback fails and shows default throttling");
+		result.appliedClass = -1; // 本次请求全部失败、系统保持上次成功的 HIGH
+		check(Inkeys::Helper::NextCurrentSchedulingClass(-1, 4) == 4 && Inkeys::Helper::NextCurrentSchedulingClass(2, 4) == 2 &&
+			Inkeys::Helper::NextCurrentSchedulingClass(-1, -1) == -1, "failed request keeps the previously effective scheduling class");
+		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：HIGH (4)（未读回）\n电源节流：系统默认\n",
+			"scheduling information keeps the previously effective class after a fully failed request");
+		result.appliedClass = 4;
+		result.priorityReadBack = 99;
+		result.throttlingApplied = false;
+		result.throttlingError = ERROR_INVALID_PARAMETER;
+		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：未知 (99)\n电源节流：不支持（需 Windows 10 1709 及以上）\n",
+			"scheduling information shows unknown class and treats error 87 as unsupported");
+		result.throttlingError = ERROR_ACCESS_DENIED;
+		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：未知 (99)\n电源节流：设置失败（错误码 5）\n",
+			"scheduling information includes other throttling error codes");
+	}
+
 	for (const bool writeFile : { false, true })
 		for (const bool writeReferer : { false, true })
 		{
