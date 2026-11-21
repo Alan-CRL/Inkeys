@@ -14,6 +14,7 @@
 import Inkeys.Helper.CrashHandler;
 import Inkeys.UI.Setting;
 import Inkeys.UI.Bar;
+import Inkeys.UI.Freeze;
 import Inkeys.UI.Ppt;
 import Inkeys.UI.PageControl;
 import Inkeys.UI.SelectionOverlay;
@@ -4107,6 +4108,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		ReconcileDraw3Presentation();
 		magnificationCreateReady = magnificationCreateReady &&
 			magnifierWindow && magnifierChild;
+		// 主栏在其后初始化，首帧即按此决定定格按钮是否保持禁用（WinPE/Wine 缺少放大 API 时为假）。
+		Inkeys::UI::Freeze::SetSupported(magnificationCreateReady);
 
 		// 只提升 owner 链根，由 Win32 维护其余覆盖层的相对 Z 序。
 		windowService.SetTopmostRefreshObserver([]

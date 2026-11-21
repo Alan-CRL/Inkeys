@@ -702,6 +702,8 @@ namespace Inkeys::UI::Bar
 			&& !pierceModeButton->IsVisible() && freezeModeButton->size==BarButtonSizeEnum::twoTwo,
 			"combined setting immediately hides Pierce and enlarges Freeze");
 		// 直接执行生产 Pierce 回调，验证按钮切换身份和三类记忆工具恢复。
+		// 自检进程不创建放大镜窗口，定格夹具按“放大 API 可用”验证。
+		struct FreezeSupportScope{bool before=Freeze::IsSupported();FreezeSupportScope(){Freeze::SetSupported(true);}~FreezeSupportScope(){Freeze::SetSupported(before);}} freezeSupportScope;
 		SetSelectAndClickThroughMode(1);
 		for(const auto tool:{StateModeSelectEnum::IdtPen,StateModeSelectEnum::IdtShape,StateModeSelectEnum::IdtEraser})
 		{

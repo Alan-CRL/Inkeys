@@ -1,4 +1,4 @@
-#include <array>
+﻿#include <array>
 #include <cstdint>
 #include <iostream>
 #include <string_view>
@@ -225,6 +225,7 @@ namespace
 		SetStateObserver(nullptr);
 		SetPresentationActive(false);
 		SetWhiteboardActive(false);
+		SetSupported(true); // 用例验证放大 API 可用时的协调器状态机。
 		if (IsActive()) Toggle();
 		Coordinator workspace;
 		freezeObserverCoordinator = &workspace;

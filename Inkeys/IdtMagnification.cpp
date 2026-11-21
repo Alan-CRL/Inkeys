@@ -254,13 +254,21 @@ bool PrepareMagnifierWindow()
 	// Window Service 启动回退会销毁并重建整组窗口，新生命周期不能继承旧 stop。
 	magnifierCoordinator.Reset();
 	magnificationCreateReady = false;
-	HMODULE hMagDll = LoadLibrary(TEXT("Magnification.dll"));
+	// Magnification.dll 为延迟导入（WinPE/Wine 可能没有）：只从 System32 加载，并在进程生命周期内保留该模块，
+	// 使随后的延迟加载按模块名命中这份系统 DLL，而不是按搜索顺序加载程序目录中的同名文件。
+	static const HMODULE hMagDll = []() noexcept -> HMODULE
+	{
+		wchar_t path[MAX_PATH]{};
+		const UINT length = GetSystemDirectoryW(path, MAX_PATH);
+		if (length == 0 || length >= MAX_PATH) return nullptr;
+		if (wcscat_s(path, L"\\Magnification.dll") != 0) return nullptr;
+		return LoadLibraryW(path);
+	}();
 	if (hMagDll == NULL)
 	{
 		Inkeys::Log::Warn(Inkeys::Log::Module::Magnifier, "本机缺少 Magnification.dll，定格等相关功能将被禁用。");
 		return false;
 	}
-	FreeLibrary(hMagDll);
 
 	HMODULE hNtdll = ::GetModuleHandleW(L"ntdll.dll");
 	if (hNtdll && GetProcAddress(hNtdll, "wine_get_version") != nullptr)
@@ -322,6 +330,7 @@ void ShutdownMagnifierWindow()
 {
 	StopMagnifierCoordinator();
 	magnificationCreateReady = false;
+	Inkeys::UI::Freeze::SetSupported(false);
 	magnifierChild = nullptr;
 	magnifierWindow = nullptr;
 	MagUninitialize();

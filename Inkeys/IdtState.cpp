@@ -2262,7 +2262,8 @@ bool ToggleClickThroughFromButton()
 
 bool ToggleFreezeFromButton()
 {
-	if (!Inkeys::UI::Freeze::IsAvailable()) return false;
+	// 放大 API 不可用（如 WinPE 缺少 Magnification.dll）时按钮保持禁用，也不退出穿透等任何模式。
+	if (!Inkeys::UI::Freeze::IsAvailable() || !Inkeys::UI::Freeze::IsSupported()) return false;
 	bool restored = false;
 	{
 		std::scoped_lock lock(stateModeTransitionMutex);
@@ -2412,7 +2413,7 @@ bool ToggleFreezeForShortcutIfRevision(std::uint64_t expectedRevision)
 	const auto before = GetStateModeVersionedSnapshot();
 	if (before.revision != expectedRevision ||
 		IsComputerInteractionMode(before.state.StateModeSelect) ||
-		!Inkeys::UI::Freeze::IsAvailable()) return false;
+		!Inkeys::UI::Freeze::IsAvailable() || !Inkeys::UI::Freeze::IsSupported()) return false;
 	Inkeys::UI::Freeze::Toggle();
 	const auto toggled = Inkeys::UI::Freeze::Snapshot();
 	if (StateModeTransitionRevision() != expectedRevision)
@@ -4051,6 +4052,29 @@ int RunStateModeProductionTest() noexcept
 		require(SetSelectAndClickThroughMode(0) && SetSelectAndClickThroughMode(1) &&
 			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
 			"public-mode-switch-samples-empty-host");
+		{
+			// 放大 API 不可用：按钮与快捷键都不生效，工具状态与版本不变。快捷键从批注模式、按钮从穿透模式验证，
+			// 这两处本来都会改变状态，能分别证明入口级拒绝（而非靠 Toggle 内部兜底）。
+			Inkeys::UI::Freeze::SetSupported(false);
+			ChangeStateModeToEraser();
+			const auto unsupportedAnnotation = GetStateModeVersionedSnapshot();
+			require(!ToggleFreezeForShortcutIfRevision(unsupportedAnnotation.revision) && !Inkeys::UI::Freeze::IsActive() &&
+				StateModeTransitionRevision() == unsupportedAnnotation.revision &&
+				GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtEraser,
+				"freeze-unsupported-rejects-shortcut-from-annotation");
+			require(ChangeStateModeToClickThrough(), "freeze-unsupported-enters-clickthrough");
+			const auto unsupportedClickThrough = GetStateModeVersionedSnapshot();
+			require(!ToggleFreezeFromButton() && !Inkeys::UI::Freeze::IsActive() &&
+				StateModeTransitionRevision() == unsupportedClickThrough.revision &&
+				GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtClickThrough,
+				"freeze-unsupported-button-keeps-clickthrough-mode-and-revision");
+			Inkeys::UI::Freeze::Toggle();
+			require(!Inkeys::UI::Freeze::IsActive(), "freeze-unsupported-toggle-cannot-activate");
+			require(ChangeStateModeToSelection() &&
+				GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection, "freeze-unsupported-restores-selection");
+			// 自检进程不创建放大镜窗口，以下用例按“支持”验证原有状态机。
+			Inkeys::UI::Freeze::SetSupported(true);
+		}
 		const StateModeSelectEnum rememberedTools[]{StateModeSelectEnum::IdtPen,
 			StateModeSelectEnum::IdtShape, StateModeSelectEnum::IdtEraser};
 		for (const auto tool : rememberedTools)

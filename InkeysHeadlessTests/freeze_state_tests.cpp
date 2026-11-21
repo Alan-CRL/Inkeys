@@ -1,4 +1,4 @@
-#include <iostream>
+﻿#include <iostream>
 #include <string_view>
 
 import Inkeys.UI.Freeze;
@@ -29,6 +29,11 @@ int RunFreezeStateTests()
 	SetPresentationActive(false);
 	SetWhiteboardActive(false);
 	Check(IsAvailable() && !IsActive(), "freeze starts available and inactive");
+	// 放大 API 不可用（WinPE/Wine）时 Toggle 不能进入定格；可用性与工作区位相互独立。
+	SetSupported(false);
+	Toggle();
+	Check(IsAvailable() && !IsSupported() && !IsActive(), "unsupported magnifier rejects freeze activation");
+	SetSupported(true);
 	SetStateObserver(&Observe);
 	const StateSnapshot initial = Snapshot();
 	Check(observerCalls == 1 && observed.revision == initial.revision,

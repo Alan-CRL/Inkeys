@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 
@@ -1001,6 +1001,8 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	const bool compactSelection = !whiteboard && selection && !hasContent;
 	const bool freezeAvailable = Inkeys::UI::Freeze::IsAvailable();
 	const bool freezeActive = Inkeys::UI::Freeze::IsActive();
+	// 放大 API 不可用时按钮照常显示、布局不变，只保持禁用；不能并入 IsAvailable（它决定可见性与 A2 布局）。
+	const bool freezeSupported = Inkeys::UI::Freeze::IsSupported();
 	// 画布调试开关与可视化位均为无锁读取，不会在表现锁内嵌套模式锁。
 	const bool canvasDebugEnabled = IsCanvasDebugEnabled();
 	const bool canvasDebugVisual = IsCanvasDebugVisualActive();
@@ -1045,7 +1047,7 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 		case BarButtonPresetEnum::Freeze:
 			size = a2.freezeTwoTwo ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
 			hide = !a2.freezeVisible;
-			state = !freezeAvailable ? BarWidgetState::Disable : (freezeActive ? BarWidgetState::Selected : BarWidgetState::None);
+			state = !freezeAvailable || !freezeSupported ? BarWidgetState::Disable : (freezeActive ? BarWidgetState::Selected : BarWidgetState::None);
 			break;
 		case BarButtonPresetEnum::Pierce:
 			size = a2.pierceTwoTwo ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;

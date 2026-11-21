@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include <atomic>
 #include <cstdint>
@@ -19,6 +19,9 @@ export namespace Inkeys::UI::Freeze
 	// 定格只由用户切换或进入工作区时改变，绘制/选择工具切换不参与状态机。
 	[[nodiscard]] bool IsActive() noexcept;
 	[[nodiscard]] bool IsAvailable() noexcept;
+	// 放大 API（Magnification.dll）是否可用，独立于工作区可用性：不支持时按钮照常显示但保持禁用。
+	[[nodiscard]] bool IsSupported() noexcept;
+	void SetSupported(bool supported) noexcept;
 	[[nodiscard]] StateSnapshot Snapshot() noexcept;
 	void SetStateObserver(StateObserver observer) noexcept;
 	[[nodiscard]] bool DeactivateIfRevision(std::uint64_t revision) noexcept;
@@ -40,6 +43,8 @@ namespace
 	constexpr std::uint64_t revisionStep = 0x100;
 	std::atomic<std::uint64_t> freezeState = 0;
 	std::atomic<StateObserver> stateObserver = nullptr;
+	// 放大镜窗口创建结果确定前视为不支持，避免缺少 Magnification.dll 时按钮先可点再变灰。
+	std::atomic_bool magnifierSupported = false;
 
 	[[nodiscard]] StateSnapshot DecodeState(std::uint64_t state) noexcept
 	{
@@ -95,6 +100,16 @@ namespace Inkeys::UI::Freeze
 			& (presentationBit | whiteboardBit)) == 0;
 	}
 
+	bool IsSupported() noexcept
+	{
+		return magnifierSupported.load(std::memory_order_acquire);
+	}
+
+	void SetSupported(bool supported) noexcept
+	{
+		magnifierSupported.store(supported, std::memory_order_release);
+	}
+
 	StateSnapshot Snapshot() noexcept
 	{
 		return DecodeState(freezeState.load(std::memory_order_acquire));
@@ -131,6 +146,8 @@ namespace Inkeys::UI::Freeze
 		for (;;)
 		{
 			if ((current & (presentationBit | whiteboardBit)) != 0) return;
+			// 放大 API 不可用时只拒绝进入定格；已激活的状态仍允许关闭。
+			if ((current & freezeBit) == 0 && !magnifierSupported.load(std::memory_order_acquire)) return;
 			const std::uint64_t desired = NextState(current,
 				(current & flagsMask) ^ freezeBit);
 			if (freezeState.compare_exchange_weak(current, desired,
