@@ -1064,6 +1064,21 @@
         "Hardware": "Przyspieszanie sprzętowe",
         "Software": "Renderowanie programowe"
       },
+      "GpuSchedulingPriority":
+      {
+        "N": "Priorytet planowania GPU",
+        "E": "Zwiększa priorytet Inkeys w dostępie do czasu GPU, gdy inne programy korzystają z karty graficznej, co zmniejsza opóźnienie pisma.",
+        "Standard": "Standardowy",
+        "Balanced": "Zrównoważony",
+        "Performance": "Wysoka wydajność",
+        "Info": "Jeśli ograniczanie zasilania nie jest wyłączone, system Windows może uznać Inkeys za program działający w tle i obniżyć jego priorytet, przez co wybrany poziom może nie działać.",
+        "PerformanceNotice": "Wysoka wydajność może odbierać czas GPU programom do nagrywania ekranu, prezentacji i podobnym. Niezalecane podczas nagrywania."
+      },
+      "PowerThrottling":
+      {
+        "N": "Wyłącz ograniczanie zasilania",
+        "E": "Zapobiega traktowaniu Inkeys przez system Windows jako programu w tle i obniżaniu jego wydajności. Działa w systemie Windows 10 1709 i nowszych."
+      },
       "AdvancedSection": "Ustawienia zaawansowane",
       "LowLevelSection": "Ustawienia niskopoziomowe",
       "InputMode":

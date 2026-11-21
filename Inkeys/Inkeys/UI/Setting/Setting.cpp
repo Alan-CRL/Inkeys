@@ -67,6 +67,7 @@ import Inkeys.UI.Ppt;
 import Inkeys.UI.PageControl;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Helper.Thread;
+import Inkeys.Helper.ProcessScheduling;
 import Inkeys.Net.Update;
 import Inkeys.Load;
 import Inkeys.Other.Inputs;
@@ -4792,6 +4793,39 @@ SettingSessionCoroutine RunSettingSession()
 					{
 						draw3Config.RenderAcceleration = acceleration;
 						QueueConfigWrite();
+					}
+					// GPU 调度档位与电源节流即时生效：写入配置后立即应用到本进程，无需重启。
+					{
+						const auto applyProcessScheduling = [&draw3Config]()
+						{
+							(void)Inkeys::Helper::ApplyProcessScheduling(
+								Inkeys::Helper::NormalizeGpuSchedulingTier(draw3Config.GpuSchedulingPriority.load()),
+								draw3Config.DisablePowerThrottling.load());
+						};
+						const auto& schedulingText = renderingText.GpuSchedulingPriority;
+						int schedulingTier = static_cast<int>(Inkeys::Helper::NormalizeGpuSchedulingTier(draw3Config.GpuSchedulingPriority.load()));
+						if (schedulingTier == static_cast<int>(Inkeys::Helper::GpuSchedulingTier::Performance))
+							Design::Notice("##gpu-scheduling-performance", IA(schedulingText.PerformanceNotice).c_str(), nullptr,
+								ImFluentInfoSeverity_Warning);
+						const string schedulingInfo = IA(schedulingText.Info);
+						if (Design::ComboRow("##gpu-scheduling-priority", IA(schedulingText.N).c_str(), IA(schedulingText.E).c_str(),
+							"\ue7f4", schedulingTier,
+							{ IA(schedulingText.Standard), IA(schedulingText.Balanced) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+								IA(schedulingText.Performance) },
+							schedulingInfo.c_str()))
+						{
+							draw3Config.GpuSchedulingPriority = schedulingTier;
+							applyProcessScheduling();
+							QueueConfigWrite();
+						}
+						bool disablePowerThrottling = draw3Config.DisablePowerThrottling.load();
+						if (Design::ToggleRow("##disable-power-throttling", IA(renderingText.PowerThrottling.N).c_str(),
+							IA(renderingText.PowerThrottling.E).c_str(), "\ue7f4", disablePowerThrottling))
+						{
+							draw3Config.DisablePowerThrottling = disablePowerThrottling;
+							applyProcessScheduling();
+							QueueConfigWrite();
+						}
 					}
 					if (Design::ToggleRow("##draw3-zhaoxin", IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.N).c_str(),
 						IA(I18nKey.SettingsUI.Experimental.Draw3.ZhaoxinCompatibility.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableZhaoxinCompatibility, restartRequired.c_str()))

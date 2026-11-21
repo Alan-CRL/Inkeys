@@ -1064,6 +1064,21 @@
         "Hardware": "Hardware acceleration",
         "Software": "Software rendering"
       },
+      "GpuSchedulingPriority":
+      {
+        "N": "GPU scheduling priority",
+        "E": "Gives Inkeys higher priority for GPU time when other programs are using the graphics card, reducing ink lag.",
+        "Standard": "Standard",
+        "Balanced": "Balanced",
+        "Performance": "High performance",
+        "Info": "If power throttling is not turned off, Windows may treat Inkeys as a background program and lower its priority, so the selected level may not take effect.",
+        "PerformanceNotice": "High performance may take GPU time away from screen recording, presentation and similar programs. Not recommended while recording."
+      },
+      "PowerThrottling":
+      {
+        "N": "Turn off power throttling",
+        "E": "Prevents Windows from treating Inkeys as a background program and reducing its performance. Works on Windows 10 1709 and later."
+      },
       "AdvancedSection": "Advanced settings",
       "LowLevelSection": "Low-level settings",
       "InputMode":

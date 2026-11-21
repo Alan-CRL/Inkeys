@@ -1064,6 +1064,21 @@
         "Hardware": "Akselerasi perangkat keras",
         "Software": "Perenderan perangkat lunak"
       },
+      "GpuSchedulingPriority":
+      {
+        "N": "Prioritas penjadwalan GPU",
+        "E": "Memberi Inkeys prioritas waktu GPU yang lebih tinggi saat program lain menggunakan kartu grafis, sehingga mengurangi jeda goresan.",
+        "Standard": "Standar",
+        "Balanced": "Seimbang",
+        "Performance": "Performa tinggi",
+        "Info": "Jika pembatasan daya tidak dimatikan, Windows dapat menganggap Inkeys sebagai program latar belakang dan menurunkan prioritasnya, sehingga tingkat yang dipilih mungkin tidak berlaku.",
+        "PerformanceNotice": "Performa tinggi dapat mengambil waktu GPU dari program perekam layar, presentasi, dan sejenisnya. Tidak disarankan saat merekam."
+      },
+      "PowerThrottling":
+      {
+        "N": "Matikan pembatasan daya",
+        "E": "Mencegah Windows memperlakukan Inkeys sebagai program latar belakang dan menurunkan performanya. Berlaku di Windows 10 1709 dan yang lebih baru."
+      },
       "AdvancedSection": "Pengaturan lanjutan",
       "LowLevelSection": "Pengaturan tingkat rendah",
       "InputMode":

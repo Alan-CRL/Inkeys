@@ -1064,6 +1064,21 @@
         "Hardware": "Accelerare hardware",
         "Software": "Randare software"
       },
+      "GpuSchedulingPriority":
+      {
+        "N": "Prioritate de planificare GPU",
+        "E": "Oferă Inkeys o prioritate mai mare la timpul GPU când alte programe folosesc placa grafică, reducând întârzierea scrisului.",
+        "Standard": "Standard",
+        "Balanced": "Echilibrat",
+        "Performance": "Performanță ridicată",
+        "Info": "Dacă limitarea energiei nu este dezactivată, Windows poate considera Inkeys un program în fundal și îi poate reduce prioritatea, astfel încât nivelul ales poate să nu aibă efect.",
+        "PerformanceNotice": "Performanța ridicată poate lua timp GPU programelor de înregistrare a ecranului, de prezentare și altora similare. Nu este recomandată în timpul înregistrării."
+      },
+      "PowerThrottling":
+      {
+        "N": "Dezactivează limitarea energiei",
+        "E": "Împiedică Windows să trateze Inkeys ca pe un program în fundal și să îi reducă performanța. Funcționează pe Windows 10 1709 și versiunile ulterioare."
+      },
       "AdvancedSection": "Setări avansate",
       "LowLevelSection": "Setări de nivel scăzut",
       "InputMode":

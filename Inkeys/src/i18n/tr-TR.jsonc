@@ -1064,6 +1064,21 @@
         "Hardware": "Donanım hızlandırma",
         "Software": "Yazılımla işleme"
       },
+      "GpuSchedulingPriority":
+      {
+        "N": "GPU zamanlama önceliği",
+        "E": "Diğer programlar ekran kartını kullanırken Inkeys’in GPU zamanı önceliğini artırarak mürekkep gecikmesini azaltır.",
+        "Standard": "Standart",
+        "Balanced": "Dengeli",
+        "Performance": "Yüksek performans",
+        "Info": "Güç kısıtlaması kapatılmazsa Windows, Inkeys’i arka plan programı olarak görüp önceliğini düşürebilir; seçilen düzey bu durumda etkili olmayabilir.",
+        "PerformanceNotice": "Yüksek performans, ekran kaydı, sunum ve benzeri programların GPU zamanını azaltabilir. Kayıt sırasında önerilmez."
+      },
+      "PowerThrottling":
+      {
+        "N": "Güç kısıtlamasını kapat",
+        "E": "Windows’un Inkeys’i arka plan programı olarak görüp performansını düşürmesini önler. Windows 10 1709 ve sonrasında geçerlidir."
+      },
       "AdvancedSection": "Gelişmiş ayarlar",
       "LowLevelSection": "Alt düzey ayarlar",
       "InputMode":

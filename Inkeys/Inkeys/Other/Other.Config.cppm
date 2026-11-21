@@ -604,6 +604,8 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, UlwCompositionAlign, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DcompCompositionAlign, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, UnthrottledMouseMoveWhileDrawing, false) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, GpuSchedulingPriority, 1) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DisablePowerThrottling, true) \
 			) \
 			GROUP(ConsoleOutput, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, PptCOM, false) \

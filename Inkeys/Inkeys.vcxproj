@@ -1026,6 +1026,7 @@
     <ClCompile Include="Inkeys\Helper\FailedCleanupDeadline.cpp" />
     <ClCompile Include="Inkeys\Helper\Ui3PresentationFixtureAuth.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm" />
+    <ClCompile Include="Inkeys\Helper\Helper.ProcessScheduling.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.SecRandom.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.Thread.cppm" />
     <ClCompile Include="Inkeys\Load\Load.cppm" />

@@ -1064,6 +1064,21 @@
         "Hardware": "Tăng tốc phần cứng",
         "Software": "Kết xuất phần mềm"
       },
+      "GpuSchedulingPriority":
+      {
+        "N": "Mức ưu tiên lập lịch GPU",
+        "E": "Tăng mức ưu tiên thời gian GPU cho Inkeys khi chương trình khác đang dùng card đồ họa, giúp giảm độ trễ nét vẽ.",
+        "Standard": "Tiêu chuẩn",
+        "Balanced": "Cân bằng",
+        "Performance": "Hiệu năng cao",
+        "Info": "Nếu chưa tắt giới hạn điện năng, Windows có thể coi Inkeys là chương trình nền và hạ mức ưu tiên của nó, nên mức đã chọn có thể không có hiệu lực.",
+        "PerformanceNotice": "Hiệu năng cao có thể lấy bớt thời gian GPU của các chương trình quay màn hình, trình chiếu và tương tự. Không khuyến nghị khi đang quay."
+      },
+      "PowerThrottling":
+      {
+        "N": "Tắt giới hạn điện năng",
+        "E": "Ngăn Windows coi Inkeys là chương trình nền và giảm hiệu năng của nó. Có hiệu lực trên Windows 10 1709 trở lên."
+      },
       "AdvancedSection": "Cài đặt nâng cao",
       "LowLevelSection": "Cài đặt cấp thấp",
       "InputMode":

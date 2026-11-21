@@ -20,6 +20,7 @@ import Inkeys.UI.SelectionOverlay;
 import Inkeys.UI.Whiteboard;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Helper.Thread;
+import Inkeys.Helper.ProcessScheduling;
 import Inkeys.Net.Update;
 import Inkeys.Load;
 import Inkeys.Other.Gesture;
@@ -3414,6 +3415,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		ReportStartupMilestoneForManualTest(
 			Inkeys::Startup::Milestone::FullConfigReady);
 	}
+	// GPU 调度档位与电源节流：早于 Draw3 首帧应用，避免画布先以后台优先级运行；失败只记日志，不影响启动。
+	(void)Inkeys::Helper::ApplyProcessScheduling(
+		Inkeys::Helper::NormalizeGpuSchedulingTier(config.Experimental.Inkeys3.Draw3.GpuSchedulingPriority.load()),
+		config.Experimental.Inkeys3.Draw3.DisablePowerThrottling.load());
 	// 显示快照发布后只桥接旧绘图尺度，UI 自身通过各自客户端处理布局。
 	displaySubscription = Inkeys::Display::Subscribe([](Inkeys::Display::SnapshotPtr snapshot)
 		{

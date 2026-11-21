@@ -1064,6 +1064,21 @@
         "Hardware": "ハードウェアアクセラレーション",
         "Software": "ソフトウェア描画"
       },
+      "GpuSchedulingPriority":
+      {
+        "N": "GPU スケジューリング優先度",
+        "E": "ほかのプログラムがグラフィックスカードを使用しているときに、Inkeys が GPU 時間を得る優先度を上げ、筆跡の遅れを減らします。",
+        "Standard": "標準",
+        "Balanced": "バランス",
+        "Performance": "高パフォーマンス",
+        "Info": "電力調整を無効にしていない場合、Windows が Inkeys をバックグラウンドプログラムとみなして優先度を下げるため、選択したレベルが効かないことがあります。",
+        "PerformanceNotice": "高パフォーマンスは画面録画やプレゼンテーションなどのプログラムの GPU 時間を奪うことがあります。録画中は推奨しません。"
+      },
+      "PowerThrottling":
+      {
+        "N": "電力調整を無効にする",
+        "E": "Windows が Inkeys をバックグラウンドプログラムとして扱い、性能を下げるのを防ぎます。Windows 10 1709 以降で有効です。"
+      },
       "AdvancedSection": "詳細設定",
       "LowLevelSection": "低レベル設定",
       "InputMode":

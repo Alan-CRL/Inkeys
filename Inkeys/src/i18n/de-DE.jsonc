@@ -1064,6 +1064,21 @@
         "Hardware": "Hardwarebeschleunigung",
         "Software": "Softwarerendering"
       },
+      "GpuSchedulingPriority":
+      {
+        "N": "GPU-Planungspriorität",
+        "E": "Gibt Inkeys mehr GPU-Zeit, wenn andere Programme die Grafikkarte auslasten, und verringert so die Verzögerung der Tinte.",
+        "Standard": "Standard",
+        "Balanced": "Ausgewogen",
+        "Performance": "Hohe Leistung",
+        "Info": "Wenn die Energiedrosselung nicht deaktiviert ist, kann Windows Inkeys als Hintergrundprogramm einstufen und seine Priorität senken; die gewählte Stufe wirkt dann möglicherweise nicht.",
+        "PerformanceNotice": "Hohe Leistung kann Bildschirmaufnahme-, Präsentations- und ähnlichen Programmen GPU-Zeit wegnehmen. Während einer Aufnahme nicht empfohlen."
+      },
+      "PowerThrottling":
+      {
+        "N": "Energiedrosselung deaktivieren",
+        "E": "Verhindert, dass Windows Inkeys als Hintergrundprogramm behandelt und seine Leistung drosselt. Wirksam ab Windows 10 1709."
+      },
       "AdvancedSection": "Erweiterte Einstellungen",
       "LowLevelSection": "Systemnahe Einstellungen",
       "InputMode":

@@ -113,6 +113,9 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Other\Other.Config.cpp">
 	  <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
 	</ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Helper\Helper.ProcessScheduling.cppm">
+	  <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+	</ClCompile>
 	<ClCompile Include="..\Inkeys\Inkeys\Startup\Startup.Progress.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Startup\Startup.Progress.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\UI\StartupPreview\StartupPreview.State.cppm" />

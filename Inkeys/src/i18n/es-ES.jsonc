@@ -1064,6 +1064,21 @@
         "Hardware": "Aceleración por hardware",
         "Software": "Renderizado por software"
       },
+      "GpuSchedulingPriority":
+      {
+        "N": "Prioridad de programación de la GPU",
+        "E": "Da a Inkeys más prioridad de tiempo de GPU cuando otros programas usan la tarjeta gráfica, lo que reduce el retraso del trazo.",
+        "Standard": "Estándar",
+        "Balanced": "Equilibrado",
+        "Performance": "Alto rendimiento",
+        "Info": "Si no se desactiva la limitación de energía, Windows puede considerar Inkeys como un programa en segundo plano y bajar su prioridad, por lo que el nivel elegido puede no surtir efecto.",
+        "PerformanceNotice": "El alto rendimiento puede quitar tiempo de GPU a programas de grabación de pantalla, presentaciones y similares. No se recomienda durante una grabación."
+      },
+      "PowerThrottling":
+      {
+        "N": "Desactivar la limitación de energía",
+        "E": "Evita que Windows trate Inkeys como un programa en segundo plano y reduzca su rendimiento. Funciona en Windows 10 1709 y posteriores."
+      },
       "AdvancedSection": "Configuración avanzada",
       "LowLevelSection": "Configuración de bajo nivel",
       "InputMode":

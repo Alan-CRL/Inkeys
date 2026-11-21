@@ -1064,6 +1064,21 @@
         "Hardware": "硬體加速",
         "Software": "軟體加速"
       },
+      "GpuSchedulingPriority":
+      {
+        "N": "GPU 排程優先順序",
+        "E": "其他程式佔用顯示卡時，提高 Inkeys 取得顯示卡時間的優先順序，減少筆跡延遲。",
+        "Standard": "標準",
+        "Balanced": "平衡",
+        "Performance": "高效能",
+        "Info": "未關閉電源節流時，Windows 可能將 Inkeys 視為背景程式並降低其優先順序，所選等級可能不會生效。",
+        "PerformanceNotice": "高效能等級可能佔用螢幕錄影、簡報等程式的顯示卡時間，錄影時不建議使用。"
+      },
+      "PowerThrottling":
+      {
+        "N": "關閉電源節流",
+        "E": "避免 Windows 將 Inkeys 視為背景程式而降低效能。Windows 10 1709 及以上版本生效。"
+      },
       "AdvancedSection": "進階設定",
       "LowLevelSection": "底層設定",
       "InputMode":

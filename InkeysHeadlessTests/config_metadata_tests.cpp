@@ -10,6 +10,7 @@
 
 import Inkeys.Other.Config;
 import Inkeys.Conv.Text;
+import Inkeys.Helper.ProcessScheduling;
 
 namespace
 {
@@ -42,6 +43,21 @@ int RunConfigMetadataTests()
 	{
 		if (!Expect(condition, name)) ++failures;
 	};
+
+	// GPU 调度档位：默认均衡 + 关闭电源节流；档位到 D3DKMT 类值（NORMAL=2、HIGH=4、REALTIME=5），越界按均衡。
+	{
+		using Inkeys::Helper::GpuSchedulingTier;
+		const Inkeys::Config defaults;
+		check(defaults.Experimental.Inkeys3.Draw3.GpuSchedulingPriority.load() == 1 &&
+			defaults.Experimental.Inkeys3.Draw3.DisablePowerThrottling.load(), "gpu scheduling defaults to balanced without throttling");
+		check(Inkeys::Helper::GpuSchedulingClassForTier(GpuSchedulingTier::Standard) == 2 &&
+			Inkeys::Helper::GpuSchedulingClassForTier(GpuSchedulingTier::Balanced) == 4 &&
+			Inkeys::Helper::GpuSchedulingClassForTier(GpuSchedulingTier::Performance) == 5, "gpu scheduling tier maps to D3DKMT class");
+		check(Inkeys::Helper::NormalizeGpuSchedulingTier(0) == GpuSchedulingTier::Standard &&
+			Inkeys::Helper::NormalizeGpuSchedulingTier(2) == GpuSchedulingTier::Performance &&
+			Inkeys::Helper::NormalizeGpuSchedulingTier(-1) == GpuSchedulingTier::Balanced &&
+			Inkeys::Helper::NormalizeGpuSchedulingTier(3) == GpuSchedulingTier::Balanced, "out-of-range gpu scheduling tier falls back to balanced");
+	}
 
 	for (const bool writeFile : { false, true })
 		for (const bool writeReferer : { false, true })

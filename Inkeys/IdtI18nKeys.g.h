@@ -1067,6 +1067,21 @@ inline constexpr struct I18nKeyRoot
                 const char* Hardware = "SettingsUI/Performance/RenderAcceleration/Hardware";
                 const char* Software = "SettingsUI/Performance/RenderAcceleration/Software";
             } RenderAcceleration{};
+            struct Node__SettingsUI__Performance__GpuSchedulingPriority
+            {
+                const char* N = "SettingsUI/Performance/GpuSchedulingPriority/N";
+                const char* E = "SettingsUI/Performance/GpuSchedulingPriority/E";
+                const char* Standard = "SettingsUI/Performance/GpuSchedulingPriority/Standard";
+                const char* Balanced = "SettingsUI/Performance/GpuSchedulingPriority/Balanced";
+                const char* Performance = "SettingsUI/Performance/GpuSchedulingPriority/Performance";
+                const char* Info = "SettingsUI/Performance/GpuSchedulingPriority/Info";
+                const char* PerformanceNotice = "SettingsUI/Performance/GpuSchedulingPriority/PerformanceNotice";
+            } GpuSchedulingPriority{};
+            struct Node__SettingsUI__Performance__PowerThrottling
+            {
+                const char* N = "SettingsUI/Performance/PowerThrottling/N";
+                const char* E = "SettingsUI/Performance/PowerThrottling/E";
+            } PowerThrottling{};
             const char* AdvancedSection = "SettingsUI/Performance/AdvancedSection";
             const char* LowLevelSection = "SettingsUI/Performance/LowLevelSection";
             struct Node__SettingsUI__Performance__InputMode
