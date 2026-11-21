@@ -1,4 +1,4 @@
-#include "Setting.Pages.h"
+﻿#include "Setting.Pages.h"
 #include "imfluent/imfluent_internal.h"
 #include "imfluent/imfluent_icons.h"
 #include "imgui/imgui_internal.h"
@@ -321,12 +321,15 @@ namespace Inkeys::UI::Setting::Design
 					{
 						ImGui::SetCursorScreenPos({ contentRight - Pixels(NavigationRowHeight), origin.y });
 						ImFluent::PushStyleColor(ImFluentCol_ControlFillDefault, IM_COL32(0, 0, 0, 0));
+						// 与导航项、汉堡按钮共用侧栏浅深反馈色，避免普通按钮近白填色。
+						ImFluent::PushStyleColor(ImFluentCol_ControlFillSecondary, GetPalette().subtleHover);
+						ImFluent::PushStyleColor(ImFluentCol_ControlFillTertiary, GetPalette().subtlePressed);
 						ImFluent::PushStyleColor(ImFluentCol_ControlStrokeDefault, IM_COL32(0, 0, 0, 0));
 						ImFluent::PushStyleColor(ImFluentCol_ControlStrokeSecondary, IM_COL32(0, 0, 0, 0));
 						ImFluent::PushStyleColor(ImFluentCol_ElevationControlTop, IM_COL32(0, 0, 0, 0));
 						ImFluent::PushStyleColor(ImFluentCol_ElevationControlBottom, IM_COL32(0, 0, 0, 0));
 						const bool arrowPressed = Button("##group-chevron", { Pixels(NavigationRowHeight), Pixels(NavigationRowHeight) });
-						ImFluent::PopStyleColor(5);
+						ImFluent::PopStyleColor(7);
 						group.chevronBounds = ItemBounds();
 						ImDrawList* dl = ImGui::GetWindowDrawList();
 						const int firstVertex = dl->VtxBuffer.Size;
