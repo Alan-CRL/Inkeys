@@ -22,7 +22,7 @@ import Inkeys.Drawing.Draw3.renderer;
 
 export namespace Inkeys::Drawing::Draw3
 {
-	// 自动候选只包含 DComp/ULW；DwmBlurBehind 仅供显式选择的 Win7 Aero 路径。
+	// 自动候选：Win8+ 为 DComp/ULW；Win7（低于 6.2）为 DComp/DwmBlurBehind/ULW。手选 DwmBlurBehind 同样可用。
 	enum class TransparentPresentMode
 	{
 		UlwDirtyRect,

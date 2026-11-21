@@ -4038,9 +4038,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				Inkeys::UI::Whiteboard::PublishCanvasViewport(sample);
 			}
 		};
+		// 自动在 Win7 上会尝试 Win7Dwm，Host 内 Win7Dwm → ULW 都失败时与手选 Win7Dwm 一样重建窗口链再以 ULW 重试。
+		const IdtSysVersionStruct draw3WindowsVersion = GetWindowsVersion();
+		const bool automaticTriesWin7Dwm = preferredMode == HostMode::Automatic &&
+			(draw3WindowsVersion.majorVersion < 6 || (draw3WindowsVersion.majorVersion == 6 && draw3WindowsVersion.minorVersion < 2));
 		bool draw3Started = StartDraw3ProductWithFallback(windowService, windowSpecs,
 			drawpad_window, draw3StyleCallbacks, draw3StartOptions, draw3RuntimeCallbacks,
-			preferDraw3DirectComposition || preferredMode == HostMode::DwmBlurBehind, StartWindowService);
+			preferDraw3DirectComposition || preferredMode == HostMode::DwmBlurBehind || automaticTriesWin7Dwm, StartWindowService);
 		if (!draw3Started)
 		{
 			// Host 初始化失败后的提示和窗口清理可能依赖已停止的绘制线程，先建立监督。

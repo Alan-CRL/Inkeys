@@ -119,6 +119,56 @@ namespace Inkeys::Drawing::Draw3
 		static_assert(FirstProductMode(TransparentPresentMode::UlwDirtyRect, true) == TransparentPresentMode::UlwDirtyRect);
 		static_assert(FirstProductMode(TransparentPresentMode::DirectCompositionVisualTree, false) == TransparentPresentMode::UlwDirtyRect);
 
+		// 产品启动候选，ULW 恒为末项（terminal）。自动：DComp（可用时）→ Win7Dwm（仅 Win7 系统，SP1/Aero/着色
+		// 先决条件由 TryInitialize 在改动窗口前检查）→ ULW；手选沿用“首选 → ULW”，手选 DComp 不经过 Win7Dwm。
+		// Win7 没有 dcomp.dll，DComp 在改动窗口样式前即被拒绝，Win7Dwm 拿到的是未改动的窗口。
+		struct ProductModeChain
+		{
+			TransparentPresentMode modes[3]{};
+			size_t count = 0;
+		};
+
+		constexpr ProductModeChain BuildProductModeChain(std::optional<TransparentPresentMode> preferred,
+			bool allowDirectComposition, bool belowWindows8) noexcept
+		{
+			ProductModeChain chain;
+			const auto first = FirstProductMode(preferred, allowDirectComposition);
+			if (first != TransparentPresentMode::UlwDirtyRect) chain.modes[chain.count++] = first;
+			if (!preferred && belowWindows8 && first != TransparentPresentMode::DwmBlurBehind)
+				chain.modes[chain.count++] = TransparentPresentMode::DwmBlurBehind;
+			chain.modes[chain.count++] = TransparentPresentMode::UlwDirtyRect;
+			return chain;
+		}
+
+		constexpr bool ChainIs(const ProductModeChain& chain, TransparentPresentMode a,
+			std::optional<TransparentPresentMode> b = std::nullopt, std::optional<TransparentPresentMode> c = std::nullopt) noexcept
+		{
+			const size_t expected = 1 + (b ? 1 : 0) + (c ? 1 : 0);
+			return chain.count == expected && chain.modes[0] == a && (!b || chain.modes[1] == *b) && (!c || chain.modes[2] == *c);
+		}
+		static_assert(ChainIs(BuildProductModeChain(std::nullopt, true, false),
+			TransparentPresentMode::DirectCompositionVisualTree, TransparentPresentMode::UlwDirtyRect));
+		static_assert(ChainIs(BuildProductModeChain(std::nullopt, true, true), TransparentPresentMode::DirectCompositionVisualTree,
+			TransparentPresentMode::DwmBlurBehind, TransparentPresentMode::UlwDirtyRect));
+		static_assert(ChainIs(BuildProductModeChain(std::nullopt, false, true),
+			TransparentPresentMode::DwmBlurBehind, TransparentPresentMode::UlwDirtyRect));
+		static_assert(ChainIs(BuildProductModeChain(std::nullopt, false, false), TransparentPresentMode::UlwDirtyRect));
+		static_assert(ChainIs(BuildProductModeChain(TransparentPresentMode::DwmBlurBehind, false, true),
+			TransparentPresentMode::DwmBlurBehind, TransparentPresentMode::UlwDirtyRect));
+		static_assert(ChainIs(BuildProductModeChain(TransparentPresentMode::DwmBlurBehind, true, false),
+			TransparentPresentMode::DwmBlurBehind, TransparentPresentMode::UlwDirtyRect));
+		static_assert(ChainIs(BuildProductModeChain(TransparentPresentMode::DirectCompositionVisualTree, true, true),
+			TransparentPresentMode::DirectCompositionVisualTree, TransparentPresentMode::UlwDirtyRect));
+		static_assert(ChainIs(BuildProductModeChain(TransparentPresentMode::DirectCompositionVisualTree, false, true),
+			TransparentPresentMode::UlwDirtyRect));
+		static_assert(ChainIs(BuildProductModeChain(TransparentPresentMode::UlwDirtyRect, true, true), TransparentPresentMode::UlwDirtyRect));
+
+		bool IsBelowWindows8() noexcept
+		{
+			const auto version = GetWindowsVersion();
+			return version.majorVersion < 6 || (version.majorVersion == 6 && version.minorVersion < 2);
+		}
+
 		// 查询 API 返回值与玻璃是否可用是两个条件，保留具体失败步骤供设置页诊断。
 		HRESULT CheckWin7Dwm(const char*& stage) noexcept
 		{
@@ -1406,9 +1456,11 @@ namespace Inkeys::Drawing::Draw3
 		const char* fallbackStage = nullptr;
 		HRESULT fallbackResult = S_OK;
 		PresentationFallbackReport fallbackReport;
-		// 只对手选 Win7Dwm 降级生效：初始化成功但同一目标反复提交失败时终止无进展的恢复。
+		// 只对 Win7Dwm 降级生效（手选，或自动在本代启动时选中）：初始化成功但同一目标反复提交失败时终止无进展的恢复。
 		std::optional<TransparentOutputTarget> recoveredUlwTarget;
 		std::uint64_t recoveredUlwUpdates = 0;
+		// 自动在本代启动时选中过 Win7Dwm：运行期恢复与手选一致，只降到 ULW，不再重进 Win7Dwm。
+		bool automaticWin7DwmEntered = false;
 		bool waitableSwapChain = false;
 		// 帧延迟句柄属于当前交换链；gate 的熔断状态跨交换链重建保留到 Shutdown。
 		HANDLE frameLatencyWaitHandle = nullptr;
@@ -2190,6 +2242,7 @@ namespace Inkeys::Drawing::Draw3
 		impl_->fallbackResult = S_OK;
 		impl_->fallbackReport = {};
 		impl_->recoveredUlwTarget.reset();
+		impl_->automaticWin7DwmEntered = false;
 		impl_->requestedOutputTarget = TransparentOutputTarget::PrimaryDrawpad;
 		impl_->requestedOutputRevision = 0;
 		impl_->dcompHandoffBarrier = {};
@@ -2217,6 +2270,7 @@ namespace Inkeys::Drawing::Draw3
 		impl_->fallbackStage = nullptr;
 		impl_->fallbackResult = S_OK;
 		impl_->recoveredUlwTarget.reset();
+		impl_->automaticWin7DwmEntered = false;
 		impl_->fallbackReport = options.previousAttempt;
 		if (impl_->fallbackReport.lastAttemptFailure.empty())
 		{
@@ -2245,7 +2299,7 @@ namespace Inkeys::Drawing::Draw3
 			impl_->PublishInformation(true, "初始化失败（窗口不可用）");
 			return false;
 		}
-		const auto tryStartupMode = [&](TransparentPresentMode mode, bool terminal)
+		const auto tryStartupMode = [&](TransparentPresentMode mode, bool terminal, TransparentPresentMode next)
 		{
 			Shutdown::FailedCleanupDeadline releaseCleanup(options.failedCleanup.Publisher());
 			if (options.failedCleanup.HasPublisher()) releaseCleanup.PrepareOrFatal();
@@ -2263,7 +2317,7 @@ namespace Inkeys::Drawing::Draw3
 					if (!terminal)
 					{
 						DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "Transparent present mode " << TransparentPresentModeName(mode)
-							<< " failed; fallback to " << TransparentPresentModeName(TransparentPresentMode::UlwDirtyRect) << "." << std::endl;
+							<< " failed; fallback to " << TransparentPresentModeName(next) << "." << std::endl;
 					}
 				}
 			}
@@ -2280,10 +2334,20 @@ namespace Inkeys::Drawing::Draw3
 			return initialized;
 		};
 		if (options.requireMode)
-			return tryStartupMode(options.requiredMode, true);
-		const auto first = FirstProductMode(options.preferredMode, options.allowDirectComposition);
-		if (first != TransparentPresentMode::UlwDirtyRect && tryStartupMode(first, false)) return true;
-		if (tryStartupMode(TransparentPresentMode::UlwDirtyRect, true)) return true;
+			return tryStartupMode(options.requiredMode, true, options.requiredMode);
+		// 每个候选失败后都先由 tryStartupMode ReleaseAttempt，下一候选的 TryInitialize 开头再释放一次；
+		// 释放未完成（DComp 退休超时）时后续候选被拒绝，失败截止沿用原有的 terminal 继承语义（与改动前一致）。
+		const auto chain = BuildProductModeChain(options.preferredMode, options.allowDirectComposition, IsBelowWindows8());
+		for (size_t index = 0; index < chain.count; ++index)
+		{
+			const bool terminal = index + 1 == chain.count;
+			const auto mode = chain.modes[index];
+			if (tryStartupMode(mode, terminal, terminal ? mode : chain.modes[index + 1]))
+			{
+				impl_->automaticWin7DwmEntered = !options.preferredMode && IsDwmBlurBehindMode(mode);
+				return true;
+			}
+		}
 		options.failedCleanup.BeginKnownFailure();
 		DiagnosticOutput::Line(DiagnosticOutput::OutError) << "All transparent present modes failed." << std::endl;
 		return false;
@@ -2340,7 +2404,9 @@ namespace Inkeys::Drawing::Draw3
 		const HRESULT failure = impl_->lastFailure;
 		const bool deviceLost = IsGraphicsDeviceLostError(failure);
 		const TransparentPresentMode failedMode = impl_->activeMode;
-		const bool requestedWin7Dwm = impl_->options.preferredMode == TransparentPresentMode::DwmBlurBehind;
+		// 手选 Win7Dwm，或自动在本代启动时选中 Win7Dwm：运行期一律只恢复到 ULW 并受无进展保护。
+		const bool requestedWin7Dwm = impl_->options.preferredMode == TransparentPresentMode::DwmBlurBehind ||
+			impl_->automaticWin7DwmEntered;
 		auto& output = impl_->requestedOutputTarget == TransparentOutputTarget::SelectionUlw ?
 			impl_->selectionUlwPresenter : impl_->primaryUlwPresenter;
 		if (requestedWin7Dwm && IsUlwMode(failedMode) &&
@@ -2402,7 +2468,8 @@ namespace Inkeys::Drawing::Draw3
 			return false;
 		}
 
-		// 手选 DWM 遇到运行期故障后，本代只恢复到外部 ULW 位图；防止设备重建后重复进入坏链。
+		// Win7Dwm（手选或自动选中）遇到运行期故障后，本代只恢复到外部 ULW 位图；防止设备重建后重复进入坏链。
+		// 自动选路即使未进入过 Win7Dwm，FirstProductMode 也只会给出 DComp/ULW，运行期不会首次进入 Win7Dwm。
 		auto first = deviceLost ? FirstProductMode(impl_->options.preferredMode, impl_->options.allowDirectComposition) : failedMode;
 		if (requestedWin7Dwm)
 		{

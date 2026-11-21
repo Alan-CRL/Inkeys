@@ -1284,11 +1284,13 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(snapshot.presentationMode == requiredMode,
 					"forced presenter used the requested real backend", failures);
 			else
+				// 自动候选：DComp（允许时）/ Win7Dwm（仅 Win7 且环境可用）/ ULW。
 				modeSucceeded &= Check(
 					snapshot.presentationMode == HostPresentationMode::UlwDirtyRect ||
 					(allowDirectComposition && snapshot.presentationMode ==
-						HostPresentationMode::DirectCompositionVisualTree),
-					"automatic fallback selected only DComp or ULW", failures);
+						HostPresentationMode::DirectCompositionVisualTree) ||
+					(IsWin7DwmAvailable() && snapshot.presentationMode == HostPresentationMode::DwmBlurBehind),
+					"automatic fallback selected only DComp, Win7Dwm or ULW", failures);
 			modeSucceeded &= CheckPresentationStyle(drawpad, snapshot.presentationMode, failures);
 			modeSucceeded &= CheckPresentationWindowStyle(presentation, failures);
 			modeSucceeded &= Check(SendMessageW(drawpad, WM_MOUSEACTIVATE,
