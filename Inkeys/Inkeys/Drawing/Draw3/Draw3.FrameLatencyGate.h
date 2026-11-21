@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <type_traits>
+#include <utility>
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -10,10 +12,13 @@ namespace Inkeys::Drawing::Draw3
 	// 句柄是计数信号：等到一次即占用一个名额，只有成功 Present1 之后才由系统回补。
 	enum class FrameLatencySignal : std::uint8_t { Signaled, TimedOut, Failed };
 	enum class FrameLatencyWaitOutcome : std::uint8_t { Disabled, AlreadyHeld, Signaled, TimedOut, Failed };
-	enum class FrameLatencyTripReason : std::uint8_t { None, SignalLost, WaitFailed };
+	// QueueOverflow：GPU 忙期间欠账超过 kFrameLatencyMaxBusyDebt，多压的帧无法再记账补还，只能重建交换链清空队列。
+	enum class FrameLatencyTripReason : std::uint8_t { None, SignalLost, WaitFailed, QueueOverflow };
 	// Count：可计数状态，超时参与熔断；Exclude：隐藏/交接等排除状态，超时打断连续计数；
 	// Neutral：帧循环外的补等，既不计数也不打断帧循环已有的连续计数。
-	enum class FrameLatencyTimeoutPolicy : std::uint8_t { Count, Exclude, Neutral };
+	// GpuBusy：超时那一刻上一帧 GPU 工作仍未完成（被其他程序抢占 GPU），与 Neutral 一样不计数也不打断；
+	// 此后无令牌 Present 的帧确实压在队列里、GPU 恢复后会逐个交还信号，欠账按更高上限如实记账并逐帧还清。
+	enum class FrameLatencyTimeoutPolicy : std::uint8_t { Count, Exclude, Neutral, GpuBusy };
 
 	inline constexpr double kFrameLatencyTimeoutScale = 1.5;
 	inline constexpr double kFrameLatencyMinimumTimeoutMs = 4.0;
@@ -24,6 +29,10 @@ namespace Inkeys::Drawing::Draw3
 	inline constexpr double kFrameLatencyTripMinimumMs = 1000.0;
 	// 欠账上限：信号真的不来（隐藏、交接等）时欠账不无限增长，补等最多拖慢一帧。
 	inline constexpr std::uint32_t kFrameLatencyMaxDebt = 2;
+	// Count/GpuBusy 超时后的欠账上限：饥饿期间多压的帧若按 2 封顶，超出部分永不补还，GPU 恢复后一直留在合成队列里，
+	// 可见延迟持续偏高（实测 3 秒饥饿后 45 ms → 130–250 ms 不恢复；上限 16 时 7 秒饥饿仍溢出 5 帧，REALTIME 下约 +200 ms）。
+	// 连续 GPU 忙超过 5 秒（kGpuBusyNeutralLimitMs）后超时重新计数并熔断重建、队列清空；5 秒内约 25 次超时 Present，取 32 留余量。
+	inline constexpr std::uint32_t kFrameLatencyMaxBusyDebt = 32;
 
 	struct FrameLatencyWaitResult
 	{
@@ -32,6 +41,7 @@ namespace Inkeys::Drawing::Draw3
 		double timeoutMs = 0.0;
 		bool debtRepaid = false;        // 本次额外等到一次信号，还掉一笔欠账
 		bool debtRepayTimedOut = false; // 补等超时，欠账保留
+		FrameLatencyTimeoutPolicy timeoutPolicy = FrameLatencyTimeoutPolicy::Count; // 仅主等待超时时有效：本次超时实际采用的策略
 	};
 
 	class FrameLatencyGate
@@ -54,6 +64,9 @@ namespace Inkeys::Drawing::Draw3
 			waitAttempted_ = false;
 			waitFailed_ = false;
 			hasLastAcquire_ = false;
+			busyTimeoutPending_ = false;
+			largeDebtCapPending_ = false;
+			busyQueueOverflow_ = false;
 			debt_ = 0;
 			consecutiveTimeouts_ = 0;
 			streakStartMs_ = 0.0;
@@ -89,9 +102,11 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		// 未持有令牌时才等待一次。nowMs() 返回单调毫秒；wait(timeoutMs) 返回 FrameLatencySignal。
-		template<class Clock, class Wait>
+		// policy 可以是 FrameLatencyTimeoutPolicy，也可以是返回它的可调用对象：后者只在主等待超时后调用一次，
+		// 用于按“超时那一刻”的状态（如上一帧 GPU 工作是否仍未完成）决定本次超时是否计入熔断。
+		template<class Policy, class Clock, class Wait>
 		FrameLatencyWaitResult Acquire(double targetFrameMs, double refreshMs,
-			FrameLatencyTimeoutPolicy policy, Clock&& nowMs, Wait&& wait)
+			Policy&& policy, Clock&& nowMs, Wait&& wait)
 		{
 			FrameLatencyWaitResult result;
 			if (!enabled_) return result;
@@ -155,13 +170,19 @@ namespace Inkeys::Drawing::Draw3
 				result.outcome = FrameLatencyWaitOutcome::TimedOut;
 				++totalTimeouts_;
 				RaiseIntervalAfterTimeout(result.timeoutMs);
-				if (policy == FrameLatencyTimeoutPolicy::Count)
+				result.timeoutPolicy = ResolveTimeoutPolicy(std::forward<Policy>(policy));
+				// Count（GPU 已空闲而信号未到）与 GpuBusy 之后无令牌 Present 的帧都确实压在队列里，按大上限如实记账；
+				// 只有排除状态与帧外补等（Exclude/Neutral）沿用小上限。溢出即熔断只针对 GPU 忙。
+				largeDebtCapPending_ = result.timeoutPolicy == FrameLatencyTimeoutPolicy::GpuBusy ||
+					result.timeoutPolicy == FrameLatencyTimeoutPolicy::Count;
+				busyTimeoutPending_ = result.timeoutPolicy == FrameLatencyTimeoutPolicy::GpuBusy;
+				if (result.timeoutPolicy == FrameLatencyTimeoutPolicy::Count)
 				{
 					if (consecutiveTimeouts_ == 0) streakStartMs_ = startMs;
 					++consecutiveTimeouts_;
 					lastTimeoutEndMs_ = endMs;
 				}
-				else if (policy == FrameLatencyTimeoutPolicy::Exclude) consecutiveTimeouts_ = 0;
+				else if (result.timeoutPolicy == FrameLatencyTimeoutPolicy::Exclude) consecutiveTimeouts_ = 0;
 				break;
 			default:
 				// 句柄本身失效：不再等待，交由调用方熔断。
@@ -180,10 +201,22 @@ namespace Inkeys::Drawing::Draw3
 			// 已到上限时只计溢出次数（会话累计），用于实测确认上限是否够用。
 			if (succeeded && enabled_ && !tokenHeld_)
 			{
-				if (debt_ < kFrameLatencyMaxDebt) ++debt_;
-				else ++totalDebtOverflows_;
+				const std::uint32_t cap = largeDebtCapPending_ ? kFrameLatencyMaxBusyDebt : kFrameLatencyMaxDebt;
+				if (debt_ < cap) ++debt_;
+				else
+				{
+					++totalDebtOverflows_;
+					// 长时间“半饥饿”（偶有信号，5 秒忙计时被清零）可让欠账顶到忙上限：此后溢出的帧会永久留在队列里，
+					// 要求熔断重建（与改动前饥饿即熔断的行为一致）。排除状态下的溢出只计数，保持原语义。
+					if (busyTimeoutPending_) busyQueueOverflow_ = true;
+				}
 			}
-			if (succeeded) tokenHeld_ = false;
+			if (succeeded)
+			{
+				tokenHeld_ = false;
+				busyTimeoutPending_ = false;
+				largeDebtCapPending_ = false;
+			}
 		}
 
 		// 帧循环外的 Present：没有令牌且自上次 Present 以来没等过时，需要先补等一次。
@@ -196,7 +229,7 @@ namespace Inkeys::Drawing::Draw3
 		bool ShouldTrip() const noexcept
 		{
 			if (!enabled_) return false;
-			if (waitFailed_) return true;
+			if (waitFailed_ || busyQueueOverflow_) return true;
 			return consecutiveTimeouts_ >= kFrameLatencyTripTimeouts &&
 				lastTimeoutEndMs_ - streakStartMs_ >= kFrameLatencyTripMinimumMs;
 		}
@@ -204,15 +237,25 @@ namespace Inkeys::Drawing::Draw3
 		// 熔断：本会话不再启用；调用方随后重建为不带 waitable 标志的交换链。
 		void Trip() noexcept
 		{
-			tripReason_ = waitFailed_ ? FrameLatencyTripReason::WaitFailed : FrameLatencyTripReason::SignalLost;
+			tripReason_ = waitFailed_ ? FrameLatencyTripReason::WaitFailed :
+				busyQueueOverflow_ ? FrameLatencyTripReason::QueueOverflow : FrameLatencyTripReason::SignalLost;
 			tripped_ = true;
 			enabled_ = false;
 			tokenHeld_ = false;
 			waitAttempted_ = false;
+			busyTimeoutPending_ = false;
+			largeDebtCapPending_ = false;
 			debt_ = 0;
 		}
 
 	private:
+		template<class Policy>
+		static FrameLatencyTimeoutPolicy ResolveTimeoutPolicy(Policy&& policy)
+		{
+			if constexpr (std::is_invocable_r_v<FrameLatencyTimeoutPolicy, Policy&&>) return std::forward<Policy>(policy)();
+			else return static_cast<FrameLatencyTimeoutPolicy>(policy);
+		}
+
 		// 超时说明信号间隔至少有这么长：把间隔估计抬到本次超时值，下一次超时随之放宽 1.5 倍。
 		// 原先只在等到信号时才更新估计，GPU 慢时开头会连续超时几十次，欠账溢出上限后无法还清，队列持续积压。
 		// 等到信号后照常按 EMA 回落，超时放宽只影响信号迟迟不来时的等待上限，不增加正常帧的等待。
@@ -227,10 +270,13 @@ namespace Inkeys::Drawing::Draw3
 		bool waitAttempted_ = false;
 		bool waitFailed_ = false;
 		bool hasLastAcquire_ = false;
+		bool busyTimeoutPending_ = false; // 最近一次主等待因 GPU 忙超时、尚未 Present
+		bool largeDebtCapPending_ = false; // 最近一次主等待以 Count/GpuBusy 超时、尚未 Present：欠账按大上限记账
+		bool busyQueueOverflow_ = false;  // GPU 忙期间欠账溢出，需熔断重建
 		bool tripped_ = false;
 		FrameLatencyTripReason tripReason_ = FrameLatencyTripReason::None;
 		std::uint32_t consecutiveTimeouts_ = 0;
-		std::uint32_t debt_ = 0; // 没拿到名额就成功 Present 的次数（上限 kFrameLatencyMaxDebt）
+		std::uint32_t debt_ = 0; // 没拿到名额就成功 Present 的次数（上限 kFrameLatencyMaxDebt，GPU 忙超时后 kFrameLatencyMaxBusyDebt）
 		double streakStartMs_ = 0.0;
 		double lastTimeoutEndMs_ = 0.0;
 		double lastAcquireMs_ = 0.0;

@@ -480,7 +480,7 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 
 ### 2. Signatures
 
-- `Draw3.FrameLatencyGate.h`：纯状态机 `FrameLatencyGate`（不依赖 D3D），`Acquire(targetFrameMs, refreshMs, FrameLatencyTimeoutPolicy{Count,Exclude,Neutral}, nowMs, wait)`、`OnPresentCalled(bool succeeded)`、`NeedsWaitBeforePresent()`、`ShouldTrip()`、`Trip()`、`Debt()`、`TotalDebtOverflows()`；常量 `kFrameLatencyTimeoutScale=1.5`、超时下/上限 4/200 ms、`kFrameLatencyTripTimeouts=8`、`kFrameLatencyTripMinimumMs=1000`、`kFrameLatencyMaxDebt=2`；`FrameLatencyWaitResult` 带 `debtRepaid/debtRepayTimedOut`，`waitedMs` 含补等。
+- `Draw3.FrameLatencyGate.h`：纯状态机 `FrameLatencyGate`（不依赖 D3D），`Acquire(targetFrameMs, refreshMs, policy, nowMs, wait)`（`policy` 为 `FrameLatencyTimeoutPolicy{Count,Exclude,Neutral,GpuBusy}`，或返回它的可调用对象——只在主等待 `TimedOut` 后调用一次，`Signaled`/`Failed`/补等均不调用；实际采用的策略写入 `FrameLatencyWaitResult::timeoutPolicy`）、`OnPresentCalled(bool succeeded)`、`NeedsWaitBeforePresent()`、`ShouldTrip()`、`Trip()`、`Debt()`、`TotalDebtOverflows()`；常量 `kFrameLatencyTimeoutScale=1.5`、超时下/上限 4/200 ms、`kFrameLatencyTripTimeouts=8`、`kFrameLatencyTripMinimumMs=1000`、`kFrameLatencyMaxDebt=2`、`kFrameLatencyMaxBusyDebt=32`；`FrameLatencyTripReason{None,SignalLost,WaitFailed,QueueOverflow}`；`FrameLatencyWaitResult` 带 `debtRepaid/debtRepayTimedOut`，`waitedMs` 含补等。
 - `TransparentPresentationController::PrepareFrameLatency(targetFrameMs, countsTowardTrip) -> FrameLatencyWaitReport` 与 `ConsumePresentLatencyWait()`。
 - 配置 `Experimental.Inkeys3.Draw3.EnableWaitableWait`（默认 true，启动快照）经 `HostStartOptions.enableWaitableWait` → `TransparentPresentationOptions` 传入。
 
@@ -489,13 +489,15 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 - **令牌语义**：未持有令牌才等一次；`Signaled` 持有令牌，只有实际调用且成功的 `Present1` 消耗。空裁剪矩形不调用 `Present1`、`Present1` 失败、`DwmFlush` 失败都不消耗。
 - **等待点**：主循环在设备恢复/Resize 处理之后、导航 Drain 与输入批次之前调用 `PrepareFrameLatency`；帧循环外的 Present（清屏、整画布）在 `PresentSwapChain` 内按 `NeedsWaitBeforePresent()` 补等，策略 `Neutral`（不计数也不打断连续计数）。
 - **超时仍 Present**：超时不是错误，本帧照常合成与 `Present1`；启动首帧初始句柄已发信号。
-- **超时欠账与还账（2026-11-18 压力实测后补）**：waitable 交换链的 `Present1` 不阻塞，`SetMaximumFrameLatency(1)` 也不限它；没拿到名额就成功 Present 会永久多压一帧（压力下 10–25% 超时，表现为 DComp 越拖越远、ULW 不会）。因此 `OnPresentCalled` 在“成功且未持有令牌”时记一笔欠账（上限 2，已满只计 `TotalDebtOverflows`）；之后拿到本帧令牌时若有欠账，再以同一超时多等一次信号，等到则还一笔、每帧最多一笔，补等超时只保留欠账、本帧照常 Present。补等不计入超时次数与熔断；但补等返回句柄失效（`Failed`）与主等待失败同样置 `waitFailed_`，`PrepareFrameLatency` 随即熔断（`Trip` 清令牌），本帧与主等待失败一样跳过，下一轮重建为不带 waitable 的交换链并整帧重放。空闲后欠账对应的信号已积在句柄里，补等立即返回，不产生落笔突发排队。`Reset`（交换链重建）与 `Trip` 清零欠账，溢出累计不清零。
+- **超时欠账与还账（2026-11-18 压力实测后补）**：waitable 交换链的 `Present1` 不阻塞，`SetMaximumFrameLatency(1)` 也不限它；没拿到名额就成功 Present 会永久多压一帧（压力下 10–25% 超时，表现为 DComp 越拖越远、ULW 不会）。因此 `OnPresentCalled` 在“成功且未持有令牌”时记一笔欠账（上限 2，已满只计 `TotalDebtOverflows`；本帧主等待以 `Count`/`GpuBusy` 超时时上限为 32，见下条）；之后拿到本帧令牌时若有欠账，再以同一超时多等一次信号，等到则还一笔、每帧最多一笔，补等超时只保留欠账、本帧照常 Present。补等不计入超时次数与熔断；但补等返回句柄失效（`Failed`）与主等待失败同样置 `waitFailed_`，`PrepareFrameLatency` 随即熔断（`Trip` 清令牌），本帧与主等待失败一样跳过，下一轮重建为不带 waitable 的交换链并整帧重放。空闲后欠账对应的信号已积在句柄里，补等立即返回，不产生落笔突发排队。`Reset`（交换链重建）与 `Trip` 清零欠账，溢出累计不清零。
 - **自适应超时** `clamp(1.5 × max(预设帧间隔, DWM 刷新间隔, 信号间隔 EMA), 4, 200) ms`。EMA 只吸收不超过 200 ms 的获取间隔（更长的是空闲，不是合成节奏）；刷新间隔取 `DwmGetCompositionTimingInfo`，失败按 16.7 ms。任一次等待或补等超时，都把 EMA 抬到本次超时值（下一次超时放宽 1.5 倍）——否则开画布时 GPU 已慢，估计只靠成功获取更新，实测第一秒超时 58 次、欠账溢出 28 次。
-- **只在可能失效时熔断**：`Count` 策略下连续超时 ≥ 8 且连续区间 ≥ 1000 ms，或句柄等待本身失败（`WaitFailed`）。任何一次成功获取都清零连续计数，GPU 慢不会熔断。窗口隐藏/最小化、交接屏障 pending、`recoveryPending`、非主画布输出（SelectionUlw/ULW）、工作区交接/加载未决时为 `Exclude` 或直接不等待。
+- **GPU 忙超时不计入熔断（2026-11-20 阶段 A，R5）**：`PrepareFrameLatency` 在可计数状态下传入解析器：主等待超时后用 `PreviousFrameGpuIdle(true)`（允许提交命令缓冲，避免 Present1 之后插入的查询一直未提交而永远读到“忙”；每帧节奏统计仍用不提交的读取）判断上一帧 GPU 工作是否完成。超时后先重查可见性与交接屏障（等待期间转为隐藏/最小化/交接 → `Exclude`，并清零 5 秒忙计时）；仍未完成 → `GpuBusy`（被其他程序抢占 GPU、信号迟到而非丢失：不计数、不打断连续计数，汇总计 `gpuBusyTimeouts`）；已完成 → `Count`。只有 `S_FALSE` 算忙，设备移除等错误按空闲处理。连续 GPU 忙超过 `kGpuBusyNeutralLimitMs = 5000` 仍等不到信号则恢复 `Count`（防止查询长期未就绪掩盖真实丢失）；计时在获取成功、判为空闲与句柄关闭时清零。
+- **GPU 忙期间的欠账（实测回归后补）**：饥饿期间每次超时仍 Present，帧确实压在合成队列里。若仍按 2 封顶，超出部分永不补还，GPU 恢复后永久残留（实测 3 秒饥饿后同配置 45 ms → 130–250 ms 不恢复；上限 16 时 7 秒饥饿溢出 5 帧，REALTIME 下约 +200 ms）。因此 `GpuBusy` 超时后（以及 `Count` 超时后）的无令牌 Present 按 `kFrameLatencyMaxBusyDebt = 32` 如实记账（只有 `Exclude`/`Neutral` 沿用 2）（5 秒忙计时内约 25 次超时 Present），GPU 恢复后按“每帧多补等一次”还清；GPU 忙期间仍溢出（长时间“半饥饿”偶有信号使 5 秒计时清零）→ `ShouldTrip` 立即为真，熔断原因 `QueueOverflow`，重建为普通链清空队列。排除状态的溢出仍只计数。
+- **只在可能失效时熔断**：`Count` 策略下连续超时 ≥ 8 且连续区间 ≥ 1000 ms，或句柄等待本身失败（`WaitFailed`），或 GPU 忙期间欠账溢出（`QueueOverflow`）。任何一次成功获取都清零连续计数：GPU 慢（信号迟到）不熔断；GPU 被抢占的饥饿只在连续 5 s 仍无信号或欠账溢出 32 时作为兜底熔断。窗口隐藏/最小化、交接屏障 pending、`recoveryPending`、非主画布输出（SelectionUlw/ULW）、工作区交接/加载未决时为 `Exclude` 或直接不等待。
 - **熔断后**：本会话不再尝试 waitable，经现有 `RecoverFromRuntimeFailure` 重建为同模式、不带 waitable 标志的 FLIP，仍由设备级 `SetMaximumFrameLatency(1)` 限流；新会话复位。
-- **开关关闭** = 保留 waitable 交换链但不等待（A/B 与排障用）；Win8.0（waitable 创建失败）、ULW、Win7 路径不新增任何应用侧等待。
+- **开关关闭（2026-11-20 阶段 A，R6）** = DComp 直接创建普通 FLIP 交换链（不带 `FRAME_LATENCY_WAITABLE_OBJECT`），由设备级 `SetMaximumFrameLatency(1)` 在 Present 内限流，创建时输出 `waitable disabled by setting; using ordinary swapchain`。**禁止**保留 waitable 标志而不等待：该标志下 Present 不受设备级上限约束，提交无界堆积（实测压力下可见延迟 400→1840 ms 随笔画增长；普通链 37–133 ms）。Win8.0（waitable 创建失败）、ULW、Win7 路径不新增任何应用侧等待。
 - **口径**：等待耗时计入帧预算（等得越久帧尾睡得越少），但**不计入工作耗时**——`RecordActiveFrame` 的 `workMs` 扣除；画布调试与设备性能看板的无限制渲染帧率只扣其中的纯显示节拍部分 `FrameLatencyWaitReport::pacingWaitMs`（等待开始时上一次 Present1 之后插入的 `D3D11_QUERY_EVENT` 已完成；未完成说明在等 GPU，整段计入耗时）；运行指标单列 `latencyWaitMs`/`latencyWaitState` 与会话计数 `latencyWait.timeouts/tripped`。
-- **诊断**仅 Debug 级 `[Draw3Diag][latency]`：创建时启用/禁用/跳过原因与 `refreshMs/timeoutMs`，约每秒一行汇总（acquired、timeouts、repaid、repayTimeouts、debt、debtOverflowTotal、平均/最大等待、timeoutMs、signalIntervalMs），熔断一行。不逐帧输出。
+- **诊断**仅 Debug 级 `[Draw3Diag][latency]`：创建时启用/禁用/跳过原因与 `refreshMs/timeoutMs`，约每秒一行汇总（acquired、timeouts、gpuBusyTimeouts、repaid、repayTimeouts、debt、debtOverflowTotal、平均/最大等待、timeoutMs、signalIntervalMs），熔断一行（reason=signal-lost/wait-failed/queue-overflow，附 gpuBusyTimeoutsTotal）。不逐帧输出。
 - 实测（SyncInterval 0）：句柄约 1 ms 内回补，正常情况几乎零等待（无压力 120 Hz：每秒 120 次获取、0 超时、0 欠账）；waitable 只在 GPU/合成吃紧时把排队压回一帧。`acquired` 每秒计数可直接读作实际出帧率。压力脚本下（GPU 约 35–55 ms/帧）开画布首秒约 2 次超时，之后每秒 1–3 次超时并当秒还清。
 
 ### 4. Validation & Error Matrix
@@ -504,13 +506,17 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 |---|---|
 | 句柄已发信号 | 立即返回，令牌持有直到成功 Present |
 | GPU 慢、信号迟到 | 超时随 EMA 放宽，等待成功，不熔断 |
-| 超时后 Present 成功 | 记欠账（≤2），后续拿到令牌的帧逐帧补等还清；已满计溢出 |
+| 超时后 Present 成功 | 记欠账：Count/GpuBusy 超时后上限 32，Exclude/Neutral 上限 2；后续拿到令牌的帧逐帧补等还清；已满计溢出（GpuBusy 下溢出即熔断） |
 | 开画布时 GPU 已慢 | 每次超时把下一次超时放宽 1.5 倍，几次内适应，不溢出 |
 | 空闲后残留欠账 | 首帧补等立即返回并还清，不突发排队 |
 | 窗口隐藏/最小化/交接/加载期间超时 | 只计统计，打断连续计数，不熔断 |
+| 超时时上一帧 GPU 仍忙（其他程序抢占） | `GpuBusy`：不计数不打断，欠账按 32 记账，GPU 恢复后逐帧还清；只在连续 5 s 无信号或欠账溢出时兜底熔断 |
+| GPU 忙连续 ≥ 5 s 仍无信号 | 恢复 `Count`，满足条件即熔断 |
+| GPU 忙期间欠账超过 32 | 熔断（`QueueOverflow`），重建普通链清空队列 |
 | 信号持续缺失 ≥ 8 次且 ≥ 1 s，或等待失败 | 熔断，重建不带标志的 FLIP，本会话不再尝试 |
 | Present 失败或空裁剪 | 令牌保留，下一帧不重复等待 |
-| 开关关 / Win8.0 / ULW / Win7 | 不等待，行为与改动前一致 |
+| 开关关 | DComp 创建普通 FLIP 链，设备级上限限流，不等待 |
+| Win8.0 / ULW / Win7 | 不等待，行为与改动前一致 |
 
 ### 5. Good / Base / Bad Cases
 
@@ -520,7 +526,7 @@ Correct：`Present1 -> DwmFlush(仅交接全帧) -> observer.presented(success)`
 
 ### 6. Tests Required
 
-- `InkeysHeadlessTests/draw3_frame_latency_gate_tests.cpp`（`RunDraw3FrameLatencyGateTests`，`--frame-latency-gate-only`）：禁用不等、首获令牌、令牌消耗规则、自适应超时、EMA 空闲过滤、三种超时策略、熔断阈值、等待失败熔断、还账补等失败熔断；欠账只在无令牌成功 Present 时记、GPU 抖动超时后在途帧回到 1、空闲后补等零等待、信号丢失时欠账封顶且计溢出、开画布 GPU 慢（60 ms/帧、初始超时 25 ms）≤3 次超时内适应且不溢出。
+- `InkeysHeadlessTests/draw3_frame_latency_gate_tests.cpp`（`RunDraw3FrameLatencyGateTests`，`--frame-latency-gate-only`）：禁用不等、首获令牌、令牌消耗规则、自适应超时、EMA 空闲过滤、四种超时策略（含解析器只在主等待超时后调用一次、GPU 忙欠账按 32 记账与恢复后还清、忙转 Count 不按小上限溢出、Exclude 仍封顶 2、GPU 忙溢出熔断）、熔断阈值、等待失败熔断、还账补等失败熔断；欠账只在无令牌成功 Present 时记、GPU 抖动超时后在途帧回到 1、空闲后补等零等待、信号丢失时欠账封顶且计溢出、开画布 GPU 慢（60 ms/帧、初始超时 25 ms）≤3 次超时内适应且不溢出。
 - 完整 Solution `Debug|ARM64` 构建，`InkeysHeadlessTests.exe --no-window`、`Inkeys.exe --draw3-control-fence-test`。
 - 熔断路径没有故障注入开关，单纯加压不会触发；真实熔断只能代码审查 + 状态机单测证明。
 

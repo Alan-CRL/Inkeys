@@ -67,6 +67,9 @@ namespace Inkeys::Drawing::Draw3
 
 	namespace
 	{
+		// 连续“GPU 忙超时”不计入熔断的时长上限（R5）：实测压力下单包排队可达 2.3 s，留出余量。
+		constexpr double kGpuBusyNeutralLimitMs = 5000.0;
+
 		HMODULE LoadSystemLibrary(const wchar_t* fileName) noexcept
 		{
 			if (!fileName || fileName[0] == L'\0') return nullptr;
@@ -1423,8 +1426,10 @@ namespace Inkeys::Drawing::Draw3
 		struct FrameLatencySummary
 		{
 			double startMs = 0.0, waitSumMs = 0.0, waitMaxMs = 0.0;
-			std::uint32_t acquired = 0, timeouts = 0, repaid = 0, repayTimeouts = 0;
+			std::uint32_t acquired = 0, timeouts = 0, repaid = 0, repayTimeouts = 0, gpuBusyTimeouts = 0;
 		} frameLatencySummary;
+		std::uint64_t frameLatencyGpuBusyTimeoutsTotal = 0; // 会话累计：超时时上一帧 GPU 仍未完成、不计入熔断的次数
+		double frameLatencyGpuBusySinceMs = 0.0; // 本轮“GPU 忙超时”开始时刻；等到信号或判为空闲时清零
 		// ULW 异步读回与 DWM 合成时钟（design §5.10/§5.11）。熔断只在本会话有效，Shutdown 清除。
 		bool ulwAsyncFused = false;
 		bool dwmComposing = false;
@@ -1548,14 +1553,47 @@ namespace Inkeys::Drawing::Draw3
 			frameLatencyWaitHandle = nullptr;
 			frameLatencyGate.Reset();
 			frameLatencySummary = {};
+			frameLatencyGpuBusySinceMs = 0.0;
 			presentLatencyWait = {};
 		}
 
-		FrameLatencyWaitResult WaitFrameLatency(FrameLatencyTimeoutPolicy policy) noexcept
+		// countable=false：补等或排除状态，沿用 Neutral/Exclude 原策略；
+		// countable=true：超时那一刻上一帧 GPU 工作仍未完成，说明是 GPU 被其他程序占用（饥饿），信号迟到而非丢失，
+		// 记为 GpuBusy（不计数也不打断连续计数，欠账按更高上限记账）；GPU 已空闲而信号仍不来才计入熔断。
+		FrameLatencyWaitResult WaitFrameLatency(FrameLatencyTimeoutPolicy policy, bool countable = false) noexcept
 		{
 			const HANDLE handle = frameLatencyWaitHandle;
+			bool gpuBusyTimeout = false;
 			const FrameLatencyWaitResult result = frameLatencyGate.Acquire(
-				frameLatencyTargetMs, compositionRefreshMs, policy,
+				frameLatencyTargetMs, compositionRefreshMs,
+				[this, policy, countable, &gpuBusyTimeout]() noexcept
+				{
+					// 等待期间窗口可能转为隐藏/最小化或进入交接：超时后重新检查，按排除处理；非计数状态清零 5 秒忙计时。
+					if (countable && (dcompHandoffBarrier.pendingOutputRevision != 0 || !IsWindowVisible(primaryWindow) ||
+						IsIconic(primaryWindow)))
+					{
+						frameLatencyGpuBusySinceMs = 0.0;
+						return FrameLatencyTimeoutPolicy::Exclude;
+					}
+					if (!countable)
+					{
+						frameLatencyGpuBusySinceMs = 0.0;
+						return policy;
+					}
+					// 查询在 Present1 之后才插入，可能仍留在未提交的命令缓冲里：这里允许提交，否则可能永远读到“忙”。
+					if (PreviousFrameGpuIdle(true))
+					{
+						frameLatencyGpuBusySinceMs = 0.0;
+						return FrameLatencyTimeoutPolicy::Count;
+					}
+					// 上限：连续 GPU 忙超过 kGpuBusyNeutralLimitMs 仍等不到任何信号时照常计数，
+					// 避免查询长期未就绪掩盖真正的信号丢失（届时熔断重建为普通链，行为与改动前一致）。
+					const double nowMs = QpcMilliseconds();
+					if (frameLatencyGpuBusySinceMs <= 0.0) frameLatencyGpuBusySinceMs = nowMs;
+					if (nowMs - frameLatencyGpuBusySinceMs >= kGpuBusyNeutralLimitMs) return FrameLatencyTimeoutPolicy::Count;
+					gpuBusyTimeout = true;
+					return FrameLatencyTimeoutPolicy::GpuBusy;
+				},
 				[]() noexcept { return QpcMilliseconds(); },
 				[handle](std::uint32_t timeoutMilliseconds) noexcept
 				{
@@ -1570,8 +1608,17 @@ namespace Inkeys::Drawing::Draw3
 			if (result.outcome != FrameLatencyWaitOutcome::Signaled &&
 				result.outcome != FrameLatencyWaitOutcome::TimedOut) return result;
 			FrameLatencySummary& summary = frameLatencySummary;
-			if (result.outcome == FrameLatencyWaitOutcome::Signaled) ++summary.acquired;
+			if (result.outcome == FrameLatencyWaitOutcome::Signaled)
+			{
+				++summary.acquired;
+				frameLatencyGpuBusySinceMs = 0.0;
+			}
 			else ++summary.timeouts;
+			if (gpuBusyTimeout)
+			{
+				++summary.gpuBusyTimeouts;
+				++frameLatencyGpuBusyTimeoutsTotal;
+			}
 			if (result.debtRepaid) ++summary.repaid;
 			if (result.debtRepayTimedOut) ++summary.repayTimeouts;
 			summary.waitSumMs += result.waitedMs;
@@ -1584,6 +1631,7 @@ namespace Inkeys::Drawing::Draw3
 				const std::uint32_t waits = summary.acquired + summary.timeouts;
 				DiagnosticOutput::Line() << "[Draw3Diag][latency] acquired=" << summary.acquired
 					<< " timeouts=" << summary.timeouts
+					<< " gpuBusyTimeouts=" << summary.gpuBusyTimeouts
 					<< " repaid=" << summary.repaid << " repayTimeouts=" << summary.repayTimeouts
 					<< " debt=" << frameLatencyGate.Debt()
 					<< " debtOverflowTotal=" << frameLatencyGate.TotalDebtOverflows()
@@ -1603,9 +1651,11 @@ namespace Inkeys::Drawing::Draw3
 			const std::uint32_t consecutiveTimeouts = frameLatencyGate.ConsecutiveTimeouts();
 			frameLatencyGate.Trip();
 			DiagnosticOutput::Line() << "[Draw3Diag][latency] waitable wait tripped reason="
-				<< (frameLatencyGate.TripReason() == FrameLatencyTripReason::WaitFailed ? "wait-failed" : "signal-lost")
+				<< (frameLatencyGate.TripReason() == FrameLatencyTripReason::WaitFailed ? "wait-failed" :
+					frameLatencyGate.TripReason() == FrameLatencyTripReason::QueueOverflow ? "queue-overflow" : "signal-lost")
 				<< " consecutiveTimeouts=" << consecutiveTimeouts
 				<< " totalTimeouts=" << frameLatencyGate.TotalTimeouts()
+				<< " gpuBusyTimeoutsTotal=" << frameLatencyGpuBusyTimeoutsTotal
 				<< " totalAcquired=" << frameLatencyGate.TotalAcquired()
 				<< "; rebuilding swapchain without waitable flag." << std::endl;
 			// 不在帧中途换链：走现有恢复路径重建同模式交换链，并由 CPU 文档重放画布。
@@ -1837,26 +1887,19 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 
-			if (IsDirectCompositionMode(mode))
+			// 调用方保证只在 DComp 且已启用等待时进入：取不到句柄就无法执行上限，视为 waitable 不可用，回退普通交换链（设备级上限）。
+			const HANDLE waitHandle = swapChain2->GetFrameLatencyWaitableObject();
+			if (!waitHandle)
 			{
-				if (options.enableWaitableWait)
-				{
-					// 取不到句柄就无法执行上限：视为 waitable 不可用，回退普通交换链（设备级上限）。
-					const HANDLE waitHandle = swapChain2->GetFrameLatencyWaitableObject();
-					if (!waitHandle)
-					{
-						DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "Waitable frame latency handle is unavailable; fallback to ordinary swapchain." << std::endl;
-						swapChain.Reset();
-						return false;
-					}
-					frameLatencyWaitHandle = waitHandle;
-					frameLatencyGate.Enable();
-					compositionRefreshMs = QueryCompositionRefreshMilliseconds();
-					DiagnosticOutput::Line() << "[Draw3Diag][latency] waitable wait enabled refreshMs=" << compositionRefreshMs
-						<< " timeoutMs=" << frameLatencyGate.TimeoutMs(frameLatencyTargetMs, compositionRefreshMs) << std::endl;
-				}
-				else DiagnosticOutput::Line() << "[Draw3Diag][latency] waitable wait disabled by setting." << std::endl;
+				DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "Waitable frame latency handle is unavailable; fallback to ordinary swapchain." << std::endl;
+				swapChain.Reset();
+				return false;
 			}
+			frameLatencyWaitHandle = waitHandle;
+			frameLatencyGate.Enable();
+			compositionRefreshMs = QueryCompositionRefreshMilliseconds();
+			DiagnosticOutput::Line() << "[Draw3Diag][latency] waitable wait enabled refreshMs=" << compositionRefreshMs
+				<< " timeoutMs=" << frameLatencyGate.TimeoutMs(frameLatencyTargetMs, compositionRefreshMs) << std::endl;
 
 			waitableSwapChain = true;
 			DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "Waitable swapchain enabled in mode " << TransparentPresentModeName(mode) << "." << std::endl;
@@ -1879,9 +1922,14 @@ namespace Inkeys::Drawing::Draw3
 			description.SwapEffect = sequential ? DXGI_SWAP_EFFECT_SEQUENTIAL : DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 			description.BufferCount = sequential ? 1 : 2;
 
-			// 仅 DComp 尝试帧延迟句柄；失败时退回普通链。
+			// 仅 DComp 且启用等待时尝试帧延迟句柄；失败时退回普通链。
+			// 关闭等待时不能保留 waitable 标志：该标志下 Present 不再受设备级帧延迟上限约束，不等待句柄提交会无界堆积
+			// （实测可见延迟 400→1840 ms 随笔画增长）；普通 FLIP 链由 SetMaximumFrameLatency(1) 在 Present 内限流。
 			HRESULT result = S_OK;
-			if (!IsDirectCompositionMode(mode) || frameLatencyGate.Tripped() || !TryCreateWaitableSwapChain(mode, description))
+			if (IsDirectCompositionMode(mode) && !frameLatencyGate.Tripped() && !options.enableWaitableWait)
+				DiagnosticOutput::Line() << "[Draw3Diag][latency] waitable disabled by setting; using ordinary swapchain." << std::endl;
+			if (!IsDirectCompositionMode(mode) || frameLatencyGate.Tripped() || !options.enableWaitableWait ||
+				!TryCreateWaitableSwapChain(mode, description))
 				result = CreateSwapChainForMode(mode, description);
 			if (FAILED(result) || !swapChain)
 			{
@@ -2101,10 +2149,13 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		// 不等待、不 Flush：上一次 Present1 之前提交的 GPU 工作是否已全部完成。
-		bool PreviousFrameGpuIdle() noexcept
+		// 只有 S_FALSE（查询尚未完成）算“忙”；设备移除等错误按空闲处理，避免熔断判据被永久视为 GPU 忙而失效。
+		// allowFlush 仅用于超时后的熔断判定（低频）：允许 GetData 提交仍在命令缓冲中的查询；每帧的节奏统计保持不提交。
+		bool PreviousFrameGpuIdle(bool allowFlush = false) noexcept
 		{
 			if (!gpuIdleQueryIssued || !gpuIdleQuery || !graphics || !graphics->context) return true;
-			return graphics->context->GetData(gpuIdleQuery.Get(), nullptr, 0, D3D11_ASYNC_GETDATA_DONOTFLUSH) == S_OK;
+			return graphics->context->GetData(gpuIdleQuery.Get(), nullptr, 0,
+				allowFlush ? 0u : static_cast<UINT>(D3D11_ASYNC_GETDATA_DONOTFLUSH)) != S_FALSE;
 		}
 	};
 
@@ -2120,6 +2171,7 @@ namespace Inkeys::Drawing::Draw3
 		if (!impl_) return;
 		impl_->ReleaseAttempt();
 		impl_->frameLatencyGate = {}; // 熔断只在本会话有效。
+		impl_->frameLatencyGpuBusyTimeoutsTotal = 0;
 		impl_->frameLatencyTargetMs = 1000.0 / 120.0;
 		impl_->ulwAsyncFused = false;
 		impl_->ulwAlignReason = nullptr;
@@ -2553,9 +2605,10 @@ namespace Inkeys::Drawing::Draw3
 		// 窗口隐藏/最小化或输出交接屏障未完成时句柄可能长期不发信号：超时只计统计，不参与熔断。
 		const bool countable = countsTowardTrip && impl_->dcompHandoffBarrier.pendingOutputRevision == 0 &&
 			IsWindowVisible(impl_->primaryWindow) && !IsIconic(impl_->primaryWindow);
+		if (!countable) impl_->frameLatencyGpuBusySinceMs = 0.0; // 5 秒忙计时不跨越排除区间
 		const bool gpuIdle = impl_->PreviousFrameGpuIdle();
 		const FrameLatencyWaitResult result = impl_->WaitFrameLatency(
-			countable ? FrameLatencyTimeoutPolicy::Count : FrameLatencyTimeoutPolicy::Exclude);
+			countable ? FrameLatencyTimeoutPolicy::Count : FrameLatencyTimeoutPolicy::Exclude, countable);
 		report.waitedMs = result.waitedMs;
 		if (gpuIdle) report.pacingWaitMs = result.waitedMs;
 		report.timedOut = result.outcome == FrameLatencyWaitOutcome::TimedOut;

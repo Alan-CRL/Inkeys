@@ -51,8 +51,9 @@ namespace
 			return FrameLatencySignal::TimedOut;
 		}
 
+		template<class Policy = FrameLatencyTimeoutPolicy>
 		FrameLatencyWaitResult Acquire(FrameLatencyGate& gate,
-			FrameLatencyTimeoutPolicy policy = FrameLatencyTimeoutPolicy::Count,
+			Policy policy = FrameLatencyTimeoutPolicy::Count,
 			double targetFrameMs = kTarget120, double refreshMs = kRefresh60)
 		{
 			return gate.Acquire(targetFrameMs, refreshMs, policy,
@@ -237,6 +238,174 @@ int RunDraw3FrameLatencyGateTests()
 		expect(gate.ConsecutiveTimeouts() == 7 && !gate.ShouldTrip(), "neutral timeout leaves the streak");
 		(void)semaphore.Acquire(gate);
 		expect(gate.ConsecutiveTimeouts() == 8 && gate.ShouldTrip(), "counted timeouts trip after the streak resumes");
+	}
+
+	// 超时后才解析策略（R5）：GPU 仍忙的超时记为 Neutral，不熔断也不打断空闲超时的连续计数；
+	// 解析器只在主等待超时时调用，成功获取不调用。
+	{
+		FrameLatencyGate gate; LatencySemaphore semaphore;
+		gate.Enable();
+		int resolverCalls = 0;
+		bool gpuBusy = false;
+		const auto resolver = [&]
+		{
+			++resolverCalls;
+			return gpuBusy ? FrameLatencyTimeoutPolicy::Neutral : FrameLatencyTimeoutPolicy::Count;
+		};
+		auto result = semaphore.Acquire(gate, resolver);
+		expect(result.outcome == FrameLatencyWaitOutcome::Signaled && resolverCalls == 0, "resolver is not called on signal");
+		semaphore.Present(); gate.OnPresentCalled(true);
+		semaphore.available = 0; semaphore.releases.clear();
+		gpuBusy = true;
+		for (int index = 0; index < 30; ++index)
+		{
+			result = semaphore.Acquire(gate, resolver);
+			expect(result.outcome == FrameLatencyWaitOutcome::TimedOut && result.timeoutPolicy == FrameLatencyTimeoutPolicy::Neutral,
+				"busy timeout resolves to neutral");
+			semaphore.nowMs += 200.0;
+		}
+		expect(resolverCalls == 30 && gate.ConsecutiveTimeouts() == 0 && !gate.ShouldTrip(), "gpu-busy timeouts never trip");
+		// 忙与空闲交替：只累计空闲超时，忙超时不打断。
+		for (int index = 0; index < 14; ++index)
+		{
+			gpuBusy = (index % 2) == 1;
+			(void)semaphore.Acquire(gate, resolver);
+			semaphore.nowMs += 200.0;
+		}
+		expect(gate.ConsecutiveTimeouts() == 7 && !gate.ShouldTrip(), "alternating busy timeouts count only idle ones");
+		gpuBusy = false;
+		result = semaphore.Acquire(gate, resolver);
+		expect(result.timeoutPolicy == FrameLatencyTimeoutPolicy::Count && gate.ConsecutiveTimeouts() == 8 && gate.ShouldTrip(),
+			"idle timeouts still trip");
+	}
+
+	// 解析器在主等待返回之后调用（读取超时那一刻的状态）；还账补等无论成败都不调用解析器。
+	{
+		FrameLatencyGate gate;
+		gate.Enable();
+		double clockMs = 0.0;
+		bool waitReturned = false;
+		bool resolverSawReturnedWait = false;
+		const auto timedOut = gate.Acquire(kTarget120, kRefresh60,
+			[&] { resolverSawReturnedWait = waitReturned; return FrameLatencyTimeoutPolicy::Neutral; },
+			[&] { return clockMs; },
+			[&](std::uint32_t timeoutMs) { clockMs += timeoutMs; waitReturned = true; return FrameLatencySignal::TimedOut; });
+		expect(timedOut.outcome == FrameLatencyWaitOutcome::TimedOut && resolverSawReturnedWait, "resolver runs after the wait returns");
+		gate.OnPresentCalled(true); // 无令牌 Present：记一笔欠账
+		int resolverCalls = 0;
+		int waits = 0;
+		const auto repaid = gate.Acquire(kTarget120, kRefresh60,
+			[&] { ++resolverCalls; return FrameLatencyTimeoutPolicy::Count; },
+			[&] { return clockMs; },
+			[&](std::uint32_t timeoutMs)
+			{
+				++waits;
+				if (waits == 1) return FrameLatencySignal::Signaled;
+				clockMs += timeoutMs;
+				return FrameLatencySignal::TimedOut; // 补等超时
+			});
+		expect(repaid.outcome == FrameLatencyWaitOutcome::Signaled && repaid.debtRepayTimedOut && waits == 2 && resolverCalls == 0,
+			"debt repay path never calls resolver");
+	}
+
+	// GPU 忙超时：欠账按 kFrameLatencyMaxBusyDebt 如实记账（饥饿期间多压的帧都在队列里），GPU 恢复后逐帧还清；
+	// 排除状态（Exclude）仍按 kFrameLatencyMaxDebt 封顶。不计入熔断。
+	{
+		FrameLatencyGate gate; LatencySemaphore semaphore;
+		gate.Enable();
+		(void)semaphore.Acquire(gate);
+		semaphore.Present(); gate.OnPresentCalled(true);
+		const double starvedGpuFreeAt = semaphore.nowMs + 3000.0; // 3 秒饥饿：期间提交的帧都在 GPU 恢复后完成
+		semaphore.available = 0;
+		semaphore.releases.clear();
+		semaphore.releases.push_back(starvedGpuFreeAt); // 饥饿前提交的那一帧同样在 GPU 恢复时才完成
+		semaphore.gpuFreeAtMs = starvedGpuFreeAt;
+		int busyFrames = 0;
+		while (semaphore.nowMs < starvedGpuFreeAt - 250.0)
+		{
+			const auto result = semaphore.Acquire(gate, [] { return FrameLatencyTimeoutPolicy::GpuBusy; });
+			expect(result.outcome == FrameLatencyWaitOutcome::TimedOut, "starved frame times out");
+			semaphore.Present(); gate.OnPresentCalled(true);
+			++busyFrames;
+		}
+		expect(busyFrames > static_cast<int>(kFrameLatencyMaxDebt) && !gate.ShouldTrip(), "gpu-busy starvation never trips");
+		expect(gate.Debt() == (std::min)(static_cast<std::uint32_t>(busyFrames), kFrameLatencyMaxBusyDebt) &&
+			gate.TotalDebtOverflows() == static_cast<std::uint64_t>((std::max)(0, busyFrames - static_cast<int>(kFrameLatencyMaxBusyDebt))),
+			"gpu-busy presents are tracked up to the busy debt cap");
+		// GPU 恢复：每帧拿到名额后多等一次信号，欠账逐帧还清，在途帧回到上限。
+		semaphore.nowMs = starvedGpuFreeAt + 1.0;
+		semaphore.gpuFrameMs = 1.0;
+		for (int frame = 0; frame < 40 && gate.Debt() > 0; ++frame)
+		{
+			(void)semaphore.Acquire(gate, [] { return FrameLatencyTimeoutPolicy::Count; });
+			semaphore.Present(); gate.OnPresentCalled(true);
+			semaphore.nowMs += 2.0;
+		}
+		expect(gate.Debt() == 0, "busy debt is repaid after the gpu recovers");
+		expect(semaphore.InFlight() <= 1, "queue returns to one frame in flight after starvation");
+	}
+	{
+		FrameLatencyGate gate; LatencySemaphore semaphore;
+		gate.Enable();
+		semaphore.available = 0;
+		semaphore.signalLost = true;
+		for (int index = 0; index < 10; ++index)
+		{
+			(void)semaphore.Acquire(gate, FrameLatencyTimeoutPolicy::Exclude);
+			semaphore.Present(); gate.OnPresentCalled(true);
+		}
+		expect(gate.Debt() == kFrameLatencyMaxDebt, "excluded timeouts keep the small debt cap");
+		expect(!gate.ShouldTrip(), "excluded debt overflow only counts and never trips");
+	}
+	// 忙超时累计欠账后改判 Count（GPU 刚空闲）：该帧仍按大上限记账，不按小上限溢出，也不熔断。
+	{
+		FrameLatencyGate gate; LatencySemaphore semaphore;
+		gate.Enable();
+		semaphore.available = 0;
+		semaphore.signalLost = true;
+		for (int index = 0; index < 3; ++index)
+		{
+			(void)semaphore.Acquire(gate, [] { return FrameLatencyTimeoutPolicy::GpuBusy; });
+			semaphore.Present(); gate.OnPresentCalled(true);
+		}
+		(void)semaphore.Acquire(gate, [] { return FrameLatencyTimeoutPolicy::Count; });
+		semaphore.Present(); gate.OnPresentCalled(true);
+		expect(gate.Debt() == 4 && gate.TotalDebtOverflows() == 0 && !gate.ShouldTrip(), "count timeout after busy debt keeps tracking");
+		(void)semaphore.Acquire(gate, FrameLatencyTimeoutPolicy::Exclude);
+		semaphore.Present(); gate.OnPresentCalled(true);
+		expect(gate.Debt() == 4 && gate.TotalDebtOverflows() == 1 && !gate.ShouldTrip(), "excluded present above the small cap only counts overflow");
+	}
+	// GPU 忙期间欠账超过忙上限：溢出的帧无法补还，要求熔断重建。
+	{
+		FrameLatencyGate gate; LatencySemaphore semaphore;
+		gate.Enable();
+		semaphore.available = 0;
+		semaphore.signalLost = true;
+		for (std::uint32_t index = 0; index < kFrameLatencyMaxBusyDebt; ++index)
+		{
+			(void)semaphore.Acquire(gate, [] { return FrameLatencyTimeoutPolicy::GpuBusy; });
+			semaphore.Present(); gate.OnPresentCalled(true);
+		}
+		expect(gate.Debt() == kFrameLatencyMaxBusyDebt && !gate.ShouldTrip(), "busy debt up to the cap does not trip");
+		(void)semaphore.Acquire(gate, [] { return FrameLatencyTimeoutPolicy::GpuBusy; });
+		semaphore.Present(); gate.OnPresentCalled(true);
+		expect(gate.ShouldTrip(), "busy debt overflow requests a rebuild");
+		gate.Trip();
+		expect(gate.TripReason() == FrameLatencyTripReason::QueueOverflow, "busy overflow trip reason");
+	}
+
+	// 解析器也可返回 Exclude；句柄失效时不调用解析器且照常熔断。
+	{
+		FrameLatencyGate gate; LatencySemaphore semaphore;
+		gate.Enable();
+		semaphore.available = 0;
+		for (int index = 0; index < 7; ++index) { (void)semaphore.Acquire(gate); semaphore.nowMs += 200.0; }
+		(void)semaphore.Acquire(gate, [] { return FrameLatencyTimeoutPolicy::Exclude; });
+		expect(gate.ConsecutiveTimeouts() == 0, "resolver exclude breaks the streak");
+		int resolverCalls = 0;
+		semaphore.waitFails = true;
+		const auto result = semaphore.Acquire(gate, [&] { ++resolverCalls; return FrameLatencyTimeoutPolicy::Neutral; });
+		expect(result.outcome == FrameLatencyWaitOutcome::Failed && resolverCalls == 0 && gate.ShouldTrip(), "failed wait trips without resolver");
 	}
 
 	// 句柄等待失败：立即要求熔断。
