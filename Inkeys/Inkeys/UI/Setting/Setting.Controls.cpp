@@ -2081,7 +2081,11 @@ namespace Inkeys::UI::Setting::Design
 			| ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoBackground);
 		auto* window = ImGui::GetCurrentWindow();
 		const ImRect rect = window->Rect();
-		window->DrawList->PushClipRect(rect.Min, rect.Max, false);
+		// 底板需画满卡片外缘（子窗口自身 ClipRect 已内缩），但必须与父窗口的裁剪区求交（与 ImGui 子窗口 host_rect 一致），
+		// 否则滚动到标题栏下方时底板会越过页面裁剪画到标题栏上，而文字仍被裁掉。
+		ImRect surfaceClip = rect;
+		if (window->ParentWindow) surfaceClip.ClipWithFull(window->ParentWindow->ClipRect);
+		window->DrawList->PushClipRect(surfaceClip.Min, surfaceClip.Max, false);
 		DrawCardSurface(window->DrawList, rect.Min, rect.Max, fill, border, rounding);
 		window->DrawList->PopClipRect();
 		scrollbar.Finish(window);
