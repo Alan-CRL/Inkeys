@@ -29,7 +29,7 @@
 | Experimental.Inkeys3.Draw3.PresentationMode | 0；自动/DComp/Win7Dwm/ULW = 0/1/2/3 | 下次启动；缺少新键时将旧 EnableDirectComposition 的 false 映射为 ULW，true 映射为自动 |
 | Experimental.Inkeys3.Draw3.RenderAcceleration | 0；自动/硬件加速/软件加速 = 0/1/2 | 下次启动；自动 = 硬件优先、失败回退 WARP；硬件加速 = 只用硬件，不回退；软件加速 = WARP。设备丢失恢复沿用同一策略。缺少新键时旧 EnableHardwareAcceleration=false 迁移为软件加速，true 或缺键为自动 |
 | Experimental.Inkeys3.Draw3.EnableWaitableWait | true | 下次启动（`configOnce` 快照）；关闭时 DComp 改建普通 FLIP 链（2026-11-20 阶段 A 起，见 `draw3-integration.md`） |
-| Experimental.Inkeys3.Draw3.GpuSchedulingPriority | 1；标准/均衡/高性能 = 0/1/2，越界按 1 | 即时：设置页写配置后调用 `Inkeys::Helper::ApplyProcessScheduling`；启动时在完整配置读取后、Draw3 Host 前应用一次。映射 D3DKMT 调度类 NORMAL=2 / HIGH=4 / REALTIME=5 |
+| Experimental.Inkeys3.Draw3.GpuSchedulingPriority | 1；标准/均衡/高性能 = 0/1/2，越界按 1 | 即时：设置页写配置后调用 `Inkeys::Helper::ApplyProcessScheduling`；启动时在完整配置读取后、Draw3 Host 前应用一次。映射 D3DKMT 调度类 NORMAL=2 / HIGH=4 / REALTIME=5；请求失败（NTSTATUS < 0）逐级回退：高性能 REALTIME→HIGH→NORMAL、均衡 HIGH→NORMAL、标准仅 NORMAL，成功即停，配置不改写（2026-11-21 阶段 A2） |
 | Experimental.Inkeys3.Draw3.DisablePowerThrottling | true | 即时，同上；true = `SetProcessInformation(ProcessPowerThrottling, {1, EXECUTION_SPEED, 0})` 显式关闭执行速度节流；false = `ControlMask=0` 交还系统默认（不是强制节流）。Win10 1709 以下调用失败只记日志 |
 | Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback | true | 下次启动（`configOnce` 快照）；只影响主画布 ULW：关闭 = 同步读回、不节流、不对齐（独立纹理与 SIMD 复制仍保留） |
 | Experimental.Inkeys3.Draw3.UlwCompositionAlign | true，性能页合成对齐下拉框 | 下次启动；异步读回开启时是否对齐 DWM 合成时机提交，与 DComp 键共同表示始终、关闭或仅指定后端 |
@@ -48,7 +48,7 @@
 - 粒子条目不显示toggle，仅保留BETA禁用说明；Controller构造配置true、setter请求true也始终关闭，不因旧配置恢复，重复请求不产生额外wake。保留算法/Shader/配置字段，不扩大为资源清理任务。
 - 绘制页先“绘图环境”（设备项）、后“通用”；移除统一新笔提示但保留每笔锁存。界面60FPS、画布120FPS、精准显示本地化推荐标记，数据值不变；侧栏性能与实验glyph对调，不改变路由。
 - 原硬件加速、DComp、兆芯兼容三项迁移至性能页并重启生效：硬件加速改为 RenderAcceleration 下拉，DComp 开关改为 PresentationMode 下拉（旧键仅在缺少新键时迁移），兆芯兼容继续使用原键。
-- 软件调试 → 画布初始化信息：标题下按需显示呈现方式回退警告（交换链类型由呈现方式固定，没有交换链回退，2026-11-20 删除 `DebugSoftware.SwapChainFallback` 与 `PresentationFallbackReport::chainWarning`）。自动后端回退仅记录日志；主动指定后端失败才提示。正文展示实际状态。警告沿用黄色信息条，持有本代首次尝试的失败原因，外层窗口重建时传递。
+- 软件调试 → 画布初始化信息：标题下按需显示呈现方式回退警告（交换链类型由呈现方式固定，没有交换链回退，2026-11-20 删除 `DebugSoftware.SwapChainFallback` 与 `PresentationFallbackReport::chainWarning`）。自动后端回退仅记录日志；主动指定后端失败才提示。正文展示实际状态。警告沿用黄色信息条，持有本代首次尝试的失败原因，外层窗口重建时传递。正文末尾由设置页追加两行进程级状态（2026-11-21 阶段 A2）：`GPU 调度类：HIGH (4)`（取读回值；读回失败显示最近成功请求的类并注明“未读回”；从未成功为“不可用”）与 `电源节流：已关闭执行速度节流/系统默认/不支持（需 Windows 10 1709 及以上）/设置失败（错误码 N）`。只显示当前状态，不显示回退过程；文本由 `FormatProcessSchedulingInformation(LastProcessSchedulingResult())` 生成（读缓存，不调用系统 API），与画布文本拼成同一字符串供显示与复制。
 - 性能页三块顺序：“渲染”= `##draw3-acceleration`（画布渲染加速，只有 i 重启提示）→ `##gpu-scheduling-priority`（GPU 调度优先级，说明 + i 提示“未关闭电源节流时……所选档位可能不会生效”，选高性能时上方黄色 Notice 提示录屏慎用，即时生效）→ `##disable-power-throttling`（关闭电源节流，说明含“Windows 10 1709 及以上生效”，即时生效）→ 兆芯兼容；“高级设置”= `##draw3-unthrottled-mouse-move`（绘制时鼠标移动不受画布帧率限制，即时生效，无重启提示）；“底层设置”= `##draw3-presentation`（透明呈现方式）→ `##draw3-composition-align`（合成时机对齐，首项“始终（推荐）”）→ `##draw3-waitable-wait`（Waitable 模式下启用等待）→ `##draw3-ulw-async-readback`（UpdateLayeredWindow 模式下异步读回），均重启生效。所有选项在任何系统上都可选（便携版换系统后由启动链自动回退，全选自动为最佳），不置灰；行上方按条件显示 `Design::Notice`：不兼容组合/系统不支持用黄色警告，系统适用条件用蓝色信息。输入方式：手选 RTS → 信息 `InputMode.RtsTouchpadNotice`；Win7 手选 WM_POINTER → 警告 `InputMode.PointerUnsupported`。透明呈现：Win7（低于 6.2）选 DirectComposition → 警告 `PresentationMode.DcompUnsupported`；Win8+ 选 Win7dwm → 警告 `PresentationMode.Win7dwmUnsupportedFormat`（{0}=8/8.1/10/11，10.0 build≥22000 为 11）；Win7 选 Win7dwm → 信息 `PresentationMode.Win7dwmAeroRequired`。交换链设置项已删除（2026-11-20 用户决定）：DirectComposition 固定 FLIP，Win7dwm 固定 SEQUENTIAL（Win7 Aero 实机 FLIP 黑屏且无报错），ULW 不用交换链；旧配置键 `SwapChainMode` 读取时忽略、保存时退役。提示只看已保存的选项与本机系统版本，不看运行时实际回退。waitable 行为合同见 `draw3-integration.md`“DComp waitable 帧延迟等待与熔断”；ULW 读回合同见同文件“ULW 独立纹理、异步读回与合成对齐”；鼠标选项合同见 `draw3-cursors.md`“绘制时光标跟随画布帧率”。
 - 性能页“底层设置”首行为 `##draw3-input-mode`（输入方式，重启生效）。说明行为固定用户文案 `InputMode.E`（“决定设备消息的输入方式，一些选项可能与触控板手势冲突。”），不再拼接实际后端、大屏指定或重启提示（`NextInputBackendDiffers` 已删除）。实际后端与回退原因只在“软件调试 → 画布初始化输出”展示：`InputFallback` 非空时与呈现/交换链回退同位置显示警告条 `##canvas-input-fallback`（标题 `DebugSoftware.InputFallback`，正文“已从 {首选} 回退到 {实际}。”+ 各失败原因；首选取手选偏好，自动取解析结果）。`ComboRow/ComboBox` 支持单个 `disabledItem`（置灰、点击不提交、方向键/Home/End 跳过）。
 - 设置→绘制→白板：系统低于 Win11 且实际后端为 RTS 扩展/基础 XY 时，在“白板拖动惯性”上方用 `Design::Notice` 显示 RTS 不兼容触控板拖动；Win11 实际 RTS 且窗口注册不可用时改显示“当前系统或设备无法在 RealTimeStylus 模式下使用此手势”。“白板拖动惯性”上方常驻 ⓘ `CanvasPanInertia.TouchpadRequirement`（“触控板手势需要 Windows 8.1 或更高版本及精确式触控板。”）。
@@ -173,9 +173,10 @@ Correct：绘制与复制复用同一局部完整字符串；只在user点击标
 
 ### 3. Contracts
 - `D3DKMTSet/GetProcessSchedulingPriorityClass`（gdi32）与 `SetProcessInformation`（kernel32，Win8+ 才导出）全部 `GetProcAddress` 动态获取；**禁止**静态调用（Win7 无法启动）。失败不影响启动与绘制。
-- 每次实际调用输出一行 `Log::Module::Draw3` Info：`进程调度 tier class disableThrottling priorityApi status readBack throttlingApi throttlingApplied throttlingError os`。
+- 调度类请求按档位逐级回退（2026-11-21 阶段 A2，`SchedulingFallbackRoute` / `RunSchedulingFallback`）：高性能 REALTIME→HIGH→NORMAL、均衡 HIGH→NORMAL、标准仅 NORMAL；第一个尝试的就是档位对应的类，失败判定只看 `D3DKMTSetProcessSchedulingPriorityClass` 返回的 NTSTATUS < 0（读回值只用于显示），当前一级成功即停；全部失败保持系统原状。`ProcessSchedulingResult` 记录 `requestedClass/appliedClass/attemptCount/valid`，`LastProcessSchedulingResult()` 返回缓存副本。
+- 每次实际调用输出一行 `Log::Module::Draw3` Info：`进程调度 tier requested attempts=<类:status,...> applied readBack disableThrottling priorityApi status throttlingApi throttlingApplied throttlingError os`。
 - Win11 实测映射（WPR `ChangePriority`）：节流时 NORMAL/HIGH 都是 1、REALTIME 23；关闭节流后 NORMAL/HIGH 都是 16、REALTIME 23。即 Win11 上“均衡”的收益来自关闭电源节流。2026-11-21 实机回收：Win10（HD 4600）上 HIGH 与 NORMAL 延迟无差别；Intel 核显即使被降到 1 也不会饿死，GPU 压力下延迟约为压力程序单包时长 × 1.6（抢占粒度限制），档位与节流基本无影响；饥饿型降级主要见于骁龙（Adreno）。
 - 实测（Snapdragon X，GPU 压力工具占前台，waitable 链）：默认（均衡 + 关闭节流）p50 44 ms / max 90 ms；标准或均衡 + 节流默认：墨迹 1.5 s 内不上屏；高性能 60–78 ms。OBS 录屏 + 压力：默认掉帧 2.5%（改动前 4.4%），高性能 23.5%——高性能不作默认，说明提示录屏慎用。
 
 ### 6. Tests Required
-- `config_metadata_tests.cpp`：默认值（1、true）、档位映射 2/4/5、越界回退均衡。
+- `config_metadata_tests.cpp`：默认值（1、true）、档位映射 2/4/5、越界回退均衡；注入假 setter 覆盖三档回退路线、成功即停、全部失败，以及画布信息两行文本的各分支。

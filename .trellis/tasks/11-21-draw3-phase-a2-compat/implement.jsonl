@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "GPU 调度条目与画布初始化信息合同"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "呈现链、Win7Dwm、运行期恢复与启动失败重建合同"}
+{"file": ".trellis/spec/native/platform-and-resources.md", "reason": "平台兼容与呈现链图"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "输入后端选择与回退（第4步）"}

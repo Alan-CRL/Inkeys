@@ -1,6 +1,6 @@
 # Platform and Resources
 
-> 本层主要描述独立 inkStrokeModelerTest/draw3 demo 的历史路径；已集成 Inkeys 主产品的首发选择合同以 native-desktop/draw3-integration.md 为准：自动仅 DComp/ULW，第一版 Win7Dwm 需手选且通过 Aero 条件检查，ULW 自 2026-11-18 起不建交换链（独立纹理 + 异步读回）；用户在 Win7 SP1+仅 KB2670838 实测可用的 FLIP_SEQUENTIAL 保留为阶段 D 的兼容依据。
+> 本层主要描述独立 inkStrokeModelerTest/draw3 demo 的历史路径；已集成 Inkeys 主产品的首发选择合同以 native-desktop/draw3-integration.md 为准：自动为 DComp/ULW，Win7 上为 DComp/Win7Dwm/ULW（2026-11-21 阶段 A2），Win7Dwm 须通过 Aero 条件检查，ULW 自 2026-11-18 起不建交换链（独立纹理 + 异步读回）；用户在 Win7 SP1+仅 KB2670838 实测可用的 FLIP_SEQUENTIAL 保留为阶段 D 的兼容依据。
 
 ## Compatibility Target Versus Verified Behavior
 
@@ -97,7 +97,7 @@ bool TransparentPresentationController::Present(RECT dirty, bool presentFull);
 
 Wrong：`Windows 7 上 DWM 透明和 resize 均受支持。`
 
-Correct：`Windows 7 SP1 + KB2670838 是 Draw3 兼容目标；已集成主产品仅选择 DComp/ULW，目标环境下的透明和 resize 行为仍待真机验证。`
+Correct：`Windows 7 SP1 + KB2670838 是 Draw3 兼容目标；已集成主产品自动选择 DComp/ULW，Win7 上自动可进入 Win7Dwm（2026-11-21 起，兼容性实测已通过）。`
 
 Wrong：`窗口创建后发现缺少 WS_EX_NOREDIRECTIONBITMAP，再用 SetWindowLongPtr 补上。`
 
@@ -155,6 +155,7 @@ L0 可由当前笔状态重建，不在 resize 中保留。
 
 ```text
 DirectCompositionVisualTree
+  -> DwmBlurBehind（仅自动且 Win7，2026-11-21 阶段 A2）
   -> UlwDirtyRect
 （手选 Win7Dwm：DwmBlurBehind -> UlwDirtyRect；DwmBlurBehind2 已于 2026-11-20 删除）
 ```
