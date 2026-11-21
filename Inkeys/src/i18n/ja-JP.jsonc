@@ -1113,6 +1113,7 @@
         "Always": "常に有効",
         "Off": "オフ",
         "UlwOnly": "UpdateLayeredWindow のみ",
+        "Win7dwmOnly": "Win7dwm のみ",
         "DcompOnly": "DirectComposition のみ"
       },
       "WaitableWait":

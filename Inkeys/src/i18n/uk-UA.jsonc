@@ -1113,6 +1113,7 @@
         "Always": "Завжди",
         "Off": "Вимкнено",
         "UlwOnly": "Лише UpdateLayeredWindow",
+        "Win7dwmOnly": "Лише Win7dwm",
         "DcompOnly": "Лише DirectComposition"
       },
       "WaitableWait":

@@ -1113,6 +1113,7 @@
         "Always": "Luôn bật",
         "Off": "Tắt",
         "UlwOnly": "Chỉ UpdateLayeredWindow",
+        "Win7dwmOnly": "Chỉ Win7dwm",
         "DcompOnly": "Chỉ DirectComposition"
       },
       "WaitableWait":

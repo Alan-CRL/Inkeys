@@ -1384,9 +1384,12 @@ namespace Inkeys::Drawing::Draw3
 		struct DwmBlurBehindPresenter
 		{
 			HWND window = nullptr;
+			// Win7 没有 DComp 帧统计：相位对齐用 DwmGetCompositionTimingInfo 的整桌面合成时序（与 ULW 对齐同源）。
+			CompositionClock phaseClock;
 
 			void Reset()
 			{
+				phaseClock = {};
 				if (window && IsWindow(window))
 				{
 					DWM_BLURBEHIND blur = {};
@@ -1722,10 +1725,8 @@ namespace Inkeys::Drawing::Draw3
 				deviceInformation = "图形设备：不可用\n";
 				return;
 			}
-			text << "图形设备：" << (graphics->driverType == D3D_DRIVER_TYPE_WARP ? "WARP（软件绘制）" : "Hardware（硬件 GPU）")
+			text << "图形设备：" << (graphics->driverType == D3D_DRIVER_TYPE_WARP ? "WARP" : "Hardware")
 				<< "\nD3D Feature Level：" << FormatDiagnosticFeatureLevel(graphics->featureLevel) << "\n";
-			if (options.enableHardwareAcceleration && graphics->driverType == D3D_DRIVER_TYPE_WARP)
-				text << "硬件设备创建失败，已回退到软件绘制。\n";
 			DXGI_ADAPTER_DESC adapter{};
 			const HRESULT descriptionResult = graphics->adapter ? graphics->adapter->GetDesc(&adapter) : E_NOINTERFACE;
 			if (SUCCEEDED(descriptionResult))
@@ -1799,7 +1800,7 @@ namespace Inkeys::Drawing::Draw3
 					renderer->backBufferTexture->GetDesc(&finalDescription);
 					text << "主画布呈现：UpdateLayeredWindow (ULW)\n辅助前置表面：由画布承担\n最终目标：独立纹理 "
 						<< finalDescription.Width << "×" << finalDescription.Height << " BGRA8\n读回模式："
-						<< (options.enableUlwAsyncReadback && !ulwAsyncFused ? "异步（自适应，最多领先一帧）" : "同步")
+						<< (options.enableUlwAsyncReadback && !ulwAsyncFused ? "异步" : "同步")
 						<< "\nDWM 合成：" << (dwmComposing ? "开启" : "关闭") << "  刷新间隔：" << std::fixed
 						<< std::setprecision(2) << ulwRefreshMs << " ms（来源：" << ulwRefreshSource << "）\n";
 				}
@@ -2140,7 +2141,7 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 			DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "Active transparent present mode: " << TransparentPresentModeName(mode)
-				<< " ulwAlignSetting=" << options.enableUlwCompositionAlign << " dcompAlignSetting=" << options.enableDcompCompositionAlign << std::endl;
+				<< " ulwAlignSetting=" << options.enableUlwCompositionAlign << " dcompAlignSetting=" << options.enableDcompCompositionAlign << " win7DwmAlignSetting=" << options.enableWin7DwmCompositionAlign << std::endl;
 			RefreshUlwCompositionState("initialize");
 			return true;
 		}
@@ -2800,25 +2801,38 @@ namespace Inkeys::Drawing::Draw3
 	{
 		// 只调整固定帧截止等待的目标；打断式唤醒（Down/Up 等）仍立即返回，不等对齐。
 		if (!impl_ || impl_->recoveryPending) return 0.0;
-		if (IsDirectCompositionMode(impl_->activeMode))
+		// DComp 与 Win7dwm 都是“Present 写入、下一次 DWM 合成上屏”，用同一相位算法把帧完成贴近合成截止；
+		// 两者只差时钟来源：DComp 读 GetFrameStatistics，Win7dwm 读 DwmGetCompositionTimingInfo（Win7 无 DComp）。
+		const bool dcomp = IsDirectCompositionMode(impl_->activeMode);
+		const bool win7Dwm = IsDwmBlurBehindMode(impl_->activeMode);
+		if (dcomp || win7Dwm)
 		{
-			auto& presenter = impl_->directCompositionPresenter;
-			if (!impl_->options.enableDcompCompositionAlign || !presenter.compositionDevice ||
-				impl_->requestedOutputTarget != TransparentOutputTarget::PrimaryDrawpad) return 0.0;
-			auto& clock = presenter.phaseClock;
+			auto& dcompPresenter = impl_->directCompositionPresenter;
+			auto& dwmPresenter = impl_->dwmBlurPresenter;
+			const bool enabled = dcomp
+				? impl_->options.enableDcompCompositionAlign && dcompPresenter.compositionDevice
+				: impl_->options.enableWin7DwmCompositionAlign && dwmPresenter.window && impl_->swapChain;
+			if (!enabled || impl_->requestedOutputTarget != TransparentOutputTarget::PrimaryDrawpad) return 0.0;
+			auto& clock = dcomp ? dcompPresenter.phaseClock : dwmPresenter.phaseClock;
 			if (clock.NeedsRefresh(frameStartMs))
 			{
-				DCOMPOSITION_FRAME_STATISTICS stats = {};
 				CompositionTimingSample sample = {};
-				const HRESULT statsResult = presenter.compositionDevice->GetFrameStatistics(&stats);
-				if (SUCCEEDED(statsResult))
-					sample = DcompTimingSample(stats.nextEstimatedFrameTime.QuadPart, stats.currentTime.QuadPart,
-						stats.timeFrequency.QuadPart, stats.currentCompositionRate.Numerator, stats.currentCompositionRate.Denominator);
+				HRESULT statsResult = S_OK;
+				if (dcomp)
+				{
+					DCOMPOSITION_FRAME_STATISTICS stats = {};
+					statsResult = dcompPresenter.compositionDevice->GetFrameStatistics(&stats);
+					if (SUCCEEDED(statsResult))
+						sample = DcompTimingSample(stats.nextEstimatedFrameTime.QuadPart, stats.currentTime.QuadPart,
+							stats.timeFrequency.QuadPart, stats.currentCompositionRate.Numerator, stats.currentCompositionRate.Denominator);
+				}
+				else sample = Impl::SampleCompositionTiming();
 				// 失败仅让时钟本轮失效，下一采样周期再试，与 waitable 的超时/熔断分开。
 				clock.Update(sample, frameStartMs);
 				const double shiftMs = DcompPhaseAdjustMs(frameStartMs + intervalMs, intervalMs, workMs, clock);
 				// 仅在重读时序时记录样本，便于对照开关状态和实际修正量。
-				DiagnosticOutput::Line() << "[Draw3Diag][dcomp-align] valid=" << clock.Valid() << " hr=" << statsResult
+				DiagnosticOutput::Line() << (dcomp ? "[Draw3Diag][dcomp-align] valid=" : "[Draw3Diag][win7dwm-align] valid=")
+					<< clock.Valid() << " hr=" << statsResult
 					<< " periodMs=" << clock.PeriodMs() << " frameIntervalMs=" << intervalMs << " shiftMs=" << shiftMs << std::endl;
 				// 等待接口接收相对时长，采样占用的帧预算必须扣除，即使本次统计无效。
 				const double elapsedAfterWorkMs = (std::max)(0.0, QpcMilliseconds() - (frameStartMs + workMs));
@@ -2864,6 +2878,7 @@ namespace Inkeys::Drawing::Draw3
 		state.ulwAsyncReadback = IsUlwMode(impl.activeMode) && impl.options.enableUlwAsyncReadback && !impl.ulwAsyncFused;
 		state.ulwCompositionAlign = state.ulwAsyncReadback && impl.options.enableUlwCompositionAlign && impl.dwmComposing;
 		state.dcompCompositionAlign = IsDirectCompositionMode(impl.activeMode) && impl.options.enableDcompCompositionAlign;
+		state.win7DwmCompositionAlign = IsDwmBlurBehindMode(impl.activeMode) && impl.options.enableWin7DwmCompositionAlign;
 		return state;
 	}
 

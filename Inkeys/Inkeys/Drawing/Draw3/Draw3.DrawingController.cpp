@@ -21745,6 +21745,7 @@ namespace Inkeys::Drawing::Draw3
 			signature.ulwAsyncReadback = state.ulwAsyncReadback ? 1 : 0;
 			signature.ulwCompositionAlign = state.ulwCompositionAlign ? 1 : 0;
 			signature.dcompCompositionAlign = state.dcompCompositionAlign ? 1 : 0;
+			signature.win7DwmCompositionAlign = state.win7DwmCompositionAlign ? 1 : 0;
 			signature.zhaoxinCompatibility = renderer_.UsesZhaoxinCompatibleUpload() ? 1 : 0;
 			return DevicePerformance::NormalizeSignature(signature);
 		};

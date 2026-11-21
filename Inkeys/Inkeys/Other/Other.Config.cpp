@@ -624,6 +624,21 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					return;
 				}
 			}
+			if constexpr (std::is_same_v<T, IdtAtomic<bool>>)
+			{
+				if (!jsonValue && path == "Experimental.Inkeys3.Draw3.Win7DwmCompositionAlign")
+				{
+					// 旧配置没有 Win7dwm 键：只有原“始终”（两个旧键都开或缺省）才包含 Win7dwm，
+					// 原“仅 UpdateLayeredWindow / 仅 DirectComposition / 关闭”保持原义，不被新默认值改成混合组合。
+					const auto legacyEnabled = [&](const char* key)
+					{
+						const auto* legacy = TryGetValueAtPath(root, groupPath, key);
+						return !legacy || !legacy->isBool() || legacy->asBool();
+					};
+					value = legacyEnabled("UlwCompositionAlign") && legacyEnabled("DcompCompositionAlign");
+					return;
+				}
+			}
 			if (!jsonValue) return;
 
 			if constexpr (std::is_same_v<T, IdtAtomic<int>>)

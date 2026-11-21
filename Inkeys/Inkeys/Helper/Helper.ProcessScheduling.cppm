@@ -178,7 +178,7 @@ namespace Inkeys::Helper
 			text += "\n电源节流：";
 			if (!result.throttlingApiAvailable ||
 				(!result.throttlingApplied && result.throttlingError == ERROR_INVALID_PARAMETER))
-				text += "不支持（需 Windows 10 1709 及以上）";
+				text += "不支持";
 			else if (result.throttlingApplied)
 				text += result.disablePowerThrottlingRequested ? "已关闭执行速度节流" : "系统默认";
 			else

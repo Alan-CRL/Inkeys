@@ -211,6 +211,14 @@ namespace
 		std::this_thread::sleep_for(delay);
 	}
 
+	// 预览路径与普通启动路径共用同一 0xD002 文案。共享渲染管线依赖 D2D 1.1 / DWrite 1.1，
+	// Win7 SP1 需要平台更新 KB2670838，因此附带安装提示。
+	constexpr const wchar_t* RenderPipelineStartupFailureMessage =
+		L"Unable to initialize the shared rendering pipeline.\n"
+		L"On Windows 7, please try installing update KB2670838 (see www.inkeys.top/win7).\n"
+		L"共享渲染管线初始化失败。\n"
+		L"Windows 7 用户请尝试安装 KB2670838 更新（详情见 www.inkeys.top/win7）。";
+
 	void PublishFatalStartupFailure(
 		std::uint32_t code, const wchar_t* message) noexcept
 	{
@@ -3038,8 +3046,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		const HRESULT earlyRenderResult = Inkeys::UI::RenderPipeline::Initialize();
 		if (FAILED(earlyRenderResult))
 		{
-			PublishFatalStartupFailure(0xD002u,
-				L"Unable to initialize the shared rendering pipeline.\n共享渲染管线初始化失败。");
+			PublishFatalStartupFailure(0xD002u, RenderPipelineStartupFailureMessage);
 			return 1;
 		}
 		// 现有 Initialize 是一个原子握手；三个真实子资源在成功返回后合并报告。
@@ -3566,8 +3573,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		{
 			SetOffSignal(1);
 			Inkeys::Log::Critical(Inkeys::Log::Module::Main, "界面绘图库初始化失败, hr=0x{:08X}", static_cast<unsigned int>(hr));
-			PublishFatalStartupFailure(0xD002u,
-				L"共享渲染管线初始化失败，程序无法继续启动。");
+			PublishFatalStartupFailure(0xD002u, RenderPipelineStartupFailureMessage);
 			return 0;
 		}
 		if (hr == S_OK)
@@ -3974,6 +3980,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			configOnce.Experimental.Inkeys3.Draw3.UlwCompositionAlign;
 		draw3StartOptions.enableDcompCompositionAlign =
 			configOnce.Experimental.Inkeys3.Draw3.DcompCompositionAlign;
+		draw3StartOptions.enableWin7DwmCompositionAlign =
+			configOnce.Experimental.Inkeys3.Draw3.Win7DwmCompositionAlign;
 		const auto whiteboardDefault = config.Drawing.Whiteboard.DefaultTheme.load();
 		draw3StartOptions.whiteboardDefaultTheme = { whiteboardDefault.backgroundRgb,
 			static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(whiteboardDefault.pattern) };

@@ -96,7 +96,7 @@ int RunConfigMetadataTests()
 		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：尚未应用\n电源节流：尚未应用\n",
 			"scheduling information before first apply");
 		result.valid = true;
-		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：不可用\n电源节流：不支持（需 Windows 10 1709 及以上）\n",
+		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：不可用\n电源节流：不支持\n",
 			"scheduling information without a class or throttling API");
 		result.priorityReadBack = 2;
 		result.appliedClass = 4;
@@ -119,7 +119,7 @@ int RunConfigMetadataTests()
 		result.priorityReadBack = 99;
 		result.throttlingApplied = false;
 		result.throttlingError = ERROR_INVALID_PARAMETER;
-		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：未知 (99)\n电源节流：不支持（需 Windows 10 1709 及以上）\n",
+		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：未知 (99)\n电源节流：不支持\n",
 			"scheduling information shows unknown class and treats error 87 as unsupported");
 		result.throttlingError = ERROR_ACCESS_DENIED;
 		check(FormatProcessSchedulingInformation(result) == "GPU 调度类：未知 (99)\n电源节流：设置失败（错误码 5）\n",
@@ -788,7 +788,7 @@ int RunConfigMetadataTests()
 		writeModeDocument(document);
 		check(presentationConfig.ReadAll() && draw3.PresentationMode.load() == 0,
 			"fresh presentation setting defaults to automatic");
-		check(draw3.DcompCompositionAlign.load() && draw3.UlwCompositionAlign.load(),
+		check(draw3.DcompCompositionAlign.load() && draw3.UlwCompositionAlign.load() && draw3.Win7DwmCompositionAlign.load(),
 			"missing composition alignment settings default to always");
 		for (const bool dcomp : { false, true })
 		{
@@ -799,8 +799,37 @@ int RunConfigMetadataTests()
 				writeModeDocument(document);
 				check(presentationConfig.ReadAll() && draw3.DcompCompositionAlign.load() == dcomp &&
 					draw3.UlwCompositionAlign.load() == ulw, "saved composition alignment combination is preserved");
+				// 旧配置没有 Win7dwm 键：只有原“始终”包含 Win7dwm，原“仅 X/关闭”保持单一档位。
+				check(draw3.Win7DwmCompositionAlign.load() == (ulw && dcomp),
+					"legacy composition alignment derives the Win7dwm key from the old choice");
+				const int legacyIndex = ulw ? (dcomp ? 0 : 2) : (dcomp ? 4 : 1);
+				check(Inkeys::Draw3CompositionAlignIndex(draw3.UlwCompositionAlign.load(),
+					draw3.Win7DwmCompositionAlign.load(), draw3.DcompCompositionAlign.load()) == legacyIndex,
+					"legacy composition alignment keeps its dropdown choice");
+				for (const bool win7Dwm : { false, true })
+				{
+					fields["Win7DwmCompositionAlign"] = win7Dwm;
+					writeModeDocument(document);
+					check(presentationConfig.ReadAll() && draw3.Win7DwmCompositionAlign.load() == win7Dwm &&
+						draw3.DcompCompositionAlign.load() == dcomp && draw3.UlwCompositionAlign.load() == ulw,
+						"saved three-key composition alignment combination is preserved");
+				}
+				fields.removeMember("Win7DwmCompositionAlign");
 			}
 		}
+		for (int index = 0; index < 5; ++index)
+		{
+			const auto choice = Inkeys::Draw3CompositionAlignFromIndex(index);
+			check(Inkeys::Draw3CompositionAlignIndex(choice.ulw, choice.win7Dwm, choice.dcomp) == index,
+				"composition alignment dropdown index round-trips");
+		}
+		check(Inkeys::Draw3CompositionAlignFromIndex(3).win7Dwm && !Inkeys::Draw3CompositionAlignFromIndex(3).ulw &&
+			!Inkeys::Draw3CompositionAlignFromIndex(3).dcomp, "Win7dwm-only sits between ULW-only and DComp-only");
+		check(Inkeys::Draw3CompositionAlignIndex(true, true, false) == -1 &&
+			Inkeys::Draw3CompositionAlignIndex(true, false, true) == -1,
+			"mixed composition alignment combinations select no dropdown item");
+		fields.removeMember("DcompCompositionAlign");
+		fields.removeMember("UlwCompositionAlign");
 		for (const bool legacy : { true, false })
 		{
 			fields["EnableDirectComposition"] = legacy;

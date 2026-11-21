@@ -293,6 +293,8 @@ namespace Inkeys::Drawing::Draw3
 		// 异步读回时对齐 DWM 合成时机提交；无界面配置键，用于实机开/关对照。
 		bool enableUlwCompositionAlign = true;
 		bool enableDcompCompositionAlign = true;
+		// Win7dwm 主画布按 DWM 合成时序微调帧相位，使帧完成贴近合成截止。
+		bool enableWin7DwmCompositionAlign = true;
 		int frameRate = 120; // 仅在启动时选择画布模型参数组。
 		InputPreference inputPreference = InputPreference::Automatic;
 		bool largeScreenTouchMode = false;

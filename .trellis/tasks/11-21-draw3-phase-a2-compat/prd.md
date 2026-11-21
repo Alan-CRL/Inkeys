@@ -161,3 +161,11 @@
   - DComp 退休超时后候选链可能继续：改动前两步链同样存在；尝试“立即中止”会丢失原失败截止与诊断，复核后撤回，保持原语义，记为既有问题（见下）。
 - 既有问题（未处理）：DComp 失败且释放（退休）超时后，若退休在下一候选前完成，链会在同一 HWND 继续尝试下一模式；正确修法需要让 release 失败携带原截止并单独结束链，涉及 failed-cleanup 截止语义，另行处理。
 - 实机验证（2026-11-21 用户确认通过）：Win7 SP1+KB2670838 上自动选中 Win7dwm 与失败回退；WinPE 启动与定格按钮禁用；Wine 基础书写（鼠标兼容）。
+
+## 追加修改（2026-11-21，实机验证后）
+
+- 画布初始化信息去掉解释性语句：`Hardware`/`WARP` 去括注、删“硬件设备创建失败，已回退到软件绘制。”、ULW 读回 `异步` 去括注、`已停止` 去“（以下为本代最后记录）”、电源节流 `不支持` 去括注；保留 `（无 MSAA）`、`Waitable（最大排队帧数 1）`、HRESULT/错误码/失败原因等状态（用户决定）。
+- 自定义 GDI 消息框：外描边仅 Win11（build ≥ 22000）为 8 DIP 圆角，Win7/8/8.1/10 为直角（与设置窗口一致）。
+- `0xD002` 共享渲染管线失败：预览与普通两条路径共用一条中英文案，附 Win7 KB2670838 安装提示（www.inkeys.top/win7）。
+- Win7dwm 合成时机对齐：新增独立配置键 `Experimental.Inkeys3.Draw3.Win7DwmCompositionAlign`（默认 true，旧配置缺键时取 `Ulw && Dcomp`）；下拉框五档“始终/关闭/仅 UpdateLayeredWindow/仅 Win7dwm/仅 DirectComposition”；`FramePhaseAdjustMs` 中与 DComp 共用 `DcompPhaseAdjustMs`，时钟取 `DwmGetCompositionTimingInfo`；设备性能签名新增可选字段 `win7DwmCompositionAlign`（键后缀 `-walign`）。Win7 实机效果待验证（看 `[Draw3Diag][win7dwm-align]` 日志）。
+- 验证：Debug|ARM64 完整构建、`InkeysHeadlessTests --no-window`、`--draw3-control-fence-test`、`--draw3-device-policy-test` 通过；`i18n.ps1 check` 通过。

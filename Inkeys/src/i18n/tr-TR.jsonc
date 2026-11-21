@@ -1113,6 +1113,7 @@
         "Always": "Her zaman",
         "Off": "Kapalı",
         "UlwOnly": "Yalnızca UpdateLayeredWindow",
+        "Win7dwmOnly": "Yalnızca Win7dwm",
         "DcompOnly": "Yalnızca DirectComposition"
       },
       "WaitableWait":

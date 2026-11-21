@@ -54,6 +54,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool ulwAsyncReadback = false;    // ULW 下异步读回实际开启（未熔断）
 		bool ulwCompositionAlign = false; // 且 DWM 正在合成、对齐开关开启
 		bool dcompCompositionAlign = false; // DComp 主画布启用合成时机对齐
+		bool win7DwmCompositionAlign = false; // Win7dwm 主画布启用合成时机对齐
 	};
 
 	using SetWindowStyleCallback = bool(*)(
@@ -90,6 +91,8 @@ export namespace Inkeys::Drawing::Draw3
 		// 异步读回开启且 DWM 合成时，ULW 提交对齐合成时机；无界面配置键，用于实机开/关对照。
 		bool enableUlwCompositionAlign = true;
 		bool enableDcompCompositionAlign = true;
+		// Win7dwm 主画布按 DWM 合成时序微调帧相位，使帧完成贴近合成截止。
+		bool enableWin7DwmCompositionAlign = true;
 		// 仅隐藏窗口测试：ULW 下仍建辅助 presenter，用无 DComp 的 WARP 环境覆盖 DComp/Win7Dwm 共用的辅助读回生命周期。
 		bool initializeAuxiliaryForUlw = false;
 	};

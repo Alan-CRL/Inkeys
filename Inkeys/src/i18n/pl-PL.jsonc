@@ -1113,6 +1113,7 @@
         "Always": "Zawsze",
         "Off": "Wyłączona",
         "UlwOnly": "Tylko UpdateLayeredWindow",
+        "Win7dwmOnly": "Tylko Win7dwm",
         "DcompOnly": "Tylko DirectComposition"
       },
       "WaitableWait":

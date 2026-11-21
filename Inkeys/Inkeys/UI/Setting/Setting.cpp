@@ -4881,18 +4881,20 @@ SettingSessionCoroutine RunSettingSession()
 						draw3Config.PresentationMode = presentation;
 						QueueConfigWrite();
 					}
-					const bool ulwAlign = draw3Config.UlwCompositionAlign.load();
-					const bool dcompAlign = draw3Config.DcompCompositionAlign.load();
-					// 四档沿用两个后端原有配置，保留已保存的独立偏好。
-					int alignment = ulwAlign ? (dcompAlign ? 0 : 2) : (dcompAlign ? 3 : 1);
+					// 五档对应三个后端各自的配置键；手改出的混合组合不选中任何档，原值保留。
+					int alignment = Inkeys::Draw3CompositionAlignIndex(draw3Config.UlwCompositionAlign.load(),
+						draw3Config.Win7DwmCompositionAlign.load(), draw3Config.DcompCompositionAlign.load());
 					const auto& alignText = renderingText.CompositionAlign;
 					if (Design::ComboRow("##draw3-composition-align", IA(alignText.N).c_str(),
 						nullptr, "\ue7f4", alignment,
-						{ IA(alignText.Always) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix), IA(alignText.Off), IA(alignText.UlwOnly), IA(alignText.DcompOnly) },
+						{ IA(alignText.Always) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix), IA(alignText.Off),
+							IA(alignText.UlwOnly), IA(alignText.Win7dwmOnly), IA(alignText.DcompOnly) },
 						restartRequired.c_str(), true, true))
 					{
-						draw3Config.UlwCompositionAlign = alignment == 0 || alignment == 2;
-						draw3Config.DcompCompositionAlign = alignment == 0 || alignment == 3;
+						const auto choice = Inkeys::Draw3CompositionAlignFromIndex(alignment);
+						draw3Config.UlwCompositionAlign = choice.ulw;
+						draw3Config.Win7DwmCompositionAlign = choice.win7Dwm;
+						draw3Config.DcompCompositionAlign = choice.dcomp;
 						QueueConfigWrite();
 					}
 					if (Design::ToggleRow("##draw3-waitable-wait", IA(I18nKey.SettingsUI.Performance.WaitableWait.N).c_str(),

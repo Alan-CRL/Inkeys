@@ -58,6 +58,31 @@ export namespace Inkeys
 	// 自动：硬件优先、失败回退 WARP；硬件加速：只用硬件、失败不回退；软件加速：直接使用 WARP。
 	enum class Draw3RenderAccelerationPreference { Automatic, Hardware, Software };
 
+	// 合成时机对齐下拉框：始终、关闭、仅 UpdateLayeredWindow、仅 Win7dwm、仅 DirectComposition，
+	// 背后是三个后端各自的配置键（Ulw/Win7Dwm/DcompCompositionAlign）。
+	struct Draw3CompositionAlignChoice
+	{
+		bool ulw = true;
+		bool win7Dwm = true;
+		bool dcomp = true;
+	};
+
+	constexpr int Draw3CompositionAlignIndex(bool ulw, bool win7Dwm, bool dcomp) noexcept
+	{
+		if (ulw && win7Dwm && dcomp) return 0;
+		if (!ulw && !win7Dwm && !dcomp) return 1;
+		if (ulw && !win7Dwm && !dcomp) return 2;
+		if (!ulw && win7Dwm && !dcomp) return 3;
+		if (!ulw && !win7Dwm && dcomp) return 4;
+		// 只有手改配置才会出现其它组合：下拉框不选中任何项，原值保留到用户重新选择。
+		return -1;
+	}
+
+	constexpr Draw3CompositionAlignChoice Draw3CompositionAlignFromIndex(int index) noexcept
+	{
+		return { index == 0 || index == 2, index == 0 || index == 3, index == 0 || index == 4 };
+	}
+
 	enum class ConfigUploadMode
 	{
 		NoUpload,
@@ -602,6 +627,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableWaitableWait, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableUlwAsyncReadback, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, UlwCompositionAlign, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Win7DwmCompositionAlign, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DcompCompositionAlign, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, UnthrottledMouseMoveWhileDrawing, false) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, GpuSchedulingPriority, 1) \

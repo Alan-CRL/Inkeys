@@ -546,7 +546,8 @@ Correct：`PrepareFrameLatency(1000/target_fps, countable)` 在帧首有界等�
 
 - `TransparentPresentationController`：`BeginUlwFrame(frameStartMs, targetFrameMs)`（C1 帧开头探测）、`ServiceUlwBeforeFrameWait()`（帧尾累计脏区拷出）、`CompleteUlwBeforeIdle(textureValid)`（C3 空闲前）、`DiscardUlwAccumulated()`（光栅失败帧）、`UlwFramePhaseAdjustMs(frameStartMs)`（相位微调），均返回 `UlwFrameReport{waitedMs, failed}`；ULW 下 `SwapChain()` 返回空。
 - 纯逻辑头：`Draw3.UlwReadbackPacing.h`（即时/流水自适应：连续 3 帧超预算且 Map 等待 ≥ 帧间隔 25% 进流水；每 500 ms 试一帧即时，≤ 帧间隔 90% 回即时）、`Draw3.CompositionClock.h`（`CompositionClock` 每 250 ms 重读 DWM 时序；`Invalidate()` 同时作废旧周期，DWM 关闭后不再重读时 ULW 节流回到显示器刷新率，`CommitDurationEstimator` 取 EMA 与最近 16 次最大值，`UlwCommitPlanner`、`ClassifyCompositionCadence`）。
-- 配置 `Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback`（默认 true，界面开关）、`Experimental.Inkeys3.Draw3.UlwCompositionAlign`（默认 true，与 DcompCompositionAlign 共用性能页选择项），启动快照经 `HostStartOptions` → `TransparentPresentationOptions`。
+- 配置 `Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback`（默认 true，界面开关）、`Experimental.Inkeys3.Draw3.UlwCompositionAlign`（默认 true，与 Win7DwmCompositionAlign、DcompCompositionAlign 共用性能页选择项），启动快照经 `HostStartOptions` → `TransparentPresentationOptions`。
+- Win7dwm 合成时机对齐（2026-11-21）：`FramePhaseAdjustMs` 中 DComp 与 Win7dwm 共用 `DcompPhaseAdjustMs` 相位算法，仅时钟来源不同——DComp 读 `IDCompositionDevice::GetFrameStatistics`，Win7dwm 读 `DwmGetCompositionTimingInfo(nullptr)`（与 ULW 对齐同源，时钟存于 `DwmBlurBehindPresenter::phaseClock`，随 presenter `Reset()` 清零）；只在主画布输出、`enableWin7DwmCompositionAlign` 开启时生效，诊断行 `[Draw3Diag][win7dwm-align]`，`EffectiveState().win7DwmCompositionAlign` 写入设备性能签名。截止余量沿用 `kCompositionDeadlineMarginMs`，Win7 实机效果待验证。
 
 ### 3. Contracts
 
@@ -686,7 +687,7 @@ Good：关闭产品准入后，合法 Stop 仍到 owner并确认。Base：普通
 
 ### 2. Signatures
 - `Draw3.DevicePerformanceModel.h`：`Dimension`、`ToolDimensionMask(int drawingTool)`、`FrameSample`、`Tally::Add(mask, sample)` 与 `Tally::display`（`DisplayRange::Observe(hz)`）、`Signature`/`NormalizeSignature`、`MergeTally(store, signature, date, now, counters, display)`/`MergeStore`、`MakeFigure`、`BuildReport`、`ClassifyFigure`。纯逻辑，无 Windows 依赖（2026-11-18 起不再计算帧率建议）。
-- `Draw3.DevicePerformanceJson.h`：`SerializeStore` / `ParseStore`（jsoncpp，字符串进出）；`kFileVersion = 4`，计数器为 8 元数组 `[frames, costMs, timedFrames, displayedFrames, intervalMs, missed, computeFrames, computeIntervalMs]`（渲染帧按 DWM 合成周期计数、去掉限制间隔），日桶带 `display: [minHz, maxHz]`，版本 1–3 文件按 schema 不符改名 `.bad`，不兼容；签名项 `dcompCompositionAlign` 为阶段 E 后追加的可选字段，缺键按未对齐读入、不升版本。
+- `Draw3.DevicePerformanceJson.h`：`SerializeStore` / `ParseStore`（jsoncpp，字符串进出）；`kFileVersion = 4`，计数器为 8 元数组 `[frames, costMs, timedFrames, displayedFrames, intervalMs, missed, computeFrames, computeIntervalMs]`（渲染帧按 DWM 合成周期计数、去掉限制间隔），日桶带 `display: [minHz, maxHz]`，版本 1–3 文件按 schema 不符改名 `.bad`，不兼容；签名项 `dcompCompositionAlign`（阶段 E 后）与 `win7DwmCompositionAlign`（2026-11-21，仅 Win7dwm 有意义，键后缀 `-walign`）为追加的可选字段，缺键按未对齐读入、不升版本。
 - `DevicePerformanceLedger`（`Draw3.DevicePerformanceLedger.h/.cpp`）：`Start(path)`、`Stop()`、`SetCurrentSignature`、`MarkBusy()`、`Submit(signature, tally, segmentEpoch)`、`SetRecordingEnabled`、`Clear`、`Snapshot(knownRevision, out)`。
 - `TransparentPresentationController::CommittedPresentCount()`（DComp 成功 Present1 + 主画布/辅助 ULW 成功 UpdateLayeredWindow 次数，单调递增）、`LastCommittedPresentMs()`（最近一次提交完成时刻）、`SampleDisplayTiming(nowMs)`（DWM 合成时序 `CompositionTimingSample`，周期保留小数，约 250 ms 重读一次）、`FrameLatencyWaitReport::pacingWaitMs`；`DevicePerformance::RefreshSlotCounter`。
 - `TransparentPresentationController::EffectiveState()`、`InkRenderer::UsesZhaoxinCompatibleUpload()`：签名只读主画布实际生效状态。

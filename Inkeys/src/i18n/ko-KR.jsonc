@@ -1113,6 +1113,7 @@
         "Always": "항상",
         "Off": "끄기",
         "UlwOnly": "UpdateLayeredWindow만",
+        "Win7dwmOnly": "Win7dwm만",
         "DcompOnly": "DirectComposition만"
       },
       "WaitableWait":

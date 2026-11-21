@@ -235,6 +235,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		std::uint8_t ulwAsyncReadback = kNotApplicable;    // 仅 ULW 有意义
 		std::uint8_t ulwCompositionAlign = kNotApplicable; // 仅 ULW 且异步读回开启时有意义
 		std::uint8_t dcompCompositionAlign = kNotApplicable; // 仅 DComp 有意义
+		std::uint8_t win7DwmCompositionAlign = kNotApplicable; // 仅 Win7dwm 有意义
 		std::uint8_t zhaoxinCompatibility = 0;
 		bool operator==(const Signature&) const = default;
 	};
@@ -249,6 +250,10 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		const bool dcomp = signature.presentation == Presentation::DirectComposition;
 		signature.dcompCompositionAlign = dcomp
 			? (signature.dcompCompositionAlign == kNotApplicable ? 0 : flag(signature.dcompCompositionAlign))
+			: kNotApplicable;
+		// Win7dwm 对齐字段晚于阶段 E 加入：旧 Win7dwm 记录同样按“未对齐”读入。
+		signature.win7DwmCompositionAlign = signature.presentation == Presentation::Win7DwmSequential
+			? (signature.win7DwmCompositionAlign == kNotApplicable ? 0 : flag(signature.win7DwmCompositionAlign))
 			: kNotApplicable;
 		if (signature.presentation == Presentation::DirectComposition)
 		{
@@ -304,6 +309,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 		if (signature.ulwAsyncReadback != kNotApplicable) key += "-async" + std::to_string(signature.ulwAsyncReadback);
 		if (signature.ulwCompositionAlign != kNotApplicable) key += "-align" + std::to_string(signature.ulwCompositionAlign);
 		if (signature.dcompCompositionAlign != kNotApplicable) key += "-dalign" + std::to_string(signature.dcompCompositionAlign);
+		if (signature.win7DwmCompositionAlign != kNotApplicable) key += "-walign" + std::to_string(signature.win7DwmCompositionAlign);
 		key += "-zx" + std::to_string(signature.zhaoxinCompatibility);
 		return key;
 	}

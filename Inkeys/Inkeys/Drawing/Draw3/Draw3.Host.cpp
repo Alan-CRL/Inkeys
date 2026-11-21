@@ -2296,6 +2296,7 @@ namespace Inkeys::Drawing::Draw3
 						presentationOptions.enableUlwAsyncReadback = startOptions.enableUlwAsyncReadback;
 						presentationOptions.enableUlwCompositionAlign = startOptions.enableUlwCompositionAlign;
 						presentationOptions.enableDcompCompositionAlign = startOptions.enableDcompCompositionAlign;
+						presentationOptions.enableWin7DwmCompositionAlign = startOptions.enableWin7DwmCompositionAlign;
 						startupStage = "TransparentPresentationController::Initialize";
 						graphicsInitialized = presentation.Initialize(windowHandle,
 							presentationWindowHandle, graphics, renderer,
@@ -2493,7 +2494,7 @@ namespace Inkeys::Drawing::Draw3
 					}
 				}
 				if (initialized) UpdateCanvasInformation(runtimeMetrics.runFailed.load(std::memory_order_acquire)
-					? "绘制异常，已停止（以下为本代最后记录）" : "已停止（以下为本代最后记录）");
+					? "绘制异常，已停止" : "已停止");
 				// Run 正常、异常或 stop 返回时都补齐活动结束，再释放 controller。
 				EndDrawingActivity();
 				CaptureRuntimeMetricsMetadata(true);
@@ -3422,7 +3423,7 @@ namespace Inkeys::Drawing::Draw3
 			const std::string fallbackInput = "Win32Mouse / RTS failed\n";
 			Host::Impl::ObserveCanvasGraphics(&state, fallbackGraphics);
 			state.UpdateCanvasInformation("就绪", nullptr, &fallbackInput);
-			state.UpdateCanvasInformation("已停止（以下为本代最后记录）");
+			state.UpdateCanvasInformation("已停止");
 			check(host.CanvasInformation().find(fallbackGraphics + fallbackInput) != std::string::npos &&
 				host.CanvasInformation().find("已停止") != std::string::npos,
 				"stopped canvas labels retained fallback facts as last generation records");

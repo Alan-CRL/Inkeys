@@ -140,6 +140,7 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 			item["ulwAsyncReadback"] = Detail::FlagToJson(signature.ulwAsyncReadback);
 			item["ulwCompositionAlign"] = Detail::FlagToJson(signature.ulwCompositionAlign);
 			item["dcompCompositionAlign"] = Detail::FlagToJson(signature.dcompCompositionAlign);
+			item["win7DwmCompositionAlign"] = Detail::FlagToJson(signature.win7DwmCompositionAlign);
 			item["zhaoxin"] = static_cast<int>(signature.zhaoxinCompatibility);
 			item["lastUsed"] = static_cast<Json::Int64>(record.lastUsedUnixSeconds);
 			Json::Value days(Json::arrayValue);
@@ -201,7 +202,9 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 				!Detail::FlagFromJson(item["ulwCompositionAlign"], signature.ulwCompositionAlign) ||
 				// 阶段 E 新增字段：旧账本缺键时保持“不适用”，由 NormalizeSignature 归入未对齐，不丢弃记录。
 				(item.isMember("dcompCompositionAlign") &&
-					!Detail::FlagFromJson(item["dcompCompositionAlign"], signature.dcompCompositionAlign)))
+					!Detail::FlagFromJson(item["dcompCompositionAlign"], signature.dcompCompositionAlign)) ||
+				(item.isMember("win7DwmCompositionAlign") &&
+					!Detail::FlagFromJson(item["win7DwmCompositionAlign"], signature.win7DwmCompositionAlign)))
 			{
 				++dropped;
 				continue;

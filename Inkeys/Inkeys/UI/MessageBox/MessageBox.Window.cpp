@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -103,7 +103,7 @@ namespace Inkeys::UI::MessageBox::Detail
 			bool initialized_ = false;
 		};
 
-		bool IsWindows8OrLater() noexcept
+		bool QueryOsVersion(RTL_OSVERSIONINFOW& version) noexcept
 		{
 			using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
 			const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
@@ -111,11 +111,30 @@ namespace Inkeys::UI::MessageBox::Detail
 				? reinterpret_cast<RtlGetVersionFn>(GetProcAddress(ntdll, "RtlGetVersion"))
 				: nullptr;
 			if (!rtlGetVersion) return false;
-			RTL_OSVERSIONINFOW version{};
+			version = {};
 			version.dwOSVersionInfoSize = sizeof(version);
-			if (rtlGetVersion(&version) != 0) return false;
+			return rtlGetVersion(&version) == 0;
+		}
+
+		bool IsWindows8OrLater() noexcept
+		{
+			RTL_OSVERSIONINFOW version{};
+			if (!QueryOsVersion(version)) return false;
 			return version.dwMajorVersion > 6
 				|| version.dwMajorVersion == 6 && version.dwMinorVersion >= 2;
+		}
+
+		// 与设置窗口一致：只有 Win11（10.0 build ≥ 22000）由 DWM 把窗口裁成圆角；
+		// Win7/8/8.1/10 的窗口是直角，外描边也必须画成直角，否则四角会露出圆弧外的底色。
+		bool UsesRoundedWindowCorners() noexcept
+		{
+			static const bool rounded = []() noexcept
+			{
+				RTL_OSVERSIONINFOW version{};
+				return QueryOsVersion(version) && (version.dwMajorVersion > 10
+					|| version.dwMajorVersion == 10 && version.dwBuildNumber >= 22000);
+			}();
+			return rounded;
 		}
 
 		BOOL CALLBACK InitializeLegacyGdiplus(PINIT_ONCE, PVOID, PVOID*) noexcept
@@ -1207,8 +1226,8 @@ namespace Inkeys::UI::MessageBox::Detail
 					static_cast<REAL>(layout.width) - borderWidth,
 					static_cast<REAL>(layout.height) - borderWidth);
 				GraphicsPath outerPath;
-				AddRoundedRectangle(outerPath, outer,
-					static_cast<REAL>(ScaleDipValue(8, layout.dpi)));
+				AddRoundedRectangle(outerPath, outer, UsesRoundedWindowCorners()
+					? static_cast<REAL>(ScaleDipValue(8, layout.dpi)) : 0.0f);
 				// 激活强调由客户区自行绘制，避免重新启用 Win32 原生标题栏。
 				const Color borderColor = windowActive
 					? Color(153, 96, 205, 255)

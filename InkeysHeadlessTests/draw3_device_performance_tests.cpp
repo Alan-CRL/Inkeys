@@ -275,6 +275,23 @@ int RunDraw3DevicePerformanceTests()
 		ulw.dcompCompositionAlign = 1;
 		expect(NormalizeSignature(ulw).dcompCompositionAlign == kNotApplicable, "dcomp alignment irrelevant under ulw");
 		ulw.dcompCompositionAlign = kNotApplicable;
+		// Win7dwm 合成对齐开关只拆分 Win7dwm 签名；缺字段的旧记录归入未对齐，对 DComp/ULW 不适用。
+		Signature win7Dwm;
+		win7Dwm.frameRate = 60;
+		win7Dwm.device = Device::Hardware;
+		win7Dwm.presentation = Presentation::Win7DwmSequential;
+		expect(NormalizeSignature(win7Dwm).win7DwmCompositionAlign == 0 &&
+			SignatureKey(win7Dwm) == "fps60-hardware-win7dwm-sequential-walign0-zx0", "legacy win7dwm reads as unaligned");
+		Signature win7DwmAligned = win7Dwm;
+		win7DwmAligned.win7DwmCompositionAlign = 1;
+		expect(!(NormalizeSignature(win7DwmAligned) == NormalizeSignature(win7Dwm)) &&
+			SignatureKey(win7DwmAligned) == "fps60-hardware-win7dwm-sequential-walign1-zx0", "win7dwm alignment splits win7dwm signature");
+		Signature dcompWithWin7Field = DCompSignature();
+		dcompWithWin7Field.win7DwmCompositionAlign = 1;
+		ulw.win7DwmCompositionAlign = 1;
+		expect(NormalizeSignature(dcompWithWin7Field).win7DwmCompositionAlign == kNotApplicable &&
+			NormalizeSignature(ulw).win7DwmCompositionAlign == kNotApplicable, "win7dwm alignment irrelevant under dcomp and ulw");
+		ulw.win7DwmCompositionAlign = kNotApplicable;
 	}
 
 	// 日桶：同日合并、第 8 个使用日淘汰最早、时间回拨插入旧日期。
@@ -401,7 +418,7 @@ int RunDraw3DevicePerformanceTests()
 			MakeCounters(DimensionBit(Dimension::Writing), 12, 2.0, 8.33));
 		expect(store.records.size() == 3, "Win7Dwm occupies a separate bucket");
 		const std::string text = SerializeStore(store);
-		expect(text.find("fps120-hardware-win7dwm-sequential-zx0") != std::string::npos,
+		expect(text.find("fps120-hardware-win7dwm-sequential-walign0-zx0") != std::string::npos,
 			"Win7Dwm key ignores irrelevant backend switches");
 		Store parsed;
 		std::size_t dropped = 99;
@@ -434,6 +451,21 @@ int RunDraw3DevicePerformanceTests()
 			expect(ParseStore(SerializeStore(alignedStore), alignedParsed) == ParseResult::Ok &&
 				alignedParsed.records.size() == 1 && alignedParsed.records[0].signature.dcompCompositionAlign == 1,
 				"dcomp alignment survives json roundtrip");
+		}
+		// Win7dwm 合成对齐开启的记录经 JSON 往返仍保留为 1。
+		{
+			Store alignedWin7DwmStore;
+			Signature alignedWin7DwmSignature;
+			alignedWin7DwmSignature.frameRate = 60;
+			alignedWin7DwmSignature.device = Device::Hardware;
+			alignedWin7DwmSignature.presentation = Presentation::Win7DwmSequential;
+			alignedWin7DwmSignature.win7DwmCompositionAlign = 1;
+			MergeTally(alignedWin7DwmStore, alignedWin7DwmSignature, MakeDate(2026, 11, 21), 1763700000,
+				MakeCounters(DimensionBit(Dimension::Writing), 12, 2.0, 16.67));
+			Store alignedWin7DwmParsed;
+			expect(ParseStore(SerializeStore(alignedWin7DwmStore), alignedWin7DwmParsed) == ParseResult::Ok &&
+				alignedWin7DwmParsed.records.size() == 1 && alignedWin7DwmParsed.records[0].signature.win7DwmCompositionAlign == 1,
+				"win7dwm alignment survives json roundtrip");
 		}
 
 		Store untouched = store;

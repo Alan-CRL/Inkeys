@@ -1113,6 +1113,7 @@
         "Always": "Selalu",
         "Off": "Nonaktif",
         "UlwOnly": "Hanya UpdateLayeredWindow",
+        "Win7dwmOnly": "Hanya Win7dwm",
         "DcompOnly": "Hanya DirectComposition"
       },
       "WaitableWait":

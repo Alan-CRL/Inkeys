@@ -1113,6 +1113,7 @@
         "Always": "一律",
         "Off": "關閉",
         "UlwOnly": "僅 UpdateLayeredWindow",
+        "Win7dwmOnly": "僅 Win7dwm",
         "DcompOnly": "僅 DirectComposition"
       },
       "WaitableWait":

@@ -1116,6 +1116,7 @@ inline constexpr struct I18nKeyRoot
                 const char* Always = "SettingsUI/Performance/CompositionAlign/Always";
                 const char* Off = "SettingsUI/Performance/CompositionAlign/Off";
                 const char* UlwOnly = "SettingsUI/Performance/CompositionAlign/UlwOnly";
+                const char* Win7dwmOnly = "SettingsUI/Performance/CompositionAlign/Win7dwmOnly";
                 const char* DcompOnly = "SettingsUI/Performance/CompositionAlign/DcompOnly";
             } CompositionAlign{};
             struct Node__SettingsUI__Performance__WaitableWait
