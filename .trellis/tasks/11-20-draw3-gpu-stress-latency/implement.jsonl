@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "waitable 帧延迟等待、熔断与呈现链路约定（R5/R6 修改对象）"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "性能页设置项、配置与实机验收约定（R1–R4 设置项）"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "新增配置键与 i18n 文案的流程"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "Win7 动态加载与 x86/x64/ARM64 构建约束（调度 API、诊断工具）"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 代码风格与模块约定（新模块 Helper.ProcessScheduling）"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "日志模块与失败降级约定"}
+{"file": ".trellis/tasks/11-20-draw3-gpu-stress-latency/research/gpu-stress-latency-experiments.md", "reason": "根因、档位映射、OBS 对照与整屏操作审计的实测依据"}

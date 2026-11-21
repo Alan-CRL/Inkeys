@@ -174,7 +174,7 @@ Correct：绘制与复制复用同一局部完整字符串；只在user点击标
 ### 3. Contracts
 - `D3DKMTSet/GetProcessSchedulingPriorityClass`（gdi32）与 `SetProcessInformation`（kernel32，Win8+ 才导出）全部 `GetProcAddress` 动态获取；**禁止**静态调用（Win7 无法启动）。失败不影响启动与绘制。
 - 每次实际调用输出一行 `Log::Module::Draw3` Info：`进程调度 tier class disableThrottling priorityApi status readBack throttlingApi throttlingApplied throttlingError os`。
-- Win11 实测映射（WPR `ChangePriority`）：节流时 NORMAL/HIGH 都是 1、REALTIME 23；关闭节流后 NORMAL/HIGH 都是 16、REALTIME 23。即 Win11 上“均衡”的收益来自关闭电源节流；HIGH 与 NORMAL 在 Win7/Win10 上是否有别由诊断包确认。
+- Win11 实测映射（WPR `ChangePriority`）：节流时 NORMAL/HIGH 都是 1、REALTIME 23；关闭节流后 NORMAL/HIGH 都是 16、REALTIME 23。即 Win11 上“均衡”的收益来自关闭电源节流。2026-11-21 实机回收：Win10（HD 4600）上 HIGH 与 NORMAL 延迟无差别；Intel 核显即使被降到 1 也不会饿死，GPU 压力下延迟约为压力程序单包时长 × 1.6（抢占粒度限制），档位与节流基本无影响；饥饿型降级主要见于骁龙（Adreno）。
 - 实测（Snapdragon X，GPU 压力工具占前台，waitable 链）：默认（均衡 + 关闭节流）p50 44 ms / max 90 ms；标准或均衡 + 节流默认：墨迹 1.5 s 内不上屏；高性能 60–78 ms。OBS 录屏 + 压力：默认掉帧 2.5%（改动前 4.4%），高性能 23.5%——高性能不作默认，说明提示录屏慎用。
 
 ### 6. Tests Required
