@@ -1064,6 +1064,14 @@
         "Hardware": "Tăng tốc phần cứng",
         "Software": "Kết xuất phần mềm"
       },
+      "AdapterPreference":
+      {
+        "N": "Ưu tiên GPU",
+        "E": "Card đồ họa mà trang vẽ ưu tiên khi dùng tăng tốc phần cứng. Nếu loại đã chọn không khả dụng, các card khác sẽ được thử lần lượt.",
+        "Automatic": "Tự động",
+        "Integrated": "Ưu tiên đồ họa tích hợp",
+        "Discrete": "Ưu tiên đồ họa rời"
+      },
       "GpuSchedulingPriority":
       {
         "N": "Mức ưu tiên lập lịch GPU",

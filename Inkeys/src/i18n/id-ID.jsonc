@@ -1064,6 +1064,14 @@
         "Hardware": "Akselerasi perangkat keras",
         "Software": "Perenderan perangkat lunak"
       },
+      "AdapterPreference":
+      {
+        "N": "Preferensi GPU",
+        "E": "Kartu grafis yang diutamakan kanvas saat akselerasi perangkat keras digunakan. Jika jenis yang dipilih tidak tersedia, kartu lain dicoba secara berurutan.",
+        "Automatic": "Otomatis",
+        "Integrated": "Utamakan grafis terintegrasi",
+        "Discrete": "Utamakan grafis diskret"
+      },
       "GpuSchedulingPriority":
       {
         "N": "Prioritas penjadwalan GPU",

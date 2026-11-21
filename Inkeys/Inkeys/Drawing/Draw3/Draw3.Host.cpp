@@ -2252,7 +2252,8 @@ namespace Inkeys::Drawing::Draw3
 					const HWND presentationWindowHandle =
 						attachedPresentationWindow.load(std::memory_order_acquire);
 					graphicsInitialized = windowHandle && InitializeGraphicsDevice(graphics,
-						startOptions.enableHardwareAcceleration, startOptions.allowWarpFallback);
+						startOptions.enableHardwareAcceleration, startOptions.allowWarpFallback,
+						static_cast<GraphicsAdapterPreference>(startOptions.adapterPreference));
 					DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=graphics result="
 						<< (graphicsInitialized ? "ready" : "failed")
 						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(windowHandle)
@@ -2291,6 +2292,8 @@ namespace Inkeys::Drawing::Draw3
 						presentationOptions.failedCleanup = failedCleanup;
 						presentationOptions.enableHardwareAcceleration = startOptions.enableHardwareAcceleration;
 						presentationOptions.allowWarpFallback = startOptions.allowWarpFallback;
+						presentationOptions.adapterPreference =
+							static_cast<GraphicsAdapterPreference>(startOptions.adapterPreference);
 						presentationOptions.enableZhaoxinCompatibility = startOptions.enableZhaoxinCompatibility;
 						presentationOptions.enableWaitableWait = startOptions.enableWaitableWait;
 						presentationOptions.enableUlwAsyncReadback = startOptions.enableUlwAsyncReadback;

@@ -1064,6 +1064,14 @@
         "Hardware": "Donanım hızlandırma",
         "Software": "Yazılımla işleme"
       },
+      "AdapterPreference":
+      {
+        "N": "GPU tercihi",
+        "E": "Donanım hızlandırma kullanılırken tuvalin tercih ettiği ekran kartı. Seçilen tür kullanılamazsa diğer kartlar sırayla denenir.",
+        "Automatic": "Otomatik",
+        "Integrated": "Tümleşik grafiği tercih et",
+        "Discrete": "Harici grafiği tercih et"
+      },
       "GpuSchedulingPriority":
       {
         "N": "GPU zamanlama önceliği",

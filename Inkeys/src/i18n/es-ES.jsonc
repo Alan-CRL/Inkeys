@@ -1064,6 +1064,14 @@
         "Hardware": "Aceleración por hardware",
         "Software": "Renderizado por software"
       },
+      "AdapterPreference":
+      {
+        "N": "Preferencia de GPU",
+        "E": "Tarjeta gráfica que prefiere el lienzo al usar aceleración por hardware. Si el tipo elegido no está disponible, se prueban las demás por orden.",
+        "Automatic": "Automático",
+        "Integrated": "Preferir gráficos integrados",
+        "Discrete": "Preferir gráficos dedicados"
+      },
       "GpuSchedulingPriority":
       {
         "N": "Prioridad de programación de la GPU",

@@ -1064,6 +1064,14 @@
         "Hardware": "Przyspieszanie sprzętowe",
         "Software": "Renderowanie programowe"
       },
+      "AdapterPreference":
+      {
+        "N": "Preferowany GPU",
+        "E": "Karta graficzna preferowana przez płótno przy przyspieszaniu sprzętowym. Jeśli wybrany typ jest niedostępny, kolejno próbowane są inne karty.",
+        "Automatic": "Automatyczny",
+        "Integrated": "Preferuj zintegrowaną grafikę",
+        "Discrete": "Preferuj dedykowaną grafikę"
+      },
       "GpuSchedulingPriority":
       {
         "N": "Priorytet planowania GPU",

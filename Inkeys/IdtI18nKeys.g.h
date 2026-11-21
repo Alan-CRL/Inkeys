@@ -1067,6 +1067,14 @@ inline constexpr struct I18nKeyRoot
                 const char* Hardware = "SettingsUI/Performance/RenderAcceleration/Hardware";
                 const char* Software = "SettingsUI/Performance/RenderAcceleration/Software";
             } RenderAcceleration{};
+            struct Node__SettingsUI__Performance__AdapterPreference
+            {
+                const char* N = "SettingsUI/Performance/AdapterPreference/N";
+                const char* E = "SettingsUI/Performance/AdapterPreference/E";
+                const char* Automatic = "SettingsUI/Performance/AdapterPreference/Automatic";
+                const char* Integrated = "SettingsUI/Performance/AdapterPreference/Integrated";
+                const char* Discrete = "SettingsUI/Performance/AdapterPreference/Discrete";
+            } AdapterPreference{};
             struct Node__SettingsUI__Performance__GpuSchedulingPriority
             {
                 const char* N = "SettingsUI/Performance/GpuSchedulingPriority/N";

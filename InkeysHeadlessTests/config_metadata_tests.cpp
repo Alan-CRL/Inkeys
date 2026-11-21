@@ -851,6 +851,24 @@ int RunConfigMetadataTests()
 			"explicit render acceleration takes priority over the legacy switch");
 		fields.removeMember("RenderAcceleration");
 		fields.removeMember("EnableHardwareAcceleration");
+		// 适配器偏好：缺键为自动，只接受精确整数 0..2，非法值回到自动。
+		writeModeDocument(document);
+		check(presentationConfig.ReadAll() && draw3.AdapterPreference.load() == 0, "missing adapter preference defaults to automatic");
+		for (const int preference : { 1, 2 })
+		{
+			fields["AdapterPreference"] = preference;
+			writeModeDocument(document);
+			check(presentationConfig.ReadAll() && draw3.AdapterPreference.load() == preference,
+				"adapter preference reads integrated-first and discrete-first");
+		}
+		for (const auto& invalid : { Json::Value(-1), Json::Value(3), Json::Value(true), Json::Value(1.0) })
+		{
+			fields["AdapterPreference"] = invalid;
+			writeModeDocument(document);
+			check(presentationConfig.ReadAll() && draw3.AdapterPreference.load() == 0,
+				"invalid adapter preference falls back to automatic");
+		}
+		fields.removeMember("AdapterPreference");
 		fields["PresentationMode"] = 2;
 		fields["SwapChainMode"] = 2;
 		writeModeDocument(document);

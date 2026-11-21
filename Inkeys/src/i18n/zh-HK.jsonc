@@ -1064,6 +1064,14 @@
         "Hardware": "硬件加速",
         "Software": "軟件加速"
       },
+      "AdapterPreference":
+      {
+        "N": "GPU 偏好",
+        "E": "使用硬件加速時畫布優先使用的顯示卡，所選類型不可用時會依次嘗試其他顯示卡。",
+        "Automatic": "自動",
+        "Integrated": "優先內置顯示卡",
+        "Discrete": "優先獨立顯示卡"
+      },
       "GpuSchedulingPriority":
       {
         "N": "GPU 排程優先次序",

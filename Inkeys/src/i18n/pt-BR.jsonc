@@ -1064,6 +1064,14 @@
         "Hardware": "Aceleração por hardware",
         "Software": "Renderização por software"
       },
+      "AdapterPreference":
+      {
+        "N": "Preferência de GPU",
+        "E": "Placa de vídeo preferida pela tela ao usar aceleração por hardware. Se o tipo escolhido não estiver disponível, as outras placas serão tentadas em sequência.",
+        "Automatic": "Automático",
+        "Integrated": "Preferir gráficos integrados",
+        "Discrete": "Preferir gráficos dedicados"
+      },
       "GpuSchedulingPriority":
       {
         "N": "Prioridade de agendamento da GPU",

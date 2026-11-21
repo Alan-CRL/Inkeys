@@ -1064,6 +1064,14 @@
         "Hardware": "硬件加速",
         "Software": "软件加速"
       },
+      "AdapterPreference":
+      {
+        "N": "GPU 偏好",
+        "E": "使用硬件加速时画布优先使用的显卡，所选类型不可用时会依次尝试其他显卡。",
+        "Automatic": "自动",
+        "Integrated": "优先核心显卡",
+        "Discrete": "优先独立显卡"
+      },
       "GpuSchedulingPriority":
       {
         "N": "GPU 调度优先级",

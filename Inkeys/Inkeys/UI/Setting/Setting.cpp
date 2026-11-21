@@ -4794,6 +4794,20 @@ SettingSessionCoroutine RunSettingSession()
 						draw3Config.RenderAcceleration = acceleration;
 						QueueConfigWrite();
 					}
+					// 适配器偏好只作用于硬件尝试顺序（软件加速档不读取）；按性能页约定不置灰。
+					{
+						const auto& adapterText = renderingText.AdapterPreference;
+						int adapterPreference = draw3Config.AdapterPreference.load();
+						if (Design::ComboRow("##draw3-adapter-preference", IA(adapterText.N).c_str(),
+							IA(adapterText.E).c_str(), "\ue7f4", adapterPreference,
+							{ IA(adapterText.Automatic) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+								IA(adapterText.Integrated), IA(adapterText.Discrete) },
+							restartRequired.c_str()))
+						{
+							draw3Config.AdapterPreference = adapterPreference;
+							QueueConfigWrite();
+						}
+					}
 					// GPU 调度档位与电源节流即时生效：写入配置后立即应用到本进程，无需重启。
 					{
 						const auto applyProcessScheduling = [&draw3Config]()

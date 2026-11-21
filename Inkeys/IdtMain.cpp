@@ -3969,6 +3969,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			// 自动：硬件优先、失败回退 WARP；硬件加速：失败不回退；软件加速：直接 WARP。
 			draw3StartOptions.enableHardwareAcceleration = acceleration != AccelerationPreference::Software;
 			draw3StartOptions.allowWarpFallback = acceleration != AccelerationPreference::Hardware;
+			// 适配器偏好只影响硬件尝试顺序；软件加速档直接 WARP，不读取它。
+			draw3StartOptions.adapterPreference = static_cast<std::uint8_t>(
+				configOnce.Experimental.Inkeys3.Draw3.AdapterPreference.load());
 		}
 		draw3StartOptions.enableZhaoxinCompatibility =
 			configOnce.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;

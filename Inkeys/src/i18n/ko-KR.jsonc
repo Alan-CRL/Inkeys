@@ -1064,6 +1064,14 @@
         "Hardware": "하드웨어 가속",
         "Software": "소프트웨어 렌더링"
       },
+      "AdapterPreference":
+      {
+        "N": "GPU 우선순위",
+        "E": "하드웨어 가속 사용 시 캔버스가 우선 사용할 그래픽 어댑터입니다. 선택한 종류를 사용할 수 없으면 다른 어댑터를 차례로 시도합니다.",
+        "Automatic": "자동",
+        "Integrated": "내장 그래픽 우선",
+        "Discrete": "외장 그래픽 우선"
+      },
       "GpuSchedulingPriority":
       {
         "N": "GPU 스케줄링 우선순위",

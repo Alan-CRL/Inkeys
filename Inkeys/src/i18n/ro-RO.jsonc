@@ -1064,6 +1064,14 @@
         "Hardware": "Accelerare hardware",
         "Software": "Randare software"
       },
+      "AdapterPreference":
+      {
+        "N": "Preferință GPU",
+        "E": "Placa grafică preferată de pânză când se folosește accelerarea hardware. Dacă tipul ales nu este disponibil, se încearcă pe rând celelalte plăci.",
+        "Automatic": "Automat",
+        "Integrated": "Preferă grafica integrată",
+        "Discrete": "Preferă grafica dedicată"
+      },
       "GpuSchedulingPriority":
       {
         "N": "Prioritate de planificare GPU",

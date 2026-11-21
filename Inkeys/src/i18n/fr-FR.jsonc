@@ -1064,6 +1064,14 @@
         "Hardware": "Accélération matérielle",
         "Software": "Rendu logiciel"
       },
+      "AdapterPreference":
+      {
+        "N": "Préférence GPU",
+        "E": "Carte graphique privilégiée par le canevas lorsque l’accélération matérielle est utilisée. Si le type choisi n’est pas disponible, les autres cartes sont essayées tour à tour.",
+        "Automatic": "Automatique",
+        "Integrated": "Privilégier la carte graphique intégrée",
+        "Discrete": "Privilégier la carte graphique dédiée"
+      },
       "GpuSchedulingPriority":
       {
         "N": "Priorité de planification GPU",

@@ -285,6 +285,8 @@ namespace Inkeys::Drawing::Draw3
 		bool enableHardwareAcceleration = true;
 		// 硬件设备创建失败时是否回退 WARP；“硬件加速”档为 false。
 		bool allowWarpFallback = true;
+		// 硬件加速可用时的适配器偏好：0 自动 / 1 优先核显 / 2 优先独显（GraphicsAdapterPreference）。
+		std::uint8_t adapterPreference = 0;
 		bool enableZhaoxinCompatibility = true;
 		// DComp waitable 交换链是否在帧开头等待帧延迟句柄；关闭时保留标志但不等待。
 		bool enableWaitableWait = true;

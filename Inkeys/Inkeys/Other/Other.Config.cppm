@@ -57,6 +57,8 @@ export namespace Inkeys
 	enum class Draw3InputPreference { Automatic, RealTimeStylus, Pointer, MouseCompatibility };
 	// 自动：硬件优先、失败回退 WARP；硬件加速：只用硬件、失败不回退；软件加速：直接使用 WARP。
 	enum class Draw3RenderAccelerationPreference { Automatic, Hardware, Software };
+	// 硬件加速可用时的适配器偏好：自动（主显示器适配器优先，再按枚举顺序）、优先核显、优先独显。
+	enum class Draw3AdapterPreference { Automatic, Integrated, Discrete };
 
 	// 合成时机对齐下拉框：始终、关闭、仅 UpdateLayeredWindow、仅 Win7dwm、仅 DirectComposition，
 	// 背后是三个后端各自的配置键（Ulw/Win7Dwm/DcompCompositionAlign）。
@@ -623,6 +625,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, PresentationMode, static_cast<int>(Draw3PresentationPreference::Automatic)) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, InputMode, static_cast<int>(Draw3InputPreference::Automatic)) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, RenderAcceleration, static_cast<int>(Draw3RenderAccelerationPreference::Automatic)) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, AdapterPreference, static_cast<int>(Draw3AdapterPreference::Automatic)) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableZhaoxinCompatibility, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableWaitableWait, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableUlwAsyncReadback, true) \

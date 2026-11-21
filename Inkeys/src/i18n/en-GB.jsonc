@@ -1064,6 +1064,14 @@
         "Hardware": "Hardware acceleration",
         "Software": "Software rendering"
       },
+      "AdapterPreference":
+      {
+        "N": "GPU preference",
+        "E": "The graphics adapter the canvas prefers when hardware acceleration is used. If the chosen type is unavailable, other adapters are tried in turn.",
+        "Automatic": "Automatic",
+        "Integrated": "Prefer integrated graphics",
+        "Discrete": "Prefer discrete graphics"
+      },
       "GpuSchedulingPriority":
       {
         "N": "GPU scheduling priority",
