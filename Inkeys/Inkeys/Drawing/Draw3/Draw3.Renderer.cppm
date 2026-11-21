@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <d3d11.h>
+#include <d3d11_1.h>
 #include <DirectXMath.h>
 #include <dxgi1_2.h>
 #include <dxgi1_4.h>
@@ -27,6 +28,8 @@ import Inkeys.Drawing.Draw3.pen_cursor;
 export namespace Inkeys::Drawing::Draw3
 {
 	inline const DirectX::XMFLOAT4 kTransparentLayerClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+	// L0 局部清除在声明范围外再扩的像素数：覆盖通用形状合成矩形比几何包络多出的 1 像素及取整误差。
+	inline constexpr LONG kOperatorContentClearMargin = 2;
 	inline constexpr float kLaserSolidDiameterAt96Dpi = 5.0f;
 	inline constexpr float kLaserCoreDiameterRatio = 1.0f / 3.0f;
 	inline constexpr float kLaserDiffuseExtentAt96Dpi = 5.0f;
@@ -383,8 +386,11 @@ export namespace Inkeys::Drawing::Draw3
 		void SetScreenSize(float width, float height);
 		// 设置当前输出合并目标。
 		void SetOMTarget(ID3D11RenderTargetView* renderTargetView);
-		// 同时绑定操作层的 Add/Retain 两个输出目标。
+		// 同时绑定操作层的 Add/Retain 两个输出目标。绑定 L0 而不声明范围时，视为写入范围未知（下一次局部清除退回整屏）。
 		void SetOperatorTarget(const OperatorLayerResources& layer);
+		// 同上，并声明本次绑定期间写入的像素范围（可超出画布，清除时裁剪；空矩形表示不写）。仅 L0 记账。
+		// 范围须覆盖线宽、抗锯齿、笔尖锥形与预测段；局部清除另外外扩 kOperatorContentClearMargin。
+		void SetOperatorTarget(const OperatorLayerResources& layer, const RECT& writeBounds);
 		// 绑定单张 Laser coverage RTV。
 		void SetLaserCoverageTarget(const LaserCoverageResources& layer);
 		// 绑定按需创建的单 contact Laser live coverage RTV。
@@ -393,6 +399,9 @@ export namespace Inkeys::Drawing::Draw3
 		void ClearRTV(ID3D11RenderTargetView* renderTargetView, DirectX::XMFLOAT4 color);
 		// 将操作层恢复为不改变下层的单位操作。
 		void ClearOperatorLayer(const OperatorLayerResources& layer);
+		// L0：只把自上次清除以来声明过的写入范围恢复为单位操作；没有写入时不清除；存在未声明写入、
+		// 没有 ID3D11DeviceContext1 或范围超过画布一半时退回整屏清除。其他层等同 ClearOperatorLayer。
+		void ClearOperatorLayerContent(const OperatorLayerResources& layer);
 		void ClearLaserCoverage(const LaserCoverageResources& layer);
 		void ClearAllLaserCoverage();
 		// 创建依赖窗口尺寸的 backbuffer 和三层画布资源。
@@ -418,6 +427,15 @@ export namespace Inkeys::Drawing::Draw3
 		Microsoft::WRL::ComPtr<ID3D11Buffer> shapeCB_;
 		Microsoft::WRL::ComPtr<ID3D11BlendState> shapeOrderedBlend_;
 		OperatorLayerResources shapeMaterialLayer_, shapeCompositeLayer_;
+		// L0 内容记账（不变量：bounds 之外处处为 Add=0、Retain=1）。untracked：有过未声明范围的写入或纹理内容未知。
+		struct OperatorContentTracking
+		{
+			RECT bounds = {};
+			bool untracked = true;
+		};
+		OperatorContentTracking l0Content_;
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext1> context1_; // Win7 未装平台更新时为空，局部清除退回整屏
+		void NoteOperatorContent(const OperatorLayerResources& layer, const RECT* writeBounds) noexcept;
 		struct ShapeRenderCacheEntry
 		{
 			::draw3::shapes::ObjectId id;

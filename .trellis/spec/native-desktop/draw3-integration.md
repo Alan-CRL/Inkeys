@@ -732,3 +732,37 @@ Good：关闭产品准入后，合法 Stop 仍到 owner并确认。Base：普通
 
 ### 7. Wrong vs Correct
 错误：签名变化时在帧尾直接 `Submit` 旧段。正确：拷入第二个槽，空闲时移交。
+
+## L0 局部清除（2026-11-20 阶段 A，R7）
+
+### 1. Scope / Trigger
+书写每帧 `ShouldRebuildSharedL0` 分支对共享 L0（Add BGRA8 + Retain R16F，整屏）的清除。原先每帧两次整屏 `ClearRenderTargetView`（2880×1920 约 31.6 MiB/帧）。抬笔、重建、恢复、形状等其余 `ClearOperatorLayer(L0)` 调用点本阶段不变（阶段 B）。
+
+### 2. Signatures
+- `InkRenderer::SetOperatorTarget(layer, const RECT& writeBounds)`：绑定并声明本次绑定期间写入的像素范围（画布像素，可超出画布，空矩形表示不写）。仅 L0 记账。
+- `InkRenderer::SetOperatorTarget(layer)`：对 L0 视为“写入范围未知”。
+- `InkRenderer::ClearOperatorLayerContent(layer)`；常量 `kOperatorContentClearMargin = 2`。
+
+### 3. Contracts
+- **不变量**：L0 在记账范围 `l0Content_.bounds` 之外处处为 Add=0、Retain=1。
+- **先声明、后绑定**：记账在绑定时完成（先于绘制），批次上传中途失败只会多清。三个写入点必须声明：`DrawL0LiveComposite`（荧光笔取 `l0HighlighterGeometry.bounds`；普通笔取 `currentL0Rect`，单点圆点右界再加 `ceil(max(0.25, 0.05r)) + 1` 覆盖第二端点右移）、`DrawActiveShapePrimitives`（逐对象/逐批 `RuntimeShapeBounds`）、构造预览（`shapeBoundsRect`）。新增 L0 写入点必须走带范围的重载，否则下一次清除退回整屏。
+- **清除判定顺序**：自上次清除以来无写入（范围空且无未知写入）→ 不清（纯橡皮、纯激光接触）；未知写入 / 无 `ID3D11DeviceContext1` / 设备 `D3D11_FEATURE_D3D11_OPTIONS.ClearView` 为假 / 外扩后面积超过画布一半 → 整屏 `ClearOperatorLayer`；否则范围外扩 2 px、裁剪到画布后对 Add、Retain 各一次 `ClearView`。`ClearOperatorLayer(L0)` 把记账重置为干净；L0 纹理创建/释放（Resize、重建、设备恢复）置为未知。
+- `ClearView` 能力在 `Init` 中与 `ID3D11DeviceContext1` 一并确定，缺任一项 `context1_` 为空。
+- 合成与 Present 的脏区不变（`frameDirty` 已含 `lastL0Rect ∪ currentL0Rect`）。
+
+### 4. Validation & Error Matrix
+| 条件 | 必需结果 |
+|---|---|
+| 两处声明写入 | 并集外扩后清除，读回 L0 全部复原 |
+| 声明范围外已有内容 | 局部清除不触碰 |
+| 清除后无新写入 | 再次清除跳过 |
+| 未声明写入 / 无 ClearView / 面积 > 50% | 整屏清除 |
+| 形状合成矩形比几何包络大 1 px | 由 2 px 外扩覆盖 |
+
+### 6. Tests Required
+- `Inkeys.exe --draw3-renderer-upload-test`（WARP 离屏，含 L0 局部清除像素读回：生产记账链路、跳过分支、未声明回退、无 ClearView 回退）。
+- 生产探针：`--draw3-renderer-pixel-test`、`--draw3-shape-renderer-test`、`--draw3-shape-focus-hidden-test`、`--draw3-palm-eraser-test`、`--draw3-pen-taper-test`、`--draw3-control-fence-test`、`--draw3-canvas-pan-feel-test`、`--draw3-whiteboard-pattern-test`。（`--draw3-hidden-test`、`--draw3-eraser-hidden-test` 在 cf5160ed 基线同样以 127 失败，为既有问题。）
+
+### 7. Wrong vs Correct
+- 错：绑定后再报告范围并清除“未知”标志——多指/形状连续绑定时，后一次报告会掩盖前一次未报告的写入。对：绑定时声明，未声明的绑定一律置未知。
+- 错：只检查 `ID3D11DeviceContext1` 是否存在。对：同时检查 `ClearView` 能力位（Win7 平台更新下旧驱动可能有接口无能力，清除静默失效会留残影）。

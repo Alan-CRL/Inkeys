@@ -747,9 +747,10 @@ auto renderPendingShapeConstruction = [&](RECT& dirty,bool& failed,bool layersRe
 	betweenShapeBounds = {};
 	if (waiting && shapeUi.construction->preview)
 	{
-		renderer_.SetOperatorTarget(renderer_.layerL0);
+		const RECT previewBounds = shapeBoundsRect(shapeUi.construction->renderData.bounds);
+		renderer_.SetOperatorTarget(renderer_.layerL0, previewBounds); // 声明写入范围供 L0 局部清除
 		if (!renderer_.DrawShapeRenderData(shapeUi.construction->renderData)) failed = true;
-		betweenShapeBounds = shapeBoundsRect(shapeUi.construction->renderData.bounds); UnionRectInPlace(dirty,betweenShapeBounds);
+		betweenShapeBounds = previewBounds; UnionRectInPlace(dirty,betweenShapeBounds);
 	}
 	shapeUi.constructionVisualDirty = false;
 };

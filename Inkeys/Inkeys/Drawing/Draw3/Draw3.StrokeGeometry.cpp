@@ -2737,15 +2737,25 @@ namespace Inkeys::Drawing::Draw3
 		StrokeShape shape, InkRenderer& renderer, bool clearLayer)
 	{
 		if (clearLayer) renderer.ClearOperatorLayer(renderer.layerL0); // 多 contact 帧由调用方只清一次共享 L0。
+		// 声明写入范围供 L0 局部清除：荧光笔取几何包络（逐扫掠段端点 ±半宽+3）；普通笔取 currentL0Rect
+		// （与 l0DrawPoints 同时重建，含预测段、笔尖锥形与 SDF 抗锯齿余量）。范围缺失时按未知写入处理。
+		const auto bindL0 = [&renderer](const RECT& bounds)
+		{
+			if (bounds.left < bounds.right && bounds.top < bounds.bottom) renderer.SetOperatorTarget(renderer.layerL0, bounds);
+			else renderer.SetOperatorTarget(renderer.layerL0);
+		};
 		if (stroke.highlighter)
 		{
 			if (stroke.l0HighlighterGeometry.primitives.empty()) return true;
-			renderer.SetOperatorTarget(renderer.layerL0);
+			bindL0(stroke.l0HighlighterGeometry.bounds);
 			return renderer.DrawHighlighterPrimitives(
 				stroke.l0HighlighterGeometry.primitives, color) >= 0;
 		}
 		if (stroke.l0DrawPoints.empty()) return true;
-		renderer.SetOperatorTarget(renderer.layerL0);
+		RECT strokeBounds = stroke.currentL0Rect;
+		if (stroke.l0DrawPoints.size() == 1 && strokeBounds.left < strokeBounds.right && std::isfinite(stroke.l0DrawPoints.front().r))
+			strokeBounds.right += static_cast<LONG>(std::ceil((std::max)(0.25f, stroke.l0DrawPoints.front().r * 0.05f))) + 1;
+		bindL0(strokeBounds);
 		return renderer.DrawStrokeOrDot(stroke.l0DrawPoints, color, shape) >= 0;
 	}
 }

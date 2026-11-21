@@ -6101,7 +6101,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		bool DrawActiveShapePrimitives(const std::vector<RuntimeStroke*>& active,
-			InkRenderer& renderer, std::vector<ShapePrimitive>& scratch)
+			InkRenderer& renderer, std::vector<ShapePrimitive>& scratch, int width, int height)
 		{
 			bool succeeded = true;
 			if (std::any_of(active.begin(), active.end(), [](const RuntimeStroke* runtime) {
@@ -6112,7 +6112,8 @@ namespace Inkeys::Drawing::Draw3
 				for (const auto* runtime : active)
 				{
 					if (!runtime || runtime->ended || runtime->cancelled || !runtime->shape.active) continue;
-					renderer.SetOperatorTarget(renderer.layerL0);
+					// 声明写入范围供 L0 局部清除；通用形状实际合成矩形多出的 1 像素由清除外扩覆盖。
+					renderer.SetOperatorTarget(renderer.layerL0, RuntimeShapeBounds(runtime->shape, width, height));
 					if (runtime->shape.generic)
 					{
 						if (!renderer.DrawShapeRenderData(runtime->shape.renderData)) return false;
@@ -6131,14 +6132,16 @@ namespace Inkeys::Drawing::Draw3
 			for (ShapePrimitiveKind kind : kKinds)
 			{
 				const RuntimeStroke* batchStyle = nullptr;
+				RECT batchBounds = {};
 				const auto flushBatch = [&]
 				{
 					if (!batchStyle || scratch.empty()) return;
-					renderer.SetOperatorTarget(renderer.layerL0);
+					renderer.SetOperatorTarget(renderer.layerL0, batchBounds);
 					if (renderer.DrawShapePrimitives(scratch, kind,
 						ColorForTool(DrawingTool::Pen, batchStyle->visualStyle)) < 0)
 						succeeded = false;
 					scratch.clear();
+					batchBounds = {};
 				};
 				scratch.clear();
 				for (const RuntimeStroke* runtime : active)
@@ -6151,6 +6154,7 @@ namespace Inkeys::Drawing::Draw3
 					// 只合并相邻同色 Shape，避免中途改色后重排笔划覆盖顺序。
 					if (scratch.empty()) batchStyle = runtime;
 					scratch.push_back(runtime->shape.primitive);
+					UnionRectInPlace(batchBounds, RuntimeShapeBounds(runtime->shape, width, height));
 				}
 				flushBatch();
 			}
@@ -6196,7 +6200,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 				UnionRectInPlace(dirty, stroke.currentL0Rect);
 			}
-			if (!DrawActiveShapePrimitives(active, renderer, shapeScratch))
+			if (!DrawActiveShapePrimitives(active, renderer, shapeScratch, width, height))
 				return { {}, false };
 			return { ClampRectToCanvas(dirty, width, height), true };
 		}
@@ -23667,7 +23671,8 @@ namespace Inkeys::Drawing::Draw3
 					shapeLayerNeedsRebuild, otherLiveLayerNeedsRebuild))
 				{
 					// 只有 Shape-only 且末点稳定时才能保留；共享层一旦重建必须重放全部活动 Shape。
-					renderer_.ClearOperatorLayer(renderer_.layerL0);
+					// 书写每帧都会走到这里：只清除上一帧 L0 实际写过的范围（R7），未声明写入时退回整屏。
+					renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 					for (RuntimeStroke* runtime : active)
 					{
 						if (runtime->tool != DrawingTool::Eraser &&
@@ -23680,7 +23685,7 @@ namespace Inkeys::Drawing::Draw3
 								rasterSubmissionFailed = true;
 						}
 					}
-						if (!DrawActiveShapePrimitives(active, renderer_, shapePrimitiveScratch))
+						if (!DrawActiveShapePrimitives(active, renderer_, shapePrimitiveScratch, size.width, size.height))
 							rasterSubmissionFailed = true;
 				}
 			}
