@@ -362,10 +362,12 @@ namespace Inkeys::Drawing::Draw3
 		{
 			if (tool == DrawingTool::Eraser) return kTransparentLayerClearColor;
 			const uint32_t rgba = visualStyle.colorRgba;
+			// RGB 的解码写法与入库重放（DrawStoredStroke）逐位一致：书写中画进 L1 的前缀才能与整笔重放逐字节相同。
+			constexpr float kByteToFloat = 1.0f / 255.0f;
 			DirectX::XMFLOAT4 productColor(
-				static_cast<float>((rgba >> 24) & 0xffu) / 255.0f,
-				static_cast<float>((rgba >> 16) & 0xffu) / 255.0f,
-				static_cast<float>((rgba >> 8) & 0xffu) / 255.0f,
+				static_cast<float>((rgba >> 24) & 0xffu) * kByteToFloat,
+				static_cast<float>((rgba >> 16) & 0xffu) * kByteToFloat,
+				static_cast<float>((rgba >> 8) & 0xffu) * kByteToFloat,
 				static_cast<float>(rgba & 0xffu) / 255.0f);
 			if (tool == DrawingTool::Highlighter)
 			{
@@ -6029,13 +6031,14 @@ namespace Inkeys::Drawing::Draw3
 			return ClampRectToCanvas(bounds, width, height);
 		}
 
+		// layer：书写中与重建时画进 L1；抬笔定稿时画进本笔所在的工作区，随本笔一起合成进 L2。
 		RECT DrawReconnectManualTestRanges(RuntimeStroke& runtime, InkRenderer& renderer,
-			int width, int height)
+			int width, int height, const OperatorLayerResources* layer = nullptr)
 		{
 			if constexpr (!kInterruptedStrokeReconnectManualTestModeEnabled) return {};
 			if (runtime.reconnectManualTestRanges.empty() || runtime.stroke.realPoints.empty()) return {};
 
-			renderer.SetOperatorTarget(renderer.layerL1);
+			renderer.SetOperatorTarget(layer ? *layer : renderer.layerL1);
 			RECT dirty = {};
 			for (const ReconnectManualTestRange& range : runtime.reconnectManualTestRanges)
 			{
@@ -6063,13 +6066,23 @@ namespace Inkeys::Drawing::Draw3
 			if (runtime.tool == DrawingTool::Highlighter)
 			{
 				if (stroke.committedHighlighterGeometry.primitives.empty()) return {};
-				renderer.SetOperatorTarget(renderer.layerL1);
+				// 绑定前声明写域，L1 的局部清除与“空层”判断才有依据。
+				const RECT highlighterDirty = ClampRectToCanvas(
+					stroke.committedHighlighterGeometry.bounds, width, height);
+				const uint64_t highlighterLayerEpoch = renderer.StableLayerEpoch();
+				const bool highlighterLayerWasEmpty = renderer.OperatorLayerEmpty(renderer.layerL1);
+				renderer.SetOperatorTarget(renderer.layerL1, highlighterDirty);
 				if (renderer.DrawHighlighterPrimitives(
 					stroke.committedHighlighterGeometry.primitives,
 					ColorForTool(runtime.tool, runtime.visualStyle)) < 0)
+				{
+					stroke.l1PrefixExact = false; // 缓存没有完整重画进 L1，抬笔时不能沿用前缀。
 					return { {}, false };
-				return { ClampRectToCanvas(
-					stroke.committedHighlighterGeometry.bounds, width, height), true };
+				}
+				// 缓存图元已原样重画：L1 里的本笔前缀与缓存一致；重画前 L1 非空则可能混有别的内容。
+				stroke.l1PrefixExact = highlighterLayerWasEmpty;
+				stroke.l1PrefixEpoch = highlighterLayerEpoch;
+				return { highlighterDirty, true };
 			}
 			std::array<InkPoint, 1> fallbackPoint = {};
 			std::span<const InkPoint> stablePoints;
@@ -6085,19 +6098,38 @@ namespace Inkeys::Drawing::Draw3
 				if (pointCount == 0) return {};
 				stablePoints = std::span<const InkPoint>(stroke.realPoints).first(pointCount);
 			}
-			renderer.SetOperatorTarget(renderer.layerL1);
+			const uint64_t stableLayerEpoch = renderer.StableLayerEpoch();
+			const bool stableLayerWasEmpty = renderer.OperatorLayerEmpty(renderer.layerL1);
 			if (runtime.tool == DrawingTool::Eraser && stroke.eraserShape != EraserShape::Circle)
 			{
+				const RECT eraserDirty = RectFromEraserPoints(stablePoints, stroke.eraserShape, width, height);
+				renderer.SetOperatorTarget(renderer.layerL1, eraserDirty);
 				if (DrawEraserStrokeOrDot(renderer, stablePoints, stroke.eraserShape,
-					ColorForTool(runtime.tool, runtime.visualStyle)) < 0) return { {}, false };
-				return { RectFromEraserPoints(stablePoints, stroke.eraserShape, width, height), true };
+					ColorForTool(runtime.tool, runtime.visualStyle)) < 0)
+				{
+					stroke.l1PrefixExact = false;
+					return { {}, false };
+				}
+				NoteL1PrefixDrawn(stroke, stablePoints, true, !stroke.realPoints.empty() && stablePoints.size() >= 2,
+					stableLayerEpoch, stableLayerWasEmpty);
+				return { eraserDirty, true };
 			}
 			const InkOperatorKind operatorKind = runtime.tool == DrawingTool::Eraser
 				? InkOperatorKind::Erase : InkOperatorKind::Draw;
+			// 单点会画成向右延伸的短胶囊，写域与脏区都按实际绘制端点计算。
+			const RECT stableDirty = RectFromStrokeOrDotPoints(stablePoints, width, height);
+			renderer.SetOperatorTarget(renderer.layerL1, stableDirty);
 			if (renderer.DrawStrokeOrDot(stablePoints,
 				ColorForTool(runtime.tool, runtime.visualStyle),
-				StrokeShape::RoundCapsule, operatorKind) < 0) return { {}, false };
-			return { RectFromStrokePoints(stablePoints, width, height), true };
+				StrokeShape::RoundCapsule, operatorKind) < 0)
+			{
+				stroke.l1PrefixExact = false;
+				return { {}, false };
+			}
+			// 整段重画：按重画的点重新计算 L1 前缀指纹（落点兜底和单点印记不算精确）。
+			NoteL1PrefixDrawn(stroke, stablePoints, true, !stroke.realPoints.empty() && stablePoints.size() >= 2,
+				stableLayerEpoch, stableLayerWasEmpty);
+			return { stableDirty, true };
 		}
 
 		bool DrawActiveShapePrimitives(const std::vector<RuntimeStroke*>& active,
@@ -6112,8 +6144,16 @@ namespace Inkeys::Drawing::Draw3
 				for (const auto* runtime : active)
 				{
 					if (!runtime || runtime->ended || runtime->cancelled || !runtime->shape.active) continue;
-					// 声明写入范围供 L0 局部清除；通用形状实际合成矩形多出的 1 像素由清除外扩覆盖。
-					renderer.SetOperatorTarget(renderer.layerL0, RuntimeShapeBounds(runtime->shape, width, height));
+					// 声明写入范围供 L0 局部清除。通用图形的合成矩形比外框各边多 1 像素：外框贴在画布边外时
+					// 外框裁剪后为空，但那 1 像素仍可能写入，写域按合成矩形声明。
+					RECT writeBounds = RuntimeShapeBounds(runtime->shape, width, height);
+					if (runtime->shape.generic && runtime->shape.renderData.bounds.valid)
+					{
+						const auto& b = runtime->shape.renderData.bounds;
+						writeBounds = ClampRectToCanvas({ SaturatingFloorToLong(double(b.left) - 1.0), SaturatingFloorToLong(double(b.top) - 1.0),
+							SaturatingCeilToLong(double(b.right) + 1.0), SaturatingCeilToLong(double(b.bottom) + 1.0) }, width, height);
+					}
+					renderer.SetOperatorTarget(renderer.layerL0, writeBounds);
 					if (runtime->shape.generic)
 					{
 						if (!renderer.DrawShapeRenderData(runtime->shape.renderData)) return false;
@@ -6161,12 +6201,27 @@ namespace Inkeys::Drawing::Draw3
 			return succeeded;
 		}
 
+		// 上屏合成按两层是否有内容选择：都空不跑合成；只有一层有内容时只读那一层（PS 类型 25）；否则双层合成。
+		// 调试用的有序合成保持双层。三种做法的像素结果相同，空层在双层合成里本来就是单位操作。
+		bool ApplyActiveOperatorLayers(InkRenderer& renderer, ID3D11RenderTargetView* target, RECT rect,
+			OperatorLayerMergeMode mergeMode)
+		{
+			if (mergeMode == OperatorLayerMergeMode::Ordered)
+				return renderer.ApplyOperatorLayers(target, renderer.layerL1, renderer.layerL0, rect, mergeMode);
+			const bool stableEmpty = renderer.OperatorLayerEmpty(renderer.layerL1);
+			const bool liveEmpty = renderer.OperatorLayerEmpty(renderer.layerL0);
+			if (stableEmpty && liveEmpty) return true;
+			if (stableEmpty) return renderer.ApplyOperatorLayer(target, renderer.layerL0, rect);
+			if (liveEmpty) return renderer.ApplyOperatorLayer(target, renderer.layerL1, rect);
+			return renderer.ApplyOperatorLayers(target, renderer.layerL1, renderer.layerL0, rect, mergeMode);
+		}
+
 		LiveRasterSubmission RebuildActiveLayers(const std::vector<RuntimeStroke*>& active,
 			InkRenderer& renderer, int width, int height,
 			std::vector<ShapePrimitive>& shapeScratch)
 		{
-			renderer.ClearOperatorLayer(renderer.layerL1);
-			renderer.ClearOperatorLayer(renderer.layerL0);
+			renderer.ClearOperatorLayerContent(renderer.layerL1);
+			renderer.ClearOperatorLayerContent(renderer.layerL0);
 			RECT dirty = {};
 			for (RuntimeStroke* runtime : active)
 			{
@@ -6191,7 +6246,7 @@ namespace Inkeys::Drawing::Draw3
 				stroke.lastL0Rect = {};
 				stroke.currentL0Rect = runtime->tool == DrawingTool::Highlighter
 					? ClampRectToCanvas(stroke.l0HighlighterGeometry.bounds, width, height)
-					: RectFromStrokePoints(stroke.l0DrawPoints, width, height);
+					: RectFromStrokeOrDotPoints(stroke.l0DrawPoints, width, height);
 				if (runtime->tool != DrawingTool::Eraser && !stroke.l0DrawPoints.empty())
 				{
 					if (!DrawL0LiveComposite(stroke,
@@ -6596,11 +6651,8 @@ namespace Inkeys::Drawing::Draw3
 			return layers;
 		};
 		const RECT fullRect = { 0, 0, 64, 64 };
-		const auto readCompositedBGRA = [&](std::vector<uint8_t>& pixels)
+		const auto readBackBufferBGRA = [&](std::vector<uint8_t>& pixels)
 		{
-			renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
-			if (!renderer.ResolveLaserCompositedColor(
-				renderer.backBufferRTV.Get(), fullRect, 1.0f)) return false;
 			renderer.context->OMSetRenderTargets(0, nullptr, nullptr);
 			D3D11_TEXTURE2D_DESC description = {};
 			renderer.backBufferTexture->GetDesc(&description);
@@ -6611,17 +6663,24 @@ namespace Inkeys::Drawing::Draw3
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
 			if (FAILED(renderer.device->CreateTexture2D(&description, nullptr,
 				staging.GetAddressOf()))) return false;
+			pixels.resize(64u * 64u * 4u);
 			renderer.context->CopyResource(staging.Get(), renderer.backBufferTexture.Get());
 			D3D11_MAPPED_SUBRESOURCE mapped = {};
 			if (FAILED(renderer.context->Map(staging.Get(), 0,
 				D3D11_MAP_READ, 0, &mapped))) return false;
-			pixels.resize(64u * 64u * 4u);
 			for (size_t row = 0; row < 64; ++row)
 				std::memcpy(pixels.data() + row * 64u * 4u,
 					static_cast<const uint8_t*>(mapped.pData) + row * mapped.RowPitch,
 					64u * 4u);
 			renderer.context->Unmap(staging.Get(), 0);
 			return true;
+		};
+
+		const auto readCompositedBGRA = [&](std::vector<uint8_t>& pixels)
+		{
+			renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
+			return renderer.ResolveLaserCompositedColor(renderer.backBufferRTV.Get(), fullRect, 1.0f) &&
+				readBackBufferBGRA(pixels);
 		};
 
 		renderer.ClearAllLaserCoverage();
@@ -6692,6 +6751,66 @@ namespace Inkeys::Drawing::Draw3
 		check(actualCosts.bakeCalls == 3 && actualCosts.bakeFailures == 1 &&
 			(actualCosts.stageAvailableMask & 2u) != 0 && (actualCosts.stageCpuAvailableMask & 2u) != 0,
 			"N1 actual WARP bake success/failure shares the production wall/CPU collector");
+
+		// 复用离屏 WARP 目标，直接覆盖上屏合成的空层分派。
+		auto& l0 = renderer.layerL0;
+		auto& l1 = renderer.layerL1;
+		auto* dst = renderer.backBufferRTV.Get();
+		const DirectX::XMFLOAT4 background(0.2f, 0.4f, 0.6f, 1.0f), ink(0.8f, 0.2f, 0.4f, 0.65f);
+		const std::array<InkPoint, 2> resolvePoints = { InkPoint{ 14.25f, 23.25f, 3.25f, 0 },
+			InkPoint{ 40.75f, 23.25f, 3.25f, 1 } };
+		const RECT resolveRect = { 8, 16, 48, 32 };
+		const auto drawOperator = [&](const OperatorLayerResources& layer)
+		{
+			renderer.SetOperatorTarget(layer, resolveRect);
+			check(renderer.DrawStroke(resolvePoints, ink) == 0, "resolve test paints the operator layer");
+		};
+		const auto resolveActive = [&](OperatorLayerMergeMode mode, unsigned single, unsigned dual, const char* name)
+		{
+			const auto before = renderer.OperatorCounters();
+			const bool resolved = ApplyActiveOperatorLayers(renderer, dst, resolveRect, mode);
+			const auto& after = renderer.OperatorCounters();
+			check(resolved && after.singleResolves == before.singleResolves + single &&
+				after.dualResolves == before.dualResolves + dual, name);
+		};
+
+		std::vector<uint8_t> backgroundPixels, activePixels, dualPixels;
+		renderer.ClearOperatorLayer(l0);
+		renderer.ClearOperatorLayer(l1);
+		renderer.ClearRTV(dst, background);
+		check(readBackBufferBGRA(backgroundPixels), "read active operator background");
+		resolveActive(OperatorLayerMergeMode::CoverageUnion, 0, 0, "empty operator layers skip both resolves");
+		check(readBackBufferBGRA(activePixels) && activePixels == backgroundPixels, "empty resolve preserves background bytes");
+
+		for (auto* layer : { &l0, &l1 })
+		{
+			renderer.ClearOperatorLayer(l0);
+			renderer.ClearOperatorLayer(l1);
+			drawOperator(*layer);
+			renderer.ClearRTV(dst, background);
+			resolveActive(OperatorLayerMergeMode::CoverageUnion, 1, 0, layer == &l0 ?
+				"L0-only active resolve counts one single resolve" : "L1-only active resolve counts one single resolve");
+			check(readBackBufferBGRA(activePixels), "read single active operator resolve");
+
+			// 双层基准使用同一份操作纹理和底色，并确认笔画确实改变了底色。
+			renderer.ClearRTV(dst, background);
+			check(renderer.ApplyOperatorLayers(dst, l1, l0, resolveRect, OperatorLayerMergeMode::CoverageUnion),
+				"explicit dual operator reference resolves");
+			check(readBackBufferBGRA(dualPixels) && dualPixels != backgroundPixels && dualPixels == activePixels,
+				layer == &l0 ? "L0-only active bytes match explicit dual resolve" : "L1-only active bytes match explicit dual resolve");
+		}
+
+		drawOperator(l0); // 上一轮保留了 L1 的笔画。
+		renderer.ClearRTV(dst, background);
+		resolveActive(OperatorLayerMergeMode::CoverageUnion, 0, 1, "two nonempty layers count one dual resolve");
+		renderer.ClearOperatorLayer(l0);
+		renderer.ClearRTV(dst, background);
+		resolveActive(OperatorLayerMergeMode::Ordered, 0, 1, "ordered resolve with empty L0 still counts one dual resolve");
+
+		renderer.context->OMSetRenderTargets(0, nullptr, nullptr);
+		renderer.ClearOperatorLayer(l0);
+		renderer.ClearOperatorLayer(l1);
+		renderer.ClearRTV(dst, kTransparentLayerClearColor);
 		return failures;
 	}
 
@@ -15492,8 +15611,7 @@ namespace Inkeys::Drawing::Draw3
 		renderer_.CopyResource(renderer_.backBufferTexture.Get(), renderer_.layerL2Texture.Get(), dirty); // L2 是已经稳定的底层画布。
 		const OperatorLayerMergeMode mergeMode = orderLiveOverStable
 			? OperatorLayerMergeMode::Ordered : OperatorLayerMergeMode::CoverageUnion;
-		const bool applied = renderer_.ApplyOperatorLayers(renderer_.backBufferRTV.Get(),
-			renderer_.layerL1, renderer_.layerL0, dirty, mergeMode);
+		const bool applied = ApplyActiveOperatorLayers(renderer_, renderer_.backBufferRTV.Get(), dirty, mergeMode);
 		// 画布调试板位于全部墨迹层之下；调试关闭时该调用只检查一个布尔值。
 		if (applied) (void)renderer_.DrawDebugPlateUnder(dirty);
 		// 白板纹理在最底层（调试板之后的 under）；非白板工作区只检查一个布尔值。
@@ -16489,6 +16607,8 @@ namespace Inkeys::Drawing::Draw3
 		CanvasRenderTilePlan viewportTilePlan;
 		size_t viewportTilePlanIndex = 0;
 		bool viewportRecoveryPending = false;
+		// 最近一次抬笔重建共享层之后的 L1 内容世代；之后世代变了说明 L1 被别的流程用过（如历史直接回放借作工作区）。
+		uint64_t sharedLayersRebuiltEpoch = ~0ull;
 		bool viewportVisibleClear = true;
 		double viewportTileEwmaMilliseconds = 0.5;
 		double previousCanvasFrameWorkMilliseconds = 0.0;
@@ -20091,7 +20211,7 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			}
 			*canvas = std::move(candidate); runtime = std::move(candidateRuntime);
-			renderer_.ClearOperatorLayer(renderer_.layerL1); renderer_.ClearOperatorLayer(renderer_.layerL0);
+			renderer_.ClearOperatorLayerContent(renderer_.layerL1); renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 			viewportVisibleClear = CanvasVisibleClarityAfterAuthoritativeWrite(viewportVisibleClear,true);
 			if (metricsState_)
 			{
@@ -20265,8 +20385,8 @@ namespace Inkeys::Drawing::Draw3
 				dirty = restored.dirty;
 				path = CompositionRestorePathName(restored.path);
 			}
-			renderer_.ClearOperatorLayer(renderer_.layerL1);
-			renderer_.ClearOperatorLayer(renderer_.layerL0);
+			renderer_.ClearOperatorLayerContent(renderer_.layerL1);
+			renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 			UnionRectInPlace(frameDirty, dirty);
 			--runtime.operationCursor;
 			const size_t hotRemaining = historyGpuCache.ConsecutiveHotDepth(
@@ -20391,10 +20511,10 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			const bool metricsDrawAttempt = metricsState_ ? metricsState_->BeginRasterAttempt() : false;
-			renderer_.ClearOperatorLayer(renderer_.layerL1);
-			renderer_.ClearOperatorLayer(renderer_.layerL0);
+			renderer_.ClearOperatorLayerContent(renderer_.layerL1);
+			renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 			const StoredStrokeRasterTarget target = {
-				&renderer_.layerL1, viewport.x, viewport.y, size.width, size.height
+				&renderer_.layerL0, viewport.x, viewport.y, size.width, size.height
 			};
 			const StoredStrokeRasterResult raster = DrawStoredStroke(
 				strokes[item->strokeIndex], renderer_, target,
@@ -20404,8 +20524,8 @@ namespace Inkeys::Drawing::Draw3
 				raster.dirty, size.width, size.height);
 			if (!raster.succeeded)
 			{
-				renderer_.ClearOperatorLayer(renderer_.layerL1);
-				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				renderer_.ClearOperatorLayerContent(renderer_.layerL1);
+				renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 				UnionRectInPlace(frameDirty, dirty);
 				DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
 					" item=" << itemId->index << " base=" << basePath <<
@@ -20430,8 +20550,9 @@ namespace Inkeys::Drawing::Draw3
 			if (!IsEmptyRect(redoDirty))
 			{
 				const bool metricsResolveAttempt = metricsState_ ? metricsState_->BeginRasterAttempt() : false;
-				submitted = renderer_.ApplyOperatorLayers(renderer_.layerL2RTV.Get(),
-					renderer_.layerL1, renderer_.layerL0, redoDirty);
+				// 只读 L0 工作区。L1 仍在前后各清一次：补背景与回滚的历史直接回放会把最后一笔留在 L1。
+				submitted = renderer_.ApplyOperatorLayer(renderer_.layerL2RTV.Get(),
+					renderer_.layerL0, redoDirty);
 				if (metricsState_) metricsState_->RasterReturned(metricsResolveAttempt, submitted);
 			}
 
@@ -20448,8 +20569,8 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
 					historyGpuCache.CancelPreimage(preimageCapture.ticket);
-				renderer_.ClearOperatorLayer(renderer_.layerL1);
-				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				renderer_.ClearOperatorLayerContent(renderer_.layerL1);
+				renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 				const CompositionRestorePath rollbackPath = rollbackRedoPixels();
 				UnionRectInPlace(frameDirty, dirty);
 				DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
@@ -20464,8 +20585,8 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (preimageCapture.status == HotPreimageCaptureStatus::Captured)
 					historyGpuCache.CancelPreimage(preimageCapture.ticket);
-				renderer_.ClearOperatorLayer(renderer_.layerL1);
-				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				renderer_.ClearOperatorLayerContent(renderer_.layerL1);
+				renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 				const CompositionRestorePath rollbackPath = rollbackRedoPixels();
 				UnionRectInPlace(frameDirty, dirty);
 				DiagnosticOutput::Line() << "[Redo] page=" << (currentPageIndex_ + 1) <<
@@ -20486,8 +20607,8 @@ namespace Inkeys::Drawing::Draw3
 				if (!hotRearmed)
 					historyGpuCache.CancelPreimage(preimageCapture.ticket);
 			}
-			renderer_.ClearOperatorLayer(renderer_.layerL1);
-			renderer_.ClearOperatorLayer(renderer_.layerL0);
+			renderer_.ClearOperatorLayerContent(renderer_.layerL1);
+			renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 			UnionRectInPlace(dirty, redoDirty);
 			UnionRectInPlace(frameDirty, dirty);
 			viewportVisibleClear = CanvasVisibleClarityAfterAuthoritativeWrite(
@@ -23400,16 +23521,57 @@ namespace Inkeys::Drawing::Draw3
 					// 手掌仅观察触点不出墨、已取消的接触不代表该工具的真实负载。
 					if (runtime && !runtime->palmObservationOnly && !runtime->cancelled)
 						performanceFrameDimensions |= DevicePerformance::ToolDimensionMask(static_cast<int>(runtime->tool));
+			// 普通书写帧的 L0 刷新：擦掉上一帧的尾段、预测和预览，再重画全部活动触点。
+			const auto refreshSharedLiveLayer = [&]
+			{
+				const bool hasActiveShape = std::any_of(active.begin(), active.end(),
+					[](const RuntimeStroke* runtime)
+					{
+						return runtime && !runtime->ended && runtime->shape.active;
+					});
+				if (!ShouldRebuildSharedL0(hasActiveShape,
+					shapeLayerNeedsRebuild, otherLiveLayerNeedsRebuild)) return;
+				// 只有 Shape-only 且末点稳定时才能保留；共享层一旦重建必须重放全部活动 Shape。
+				// 书写每帧都会走到这里：只清除上一帧 L0 实际写过的范围（R7），未声明写入时退回整屏。
+				renderer_.ClearOperatorLayerContent(renderer_.layerL0);
+				for (RuntimeStroke* runtime : active)
+				{
+					if (runtime->tool != DrawingTool::Eraser &&
+						runtime->tool != DrawingTool::Laser && !runtime->shape.active &&
+						!runtime->stroke.l0DrawPoints.empty())
+					{
+						if (!DrawL0LiveComposite(runtime->stroke,
+							ColorForTool(runtime->tool, runtime->visualStyle),
+							StrokeShape::RoundCapsule, renderer_, false))
+							rasterSubmissionFailed = true;
+					}
+				}
+				if (!DrawActiveShapePrimitives(active, renderer_, shapePrimitiveScratch, size.width, size.height))
+					rasterSubmissionFailed = true;
+			};
 			if (hasEndedStroke)
 			{
+				// 激光不写 L1/L0：本帧结束的触点全是激光时，不动共享层，按普通书写帧刷新其余触点的 L0。
+				// 找不到任何已结束触点时（防御）按原流程重建。上次重建后 L1 若被别的流程动过（世代变化），
+				// 也按原流程重建，否则历史直接回放留在 L1 的内容会一直叠在画面上。
+				const bool anyEnded = std::any_of(active.begin(), active.end(),
+					[](const RuntimeStroke* runtime) { return runtime && runtime->ended; });
+				const bool laserOnlyEnd = anyEnded && renderer_.StableLayerEpoch() == sharedLayersRebuiltEpoch &&
+					std::none_of(active.begin(), active.end(),
+					[](const RuntimeStroke* runtime) { return runtime && runtime->ended && runtime->tool != DrawingTool::Laser; });
 				// 焦点层候选：本批最后一笔、且结束后不再有任何活动接触；只有它可留在 L1 且保持 Z 序最上层。
 				RuntimeStroke* focusLayerCandidate = nullptr;
 				if (ShapeFocusLayerEnabled().load(std::memory_order_relaxed) && !shapeUi.focus.Active() &&
 					std::none_of(active.begin(), active.end(), [](const RuntimeStroke* runtime) { return runtime && !runtime->ended; }))
 					for (RuntimeStroke* runtime : active)
 						if (runtime && runtime->ended && runtime->tool != DrawingTool::Laser) focusLayerCandidate = runtime;
-				renderer_.ClearOperatorLayer(renderer_.layerL1);
-				renderer_.ClearOperatorLayer(renderer_.layerL0);
+				// 路径 B：L0 借作逐笔隔离工作区，先擦掉上一帧的尾段、预测和预览。L1 里各触点的前缀留到
+				// 全部结束笔进 L2 之后，由 RebuildActiveLayers 清一次并重画仍在书写的前缀。
+				if (!laserOnlyEnd) renderer_.ClearOperatorLayerContent(renderer_.layerL0);
+				// 路径 A 的前提之一：L1 里只可能有这一个触点的前缀——除激光外只有一个触点，且没有待落定的焦点层。
+				const bool soleInkContact = !laserOnlyEnd && !shapeUi.focus.Active() &&
+					std::count_if(active.begin(), active.end(), [](const RuntimeStroke* runtime)
+						{ return runtime && runtime->tool != DrawingTool::Laser; }) == 1;
 				for (RuntimeStroke* runtime : active)
 				{
 					if (!runtime->ended) continue;
@@ -23465,21 +23627,50 @@ namespace Inkeys::Drawing::Draw3
 								publishCurrentPageContent();
 								const InkRasterStateToken beforeState = committed->beforeState;
 								// Runtime history 先登记成功，随后才允许产生可见 L2 像素。
-								renderer_.ClearOperatorLayer(renderer_.layerL1);
-								renderer_.ClearOperatorLayer(renderer_.layerL0);
-								const StoredStrokeRasterTarget storedStrokeTarget = {
-									&renderer_.layerL1, canvas->Viewport().x,
-									canvas->Viewport().y, size.width, size.height
-								};
-								const StoredStrokeRasterResult completedStrokeRaster =
-									DrawStoredStroke(storedStroke,
-									renderer_, storedStrokeTarget,
-									runtime->rebuildPoints, completedHighlighterScratch);
-								RECT completedStrokeDirty = completedStrokeRaster.dirty;
-								const RenderItemState* addedItem = pageRuntime.history.Find(renderItem);
-								// 自动进入编辑的图形不写入 L2：覆盖率留在 L1，热前像推迟到落定时采集。
+								// 自动进入编辑的图形不写入 L2：共享层重建后由 drawFocusLayer 画进 L1，热前像推迟到落定时采集。
+								// 这里仍先在工作区栅格一次但不合成：首次栅格失败时不发布待编辑对象和构造完成沿（与原流程一致）。
 								const bool deferToFocusLayer = runtime == focusLayerCandidate && storedStroke.Shape() &&
 									runtime->lastInputSnapshot.qpc >= shapeUi.pendingCompletedQpc;
+								// 路径 B：最终整笔画进只含它自己的 L0，再单层合成进 L2；不读也不清 L1。
+								renderer_.ClearOperatorLayerContent(renderer_.layerL0);
+								const StoredStrokeRasterTarget storedStrokeTarget = {
+									&renderer_.layerL0, canvas->Viewport().x,
+									canvas->Viewport().y, size.width, size.height
+								};
+								// 路径 A：L1 里只有这一笔、且定稿点列的前缀与当时画进 L1 的点逐点相同，
+								// 只把最终尾段画进 L0，随后 L1 与 L0 一次并入 L2，不重画前缀。条件不满足时不绘制，改走路径 B。
+								StoredStrokeRasterResult completedStrokeRaster;
+								bool resolveStableAndLive = false;
+								if (soleInkContact && !deferToFocusLayer && !storedStroke.Shape() && !runtime->shape.active &&
+									runtime->viewport.x == canvas->Viewport().x && runtime->viewport.y == canvas->Viewport().y)
+								{
+									// 橡皮的真实点全部在 L1：抬笔帧新到的点此前没有提交，先经同一入口补上（同时更新指纹）。
+									if (runtime->tool == DrawingTool::Eraser)
+										(void)CommitEraserRealPointsToL1(runtime->stroke, StrokeShape::RoundCapsule,
+											renderer_, size.width, size.height);
+									// 笔的定稿点列在 rebuildPoints（FinalizeStoredStroke 的输出，稍后会被 DrawStoredStroke 当作暂存区覆盖）；
+									// 荧光笔和橡皮定稿不改点列。
+									const std::span<const InkPoint> finalPoints =
+										storedStroke.Style().inkType == StoredInkType::Pen
+										? std::span<const InkPoint>(runtime->rebuildPoints)
+										: std::span<const InkPoint>(runtime->stroke.realPoints);
+									const CompletedTailRasterResult tail = DrawCompletedStrokeTail(runtime->stroke,
+										storedStroke.Style(), finalPoints, renderer_, renderer_.layerL0,
+										canvas->Viewport().x, canvas->Viewport().y,
+										size.width, size.height, completedHighlighterScratch);
+									if (tail.eligible)
+									{
+										completedStrokeRaster = { tail.succeeded, tail.dirty };
+										resolveStableAndLive = true;
+									}
+								}
+								if (!resolveStableAndLive)
+									completedStrokeRaster = DrawStoredStroke(storedStroke,
+										renderer_, storedStrokeTarget,
+										runtime->rebuildPoints, completedHighlighterScratch);
+								renderer_.CountCompletedStroke(resolveStableAndLive);
+								RECT completedStrokeDirty = completedStrokeRaster.dirty;
+								const RenderItemState* addedItem = pageRuntime.history.Find(renderItem);
 								if (addedItem && completedStrokeRaster.succeeded && !deferToFocusLayer)
 								{
 									preimageCapture = historyGpuCache.CapturePreimage({
@@ -23531,7 +23722,7 @@ namespace Inkeys::Drawing::Draw3
 								if constexpr (kInterruptedStrokeReconnectManualTestModeEnabled)
 									UnionRectInPlace(completedStrokeDirty,
 										DrawReconnectManualTestRanges(
-											*runtime, renderer_, size.width, size.height));
+											*runtime, renderer_, size.width, size.height, &renderer_.layerL0));
 								completedStrokeDirty = ClampRectToCanvas(
 									completedStrokeDirty, size.width, size.height);
 								bool submitted = completedStrokeRaster.succeeded;
@@ -23544,15 +23735,19 @@ namespace Inkeys::Drawing::Draw3
 								else if (submitted && !IsEmptyRect(completedStrokeDirty))
 								{
 									// 每条 Stroke 独立 resolve，保留高亮透明度和擦除的文档顺序。
-									submitted = renderer_.ApplyOperatorLayers(renderer_.layerL2RTV.Get(),
-										renderer_.layerL1, renderer_.layerL0,
-										completedStrokeDirty);
+									submitted = resolveStableAndLive
+										? ApplyActiveOperatorLayers(renderer_, renderer_.layerL2RTV.Get(),
+											completedStrokeDirty, OperatorLayerMergeMode::CoverageUnion)
+										: renderer_.ApplyOperatorLayer(renderer_.layerL2RTV.Get(),
+											renderer_.layerL0, completedStrokeDirty);
 									if (submitted)
 									{
 										UnionRectInPlace(frameDirty, completedStrokeDirty);
 										runtime->metricVisible = true;
 									}
 								}
+								// 工作区用完即清：下一条结束笔或随后的重建拿到的都是空 L0。
+								renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 								if (submitted && storedStroke.Shape() && runtime->lastInputSnapshot.qpc >= shapeUi.pendingCompletedQpc)
 								{
 									shapeUi.pendingObject = *storedStroke.Shape(); shapeUi.pendingItem = committed->renderItem;
@@ -23599,12 +23794,17 @@ namespace Inkeys::Drawing::Draw3
 					}
 					UnionRectInPlace(frameDirty, runtime->visibleDirty);
 				}
-				const LiveRasterSubmission rebuilt = RebuildActiveLayers(active,
-					renderer_, size.width, size.height, shapePrimitiveScratch);
-				rasterSubmissionFailed |= !rebuilt.succeeded;
-				UnionRectInPlace(frameDirty, rebuilt.dirty);
-				// 共享层重建后把刚完成的待落定图形画进 L1（只此一个对象，不重放 tile）。
-				if (shapeUi.focus.Active() && !drawFocusLayer(frameDirty)) abandonFocusLayer(frameDirty);
+				if (laserOnlyEnd) refreshSharedLiveLayer();
+				else
+				{
+					const LiveRasterSubmission rebuilt = RebuildActiveLayers(active,
+						renderer_, size.width, size.height, shapePrimitiveScratch);
+					rasterSubmissionFailed |= !rebuilt.succeeded;
+					UnionRectInPlace(frameDirty, rebuilt.dirty);
+					// 共享层重建后把刚完成的待落定图形画进 L1（只此一个对象，不重放 tile）。
+					if (shapeUi.focus.Active() && !drawFocusLayer(frameDirty)) abandonFocusLayer(frameDirty);
+					sharedLayersRebuiltEpoch = renderer_.StableLayerEpoch();
+				}
 
 				std::erase_if(active, [&](RuntimeStroke* runtime)
 					{
@@ -23661,35 +23861,7 @@ namespace Inkeys::Drawing::Draw3
 						return true;
 					});
 			}
-			else if (!active.empty())
-			{
-				const bool hasActiveShape = std::any_of(active.begin(), active.end(),
-					[](const RuntimeStroke* runtime)
-					{
-						return runtime && !runtime->ended && runtime->shape.active;
-					});
-				if (ShouldRebuildSharedL0(hasActiveShape,
-					shapeLayerNeedsRebuild, otherLiveLayerNeedsRebuild))
-				{
-					// 只有 Shape-only 且末点稳定时才能保留；共享层一旦重建必须重放全部活动 Shape。
-					// 书写每帧都会走到这里：只清除上一帧 L0 实际写过的范围（R7），未声明写入时退回整屏。
-					renderer_.ClearOperatorLayerContent(renderer_.layerL0);
-					for (RuntimeStroke* runtime : active)
-					{
-						if (runtime->tool != DrawingTool::Eraser &&
-							runtime->tool != DrawingTool::Laser && !runtime->shape.active &&
-							!runtime->stroke.l0DrawPoints.empty())
-						{
-							if (!DrawL0LiveComposite(runtime->stroke,
-								ColorForTool(runtime->tool, runtime->visualStyle),
-								StrokeShape::RoundCapsule, renderer_, false))
-								rasterSubmissionFailed = true;
-						}
-					}
-						if (!DrawActiveShapePrimitives(active, renderer_, shapePrimitiveScratch, size.width, size.height))
-							rasterSubmissionFailed = true;
-				}
-			}
+			else if (!active.empty()) refreshSharedLiveLayer();
 
 			renderPendingShapeConstruction(frameDirty,rasterSubmissionFailed,hasEndedStroke || shapeLayerNeedsRebuild || otherLiveLayerNeedsRebuild);
 			publishShapeUi();
@@ -23851,8 +24023,7 @@ namespace Inkeys::Drawing::Draw3
 					const OperatorLayerMergeMode mergeMode = orderedPreview
 						? OperatorLayerMergeMode::Ordered
 						: OperatorLayerMergeMode::CoverageUnion;
-					compositeSucceeded = renderer_.ApplyOperatorLayers(renderer_.backBufferRTV.Get(),
-						renderer_.layerL1, renderer_.layerL0, frameDirty, mergeMode);
+					compositeSucceeded = ApplyActiveOperatorLayers(renderer_, renderer_.backBufferRTV.Get(), frameDirty, mergeMode);
 					if (compositeSucceeded)
 					{
 						(void)renderer_.DrawDebugPlateUnder(frameDirty);

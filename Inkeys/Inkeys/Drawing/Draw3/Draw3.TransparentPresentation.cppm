@@ -208,6 +208,8 @@ export namespace Inkeys::Drawing::Draw3
 		TransparentPresentationEffectiveState EffectiveState() const noexcept;
 		// 返回绘制线程上一次真实 Present 的 ULW alpha/dirty-rect 观测。
 		TransparentPresentObservation LastPresentObservation() const;
+		bool ConfirmShownFrame(TransparentOutputTarget target, std::uint64_t outputRevision,
+			std::uint64_t contentRevision) noexcept;
 		// 绘制 owner 的名义像素载荷，仅用于生命周期观测，不等同进程/驱动驻留字节。
 		std::uint64_t AuxiliaryReadbackPayloadBytes() const noexcept;
 		// 仅提升已有辅助视觉帧；资源缺失本身不能制造空闲 Present。

@@ -528,6 +528,16 @@ OperatorOutput main(PS_INPUT input)
         return snapshotOutput;
     }
 
+    if (type == 25)
+    {
+        // 单层合成：另一层确知为空时只读实时层槽位，结果与类型 1 逐像素相同。
+        // 独立早返回：Win7 guarded 尾部的 type > 22 不能把它当作 DefaultInk。
+        OperatorOutput singleOutput;
+        singleOutput.add = LiveOperatorAdd.Sample(OperatorSampler, input.uv);
+        singleOutput.retain = LiveOperatorRetain.Sample(OperatorSampler, input.uv).rrrr;
+        return singleOutput;
+    }
+
     if (type == 1 || type == 2)
     {
         float4 stableAdd = StableOperatorAdd.Sample(OperatorSampler, input.uv);

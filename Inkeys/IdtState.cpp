@@ -1048,6 +1048,107 @@ namespace
 		return auxiliary && primary;
 	}
 
+	// 调用方持有 draw3PresentationMutex。窗口命令返回后才向绘制 owner 发请求，跨帧等待靠 runtime wake。
+	Draw3PresentationReconcileResult ApplyReadyDrawpadSurface(
+		Inkeys::Window::DrawpadSurfaceVisibility visibility, const ProductState& desired,
+		const Inkeys::Drawing::Draw3::HostRuntimeSnapshot& runtime, std::uint64_t modeRevision,
+		const WorkspaceHandoff& scene, std::function<bool()> guard)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		using namespace Inkeys::Window;
+		using Result = Draw3PresentationReconcileResult;
+		static std::optional<ShownFrameKey> settled, attempting;
+		static std::shared_ptr<ShownFrameRequest> receipt;
+		static unsigned attempts = 0, retireFailures = 0;
+		auto& service = GetService();
+		const bool inkPair = runtime.currentPageHasContent && runtime.workspace != Workspace::Whiteboard &&
+			(runtime.presentationMode == HostPresentationMode::DirectCompositionVisualTree ||
+				runtime.presentationMode == HostPresentationMode::DwmBlurBehind);
+		auto key = DrawpadShownFrameKey(runtime, modeRevision, scene.revision, 0, 0);
+		// 新工作区已经过自己的窗口事务；同一工作区内的换页沿用原先的显隐路径。
+		const bool knownWorkspace = settled && settled->hostGeneration == key.hostGeneration &&
+			settled->workspaceRevision == scene.revision;
+		const bool sameScene = scene.committed == key.workspace && (!knownWorkspace ||
+			(settled->workspace == key.workspace && settled->page == key.page && settled->pageIndex == key.pageIndex));
+		if (inkPair && sameScene)
+		{
+			const auto primary = service.SurfaceSnapshot(WindowRole::Drawpad);
+			const auto auxiliary = service.SurfaceSnapshot(WindowRole::DrawpadPresentation);
+			if (!primary || !auxiliary || !primary->known || !auxiliary->known) return Result::Retry;
+			const bool toPrimary = visibility == DrawpadSurfaceVisibility::Primary;
+			if (toPrimary ? auxiliary->visible : primary->visible)
+			{
+				if (key.productRevision != desired.revision || !runtime.lastPresentSucceeded) return Result::Waiting;
+				key.primaryGeneration = primary->generation;
+				key.auxiliaryGeneration = auxiliary->generation;
+				if (attempting != key)
+				{
+					if (receipt) receipt->status.store(ShownFrameStatus::Failed);
+					receipt.reset();
+					attempting = key;
+					attempts = retireFailures = 0;
+				}
+				const auto action = PlanInkHandoff(key, toPrimary ? primary->visible : auxiliary->visible,
+					receipt.get(), attempts, receipt && std::chrono::steady_clock::now() >= receipt->deadline);
+				if (action == InkHandoffAction::Wait) return Result::Waiting;
+				// 上屏确认或退旧连续失败（持续遮挡、合成等待失败等）：不能停在“模式已切、窗口没切”，
+				// 退回下方原先的直接成对切换，最坏情况与改动前一致。
+				const bool exhausted = action == InkHandoffAction::Exhausted || retireFailures >= 3;
+				const auto current = [guard, key]() noexcept
+				{
+					if (!guard() || !WorkspaceRequestCurrent(key.workspaceRevision)) return false;
+					const auto state = ProductRuntimeSnapshot();
+					const auto wanted = ProductHost().ProductBridge().Snapshot();
+					return wanted.revision == key.productRevision && state.running && !state.consumerFatal &&
+						state.lastPresentSucceeded && state.currentPageHasContent && !Draw3RecoveryNeedsUiRelease(state, wanted) &&
+						DrawpadPresentationReady(wanted, state) && key == DrawpadShownFrameKey(state,
+							key.modeRevision, key.workspaceRevision, key.primaryGeneration, key.auxiliaryGeneration);
+				};
+				if (!exhausted)
+				{
+					const auto step = action == InkHandoffAction::RetireSource
+						? DrawpadHandoffStep::RetireSource : DrawpadHandoffStep::ShowTarget;
+					if (step == DrawpadHandoffStep::ShowTarget)
+					{
+						++attempts;
+						if (receipt) receipt->status.store(ShownFrameStatus::Failed);
+						receipt.reset();
+					}
+					if (!service.SetDrawpadSurfaceVisibility(visibility, current,
+						DrawpadSurfaceHandoff{ step, primary->generation, auxiliary->generation }))
+					{
+						if (step == DrawpadHandoffStep::RetireSource) ++retireFailures;
+						return Result::Retry;
+					}
+					if (step == DrawpadHandoffStep::ShowTarget)
+					{
+						if (!current()) return Result::Retry;
+						receipt = std::make_shared<ShownFrameRequest>(key);
+						ProductHost().RequestShownFrame(receipt);
+						return Result::Waiting;
+					}
+					settled = key;
+					attempting.reset();
+					receipt.reset();
+					return Result::Applied;
+				}
+				// 耗尽：保留 attempting 与计数，直接切换失败后重入仍走直接切换，不重新开始两段交接。
+				// 命令排队期间场景、内容或窗口代际变了就不执行（与分步命令同一复核），下次按新键重新开始。
+				if (receipt) receipt->status.store(ShownFrameStatus::Failed);
+				receipt.reset();
+				if (!service.SetDrawpadSurfaceVisibility(visibility, current)) return Result::Retry;
+				settled = key;
+				return Result::Applied;
+			}
+		}
+		if (receipt) receipt->status.store(ShownFrameStatus::Failed);
+		receipt.reset();
+		attempting.reset();
+		if (!service.SetDrawpadSurfaceVisibility(visibility, std::move(guard))) return Result::Retry;
+		settled = key;
+		return Result::Applied;
+	}
+
 	[[nodiscard]] Draw3PresentationReconcileResult
 		ReconcileDraw3PresentationState()
 	{
@@ -1211,10 +1312,12 @@ namespace
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
 			return Draw3PresentationReconcileResult::Retry;
 		}
-		if (!service.SetDrawpadSurfaceVisibility(visibility,
-			bridgeGuard(desired.revision, false, modeRevision)))
+		const auto applied = ApplyReadyDrawpadSurface(visibility, desired, runtime, modeRevision,
+			scene, bridgeGuard(desired.revision, false, modeRevision));
+		if (applied != Draw3PresentationReconcileResult::Applied)
 		{
 			draw3PresentationRetryPending.store(true, std::memory_order_release);
+			if (applied == Draw3PresentationReconcileResult::Waiting) return applied;
 			const auto current = Inkeys::Drawing::Draw3::ProductHost()
 				.ProductBridge().Snapshot();
 			if (current.revision != desired.revision ||

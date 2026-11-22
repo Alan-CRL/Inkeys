@@ -291,7 +291,7 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     float r1 = data1.r;
     float r2 = data2.r;
 
-    if (type == 1 || type == 2)
+    if (type == 1 || type == 2 || type == 25)
     {
         float2 rectMin = min(p1, p2);
         float2 rectMax = max(p1, p2);

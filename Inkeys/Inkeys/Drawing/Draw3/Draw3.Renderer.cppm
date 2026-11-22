@@ -7,6 +7,7 @@
 #include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 #include "Draw3.EraserCursor.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <d3d11.h>
@@ -30,6 +31,24 @@ export namespace Inkeys::Drawing::Draw3
 	inline const DirectX::XMFLOAT4 kTransparentLayerClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 	// L0 局部清除在声明范围外再扩的像素数：覆盖通用形状合成矩形比几何包络多出的 1 像素及取整误差。
 	inline constexpr LONG kOperatorContentClearMargin = 2;
+	// 每层登记的写入矩形上限；多指相距较远时各自成矩形，避免外包矩形接近整屏。
+	inline constexpr size_t kOperatorContentRectCapacity = 8;
+	// 各矩形面积之和超过画布的 1/N 时改用整屏清除（保守分界线，见阶段 B 设计）。
+	inline constexpr long long kOperatorContentPartialClearDivisor = 16;
+	// L0/L1 清除与合成的累计次数，只供自检和诊断读取。清除按“层”计（一层含 Add、Retain 两张图）。
+	struct OperatorLayerCounters
+	{
+		uint64_t fullClears = 0;
+		uint64_t partialClears = 0;
+		uint64_t skippedClears = 0;
+		uint64_t dualResolves = 0;
+		uint64_t singleResolves = 0;
+		uint64_t tailPathStrokes = 0;     // 抬笔走路径 A（沿用 L1 前缀，只画尾段）的笔数
+		uint64_t isolatedPathStrokes = 0; // 抬笔走路径 B（整笔重画进隔离工作区）的笔数
+		uint64_t shapeFullClears = 0;
+		uint64_t shapePartialClears = 0;
+		uint64_t shapeSkippedClears = 0;
+	};
 	inline constexpr float kLaserSolidDiameterAt96Dpi = 5.0f;
 	inline constexpr float kLaserCoreDiameterRatio = 1.0f / 3.0f;
 	inline constexpr float kLaserDiffuseExtentAt96Dpi = 5.0f;
@@ -386,11 +405,15 @@ export namespace Inkeys::Drawing::Draw3
 		void SetScreenSize(float width, float height);
 		// 设置当前输出合并目标。
 		void SetOMTarget(ID3D11RenderTargetView* renderTargetView);
-		// 同时绑定操作层的 Add/Retain 两个输出目标。绑定 L0 而不声明范围时，视为写入范围未知（下一次局部清除退回整屏）。
+		// 同时绑定操作层的 Add/Retain 两个输出目标。绑定 L0 或 L1 而不声明范围时，视为写入范围未知（下一次局部清除退回整屏）。
 		void SetOperatorTarget(const OperatorLayerResources& layer);
-		// 同上，并声明本次绑定期间写入的像素范围（可超出画布，清除时裁剪；空矩形表示不写）。仅 L0 记账。
+		// 同上，并声明本次绑定期间写入的像素范围（可超出画布，清除时裁剪；空矩形表示不写）。L0、L1 记账，其他层为空操作。
 		// 范围须覆盖线宽、抗锯齿、笔尖锥形与预测段；局部清除另外外扩 kOperatorContentClearMargin。
 		void SetOperatorTarget(const OperatorLayerResources& layer, const RECT& writeBounds);
+		// 绑定但暂不记账：写域要到绘制完成后才知道时使用。调用方随后必须调用 NoteOperatorWrite（成功）
+		// 或 MarkOperatorLayerUntracked（失败或范围不明），否则该层的登记与实际内容不一致。
+		void BindOperatorTarget(const OperatorLayerResources& layer);
+		void NoteOperatorWrite(const OperatorLayerResources& layer, const RECT& writeBounds) noexcept;
 		// 绑定单张 Laser coverage RTV。
 		void SetLaserCoverageTarget(const LaserCoverageResources& layer);
 		// 绑定按需创建的单 contact Laser live coverage RTV。
@@ -399,9 +422,20 @@ export namespace Inkeys::Drawing::Draw3
 		void ClearRTV(ID3D11RenderTargetView* renderTargetView, DirectX::XMFLOAT4 color);
 		// 将操作层恢复为不改变下层的单位操作。
 		void ClearOperatorLayer(const OperatorLayerResources& layer);
-		// L0：只把自上次清除以来声明过的写入范围恢复为单位操作；没有写入时不清除；存在未声明写入、
-		// 没有 ID3D11DeviceContext1 或范围超过画布一半时退回整屏清除。其他层等同 ClearOperatorLayer。
+		// L0/L1：只把自上次清除以来声明过的写入范围恢复为单位操作；没有写入时不清除；存在未声明写入、
+		// 没有 ClearView 能力或各矩形面积之和超过画布 1/16 时退回整屏清除。其他层等同 ClearOperatorLayer。
 		void ClearOperatorLayerContent(const OperatorLayerResources& layer);
+		// L0/L1 自上次清除以来确知没有任何写入（处处为单位操作）。其他层恒为 false。
+		bool OperatorLayerEmpty(const OperatorLayerResources& layer) const noexcept;
+		// 绕过 SetOperatorTarget 直接改写层内容（拷贝、外部绑定）后调用，使下一次清除退回整屏。
+		void MarkOperatorLayerUntracked(const OperatorLayerResources& layer) noexcept;
+		// 只把一个操作层应用到目标 RGBA（另一层确知为空时使用，结果与双层合成逐像素相同）。
+		bool ApplyOperatorLayer(ID3D11RenderTargetView* dstRTV, const OperatorLayerResources& layer, RECT rect);
+		const OperatorLayerCounters& OperatorCounters() const noexcept { return operatorCounters_; }
+		// L1 内容世代：除“声明写域的绑定”（书写中追加前缀）之外，任何改变 L1 内容的事件都会使它递增——
+		// 清除、未声明范围的绑定、绘制后补登记、标记未知、纹理重建。抬笔路径 A 用它确认 L1 里只有本笔自己追加的内容。
+		uint64_t StableLayerEpoch() const noexcept { return stableLayerEpoch_; }
+		void CountCompletedStroke(bool tailPath) noexcept { ++(tailPath ? operatorCounters_.tailPathStrokes : operatorCounters_.isolatedPathStrokes); }
 		void ClearLaserCoverage(const LaserCoverageResources& layer);
 		void ClearAllLaserCoverage();
 		// 创建依赖窗口尺寸的 backbuffer 和三层画布资源。
@@ -420,22 +454,42 @@ export namespace Inkeys::Drawing::Draw3
 		// 与设备同寿命的独立 shader/b4，以及按当前目标尺寸惰性分配的操作层。
 		bool EnsureShapePipeline();
 		bool EnsureShapeLayers();
-		bool DrawShapeBatch(const ::draw3::shapes::RenderBatch&, float originX, float originY);
+		struct ShapeScratchContent;
+		// 图形临时层（材质层、合成层）按上一次写域清除：没写过跳过；内容未知、无 ClearView 或超过画布 1/16 整屏清。
+		void ClearShapeScratchLayer(const OperatorLayerResources& layer, ShapeScratchContent& content);
+		// scissor 非空时图元只写入该矩形（需要带剪裁的光栅状态），材质层的写域随之可知。
+		bool DrawShapeBatch(const ::draw3::shapes::RenderBatch&, float originX, float originY, const RECT* scissor);
 		bool ResolveShapeLayer(const OperatorLayerResources&, ID3D11RenderTargetView* const*, RECT);
 		Microsoft::WRL::ComPtr<ID3D11VertexShader> shapeVertexShader_;
 		Microsoft::WRL::ComPtr<ID3D11PixelShader> shapePixelShader_;
 		Microsoft::WRL::ComPtr<ID3D11Buffer> shapeCB_;
 		Microsoft::WRL::ComPtr<ID3D11BlendState> shapeOrderedBlend_;
 		OperatorLayerResources shapeMaterialLayer_, shapeCompositeLayer_;
-		// L0 内容记账（不变量：bounds 之外处处为 Add=0、Retain=1）。untracked：有过未声明范围的写入或纹理内容未知。
-		struct OperatorContentTracking
+		struct ShapeScratchContent
 		{
 			RECT bounds = {};
+			bool unknown = true;
+		};
+		ShapeScratchContent shapeMaterialContent_, shapeCompositeContent_;
+		// L0/L1 内容记账（不变量：登记矩形之外处处为 Add=0、Retain=1）。untracked：有过未声明范围的写入或纹理内容未知。
+		// 矩形按声明原样保存（可超出画布），清除时再外扩并裁剪；登记满后并入面积增量最小的一个。
+		struct OperatorContentTracking
+		{
+			std::array<RECT, kOperatorContentRectCapacity> rects = {};
+			uint32_t count = 0;
 			bool untracked = true;
 		};
-		OperatorContentTracking l0Content_;
+		OperatorContentTracking l0Content_, l1Content_;
+		OperatorLayerCounters operatorCounters_;
+		uint64_t stableLayerEpoch_ = 0;
 		Microsoft::WRL::ComPtr<ID3D11DeviceContext1> context1_; // Win7 未装平台更新时为空，局部清除退回整屏
+		// 只有 L0、L1 记账；其他操作层返回空指针。
+		OperatorContentTracking* ContentTrackingFor(const OperatorLayerResources& layer) noexcept;
+		const OperatorContentTracking* ContentTrackingFor(const OperatorLayerResources& layer) const noexcept;
 		void NoteOperatorContent(const OperatorLayerResources& layer, const RECT* writeBounds) noexcept;
+		// stableLayer 为空时只读 liveLayer（PS 类型 25）。
+		bool ResolveOperatorLayers(ID3D11RenderTargetView* dstRTV, const OperatorLayerResources* stableLayer,
+			const OperatorLayerResources& liveLayer, RECT rect, float shapeType);
 		struct ShapeRenderCacheEntry
 		{
 			::draw3::shapes::ObjectId id;

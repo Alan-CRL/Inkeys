@@ -23,6 +23,7 @@
 #include <d3d11_1.h>
 #include <DirectXMath.h>
 #include <dxgi1_2.h>
+#include <limits>
 #include <utility>
 #include <vector>
 #include <windows.h>
@@ -150,7 +151,20 @@ namespace Inkeys::Drawing::Draw3
 		const OperatorLayerResources& stableLayer, const OperatorLayerResources& liveLayer,
 		RECT rect, OperatorLayerMergeMode mergeMode)
 	{
-		if (!dstRTV || !compositeVertexBuffer || !compositeVertexSRV || !stableLayer.addSRV || !stableLayer.retainSRV ||
+		return ResolveOperatorLayers(dstRTV, &stableLayer, liveLayer, rect,
+			mergeMode == OperatorLayerMergeMode::Ordered ? 2.0f : 1.0f);
+	}
+
+	bool InkRenderer::ApplyOperatorLayer(ID3D11RenderTargetView* dstRTV, const OperatorLayerResources& layer, RECT rect)
+	{
+		return ResolveOperatorLayers(dstRTV, nullptr, layer, rect, 25.0f); // PS 类型 25 只读 t4/t5。
+	}
+
+	bool InkRenderer::ResolveOperatorLayers(ID3D11RenderTargetView* dstRTV, const OperatorLayerResources* stableLayer,
+		const OperatorLayerResources& liveLayer, RECT rect, float shapeType)
+	{
+		if (!dstRTV || !compositeVertexBuffer || !compositeVertexSRV ||
+			(stableLayer && (!stableLayer->addSRV || !stableLayer->retainSRV)) ||
 			!liveLayer.addSRV || !liveLayer.retainSRV) return false;
 		rect.left = std::max(0L, rect.left);
 		rect.top = std::max(0L, rect.top);
@@ -172,7 +186,7 @@ namespace Inkeys::Drawing::Draw3
 		constants->width = viewportWidth;
 		constants->height = viewportHeight;
 		constants->color = DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f);
-		constants->shapeType = mergeMode == OperatorLayerMergeMode::Ordered ? 2.0f : 1.0f;
+		constants->shapeType = shapeType;
 		constants->bufferOffset = 0;
 		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
 		context->Unmap(globalCB.Get(), 0);
@@ -188,8 +202,8 @@ namespace Inkeys::Drawing::Draw3
 		context->PSSetShader(pixelShader.Get(), nullptr, 0);
 		context->PSSetConstantBuffers(0, 1, constantBuffers);
 		ID3D11ShaderResourceView* compositeResources[] = {
-			stableLayer.addSRV.Get(),
-			stableLayer.retainSRV.Get(),
+			stableLayer ? stableLayer->addSRV.Get() : nullptr,
+			stableLayer ? stableLayer->retainSRV.Get() : nullptr,
 			nullptr, // t3 留给 VS 的荧光笔结构化缓冲区。
 			liveLayer.addSRV.Get(),
 			liveLayer.retainSRV.Get()
@@ -200,6 +214,7 @@ namespace Inkeys::Drawing::Draw3
 		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
 		context->RSSetState(rasterState.Get());
 		context->Draw(6, 0); // 双源混合一次完成 Result = Add + Retain * Below。
+		++(stableLayer ? operatorCounters_.dualResolves : operatorCounters_.singleResolves);
 
 		ID3D11ShaderResourceView* nullResources[] = { nullptr, nullptr, nullptr, nullptr, nullptr };
 		ID3D11SamplerState* nullSampler[] = { nullptr };
@@ -255,26 +270,100 @@ namespace Inkeys::Drawing::Draw3
 		if (dsState) context->OMSetDepthStencilState(dsState.Get(), 0);
 	}
 
+	void InkRenderer::BindOperatorTarget(const OperatorLayerResources& layer)
+	{
+		ID3D11RenderTargetView* targets[] = { layer.addRTV.Get(), layer.retainRTV.Get() };
+		context->OMSetRenderTargets(ARRAYSIZE(targets), targets, nullptr);
+		if (dsState) context->OMSetDepthStencilState(dsState.Get(), 0);
+	}
+
+	void InkRenderer::NoteOperatorWrite(const OperatorLayerResources& layer, const RECT& writeBounds) noexcept
+	{
+		NoteOperatorContent(layer, &writeBounds);
+		if (&layer == &layerL1) ++stableLayerEpoch_; // 入库笔画、焦点层等整笔写入不属于“本笔追加前缀”。
+	}
+
+	InkRenderer::OperatorContentTracking* InkRenderer::ContentTrackingFor(const OperatorLayerResources& layer) noexcept
+	{
+		return &layer == &layerL0 ? &l0Content_ : &layer == &layerL1 ? &l1Content_ : nullptr;
+	}
+
+	const InkRenderer::OperatorContentTracking* InkRenderer::ContentTrackingFor(const OperatorLayerResources& layer) const noexcept
+	{
+		return &layer == &layerL0 ? &l0Content_ : &layer == &layerL1 ? &l1Content_ : nullptr;
+	}
+
+	bool InkRenderer::OperatorLayerEmpty(const OperatorLayerResources& layer) const noexcept
+	{
+		const OperatorContentTracking* tracking = ContentTrackingFor(layer);
+		return tracking && !tracking->untracked && tracking->count == 0;
+	}
+
+	void InkRenderer::MarkOperatorLayerUntracked(const OperatorLayerResources& layer) noexcept
+	{
+		if (OperatorContentTracking* tracking = ContentTrackingFor(layer)) tracking->untracked = true;
+		if (&layer == &layerL1) ++stableLayerEpoch_;
+	}
+
 	// 在绑定时记账（先于绘制），批次上传中途失败也只会多清，不会漏清。
 	void InkRenderer::NoteOperatorContent(const OperatorLayerResources& layer, const RECT* writeBounds) noexcept
 	{
-		if (&layer != &layerL0) return;
+		OperatorContentTracking* tracking = ContentTrackingFor(layer);
+		if (!tracking) return;
 		if (!writeBounds)
 		{
-			l0Content_.untracked = true;
+			tracking->untracked = true;
+			if (&layer == &layerL1) ++stableLayerEpoch_;
 			return;
 		}
-		const RECT& add = *writeBounds;
+		RECT add = *writeBounds;
+		// 声明范围可远超画布（甚至是饱和值）：先收进 ±2^24，后续外扩、相邻判断和面积计算都不会溢出；
+		// 画布远小于该范围，收拢不改变与画布的交集。
+		constexpr LONG kCoordinateLimit = 1L << 24;
+		add.left = std::clamp(add.left, -kCoordinateLimit, kCoordinateLimit);
+		add.top = std::clamp(add.top, -kCoordinateLimit, kCoordinateLimit);
+		add.right = std::clamp(add.right, -kCoordinateLimit, kCoordinateLimit);
+		add.bottom = std::clamp(add.bottom, -kCoordinateLimit, kCoordinateLimit);
 		if (add.left >= add.right || add.top >= add.bottom) return;
-		RECT& bounds = l0Content_.bounds;
-		if (bounds.left >= bounds.right || bounds.top >= bounds.bottom) bounds = add;
-		else
+		const auto area = [](const RECT& rect) noexcept
 		{
-			bounds.left = (std::min)(bounds.left, add.left);
-			bounds.top = (std::min)(bounds.top, add.top);
-			bounds.right = (std::max)(bounds.right, add.right);
-			bounds.bottom = (std::max)(bounds.bottom, add.bottom);
+			return static_cast<long long>(rect.right - rect.left) * static_cast<long long>(rect.bottom - rect.top);
+		};
+		const auto unite = [](const RECT& first, const RECT& second) noexcept
+		{
+			return RECT{ (std::min)(first.left, second.left), (std::min)(first.top, second.top),
+				(std::max)(first.right, second.right), (std::max)(first.bottom, second.bottom) };
+		};
+		// 与已有矩形相交或相邻（含清除外扩后的重叠）时合并，同一触点逐帧追加的写入保持为一个矩形。
+		// 合并后的矩形可能又碰到别的矩形，循环到不再变化；每轮至少减少一个矩形，必然终止。
+		for (bool merged = true; merged;)
+		{
+			merged = false;
+			for (uint32_t index = 0; index < tracking->count; ++index)
+			{
+				const RECT& existing = tracking->rects[index];
+				if (add.left > existing.right + 2 * kOperatorContentClearMargin || existing.left > add.right + 2 * kOperatorContentClearMargin ||
+					add.top > existing.bottom + 2 * kOperatorContentClearMargin || existing.top > add.bottom + 2 * kOperatorContentClearMargin) continue;
+				add = unite(add, existing);
+				tracking->rects[index] = tracking->rects[--tracking->count];
+				merged = true;
+				break;
+			}
 		}
+		if (tracking->count < tracking->rects.size())
+		{
+			tracking->rects[tracking->count++] = add;
+			return;
+		}
+		// 登记已满：并入合并后面积增量最小的一个，保持“登记矩形之外为单位操作”的不变量。
+		uint32_t best = 0;
+		long long bestGrowth = (std::numeric_limits<long long>::max)();
+		for (uint32_t index = 0; index < tracking->count; ++index)
+		{
+			const long long growth = area(unite(add, tracking->rects[index])) - area(tracking->rects[index]);
+			if (growth < bestGrowth) { bestGrowth = growth; best = index; }
+		}
+		tracking->rects[best] = unite(add, tracking->rects[best]);
 	}
 
 	void InkRenderer::SetLaserCoverageTarget(const LaserCoverageResources& layer)
@@ -300,47 +389,66 @@ namespace Inkeys::Drawing::Draw3
 	{
 		ClearRTV(layer.addRTV.Get(), kTransparentLayerClearColor);
 		ClearRTV(layer.retainRTV.Get(), DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f)); // Retain=1 表示不改变下层。
-		if (&layer == &layerL0) l0Content_ = { {}, false };
+		if (OperatorContentTracking* tracking = ContentTrackingFor(layer))
+		{
+			*tracking = { {}, 0, false };
+			++operatorCounters_.fullClears;
+			if (&layer == &layerL1) ++stableLayerEpoch_;
+		}
 	}
 
 	void InkRenderer::ClearOperatorLayerContent(const OperatorLayerResources& layer)
 	{
-		if (&layer != &layerL0)
+		OperatorContentTracking* tracking = ContentTrackingFor(layer);
+		if (!tracking)
 		{
 			ClearOperatorLayer(layer);
 			return;
 		}
-		const RECT bounds = l0Content_.bounds;
-		const bool empty = bounds.left >= bounds.right || bounds.top >= bounds.bottom;
-		// 自上次清除以来没有任何写入（如纯橡皮、纯激光接触）：L0 已处处为单位操作，不清除。
-		if (!l0Content_.untracked && empty) return;
+		// 自上次清除以来没有任何写入（如纯橡皮帧的 L0、纯激光接触）：该层已处处为单位操作，不清除。
+		if (!tracking->untracked && tracking->count == 0)
+		{
+			++operatorCounters_.skippedClears;
+			return;
+		}
 		const LONG width = static_cast<LONG>(viewportWidth);
 		const LONG height = static_cast<LONG>(viewportHeight);
-		// 外扩覆盖形状合成矩形比几何包络多出的 1 像素等取整误差，再裁剪到画布。
-		const RECT rect = {
-			(std::max)(0L, bounds.left - kOperatorContentClearMargin), (std::max)(0L, bounds.top - kOperatorContentClearMargin),
-			(std::min)(width, bounds.right + kOperatorContentClearMargin), (std::min)(height, bounds.bottom + kOperatorContentClearMargin) };
-		const bool rectEmpty = rect.left >= rect.right || rect.top >= rect.bottom;
-		if (!l0Content_.untracked && rectEmpty)
+		// 外扩覆盖形状合成矩形比几何包络多出的 1 像素等取整误差，再裁剪到画布；完全在画布外的矩形丢弃。
+		std::array<D3D11_RECT, kOperatorContentRectCapacity> clearRects = {};
+		UINT clearCount = 0;
+		long long area = 0;
+		for (uint32_t index = 0; index < tracking->count; ++index)
 		{
-			l0Content_ = { {}, false }; // 写入范围完全在画布外，画布内没有内容。
+			const RECT& bounds = tracking->rects[index];
+			const D3D11_RECT rect = {
+				(std::max)(0L, bounds.left - kOperatorContentClearMargin), (std::max)(0L, bounds.top - kOperatorContentClearMargin),
+				(std::min)(width, bounds.right + kOperatorContentClearMargin), (std::min)(height, bounds.bottom + kOperatorContentClearMargin) };
+			if (rect.left >= rect.right || rect.top >= rect.bottom) continue;
+			area += static_cast<long long>(rect.right - rect.left) * static_cast<long long>(rect.bottom - rect.top);
+			clearRects[clearCount++] = rect;
+		}
+		if (!tracking->untracked && clearCount == 0)
+		{
+			*tracking = { {}, 0, false }; // 写入范围完全在画布外，画布内没有内容。
+			++operatorCounters_.skippedClears;
 			return;
 		}
-		const long long area = rectEmpty ? 0LL :
-			static_cast<long long>(rect.right - rect.left) * static_cast<long long>(rect.bottom - rect.top);
-		// 未声明写入、无 ClearView 或范围过大（两次矩形清除不比整屏便宜）时退回整屏，保证不留残影。
-		if (l0Content_.untracked || !context1_ || rectEmpty || area * 2 > static_cast<long long>(width) * height)
+		// 未声明写入、无 ClearView 或范围过大时退回整屏，保证不留残影。分界线保守取画布的 1/16：
+		// 小矩形在各类设备上都不慢于整屏清，大矩形在没有快速矩形清的驱动上可能反而更慢。
+		if (tracking->untracked || !context1_ ||
+			area * kOperatorContentPartialClearDivisor > static_cast<long long>(width) * height)
 		{
 			ClearOperatorLayer(layer);
 			return;
 		}
-		const D3D11_RECT clearRect = { rect.left, rect.top, rect.right, rect.bottom };
 		const float transparent[4] = { kTransparentLayerClearColor.x, kTransparentLayerClearColor.y,
 			kTransparentLayerClearColor.z, kTransparentLayerClearColor.w };
 		const float retainIdentity[4] = { 1.0f, 1.0f, 1.0f, 1.0f }; // Retain=1 表示不改变下层。
-		context1_->ClearView(layer.addRTV.Get(), transparent, &clearRect, 1);
-		context1_->ClearView(layer.retainRTV.Get(), retainIdentity, &clearRect, 1);
-		l0Content_ = { {}, false };
+		context1_->ClearView(layer.addRTV.Get(), transparent, clearRects.data(), clearCount);
+		context1_->ClearView(layer.retainRTV.Get(), retainIdentity, clearRects.data(), clearCount);
+		*tracking = { {}, 0, false };
+		++operatorCounters_.partialClears;
+		if (&layer == &layerL1) ++stableLayerEpoch_;
 	}
 
 	void InkRenderer::ClearLaserCoverage(const LaserCoverageResources& layer)
@@ -561,7 +669,8 @@ namespace Inkeys::Drawing::Draw3
 		CreateTrustedL2SnapshotResources(width, height);
 		if (!CreateOperatorLayerResources(width, height, layerL1)) return false; // L1 保存当前笔画已确认前缀操作。
 		if (!CreateOperatorLayerResources(width, height, layerL0)) return false; // L0 保存每帧变化的笔锋和预测操作。
-		l0Content_ = {}; // 新纹理内容未知：在一次整屏清除之前，局部清除一律退回整屏。
+		l0Content_ = l1Content_ = {}; // 新纹理内容未知：在一次整屏清除之前，局部清除一律退回整屏。
+		++stableLayerEpoch_;
 		// 可选 Laser 主体由工具选择控制；普通画布不预留整屏激光纹理。
 
 		SetScreenSize(static_cast<float>(width), static_cast<float>(height));
@@ -598,7 +707,7 @@ namespace Inkeys::Drawing::Draw3
 		layerL0.retainRTV.Reset();
 		layerL0.retainSRV.Reset();
 		layerL0.retainTexture.Reset();
-		l0Content_ = {};
+		l0Content_ = l1Content_ = {};
 		ReleaseLaserResources();
 	}
 
@@ -690,6 +799,7 @@ namespace Inkeys::Drawing::Draw3
 			if (oldL2Texture) CopyResource(layerL2Texture.Get(), oldL2Texture.Get(), keepRect); // 保留已完成笔迹。
 			if (oldL1AddTexture) CopyResource(layerL1.addTexture.Get(), oldL1AddTexture.Get(), keepRect);
 			if (oldL1RetainTexture) CopyResource(layerL1.retainTexture.Get(), oldL1RetainTexture.Get(), keepRect); // 保留正在绘制的稳定前缀。
+			MarkOperatorLayerUntracked(layerL1); // 拷贝绕过了绑定记账：L1 内容范围未知，下一次清除必须整屏。
 			if (oldLaserCompositedTexture && laserCompositedColor.texture)
 				CopyResource(laserCompositedColor.texture.Get(),
 					oldLaserCompositedTexture.Get(), keepRect);
@@ -729,6 +839,15 @@ namespace Inkeys::Drawing::Draw3
 		// 按实际绘图 GPU 选择，不把兆芯 CPU + 其他显卡误判为兼容设备。
 		useDefaultStructuredUpload_ = UseZhaoxinDefaultUpload(enableZhaoxinCompatibility,
 			driver, adapterIdentityAvailable, adapterDescription.VendorId);
+		{
+			// 每次设备初始化记一条：用于统计有多少设备落在“整屏清除”一档（无 ClearView 能力）。
+			char message[160] = {};
+			std::snprintf(message, sizeof(message),
+				"Draw3 操作层局部清除：ClearView=%d options=%d driver=%d vendor=0x%04X",
+				context1_ ? 1 : 0, deviceOptionsAvailable ? 1 : 0, static_cast<int>(driver),
+				adapterIdentityAvailable ? static_cast<unsigned int>(adapterDescription.VendorId) : 0u);
+			(void)Inkeys::Log::TryWrite(Inkeys::Log::Level::Info, Inkeys::Log::Module::Draw3, std::nullopt, message);
+		}
 		if (!CreateSizeDependentResources(swapChain, width, height)) return false;
 		return CreateFixedResources(driver);
 	}
@@ -1368,32 +1487,32 @@ namespace Inkeys::Drawing::Draw3
 					"both consecutive batches rendered with their own data");
 				testContext->Unmap(pixelReadback.Get(), 0);
 
-				// R7：L0 局部清除的真实像素读回（Add BGRA8=0、Retain R16F=1.0 即单位操作）。
+				// R7：操作层清除的真实像素读回（Add BGRA8=0、Retain R16F=1.0 即单位操作）。
 				if (mode == 0)
 				{
-					const auto l0Region = [&](RECT region, bool requireIdentity, const char* name) -> bool
+					D3D11_TEXTURE2D_DESC retainReadDescription = targetDescription;
+					retainReadDescription.Format = DXGI_FORMAT_R16_FLOAT;
+					Microsoft::WRL::ComPtr<ID3D11Texture2D> retainReadback;
+					if (!check(SUCCEEDED(testDevice->CreateTexture2D(&retainReadDescription, nullptr,
+						retainReadback.GetAddressOf())), "operator retain staging texture")) return 1;
+					const auto layerRegion = [&](const OperatorLayerResources& layer,
+						RECT region, bool requireIdentity, const char* name)
 					{
 						bool allIdentity = true;
-						for (int layerIndex = 0; layerIndex < 2; ++layerIndex)
+						testContext->OMSetRenderTargets(0, nullptr, nullptr);
+						for (int plane = 0; plane < 2; ++plane)
 						{
-							ID3D11Texture2D* source = layerIndex == 0 ? renderer.layerL0.addTexture.Get() : renderer.layerL0.retainTexture.Get();
-							D3D11_TEXTURE2D_DESC stagingDescription = {};
-							source->GetDesc(&stagingDescription);
-							stagingDescription.Usage = D3D11_USAGE_STAGING;
-							stagingDescription.BindFlags = stagingDescription.MiscFlags = 0;
-							stagingDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-							Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
-							if (!check(SUCCEEDED(testDevice->CreateTexture2D(&stagingDescription, nullptr, staging.GetAddressOf())), "L0 staging texture"))
-								return false;
-							testContext->OMSetRenderTargets(0, nullptr, nullptr);
-							testContext->CopyResource(staging.Get(), source);
+							auto* source = plane == 0 ? layer.addTexture.Get() : layer.retainTexture.Get();
+							auto* staging = plane == 0 ? pixelReadback.Get() : retainReadback.Get();
+							testContext->CopyResource(staging, source);
 							D3D11_MAPPED_SUBRESOURCE mapped = {};
-							if (!check(SUCCEEDED(testContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)), "L0 readback")) return false;
+							if (!check(SUCCEEDED(testContext->Map(staging, 0, D3D11_MAP_READ, 0, &mapped)), "operator region readback"))
+								return false;
 							for (LONG y = region.top; y < region.bottom; ++y)
 								for (LONG x = region.left; x < region.right; ++x)
 								{
 									const auto* row = static_cast<const unsigned char*>(mapped.pData) + y * mapped.RowPitch;
-									if (layerIndex == 0)
+									if (plane == 0)
 									{
 										const auto* pixel = row + x * 4;
 										if (pixel[0] || pixel[1] || pixel[2] || pixel[3]) allIdentity = false;
@@ -1405,59 +1524,279 @@ namespace Inkeys::Drawing::Draw3
 										if (half != 0x3C00) allIdentity = false; // 半精度 1.0
 									}
 								}
-							testContext->Unmap(staging.Get(), 0);
+							testContext->Unmap(staging, 0);
 						}
 						return check(requireIdentity ? allIdentity : !allIdentity, name);
 					};
-					const RECT whole = { 0, 0, 64, 64 };
-					const RECT leftBounds = { 0, 0, 26, 22 }, rightBounds = { 32, 40, 64, 60 };
-					const std::array<InkPoint, 2> leftInk = { InkPoint{ 8, 10, 3, 0 }, InkPoint{ 16, 10, 3, 1 } };
-					const std::array<InkPoint, 2> rightInk = { InkPoint{ 42, 50, 3, 2 }, InkPoint{ 54, 50, 3, 3 } };
-					const auto drawBoth = [&](bool declare)
+					enum class ClearPath { Full, Partial, Skip };
+					const auto clearContent = [&](const OperatorLayerResources& layer, ClearPath path, const char* name)
 					{
-						if (declare) renderer.SetOperatorTarget(renderer.layerL0, leftBounds); else renderer.SetOperatorTarget(renderer.layerL0);
-						check(renderer.DrawStroke(leftInk, red) == 0, "L0 left write");
-						if (declare) renderer.SetOperatorTarget(renderer.layerL0, rightBounds); else renderer.SetOperatorTarget(renderer.layerL0);
-						check(renderer.DrawStroke(rightInk, green) == 0, "L0 right write");
+						const auto before = renderer.OperatorCounters();
+						renderer.ClearOperatorLayerContent(layer);
+						const auto& after = renderer.OperatorCounters();
+						const auto full = after.fullClears - before.fullClears;
+						const auto partial = after.partialClears - before.partialClears;
+						const bool expected = full == (path == ClearPath::Full) && partial == (path == ClearPath::Partial);
+						check(expected && after.skippedClears == before.skippedClears + (path == ClearPath::Skip), name);
 					};
-					testContext.As(&renderer.context1_);
-					check(renderer.context1_ != nullptr, "WARP exposes ID3D11DeviceContext1");
-					// 声明两处不相交写入后局部清除：整层复原。
-					renderer.ClearOperatorLayer(renderer.layerL0);
-					drawBoth(true);
-					l0Region(leftBounds, false, "declared left write reaches L0");
-					l0Region(rightBounds, false, "declared right write reaches L0");
-					renderer.ClearOperatorLayerContent(renderer.layerL0);
-					l0Region(whole, true, "clear of declared writes restores identity");
-					// 生产记账链路：右侧内容绕过记账直接绑定 RTV 写入（模拟声明范围之外的已有内容），左侧经声明绑定写入。
-					// 局部清除只复原左侧；右侧保留，证明走的是矩形清除而非整屏。
-					renderer.ClearOperatorLayer(renderer.layerL0);
+					const auto bindRaw = [&](const OperatorLayerResources& layer)
 					{
-						ID3D11RenderTargetView* rawTargets[] = { renderer.layerL0.addRTV.Get(), renderer.layerL0.retainRTV.Get() };
-						testContext->OMSetRenderTargets(ARRAYSIZE(rawTargets), rawTargets, nullptr);
-						check(renderer.DrawStroke(rightInk, green) == 0, "L0 raw right write");
-					}
-					renderer.SetOperatorTarget(renderer.layerL0, leftBounds);
+						// 模拟声明范围以外的旧内容，绑定两张 RTV 时绕过写域登记。
+						ID3D11RenderTargetView* targets[] = { layer.addRTV.Get(), layer.retainRTV.Get() };
+						testContext->OMSetRenderTargets(ARRAYSIZE(targets), targets, nullptr);
+					};
+					const RECT whole = { 0, 0, 64, 64 };
+					const RECT leftBounds = { 0, 4, 6, 10 }, rightBounds = { 59, 48, 64, 54 };
+					const std::array<InkPoint, 2> leftInk = { InkPoint{ 2, 7, 1.5f, 0 }, InkPoint{ 4, 7, 1.5f, 1 } };
+					const std::array<InkPoint, 2> rightInk = { InkPoint{ 61, 51, 1.25f, 2 }, InkPoint{ 62, 51, 1.25f, 3 } };
+					const auto drawBoth = [&](const OperatorLayerResources& layer, const RECT& left, const RECT& right)
+					{
+						renderer.SetOperatorTarget(layer, left);
+						check(renderer.DrawStroke(leftInk, red) == 0, "declared left write");
+						renderer.SetOperatorTarget(layer, right);
+						check(renderer.DrawStroke(rightInk, green) == 0, "declared right write");
+					};
+					auto& l0 = renderer.layerL0;
+					auto& l1 = renderer.layerL1;
+					const auto originalContext1 = renderer.context1_;
+					Microsoft::WRL::ComPtr<ID3D11DeviceContext1> clearViewContext;
+					if (!check(options.ClearView && SUCCEEDED(testContext.As(&clearViewContext)), "WARP supports ClearView")) return 1;
+					renderer.context1_ = clearViewContext;
+					// 两处写域外扩并裁剪后合计 8×10 + 7×10 = 150，小于 256 像素。
+					renderer.ClearOperatorLayer(l0);
+					drawBoth(l0, leftBounds, rightBounds);
+					layerRegion(l0, leftBounds, false, "declared left write reaches L0");
+					layerRegion(l0, rightBounds, false, "declared right write reaches L0");
+					clearContent(l0, ClearPath::Partial, "L0 two declared writes count one partial clear");
+					layerRegion(l0, whole, true, "clear of declared writes restores identity");
+
+					renderer.ClearOperatorLayer(l0);
+					bindRaw(l0);
+					check(renderer.DrawStroke(rightInk, green) == 0, "L0 raw right write");
+					renderer.SetOperatorTarget(l0, leftBounds);
 					check(renderer.DrawStroke(leftInk, red) == 0, "L0 declared left write");
-					renderer.ClearOperatorLayerContent(renderer.layerL0);
-					l0Region(leftBounds, true, "declared bind then partial clear restores the declared rectangle");
-					l0Region(rightBounds, false, "partial clear leaves content outside the declared rectangle");
-					// 局部清除后没有新的写入：再次清除被跳过，右侧仍在。
-					renderer.ClearOperatorLayerContent(renderer.layerL0);
-					l0Region(rightBounds, false, "no recorded write skips the clear");
-					// 未声明范围的写入：退回整屏清除。
-					renderer.ClearOperatorLayer(renderer.layerL0);
-					drawBoth(false);
-					renderer.ClearOperatorLayerContent(renderer.layerL0);
-					l0Region(whole, true, "undeclared write falls back to full clear");
-					// 没有 ID3D11DeviceContext1：退回整屏清除。
-					renderer.ClearOperatorLayer(renderer.layerL0);
+					clearContent(l0, ClearPath::Partial, "L0 declared left write counts one partial clear");
+					layerRegion(l0, leftBounds, true, "declared bind then partial clear restores the declared rectangle");
+					layerRegion(l0, rightBounds, false, "partial clear leaves content outside the declared rectangle");
+					clearContent(l0, ClearPath::Skip, "L0 no recorded write counts one skipped clear");
+					layerRegion(l0, rightBounds, false, "no recorded write skips the clear");
+					// 保留右侧旧内容，验证两种回退都清到声明范围之外。
+					renderer.SetOperatorTarget(l0);
+					check(renderer.DrawStroke(leftInk, red) == 0, "L0 write without declared bounds");
+					clearContent(l0, ClearPath::Full, "L0 unknown write counts one full clear");
+					layerRegion(l0, whole, true, "undeclared write falls back to full clear");
+
 					renderer.context1_.Reset();
-					renderer.SetOperatorTarget(renderer.layerL0, leftBounds);
+					bindRaw(l0);
+					check(renderer.DrawStroke(rightInk, green) == 0, "L0 raw right write without ClearView");
+					renderer.SetOperatorTarget(l0, leftBounds);
 					check(renderer.DrawStroke(leftInk, red) == 0, "L0 left write without ClearView");
-					renderer.ClearOperatorLayerContent(renderer.layerL0);
-					l0Region(whole, true, "missing ClearView falls back to full clear");
-					renderer.ClearOperatorLayer(renderer.layerL0);
+					clearContent(l0, ClearPath::Full, "missing ClearView counts one full clear");
+					layerRegion(l0, whole, true, "missing ClearView falls back to full clear");
+					renderer.context1_ = clearViewContext;
+
+					const RECT sentinelPixel = { 28, 27, 29, 28 };
+					const std::array<InkPoint, 2> sentinelInk = { InkPoint{ 27, 27, 2, 0 }, InkPoint{ 30, 27, 2, 1 } };
+					const auto drawSentinel = [&](const OperatorLayerResources& layer)
+					{
+						bindRaw(layer);
+						check(renderer.DrawStroke(sentinelInk, green) == 0, "raw sentinel write");
+						layerRegion(layer, sentinelPixel, false, "raw sentinel pixel reaches operator layer");
+					};
+					// 哨兵位于两个登记矩形之间，合用一个外包矩形会擦掉它。
+					for (auto* layer : { &l0, &l1 })
+					{
+						renderer.ClearOperatorLayer(*layer);
+						drawBoth(*layer, leftBounds, rightBounds);
+						layerRegion(*layer, leftBounds, false, "multi-rect left write reaches operator layer");
+						layerRegion(*layer, rightBounds, false, "multi-rect right write reaches operator layer");
+						drawSentinel(*layer);
+						clearContent(*layer, ClearPath::Partial, layer == &l0 ?
+							"L0 multi-rect clear counts once" : "L1 multi-rect clear counts once");
+						layerRegion(*layer, leftBounds, true, "multi-rect clear restores left write");
+						layerRegion(*layer, rightBounds, true, "multi-rect clear restores right write");
+						layerRegion(*layer, sentinelPixel, false, "multi-rect clear preserves the sentinel between rectangles");
+					}
+
+					// 64×64 的 1/16 为 256。每边外扩 2，再裁剪到画布：
+					// 左上贴边、右侧贴边，两矩形面积和分别为 8×18 + 7×16 = 256、8×19 + 7×15 = 257。
+					for (const bool aboveThreshold : { false, true })
+					{
+						renderer.ClearOperatorLayer(l0);
+						drawBoth(l0, { 0, 0, 6, aboveThreshold ? 17 : 16 },
+							{ 59, aboveThreshold ? 43 : 42, 64, 54 });
+						layerRegion(l0, leftBounds, false, "threshold left write reaches L0");
+						layerRegion(l0, rightBounds, false, "threshold right write reaches L0");
+						drawSentinel(l0);
+						clearContent(l0, aboveThreshold ? ClearPath::Full : ClearPath::Partial, aboveThreshold ?
+							"257 pixels count one full clear" : "256 pixels count one partial clear");
+						layerRegion(l0, leftBounds, true, "threshold clear restores left write");
+						layerRegion(l0, rightBounds, true, "threshold clear restores right write");
+						layerRegion(l0, sentinelPixel, aboveThreshold, aboveThreshold ?
+							"257 pixels clear the sentinel" : "256 pixels preserve the sentinel");
+					}
+
+					const auto drawDot = [&](RECT bounds)
+					{
+						const std::array<InkPoint, 1> dot = { InkPoint{
+							(bounds.left + bounds.right) * 0.5f, (bounds.top + bounds.bottom) * 0.5f, 0.5f, 0 } };
+						renderer.SetOperatorTarget(l0, bounds);
+						check(renderer.DrawStrokeOrDot(dot, red) == 0, "declared tiny write");
+						layerRegion(l0, bounds, false, "declared tiny write reaches L0");
+					};
+					// 九个 1×1 写入间隔 8px。第九个并入横向或纵向最近的一个，外扩后
+					// 面积为 7×5×5 + 13×5 = 240，小于 64×64/16 = 256。
+					for (LONG i = 0; i < 9; ++i)
+					{
+						const LONG x = 8 + (i % 3) * 8, y = 12 + (i / 3) * 8;
+						drawDot({ x, y, x + 1, y + 1 });
+					}
+					bindRaw(l0);
+					check(renderer.DrawStroke(rightInk, green) == 0, "raw capacity sentinel write");
+					layerRegion(l0, rightBounds, false, "capacity sentinel reaches L0");
+					clearContent(l0, ClearPath::Partial, "nine disjoint writes count one partial clear");
+					layerRegion(l0, { 0, 0, 32, 64 }, true, "capacity merge clears all nine writes");
+					layerRegion(l0, rightBounds, false, "capacity clear preserves the sentinel");
+					renderer.ClearOperatorLayer(l0);
+
+					// A、B 相隔 5px，先独立登记；C 桥接后外扩面积为 21×12 = 252。
+					// 若只吞并一侧，剩余两个外扩矩形的面积和为 (15+10)×12 = 300，会退回整屏清。
+					const RECT a = { 10, 8, 16, 16 }, b = { 21, 8, 27, 16 }, c = { 16, 8, 21, 16 };
+					drawDot(a);
+					drawDot(b);
+					drawDot(c);
+					drawSentinel(l0);
+					clearContent(l0, ClearPath::Partial, "bridge merges both neighbors and counts one partial clear");
+					layerRegion(l0, a, true, "bridge clear restores A");
+					layerRegion(l0, b, true, "bridge clear restores B");
+					layerRegion(l0, c, true, "bridge clear restores C");
+					layerRegion(l0, sentinelPixel, false, "bridge clear preserves the sentinel");
+					renderer.ClearOperatorLayer(l0);
+
+					// 四次相邻追加分别外扩会达 324px，合并后只清 216px。
+					check(renderer.OperatorLayerEmpty(l0), "L0 empty before adjacent writes");
+					for (LONG x = 14; x < 34; x += 5) drawDot({ x, 31, x + 5, 36 });
+					check(!renderer.OperatorLayerEmpty(l0), "L0 nonempty after adjacent writes");
+					clearContent(l0, ClearPath::Partial, "adjacent writes merge into one partial clear");
+					layerRegion(l0, whole, true, "adjacent write clear restores identity");
+					check(renderer.OperatorLayerEmpty(l0), "L0 empty after adjacent write clear");
+
+					// 饱和坐标外扩后仍要覆盖实际写入，不能因溢出丢弃矩形。
+					constexpr LONG minCoord = (std::numeric_limits<LONG>::min)();
+					constexpr LONG maxCoord = (std::numeric_limits<LONG>::max)();
+					renderer.SetOperatorTarget(l0, { minCoord, minCoord, maxCoord, maxCoord });
+					check(renderer.DrawStroke(leftInk, red) == 0, "saturated bounds write");
+					layerRegion(l0, leftBounds, false, "saturated bounds write reaches L0");
+					clearContent(l0, ClearPath::Full, "saturated bounds count one full clear");
+					layerRegion(l0, whole, true, "saturated bounds clear restores identity");
+
+					renderer.SetOperatorTarget(l0, { rightBounds.left, rightBounds.top, maxCoord, rightBounds.bottom });
+					check(renderer.DrawStroke(rightInk, green) == 0, "saturated right edge write");
+					layerRegion(l0, rightBounds, false, "saturated right edge write reaches L0");
+					clearContent(l0, ClearPath::Partial, "saturated right edge counts one partial clear");
+					layerRegion(l0, whole, true, "saturated right edge clear restores identity");
+
+					renderer.SetOperatorTarget(l0, { -16, 8, -8, 16 });
+					renderer.SetOperatorTarget(l0, { 70, 48, 78, 54 });
+					check(!renderer.OperatorLayerEmpty(l0), "off-canvas declarations are tracked before clear");
+					clearContent(l0, ClearPath::Skip, "off-canvas declarations count one skipped clear");
+					check(renderer.OperatorLayerEmpty(l0), "off-canvas declarations reset to empty after clear");
+
+					// L1 的哨兵仍在，未声明的绑定必须连同哨兵整层清掉。
+					renderer.SetOperatorTarget(l1);
+					check(renderer.DrawStroke(leftInk, red) == 0, "L1 write without declared bounds");
+					layerRegion(l1, leftBounds, false, "unbounded write reaches L1");
+					clearContent(l1, ClearPath::Full, "L1 unknown write counts one full clear");
+					layerRegion(l1, whole, true, "L1 unknown write clears all pixels including sentinel");
+
+					check(renderer.OperatorLayerEmpty(l0), "L0 empty before marking untracked");
+					renderer.MarkOperatorLayerUntracked(l0);
+					check(!renderer.OperatorLayerEmpty(l0), "marking empty L0 untracked makes it nonempty");
+					drawSentinel(l0);
+					clearContent(l0, ClearPath::Full, "marking L0 untracked counts one full clear");
+					layerRegion(l0, whole, true, "marked untracked layer clears the raw sentinel");
+					check(renderer.OperatorLayerEmpty(l0), "L0 empty after untracked clear");
+
+					// 显式加载生产版，避免 Win7 或诊断环境选中保护版时，两次合成用了同一字节码。
+					const auto originalShader = renderer.pixelShader;
+					const auto productionBlob = LoadShaderFromResource(IDR_DRAW3_INK_PIXEL_SHADER);
+					Microsoft::WRL::ComPtr<ID3D11PixelShader> productionShader, guardedShader;
+					if (!check(productionBlob.data && SUCCEEDED(testDevice->CreatePixelShader(productionBlob.data,
+						productionBlob.size, nullptr, productionShader.GetAddressOf())),
+						"production operator resolve pixel shader")) return 1;
+					if (!check(SUCCEEDED(testDevice->CreatePixelShader(Draw3Win7GuardedShader::Bytecode,
+						sizeof(Draw3Win7GuardedShader::Bytecode), nullptr, guardedShader.GetAddressOf())),
+						"guarded operator resolve pixel shader")) return 1;
+					const auto readBackBuffer = [&](std::vector<unsigned char>& result)
+					{
+						testContext->OMSetRenderTargets(0, nullptr, nullptr);
+						testContext->CopyResource(pixelReadback.Get(), renderer.backBufferTexture.Get());
+						D3D11_MAPPED_SUBRESOURCE mapped = {};
+						if (!check(SUCCEEDED(testContext->Map(pixelReadback.Get(), 0, D3D11_MAP_READ, 0, &mapped)),
+							"operator resolve backbuffer readback")) return false;
+						for (UINT row = 0; row < 64; ++row)
+							std::memcpy(result.data() + row * 64 * 4,
+								static_cast<const unsigned char*>(mapped.pData) + row * mapped.RowPitch, 64 * 4);
+						testContext->Unmap(pixelReadback.Get(), 0);
+						return true;
+					};
+					const DirectX::XMFLOAT4 background(0.2f, 0.4f, 0.6f, 1.0f), penColor(0.8f, 0.2f, 0.4f, 0.65f);
+					const RECT resolveRect = { 8, 16, 48, 32 };
+					const std::array<InkPoint, 2> resolveInk = { InkPoint{ 14.25f, 23.25f, 3.25f, 0 },
+						InkPoint{ 40.75f, 23.25f, 3.25f, 1 } };
+					std::vector<unsigned char> backgroundPixels(64 * 64 * 4), dualPixels(64 * 64 * 4),
+						singlePixels(64 * 64 * 4), guardedPixels(64 * 64 * 4);
+					auto* dst = renderer.backBufferRTV.Get();
+					renderer.ClearRTV(dst, background);
+					if (!readBackBuffer(backgroundPixels)) return 1;
+					for (auto* layer : { &l1, &l0 })
+						for (const auto kind : { InkOperatorKind::Draw, InkOperatorKind::Erase })
+						{
+							renderer.pixelShader = productionShader;
+							renderer.ClearOperatorLayer(l1);
+							renderer.ClearOperatorLayer(l0);
+							renderer.SetOperatorTarget(*layer, resolveRect);
+							check(renderer.DrawStroke(resolveInk, kind == InkOperatorKind::Draw ?
+								penColor : kTransparentLayerClearColor, StrokeShape::RoundCapsule, kind) == 0,
+								"operator resolve source stroke");
+							layerRegion(layer == &l1 ? l0 : l1, whole, true, "other resolve layer is identity");
+							const auto before = renderer.OperatorCounters();
+
+							renderer.ClearRTV(dst, background);
+							check(renderer.ApplyOperatorLayers(dst, l1, l0, resolveRect), "dual operator resolve submission");
+							if (!readBackBuffer(dualPixels)) return 1;
+							check(renderer.OperatorCounters().dualResolves == before.dualResolves + 1 &&
+								renderer.OperatorCounters().singleResolves == before.singleResolves, "dual resolve counts once");
+							// 检查笔画核心，避免两条合成路径都没有改变底色时出现假阳性。
+							constexpr size_t center = (23 * 64 + 24) * 4;
+							const unsigned char transparentPixel[4] = {};
+							check(kind == InkOperatorKind::Erase ?
+								std::memcmp(dualPixels.data() + center, transparentPixel, 4) == 0 :
+								std::memcmp(dualPixels.data() + center, backgroundPixels.data() + center, 4) != 0,
+								"dual resolve draws ink or fully erases the opaque background at stroke center");
+
+							renderer.ClearRTV(dst, background);
+							check(renderer.ApplyOperatorLayer(dst, *layer, resolveRect), "single operator resolve submission");
+							if (!readBackBuffer(singlePixels)) return 1;
+							check(singlePixels == dualPixels, "single and dual operator resolve pixels are identical");
+							check(renderer.OperatorCounters().singleResolves == before.singleResolves + 1 &&
+								renderer.OperatorCounters().dualResolves == before.dualResolves + 1, "single resolve counts once");
+
+							// 保留同一份操作层纹理，只替换单层合成使用的像素着色器。
+							renderer.ClearRTV(dst, background);
+							renderer.pixelShader = guardedShader;
+							const bool guardedResolved = renderer.ApplyOperatorLayer(dst, *layer, resolveRect);
+							renderer.pixelShader = originalShader;
+							testContext->PSSetShader(originalShader.Get(), nullptr, 0);
+							check(guardedResolved, "guarded single operator resolve submission");
+							if (!readBackBuffer(guardedPixels)) return 1;
+							check(guardedPixels == singlePixels, "guarded and production single operator resolve pixels are identical");
+							check(renderer.OperatorCounters().singleResolves == before.singleResolves + 2 &&
+								renderer.OperatorCounters().dualResolves == before.dualResolves + 1, "guarded single resolve counts once");
+						}
+					renderer.ClearOperatorLayer(l0);
+					renderer.ClearOperatorLayer(l1);
+					renderer.context1_ = originalContext1;
 				}
 
 				// 光标尺寸必须由真实生产 PS 像素读回证明，不能用 appearance 的理论盒代替。

@@ -835,6 +835,58 @@ namespace
 			"only the latest target revision completes its handoff barrier")) ++failures;
 	}
 
+	void TestInkWindowHandoff(int& failures)
+	{
+		using namespace Inkeys::Drawing::Draw3;
+		using A = InkHandoffAction;
+		const int before = failures;
+		for (auto target : { HostOutputTarget::PrimaryDrawpad, HostOutputTarget::SelectionUlw })
+		{
+			HostRuntimeSnapshot runtime{};
+			runtime.workspace = Workspace::Presentation;
+			runtime.presentationReady.emplace();
+			runtime.readyOutputTarget = target;
+			const auto key = DrawpadShownFrameKey(runtime, 7, 2, 3, 4);
+			ShownFrameRequest receipt(key);
+			if (!Expect(PlanInkHandoff(key, false, nullptr, 0, false) == A::ShowAndRequest &&
+				PlanInkHandoff(key, true, nullptr, 0, false) == A::ShowAndRequest &&
+				PlanInkHandoff(key, true, &receipt, 1, false) == A::Wait,
+				"prepared ink and successful show still require a post-show receipt")) ++failures;
+			receipt.status = ShownFrameStatus::Confirmed;
+			if (!Expect(PlanInkHandoff(key, true, &receipt, 1, false) == A::RetireSource &&
+				PlanInkHandoff(key, false, &receipt, 1, false) == A::ShowAndRequest,
+				"only a visible target with matching confirmation can retire the source")) ++failures;
+			auto changed = key;
+			++changed.page->targetRevision;
+			auto reversed = key;
+			reversed.target = target == HostOutputTarget::PrimaryDrawpad ?
+				HostOutputTarget::SelectionUlw : HostOutputTarget::PrimaryDrawpad;
+			auto resized = key; ++resized.resizeCount;
+			auto output = key; ++output.outputRevision;
+			auto content = key; ++content.contentRevision;
+			auto restarted = key; ++restarted.hostGeneration;
+			auto recreated = key; ++recreated.auxiliaryGeneration;
+			auto scene = key; ++scene.workspaceRevision;
+			auto intent = key; ++intent.modeRevision;
+			auto product = key; ++product.productRevision;
+			auto recovery = key; ++recovery.recoveryRevision;
+			for (const auto& current : { changed, reversed, resized, output, content, restarted, recreated, scene, intent, product, recovery })
+				if (!Expect(PlanInkHandoff(current, true, &receipt, 0, false) == A::ShowAndRequest &&
+					PlanInkHandoff(current, true, &receipt, 3, true) == A::Exhausted,
+					"superseded receipt cannot retire the source")) ++failures;
+			receipt.status = ShownFrameStatus::Failed;
+			if (!Expect(PlanInkHandoff(key, false, nullptr, 3, false) == A::Exhausted &&
+				PlanInkHandoff(key, true, &receipt, 1, false) == A::ShowAndRequest &&
+				PlanInkHandoff(key, true, &receipt, 3, false) == A::Exhausted,
+				"show or composition failure bounds retries and never retires by itself")) ++failures;
+			receipt.status = ShownFrameStatus::Pending;
+			if (!Expect(PlanInkHandoff(key, true, &receipt, 2, true) == A::ShowAndRequest &&
+				PlanInkHandoff(key, true, &receipt, 3, true) == A::Exhausted,
+				"timeout cannot substitute for composition confirmation")) ++failures;
+		}
+		std::cout << "[InkWindowHandoff] failures=" << failures - before << '\n';
+	}
+
 	void TestDrawpadPresentationPlan(int& failures)
 	{
 		using namespace Inkeys::Drawing::Draw3;
@@ -1416,6 +1468,7 @@ int RunDraw3BridgeTests()
 	TestDCompRetirement(failures);
 	TestWin7DwmPolicy(failures);
 	TestDCompHandoffBarrier(failures);
+	TestInkWindowHandoff(failures);
 	TestDrawpadPresentationPlan(failures);
 	TestSceneReadyHandoff(failures);
 	TestSceneDispatchResponsibility(failures);

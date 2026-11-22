@@ -1453,6 +1453,7 @@ namespace Inkeys::Drawing::Draw3
 		TransparentOutputTarget requestedOutputTarget =
 			TransparentOutputTarget::PrimaryDrawpad;
 		std::uint64_t requestedOutputRevision = 0;
+		HRESULT lastSwapChainPresent = E_FAIL;
 		DCompHandoffBarrierState dcompHandoffBarrier{};
 		TransparentPresentObservation lastObservation{};
 		std::string deviceInformation;
@@ -2564,6 +2565,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const char* submitStage = "IDXGISwapChain1::Present1";
 			HRESULT result = impl_->PresentSwapChain(dirty, presentFull); // GPU 路径直接 Present1，DWM 读取 alpha。
+			impl_->lastSwapChainPresent = result; // 隐藏准备仍接受 OCCLUDED，显示后须核对原始结果。
 			if (impl_->dcompHandoffBarrier.Consume(
 				IsGpuMode(impl_->activeMode), presentFull,
 				SUCCEEDED(result), impl_->requestedOutputRevision))
@@ -2627,6 +2629,21 @@ namespace Inkeys::Drawing::Draw3
 			impl_->presentSuccessLogged = true;
 		}
 		return succeeded;
+	}
+
+	bool TransparentPresentationController::ConfirmShownFrame(TransparentOutputTarget target,
+		std::uint64_t outputRevision, std::uint64_t contentRevision) noexcept
+	{
+		const auto& frame = impl_->lastObservation;
+		const bool primary = target == TransparentOutputTarget::PrimaryDrawpad;
+		const HWND hwnd = primary ? impl_->primaryWindow : impl_->selectionWindow;
+		if (!IsGpuMode(impl_->activeMode) || impl_->recoveryPending || impl_->presentFailureLogged ||
+			target != impl_->requestedOutputTarget || outputRevision != impl_->requestedOutputRevision ||
+			frame.outputTarget != target || frame.outputRevision != outputRevision ||
+			frame.presentedContentRevision != contentRevision || !IsWindowVisible(hwnd)) return false;
+		if (primary && impl_->lastSwapChainPresent != S_OK) return false;
+		// DComp 的交换链已绑定到提交过的静态 visual；像素复呈不改变 visual tree。
+		return SUCCEEDED(DwmFlush()) && IsWindowVisible(hwnd);
 	}
 
 	std::uint64_t TransparentPresentationController::AuxiliaryReadbackPayloadBytes() const noexcept

@@ -592,8 +592,10 @@ namespace Inkeys::Drawing::Draw3
 			int width = 0, height = 0;
 			bool operator==(const AuxiliaryReleaseRequest&) const = default;
 		};
-		std::mutex auxiliaryReleaseMutex;
+		std::mutex surfaceRequestMutex;
 		std::optional<AuxiliaryReleaseRequest> pendingAuxiliaryRelease;
+		std::shared_ptr<ShownFrameRequest> pendingShownFrame; // 由 surfaceRequestMutex 交给绘制线程。
+		std::shared_ptr<ShownFrameRequest> renderingShownFrame; // 仅绘制 owner 访问。
 		Detail::HostRuntimeRevisionSignal runtimeRevision;
 		Detail::HostDrawingActivityState drawingActivity;
 		Detail::HostAcceptedStrokeState acceptedStrokes;
@@ -1059,9 +1061,11 @@ namespace Inkeys::Drawing::Draw3
 			auxiliaryFullFrameClean.store(false, std::memory_order_release);
 			auxiliaryReadbackPayloadBytes.store(0, std::memory_order_release);
 			{
-				std::scoped_lock lock(auxiliaryReleaseMutex);
+				std::scoped_lock lock(surfaceRequestMutex);
 				pendingAuxiliaryRelease.reset();
+				pendingShownFrame.reset();
 			}
+			renderingShownFrame.reset();
 			runtimeRevision.Reset();
 			drawingActivity.Reset();
 			lastDirtyLeft.store(0, std::memory_order_release);
@@ -1170,6 +1174,11 @@ namespace Inkeys::Drawing::Draw3
 					self->ulwPremultipliedAlphaFailureCount.fetch_add(1, std::memory_order_acq_rel);
 				if (observation.fullFrameAllZeroAlpha)
 					self->ulwTransparentFullFrameVerified.store(true, std::memory_order_release);
+			}
+			if (self->renderingShownFrame && presentFull)
+			{
+				auto request = std::move(self->renderingShownFrame);
+				self->FinishShownFrame(*request, succeeded);
 			}
 			if (runtimeChanged) self->PublishRuntimeRevision();
 			if (self->runtimeMetrics.session)
@@ -2093,14 +2102,53 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
-		void PumpAuxiliaryRelease()
+		bool ShownSceneCurrent(const ShownFrameKey& key) const
+		{
+			if (!running.load() || bridge.Snapshot().revision != key.productRevision ||
+				workspace.load() != key.workspace || currentPageIndex.load() != key.pageIndex ||
+				contentRevision.load() != key.contentRevision || resizeCount.load() != key.resizeCount ||
+				ToHostMode(presentation.ActiveMode()) != key.mode) return false;
+			std::scoped_lock lock(presentationTargetMutex);
+			return !commandScenePending && recovery.revision == key.recoveryRevision && acceptedStrokes.HostGeneration() == key.hostGeneration &&
+				appliedProductRevision == key.productRevision && readyPresentationTarget == key.page;
+		}
+
+		void FinishShownFrame(ShownFrameRequest& request, bool frameSucceeded)
+		{
+			const auto& key = request.key;
+			const auto target = key.target == HostOutputTarget::SelectionUlw
+				? TransparentOutputTarget::SelectionUlw : TransparentOutputTarget::PrimaryDrawpad;
+			const bool confirmed = request.status.load() == ShownFrameStatus::Pending &&
+				frameSucceeded && ShownSceneCurrent(key) &&
+				presentation.ConfirmShownFrame(target, key.outputRevision, key.contentRevision) &&
+				ShownSceneCurrent(key) && std::chrono::steady_clock::now() < request.deadline;
+			auto pending = ShownFrameStatus::Pending;
+			if (request.status.compare_exchange_strong(pending,
+				confirmed ? ShownFrameStatus::Confirmed : ShownFrameStatus::Failed))
+				PublishRuntimeRevision();
+		}
+
+		void PumpSurfaceRequests()
 		{
 			std::optional<AuxiliaryReleaseRequest> request;
+			std::shared_ptr<ShownFrameRequest> shown;
 			{
-				std::scoped_lock lock(auxiliaryReleaseMutex);
+				std::scoped_lock lock(surfaceRequestMutex);
 				request.swap(pendingAuxiliaryRelease);
+				shown.swap(pendingShownFrame);
+			}
+			if (shown && shown->status.load() == ShownFrameStatus::Pending)
+			{
+				if (shown->key.target == HostOutputTarget::PrimaryDrawpad && ShownSceneCurrent(shown->key))
+				{
+					// 先消费显示请求，再从画布重画全帧；窗口显示消息触发的早先帧不能冒充回执。
+					renderingShownFrame = std::move(shown);
+					window.RequestFullPresent();
+				}
+				else FinishShownFrame(*shown, shown->key.target == HostOutputTarget::SelectionUlw);
 			}
 			if (!request || !running.load(std::memory_order_acquire) ||
+				IsWindowVisible(attachedPresentationWindow.load(std::memory_order_acquire)) ||
 				!lastPresentSucceeded.load(std::memory_order_acquire) ||
 				auxiliaryReadbackPayloadBytes.load(std::memory_order_acquire) == 0) return;
 			{
@@ -2141,7 +2189,7 @@ namespace Inkeys::Drawing::Draw3
 			self->PumpPresentationCompletions();
 			if (kind == ControlWakeKind::Command) self->PumpOneBridgeCommand();
 			self->PumpBridgeState();
-			self->PumpAuxiliaryRelease();
+			self->PumpSurfaceRequests();
 		}
 
 		bool Start(HWND hwnd, HWND presentationHwnd,
@@ -3015,6 +3063,15 @@ namespace Inkeys::Drawing::Draw3
 			revision, timeoutMilliseconds, impl_->running, waitWhileStopped);
 	}
 
+	void Host::RequestShownFrame(std::shared_ptr<ShownFrameRequest> request)
+	{
+		{
+			std::scoped_lock lock(impl_->surfaceRequestMutex);
+			impl_->pendingShownFrame = std::move(request);
+		}
+		(void)impl_->input.PublishControlWake();
+	}
+
 	void Host::AcknowledgeAuxiliarySurfaceHidden(const HostRuntimeSnapshot& expected) noexcept
 	{
 		if (!expected.running || !expected.firstFrameReady || !expected.lastPresentSucceeded ||
@@ -3030,7 +3087,7 @@ namespace Inkeys::Drawing::Draw3
 			expected.readyOutputTarget, expected.committedWidth, expected.committedHeight };
 		try
 		{
-			std::scoped_lock lock(impl_->auxiliaryReleaseMutex);
+			std::scoped_lock lock(impl_->surfaceRequestMutex);
 			if (impl_->pendingAuxiliaryRelease == request) return;
 			impl_->pendingAuxiliaryRelease = request;
 		}

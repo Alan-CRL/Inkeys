@@ -9,7 +9,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <d3d11.h>
+#include <d3d11_1.h>
 #include <vector>
 #include <wrl/client.h>
 
@@ -52,17 +52,20 @@ namespace Inkeys::Drawing::Draw3
 			ComPtr<ID3D11Texture2D> staging;
 			if (!check(SUCCEEDED(device->CreateTexture2D(&description, nullptr,
 				staging.GetAddressOf())), "readback texture")) return 1;
-			const auto read = [&](std::vector<unsigned char>& result, ID3D11Texture2D* source = nullptr)
+			const auto read = [&](std::vector<unsigned char>& result, ID3D11Texture2D* source = nullptr,
+				ID3D11Texture2D* stagingTexture = nullptr, size_t bytesPerPixel = 4)
 			{
 				context->OMSetRenderTargets(0, nullptr, nullptr);
-				context->CopyResource(staging.Get(), source ? source : renderer.layerL0.addTexture.Get());
+				auto* destination = stagingTexture ? stagingTexture : staging.Get();
+				context->CopyResource(destination, source ? source : renderer.layerL0.addTexture.Get());
 				D3D11_MAPPED_SUBRESOURCE mapped = {};
-				if (FAILED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
-				result.resize(128 * 128 * 4);
+				if (FAILED(context->Map(destination, 0, D3D11_MAP_READ, 0, &mapped))) return false;
+				const size_t rowBytes = 128 * bytesPerPixel;
+				result.resize(128 * rowBytes);
 				for (size_t y = 0; y < 128; ++y)
-					std::memcpy(result.data() + y * 128 * 4,
-						static_cast<unsigned char*>(mapped.pData) + y * mapped.RowPitch, 128 * 4);
-				context->Unmap(staging.Get(), 0);
+					std::memcpy(result.data() + y * rowBytes,
+						static_cast<unsigned char*>(mapped.pData) + y * mapped.RowPitch, rowBytes);
+				context->Unmap(destination, 0);
 				return true;
 			};
 			uint8_t identity = 1;
@@ -596,9 +599,205 @@ namespace Inkeys::Drawing::Draw3
 				std::snprintf(name, sizeof(name), "post-generic pixels equal original baseline: %s", legacyNames[tool]);
 				check(renderLegacy(tool, pixels) && pixels == legacyBaselines[tool], name);
 			}
-			check(SUCCEEDED(device->GetDeviceRemovedReason()), "device remains healthy");
 			context->ClearState();
 			renderer.ReleaseResources();
+			// 独立夹具复用同一无窗口设备，避免重建基线时改动前面用例的 renderer。
+			InkRenderer scratch;
+			if (!check(scratch.Init(device.Get(), context.Get(), nullptr, 128, 128,
+				D3D_DRIVER_TYPE_WARP, false), "shape scratch renderer")) return 1;
+			scratch.layerL0.retainTexture->GetDesc(&description);
+			description.Usage = D3D11_USAGE_STAGING;
+			description.BindFlags = 0;
+			description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+			ComPtr<ID3D11Texture2D> retainStaging;
+			if (!check(SUCCEEDED(device->CreateTexture2D(&description, nullptr,
+				retainStaging.GetAddressOf())), "shape scratch Retain readback texture")) return 1;
+
+			struct LayerPixels
+			{
+				std::vector<unsigned char> add, retain;
+				bool operator==(const LayerPixels&) const = default;
+			};
+			const auto readLayer = [&](LayerPixels& result)
+			{
+				return read(result.add, scratch.layerL0.addTexture.Get()) &&
+					read(result.retain, scratch.layerL0.retainTexture.Get(), retainStaging.Get(), 2);
+			};
+			const auto clearTarget = [&]
+			{
+				scratch.ClearOperatorLayer(scratch.layerL0);
+				scratch.SetOperatorTarget(scratch.layerL0);
+			};
+			LayerPixels blank;
+			clearTarget();
+			if (!check(readLayer(blank), "shape scratch identity readback")) return 1;
+			D3D11_FEATURE_DATA_D3D11_OPTIONS options = {};
+			ComPtr<ID3D11DeviceContext1> clearViewContext;
+			const bool canClearView = SUCCEEDED(device->CheckFeatureSupport(
+				D3D11_FEATURE_D3D11_OPTIONS, &options, sizeof(options))) && options.ClearView &&
+				SUCCEEDED(context.As(&clearViewContext));
+
+			const auto captureFresh = [&](const auto& draw, LayerPixels& result, unsigned firstFullClears)
+			{
+				// Resize 同尺寸也重建资源，首次绘制的整屏清增量同时验证基线起点。
+				if (!scratch.Resize(nullptr, 128, 128)) return false;
+				clearTarget();
+				const auto before = scratch.OperatorCounters();
+				return draw() && readLayer(result) && result.add != blank.add && result.retain != blank.retain &&
+					scratch.OperatorCounters().shapeFullClears - before.shapeFullClears == firstFullClears;
+			};
+			const auto checkSequence = [&](const auto& first, const auto& second, unsigned firstFullClears,
+				unsigned fullClears, unsigned partialClears, const char* name, LayerPixels& baseline)
+			{
+				if (!check(scratch.Resize(nullptr, 128, 128), "rebuild shape scratch for sequence")) return false;
+				clearTarget();
+				LayerPixels firstPixels;
+				const bool firstDrawn = first() && readLayer(firstPixels) &&
+					firstPixels.add != blank.add && firstPixels.retain != blank.retain;
+				clearTarget();
+				const auto before = scratch.OperatorCounters();
+				LayerPixels actual;
+				const bool secondDrawn = second() && readLayer(actual);
+				const auto after = scratch.OperatorCounters();
+				const bool fresh = captureFresh(second, baseline, firstFullClears);
+				check(firstDrawn && secondDrawn && fresh && actual == baseline, name);
+				char counterName[128] = {};
+				std::snprintf(counterName, sizeof(counterName), "%s: scratch clear deltas", name);
+				const auto full = after.shapeFullClears - before.shapeFullClears;
+				const auto partial = after.shapePartialClears - before.shapePartialClears;
+				if (!check(firstDrawn && secondDrawn && full == fullClears && partial == partialClears, counterName))
+					std::fprintf(stderr, "[ShapeRenderer] expected full/partial=%u/%u, actual=%llu/%llu\n",
+						fullClears, partialClears, static_cast<unsigned long long>(full),
+						static_cast<unsigned long long>(partial));
+				return fresh;
+			};
+			const auto checkSentinel = [&](const auto& draw, const LayerPixels& baseline)
+			{
+				const std::array<ShapePrimitive, 1> marker = { ShapePrimitive{{110,110,0,0},{118,118,0,0}} };
+				clearTarget();
+				LayerPixels sentinel;
+				if (scratch.DrawShapePrimitives(marker, ShapePrimitiveKind::FilledRectangle, {0,1,0,0.75f}) < 0 ||
+					!readLayer(sentinel) || alpha(sentinel.add, 114, 114) == 0 || sentinel.retain == blank.retain)
+					return false;
+				// 哨兵连同抗锯齿边缘落在右下角；用独立快照拼出两张完整预期纹理。
+				LayerPixels expected = baseline;
+				const auto copyMarker = [](auto& dst, const auto& src, const auto& identity, size_t pixelBytes)
+				{
+					const size_t rowBytes = 16 * pixelBytes;
+					for (size_t y = 106; y < 122; ++y)
+					{
+						const size_t offset = (y * 128 + 106) * pixelBytes;
+						if (std::memcmp(dst.data() + offset, identity.data() + offset, rowBytes) != 0) return false;
+						std::memcpy(dst.data() + offset, src.data() + offset, rowBytes);
+					}
+					return true;
+				};
+				if (!copyMarker(expected.add, sentinel.add, blank.add, 4) ||
+					!copyMarker(expected.retain, sentinel.retain, blank.retain, 2)) return false;
+				scratch.SetOperatorTarget(scratch.layerL0);
+				LayerPixels actual;
+				return draw() && readLayer(actual) && actual == expected;
+			};
+			const auto rectangle = [&](float x, float y, float width, float height, bool stroke = false)
+			{
+				auto shape = object();
+				shape.kind = Kind::Rectangle;
+				shape.geometry.start = {x,y};
+				shape.geometry.end = {x + width,y + height};
+				shape.style.stroke = stroke;
+				shape.style.strokeOpacity = 0.45f;
+				shape.style.width = 2;
+				shape.style.fill = true;
+				shape.style.fillOpacity = 0.6f;
+				return shape;
+			};
+			const auto drawObject = [&](const ShapeObject& shape)
+			{
+				return [&, shape] { return scratch.DrawShapeObject(shape); };
+			};
+			const auto smallA = drawObject(rectangle(16.5f,17.5f,14,12));
+			const auto disjointB = drawObject(rectangle(68.5f,70.5f,14,12));
+			const auto overlapB = drawObject(rectangle(23.5f,22.5f,14,12));
+			const auto largeA = drawObject(rectangle(6,8,90,82));
+			const auto multiA = drawObject(rectangle(16.5f,17.5f,14,12,true));
+			const auto multiB = drawObject(rectangle(23.5f,22.5f,14,12,true));
+			const unsigned compositePartial = canClearView ? 1 : 0;
+			const unsigned materialPartial = canClearView && scratch.laserScissorRasterState ? 1 : 0;
+			const unsigned smallPartial = compositePartial + materialPartial;
+			LayerPixels baseline;
+			checkSequence(smallA, disjointB, 2, 2 - smallPartial, smallPartial,
+				"disjoint generic shapes match fresh B", baseline);
+			const bool overlapFresh = checkSequence(smallA, overlapB, 2, 2 - smallPartial, smallPartial,
+				"overlapping generic shapes match fresh B", baseline);
+			check(overlapFresh && checkSentinel(overlapB, baseline), "generic shape preserves target sentinel");
+			const unsigned multiPartial = compositePartial + 2 * materialPartial;
+			checkSequence(multiA, multiB, 3 - materialPartial, 3 - multiPartial, multiPartial,
+				"generic fill and stroke materials match fresh B", baseline);
+			checkSequence(largeA, overlapB, 2, 2, 0,
+				"large previous generic shape clears both layers in full", baseline);
+
+			const auto savedScissor = scratch.laserScissorRasterState;
+			if (savedScissor)
+			{
+				RenderData edgeData;
+				const bool built = BuildRenderData(slenderEllipse, edgeData);
+				const auto edge = [&] { return scratch.DrawShapeRenderData(edgeData); };
+				LayerPixels clipped;
+				const bool clippedDrawn = built && captureFresh(edge, clipped, 2);
+				scratch.laserScissorRasterState.Reset();
+				// 无剪裁时材质写域未知；合成写域仍明确，可独立走局部清除。
+				checkSequence(smallA, disjointB, 2, 2 - compositePartial, compositePartial,
+					"no scissor: disjoint generic shapes match fresh B", baseline);
+				checkSequence(smallA, overlapB, 2, 2 - compositePartial, compositePartial,
+					"no scissor: overlapping generic shapes match fresh B", baseline);
+				LayerPixels unclipped, fullViewport;
+				const bool unclippedDrawn = built && captureFresh(edge, unclipped, 2);
+				// 扩大解析范围，避免两边都被同一合成矩形截断而比较相等。
+				edgeData.bounds = {0,0,128,128,true};
+				const bool fullViewportDrawn = built && captureFresh(edge, fullViewport, 2);
+				scratch.laserScissorRasterState = savedScissor;
+				check(clippedDrawn && unclippedDrawn && fullViewportDrawn &&
+					clipped == unclipped && clipped == fullViewport,
+					"slender ellipse scissor matches unclipped and full-viewport references");
+			}
+			else
+			{
+				std::fprintf(stderr, "[ShapeRenderer] SKIP scissor injection and comparison: no scissor raster state\n");
+			}
+
+			const std::array<ShapePrimitiveKind, 4> kinds = { ShapePrimitiveKind::SolidLine,
+				ShapePrimitiveKind::DashedLine, ShapePrimitiveKind::OutlineRectangle, ShapePrimitiveKind::FilledRectangle };
+			const ShapePrimitive legacyA{{20,20,2,0},{32,32,0,0}};
+			const std::array<ShapePrimitive, 4> legacyB = { ShapePrimitive{{30,30,13,0},{72,72,0,0}},
+				ShapePrimitive{{30,30,2,0},{86,86,0,0}}, ShapePrimitive{{30,30,3,0},{80,72,0,0}},
+				ShapePrimitive{{30,30,0,0},{80,72,0,0}} };
+			const DirectX::XMFLOAT4 legacyColor{1,0.25f,0,0.65f};
+			for (size_t i = 0; i < kinds.size(); ++i)
+			{
+				const auto first = [&] { return scratch.DrawOrderedLegacyShapePrimitive(legacyA, kinds[i], legacyColor); };
+				const auto second = [&] { return scratch.DrawOrderedLegacyShapePrimitive(legacyB[i], kinds[i], legacyColor); };
+				const bool fresh = checkSequence(first, second, 1, 1 - compositePartial, compositePartial,
+					legacyNames[i], baseline);
+				char name[128] = {};
+				std::snprintf(name, sizeof(name), "%s preserves target sentinel", legacyNames[i]);
+				check(fresh && checkSentinel(second, baseline), name);
+
+				// 直接将相同旧 shader 写入单位目标层，等价于单位背景上的整视口解析，
+				// 绕过生产包络。两张整图比较覆盖端帽和抗锯齿像素。
+				clearTarget();
+				const std::array<ShapePrimitive, 1> direct = { legacyB[i] };
+				LayerPixels fullViewport;
+				const bool directDrawn = scratch.DrawShapePrimitives(direct, kinds[i], legacyColor) == 0 &&
+					readLayer(fullViewport);
+				std::snprintf(name, sizeof(name), "%s matches full-viewport reference", legacyNames[i]);
+				check(fresh && directDrawn && baseline == fullViewport, name);
+				if (kinds[i] == ShapePrimitiveKind::SolidLine)
+					check(directDrawn && alpha(fullViewport.add, 23, 23) > 0 && alpha(fullViewport.add, 79, 79) > 0,
+						"thick 45-degree reference has coverage beyond both endpoints");
+			}
+			context->ClearState();
+			scratch.ReleaseResources();
+			check(SUCCEEDED(device->GetDeviceRemovedReason()), "device remains healthy");
 			std::fprintf(stderr, "[ShapeRenderer] cases=%d failures=%d result=%s\n", cases, failures,
 				failures ? "FAIL" : "PASS");
 			return failures ? 1 : 0;

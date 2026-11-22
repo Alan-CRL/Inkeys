@@ -79,6 +79,14 @@ export namespace Inkeys::Window
 		Hidden,
 	};
 
+	// 分步交接只写一个 HWND；两窗代际在执行和提交时都须有效。
+	enum class DrawpadHandoffStep { ShowTarget, RetireSource };
+	struct DrawpadSurfaceHandoff
+	{
+		DrawpadHandoffStep step;
+		std::uint64_t primaryGeneration, auxiliaryGeneration;
+	};
+
 	struct WorkspaceWindowPolicy
 	{
 		std::uint64_t revision = 0;
@@ -342,7 +350,7 @@ export namespace Inkeys::Window
 		[[nodiscard]] bool RequestHideAllUserWindows();
 		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
 			DrawpadSurfaceVisibility visibility,
-			std::function<bool()> stillDesired = {});
+			std::function<bool()> stillDesired = {}, std::optional<DrawpadSurfaceHandoff> handoff = {});
 		[[nodiscard]] bool SetBounds(WindowRole role, const RECT& bounds, std::function<bool()> stillDesired = {});
 		// 这些入口仅 try-copy 固定快照，返回 0/nullopt 时调用方保留候选并 Retry。
 		[[nodiscard]] SurfacePresentationLease TryAcquirePresentationLease(WindowRole first, WindowRole second = WindowRole::Count) noexcept;

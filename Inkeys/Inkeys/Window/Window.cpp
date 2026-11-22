@@ -605,11 +605,12 @@ namespace Inkeys::Window
 
 		[[nodiscard]] bool SetDrawpadSurfaceVisibility(
 			DrawpadSurfaceVisibility visibility,
-			std::function<bool()> stillDesired)
+			std::function<bool()> stillDesired, std::optional<DrawpadSurfaceHandoff> handoff)
 		{
 			Command command;
 			command.type = CommandType::SetDrawpadSurfaceVisibility;
 			command.role = WindowRole::Drawpad;
+			command.drawpadHandoff = handoff;
 			command.drawpadVisibility = visibility;
 			command.stillDesired = std::move(stillDesired);
 			return Submit(std::move(command));
@@ -1000,6 +1001,7 @@ namespace Inkeys::Window
 			RECT bounds{};
 			bool enabled = false;
 			std::optional<HWND> settingOwner;
+			std::optional<DrawpadSurfaceHandoff> drawpadHandoff;
 			DrawpadSurfaceVisibility drawpadVisibility =
 				DrawpadSurfaceVisibility::Hidden;
 			std::function<bool()> stillDesired;
@@ -2067,6 +2069,9 @@ namespace Inkeys::Window
 			try
 			{
 				return (!command.completion || (running_.load(std::memory_order_acquire) && command.completion->Current()))
+					&& (!command.drawpadHandoff ||
+						(records_[RoleIndex(WindowRole::Drawpad)].generation.load() == command.drawpadHandoff->primaryGeneration &&
+						records_[RoleIndex(WindowRole::DrawpadPresentation)].generation.load() == command.drawpadHandoff->auxiliaryGeneration))
 					&& (!command.candidate || CandidateIdentityCurrent(*command.candidate))
 					&& (!command.nativeEventKind || (command.nativeEventKind == 1 ? promoteEvents_ : refreshEvents_).Current(command.nativeEventRevision))
 					&& (command.identityRole == WindowRole::Count || (Handle(command.identityRole) == command.identityWindow
@@ -3408,6 +3413,7 @@ namespace Inkeys::Window
 			bool group = false;
 			bool canvas = false;
 			bool workspace = false;
+			bool visibilityOnly = false;
 			bool candidate = false;
 			std::optional<GroupSnapshot> zOrder;
 			bool minimized = false;
@@ -3434,6 +3440,7 @@ namespace Inkeys::Window
 		{
 			CommandSnapshot snapshot;
 			snapshot.originalWindow = Handle(command.role);
+			snapshot.visibilityOnly = command.drawpadHandoff.has_value();
 			snapshot.candidate = command.type == CommandType::ApplyCandidate;
 			snapshot.workspace = command.type == CommandType::PrepareWorkspacePolicy || command.type == CommandType::CompleteWorkspacePolicy;
 			if (snapshot.workspace)
@@ -3463,6 +3470,7 @@ namespace Inkeys::Window
 				native.role = role;
 				native.viewOnly = snapshot.workspace && !IsCanvas(role) && role != WindowRole::Freeze;
 				native.hwnd = hwnd;
+				native.restoreBounds = !snapshot.visibilityOnly;
 				native.generation = records_[RoleIndex(role)].generation.load(std::memory_order_acquire);
 				if (command.candidate)
 					for (std::size_t i = 0; i < command.candidate->candidate.value.count; ++i)
@@ -3492,6 +3500,12 @@ namespace Inkeys::Window
 					capture(target.role);
 					if (target.promote || (target.visibility == WindowCandidateVisibility::Show && !IsWindowVisible(target.hwnd))) { snapshot.zOrder = CaptureGroupZOrder(); if (!snapshot.zOrder) throw std::runtime_error("candidate z-order"); }
 				}
+			}
+			else if (command.drawpadHandoff)
+			{
+				const bool primary = command.drawpadVisibility == DrawpadSurfaceVisibility::Primary;
+				const bool retire = command.drawpadHandoff->step == DrawpadHandoffStep::RetireSource;
+				capture(primary != retire ? WindowRole::Drawpad : WindowRole::DrawpadPresentation);
 			}
 			else if (snapshot.workspace)
 			{
@@ -3597,7 +3611,7 @@ namespace Inkeys::Window
 
 		[[nodiscard]] bool RestoreCommandSnapshot(const CommandSnapshot& snapshot, CommandType type, WindowRole role)
 		{
-			if (snapshot.candidate)
+			if (snapshot.candidate || snapshot.visibilityOnly)
 			{
 				bool restored = true;
 				for (const auto& native : snapshot.windows)
@@ -3620,6 +3634,11 @@ namespace Inkeys::Window
 					if (native.restoreVisibility)
 					{
 						const bool visible = safetyOverrides_[RoleIndex(native.role)].Visible(native.generation, native.visible) && !shutdownRequested_.load(std::memory_order_acquire);
+						// 显示命令撤回时若对侧已消失，普通交接不能把仅剩的可见窗也撤下。
+						if (snapshot.visibilityOnly && !visible && !SafetyHidden(native.hwnd) &&
+							!shutdownRequested_.load() && IsWindowVisible(native.hwnd) &&
+							!IsWindowVisible(Handle(native.role == WindowRole::Drawpad ?
+								WindowRole::DrawpadPresentation : WindowRole::Drawpad))) continue;
 						if ((IsWindowVisible(native.hwnd) != FALSE) != visible) ShowWindow(native.hwnd, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
 						if ((IsWindowVisible(native.hwnd) != FALSE) != visible) restored = false;
 					}
@@ -4266,7 +4285,7 @@ namespace Inkeys::Window
 				if (command.drawpadVisibility != DrawpadSurfaceVisibility::Hidden &&
 					shutdownRequested_.load(std::memory_order_acquire)) return false;
 				SetLastError(ERROR_SUCCESS);
-				const bool succeeded =
+				const bool succeeded = command.drawpadHandoff ? ApplyDrawpadHandoff(command) :
 					ApplyDrawpadSurfaceVisibility(command.drawpadVisibility);
 				DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
 				if (!succeeded && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
@@ -4538,6 +4557,32 @@ namespace Inkeys::Window
 			}
 			ApplyOverlayFullscreen(OverlayRoot(), true);
 			return hidden;
+		}
+
+		[[nodiscard]] bool ApplyDrawpadHandoff(const Command& command) noexcept
+		{
+			if (WhiteboardWindowMode() || WhiteboardWindowGroupMinimized() ||
+				canvasPolicyDirty_ || canvasPolicyRetry_ || canvasPolicyApplying_ ||
+				command.drawpadVisibility == DrawpadSurfaceVisibility::Hidden) return false;
+			const bool primary = command.drawpadVisibility == DrawpadSurfaceVisibility::Primary;
+			const HWND target = Handle(primary ? WindowRole::Drawpad : WindowRole::DrawpadPresentation);
+			const HWND source = Handle(primary ? WindowRole::DrawpadPresentation : WindowRole::Drawpad);
+			const bool retire = command.drawpadHandoff->step == DrawpadHandoffStep::RetireSource;
+			const bool show = !retire;
+			const HWND changed = retire ? source : target;
+			const HWND retained = retire ? target : source;
+			if (!IsWindowVisible(retained)) return false;
+			if (retire && !primary && GetCapture() == source && !ReleaseCapture() && GetCapture() == source)
+				return false;
+			// 释放 capture 可能发生重入。只对这一步的窗口操作，失败回滚也只恢复这个 HWND。
+			if (!CommandCurrent(command) || !IsWindowVisible(retained)) return false;
+			if ((IsWindowVisible(changed) != FALSE) != show)
+			{
+				if (!SetWindowPos(changed, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE |
+					SWP_NOZORDER | SWP_NOACTIVATE | (show ? SWP_SHOWWINDOW : SWP_HIDEWINDOW))) return false;
+				ApplyOverlayFullscreen(OverlayRoot());
+			}
+			return IsWindowVisible(retained) && (IsWindowVisible(changed) != FALSE) == show;
 		}
 
 		[[nodiscard]] bool ApplyDrawpadSurfaceVisibility(
@@ -5058,10 +5103,9 @@ namespace Inkeys::Window
 	bool Service::HideAllUserWindows() { return impl_->HideAllUserWindows(); }
 	bool Service::RequestHideAllUserWindows() { return impl_->RequestHideAllUserWindows(); }
 	bool Service::SetDrawpadSurfaceVisibility(DrawpadSurfaceVisibility visibility,
-		std::function<bool()> stillDesired)
+		std::function<bool()> stillDesired, std::optional<DrawpadSurfaceHandoff> handoff)
 	{
-		return impl_->SetDrawpadSurfaceVisibility(visibility,
-			std::move(stillDesired));
+		return impl_->SetDrawpadSurfaceVisibility(visibility, std::move(stillDesired), handoff);
 	}
 	bool Service::SetBounds(WindowRole role, const RECT& bounds, std::function<bool()> stillDesired) { return impl_->SetBounds(role, bounds, std::move(stillDesired)); }
 	SurfacePresentationLease Service::TryAcquirePresentationLease(WindowRole first, WindowRole second) noexcept { return impl_->TryAcquirePresentationLease(first, second); }

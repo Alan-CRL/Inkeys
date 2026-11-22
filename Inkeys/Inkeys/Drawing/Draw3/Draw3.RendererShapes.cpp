@@ -9,7 +9,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
-#include <d3d11.h>
+#include <d3d11_1.h>
 #include <DirectXMath.h>
 #include <utility>
 #include <windows.h>
@@ -58,6 +58,35 @@ namespace Inkeys::Drawing::Draw3
 			bytes = memory ? LockResource(memory) : nullptr;
 			size = SizeofResource(module, resource);
 			return bytes && size;
+		}
+
+		RECT LegacyShapeWriteRect(const ShapePrimitive& primitive, ShapePrimitiveKind kind, RECT viewport)
+		{
+			// 极端坐标下 CPU 与 shader 的浮点误差可能超过留边，沿用整视口合成。
+			constexpr float coordinateLimit = 65536.0f;
+			const auto bounded = [](float value) { return std::abs(value) <= coordinateLimit; };
+			if (!bounded(primitive.start.x) || !bounded(primitive.start.y) ||
+				!bounded(primitive.end.x) || !bounded(primitive.end.y) || !bounded(primitive.start.r))
+				return viewport;
+
+			// 基础包络与 RectFromShapePrimitive 一致；该函数所在的 ink_prediction 已依赖 renderer。
+			const double halfWidth = (std::max)(primitive.start.r, 0.0f);
+			double padding = kind == ShapePrimitiveKind::FilledRectangle ? 3.0 : halfWidth + 3.0;
+			if (IsLineShapePrimitive(kind))
+			{
+				// 旧 VS 沿切线和法线各外扩半宽 + 2；斜线四边形在坐标轴上的投影最多乘 √2。
+				padding = (halfWidth + 2.0) * std::sqrt(2.0) + 1.0;
+			}
+			const auto clip = [](double coordinate, LONG limit)
+			{
+				return static_cast<LONG>(std::clamp(coordinate, 0.0, static_cast<double>(limit)));
+			};
+			return {
+				clip(std::floor((std::min)(primitive.start.x, primitive.end.x) - padding), viewport.right),
+				clip(std::floor((std::min)(primitive.start.y, primitive.end.y) - padding), viewport.bottom),
+				clip(std::ceil((std::max)(primitive.start.x, primitive.end.x) + padding), viewport.right),
+				clip(std::ceil((std::max)(primitive.start.y, primitive.end.y) + padding), viewport.bottom)
+			};
 		}
 	}
 
@@ -115,7 +144,43 @@ namespace Inkeys::Drawing::Draw3
 				static_cast<UINT>(viewportHeight), composite)) return false;
 		shapeMaterialLayer_ = std::move(material);
 		shapeCompositeLayer_ = std::move(composite);
+		shapeMaterialContent_ = shapeCompositeContent_ = {};
 		return true;
+	}
+
+	void InkRenderer::ClearShapeScratchLayer(const OperatorLayerResources& layer, ShapeScratchContent& content)
+	{
+		const auto previous = content;
+		const auto& bounds = previous.bounds;
+		if (!previous.unknown && (bounds.left >= bounds.right || bounds.top >= bounds.bottom))
+		{
+			++operatorCounters_.shapeSkippedClears;
+			return;
+		}
+
+		content = { {}, false };
+		const LONG width = static_cast<LONG>(viewportWidth);
+		const LONG height = static_cast<LONG>(viewportHeight);
+		const D3D11_RECT rect = {
+			(std::max)(0L, bounds.left - kOperatorContentClearMargin),
+			(std::max)(0L, bounds.top - kOperatorContentClearMargin),
+			(std::min)(width, bounds.right + kOperatorContentClearMargin),
+			(std::min)(height, bounds.bottom + kOperatorContentClearMargin)
+		};
+		const auto area = static_cast<long long>(rect.right - rect.left) * (rect.bottom - rect.top);
+		if (previous.unknown || !context1_ ||
+			area * kOperatorContentPartialClearDivisor > static_cast<long long>(width) * height)
+		{
+			ClearOperatorLayer(layer);
+			++operatorCounters_.shapeFullClears;
+			return;
+		}
+
+		const float transparent[4] = {};
+		const float retainIdentity[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+		context1_->ClearView(layer.addRTV.Get(), transparent, &rect, 1);
+		context1_->ClearView(layer.retainRTV.Get(), retainIdentity, &rect, 1);
+		++operatorCounters_.shapePartialClears;
 	}
 
 	bool InkRenderer::DrawOrderedLegacyShapePrimitive(const ShapePrimitive& primitive,
@@ -142,13 +207,17 @@ namespace Inkeys::Drawing::Draw3
 				context->OMSetRenderTargets(2, targets, nullptr);
 			}
 		} restore{ context.Get(), targets };
-		ClearOperatorLayer(shapeMaterialLayer_);
+		const RECT rect = LegacyShapeWriteRect(primitive, kind,
+			{ 0, 0, static_cast<LONG>(viewportWidth), static_cast<LONG>(viewportHeight) });
+		ClearShapeScratchLayer(shapeMaterialLayer_, shapeMaterialContent_);
+		// 写域先于绘制登记：上传中途失败只会多清，不会漏清。
+		shapeMaterialContent_.bounds = rect;
 		SetOperatorTarget(shapeMaterialLayer_);
 		if (DrawShapePrimitives(std::span<const ShapePrimitive>(&primitive, 1), kind, color) < 0)
 			return false;
+		if (rect.left >= rect.right || rect.top >= rect.bottom) return true;
 		// 旧图元仍由原 shader 产生，统一有序解析仅用于混合通用图形的活动层。
-		return ResolveShapeLayer(shapeMaterialLayer_, targets,
-			{ 0, 0, static_cast<LONG>(viewportWidth), static_cast<LONG>(viewportHeight) });
+		return ResolveShapeLayer(shapeMaterialLayer_, targets, rect);
 	}
 
 	bool InkRenderer::DrawShapeObject(const ::draw3::shapes::ShapeObject& object,
@@ -204,7 +273,7 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	bool InkRenderer::DrawShapeBatch(const ::draw3::shapes::RenderBatch& batch,
-		float originX, float originY)
+		float originX, float originY, const RECT* scissor)
 	{
 		using ::draw3::shapes::GpuPrimitive;
 		const auto& style = batch.style;
@@ -244,7 +313,24 @@ namespace Inkeys::Drawing::Draw3
 			ID3D11ShaderResourceView* source = inkDataSRV.Get();
 			context->VSSetShaderResources(0, 1, &source);
 			context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF);
-			context->RSSetState(rasterState.Get());
+			if (scissor)
+			{
+				// 图元几何可略超出图形矩形（抗锯齿外扩），而后续合成只读该矩形：把写入也剪裁到矩形内，
+				// 结果不变，材质层的写域随之可知，下一次只需清这个矩形。
+				const D3D11_RECT scissorRect = { scissor->left, scissor->top, scissor->right, scissor->bottom };
+				context->RSSetScissorRects(1, &scissorRect);
+				context->RSSetState(laserScissorRasterState.Get());
+				RECT& bounds = shapeMaterialContent_.bounds;
+				if (bounds.left >= bounds.right || bounds.top >= bounds.bottom) bounds = *scissor;
+				else bounds = { (std::min)(bounds.left, scissor->left), (std::min)(bounds.top, scissor->top),
+					(std::max)(bounds.right, scissor->right), (std::max)(bounds.bottom, scissor->bottom) };
+			}
+			else
+			{
+				context->RSSetState(rasterState.Get());
+				// 没有带剪裁的光栅状态时图元可能写到矩形外：按未知内容处理，下一次清除走整屏。
+				shapeMaterialContent_.unknown = true;
+			}
 			context->Draw(static_cast<UINT>(count * 6), 0);
 			source = nullptr;
 			context->VSSetShaderResources(0, 1, &source);
@@ -316,7 +402,11 @@ namespace Inkeys::Drawing::Draw3
 				context->OMSetRenderTargets(2, targets, nullptr);
 			}
 		} restore{ context.Get(), targets };
-		ClearOperatorLayer(shapeCompositeLayer_);
+		// 带剪裁的光栅状态创建失败（可选资源）时不剪裁，临时层退回整屏清。
+		const RECT* const batchScissor = laserScissorRasterState ? &rect : nullptr;
+		ClearShapeScratchLayer(shapeCompositeLayer_, shapeCompositeContent_);
+		// 合成层只经由 ResolveShapeLayer 在 rect 内写入；先登记，失败也只会多清。
+		shapeCompositeContent_.bounds = rect;
 		const bool hasAuxiliary = std::any_of(data.batches.begin(),data.batches.end(),
 			[](const ::draw3::shapes::RenderBatch& batch) { return batch.auxiliary; });
 		for (size_t first = 0; first < data.batches.size();)
@@ -339,9 +429,9 @@ namespace Inkeys::Drawing::Draw3
 						(!hasAuxiliary && (material.fill || next.fill || next.style.width != material.style.width))) break;
 				}
 			}
-			ClearOperatorLayer(shapeMaterialLayer_);
+			ClearShapeScratchLayer(shapeMaterialLayer_, shapeMaterialContent_);
 			for (size_t index = first; index < end; ++index)
-				if (!DrawShapeBatch(data.batches[index], originX, originY)) return false;
+				if (!DrawShapeBatch(data.batches[index], originX, originY, batchScissor)) return false;
 			ID3D11RenderTargetView* composite[] = {
 				shapeCompositeLayer_.addRTV.Get(), shapeCompositeLayer_.retainRTV.Get() };
 			if (!ResolveShapeLayer(shapeMaterialLayer_, composite, rect)) return false;

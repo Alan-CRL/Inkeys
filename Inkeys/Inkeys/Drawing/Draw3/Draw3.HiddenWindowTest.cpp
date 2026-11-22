@@ -4,6 +4,7 @@
 #include "Draw3.Presentation.h"
 #include "Draw3.PresentationState.h"
 #include "Draw3.PixelDiagnosticShaders.h"
+#include "Draw3.SpeedEraser.h"
 #include "Draw3.Win7GuardedShader.h"
 #include "Draw3.ShaderCompatibility.h"
 
@@ -16,6 +17,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 import Inkeys.Drawing.Draw3.pen_cursor;
 import Inkeys.Drawing.Draw3.diagnostics;
 import Inkeys.Drawing.Draw3.drawing_controller;
+import Inkeys.Drawing.Draw3.ink_document;
 import Inkeys.Drawing.Draw3.ink_prediction;
 import Inkeys.Drawing.Draw3.ink_history_gpu;
 import draw3.uink_file;
@@ -4362,6 +4364,35 @@ namespace Inkeys::Drawing::Draw3
 			eraserDot.hasCommittedGeometry,
 			"single-point eraser retry commits after buffer restored", failures);
 
+		// 先建立可信前缀，再令追加批次的真实 Map 失败；已有指纹和游标应保留，但不能再用于抬笔。
+		const auto checkFailedAppend = [&](ActiveStroke& stroke, const InkPoint& next,
+			const auto& submit, const char* name)
+		{
+			// 这两笔的首批提交发生在上面的用例里，当时 L1 已有别的内容，按规则不算可信前缀。
+			// 这里只验证“追加失败会让可信前缀失效”，所以先把它置为可信并对齐当前 L1 世代。
+			stroke.l1PrefixExact = true;
+			stroke.l1PrefixEpoch = renderer.StableLayerEpoch();
+			const bool wasExact = stroke.l1PrefixExact;
+			const auto hash = stroke.l1PrefixHash;
+			const auto count = stroke.l1PrefixPointCount;
+			const auto index = stroke.committedIndex;
+			stroke.realPoints.push_back(next);
+			renderer.inkDataBuffer = unwritableInk;
+			const auto failed = submit();
+			renderer.inkDataBuffer = writableInk;
+			Check(wasExact && !failed.succeeded && IsRectEmpty(&failed.dirty) &&
+				!stroke.l1PrefixExact && stroke.l1PrefixHash == hash &&
+				stroke.l1PrefixPointCount == count && stroke.committedIndex == index, name, failures);
+		};
+		checkFailedAppend(pen, { 28.0f, 28.0f, 3.0f, 3.0f }, [&]
+		{
+			return CommitStablePrefixToL1(pen, 0.0, 0.0, color, StrokeShape::RoundCapsule, renderer, 64, 64);
+		}, "failed pen append invalidates L1 prefix exactness");
+		checkFailedAppend(eraser, points.back(), [&]
+		{
+			return CommitEraserRealPointsToL1(eraser, StrokeShape::RoundCapsule, renderer, 64, 64);
+		}, "failed eraser append invalidates L1 prefix exactness");
+
 		pen.l0DrawPoints = points;
 		renderer.inkDataBuffer = unwritableInk;
 		Check(!DrawL0LiveComposite(pen, color, StrokeShape::RoundCapsule,
@@ -4383,6 +4414,447 @@ namespace Inkeys::Drawing::Draw3
 		renderer.inkDataBuffer = writableInk;
 		Check(renderer.DrawShapePrimitives(shape, ShapePrimitiveKind::SolidLine, color) == 0,
 			"Shape batch reports retry submission", failures);
+
+		context->ClearState();
+		renderer.ReleaseResources();
+
+		// 故障用例只创建了上传缓冲区。复用 WARP 设备，初始化完整的离屏 shader 与操作层供读回。
+		constexpr int width = 128, height = 64;
+		if (!Check(renderer.Init(device.Get(), context.Get(), nullptr, width, height, D3D_DRIVER_TYPE_WARP, true),
+			"write bounds test initializes offscreen production renderer", failures)) return 1;
+		auto& l1 = renderer.layerL1;
+		auto& l0 = renderer.layerL0;
+		renderer.ClearOperatorLayer(l1);
+		renderer.ClearOperatorLayer(l0);
+		const RECT whole = { 0, 0, width, height }, leftColumn = { 0, 0, 1, height };
+		const auto planePixels = [&](ID3D11Texture2D* source, RECT region, bool identity, const char* name)
+		{
+			D3D11_TEXTURE2D_DESC description = {};
+			source->GetDesc(&description);
+			const bool retain = description.Format == DXGI_FORMAT_R16_FLOAT;
+			const unsigned char clearAdd[4] = {};
+			const unsigned char clearRetain[2] = { 0, 0x3C }; // R16F 1.0
+			const auto* clearPixel = retain ? clearRetain : clearAdd;
+			const size_t stride = retain ? sizeof(clearRetain) : sizeof(clearAdd);
+			description.Usage = D3D11_USAGE_STAGING;
+			description.BindFlags = description.MiscFlags = 0;
+			description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+			Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+			if (!Check(SUCCEEDED(device->CreateTexture2D(&description, nullptr, staging.GetAddressOf())),
+				"write bounds staging texture", failures)) return;
+			context->OMSetRenderTargets(0, nullptr, nullptr);
+			context->CopyResource(staging.Get(), source);
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (!Check(SUCCEEDED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)),
+				"write bounds pixel readback", failures)) return;
+			bool allIdentity = true;
+			for (LONG y = region.top; y < region.bottom; ++y)
+			{
+				const auto* row = static_cast<const unsigned char*>(mapped.pData) + y * mapped.RowPitch;
+				for (LONG x = region.left; x < region.right; ++x)
+					if (std::memcmp(row + x * stride, clearPixel, stride) != 0) allIdentity = false;
+			}
+			context->Unmap(staging.Get(), 0);
+			Check(allIdentity == identity, name, failures);
+		};
+		const auto clearAndRead = [&](const OperatorLayerResources& layer, const char* name)
+		{
+			const auto before = renderer.OperatorCounters();
+			renderer.ClearOperatorLayerContent(layer);
+			const auto& after = renderer.OperatorCounters();
+			Check(after.partialClears == before.partialClears + 1 &&
+				after.fullClears == before.fullClears && after.skippedClears == before.skippedClears &&
+				renderer.OperatorLayerEmpty(layer), name, failures);
+			planePixels(layer.addTexture.Get(), whole, true, "declared clear restores all Add pixels");
+			planePixels(layer.retainTexture.Get(), whole, true, "declared clear restores all Retain pixels");
+			// 即使某条断言失败，也让下一用例从空层开始。
+			renderer.ClearOperatorLayer(layer);
+		};
+
+		// 单点右边界 -83+80+3=0，裁剪为空；右伸 max(0.25, 80×0.05)=4 后，
+		// 胶囊实体右边界为 1，覆盖第 0 列。写域外扩后至多 6×64=384，小于 128×64/16=512。
+		const InkPoint edgeDot = { -83.0f, 24.5f, 80.0f, 0.0f };
+		ActiveStroke edgeEraser(160.0f, 500.0f);
+		edgeEraser.eraserShape = EraserShape::Circle;
+		edgeEraser.realPoints = { edgeDot };
+		const RECT oldBounds = RectFromStrokePoints(edgeEraser.realPoints, width, height);
+		Check(IsRectEmpty(&oldBounds), "unextended edge dot has empty clipped bounds", failures);
+		const auto edgeErase = CommitEraserRealPointsToL1(edgeEraser, StrokeShape::RoundCapsule, renderer, width, height);
+		Check(edgeErase.succeeded && !renderer.OperatorLayerEmpty(l1),
+			"round eraser edge dot records L1 content", failures);
+		planePixels(l1.retainTexture.Get(), leftColumn, false, "round eraser edge dot changes L1 Retain in column zero");
+		clearAndRead(l1, "declared L1 eraser edge dot clears once without full fallback");
+
+		ActiveStroke stablePen(6.0f, 500.0f);
+		stablePen.realPoints = points;
+		const auto stable = CommitStablePrefixToL1(stablePen, 0.0, 0.0, color,
+			StrokeShape::RoundCapsule, renderer, width, height);
+		Check(stable.succeeded && stablePen.committedIndex == 1 && !renderer.OperatorLayerEmpty(l1),
+			"two-point stable pen prefix records L1 content", failures);
+		planePixels(l1.addTexture.Get(), whole, false, "stable pen prefix changes L1 Add");
+		clearAndRead(l1, "declared L1 stable pen prefix clears once without full fallback");
+
+		ActiveStroke livePen(160.0f, 500.0f);
+		livePen.l0DrawPoints = { edgeDot };
+		livePen.currentL0Rect = oldBounds;
+		Check(DrawL0LiveComposite(livePen, color, StrokeShape::RoundCapsule, renderer, false) &&
+			!renderer.OperatorLayerEmpty(l0), "pen edge dot records L0 content", failures);
+		planePixels(l0.addTexture.Get(), leftColumn, false, "pen edge dot changes L0 Add in column zero");
+		clearAndRead(l0, "declared L0 edge dot clears once without full fallback");
+
+		// 两种合成及 L1 隔离检查均从同一张非均匀不透明 BGRA 底图开始，回读整张 L2。
+		constexpr UINT rowBytes = width * 4;
+		std::vector<unsigned char> background(rowBytes * height);
+		for (int y = 0; y < height; ++y)
+		{
+			for (int x = 0; x < width; ++x)
+			{
+				auto* pixel = background.data() + y * rowBytes + x * 4;
+				pixel[0] = static_cast<unsigned char>(32 + (x * 7 + y * 3) % 192);
+				pixel[1] = static_cast<unsigned char>(32 + (x * 3 + y * 5) % 192);
+				pixel[2] = static_cast<unsigned char>(32 + (x * 5 + y * 7) % 192);
+				pixel[3] = 255;
+			}
+		}
+		auto* l2 = renderer.layerL2Texture.Get();
+		D3D11_TEXTURE2D_DESC l2ReadDescription = {};
+		l2->GetDesc(&l2ReadDescription);
+		l2ReadDescription.Usage = D3D11_USAGE_STAGING;
+		l2ReadDescription.BindFlags = l2ReadDescription.MiscFlags = 0;
+		l2ReadDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> l2Readback;
+		if (!Check(SUCCEEDED(device->CreateTexture2D(&l2ReadDescription, nullptr,
+			l2Readback.GetAddressOf())), "pen-up L2 staging texture", failures)) return 1;
+
+		const auto resetLayers = [&]
+		{
+			renderer.SetScreenSize(width, height);
+			renderer.ClearOperatorLayer(l1);
+			renderer.ClearOperatorLayer(l0);
+		};
+		const auto resolveL2 = [&](RECT dirty, const OperatorLayerResources* singleLayer)
+		{
+			context->OMSetRenderTargets(0, nullptr, nullptr);
+			context->UpdateSubresource(l2, 0, nullptr, background.data(), rowBytes, 0);
+			auto* target = renderer.layerL2RTV.Get();
+			const bool resolved = singleLayer
+				? renderer.ApplyOperatorLayer(target, *singleLayer, dirty)
+				: renderer.ApplyOperatorLayers(target, l1, l0, dirty);
+			if (!Check(resolved, "pen-up operator resolve", failures))
+				return std::vector<unsigned char>{};
+
+			context->OMSetRenderTargets(0, nullptr, nullptr);
+			context->CopyResource(l2Readback.Get(), l2);
+			std::vector<unsigned char> pixels(background.size());
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (!Check(SUCCEEDED(context->Map(l2Readback.Get(), 0, D3D11_MAP_READ, 0, &mapped)),
+				"pen-up whole L2 readback", failures)) return std::vector<unsigned char>{};
+			for (int y = 0; y < height; ++y)
+			{
+				const auto* source = static_cast<const unsigned char*>(mapped.pData) + y * mapped.RowPitch;
+				std::memcpy(pixels.data() + y * rowBytes, source, rowBytes);
+			}
+			context->Unmap(l2Readback.Get(), 0);
+			return pixels;
+		};
+		const auto checkPixels = [&](const std::vector<unsigned char>& reference,
+			const std::vector<unsigned char>& actual, const char* name)
+		{
+			Check(!reference.empty() && reference != background && actual == reference, name, failures);
+		};
+
+		constexpr uint32_t rgb = 0x3377BB;
+		constexpr float byteToFloat = 1.0f / 255.0f;
+		const StoredInkStyle penStyle{ StoredInkType::Pen, rgb, 1.0f };
+		const StoredInkStyle translucentStyle{ StoredInkType::Pen, rgb, 0.35f };
+		const StoredInkStyle markerStyle{ StoredInkType::Highlighter, rgb, 0.42f };
+		const DirectX::XMFLOAT4 penColor(0x33 * byteToFloat, 0x77 * byteToFloat,
+			0xBB * byteToFloat, translucentStyle.opacity);
+		const DirectX::XMFLOAT4 markerColor(penColor.x, penColor.y, penColor.z, markerStyle.opacity);
+		const StoredInkStyle circleStyle{ StoredInkType::Eraser, 0, 1.0f };
+		StoredInkStyle rectangleStyle = circleStyle;
+		rectangleStyle.eraserShape = EraserShape::Rectangle;
+		std::vector<InkPoint> replayPoints;
+		HighlighterGeometry geometryScratch;
+		const auto replay = [&](const InkStroke& stroke, const OperatorLayerResources& layer,
+			float originX = 0.0f, float originY = 0.0f)
+		{
+			const auto result = DrawStoredStroke(stroke, renderer,
+				{ &layer, originX, originY, width, height }, replayPoints, geometryScratch);
+			Check(result.succeeded && !IsRectEmpty(&result.dirty) && !renderer.OperatorLayerEmpty(layer),
+				"pen-up stored replay submits visible geometry and declares write bounds", failures);
+			return result.dirty;
+		};
+
+		// 路径 B 的交叉笔画覆盖两条对角线，急折处和交点都含半透明重叠。
+		const std::vector<StoredInkPoint> crossed = {
+			{ 14, 16, 8 }, { 85, 47, 10 }, { 20, 49, 6 }, { 81, 15, 9 }, { 84, 29, 8 }
+		};
+		const InkStroke unrelated({ StoredInkType::Pen, 0xF5A620, 1.0f },
+			{ { 24, 37, 5 }, { 112, 32, 5 } });
+		struct PathBCase
+		{
+			const char* name;
+			InkStroke stroke;
+		};
+		const std::array pathBCases = {
+			PathBCase{ "path B opaque pen", InkStroke(penStyle, crossed) },
+			PathBCase{ "path B translucent self-crossing pen", InkStroke(translucentStyle, crossed) },
+			PathBCase{ "path B highlighter", InkStroke(markerStyle, crossed) },
+			PathBCase{ "path B round eraser", InkStroke(circleStyle, crossed) },
+			PathBCase{ "path B rectangular eraser", InkStroke(rectangleStyle, crossed) },
+			PathBCase{ "path B legacy solid line",
+				InkStroke({ StoredInkType::SolidLine, rgb, 0.8f }, { { 19, 15, 6 }, { 90, 42, 6 } }) },
+			PathBCase{ "path B legacy outline rectangle",
+				InkStroke({ StoredInkType::OutlineRectangle, rgb, 0.8f }, { { 19, 15, 6 }, { 90, 42, 6 } }) },
+			PathBCase{ "path B single point", InkStroke(translucentStyle, { { 42, 30, 7 } }) },
+			PathBCase{ "path B large single point (8px extension)",
+				InkStroke(penStyle, { { -162, 24.5f, 320 } }) }
+		};
+		for (const auto& test : pathBCases)
+		{
+			resetLayers();
+			const RECT referenceDirty = replay(test.stroke, l1);
+			const auto reference = resolveL2(referenceDirty, nullptr);
+
+			resetLayers();
+			replay(unrelated, l1);
+			const auto unrelatedBefore = resolveL2(whole, &l1);
+			replay(unrelated, l0); // 模拟有待清除的活动预览。
+			renderer.ClearOperatorLayerContent(l0);
+			const RECT dirty = replay(test.stroke, l0);
+			const auto actual = resolveL2(dirty, &l0);
+			renderer.ClearOperatorLayerContent(l0);
+			checkPixels(reference, actual, test.name);
+			Check(renderer.OperatorLayerEmpty(l0), "path B L0 is tracked empty after commit", failures);
+			planePixels(l0.addTexture.Get(), whole, true, "path B whole L0 Add is zero");
+			planePixels(l0.retainTexture.Get(), whole, true, "path B whole L0 Retain is one");
+			Check(!renderer.OperatorLayerEmpty(l1), "path B L1 still tracks other stroke", failures);
+			checkPixels(unrelatedBefore, resolveL2(whole, &l1), "path B preserves unrelated L1 stroke");
+		}
+
+		// 画布左侧外的大半径单点：入库重放的可见性裁剪与历史瓦片足迹都不含单点的右伸量（既有行为，
+		// 抬笔后右伸进画布的细条不进入 L2，已记为既有问题）。这里只要求重放成功且工作区不留残余。
+		resetLayers();
+		const InkStroke clippedDot(penStyle, { { edgeDot.x, edgeDot.y, edgeDot.r * 2.0f } });
+		const auto clippedDotResult = DrawStoredStroke(clippedDot, renderer,
+			{ &l0, 0.0f, 0.0f, width, height }, replayPoints, geometryScratch);
+		Check(clippedDotResult.succeeded, "path B clipped stored dot replay succeeds", failures);
+		renderer.ClearOperatorLayerContent(l0);
+		planePixels(l0.addTexture.Get(), whole, true, "path B clipped dot leaves no L0 Add residue");
+		planePixels(l0.retainTexture.Get(), whole, true, "path B clipped dot leaves no L0 Retain residue");
+
+		// 采样间隔约 8ms，保护窗长 4.5 个间隔，使三批各保留 5 个未提交点。
+		std::vector<InkPoint> real;
+		for (int index = 0; index < 68; ++index)
+		{
+			const int phase = index % 32;
+			const int rise = phase <= 16 ? phase : 32 - phase;
+			real.push_back({ 12.0f + index * 1.375f, 22.0f + rise * 0.875f,
+				2.5f + (index % 5) * 0.25f, index / 128.0f });
+		}
+		constexpr std::array<size_t, 3> batchSizes{ 24, 45, 68 };
+		const auto commitPrefix = [&](ActiveStroke& stroke, std::span<const InkPoint> source,
+			size_t count, DirectX::XMFLOAT4 inkColor)
+		{
+			stroke.realPoints.assign(source.begin(), source.begin() + count);
+			const auto batch = CommitStablePrefixToL1(stroke, 4.0 / 128.0, 0.5 / 128.0, inkColor,
+				StrokeShape::RoundCapsule, renderer, width, height);
+			Check(batch.succeeded && !IsRectEmpty(&batch.dirty) && stroke.hasCommittedGeometry &&
+				stroke.committedIndex == count - 6, "path A stable batch reaches expected boundary", failures);
+		};
+		const auto drawTail = [&](const ActiveStroke& stroke, const StoredInkStyle& style,
+			std::span<const InkPoint> finalPoints, float tailOriginX = 0.0f, float tailOriginY = 0.0f)
+		{
+			renderer.ClearOperatorLayer(l0);
+			return DrawCompletedStrokeTail(stroke, style, finalPoints, renderer, l0,
+				tailOriginX, tailOriginY, width, height, geometryScratch);
+		};
+		const auto rejectTail = [&](const ActiveStroke& stroke, const StoredInkStyle& style,
+			std::span<const InkPoint> finalPoints, const char* name)
+		{
+			const auto result = drawTail(stroke, style, finalPoints);
+			Check(!result.eligible && renderer.OperatorLayerEmpty(l0), name, failures);
+		};
+		const auto checkFingerprint = [&](const ActiveStroke& stroke, const char* name)
+		{
+			const auto prefix = std::span<const InkPoint>(stroke.realPoints).first(stroke.committedIndex + 1);
+			Check(stroke.l1PrefixPointCount == prefix.size() &&
+				stroke.l1PrefixHash == HashL1PrefixPoints(prefix), name, failures);
+		};
+
+		resetLayers();
+		ActiveStroke completedPen(6.0f, 500.0f);
+		for (size_t count : batchSizes)
+		{
+			commitPrefix(completedPen, real, count, penColor);
+			checkFingerprint(completedPen, "path A cumulative prefix fingerprint matches whole prefix");
+		}
+		const size_t boundary = batchSizes.back() - 6;
+		auto finalPen = real;
+		for (size_t index = boundary + 1; index < finalPen.size(); ++index)
+			finalPen[index].r = 3.0f - static_cast<float>(index - boundary) * 0.5f;
+		finalPen.back().y += 1.5f;
+		auto changed = finalPen;
+		changed[boundary / 2].x += 0.5f;
+		rejectTail(completedPen, translucentStyle, changed, "path A rejects modified interior position");
+		changed = finalPen;
+		changed[boundary].x += 0.5f;
+		rejectTail(completedPen, translucentStyle, changed, "path A rejects modified boundary position");
+		changed = finalPen;
+		changed[boundary].r += 0.25f;
+		rejectTail(completedPen, translucentStyle, changed, "path A rejects modified boundary radius");
+
+		const auto penTail = drawTail(completedPen, translucentStyle, finalPen);
+		Check(penTail.eligible && penTail.succeeded && !renderer.OperatorLayerEmpty(l0),
+			"path A pen rasterizes only its completed tail into L0", failures);
+		const auto splitPen = resolveL2(penTail.dirty, nullptr);
+		const auto livePenOnly = resolveL2(whole, &l0);
+		resetLayers();
+		renderer.SetOperatorTarget(l1, whole);
+		Check(renderer.DrawStrokeOrDot(std::span<const InkPoint>(finalPen).subspan(boundary),
+			penColor, StrokeShape::RoundCapsule) >= 0, "path A tail-only reference raster", failures);
+		checkPixels(resolveL2(whole, &l1), livePenOnly, "path A L0 contains exactly the completed pen tail");
+		resetLayers();
+		renderer.SetOperatorTarget(l1, whole);
+		Check(renderer.DrawStrokeOrDot(finalPen, penColor, StrokeShape::RoundCapsule) >= 0,
+			"path A whole pen reference raster", failures);
+		checkPixels(resolveL2(whole, &l1), splitPen, "path A finished pen equals whole raster");
+
+		resetLayers();
+		ActiveStroke mismatched(6.0f, 500.0f);
+		commitPrefix(mismatched, real, batchSizes[0], penColor);
+		auto corrected = real;
+		corrected[batchSizes[0] - 6].x += 0.5f;
+		commitPrefix(mismatched, corrected, batchSizes[1], penColor);
+		// 恢复末点后指纹相同，仍须因上一批接续失配拒绝复用已经绘制的像素。
+		mismatched.realPoints = real;
+		checkFingerprint(mismatched, "path A restored junction matches fingerprint");
+		Check(!mismatched.l1PrefixExact, "path A failed junction marks prefix inexact", failures);
+		rejectTail(mismatched, translucentStyle, real, "path A rejects edited junction between batches");
+
+		const std::vector<InkPoint> eraserPath = {
+			{ 17, 17, 4, 0 }, { 23, 20, 6, 1 }, { 33, 26, 7, 2 },
+			{ 33, 37, 5, 3 }, { 50, 39, 8, 4 }, { 61, 26, 6, 5 }
+		};
+		for (const auto& style : { circleStyle, rectangleStyle })
+		{
+			const bool round = style.eraserShape == EraserShape::Circle;
+			resetLayers();
+			ActiveStroke sweep(12.0f, 500.0f);
+			sweep.eraserShape = style.eraserShape;
+			for (size_t count : { 2u, 4u, 6u })
+			{
+				sweep.realPoints.assign(eraserPath.begin(), eraserPath.begin() + count);
+				const auto batch = CommitEraserRealPointsToL1(sweep,
+					StrokeShape::RoundCapsule, renderer, width, height);
+				Check(batch.succeeded && !IsRectEmpty(&batch.dirty) && sweep.committedIndex == count - 1,
+					"path A eraser batch submits new sweep segments", failures);
+			}
+			const auto tail = drawTail(sweep, style, sweep.realPoints);
+			Check(tail.eligible && tail.succeeded && renderer.OperatorLayerEmpty(l0),
+				"path A fully committed eraser leaves L0 empty", failures);
+			const auto splitEraser = resolveL2(tail.dirty, &l1);
+			planePixels(l0.addTexture.Get(), whole, true, "path A eraser leaves L0 Add untouched");
+			planePixels(l0.retainTexture.Get(), whole, true, "path A eraser leaves L0 Retain untouched");
+			std::vector<InkPoint> completed;
+			const auto stored = FinalizeStoredStroke(sweep, style, 0.0, completed);
+			if (Check(stored.has_value(), "path A builds whole eraser reference", failures))
+			{
+				resetLayers();
+				replay(*stored, l1);
+				checkPixels(resolveL2(whole, &l1), splitEraser, round
+					? "path A round eraser equals whole raster" : "path A rectangular eraser equals whole raster");
+			}
+
+			resetLayers();
+			ActiveStroke dotFirst(12.0f, 500.0f);
+			dotFirst.eraserShape = style.eraserShape;
+			dotFirst.realPoints = { eraserPath.front() };
+			const auto dot = CommitEraserRealPointsToL1(dotFirst,
+				StrokeShape::RoundCapsule, renderer, width, height);
+			Check(dot.succeeded && !IsRectEmpty(&dot.dirty) && dotFirst.hasCommittedGeometry,
+				"path A eraser submits initial dot", failures);
+			rejectTail(dotFirst, style, dotFirst.realPoints, round
+				? "path A rejects round eraser after one point" : "path A rejects rectangular eraser after one point");
+			dotFirst.realPoints = eraserPath;
+			const auto appended = CommitEraserRealPointsToL1(dotFirst,
+				StrokeShape::RoundCapsule, renderer, width, height);
+			Check(appended.succeeded && dotFirst.committedIndex == eraserPath.size() - 1,
+				"path A eraser appends after initial dot", failures);
+			rejectTail(dotFirst, style, dotFirst.realPoints, round
+				? "path A rejects initial round eraser dot" : "path A rejects initial rectangular eraser dot");
+		}
+
+		resetLayers();
+		ActiveStroke marker(6.0f, 500.0f, StrokeWidthMode::SimulatedPressure, true);
+		for (size_t count : batchSizes) commitPrefix(marker, real, count, markerColor);
+		const auto markerTail = drawTail(marker, markerStyle, real);
+		Check(markerTail.eligible && markerTail.succeeded && !renderer.OperatorLayerEmpty(l0),
+			"path A highlighter with matching primitive prefix draws its tail", failures);
+		const auto splitMarker = resolveL2(markerTail.dirty, nullptr);
+		resetLayers();
+		const auto markerGeometry = BuildHighlighterGeometry(real);
+		renderer.SetOperatorTarget(l1, whole);
+		Check(renderer.DrawHighlighterPrimitives(markerGeometry.primitives, markerColor) >= 0,
+			"path A whole highlighter reference raster", failures);
+		checkPixels(resolveL2(whole, &l1), splitMarker, "path A highlighter equals whole primitive raster");
+
+		resetLayers();
+		ActiveStroke duplicateMarker(6.0f, 500.0f, StrokeWidthMode::SimulatedPressure, true);
+		auto duplicate = real;
+		const size_t firstBoundary = batchSizes[0] - 6;
+		// 整笔会跳过分界点，第二批独立生成却会从这个分界点开始扫掠。
+		duplicate[firstBoundary].x = duplicate[firstBoundary - 1].x + 0.125f;
+		duplicate[firstBoundary].y = duplicate[firstBoundary - 1].y;
+		for (size_t count : batchSizes) commitPrefix(duplicateMarker, duplicate, count, markerColor);
+		rejectTail(duplicateMarker, markerStyle, duplicate, "path A rejects highlighter dedup across batches");
+
+		// 入库坐标 = 局部坐标 + 画布偏移，重放时再减回。往返不能逐点还原时，L1 里按局部坐标画的前缀
+		// 与日后的整笔重放会有可见差异，路径 A 必须拒绝；能逐点还原时结果与整笔重放逐字节相同。
+		constexpr float inexactOriginX = 1234.567f, inexactOriginY = -765.4321f;
+		constexpr float exactOriginX = 1024.0f, exactOriginY = -512.0f;
+		for (int exactCase = 0; exactCase < 2; ++exactCase)
+		{
+			resetLayers();
+			ActiveStroke offsetPen(6.0f, 500.0f);
+			offsetPen.penTailCorrectionEnabled = false;
+			auto localPoints = real;
+			for (auto& point : localPoints)
+			{
+				if (exactCase)
+				{
+					// 坐标取 1/8 像素的整数倍：与 1024、-512 相加减在单精度内没有舍入。
+					point.x = std::round(point.x * 8.0f) / 8.0f;
+					point.y = std::round(point.y * 8.0f) / 8.0f;
+				}
+				else
+				{
+					point.x += 0.1f;
+					point.y += 0.3f;
+				}
+			}
+			for (size_t count : batchSizes) commitPrefix(offsetPen, localPoints, count, penColor);
+			const float originX = exactCase ? exactOriginX : inexactOriginX;
+			const float originY = exactCase ? exactOriginY : inexactOriginY;
+			std::vector<InkPoint> offsetFinal;
+			// 关闭拟合、收尖，保留定稿的公切线约束。
+			const auto stored = FinalizeStoredStroke(offsetPen, translucentStyle, 0.0, offsetFinal, originX, originY);
+			if (!Check(stored.has_value(), "path A finalizes pen with nonzero canvas origin", failures)) continue;
+			const auto offsetTail = drawTail(offsetPen, translucentStyle, offsetFinal, originX, originY);
+			if (!exactCase)
+			{
+				Check(!offsetTail.eligible && renderer.OperatorLayerEmpty(l0),
+					"path A rejects a canvas origin that does not round-trip exactly", failures);
+				continue;
+			}
+			Check(offsetTail.eligible && offsetTail.succeeded, "path A accepts an exactly round-tripping canvas origin", failures);
+			const auto offsetActual = resolveL2(offsetTail.dirty, nullptr);
+			resetLayers();
+			replay(*stored, l1, originX, originY);
+			checkPixels(resolveL2(whole, &l1), offsetActual, "path A equals stored replay under an exact canvas origin");
+		}
+		resetLayers();
 
 		context->ClearState();
 		renderer.ReleaseResources();

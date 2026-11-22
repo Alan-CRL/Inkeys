@@ -31,6 +31,32 @@ namespace Inkeys::Drawing::Draw3
 					Bridge::ReadyIdentityFor(*desired.presentationTarget)));
 	}
 
+	inline ShownFrameKey DrawpadShownFrameKey(const HostRuntimeSnapshot& runtime,
+		std::uint64_t modeRevision, std::uint64_t workspaceRevision,
+		std::uint64_t primaryGeneration, std::uint64_t auxiliaryGeneration) noexcept
+	{
+		return { runtime.hostGeneration, runtime.appliedProductRevision, modeRevision, workspaceRevision,
+			runtime.workspace, runtime.presentationReady, runtime.currentPageIndex, runtime.presentationMode,
+			runtime.readyOutputTarget, runtime.readyOutputRevision, runtime.contentRevision, runtime.resizeCount, runtime.recovery.revision,
+			runtime.committedWidth, runtime.committedHeight, primaryGeneration, auxiliaryGeneration };
+	}
+
+	enum class InkHandoffAction { ShowAndRequest, Wait, RetireSource, Exhausted };
+
+	// 仅在旧窗可见、隐藏准备已通过后进入。每次显示获得独立回执；三次确认失败后返回 Exhausted，
+	// 由调用方退回直接成对切换，本函数自身不产生撤窗动作。
+	inline InkHandoffAction PlanInkHandoff(const ShownFrameKey& current, bool targetVisible,
+		const ShownFrameRequest* receipt, unsigned attempts, bool timedOut) noexcept
+	{
+		if (targetVisible && receipt && receipt->key == current)
+		{
+			const auto status = receipt->status.load();
+			if (status == ShownFrameStatus::Confirmed) return InkHandoffAction::RetireSource;
+			if (status == ShownFrameStatus::Pending && !timedOut) return InkHandoffAction::Wait;
+		}
+		return attempts < 3 ? InkHandoffAction::ShowAndRequest : InkHandoffAction::Exhausted;
+	}
+
 	inline bool CanvasRecoveryRetryMatches(const CanvasRecoveryState& expected,
 		const CanvasRecoveryState& current, const Bridge::ProductState& desired,
 		bool running, bool stopping, bool consumerFatal) noexcept

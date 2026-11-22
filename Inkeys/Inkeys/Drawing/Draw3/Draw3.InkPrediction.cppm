@@ -506,6 +506,13 @@ export namespace Inkeys::Drawing::Draw3
 		HighlighterGeometry committedHighlighterGeometry;
 		size_t convertedResultCount = 0;
 		size_t committedIndex = 0;
+		// L1 前缀指纹（阶段 B 路径 A）：记录实际画进 L1 的点。抬笔时定稿点列的前缀与它逐点相同，
+		// 才能直接沿用 L1 里的前缀像素；不能拿定稿结果与抬笔时的 realPoints 比（末点可能被回改、整笔可能被替换）。
+		uint64_t l1PrefixHash = 0;        // 已画进 L1 的点（x、y、r 位模式）的累计哈希
+		size_t l1PrefixPointCount = 0;    // 计入哈希的点数；与 committedIndex + 1 不符即视为不匹配
+		InkPoint l1PrefixLast = {};       // 最后一个计入的点：下一批追加必须从它接续
+		bool l1PrefixExact = false;       // false：L1 里有不由这些点的线段构成的内容（单点印记、绘制失败等）
+		uint64_t l1PrefixEpoch = 0;       // 起笔（或整段重画）时的 L1 内容世代；之后世代变化说明 L1 被清过或被别的内容写过
 		RECT lastL0Rect = { 0, 0, 0, 0 };
 		RECT currentL0Rect = { 0, 0, 0, 0 };
 		StrokeWidthEstimator widthEstimator;
@@ -652,6 +659,9 @@ export namespace Inkeys::Drawing::Draw3
 	// 计算一段墨迹点覆盖的脏矩形。
 	RECT RectFromStrokePoints(std::span<const InkPoint> points, int width, int height,
 		StrokeShape shape = StrokeShape::RoundCapsule);
+	// 同 RectFromStrokePoints，但单点按 DrawStrokeOrDot 实际绘制的右伸短胶囊求包围盒。
+	RECT RectFromStrokeOrDotPoints(std::span<const InkPoint> points, int width, int height,
+		StrokeShape shape = StrokeShape::RoundCapsule);
 	RECT RectFromEraserPoints(std::span<const InkPoint> points, EraserShape shape, int width, int height);
 	int DrawEraserStrokeOrDot(InkRenderer& renderer, std::span<const InkPoint> points,
 		EraserShape shape, DirectX::XMFLOAT4 color);
@@ -719,6 +729,28 @@ export namespace Inkeys::Drawing::Draw3
 	// 橡皮不保留 L0，直接把新增真实点（含单击圆点）提交到 L1。
 	LiveRasterSubmission CommitEraserRealPointsToL1(ActiveStroke& stroke, StrokeShape shape,
 		InkRenderer& renderer, int width, int height);
+	// 维护 L1 前缀指纹。batch 是本次实际画进 L1 的点序列：restart 为真表示从笔画起点整段（重）画；
+	// 否则 batch[0] 必须是上一批的最后一点。exactGeometry 为假表示画出的不是这些点的线段。
+	// layerEpoch / layerWasEmpty 取自绑定 L1 之前的 InkRenderer::StableLayerEpoch() 与 OperatorLayerEmpty(layerL1)：
+	// 起笔时 L1 必须为空，之后世代不得变化，否则 L1 里可能混有别的内容（历史回放残留、其他触点等）。
+	void NoteL1PrefixDrawn(ActiveStroke& stroke, std::span<const InkPoint> batch,
+		bool restart, bool exactGeometry, uint64_t layerEpoch, bool layerWasEmpty) noexcept;
+	uint64_t HashL1PrefixPoints(std::span<const InkPoint> points) noexcept;
+	// 路径 A 的尾段绘制结果。eligible 为假表示条件不满足且没有绘制，调用方改走整笔重画（路径 B）。
+	struct CompletedTailRasterResult
+	{
+		bool eligible = false;
+		bool succeeded = false;
+		RECT dirty = {}; // 整笔（含已在 L1 的前缀）的外包矩形
+	};
+	// 抬笔路径 A：L1 已含这一笔的前缀且与定稿点列的前缀逐点相同时，只把最终尾段画进 liveLayer。
+	// finalPoints 是定稿后的画布局部坐标点列（笔为拟合、收尖后的结果；荧光笔和橡皮为真实点）。
+	// originX/originY 是入库时使用的画布偏移：入库坐标 = 局部坐标 + 偏移，重放时再减回。往返不能逐点还原时
+	// （偏移较大或带小数），L1 里按局部坐标画的前缀与日后的整笔重放会有可见差异，此时不走路径 A。
+	// 调用方必须保证 liveLayer 已清空，随后用双层合成把两层一次并入 L2。
+	CompletedTailRasterResult DrawCompletedStrokeTail(const ActiveStroke& stroke, const StoredInkStyle& style,
+		std::span<const InkPoint> finalPoints, InkRenderer& renderer, const OperatorLayerResources& liveLayer,
+		float originX, float originY, int width, int height, HighlighterGeometry& highlighterScratch);
 	// 清空并重绘当前 L0 实时内容。
 	bool DrawL0LiveComposite(ActiveStroke& stroke, DirectX::XMFLOAT4 color,
 		StrokeShape shape, InkRenderer& renderer, bool clearLayer = true);

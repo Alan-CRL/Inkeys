@@ -243,6 +243,30 @@ namespace Inkeys::Drawing::Draw3
 		SelectionUlw,
 	};
 
+	// 显示后的请求独占回执；相同输出版本再次显示也要重新确认。
+	struct ShownFrameKey
+	{
+		std::uint64_t hostGeneration, productRevision, modeRevision, workspaceRevision;
+		Bridge::Workspace workspace;
+		std::optional<Bridge::PresentationReadyIdentity> page;
+		std::size_t pageIndex;
+		HostPresentationMode mode;
+		HostOutputTarget target;
+		std::uint64_t outputRevision, contentRevision, resizeCount, recoveryRevision;
+		int width, height;
+		std::uint64_t primaryGeneration, auxiliaryGeneration;
+		bool operator==(const ShownFrameKey&) const = default;
+	};
+
+	enum class ShownFrameStatus { Pending, Confirmed, Failed };
+	struct ShownFrameRequest
+	{
+		explicit ShownFrameRequest(const ShownFrameKey& expected) : key(expected) {}
+		const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+		const ShownFrameKey key;
+		std::atomic<ShownFrameStatus> status{ ShownFrameStatus::Pending };
+	};
+
 	enum class HostStartupStage : std::uint8_t
 	{
 		WindowAttached,
@@ -483,6 +507,7 @@ namespace Inkeys::Drawing::Draw3
 		// 只推进通知版本，不写 Frame/UI-ready；原生/背景完成复用同一个无丢醒握手。
 		void NotifyWorkspaceProgress() noexcept;
 		// 仅在 Window Service 已成功隐藏辅助窗且场景仍匹配后发布；绘制 owner 再校验回收。
+		void RequestShownFrame(std::shared_ptr<ShownFrameRequest> request);
 		void AcknowledgeAuxiliarySurfaceHidden(const HostRuntimeSnapshot& expected) noexcept;
 		LRESULT ForwardMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 

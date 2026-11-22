@@ -130,7 +130,7 @@ auto replayShapeEdit = [&](const std::optional<draw3::shapes::ShapeObject>& afte
 		viewportVisibleClear = false; viewportRefreshPending = true; viewportRefreshClearsTransient = false;
 		return false;
 	}
-	renderer_.ClearOperatorLayer(renderer_.layerL0); renderer_.ClearOperatorLayer(renderer_.layerL1);
+	renderer_.ClearOperatorLayerContent(renderer_.layerL0); renderer_.ClearOperatorLayerContent(renderer_.layerL1);
 	if (commit && after)
 	{
 		shapeUi.editor.object = *after; shapeUi.editor.preview.reset(); markPresentationMutation();
@@ -156,7 +156,7 @@ auto drawFocusLayer = [&](RECT& dirty) -> bool
 {
 	auto& focus = shapeUi.focus; if (!focus.Active()) return true;
 	UnionRectInPlace(dirty,focus.l1Bounds); focus.l1Bounds = {}; focus.redraw = false;
-	renderer_.ClearOperatorLayer(renderer_.layerL1);
+	renderer_.ClearOperatorLayerContent(renderer_.layerL1);
 	if (!document_) return false;
 	const auto size = window_.Size();
 	for (const auto& entry : focus.pending)
@@ -183,7 +183,7 @@ auto dropFocusLayer = [&](RECT& dirty)
 {
 	auto& focus = shapeUi.focus; if (!focus.Active()) return;
 	UnionRectInPlace(dirty,focus.l1Bounds); focus.l1Bounds = {}; focus.pending.clear(); focus.redraw = false;
-	renderer_.ClearOperatorLayer(renderer_.layerL1);
+	renderer_.ClearOperatorLayerContent(renderer_.layerL1);
 	ShapePreviewMetrics().focusDrops.fetch_add(1,std::memory_order_relaxed);
 };
 // 可信快照是唯一读取完整 L2 的路径：L2 变化后立即按新内容刷新，平移回退不会缺少刚落定的图形。
@@ -230,8 +230,8 @@ auto materializeFocusLayer = [&](RECT& dirty)
 		if (!CanvasFocusSession::IsVisibleSuffix(runtime.history,std::span<const PendingL2Item>(&entry,1)))
 			DiagnosticOutput::Text(DiagnosticOutput::Stream::Error,"[Draw3.ShapeEdit] action=materialize warning=not_z_suffix\n");
 		const auto viewport = canvas->Viewport();
-		renderer_.ClearOperatorLayer(renderer_.layerL1);
-		if (!shapeUi.construction) renderer_.ClearOperatorLayer(renderer_.layerL0);
+		renderer_.ClearOperatorLayerContent(renderer_.layerL1);
+		if (!shapeUi.construction) renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 		// 未经编辑时补齐抬笔时推迟的热前像，撤销仍可走 hot path；编辑过的项由 journal 路径撤销。
 		HotPreimageCaptureResult capture;
 		const bool unedited = runtime.rasterState == entry.beforeState;
@@ -244,7 +244,7 @@ auto materializeFocusLayer = [&](RECT& dirty)
 		const bool submitted = drawn.succeeded && ResolveFocusLayerToL2(renderer_,renderer_.layerL1,drawn.dirty);
 		if (capture.status == HotPreimageCaptureStatus::Captured && (!submitted || !historyGpuCache.CommitPreimage(capture.ticket)))
 			historyGpuCache.CancelPreimage(capture.ticket);
-		renderer_.ClearOperatorLayer(renderer_.layerL1);
+		renderer_.ClearOperatorLayerContent(renderer_.layerL1);
 		if (submitted)
 		{
 			if (unedited) runtime.rasterState = entry.afterState;
@@ -270,7 +270,7 @@ auto abandonFocusLayer = [&](RECT& dirty)
 	DiagnosticOutput::Text(DiagnosticOutput::Stream::Error,"[Draw3.ShapeEdit] action=focus_layer result=fallback path=authoritative_replay\n");
 	auto pending = std::move(focus.pending); focus.pending.clear(); focus.redraw = false;
 	UnionRectInPlace(dirty,focus.l1Bounds); focus.l1Bounds = {};
-	renderer_.ClearOperatorLayer(renderer_.layerL1);
+	renderer_.ClearOperatorLayerContent(renderer_.layerL1);
 	shapeUi.editor.preview.reset(); shapeUi.editor.legacyPreview = true;
 	for (const auto& entry : pending)
 		if (restoreItemTilesAuthoritative(entry,dirty) && entry.pageIndex < pageRuntimeStates.size() &&
@@ -310,7 +310,7 @@ auto closeShapeEditor = [&](RECT& dirty,std::optional<CanvasFocusEndAction> focu
 			CancelShapeConstruction(shapeUi.construction,shapeUi);
 		}
 		UnionRectInPlace(dirty,betweenShapeBounds); betweenShapeBounds = {};
-		renderer_.ClearOperatorLayer(renderer_.layerL0);
+		renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 	}
 	if (focusAction == CanvasFocusEndAction::Materialize) materializeFocusLayer(dirty);
 	else if (focusAction == CanvasFocusEndAction::Drop)
@@ -459,7 +459,7 @@ auto commitShapeConstruction = [&](draw3::shapes::ShapeObject object,RECT& dirty
 		const auto created = AppendRuntimeConstructedShapeCpu(*canvas,runtime,object,allocateRasterStateToken);
 		if (!created) return false;
 		runtime.rasterState = created->beforeState;
-		renderer_.ClearOperatorLayer(renderer_.layerL0);
+		renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 		shapeUi.focus.pending = {{created->renderItem,object.id,page->PageGuid(),currentPageIndex_,created->beforeState,created->afterState}};
 		if (!drawFocusLayer(dirty)) abandonFocusLayer(dirty);
 		shapeUi.pendingObject = std::move(object); shapeUi.pendingItem = created->renderItem; shapeUi.pendingPage = page->PageGuid(); shapeUi.pendingPageIndex = currentPageIndex_;
@@ -488,7 +488,7 @@ auto commitShapeConstruction = [&](draw3::shapes::ShapeObject object,RECT& dirty
 		viewportVisibleClear = false; viewportRefreshPending = true; viewportRefreshClearsTransient = false; return false;
 	}
 	*canvas = std::move(candidate); runtime = std::move(candidateRuntime);
-	renderer_.ClearOperatorLayer(renderer_.layerL0); renderer_.ClearOperatorLayer(renderer_.layerL1);
+	renderer_.ClearOperatorLayerContent(renderer_.layerL0); renderer_.ClearOperatorLayerContent(renderer_.layerL1);
 	shapeUi.pendingObject = std::move(object); shapeUi.pendingItem = item; shapeUi.pendingPage = page->PageGuid(); shapeUi.pendingPageIndex = currentPageIndex_;
 	markPresentationMutation(); publishCurrentPageContent();
 	if (observer_.strokeCompleted) observer_.strokeCompleted(observer_.context,Bridge::CompletedStrokeKind::Shape);
@@ -520,7 +520,7 @@ beginShapeContact = [&](RuntimeStroke& runtime)
 	const bool multi = runtime.shape.generic && draw3::shapes::GetToolCapabilities(runtime.shape.tool.preset).multiStage;
 	if (!multi)
 	{
-		if (shapeUi.construction) { RECT ignored{}; endCanvasFocus(CanvasFocusEndReason::ToolChange,ignored); renderer_.ClearOperatorLayer(renderer_.layerL0); window_.RequestFullPresent(); }
+		if (shapeUi.construction) { RECT ignored{}; endCanvasFocus(CanvasFocusEndReason::ToolChange,ignored); renderer_.ClearOperatorLayerContent(renderer_.layerL0); window_.RequestFullPresent(); }
 		return true;
 	}
 	const auto scene = shapeScene();
@@ -730,7 +730,7 @@ auto validateShapeUiContext = [&](RECT& dirty)
 			!SameShapeUiScene(shapeUi.construction->identity,scene.identity);
 		endCanvasFocus(window_.SelectionMode() ? CanvasFocusEndReason::SelectionMode :
 			sceneChanged ? CanvasFocusEndReason::SceneChange : CanvasFocusEndReason::ToolChange,dirty);
-		renderer_.ClearOperatorLayer(renderer_.layerL0); window_.RequestFullPresent();
+		renderer_.ClearOperatorLayerContent(renderer_.layerL0); window_.RequestFullPresent();
 	}
 	// 不变式：待落定项只在其编辑框打开期间留在 L1；编辑框未接管或已关闭则立即落定。
 	if (shapeUi.focus.Active() && !editorInFocusLayer()) { endCanvasFocus(CanvasFocusEndReason::OverlayClosed,dirty); window_.RequestFullPresent(); }
@@ -743,12 +743,18 @@ auto renderPendingShapeConstruction = [&](RECT& dirty,bool& failed,bool layersRe
 	if (!waiting && IsEmptyRect(betweenShapeBounds)) return;
 	if (!layersRebuilt && !shapeUi.constructionVisualDirty) return;
 	UnionRectInPlace(dirty,betweenShapeBounds);
-	if (active.empty()) renderer_.ClearOperatorLayer(renderer_.layerL0);
+	if (active.empty()) renderer_.ClearOperatorLayerContent(renderer_.layerL0);
 	betweenShapeBounds = {};
 	if (waiting && shapeUi.construction->preview)
 	{
 		const RECT previewBounds = shapeBoundsRect(shapeUi.construction->renderData.bounds);
-		renderer_.SetOperatorTarget(renderer_.layerL0, previewBounds); // 声明写入范围供 L0 局部清除
+		// 声明写入范围供 L0 局部清除；合成矩形比外框各边多 1 像素，写域按合成矩形声明。
+		const auto& previewBox = shapeUi.construction->renderData.bounds;
+		const auto previewSize = window_.Size();
+		renderer_.SetOperatorTarget(renderer_.layerL0, !previewBox.valid ? previewBounds : ClampRectToCanvas({
+			SaturatingFloorToLong(double(previewBox.left) - 1.0), SaturatingFloorToLong(double(previewBox.top) - 1.0),
+			SaturatingCeilToLong(double(previewBox.right) + 1.0), SaturatingCeilToLong(double(previewBox.bottom) + 1.0) },
+			previewSize.width, previewSize.height));
 		if (!renderer_.DrawShapeRenderData(shapeUi.construction->renderData)) failed = true;
 		betweenShapeBounds = previewBounds; UnionRectInPlace(dirty,betweenShapeBounds);
 	}
