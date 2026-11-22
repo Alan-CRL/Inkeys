@@ -76,7 +76,7 @@
 - 列表重建与投影使用短而明确的同一串行边界。不得持该锁跨D2D呈现、Window Service/SetWindowPos/owner等待；UpdateRendering(false)轻请求与timer不能等待可能同步等待owner的渲染锁。面板Close归位等可重入副作用与纯投影分开，避免锁内Close重新取得Recall/更新锁。
 - 主栏布局失效必须比较稳定成员身份/顺序、有效size/IsVisible以及隐藏成员锚点语义，不能只比较总宽度。等宽的两枚2×1与单枚2×2、成员替换/顺序变化仍进入现有统一批次；扩张曲线继续由实际宽度决定。Selected/Disable、文字/颜色、hover/emph/pressScale/动画val不属于几何指纹。
 - Freeze 在 PPT/Whiteboard 不可用时仅设置 hide，保留同一 List 身份/顺序；收窄时复用 `AnchorHiddenBarButton` 按本帧前一可见成员的目标加入现有布局批次，不保留旧右侧坐标或另写动画。退场成员先绘制，可见成员随后覆盖，使用表现锁内取得的本帧显隐指纹决定 Z 序，不能在两次绘制遍历之间重新读取实时 hide。
-- RenderLoop继续持有像素目标SetTar、current/target、CanJoin与换边后半程重开、隐藏锚点、命中和旧新dirty；统一业务入口不得SetDirect跳过动画。主按钮脉冲/停靠及独立Surface/属性按钮保持原所有权，不扩大为全UI属性框架。
+- `Inkeys.UI.Bar:MainContent` 是真实主栏与设置预览共用的内容编排层，负责投影、内容样式、批次（含 CanJoin 与后半程重开）、按钮/底板/More 目标写入、隐藏锚点和悬停提示策略。它由宿主显式传入数据、动画状态与服务，除主题读取外不得依赖 `BarUISetClass`、`BarRenderLoopState` 或全局主栏状态。实栏继续在原帧阶段调用并持有命中、脏区、主按钮、停靠、换边与属性面板。统一业务入口不得 SetDirect 跳过动画。改动涉及实栏内容编排时在共享层实现，运行 `--ui3-trace-dump <dir>` 并对 `Build/ui3-trace/base` 逐帧逐值比较，连同 golden 逐字节门禁一起验证。预览合同见 [settings-component-editor.md](settings-component-editor.md)。
 - 真实Bar无窗口回归须调用RegisterBuiltInComponents/SyncLegacyExtensionButtons/Load/UpdateRendering与生产timer/state入口：相同业务styleKey下Separate绘制增删组件仍为Pierce上2×1/Freeze下2×1；覆盖0/1/2/3+组件及overflow、模式/内容/PPT/Whiteboard、历史期限与精简态、等宽转换/动画中途/重复刷新。源码合同只作补充，不以复制逻辑或字符串替代真实生产调用；未启动Draw3 Host/HWND时不能声称验证Accepted命令或系统WM_TIMER投递。
 
 ### Undo/Redo 属性与 3 秒布局保护合同
