@@ -22,7 +22,8 @@
     "11-20-bar-layout-model",
     "11-20-bar-content-instance",
     "11-20-component-preview-dragdrop",
-    "11-20-component-library-page"
+    "11-20-component-library-page",
+    "11-20-bar-content-shared-choreography"
   ],
   "parent": "11-16-inkeys3-midterm-refactor",
   "relatedFiles": [],
