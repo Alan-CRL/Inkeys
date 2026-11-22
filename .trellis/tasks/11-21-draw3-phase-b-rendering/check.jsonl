@@ -1,0 +1,9 @@
+{"file":".trellis/tasks/11-21-draw3-phase-b-rendering/design.md","reason":"三组设计与接口；另按主题读取 native-desktop/draw3-integration.md 的窗口交接和第 736 行 L0 合同"}
+{"file":".trellis/spec/native/terminal-tail-reconstruction.md","reason":"终态拟合、实时锚点与回退边界"}
+{"file":".trellis/spec/native-desktop/memory-resource-lifecycle.md","reason":"辅助窗口回执、激光表面与资源退役"}
+{"file":".trellis/spec/native-desktop/draw3-shaders.md","reason":"SM5 产品资源链与兼容路径"}
+{"file":".trellis/tasks/11-21-draw3-phase-b-rendering/research/layers.md","reason":"逐笔提交、共享层清理与各工具分支"}
+{"file":".trellis/tasks/11-21-draw3-phase-b-rendering/research/handoff.md","reason":"两个方向的完整帧和显示后回执"}
+{"file":".trellis/tasks/11-21-draw3-phase-b-rendering/research/shaders.md","reason":"shader 等价候选、粒子设置与能力门"}
+{"file":".trellis/tasks/11-21-draw3-phase-b-rendering/research/offscreen.md","reason":"阶段 B 基线的测试条件、测量结果和局限"}
+{"file": ".trellis/tasks/11-21-draw3-phase-b-rendering/research/l0-clear-probe.md", "reason": "L0 清除方式离屏计时与 1/16 分界线的依据"}

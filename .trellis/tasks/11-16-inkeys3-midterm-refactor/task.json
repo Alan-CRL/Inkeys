@@ -24,7 +24,8 @@
     "11-19-draw3-input-backends",
     "11-20-draw3-canvas-gesture-fullscreen",
     "11-20-draw3-gpu-stress-latency",
-    "11-21-draw3-phase-a2-compat"
+    "11-21-draw3-phase-a2-compat",
+    "11-21-draw3-phase-b-rendering"
   ],
   "parent": null,
   "relatedFiles": [],
