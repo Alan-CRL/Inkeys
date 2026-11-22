@@ -30,6 +30,7 @@
 
 module Inkeys.UI.Bar;
 import :Button;
+import :MainContent;
 
 import :Main;
 import :Layout;
@@ -988,72 +989,14 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	// 读取渲染线程已落地的档位，保证投影与本帧布局使用同一尺寸。
 	const bool compactSize = NormalizeBarSizeMode(barUISet.barStyle.appliedSizeMode.load(
 		std::memory_order_acquire)) == BarSizeMode::Compact;
+	const Inkeys::UI::Bar::MainBarPresentationInput input{ stateMode.StateModeSelect,
+		whiteboard, hasContent, featureEnabled, freezeAvailable,
+		freezeActive, canvasDebugEnabled, canvasDebugVisual, settingVisible, moreOpen, compactSize, a2, recall };
 	const auto apply = [&](BarButtonClass* button)
 	{
 		if (!button) return;
-		auto size = button->baseSize.load();
-		bool hide = false;
-		WidgetState state = WidgetState::None;
-		switch (button->preset.load())
-		{
-		case BarButtonPresetEnum::Select:
-			state = selection && !canvasDebugVisual ? WidgetState::Selected : WidgetState::None;
-			break;
-		case BarButtonPresetEnum::Draw:
-			state = !canvasDebugVisual && stateMode.StateModeSelect == StateModeSelectEnum::IdtPen ? WidgetState::Selected : WidgetState::None;
-			break;
-		case BarButtonPresetEnum::Eraser:
-			hide = compactSelection;
-			state = !canvasDebugVisual && stateMode.StateModeSelect == StateModeSelectEnum::IdtEraser ? WidgetState::Selected : WidgetState::None;
-			break;
-		case BarButtonPresetEnum::Geometry:
-			hide = compactSelection;
-			state = !canvasDebugVisual && stateMode.StateModeSelect == StateModeSelectEnum::IdtShape ? WidgetState::Selected : WidgetState::None;
-			break;
-		case BarButtonPresetEnum::Clean:
-			state = selection && !hasContent ? WidgetState::Disable : WidgetState::None;
-			break;
-		case BarButtonPresetEnum::Whiteboard:
-			size = a2.whiteboardTwoTwo ? ButtonSizeEnum::twoTwo : ButtonSizeEnum::twoOne;
-			hide = !featureEnabled;
-			state = whiteboard ? WidgetState::Selected : WidgetState::None;
-			break;
-		case BarButtonPresetEnum::Freeze:
-			size = a2.freezeTwoTwo ? ButtonSizeEnum::twoTwo : ButtonSizeEnum::twoOne;
-			hide = !a2.freezeVisible;
-			state = !freezeAvailable ? WidgetState::Disable : (freezeActive ? WidgetState::Selected : WidgetState::None);
-			break;
-		case BarButtonPresetEnum::Pierce:
-			size = a2.pierceTwoTwo ? ButtonSizeEnum::twoTwo : ButtonSizeEnum::twoOne;
-			hide = !a2.pierceVisible;
-			state = !canvasDebugVisual && stateMode.StateModeSelect == StateModeSelectEnum::IdtClickThrough ? WidgetState::Selected : WidgetState::None;
-			break;
-		case BarButtonPresetEnum::EndShow:
-			hide = !a2.endShowVisible;
-			break;
-		case BarButtonPresetEnum::CanvasDebug:
-			hide = !canvasDebugEnabled;
-			state = canvasDebugVisual ? WidgetState::Selected : WidgetState::None;
-			break;
-		case BarButtonPresetEnum::Recall:
-			size = recall.undoExpanded ? ButtonSizeEnum::twoTwo : ButtonSizeEnum::twoOne;
-			hide = !recall.mainUndoVisible;
-			// 灰色历史按钮仍可点击延期，由命令可用性阻止发布，不能设成Disable。
-			break;
-		case BarButtonPresetEnum::Redo:
-			size = recall.redoExpanded ? ButtonSizeEnum::twoTwo : ButtonSizeEnum::twoOne;
-			hide = !recall.mainRedoVisible;
-			break;
-		case BarButtonPresetEnum::More:
-			state = moreOpen ? WidgetState::Selected : WidgetState::None;
-			break;
-		case BarButtonPresetEnum::Setting:
-			state = settingVisible ? WidgetState::Selected : WidgetState::None;
-			break;
-		default: break;
-		}
-		// 小尺寸只改运行时有效尺寸：基准/配置/注册尺寸保持原值，切回大尺寸即恢复。
-		if (compactSize && size != ButtonSizeEnum::oneTwo) size = ButtonSizeEnum::oneOne;
+		const auto [size, hide, state] = Inkeys::UI::Bar::ResolveMainBarPresentation(
+			button->preset.load(), button->baseSize.load(), input);
 		button->size = size;
 		button->userVisible = button->baseUserVisible.load();
 		button->hide = hide;
@@ -1072,9 +1015,8 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	barUISet.barState.recallAttribute = recall.popupOpen;
 	// 内容仍从当前动画值过渡；同目标不会重启文字或图标动画。
 	// 长标签换行由语言资源指定，翻译调整不再依赖英文原文匹配。
-	auto label = whiteboard ? IW(I18nKey.UI.Bar.MainButtons.MoveLabel)
-		: IW(separate && !selection ? I18nKey.UI.Bar.MainButtons.SelectClearLabel : I18nKey.UI.Bar.MainButtons.SelectLabel);
-	preset[(int)BarButtonPresetEnum::Select]->TransitionContent(whiteboard ? L"barMove" : L"barSelect", label, immediateLabel);
+	const auto style = Inkeys::UI::Bar::ResolveSelectStyle(whiteboard, separate, selection);
+	preset[(int)BarButtonPresetEnum::Select]->TransitionContent(style.icon, style.LocalizedLabel(I18n::getW, Inkeys::UI::Bar::ShapeToolLabel), immediateLabel);
 	UpdateDrawButtonStyle(stateMode, immediateLabel);
 	UpdateWhiteboardButtonStyle(whiteboard,
 		Inkeys::Window::GetService().WhiteboardWindowGroupMinimized(), immediateLabel);
@@ -1216,14 +1158,8 @@ void BarButtonSetClass::UpdateDrawButtonStyle(const StateModeClass& stateMode, b
 	if (drawButtonStyleKey == styleKey) return;
 	auto button = preset[(int)BarButtonPresetEnum::Draw];
 	if (!button) return;
-	button->TransitionContent(
-		laser ? L"barLaser" : (highlighter ? L"barHighlighter1" :
-			(hardPen ? L"barBrush1" : L"barBrush2")),
-		selected ? (laser ? IW(I18nKey.UI.Bar.MainButtons.LaserLabel)
-			: (highlighter ? IW(I18nKey.UI.Bar.MainButtons.HighlighterLabel)
-				: (hardPen ? IW(I18nKey.UI.Bar.MainButtons.HardPenLabel)
-					: IW(I18nKey.UI.Bar.MainButtons.SoftPenLabel))))
-			: IW(I18nKey.UI.Bar.MainButtons.DrawLabel), immediateLabel);
+	const auto style = Inkeys::UI::Bar::ResolveDrawStyle(selected, laser, highlighter, hardPen);
+	button->TransitionContent(style.icon, style.LocalizedLabel(I18n::getW, Inkeys::UI::Bar::ShapeToolLabel), immediateLabel);
 	drawButtonStyleKey = styleKey;
 }
 void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active, bool minimized, bool immediateLabel)
@@ -1232,19 +1168,13 @@ void BarButtonSetClass::UpdateWhiteboardButtonStyle(bool active, bool minimized,
 	if (!whiteboard) return;
 	if (auto* pierce = preset[(int)BarButtonPresetEnum::Pierce])
 	{
-		auto label = IW(I18nKey.UI.Bar.MainButtons.ClickThroughLabel);
-		pierce->TransitionContent(L"barPierce", label, immediateLabel);
+		const auto style = Inkeys::UI::Bar::ResolvePierceStyle();
+		pierce->TransitionContent(style.icon, style.LocalizedLabel(I18n::getW, Inkeys::UI::Bar::ShapeToolLabel), immediateLabel);
 	}
 	const bool resume = active && minimized;
 	const bool returnToShow = active && !resume && Inkeys::UI::Bar::PptPresentationActive();
-	// 每个状态使用专属图标：回到白板、返回放映、关闭白板与打开白板。
-	whiteboard->TransitionContent(resume ? L"barResumeWhiteboard"
-			: returnToShow ? L"barReturnShow"
-			: active ? L"barCloseWhiteboard" : L"barWhiteboard",
-		resume ? IW(I18nKey.UI.Bar.MainButtons.ResumeWhiteboardLabel)
-			: returnToShow ? IW(I18nKey.UI.Bar.MainButtons.ReturnToShowLabel)
-			: active ? IW(I18nKey.UI.Bar.MainButtons.CloseWhiteboardLabel)
-				: IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel), immediateLabel);
+	const auto style = Inkeys::UI::Bar::ResolveWhiteboardStyle(active, resume, returnToShow);
+	whiteboard->TransitionContent(style.icon, style.LocalizedLabel(I18n::getW, Inkeys::UI::Bar::ShapeToolLabel), immediateLabel);
 }
 void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode, bool immediateLabel)
 {
@@ -1257,10 +1187,8 @@ void BarButtonSetClass::UpdateEraserButtonStyle(const StateModeClass& stateMode,
 	if (eraserButtonStyleKey == styleKey) return;
 	auto button = preset[(int)BarButtonPresetEnum::Eraser];
 	if (!button) return;
-	button->TransitionContent(
-		L"barEraser", selected
-			? IW(I18nKey.UI.Bar.MainButtons.AreaEraserLabel)
-			: IW(I18nKey.UI.Bar.MainButtons.EraserLabel), immediateLabel);
+	const auto style = Inkeys::UI::Bar::ResolveEraserStyle(selected);
+	button->TransitionContent(style.icon, style.LocalizedLabel(I18n::getW, Inkeys::UI::Bar::ShapeToolLabel), immediateLabel);
 	eraserButtonStyleKey = styleKey;
 }
 void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMode, bool immediateLabel)
@@ -1277,9 +1205,9 @@ void BarButtonSetClass::UpdateGeometryButtonStyle(const StateModeClass& stateMod
 	if (geometryButtonStyleKey == styleKey) return;
 	auto* button = preset[(int)BarButtonPresetEnum::Geometry];
 	if (!button) return;
-	if (button->badge) button->badge->shown = pinned;
-	button->TransitionContent(selected ? Inkeys::UI::Bar::ShapeToolIconResource(tool) : L"barGeometry",
-		selected ? Inkeys::UI::Bar::ShapeToolLabel(tool.preset) : IW(I18nKey.UI.Bar.MainButtons.GeometryLabel), immediateLabel);
+	const auto style = Inkeys::UI::Bar::ResolveGeometryStyle(selected, pinned, tool);
+	if (button->badge) button->badge->shown = style.badge;
+	button->TransitionContent(style.icon, style.LocalizedLabel(I18n::getW, Inkeys::UI::Bar::ShapeToolLabel), immediateLabel);
 	geometryButtonStyleKey = styleKey;
 }
 
@@ -1836,13 +1764,21 @@ namespace Inkeys::UI::Bar
 		ButtonVisualLayoutKind layoutKind, double duration, double scale, bool direct,
 		std::optional<double> iconHeightOverride, std::optional<double> fontTargetScale)
 	{
+		ConfigureButtonVisualTargets(barUISet.spec, button, layoutKind, duration, scale,
+			direct, iconHeightOverride, fontTargetScale);
+	}
+
+	void ConfigureButtonVisualTargets(UIRendering& renderer, BarButtonClass& button,
+		ButtonVisualLayoutKind layoutKind, double duration, double scale, bool direct,
+		std::optional<double> iconHeightOverride, std::optional<double> fontTargetScale)
+	{
 		const auto metrics = ResolveButtonVisualMetrics(layoutKind);
 		const double labelSize = button.LabelFontSize(metrics.primaryFontSizeDip);
-		// 即使绘制在其他表面，也保持旧实现使用主栏测量器的条件和来源。
-		auto* renderer = button.preset == BarButtonPresetEnum::Geometry
-			&& metrics.primarySlotWidthDip > 4 && labelSize > 0 ? &barUISet.spec : nullptr;
+		// 只为图形标签按实际宿主测量；其他按钮沿用网格字号。
+		auto* measurement = button.preset == BarButtonPresetEnum::Geometry
+			&& metrics.primarySlotWidthDip > 4 && labelSize > 0 ? &renderer : nullptr;
 		Inkeys::UI::UI3::ConfigureButtonVisualTargets(button, layoutKind, duration, scale,
-			direct, iconHeightOverride, fontTargetScale, labelSize, renderer);
+			direct, iconHeightOverride, fontTargetScale, labelSize, measurement);
 	}
 
 	ButtonAnimationResult AdvanceButtonVisual(BarButtonClass& button,

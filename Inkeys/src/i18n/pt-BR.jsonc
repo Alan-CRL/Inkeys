@@ -1345,6 +1345,7 @@
       "DragStore": "Guardar em Mais",
       "DragDelete": "Solte para excluir",
       "DragCancelAdd": "Solte para cancelar a adição",
+      "TrashLabel": "Arraste aqui para excluir",
       "DragNotAllowed": "Este botão só pode ser movido dentro da área original",
       "DragFixed": "Divisores fixos não podem ser movidos",
       "DragNotHere": "Não é possível soltar aqui"

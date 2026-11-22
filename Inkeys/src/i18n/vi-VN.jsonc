@@ -1345,6 +1345,7 @@
       "DragStore": "Cất vào mục Thêm",
       "DragDelete": "Thả ra để xóa",
       "DragCancelAdd": "Thả ra để hủy thêm",
+      "TrashLabel": "Kéo vào đây để xóa",
       "DragNotAllowed": "Nút này chỉ có thể di chuyển trong vùng ban đầu",
       "DragFixed": "Không thể di chuyển đường phân cách cố định",
       "DragNotHere": "Không thể thả ở đây"

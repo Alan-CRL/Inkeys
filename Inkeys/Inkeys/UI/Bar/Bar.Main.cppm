@@ -41,6 +41,7 @@ import Inkeys.UI.Bar.EraserAttributeMotion;
 import Inkeys.UI.Bar.RecallAttributeMotion;
 export import Inkeys.UI.Bar.RecallChrome;
 export import :Button;
+export import :MainContent;
 export import :PenPreviewRendering;
 export import Inkeys.UI.Bar.Metrics;
 
@@ -302,26 +303,12 @@ private:
 
 namespace Inkeys::UI::Bar
 {
-	// 隐藏按钮继续留在运行时列表，位置跟随来源按钮；渲染与离屏回归共用。
+	// 既有离屏调用的适配入口，列表锚定策略由 MainContent 统一实现。
 	void AnchorHiddenBarButton(BarButtonSetClass& buttons, bool folded,
 		BarButtonPresetEnum hiddenPreset, BarButtonPresetEnum anchorPreset,
 		const std::function<void(UiValueClass&, double)>& setPositionTarget);
 
 	enum class BarButtonListLayoutKind { Main, GroupedGrid, SingleRow, GeometryGrid };
-	struct BarButtonListPlacement
-	{
-		std::shared_ptr<BarButtonClass> button;
-		double x = 0.0, y = 0.0, width = 0.0, height = 0.0;
-		int column = 0, row = 0, columnSpan = 1, rowSpan = 1;
-		bool forced = false;
-	};
-	struct BarButtonListLayout
-	{
-		std::vector<BarButtonListPlacement> placements;
-		double width = 0.0, height = 0.0;
-		int subColumns = 0, explicitRows = 0, totalRows = 0;
-		bool showDivider = false;
-	};
 	// sizeMode 决定网格间距与行高；小尺寸主栏为单行 1×1，大尺寸保持既有双行流。
 	[[nodiscard]] BarButtonListLayout ResolveBarButtonListLayout(
 		const std::vector<std::shared_ptr<BarButtonClass>>& buttons,
@@ -907,12 +894,7 @@ public:
 	BarStatusIndicatorPanel statusIndicator;
 	// 小尺寸悬停提示的输入来源：输入线程经交互反馈队列投递，仅渲染线程读写。
 	// mouse=最近一条消息是未按键的真实鼠标移动；screen=光标屏幕坐标；main=命中的主栏/More 按钮（可空），more=来自 More。
-	struct HoverHintSource
-	{
-		bool mouse = false, more = false;
-		POINT screen{};
-		std::shared_ptr<BarButtonClass> main;
-	} hoverHintSource;
+	Inkeys::UI::Bar::MainBarHoverSource hoverHintSource;
 	BarRecallAttributePanel recallAttribute;
 	Panel mainPanel{"Main"}, morePanel{"More"}, colorPickerPanel{"MainColorPicker"};
 	Panel annotationTooltipPanel{"AnnotationTooltip"}, overflowTooltipPanel{"OverflowTooltip"};
@@ -1668,6 +1650,8 @@ namespace Inkeys::UI::Bar
 	export int RunUi3MultiTargetOffscreenBenchmark();
 	export int RunGeometryAttributeOffscreenTest();
 	export int RunUi3GoldenDump(const wchar_t* outputDirectory);
+	// 动画轨迹基线（Bar.Golden.Test.cpp）：固定帧时钟逐帧记录主栏内容的动画值。
+	export int RunUi3TraceDump(const wchar_t* outputDirectory);
 	// 像素基线入口（Bar.Golden.Test.cpp）的主栏场景夹具，供第二宿主测试复用同一份搭建与确定性处理。
 	struct BarGoldenMainSceneHost
 	{

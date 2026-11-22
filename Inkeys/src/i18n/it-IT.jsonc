@@ -1345,6 +1345,7 @@
       "DragStore": "Sposta in Altro",
       "DragDelete": "Rilascia per eliminare",
       "DragCancelAdd": "Rilascia per annullare l’aggiunta",
+      "TrashLabel": "Trascina qui per eliminare",
       "DragNotAllowed": "Questo pulsante si può spostare solo nella sua area",
       "DragFixed": "I divisori fissi non si possono spostare",
       "DragNotHere": "Impossibile rilasciare qui"

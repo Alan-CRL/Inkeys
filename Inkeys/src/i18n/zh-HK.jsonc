@@ -1345,6 +1345,7 @@
       "DragStore": "收納到更多",
       "DragDelete": "放開以刪除",
       "DragCancelAdd": "放開以取消新增",
+      "TrashLabel": "拖到這裏刪除",
       "DragNotAllowed": "此按鈕只能在原區域內調整位置",
       "DragFixed": "固定分隔線不能移動",
       "DragNotHere": "不能放在這裏"

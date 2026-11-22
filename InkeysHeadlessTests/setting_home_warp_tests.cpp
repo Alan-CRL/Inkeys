@@ -28,6 +28,7 @@
 #include <fstream>
 #include <utility>
 #include <vector>
+#include "../Inkeys/Inkeys/UI/Setting/Setting.ComponentEditor.h"
 
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "windowscodecs.lib")
@@ -801,6 +802,66 @@ namespace
 		if (renderer.Submit(checks,ImGui::GetDrawData(),&pixels))
 			checks.Expect(pixels[10*Width+10]==pixels[10*Width+30] && pixels[10*Width+30]==pixels[10*Width+50]
 				&& (pixels[10*Width+30]&255)==128,"premultiplied image matches direct draw and restores blend");
+
+		// 同一预乘纹理经过真实入场块与旧页透明度；分别验证组与逐顶点退路的像素。
+		auto& io = ImGui::GetIO();
+		const auto oldFlags = io.BackendFlags;
+		Design::PageMotionState motion;
+		auto capture = [&](float elapsed, float exitOpacity, bool fallback, Pixels& result, float& top)
+		{
+			if (fallback) io.BackendFlags &= ~ImGuiBackendFlags_RendererHasVtxOffset;
+			ImGui_ImplDX11_NewFrame();
+			ImGui::NewFrame();
+			Design::ConfigureRowAnimations(0, true, 1);
+			ImGui::SetNextWindowPos({0, 0});
+			ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##preview-fade-root", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
+			ImGui::GetWindowDrawList()->AddRectFilled({75, 75}, {130, 130}, IM_COL32(0, 128, 255, 255));
+			ImGui::BeginChild("##preview-fade-body", {200, 200}, ImGuiChildFlags_None,
+				ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar);
+			Design::ConfigurePageMotion(motion, 1, false);
+			motion.elapsed = elapsed;
+			Design::BeginPageMotion(motion);
+			ImGui::SetCursorScreenPos({80, 80});
+			Design::PageBlockScope block("##preview-fade-block");
+			auto* draw = ImGui::GetWindowDrawList();
+			const int first = draw->VtxBuffer.Size;
+			draw->AddCallback(ImGui_ImplDX11_PremultipliedBegin, nullptr);
+			draw->AddImage((ImTextureID)(uintptr_t)view.Get(), {80, 80}, {120, 120});
+			draw->AddCallback(ImGui_ImplDX11_PremultipliedEnd, nullptr);
+			const int last = draw->VtxBuffer.Size;
+			ImGui::Dummy({40, 40});
+			Inkeys::UI::Setting::ComponentEditor::FinishPreviewBlock(block, *draw, first, last, exitOpacity);
+			top = draw->VtxBuffer[first].pos.y;
+			if (exitOpacity < 1) Design::ApplyGroupOpacity(ImGui::GetCurrentWindow(), exitOpacity);
+			Design::EndPageMotion();
+			ImGui::EndChild();
+			ImGui::End();
+			ImGui::Render();
+			const bool ok = renderer.Submit(checks, ImGui::GetDrawData(), &result);
+			io.BackendFlags = oldFlags;
+			return ok;
+		};
+		Pixels full, grouped, fallback;
+		float fullY = 0, groupedY = 0, fallbackY = 0;
+		if (!capture(Design::PageMotionTiming::Total, 1, false, full, fullY)
+			|| !capture(Design::PageMotionTiming::Fade / 2, .5f, false, grouped, groupedY)
+			|| !capture(Design::PageMotionTiming::Fade / 2, .5f, true, fallback, fallbackY)) return;
+		const auto sample = 100 * Width + 100;
+		const auto red = [&](const Pixels& image) { return static_cast<int>(image[sample] & 255); };
+		checks.Expect(red(full) == 128 && std::abs(red(grouped) - 32) <= 2,
+			"preview page block and exit opacity multiply premultiplied pixels");
+		checks.Expect(std::abs(red(fallback) - 32) <= 2 && groupedY > fullY && fallbackY == groupedY,
+			"preview fallback matches block position and premultiplied opacity");
+		// 红通道只反映纹理 RGB，青底 G/B 的衰减量单独验证纹理 alpha。
+		const auto attenuatesCyan = [&](const Pixels& image)
+		{
+			const auto pixel = image[sample];
+			return std::abs(static_cast<int>((pixel >> 8) & 255) - 112) <= 2
+				&& std::abs(static_cast<int>((pixel >> 16) & 255) - 223) <= 2;
+		};
+		checks.Expect(attenuatesCyan(grouped) && attenuatesCyan(fallback),
+			"preview grouped and fallback opacity attenuate cyan background");
 	}
 
 	void CheckOpacityGroups(Checks& checks, Offscreen& renderer)

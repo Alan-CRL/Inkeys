@@ -16,6 +16,7 @@
 #include <wincodec.h>
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
 #include <cstdio>
 #include <cstdint>
@@ -23,6 +24,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iterator>
 #include <locale>
@@ -542,6 +544,248 @@ namespace Inkeys::UI::Bar
 		if (!workspace || !ResetFixture(scene)) return E_FAIL;
 		Pixels pixels;
 		return RenderMain(scene, pixels, &host);
+	}
+
+	namespace
+	{
+		// 动画轨迹基线：固定帧时钟驱动真实协调器，逐帧记录主栏内容的动画中间值。
+		// 像素 golden 只看静止帧，抽取共享编排时用它证明展开/收起/加入/重开/换边/More/折叠等过程逐帧一致。
+		struct TraceWriter
+		{
+			std::string text;
+			void Value(double v)
+			{
+				char buffer[64];
+				const auto r = std::to_chars(buffer, buffer + sizeof(buffer), v);
+				text.push_back(' ');
+				text.append(buffer, r.ptr);
+			}
+			void Visual(const char* name, const UiInnheritBaseClass& s)
+			{
+				text += name;
+				for (double v : {double(s.x.val), double(s.y.val), double(s.w.val), double(s.h.val), double(s.pct.val),
+					double(s.inhX), double(s.inhY)}) Value(v);
+				text.push_back('\n');
+			}
+			void Button(const char* tag, std::size_t index, const BarButtonClass& b)
+			{
+				text += tag; text += std::to_string(index); text.push_back(' '); text += b.id;
+				const auto& s = b.button;
+				for (double v : {double(s.x.val), double(s.y.val), double(s.w.val), double(s.h.val), double(s.pct.val),
+					double(s.inhX), double(s.inhY)}) Value(v);
+				text += " icon"; for (double v : {double(b.icon.x.val), double(b.icon.y.val), double(b.icon.w.val), double(b.icon.h.val),
+					double(b.icon.pct.val), double(b.icon.inhX), double(b.icon.inhY)}) Value(v);
+				text += " name"; for (double v : {double(b.name.x.val), double(b.name.y.val), double(b.name.size.val), double(b.name.pct.val),
+					double(b.name.inhX), double(b.name.inhY)}) Value(v);
+				text += " state"; Value(double(b.pressScale.val)); Value(static_cast<int>(b.size.load()));
+				Value(b.IsVisible() ? 1 : 0); Value(static_cast<int>(b.state->state.load())); Value(static_cast<int>(b.hoverStage.load()));
+				text.push_back('\n');
+			}
+		};
+
+		void TraceFrame(TraceWriter& w, BarUISetClass& owner, unsigned frame)
+		{
+			w.text += "frame " + std::to_string(frame) + " side " + std::to_string(int(static_cast<bool>(owner.barState.widgetPosition.mainBar)))
+				+ " fold " + std::to_string(int(static_cast<bool>(owner.barState.fold))) + '\n';
+			w.Visual("main", *owner.shapeMap[BarUISetShapeEnum::MainBar]);
+			w.Visual("mainButton", *owner.superellipseMap[BarUISetSuperellipseEnum::MainButton]);
+			w.Visual("more", *owner.shapeMap[BarUISetShapeEnum::MorePanel]);
+			w.Visual("moreClose", *owner.shapeMap[BarUISetShapeEnum::MorePanelCloseHit]);
+			w.Visual("moreCloseSvg", *owner.svgMap[BarUISetSvgEnum::MorePanelClose]);
+			w.Visual("draw", *owner.shapeMap[BarUISetShapeEnum::DrawAttributeBar]);
+			const auto main = owner.barButtonSet.buttonList.Snapshot();
+			for (std::size_t i = 0; i < main.size(); ++i) if (main[i]) w.Button("b", i, *main[i]);
+			const auto more = owner.barButtonSet.GetMoreButtonSnapshot();
+			for (std::size_t i = 0; i < more.explicitMore.size(); ++i) if (more.explicitMore[i]) w.Button("m", i, *more.explicitMore[i]);
+			for (std::size_t i = 0; i < more.forcedOverflow.size(); ++i) if (more.forcedOverflow[i]) w.Button("f", i, *more.forcedOverflow[i]);
+		}
+
+		// step(n) 推进 n 帧并逐帧记录；脚本在两次 step 之间改变状态，模拟生产的状态切换后请求渲染。
+		using TraceStep = std::function<bool(unsigned)>;
+		HRESULT RunTraceScenario(const char* name, bool compact, Inkeys::UI::StartupPlacement placement,
+			const std::function<bool(BarUISetClass&, const TraceStep&)>& script, std::string& out)
+		{
+			const Scene scene{name, Content::Expanded, false, 1};
+			Inkeys::Testing::WorkspaceSceneScope workspace(WorkspaceScene::Desktop);
+			if (!workspace || !ResetFixture(scene)) return E_FAIL;
+			auto& owner = barUISet;
+			if (compact) owner.barStyle.requestedSizeMode = static_cast<int>(BarSizeMode::Compact);
+			(void)owner.InitializeStartupPlacement(placement);
+			InitializeUI(owner);
+			owner.barStyle.dpiZoom = owner.barStyle.uiBaseZoom = 1;
+			owner.barStyle.configZoom = owner.barStyle.zoom = scene.scale;
+			owner.barStyle.initialZoomFitPending = false;
+			owner.superellipseMap[BarUISetSuperellipseEnum::MainButton]->x.SetDirect(300);
+			owner.superellipseMap[BarUISetSuperellipseEnum::MainButton]->y.SetDirect(900);
+			owner.barButtonSet.PresetInitialization(); owner.barButtonSet.RegisterBuiltInComponents();
+			owner.barButtonSet.Load(); owner.barButtonSet.StateUpdate();
+			auto callback = CreateBarOffscreenRenderCallback(owner, [](const auto&)->BOOL { return TRUE; });
+			unsigned frame = 0;
+			TraceWriter writer;
+			const auto advance = [&](unsigned count, bool record)
+			{
+				for (unsigned i = 0; i < count; ++i)
+				{
+					if (callback({Pipeline::GetDeviceEpoch(), Pipeline::GetSharedAssets(), FrameTime(++frame)})
+						== Pipeline::FrameResult::DeviceLost) return false;
+					if (record) TraceFrame(writer, owner, frame);
+				}
+				return true;
+			};
+			if (!advance(240, false)) return E_FAIL;
+			owner.barButtonSet.StateUpdate(); owner.UpdateRendering(false);
+			if (!advance(360, false)) return E_FAIL;
+			const TraceStep step = [&](unsigned count) { return advance(count, true); };
+			if (!step(2) || !script(owner, step)) return E_FAIL;
+			out = std::move(writer.text);
+			return S_OK;
+		}
+
+		struct TraceScenario
+		{
+			std::string name;
+			bool compact;
+			std::function<bool(BarUISetClass&, const TraceStep&)> script;
+			Inkeys::UI::StartupPlacement placement = Inkeys::UI::StartupPlacement::CenteredBottomBar;
+		};
+
+		std::vector<TraceScenario> TraceScenarios()
+		{
+			const auto request = [](BarUISetClass& owner) { owner.barButtonSet.StateUpdate(); owner.UpdateRendering(false); };
+			const auto selection = [=](BarUISetClass& owner) { (void)ChangeStateModeToSelection(); request(owner); };
+			const auto pen = [=](BarUISetClass& owner) { (void)ChangeStateModeToPenTool(PenToolSelectionEnum::HardPen); request(owner); };
+			const auto more = [=](BarUISetClass& owner, bool open) { owner.barState.moreExpanded = open; request(owner); };
+			// 选择态无内容时橡皮/图形/撤回隐藏：收起与展开批次、前半程加入与后半程重开。
+			const auto toggleAfter = [=](unsigned gap)
+			{
+				return [=](BarUISetClass& owner, const TraceStep& step)
+				{
+					selection(owner);
+					if (!step(gap)) return false;
+					pen(owner);
+					return step(50);
+				};
+			};
+			std::vector<TraceScenario> list;
+			for (const bool compact : {false, true})
+			{
+				const std::string suffix = compact ? "-compact" : "";
+				const auto add = [&](const char* name, std::function<bool(BarUISetClass&, const TraceStep&)> script,
+					Inkeys::UI::StartupPlacement placement = Inkeys::UI::StartupPlacement::CenteredBottomBar)
+				{
+					list.push_back({name + suffix, compact, std::move(script), placement});
+				};
+				add("collapse-expand", toggleAfter(50));
+				add("early-join", toggleAfter(4));
+				add("late-restart", toggleAfter(16));
+				add("more-open-reverse", [=](BarUISetClass& owner, const TraceStep& step)
+				{
+					more(owner, true);
+					if (!step(40)) return false;
+					more(owner, false);
+					if (!step(8)) return false;
+					more(owner, true);
+					return step(40);
+				});
+				add("fold-unfold", [=](BarUISetClass& owner, const TraceStep& step)
+				{
+					owner.barState.fold = true; request(owner);
+					if (!step(40)) return false;
+					owner.barState.fold = false; request(owner);
+					return step(50);
+				});
+				add("press-release", [=](BarUISetClass& owner, const TraceStep& step)
+				{
+					auto* eraser = owner.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Eraser)];
+					if (!eraser) return false;
+					SetButtonPressedVisual(*eraser, true); request(owner);
+					if (!step(20)) return false;
+					SetButtonPressedVisual(*eraser, false); request(owner);
+					return step(30);
+				});
+				add("draw-attribute", [=](BarUISetClass& owner, const TraceStep& step)
+				{
+					owner.barState.drawAttribute = true; request(owner);
+					if (!step(40)) return false;
+					owner.barState.drawAttribute = false; request(owner);
+					return step(40);
+				});
+				// 换边：居中吸底锁住展开方向，先收窄到选择态（左侧空间足够容纳），解除居中并请求另一侧；
+				// 换边进行中切回绘制态，覆盖“换边中重排”（展开后空间不足会再次换边，同样逐帧记录）。
+				add("side-switch-relayout", [=](BarUISetClass& owner, const TraceStep& step)
+				{
+					selection(owner);
+					if (!step(50)) return false;
+					owner.ClearBottomDockCenterForFold();
+					owner.barState.widgetPosition.mainBar = !static_cast<bool>(owner.barState.widgetPosition.mainBar); request(owner);
+					if (!step(8)) return false;
+					pen(owner);
+					return step(60);
+				});
+			}
+			return list;
+		}
+	}
+
+	int RunUi3TraceDump(const wchar_t* outputDirectory)
+	{
+		if (!outputDirectory || !*outputDirectory) return 2;
+		SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+		_CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE); _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+		struct RuntimeScope
+		{
+			std::wstring originalPath = globalPath;
+			bool com = false, pipeline = false;
+			~RuntimeScope()
+			{
+				SetThemeStyleSource(nullptr);
+				Inkeys::Drawing::Draw3::PublishShapeUiSnapshot({});
+				barUISet.specTarget.Discard();
+				if (pipeline) Pipeline::Shutdown();
+				if (com) CoUninitialize();
+				globalPath = originalPath;
+			}
+		} runtime;
+		unsigned ok = 0, failed = 0;
+		std::ostringstream report;
+		try
+		{
+			const auto directory = std::filesystem::absolute(outputDirectory);
+			std::filesystem::create_directories(directory / L"runtime-config/Inkeys/Config");
+			globalPath = (directory / L"runtime-config").wstring() + L"\\";
+			runtime.com = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+			runtime.pipeline = runtime.com && SUCCEEDED(Pipeline::Initialize());
+			IdtFontFileLoader::IsLoaderInitialized(); IdtFontCollectionLoader::IsLoaderInitialized();
+			const std::array<UINT, 4> fonts{IDR_TTF1, IDR_TTF7, IDR_TTF3, IDR_TTF8};
+			const bool assets = runtime.pipeline && SUCCEEDED(Pipeline::InitializeFontCollection(IdtFontFileLoader::GetLoader(),
+				IdtFontCollectionLoader::GetLoader(), fonts));
+			for (const auto& scenario : TraceScenarios())
+			{
+				const auto path = directory / (scenario.name + ".trace");
+				std::filesystem::remove(path);
+				std::string first, second;
+				const char* failure = nullptr;
+				if (!assets) failure = "runtime initialization failed";
+				else if (FAILED(RunTraceScenario(scenario.name.c_str(), scenario.compact, scenario.placement, scenario.script, first))
+					|| FAILED(RunTraceScenario(scenario.name.c_str(), scenario.compact, scenario.placement, scenario.script, second)))
+					failure = "scenario failed";
+				else if (first != second) failure = "two fresh runs produced different traces";
+				else
+				{
+					std::ofstream file(path, std::ios::binary | std::ios::trunc);
+					file << first;
+					if (!file) failure = "trace output failed";
+				}
+				if (failure) { ++failed; report << "FAIL " << scenario.name << ' ' << failure << '\n'; }
+				else { ++ok; report << "OK " << scenario.name << " bytes=" << first.size() << '\n'; }
+			}
+			report << "scenarios ok=" << ok << " failed=" << failed << '\n';
+			std::ofstream results(directory / L"results.log", std::ios::binary | std::ios::trunc);
+			results << report.str();
+		}
+		catch (...) { ++failed; report << "FAIL output exception\n"; }
+		std::fprintf(stderr, "%s", report.str().c_str());
+		return failed ? 1 : 0;
 	}
 
 	int RunUi3GoldenDump(const wchar_t* outputDirectory)

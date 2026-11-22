@@ -271,6 +271,9 @@ namespace Inkeys::UI::Bar
 		double scale = 1.0, bool direct = false,
 		std::optional<double> iconHeightOverride = std::nullopt,
 		std::optional<double> fontTargetScale = std::nullopt);
+	void ConfigureButtonVisualTargets(UIRendering& renderer, BarButtonClass& button,
+		ButtonVisualLayoutKind layoutKind, double duration, double scale, bool direct,
+		std::optional<double> iconHeightOverride, std::optional<double> fontTargetScale);
 	[[nodiscard]] ButtonAnimationResult AdvanceButtonVisual(
 		BarButtonClass& button, const ButtonAnimationContext& frame,
 		UiWordClass* secondary = nullptr);

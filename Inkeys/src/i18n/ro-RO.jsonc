@@ -1345,6 +1345,7 @@
       "DragStore": "Mutați în Mai multe",
       "DragDelete": "Eliberați pentru a șterge",
       "DragCancelAdd": "Eliberați pentru a anula adăugarea",
+      "TrashLabel": "Trageți aici pentru a șterge",
       "DragNotAllowed": "Acest buton poate fi mutat doar în zona sa",
       "DragFixed": "Separatoarele fixe nu pot fi mutate",
       "DragNotHere": "Nu se poate plasa aici"

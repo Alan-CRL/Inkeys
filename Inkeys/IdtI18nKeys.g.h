@@ -1348,6 +1348,7 @@ inline constexpr struct I18nKeyRoot
             const char* DragStore = "SettingsUI/Component/DragStore";
             const char* DragDelete = "SettingsUI/Component/DragDelete";
             const char* DragCancelAdd = "SettingsUI/Component/DragCancelAdd";
+            const char* TrashLabel = "SettingsUI/Component/TrashLabel";
             const char* DragNotAllowed = "SettingsUI/Component/DragNotAllowed";
             const char* DragFixed = "SettingsUI/Component/DragFixed";
             const char* DragNotHere = "SettingsUI/Component/DragNotHere";

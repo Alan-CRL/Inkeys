@@ -1048,7 +1048,9 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.Scene.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.ContentInstance.cppm" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.MainContent.cppm" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.ContentInstance.cpp" />
+    <ClCompile Include="Inkeys\UI\Bar\Bar.MainContent.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.ShapeEditor.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.ConstructionPrompt.cpp" />
     <ClCompile Include="Inkeys\UI\Bar\Bar.cpp" />

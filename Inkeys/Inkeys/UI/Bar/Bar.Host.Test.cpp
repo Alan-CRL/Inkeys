@@ -5,6 +5,7 @@
 // 场景搭建与确定性处理复用像素基线入口（Bar.Golden.Test.cpp）；全程不创建任何窗口。
 #include "../../../IdtMain.h"
 #include "../../../IdtState.h"
+#include "../../../IdtI18n.h"
 #include "../../../resource.h"
 #include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
 #include "../../Log/Log.h"
@@ -18,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <climits>
+#include <cmath>
 #include <cstdio>
 #include <cstdint>
 #include <crtdbg.h>
@@ -34,15 +36,19 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+#include "../Setting/Setting.Motion.h"
+#include "imgui/imgui_impl_dx11.h"
 
 module Inkeys.UI.Bar;
 import :Main;
 import :ContentInstance;
+import :MainContent;
 import Inkeys.UI.Bar.LayoutModel;
 import Inkeys.Other.Config;
 import :Theme;
 import Inkeys.UI.RenderPipeline;
 import Inkeys.Text.Font;
+#include "../Setting/Setting.ComponentEditor.h"
 
 using namespace Inkeys::UI::UI3;
 
@@ -493,7 +499,7 @@ namespace Inkeys::UI::Bar
 			const float dpi=ghostHint ? 96.f : 120.f;
 			dc->SetDpi(dpi,dpi);
 			bool ok = ghostHint ? SUCCEEDED(instance.DrawGhost(target,std::string(BarComponentId::Explorer),
-				{float(width/2),float(height/2)},ghostHint,false)) : SUCCEEDED(instance.Draw(target,frame));
+				{float(width/2),float(height/2)},ghostHint,std::nullopt)) : SUCCEEDED(instance.Draw(target,frame));
 			D2D1_MATRIX_3X2_F returned{};
 			float dpiX, dpiY;
 			dc->GetTransform(&returned);
@@ -524,7 +530,9 @@ namespace Inkeys::UI::Bar
 			if (!model) return;
 			preview.SetLayout(*model,1);
 			PreviewInputs input;
-			input.width = 1200; input.height = 361; // 与实栏选择按钮的半像素纵向相位对齐。
+			// 给 1.5 倍场景留足上下两侧的 More 峰值预留，不让预览高度成为缩放上限。
+			constexpr UINT previewWidth = 1600, previewHeight = 720;
+			input.width = previewWidth; input.height = previewHeight;
 			input.targetHeight = BarLargeSizeMetrics.barHeight * scene.scale;
 			input.dynamicLighting = false;
 			input.time = std::chrono::steady_clock::time_point{} + std::chrono::seconds(2);
@@ -532,8 +540,13 @@ namespace Inkeys::UI::Bar
 			const auto assets = Pipeline::GetSharedAssets();
 			input.writeFactory = assets.dwriteFactory.Get(); input.fonts = assets.fontCollection.Get();
 			auto frame = preview.Advance(input);
+			const auto* select = barUISet.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Select)];
+			const auto origin = LayoutToTarget(replay.mapping,D2D1::Point2F(static_cast<float>(select->button.inhX),
+				static_cast<float>(select->button.inhY)));
+			// 只对齐测试采样的像素相位；预览和实栏不需要使用相同的屏幕坐标。
+			if (!scene.drawAttribute) PreviewTestAccess::AlignMainButtonPixelPhase(preview, BarButtonPresetEnum::Select, origin);
 			Frame rendered;
-			const bool painted = PaintPreview(preview,frame,FrameTargetKind::PlainBitmap,1200,361,rendered);
+			const bool painted = PaintPreview(preview,frame,FrameTargetKind::PlainBitmap,previewWidth,previewHeight,rendered);
 			report.Check(painted,"preview.match.render");
 			if (!painted) return;
 			const auto body = barUISet.shapeMap[BarUISetShapeEnum::MainBar];
@@ -543,20 +556,17 @@ namespace Inkeys::UI::Bar
 			// 比较与主按钮光锚无关的选择图标和标签；深色属性盘使用不同的遮挡关系。
 			if (!scene.drawAttribute)
 			{
-				const auto* select = barUISet.barButtonSet.preset[static_cast<int>(BarButtonPresetEnum::Select)];
 				for (const auto& h : preview.Geometry().items)
 				{
 					if (!h.position || (*model)[h.position->segment][h.position->index].Id != BarButtonId::Select) continue;
-					auto origin = LayoutToTarget(replay.mapping,D2D1::Point2F(static_cast<float>(select->button.inhX),
-						static_cast<float>(select->button.inhY)));
 					Frame sample, reference;
 					constexpr LONG inset = 8;
 					const SIZE size{static_cast<LONG>(select->button.w.val)-2*inset,
 						static_cast<LONG>(select->button.h.val)-2*inset};
-					const bool cropped = Crop(real,{static_cast<LONG>(std::round(origin.x))+inset,
-						static_cast<LONG>(std::round(origin.y))+inset},size,reference)
-						&& Crop(rendered,{static_cast<LONG>(std::round(h.rect.left))+inset,
-							static_cast<LONG>(std::round(h.rect.top))+inset},size,sample);
+					const bool cropped = Crop(real,{static_cast<LONG>(std::floor(origin.x))+inset,
+						static_cast<LONG>(std::floor(origin.y))+inset},size,reference)
+						&& Crop(rendered,{static_cast<LONG>(std::floor(h.rect.left))+inset,
+							static_cast<LONG>(std::floor(h.rect.top))+inset},size,sample);
 					if (cropped && sample.bytes!=reference.bytes)
 					{
 						report.text << "INFO preview.match origin=" << origin.x << "," << origin.y << " vs " << h.rect.left << "," << h.rect.top << '\n';
@@ -637,8 +647,48 @@ namespace Inkeys::UI::Bar
 				&& count(PreviewHitKind::Companion)==0,"preview.lift-recall-redo");
 			instance.CancelLift();
 			report.Check(paint() && count(PreviewHitKind::Companion)==1,"preview.restore-recall-redo");
+			const auto& emptyGeometry = instance.Geometry();
+			const auto more = std::find_if(emptyGeometry.items.begin(), emptyGeometry.items.end(),
+				[](const auto& hit) { return hit.kind == PreviewHitKind::More; });
+			std::optional<D2D1_POINT_2F> morePoint;
+			if (more != emptyGeometry.items.end())
+				morePoint = D2D1::Point2F((more->rect.left + more->rect.right) / 2, (more->rect.top + more->rect.bottom) / 2);
+			report.Check(more != emptyGeometry.items.end() && !instance.Activate(*more) && !instance.MoreExpanded(),
+				"preview.empty-more-does-not-toggle");
+			const auto catalog = barUISet.barButtonSet.GetLayoutCatalog();
+			bool emptyHover = false;
+			if (morePoint)
+			{
+				using namespace Setting::ComponentEditor;
+				struct CountedPreview
+				{
+					BarContentInstance& instance;
+					int requests = 0;
+					bool MoreExpanded() const { return instance.MoreExpanded(); }
+					void SetMoreExpanded(bool expanded) { ++requests; instance.SetMoreExpanded(expanded); }
+				} preview{instance};
+				PreviewPressInput<CountedPreview, PreviewHit> hoverInput;
+				hoverInput.drag.BeginDragging(0, DragPointerKind::Mouse, *morePoint, {10});
+				const ItemSource source = std::string_view(BarComponentId::Explorer);
+				const auto frameId = emptyGeometry.frameId;
+				emptyHover = frameId != 0;
+				// 每个采样点对应一帧，空面板拒绝展开后也应消费本轮停留。
+				for (const double now : {1., 1.5, 1.75, 2.})
+				{
+					bool dirty = false;
+					const auto hit = instance.HitTest(*morePoint);
+					const auto drop = ResolveDragFrameDrop(hoverInput, preview, hit, true, now, dirty,
+						model, source, catalog, false, false, {});
+					emptyHover = emptyHover && hit.kind == PreviewHitKind::More && drop.action == DropAction::Store
+						&& !dirty && !instance.MoreExpanded() && instance.Geometry().frameId == frameId;
+				}
+				emptyHover = emptyHover && preview.requests == 1;
+			}
+			report.Check(emptyHover, "preview.host-empty-more-hover-stays-clean");
 			for (int i=0;i<11;++i) model[Segment::More].push_back({BarComponentId::Explorer});
 			instance.SetLayout(model,11);
+			report.Check(paint() && !instance.MoreExpanded() && count(PreviewHitKind::Panel)==0, "preview.empty-more-stays-closed");
+			instance.SetMoreExpanded(true);
 			report.Check(paint() && count(PreviewHitKind::Panel)==1,"preview.wrapped-panel");
 			bool wrap = false;
 			const auto& gaps = instance.Geometry().gaps;
@@ -649,11 +699,12 @@ namespace Inkeys::UI::Bar
 			Frame withoutBadge = pixels;
 			PreviewTestAccess::ShowGeometryBadge(instance);
 			report.Check(paint() && pixels.bytes!=withoutBadge.bytes,"preview.pinned-badge");
-			Frame newEpoch;
+			Frame sameTime, newEpoch;
 			auto withBadge = instance.Advance(input);
-			report.Check(PaintPreview(instance,withBadge,FrameTargetKind::ExternalContext,1200,360,newEpoch,1)
-				&& newEpoch.bytes==pixels.bytes,"preview.more-badge-new-epoch");
-			const auto catalog = barUISet.barButtonSet.GetLayoutCatalog();
+			const bool paintedSameTime = PaintPreview(instance,withBadge,FrameTargetKind::PlainBitmap,1200,360,sameTime);
+			report.Check(paintedSameTime && sameTime.bytes==pixels.bytes,"preview.more-badge-same-time",Difference(pixels,sameTime));
+			const bool paintedNewEpoch = PaintPreview(instance,withBadge,FrameTargetKind::ExternalContext,1200,360,newEpoch,1);
+			report.Check(paintedNewEpoch && newEpoch.bytes==pixels.bytes,"preview.more-badge-new-epoch",Difference(pixels,newEpoch));
 			const Position dividerSource{Segment::B1,1};
 			bool preserved = false;
 			if (instance.Lift(dividerSource,11) && paint())
@@ -736,18 +787,583 @@ namespace Inkeys::UI::Bar
 			UiAnimationEnabled=true; UiAnimationSpeedRate=1;
 			input.time+=std::chrono::seconds(5);
 			instance.SetMoreExpanded(true);
+			// C5 合同：More 开合全程主栏位置与大小不变（上方常驻预留，相机只读目标）；反向在同一时刻接续。
 			report.Check(paint() && pose()==closed,"preview.more-first-frame");
-			report.Check(paint() && pose().first>closed.first && pose().second<closed.second,"preview.more-mid-frame");
-			const auto mid=pose();
+			report.Check(paint() && pose()==closed,"preview.more-mid-frame-stable");
 			instance.SetMoreExpanded(false);
-			// 同一时刻反向，位置和比例必须连续。
 			input.time-=std::chrono::milliseconds(20);
-			report.Check(paint() && pose()==mid,"preview.more-reverse-frame");
+			report.Check(paint() && pose()==closed,"preview.more-reverse-frame");
 			for (int i=0;i<40;++i) paint();
 			report.Check(pose()==closed,"preview.more-close-end");
 			instance.SetMoreExpanded(true);
 			for (int i=0;i<40;++i) paint();
-			report.Check(pose().first>closed.first && pose().second<closed.second,"preview.more-open-end");
+			report.Check(pose()==closed,"preview.more-open-end");
+		}
+
+		// C5 复刻合同：More 回弹时预览相机与主栏不动、X 有像素、底板边缘与末端按钮同批次、分割线可插入 A1/B1/A2。
+		// 几何与像素同为预览纹理坐标（Draw 内部以单位变换、96 DPI 绘制）。
+		void CheckPreviewReplica(PreviewInputs input, Report& report)
+		{
+			struct RestoreAnimation
+			{
+				bool enabled = UiAnimationEnabled;
+				double rate = UiAnimationSpeedRate;
+				~RestoreAnimation() { UiAnimationEnabled = enabled; UiAnimationSpeedRate = rate; }
+			} restore;
+			UiAnimationEnabled = true; UiAnimationSpeedRate = 1;
+			const auto catalog = barUISet.barButtonSet.GetLayoutCatalog();
+			std::uint64_t revision = 20;
+			for (const auto mode : {BarSizeMode::Large, BarSizeMode::Compact})
+			{
+				const std::string tag = mode == BarSizeMode::Large ? "large" : "compact";
+				auto check = [&](bool ok, const char* label, const std::string& why = {})
+				{ report.Check(ok, "preview.replica." + tag + "." + label, why); };
+				input.sizeMode = mode;
+				auto model = Reset();
+				model[Segment::More] = {{BarComponentId::Explorer}, {BarComponentId::Control}};
+				BarContentInstance instance;
+				instance.SetLayout(model, ++revision);
+				Frame pixels;
+				PreviewFrame frame;
+				bool ok = true;
+				auto paint = [&]
+				{
+					input.time += std::chrono::milliseconds(16);
+					frame = instance.Advance(input);
+					return PaintPreview(instance, frame, FrameTargetKind::PlainBitmap, 1200,
+						static_cast<unsigned>(std::ceil(input.height)), pixels);
+				};
+				// 开合 More 时：宿主据以裁切纹理的区域、缩放倍率与主栏底板都不能变；面板要有超过终点的回弹峰值。
+				// 宽松宿主之外再测宽度受限的窄宿主（宽度只比主栏略宽，旧实现会把面板宽度/回弹计入缩放）。
+				const auto center = [](const D2D1_RECT_F& rect)
+				{ return D2D1::Point2F((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2); };
+				auto moreOpen = [&](const char* suffix)
+				{
+					instance.SetMoreExpanded(false);
+					for (int i = 0; i < 60; ++i) ok = paint() && ok;
+					const auto closedBody = instance.Geometry().body;
+					const auto closedBounds = frame.bounds;
+					const double closedScale = frame.scale;
+					const auto& items = instance.Geometry().items;
+					const auto more = std::find_if(items.begin(), items.end(),
+						[](const PreviewHit& hit) { return hit.kind == PreviewHitKind::More; });
+					const auto morePoint = more != items.end() ? center(more->rect) : D2D1::Point2F();
+					const bool confirmedMore = instance.HitTest(morePoint).kind == PreviewHitKind::More;
+					instance.SetMoreExpanded(true);
+					// 模拟拖停展开和下一次按下之间的窗口：像素仍在，编辑命中已失效。
+					const std::string name = std::string("more-") + suffix;
+					check(confirmedMore && instance.MoreExpanded() && !instance.Geometry().frameId
+						&& instance.HitTest(morePoint).kind == PreviewHitKind::Empty
+						&& instance.InsertionGaps(morePoint).empty()
+						&& !instance.ShouldDismissMoreOnPress(true, morePoint), (name + "-press-before-confirm").c_str());
+					float peak = 0, last = 0;
+					bool bodyStable = true, regionStable = true, scaleStable = true, heightFits = true;
+					for (int i = 0; i < 60; ++i)
+					{
+						ok = paint() && ok;
+						const auto& g = instance.Geometry();
+						bodyStable = bodyStable && std::abs(g.body.left - closedBody.left) < 0.01f
+							&& std::abs(g.body.top - closedBody.top) < 0.01f && std::abs(g.body.bottom - closedBody.bottom) < 0.01f;
+						regionStable = regionStable && std::abs(frame.bounds.top - closedBounds.top) < 0.01f
+							&& std::abs(frame.bounds.bottom - closedBounds.bottom) < 0.01f;
+						scaleStable = scaleStable && std::abs(frame.scale - closedScale) < 1e-9;
+						heightFits = heightFits && frame.extent.height <= input.height;
+						for (const auto& item : g.items)
+							if (item.kind == PreviewHitKind::Panel) { last = item.rect.bottom - item.rect.top; peak = (std::max)(peak, last); }
+					}
+					check(instance.Geometry().frameId && instance.HitTest(morePoint).kind == PreviewHitKind::More
+						&& !instance.ShouldDismissMoreOnPress(true, morePoint)
+						&& instance.ShouldDismissMoreOnPress(false, morePoint), (name + "-press-after-confirm").c_str());
+					check(bodyStable, (name + "-body-stable").c_str());
+					check(regionStable, (name + "-region-stable").c_str(), "closed=" + std::to_string(closedBounds.top) + ".."
+						+ std::to_string(closedBounds.bottom) + " open=" + std::to_string(frame.bounds.top) + ".." + std::to_string(frame.bounds.bottom));
+					check(scaleStable, (name + "-scale-stable").c_str(), "closed=" + std::to_string(closedScale) + " open=" + std::to_string(frame.scale));
+					check(heightFits, (name + "-fits-height").c_str());
+					check(last > 0 && peak > last + 0.5f, (name + "-overshoot").c_str(),
+						"peak=" + std::to_string(peak) + " final=" + std::to_string(last));
+				};
+				for (int i = 0; i < 60; ++i) ok = paint() && ok;
+				const auto closed = instance.Geometry().body;
+				const double roomyWidth = input.width;
+				input.width = (closed.right - closed.left) * 1.08 + 40;
+				moreOpen("narrow");
+				input.width = roomyWidth;
+				moreOpen("roomy");
+				check(ok, "render");
+				// X 图标必须真的画出来：关闭键矩形内要有明显的笔画亮度差（底板本身近似均匀）。
+				int low = 3 * 255, high = 0;
+				for (const auto& item : instance.Geometry().items)
+				{
+					if (item.kind != PreviewHitKind::Close || !pixels.Valid()) continue;
+					for (int y = static_cast<int>(item.rect.top) + 2; y < static_cast<int>(item.rect.bottom) - 2; ++y)
+						for (int x = static_cast<int>(item.rect.left) + 2; x < static_cast<int>(item.rect.right) - 2; ++x)
+						{
+							if (x < 0 || y < 0 || x >= static_cast<int>(pixels.width) || y >= static_cast<int>(pixels.height)) continue;
+							const auto* px = &pixels.bytes[(static_cast<size_t>(y) * pixels.width + x) * 4];
+							const int sum = px[0] + px[1] + px[2];
+							low = (std::min)(low, sum); high = (std::max)(high, sum);
+						}
+				}
+				check(high - low > 150, "close-glyph-pixels", "range=" + std::to_string(high - low));
+				instance.SetMoreExpanded(false);
+				for (int i = 0; i < 60; ++i) ok = paint() && ok;
+				// 从设置宿主的真实落点入口起步：空 B1 的 More 边缘以及 A1/A2 的已呈现缝。
+				using Setting::ComponentEditor::DropAction;
+				using Setting::ComponentEditor::ResolveDrop;
+				const auto geometry = instance.Geometry();
+				const auto capsule = Setting::ComponentEditor::TrashBounds(frame.bounds, geometry.body.bottom, 170, 36);
+				check(capsule.top > geometry.body.bottom && capsule.bottom < frame.bounds.bottom
+					&& std::abs(center(capsule).x - center(geometry.body).x) < 0.1f, "trash-in-presented-reserve");
+				auto dropDivider = [&](D2D1_POINT_2F point)
+				{
+					const bool more = instance.HitTest(point).kind == PreviewHitKind::More;
+					std::vector<Position> gaps;
+					for (const auto& gap : instance.InsertionGaps(point)) gaps.push_back(gap.position);
+					const auto drop = ResolveDrop(model, std::string_view(BarButtonId::UserDivider),
+						catalog, false, false, more, gaps);
+					const auto inserted = drop.gap ? Insert(model, BarButtonId::UserDivider, *drop.gap, catalog) : std::nullopt;
+					return std::pair{drop, inserted};
+				};
+				for (const auto zone : {Segment::A1, Segment::B1, Segment::A2})
+				{
+					const auto gap = std::find_if(geometry.gaps.begin(), geometry.gaps.end(),
+						[&](const PreviewGap& g) { return g.position.segment == zone && g.position.index == 0; });
+					bool inserted = false;
+					if (gap != geometry.gaps.end())
+					{
+						const D2D1_POINT_2F point{gap->start.x, (gap->start.y + gap->end.y) / 2};
+						const auto [drop, next] = dropDivider(point);
+						const bool moreEdge = zone != Segment::B1 || instance.HitTest(point).kind == PreviewHitKind::More;
+						inserted = moreEdge && drop.action == DropAction::Insert && drop.gap && drop.gap->segment == zone
+							&& next && (*next)[zone].front().Id == BarButtonId::UserDivider;
+					}
+					check(inserted, zone == Segment::A1 ? "divider-drop-a1" : zone == Segment::B1 ? "divider-drop-empty-b1-more-edge" : "divider-drop-a2");
+				}
+				const auto more = std::find_if(geometry.items.begin(), geometry.items.end(),
+					[](const PreviewHit& item) { return item.kind == PreviewHitKind::More; });
+				check(more != geometry.items.end() && dropDivider(center(more->rect)).first.action == DropAction::CancelAdd,
+					"divider-drop-more-cancels");
+
+				if (mode == BarSizeMode::Compact)
+				{
+					Setting::ComponentEditor::PreviewPressInput<BarContentInstance, PreviewHit> hoverInput;
+					auto moreHit = [&]() -> PreviewHit
+					{
+						for (const auto& item : instance.Geometry().items)
+							if (item.kind == PreviewHitKind::More) return item;
+						return {};
+					};
+					auto opensAfterDwell = [&](D2D1_POINT_2F point, const ItemSource& source)
+					{
+						const auto hit = instance.HitTest(point);
+						const auto hoverFrame = [&](bool clipped, double now)
+						{
+							bool dirty = false;
+							Setting::ComponentEditor::ResolveDragFrameDrop(hoverInput, instance, hit, clipped, now, dirty,
+								model, source, catalog, false, false, {});
+							return dirty;
+						};
+						return hit.kind == PreviewHitKind::More && hoverInput.drag.Phase() == DragPhase::Dragging
+							&& !instance.MoreExpanded() && !hoverFrame(true, 1.)
+							&& !hoverFrame(true, 1.49) && !instance.MoreExpanded()
+							&& !hoverFrame(false, 1.5) // 裁框外应重置计时。
+							&& !hoverFrame(true, 2.)
+							&& hoverFrame(true, 2.5) && instance.MoreExpanded();
+					};
+					// 从靠外的固定项起拖，让同段首缝仍可重排，再取该缝与 More 的已呈现交集。
+					const auto fixed = std::find_if(geometry.items.rbegin(), geometry.items.rend(), [](const PreviewHit& item)
+					{ return item.kind == PreviewHitKind::Item && item.position && item.position->segment == Segment::A2; });
+					bool blocked = false, fixedHover = false;
+					if (fixed != geometry.items.rend() && more != geometry.items.end())
+					{
+						bool dirty = false;
+						const bool lifted = hoverInput.Begin(instance, *fixed, 0, DragPointerKind::Mouse, center(fixed->rect), revision, 1.f)
+							&& hoverInput.Update(instance, 0, center(more->rect), *more, true, true, dirty)
+							&& hoverInput.drag.Phase() == DragPhase::Dragging;
+						input.editing = lifted;
+						for (int i = 0; i < 60; ++i) ok = paint() && ok;
+						const auto& gaps = instance.Geometry().gaps;
+						const auto firstGap = std::find_if(gaps.begin(), gaps.end(),
+							[](const PreviewGap& gap) { return gap.position.segment == Segment::A2; });
+						if (lifted && firstGap != gaps.end())
+						{
+							const auto button = moreHit().rect;
+							const auto& area = firstGap->area;
+							const auto overlap = D2D1::RectF((std::max)(area.left, button.left), (std::max)(area.top, button.top),
+								(std::min)(area.right, button.right), (std::min)(area.bottom, button.bottom));
+							const auto point = center(overlap);
+							std::vector<Position> positions;
+							for (const auto& gap : instance.InsertionGaps(point)) positions.push_back(gap.position);
+							const bool hitMore = instance.HitTest(point).kind == PreviewHitKind::More;
+							const auto drop = ResolveDrop(model, *fixed->position, catalog, false, false, hitMore, positions);
+							blocked = overlap.left < overlap.right && overlap.top < overlap.bottom && hitMore
+								&& std::any_of(positions.begin(), positions.end(), [&](Position pos)
+									{ return pos.segment == Segment::A2 && pos.index == firstGap->position.index; })
+								&& CanPlace(model, *fixed->position, firstGap->position, catalog) == PlaceDecision::Allowed
+								&& drop.action == DropAction::NotAllowed && !drop.gap;
+							fixedHover = opensAfterDwell(point, *fixed->position);
+						}
+					}
+					check(blocked, "fixed-a2-drop-more-overlap");
+					check(fixedHover, "fixed-a2-hover-more-half-second");
+					hoverInput.Cancel(instance);
+					instance.SetMoreExpanded(false);
+					// 组件库分割线在 More 中心仍是 CancelAdd，悬停计时应照常展开。
+					hoverInput.drag.BeginDragging(0, DragPointerKind::Mouse, center(moreHit().rect), {revision});
+					input.editing = true;
+					for (int i = 0; i < 60; ++i) ok = paint() && ok;
+					const auto point = center(moreHit().rect);
+					check(dropDivider(point).first.action == DropAction::CancelAdd
+						&& opensAfterDwell(point, std::string_view(BarButtonId::UserDivider)), "divider-hover-more-half-second");
+					hoverInput.Cancel(instance);
+					instance.SetMoreExpanded(false);
+					const bool libraryFrameReady = paint();
+					ok = libraryFrameReady && ok;
+
+					const auto libraryPoint = center(moreHit().rect);
+					hoverInput.drag.BeginDragging(0, DragPointerKind::Mouse, libraryPoint, {revision});
+					check(libraryFrameReady && opensAfterDwell(libraryPoint, std::string_view(BarComponentId::Explorer)),
+						"host-library-item-hover-more-half-second");
+					hoverInput.Cancel(instance);
+					instance.SetMoreExpanded(false);
+					input.editing = false;
+					for (int i = 0; i < 60; ++i) ok = paint() && ok;
+				}
+
+				// 布局批次：底板右缘与最右侧主栏项右缘的距离在整个展开过程中保持不变。
+				auto grown = model;
+				grown[Segment::B1].push_back({BarComponentId::Explorer});
+				instance.SetLayout(grown, ++revision);
+				const float before = closed.right - closed.left;
+				float lowGap = 1e9f, highGap = -1e9f, after = 0;
+				for (int i = 0; i < 40; ++i)
+				{
+					ok = paint() && ok;
+					const auto& g = instance.Geometry();
+					float right = -1e9f;
+					for (const auto& item : g.items)
+						if (item.kind != PreviewHitKind::Panel && item.kind != PreviewHitKind::Close
+							&& !(item.position && item.position->segment == Segment::More)) right = (std::max)(right, item.rect.right);
+					lowGap = (std::min)(lowGap, g.body.right - right); highGap = (std::max)(highGap, g.body.right - right);
+					after = g.body.right - g.body.left;
+				}
+				check(ok && after > before + 1, "batch-grows", "before=" + std::to_string(before) + " after=" + std::to_string(after));
+				check(highGap - lowGap < 0.75f, "batch-edge-sync", "spread=" + std::to_string(highGap - lowGap));
+				// 分割线：可从组件库插入 A1/B1/A2，不可进入 More。
+				model = grown;
+				for (const auto zone : {Segment::A1, Segment::B1, Segment::A2})
+				{
+					const Position gap{zone, 0};
+					const auto next = Insert(model, BarButtonId::UserDivider, gap, catalog);
+					const bool placed = next && instance.Place(*next, gap, revision);
+					check(placed, zone == Segment::A1 ? "divider-insert-a1" : zone == Segment::B1 ? "divider-insert-b1" : "divider-insert-a2");
+					if (placed) model = *next;
+					ok = paint() && ok;
+				}
+				check(!Insert(model, BarButtonId::UserDivider, {Segment::More, 0}, catalog), "divider-not-more");
+				// 沙盒工具模式：选择后橡皮/图形/撤回收拢隐藏且不再命中；切回绘制恢复，绘制选中显示软笔。
+				auto visibleIds = [&]
+				{
+					std::vector<std::string> ids;
+					for (const auto& h : instance.Geometry().items)
+						if (h.position && h.kind == PreviewHitKind::Item) ids.push_back(model[h.position->segment][h.position->index].Id);
+					return ids;
+				};
+				auto has = [](const std::vector<std::string>& ids, const char* id)
+				{ return std::find(ids.begin(), ids.end(), id) != ids.end(); };
+				for (int i = 0; i < 40; ++i) ok = paint() && ok;
+				auto findHit = [&](PreviewHitKind kind, const char* id = nullptr) -> PreviewHit
+				{
+					for (const auto& hit : instance.Geometry().items)
+						if (hit.kind == kind && (!id || (hit.position && model[hit.position->segment][hit.position->index].Id == id)))
+							return hit;
+					return {};
+				};
+				const auto drawHit = findHit(PreviewHitKind::Item, BarButtonId::Draw);
+				check(instance.Press(drawHit) && PreviewTestAccess::PressTarget(instance, drawHit) == ButtonPressScale,
+					"press-scale-target");
+				input.pointer = D2D1::Point2F((drawHit.rect.left + drawHit.rect.right) / 2, (drawHit.rect.top + drawHit.rect.bottom) / 2);
+				++input.pointerSerial;
+				ok = paint() && ok;
+				check(!frame.hintDeadline, "pressed-no-hover-deadline");
+				bool pressInFlight = false;
+				for (int i = 0; i < 8; ++i)
+				{
+					const double scale = PreviewTestAccess::PressScale(instance, drawHit);
+					pressInFlight |= ButtonPressScale < scale && scale < 1.0;
+					ok = paint() && ok;
+				}
+				check(pressInFlight, "press-scale-intermediate");
+				input.pointer.reset();
+				instance.ReleasePress();
+				check(PreviewTestAccess::PressTarget(instance, drawHit) == 1.0, "release-scale-target");
+				check(instance.Press(drawHit) && drawHit.position && instance.Lift(*drawHit.position, revision)
+					&& PreviewTestAccess::PressTarget(instance, drawHit) == 1.0, "lift-releases-press");
+				instance.CancelLift();
+				ok = paint() && ok;
+				const bool pressedBeforeRevision = instance.Press(drawHit);
+				instance.SetLayout(model, ++revision);
+				check(pressedBeforeRevision && PreviewTestAccess::PressTarget(instance, drawHit) == 1.0,
+					"layout-revision-releases-press");
+				ok = paint() && ok;
+				const bool pressedBeforeSuspend = instance.Press(drawHit);
+				instance.Suspend();
+				check(pressedBeforeSuspend && PreviewTestAccess::PressTarget(instance, drawHit) == 1.0,
+					"suspend-releases-press");
+				ok = paint() && ok;
+				const auto penIds = visibleIds();
+				const auto penBody = instance.Geometry().body;
+				using Preset = BarButtonPresetEnum;
+				const auto eraserBefore = PreviewTestAccess::SampleCollapse(instance, Preset::Eraser);
+				check(instance.Activate(findHit(PreviewHitKind::Item, BarButtonId::Select))
+					&& instance.ToolMode() == StateModeSelectEnum::IdtSelection, "activate-select");
+				bool collapseInFlight = false;
+				for (int i = 0; i < 40; ++i)
+				{
+					ok = paint() && ok;
+					const auto eraser = PreviewTestAccess::SampleCollapse(instance, Preset::Eraser);
+					if (eraserBefore && eraser)
+						collapseInFlight |= eraser->opacity > 0 && eraser->opacity < 1
+							&& eraser->x > (std::min)(eraserBefore->x, eraser->targetX)
+							&& eraser->x < (std::max)(eraserBefore->x, eraser->targetX);
+				}
+				check(collapseInFlight, "select-collapse-intermediate");
+				const auto selectIds = visibleIds();
+				const auto selectBody = instance.Geometry().body;
+				check(has(penIds, BarButtonId::Eraser) && has(penIds, BarButtonId::Geometry) && has(penIds, BarButtonId::Recall)
+					&& !has(selectIds, BarButtonId::Eraser) && !has(selectIds, BarButtonId::Geometry) && !has(selectIds, BarButtonId::Recall)
+					&& selectBody.right - selectBody.left < penBody.right - penBody.left, "select-collapses");
+				check(PreviewTestAccess::IsCollapsedTo(instance, Preset::Eraser, Preset::Draw)
+					&& PreviewTestAccess::IsCollapsedTo(instance, Preset::Geometry, Preset::Draw)
+					&& PreviewTestAccess::IsCollapsedTo(instance, Preset::Recall, Preset::Draw), "select-anchor-and-fade");
+				const auto& gaps = instance.Geometry().gaps;
+				check(std::none_of(gaps.begin(), gaps.end(), [&](const PreviewGap& gap)
+					{
+						const auto position = gap.position;
+						if (position.segment != Segment::A1 || position.index >= model[Segment::A1].size()) return false;
+						const auto& id = model[Segment::A1][position.index].Id;
+						return id == BarButtonId::Eraser || id == BarButtonId::Geometry || id == BarButtonId::Recall;
+					}), "select-gaps-exclude-hidden");
+				check(instance.Activate(findHit(PreviewHitKind::Item, BarButtonId::Draw))
+					&& instance.ToolMode() == StateModeSelectEnum::IdtPen, "activate-draw");
+				for (int i = 0; i < 40; ++i) ok = paint() && ok;
+				check(visibleIds() == penIds, "pen-restores");
+				check(PreviewTestAccess::ButtonLabel(instance, BarButtonPresetEnum::Draw)
+					== ResolveDrawStyle(true, false, false, false).LocalizedLabel(I18n::getW, ShapeToolLabel), "draw-soft-pen");
+				check(instance.Activate(findHit(PreviewHitKind::Item, BarButtonId::Eraser))
+					&& instance.ToolMode() == StateModeSelectEnum::IdtEraser, "activate-eraser");
+				ok = paint() && ok;
+				check(instance.Activate(findHit(PreviewHitKind::Item, BarButtonId::Geometry))
+					&& instance.ToolMode() == StateModeSelectEnum::IdtShape, "activate-geometry");
+				ok = paint() && ok;
+				const auto moreHit = findHit(PreviewHitKind::More);
+				const bool morePressed = instance.Press(moreHit);
+				instance.ReleasePress();
+				check(morePressed && !instance.MoreExpanded() && instance.Activate(moreHit) && instance.MoreExpanded()
+					&& instance.Activate(moreHit) && !instance.MoreExpanded(), "activate-more-toggle");
+				instance.Activate(moreHit);
+				for (int i = 0; i < 40; ++i) ok = paint() && ok;
+				const auto closeHit = findHit(PreviewHitKind::Close);
+				check(instance.Press(closeHit) && PreviewTestAccess::PressTarget(instance, closeHit) == ButtonPressScale,
+					"press-close-scale-target");
+				check(instance.SetClosePressed(false) && PreviewTestAccess::PressTarget(instance, closeHit) == 1.0
+					&& instance.SetClosePressed(true) && PreviewTestAccess::PressTarget(instance, closeHit) == ButtonPressScale
+					&& instance.MoreExpanded(), "close-visual-leave-and-reenter");
+				instance.ReleasePress();
+				check(PreviewTestAccess::PressTarget(instance, closeHit) == 1.0, "release-close-scale-target");
+
+				// 通过设置页使用的输入状态机，跨越拖动阈值仍由 X 持有同一次按压。
+				Setting::ComponentEditor::PreviewPressInput<BarContentInstance, PreviewHit> hostInput;
+				bool inputDirty = false;
+				auto xPoint = center(closeHit.rect);
+				const auto outside = center(findHit(PreviewHitKind::More).rect);
+				auto pressX = [&]
+				{
+					const auto hit = instance.HitTest(xPoint);
+					return hostInput.Begin(instance, hit, 0, DragPointerKind::Mouse, xPoint, revision, 1)
+						&& hostInput.CloseHeld() && PreviewTestAccess::PressTarget(instance, closeHit) == ButtonPressScale;
+				};
+				auto moveX = [&](D2D1_POINT_2F point, bool down = true, bool over = true)
+				{
+					const auto hit = instance.HitTest(point);
+					inputDirty = false;
+					return hostInput.Update(instance, 0, point, hit, over, down, inputDirty)
+						&& hostInput.CloseHeld() && inputDirty;
+				};
+				auto releaseX = [&](D2D1_POINT_2F point, std::uint64_t currentRevision, bool over = true,
+					std::optional<PreviewHit> afterDraw = {})
+				{
+					const auto presentedHit = instance.HitTest(point);
+					return hostInput.Release(instance, 0, point, afterDraw.value_or(presentedHit), presentedHit, over, currentRevision, inputDirty)
+						&& hostInput.drag.Phase() == DragPhase::Idle
+						&& PreviewTestAccess::PressTarget(instance, closeHit) == 1.0;
+				};
+				check(instance.HitTest(outside).kind == PreviewHitKind::More
+					&& std::hypot(outside.x - xPoint.x, outside.y - xPoint.y) >= 4.f, "host-close-outside-fixture");
+				check(!instance.ShouldDismissMoreOnPress(true, xPoint) && pressX(), "host-close-press");
+				check(moveX(outside) && PreviewTestAccess::PressTarget(instance, closeHit) == 1.0
+					&& instance.MoreExpanded(), "host-close-leave");
+				check(moveX(xPoint) && PreviewTestAccess::PressTarget(instance, closeHit) == ButtonPressScale
+					&& instance.MoreExpanded(), "host-close-reenter");
+				check(moveX(xPoint, false) && PreviewTestAccess::PressTarget(instance, closeHit) == 1.0
+					&& instance.MoreExpanded(), "host-close-up-releases-visual");
+				inputDirty = false;
+				check(releaseX(xPoint, revision) && !instance.MoreExpanded() && inputDirty, "host-close-release-inside");
+				instance.SetMoreExpanded(true);
+				for (int i = 0; i < 40; ++i) ok = paint() && ok;
+				xPoint = center(findHit(PreviewHitKind::Close).rect);
+				check(pressX() && moveX(outside) && releaseX(outside, revision) && instance.MoreExpanded(),
+					"host-close-release-outside");
+				check(pressX() && moveX(xPoint, true, false) && PreviewTestAccess::PressTarget(instance, closeHit) == 1.0
+					&& releaseX(xPoint, revision, false) && instance.MoreExpanded(), "host-close-clipped-release");
+				check(pressX() && releaseX(xPoint, revision + 1) && instance.MoreExpanded(),
+					"host-close-stale-release");
+				// 同一次抬起在绘制前后可以命中不同位置，X 只依据绘制前的结果。
+				check(pressX() && releaseX(outside, revision, true, instance.HitTest(xPoint))
+					&& instance.MoreExpanded(), "host-close-presented-outside");
+				inputDirty = false;
+				check(pressX() && releaseX(xPoint, revision, true, instance.HitTest(outside))
+					&& !instance.MoreExpanded() && inputDirty, "host-close-presented-inside");
+				instance.SetMoreExpanded(true);
+				for (int i = 0; i < 40; ++i) ok = paint() && ok;
+				xPoint = center(findHit(PreviewHitKind::Close).rect);
+				const bool pressedForCancel = pressX();
+				hostInput.Cancel(instance);
+				check(pressedForCancel && hostInput.drag.Phase() == DragPhase::Idle
+					&& PreviewTestAccess::PressTarget(instance, closeHit) == 1.0
+					&& !releaseX(xPoint, revision) && instance.MoreExpanded(), "host-close-cancel");
+
+				const auto keepOpenHit = findHit(PreviewHitKind::Item, BarComponentId::Control);
+				check(PreviewTestAccess::KeepMoreOpenAfterAction(instance, keepOpenHit)
+					&& !instance.Activate(keepOpenHit) && instance.MoreExpanded(), "activate-panel-keeps-open");
+				check(closeHit.kind == PreviewHitKind::Close && instance.Activate(closeHit) && !instance.MoreExpanded(), "activate-close");
+				instance.Activate(moreHit);
+				ok = paint() && ok;
+				check(instance.Activate(findHit(PreviewHitKind::Item, BarComponentId::Explorer)) && !instance.MoreExpanded(),
+					"activate-panel-closes");
+				instance.SetMoreExpanded(true);
+				for (int i = 0; i < 40; ++i) ok = paint() && ok;
+				if (mode == BarSizeMode::Compact)
+				{
+					auto hintVisible = [&]
+					{
+						const auto rect = PreviewTestAccess::HintBounds(instance);
+						return rect.right > rect.left;
+					};
+					auto showMoreHint = [&]
+					{
+						const auto item = findHit(PreviewHitKind::Item, BarComponentId::Explorer);
+						input.pointer = center(item.rect);
+						++input.pointerSerial;
+						ok = paint() && ok;
+						const auto deadline = frame.hintDeadline;
+						if (deadline) input.time = *deadline;
+						ok = paint() && ok;
+						return item.position && item.position->segment == Segment::More && deadline && hintVisible();
+					};
+					// 提示显示时抓起无关的 B1 项，立即观察清理，避免 Advance 的拖动门禁替被测分支清理。
+					const Position b1{Segment::B1, model[Segment::B1].size() - 1};
+					const bool shownBeforeCancel = showMoreHint();
+					const bool liftedForCancel = instance.Lift(b1, revision);
+					const bool shownOnCancel = hintVisible();
+					instance.CancelLift();
+					check(shownBeforeCancel && liftedForCancel && shownOnCancel && !hintVisible(),
+						"cancel-lift-clears-visible-hint");
+					ok = paint() && ok;
+					const bool shownBeforePlace = showMoreHint();
+					const bool liftedForPlace = instance.Lift(b1, revision);
+					const bool shownOnPlace = hintVisible();
+					const bool placed = liftedForPlace && instance.Place(model, b1, revision);
+					check(shownBeforePlace && shownOnPlace && placed && !hintVisible(), "place-clears-visible-hint");
+					ok = paint() && ok;
+
+					// 保留另一项，让 More 一直展开，避免面板收起的门禁掩盖旧提示。
+					const auto hovered = findHit(PreviewHitKind::Item, BarComponentId::Explorer);
+					input.pointer = D2D1::Point2F((hovered.rect.left + hovered.rect.right) / 2, (hovered.rect.top + hovered.rect.bottom) / 2);
+					++input.pointerSerial;
+					ok = paint() && ok;
+					const auto deadline = frame.hintDeadline;
+					if (deadline) input.time = *deadline;
+					ok = paint() && ok;
+					const auto shown = PreviewTestAccess::HintBounds(instance);
+					check(hovered.position && hovered.position->segment == Segment::More && deadline && shown.right > shown.left,
+						"more-item-hint-before-removal");
+					model[Segment::More].erase(model[Segment::More].begin());
+					instance.SetLayout(model, ++revision);
+					ok = paint() && ok;
+					const auto cleared = PreviewTestAccess::HintBounds(instance);
+					check(instance.MoreExpanded() && !frame.hintDeadline && cleared.right == cleared.left,
+						"more-item-hint-cleared-without-pointer-move");
+					input.pointer.reset();
+				}
+				auto moreRows = [&]
+				{
+					std::vector<float> rows;
+					for (const auto& item : instance.Geometry().items)
+						if (item.position && item.position->segment == Segment::More
+							&& std::find(rows.begin(), rows.end(), item.rect.top) == rows.end())
+							rows.push_back(item.rect.top);
+					return rows.size();
+				};
+				const auto priorRows = moreRows();
+				// 11 项在大、小尺寸均比单行多两行；检查布局刚替换起的每一帧。
+				model[Segment::More].resize(11, {BarComponentId::Explorer});
+				instance.SetLayout(model, ++revision);
+				bool grownPanelFits = true;
+				float firstGrownBottom = 0;
+				for (int i = 0; i < 40; ++i)
+				{
+					ok = paint() && ok;
+					const auto panel = findHit(PreviewHitKind::Panel);
+					if (i == 0) firstGrownBottom = frame.bounds.bottom;
+					grownPanelFits &= panel.kind == PreviewHitKind::Panel && panel.rect.left >= frame.bounds.left
+						&& panel.rect.right <= frame.bounds.right && panel.rect.top >= frame.bounds.top
+						&& panel.rect.bottom <= frame.bounds.bottom && frame.extent.height <= input.height;
+				}
+				check(priorRows == 1 && moreRows() == priorRows + 2 && grownPanelFits, "more-grow-two-rows-fits-every-frame");
+				check(firstGrownBottom >= frame.bounds.bottom, "more-grow-reserves-target-envelope-immediately");
+
+				// 把可用高度降到稳定包络的一半，宽度和目标栏高保持原值，使高度成为唯一新增的限制。
+				const double roomyHeight = input.height;
+				const double roomyScale = frame.scale;
+				const double roomyExtent = frame.extent.height;
+				input.height = std::floor(roomyExtent / 2);
+				bool heightScaleCapped = input.height > 0 && input.height < roomyExtent;
+				bool constrainedPanelFits = true;
+				for (int i = 0; i < 40; ++i)
+				{
+					ok = paint() && ok;
+					const auto panel = findHit(PreviewHitKind::Panel);
+					heightScaleCapped &= frame.scale > 0 && frame.scale <= roomyScale * 0.51;
+					constrainedPanelFits &= panel.kind == PreviewHitKind::Panel && panel.rect.left >= frame.bounds.left
+						&& panel.rect.right <= frame.bounds.right && panel.rect.top >= frame.bounds.top
+						&& panel.rect.bottom <= frame.bounds.bottom && frame.extent.height <= input.height;
+				}
+				check(heightScaleCapped, "more-height-limits-scale-every-frame");
+				check(constrainedPanelFits, "more-height-keeps-panel-in-frame");
+				input.height = roomyHeight;
+				model[Segment::More].resize(1);
+				instance.SetLayout(model, ++revision);
+				ok = paint() && ok;
+				const Position lastMore{Segment::More, 0}, endB1{Segment::B1, model[Segment::B1].size()};
+				const auto moved = Move(model, lastMore, endB1, catalog);
+				const bool placedLast = moved && instance.Lift(lastMore, revision) && instance.Place(*moved, endB1, revision);
+				check(placedLast && !instance.MoreExpanded(), "place-last-more-closes");
+				const auto restored = placedLast ? Move(*moved, endB1, lastMore, catalog) : std::nullopt;
+				ok = paint() && ok;
+				const bool placedBack = restored && instance.Lift(endB1, revision) && instance.Place(*restored, lastMore, revision);
+				ok = paint() && ok;
+				check(placedBack && !instance.MoreExpanded() && findHit(PreviewHitKind::Panel).kind != PreviewHitKind::Panel,
+					"place-more-item-back-stays-closed");
+
+				instance.SetMoreExpanded(true);
+				const bool expandedBeforeRebuild = instance.MoreExpanded();
+				auto emptyMore = model;
+				emptyMore[Segment::More].clear();
+				instance.SetLayout(emptyMore, ++revision);
+				check(expandedBeforeRebuild && !instance.MoreExpanded(), "rebuild-empty-more-clears-expanded");
+				check(ok, "sandbox-render");
+			}
 		}
 
 		void CheckPreview(const HostScene& scene, Report& report, std::array<Frame,2>& lightSamples)
@@ -758,6 +1374,7 @@ namespace Inkeys::UI::Bar
 			input.width = 1200; input.height = 360;
 			input.writeFactory = assets.dwriteFactory.Get(); input.fonts = assets.fontCollection.Get();
 			CheckPreviewProjection(input,report);
+			CheckPreviewReplica(input,report);
 			auto model = Reset();
 			model[Segment::B1].push_back({BarComponentId::Explorer});
 			model[Segment::B1].push_back({BarComponentId::Explorer});
@@ -938,7 +1555,8 @@ namespace Inkeys::UI::Bar
 				local.pointer = point(a.Geometry().items.front().rect);
 				++local.pointerSerial;
 				const auto hover = advance();
-				check(hover.hintDeadline.has_value(),"hover-deadline");
+				// 悬停提示与真实主栏一致，只在小尺寸显示。
+				check(hover.hintDeadline.has_value() == (mode == BarSizeMode::Compact),"hover-deadline");
 				if (hover.hintDeadline)
 				{
 					local.time = *hover.hintDeadline - std::chrono::milliseconds(1);

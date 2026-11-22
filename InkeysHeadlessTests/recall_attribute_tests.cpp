@@ -437,12 +437,22 @@ int RunRecallAttributeTests()
 			"component Load ends with the same final projection");
 		std::ifstream renderFile(source.parent_path()/"Bar.RenderLoop.cpp",std::ios::binary);
 		const std::string rendering((std::istreambuf_iterator<char>(renderFile)),{});
+		// 主栏批次决策与目标写入已抽到共享分区 MainContent，真实主栏在原位置调用。
+		std::ifstream contentFile(source.parent_path()/"Bar.MainContent.cpp",std::ios::binary);
+		const std::string mainContent((std::istreambuf_iterator<char>(contentFile)),{});
 		const auto frameBegin = rendering.find("BarRenderLoopCoordinator::RenderFrame(");
 		const auto due = rendering.find("frame.recallIdleDismissed = owner_.AdvanceRecallChromeIdle(0.0)", frameBegin);
 		const auto submit = rendering.find("SubmitTargetsAndLayout(state, frame)", frameBegin);
+		const std::string batchPrefix = "Inkeys::UI::Bar::ResolveMainBarBatch(state.mainBarBatch, {";
+		const auto batchCall = rendering.find(batchPrefix);
+		// 批次调用的首个实参必须是本帧布局快照（跳过换行与缩进）。
+		const auto batchArgs = batchCall == std::string::npos ? std::string::npos
+			: rendering.find_first_not_of(" \t\r\n", batchCall + batchPrefix.size());
 		expect(due != std::string::npos && due < submit
 			&& rendering.find("owner_.AdvanceRecallChromeIdle(animationDtSeconds)") == std::string::npos
-			&& rendering.find("layoutSnapshot != state.mainBarLayoutSnapshot.value()") != std::string::npos,
+			&& batchArgs != std::string::npos
+			&& rendering.compare(batchArgs, 33, "layoutSnapshot, layoutTotalWidth,") == 0
+			&& mainContent.find("input.layout != state.layout.value()") != std::string::npos,
 			"idle settlement precedes target scanning and equal-width geometry invalidates the main layout batch");
 		expect(rendering.find("frame.recallChrome = owner_.RecallChromeView()") != std::string::npos
 			&& rendering.find("frame.recallAnchorVisible = recallAnchor && recallAnchor->IsVisible()") != std::string::npos
@@ -459,8 +469,9 @@ int RunRecallAttributeTests()
 			&& rendering.substr(presentationLock, presentationUnlock - presentationLock).find("CloseColorPicker(") == std::string::npos
 			&& rendering.substr(presentationLock, presentationUnlock - presentationLock).find("CloseThicknessSlider(") == std::string::npos,
 			"capture cancellation that synchronously calls the window owner stays outside the main presentation lock");
-		expect(rendering.find("Inkeys::UI::Bar::AnchorHiddenBarButton(state.barButtonSet, state.barState.fold,")!=std::string::npos
-			&& rendering.find("AnchorHiddenButton(BarButtonPresetEnum::Pierce, BarButtonPresetEnum::Freeze)")!=std::string::npos,
+		expect(rendering.find("Inkeys::UI::Bar::ApplyMainBarButtonTargets(frame.mainButtons,")!=std::string::npos
+			&& mainContent.find("AnchorHiddenBarButton(buttons, preset(hidden), preset(preferred),")!=std::string::npos
+			&& mainContent.find("AnchorHiddenButton(BarButtonPresetEnum::Pierce, BarButtonPresetEnum::Freeze)")!=std::string::npos,
 			"production main-bar layout advances the shared Pierce-to-Freeze hidden anchor");
 		// 验证实际内容入口的提交/缓存链，防止目标正确但绘制仍消费旧 val。
 		std::ifstream uiFile(source.parent_path().parent_path() / "UI3" / "UI3.Primitive.cpp", std::ios::binary);

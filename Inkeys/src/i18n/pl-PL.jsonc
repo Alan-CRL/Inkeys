@@ -1345,6 +1345,7 @@
       "DragStore": "Przenieś do Więcej",
       "DragDelete": "Puść, aby usunąć",
       "DragCancelAdd": "Puść, aby anulować dodawanie",
+      "TrashLabel": "Przeciągnij tutaj, aby usunąć",
       "DragNotAllowed": "Ten przycisk można przesuwać tylko w jego obszarze",
       "DragFixed": "Stałych separatorów nie można przesuwać",
       "DragNotHere": "Nie można tu upuścić"

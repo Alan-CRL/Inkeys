@@ -1345,6 +1345,7 @@
       "DragStore": "Simpan ke Lainnya",
       "DragDelete": "Lepaskan untuk menghapus",
       "DragCancelAdd": "Lepaskan untuk batal menambahkan",
+      "TrashLabel": "Seret ke sini untuk menghapus",
       "DragNotAllowed": "Tombol ini hanya bisa dipindah di areanya sendiri",
       "DragFixed": "Pemisah tetap tidak dapat dipindah",
       "DragNotHere": "Tidak dapat diletakkan di sini"

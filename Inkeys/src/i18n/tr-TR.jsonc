@@ -1345,6 +1345,7 @@
       "DragStore": "Diğer'e taşı",
       "DragDelete": "Silmek için bırakın",
       "DragCancelAdd": "Eklemeyi iptal etmek için bırakın",
+      "TrashLabel": "Silmek için buraya sürükleyin",
       "DragNotAllowed": "Bu düğme yalnızca kendi alanında taşınabilir",
       "DragFixed": "Sabit ayırıcılar taşınamaz",
       "DragNotHere": "Buraya bırakılamaz"

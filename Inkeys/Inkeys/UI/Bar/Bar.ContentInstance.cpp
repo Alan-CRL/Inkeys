@@ -3,20 +3,24 @@
 #define NOMINMAX
 #endif
 #include "../../../IdtMain.h"
+#include "../../../IdtState.h"
 #include "../../../IdtI18n.h"
 #include "../../../IdtI18nKeys.g.h"
 #include <d2d1_1helper.h>
 #include <dwrite_1.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <vector>
+#include <unordered_map>
 #include <unordered_set>
 
 module Inkeys.UI.Bar;
 import :ContentInstance;
 import :Main;
+import :MainContent;
 import Inkeys.UI.Bar.LayoutModel;
 import Inkeys.UI.Bar.MainLayoutPolicy;
 import Inkeys.UI.Bar.A2;
@@ -391,6 +395,11 @@ namespace Inkeys::UI::Bar
 			b->pressScale.SetDirect(1);
 			return b;
 		}
+		void RetargetPressScale(UiValueClass& scale, bool pressed)
+		{
+			scale.SetTar(pressed ? ButtonPressScale : 1.0, UiDefaultOperationDur, std::nullopt, false,
+				pressed ? ButtonPressCurve() : ButtonReleaseCurve());
+		}
 		D2D1_RECT_F Pixels(const UiShapeClass& shape, double scale)
 		{
 			return D2D1::RectF(static_cast<float>(shape.inhX * scale), static_cast<float>(shape.inhY * scale),
@@ -403,13 +412,18 @@ namespace Inkeys::UI::Bar
 		BarLayoutModel model;
 		std::uint64_t revision = 0, serial = 0, drawn = 0;
 		std::optional<Position> lifted;
-		bool expanded = false, initialized = false;
-		double editWidth = 0;
-		std::optional<std::uint64_t> blockedHintSerial;
+		bool expanded = false, initialized = false, styleDirty = false;
+		// 抓起期间锁住相机适配宽度（抓起前的目标宽），避免窄宿主里底板越缩、按钮越大。
+		double editWidth = 0, targetWidth = 0;
+		// 沙盒状态：默认绘制模式（软笔）；样式键变化时才重新解析按钮内容。
+		StateModeSelectEnum mode = StateModeSelectEnum::IdtPen;
+		std::optional<long long> styleKey;
 		std::unique_ptr<PreviewPrototypes> prototypes;
 		std::array<std::vector<ButtonPtr>, 4> entries;
-		ButtonPtr boundary[2], more, redo, ghost;
+		std::unordered_map<std::string, ButtonPtr> singletons;
+		ButtonPtr boundary[2], more, redo, pierce, ghost;
 		std::string ghostId;
+		// main 与真实主栏 buttonList 同序且保留隐藏实例；visible 与 main 逐项对应。
 		std::vector<ButtonPtr> main;
 		std::vector<BarMainButtonLayoutEntry> visible;
 		std::unordered_map<BarButtonClass*, PreviewHit> identities;
@@ -418,6 +432,10 @@ namespace Inkeys::UI::Bar
 		UiShapeClass body, panel, divider, close;
 		UiSVGClass closeSvg;
 		UiValueClass progress{0}, opacity{0}, press{1};
+		// 相机只读目标布局：缩放与主栏上方预留随目标变化平滑过渡，从不读取动画中的宽度或 More 进度。
+		UiValueClass cameraZoom{1}, cameraTop{0};
+		MainBarBatchState batch;
+		RecallChromeView recall;
 		IdtAtomic<ButtonHoverStageEnum> closeHover = ButtonHoverStageEnum::None;
 		Panel mainPanel{"main"}, morePanel{"more"};
 		LightingStateMachine lighting;
@@ -427,10 +445,14 @@ namespace Inkeys::UI::Bar
 		PreviewFrame frame;
 		std::optional<UiShapeClass> hintShape;
 		BarHoverHintRect hintRect;
-		std::wstring hintText;
-		std::chrono::steady_clock::time_point entered;
-		bool hintShown = false;
+		MainBarHoverState hint;
+		MainBarHoverSource hintSource;
+		std::uint64_t hintSerial = 0;
 		ButtonPtr hovered;
+		// 按压中的实例（或 X）；松开后悬停暂停到下一次指针移动，与真实主栏一致。
+		ButtonPtr pressed;
+		bool closePressed = false;
+		std::optional<std::uint64_t> hoverSuppressedSerial;
 		std::unique_ptr<FormatCache> formats;
 		UIRendering renderer{ UIRenderingServices{
 			[this] { return formats.get(); }, [this] { ResetCaches(); },
@@ -474,7 +496,8 @@ namespace Inkeys::UI::Bar
 				if (b->badge) b->badge->svg.ResetCache();
 			};
 			for (auto& zone : entries) for (auto& b : zone) reset(b);
-			for (auto& b : {boundary[0],boundary[1],more,redo}) reset(b);
+			for (const auto& entry : singletons) reset(entry.second);
+			for (auto& b : {boundary[0],boundary[1],more,redo,pierce}) reset(b);
 			reset(ghost);
 			closeSvg.ResetCache();
 		}
@@ -484,35 +507,125 @@ namespace Inkeys::UI::Bar
 			prototypes = std::make_unique<PreviewPrototypes>();
 			prototypes->PresetInitialization();
 			prototypes->RegisterBuiltInComponents();
-			auto refresh = [](ButtonPtr& slot, const BarButtonClass& prototype)
+			auto refresh = [](ButtonPtr& slot, const BarButtonClass* prototype)
 			{
-				if (slot) slot->name.SetStringImmediate(prototype.name.content.GetTar());
-				else slot = Clone(prototype);
+				if (!prototype) return;
+				if (slot) slot->name.SetStringImmediate(prototype->name.content.GetTar());
+				else slot = Clone(*prototype);
 			};
 			const auto* line = prototypes->preset[static_cast<int>(BarButtonPresetEnum::Divider)];
-			for (auto& b : boundary) refresh(b,*line);
-			refresh(redo,*prototypes->preset[static_cast<int>(BarButtonPresetEnum::Redo)]);
-			refresh(more,*prototypes->GetMoreButton());
+			for (auto& b : boundary) refresh(b,line);
+			refresh(redo,prototypes->preset[static_cast<int>(BarButtonPresetEnum::Redo)]);
+			refresh(pierce,prototypes->preset[static_cast<int>(BarButtonPresetEnum::Pierce)]);
+			refresh(more,prototypes->GetMoreButton());
+			// 原型刷新后按当前语言与沙盒状态重新解析样式。
+			styleKey.reset();
 		}
-		ButtonPtr Make(const std::string& id)
+		// 与真实主栏 Update*ButtonStyle 共用解析；沙盒没有画布内容、白板与放映，绘制为软笔。
+		void ApplyStyle(BarButtonClass& b, bool immediate, const StateModeClass& snapshot, bool separate)
+		{
+			std::optional<MainBarContentStyle> style;
+			switch (b.preset.load())
+			{
+			case BarButtonPresetEnum::Select:
+				style = ResolveSelectStyle(false, separate, mode == StateModeSelectEnum::IdtSelection);
+				break;
+			case BarButtonPresetEnum::Draw:
+				style = ResolveDrawStyle(mode == StateModeSelectEnum::IdtPen, false, false, false);
+				break;
+			case BarButtonPresetEnum::Eraser:
+				style = ResolveEraserStyle(mode == StateModeSelectEnum::IdtEraser);
+				break;
+			case BarButtonPresetEnum::Geometry:
+			{
+				const bool selected = mode == StateModeSelectEnum::IdtShape;
+				style = ResolveGeometryStyle(selected, selected && IsShapeToolPinned(snapshot), GetShapeToolSpec(snapshot));
+				if (b.badge) b.badge->shown = style->badge;
+				break;
+			}
+			case BarButtonPresetEnum::Whiteboard: style = ResolveWhiteboardStyle(false, false, false); break;
+			case BarButtonPresetEnum::Pierce: style = ResolvePierceStyle(); break;
+			default: break;
+			}
+			if (style) b.TransitionContent(style->icon, style->LocalizedLabel(I18n::getW, ShapeToolLabel), immediate);
+		}
+		long long StyleKey(const StateModeClass& snapshot, bool separate) const
+		{
+			const auto tool = GetShapeToolSpec(snapshot);
+			return static_cast<long long>(mode) + 16LL * static_cast<int>(tool.preset)
+				+ 4096LL * static_cast<int>(tool.creationMode) + 65536LL * static_cast<int>(tool.sides)
+				+ (separate ? 1LL << 40 : 0) + (IsShapeToolPinned(snapshot) ? 1LL << 41 : 0);
+		}
+		void RefreshLabel(const std::string& id, BarButtonClass& button) const
+		{
+			BarButtonRegistrationClass registration;
+			if (prototypes->TryGetRegistration(id, registration) && registration.button)
+				button.name.SetStringImmediate(registration.button->name.content.GetTar());
+		}
+		ButtonPtr Create(const BarButtonClass& prototype)
+		{
+			auto button = Clone(prototype);
+			ApplyStyle(*button, true, GetStateModeSnapshot(), GetSelectAndClickThroughMode() == 1);
+			return button;
+		}
+		ButtonPtr Make(const std::string& id, bool forLayout = false)
 		{
 			BarButtonRegistrationClass registration;
 			if (!prototypes->TryGetRegistration(id, registration) || !registration.button) return {};
-			auto b = Clone(*registration.button);
-			if (b->preset == BarButtonPresetEnum::Draw)
-				b->TransitionContent(L"barBrush1", IW(I18nKey.UI.Bar.MainButtons.HardPenLabel), true);
-			if (b->preset == BarButtonPresetEnum::Whiteboard)
-				b->TransitionContent(L"barWhiteboard", IW(I18nKey.UI.Bar.MainButtons.WhiteboardLabel), true);
-			return b;
+			if (!forLayout || registration.allowMultiple) return Create(*registration.button);
+			auto& button = singletons[id];
+			if (!button) button = Create(*registration.button);
+			return button;
 		}
-		void Rebuild()
+		bool HasVisibleMoreItems(const BarLayoutModel& layout) const
+		{
+			const auto& items = layout[Segment::More];
+			const auto& buttons = entries[static_cast<size_t>(Segment::More)];
+			for (size_t i = 0; i < items.size(); ++i)
+				if (buttons[i] && items[i].Visible) return true;
+			return false;
+		}
+		void ClearHint()
+		{
+			// 布局替换后，静止指针不能沿用旧实例的提示；下次移动再登记。
+			hint = {};
+			hintSource = {};
+			hintSerial = inputs.pointerSerial;
+		}
+		void Rebuild(const BarLayoutModel& next)
 		{
 			if (!prototypes) PreparePrototypes();
-			for (std::size_t z = 0; z < entries.size(); ++z)
+			for (size_t zone = 0; zone < entries.size(); ++zone)
 			{
-				entries[z].clear();
-				for (const auto& item : model.segments[z]) entries[z].push_back(Make(item.Id));
+				const auto& previous = model.segments[zone];
+				const auto& items = next.segments[zone];
+				std::unordered_map<std::string, std::vector<size_t>> oldGroups, newGroups;
+				std::vector<ButtonPtr> ordered(items.size());
+				for (size_t index = 0; index < entries[zone].size(); ++index)
+					oldGroups[previous[index].Id].push_back(index);
+				for (size_t index = 0; index < items.size(); ++index)
+				{
+					const auto& id = items[index].Id;
+					BarButtonRegistrationClass registration;
+					if (!prototypes->TryGetRegistration(id, registration) || !registration.button) continue;
+					if (registration.allowMultiple) newGroups[id].push_back(index);
+					else ordered[index] = Make(id, true);
+				}
+				for (const auto& [id, group] : newGroups)
+				{
+					const auto old = oldGroups.find(id);
+					// 与实栏一致：同段单份可换位置；多份只有位置和可见性均对应才复用。
+					const bool reuse = old != oldGroups.end() && old->second.size() == group.size()
+						&& (group.size() == 1 || std::equal(group.begin(), group.end(), old->second.begin(),
+							[&](size_t current, size_t prior) { return current == prior && items[current].Visible == previous[prior].Visible; }));
+					for (size_t index = 0; index < group.size(); ++index)
+						ordered[group[index]] = reuse ? entries[zone][old->second[index]] : Make(id, true);
+				}
+				entries[zone] = std::move(ordered);
 			}
+			if (!HasVisibleMoreItems(next)) expanded = false;
+			// 新加入或重新启用的按钮须使用当前沙盒样式，不取离开布局前的样式。
+			styleDirty = true;
 		}
 		void Invalidate()
 		{
@@ -520,67 +633,95 @@ namespace Inkeys::UI::Bar
 			frame.frameId = 0;
 			presented = {};
 		}
+		BarButtonClass* Preset(BarButtonPresetEnum id) const
+		{
+			for (const auto& b : main)
+				if (b && b->preset == id) return b.get();
+			return nullptr;
+		}
+		// 命中项映射回按钮实例（主栏与 More 面板）；只有可交互的按钮返回实例。
+		ButtonPtr ButtonAt(const PreviewHit& hit) const
+		{
+			if (hit.kind == PreviewHitKind::More) return more;
+			if (hit.kind != PreviewHitKind::Item && hit.kind != PreviewHitKind::Companion) return {};
+			if (hit.position && hit.position->segment == Segment::More && !expanded) return {};
+			for (const auto* list : {&main, &panelButtons.explicitMore})
+				for (const auto& b : *list)
+				{
+					const auto found = identities.find(b.get());
+					if (found == identities.end() || found->second.kind != hit.kind || !b->IsVisible()) continue;
+					if (found->second.position && hit.position && SamePosition(*found->second.position, *hit.position)) return b;
+				}
+			return {};
+		}
+		// 与真实主栏 Load 同序：A1（Redo 插在撤回前）、交界线、B1、More、交界线、A2（穿透插在定格前）。
 		void Project()
 		{
 			main.clear(); visible.clear(); panelButtons.explicitMore.clear(); identities.clear();
 			const bool compact = inputs.sizeMode == BarSizeMode::Compact;
-			const auto a2 = ResolveBarA2Projection(inputs.presentation, false, inputs.whiteboardEnabled, false, false, inputs.freezeAvailable);
-			const auto recall = ResolveRecallChrome({}, false, compact);
-			auto append = [&](ButtonPtr b, PreviewHitKind kind, std::optional<Position> pos)
+			const bool selection = mode == StateModeSelectEnum::IdtSelection;
+			const bool separate = GetSelectAndClickThroughMode() == 1;
+			const auto a2 = ResolveBarA2Projection(inputs.presentation, false, inputs.whiteboardEnabled, separate, selection, inputs.freezeAvailable);
+			recall = ResolveRecallChrome({}, selection, compact);
+			const MainBarPresentationInput presentation{ mode, false, false, inputs.whiteboardEnabled,
+				inputs.freezeAvailable, false, false, false, inputs.settingsVisible, expanded, compact, a2, recall };
+			const auto snapshot = GetStateModeSnapshot();
+			if (const auto key = StyleKey(snapshot, separate); styleDirty || styleKey != key)
 			{
+				const bool immediate = !initialized || !styleKey;
+				for (auto& zone : entries) for (auto& b : zone) if (b) ApplyStyle(*b, immediate, snapshot, separate);
+				if (pierce) ApplyStyle(*pierce, immediate, snapshot, separate);
+				styleKey = key;
+				styleDirty = false;
+			}
+			auto apply = [&](const ButtonPtr& b, bool hidden)
+			{
+				const auto [size, hide, state] = ResolveMainBarPresentation(b->preset.load(), b->baseSize.load(), presentation);
+				b->size = size;
+				b->userVisible = true;
+				// 抓起项保留在列表中隐藏，沿用真实主栏的锚定收拢与退场淡出。
+				b->hide = hide || hidden;
+				b->state->state = state;
+			};
+			auto append = [&](const ButtonPtr& b, PreviewHitKind kind, std::optional<Position> pos, bool hidden = false)
+			{
+				if (!b) return;
+				apply(b, hidden);
 				identities.emplace(b.get(), PreviewHit{kind,pos});
 				if (pos && pos->segment == Segment::More) panelButtons.explicitMore.push_back(b);
-				else { main.push_back(b); visible.push_back({b.get(),b->size.load(),true}); }
+				else { main.push_back(b); visible.push_back({b.get(),b->size.load(),b->IsVisible()}); }
 			};
 			auto appendZone = [&](Segment zone)
 			{
 				auto& buttons = entries[static_cast<size_t>(zone)];
 				for (size_t i = 0; i < buttons.size(); ++i)
 				{
-					Position pos{zone,i};
-					auto b = buttons[i];
-					if (!b || !model[zone][i].Visible || (lifted && SamePosition(*lifted,pos))) continue;
+					const Position pos{zone,i};
+					const auto& b = buttons[i];
+					// 与真实主栏一致：用户隐藏的条目不进入运行时列表。
+					if (!b || !model[zone][i].Visible) continue;
+					b->baseSize = PreviewPrototypes::ToRuntimeSize(model[zone][i].Size);
+					const bool hidden = lifted && SamePosition(*lifted,pos);
 					const auto key = b->preset.load();
-					if ((key == BarButtonPresetEnum::Whiteboard && !inputs.whiteboardEnabled)
-						|| (key == BarButtonPresetEnum::Freeze && !a2.freezeVisible)
-						|| (key == BarButtonPresetEnum::EndShow && !a2.endShowVisible)) continue;
-					auto size = PreviewPrototypes::ToRuntimeSize(model[zone][i].Size);
-					if (key == BarButtonPresetEnum::Whiteboard) size = a2.whiteboardTwoTwo ? ButtonSizeEnum::twoTwo : ButtonSizeEnum::twoOne;
-					if (key == BarButtonPresetEnum::Freeze) size = a2.freezeTwoTwo ? ButtonSizeEnum::twoTwo : ButtonSizeEnum::twoOne;
-					if (key == BarButtonPresetEnum::Recall)
-					{
-						size = recall.undoExpanded ? ButtonSizeEnum::twoTwo : ButtonSizeEnum::twoOne;
-						if (recall.mainRedoVisible)
-						{
-							redo->hide = false;
-							redo->size = ButtonSizeEnum::oneOne;
-							redo->state->state = WidgetState::Disable;
-							append(redo, PreviewHitKind::Companion, pos);
-						}
-					}
-					b->size = compact && size != ButtonSizeEnum::oneTwo ? ButtonSizeEnum::oneOne : size;
-					b->hide = false;
-					b->state->state = key == BarButtonPresetEnum::Recall ? WidgetState::Disable :
-						key == BarButtonPresetEnum::Draw || (inputs.settingsVisible && key == BarButtonPresetEnum::Setting)
-							? WidgetState::Selected : WidgetState::None;
-					append(b, key == BarButtonPresetEnum::Divider ? PreviewHitKind::UserDivider : PreviewHitKind::Item, pos);
+					if (key == BarButtonPresetEnum::Recall) append(redo, PreviewHitKind::Companion, pos, hidden);
+					if (key == BarButtonPresetEnum::Freeze) append(pierce, PreviewHitKind::Companion, pos, hidden);
+					append(b, key == BarButtonPresetEnum::Divider ? PreviewHitKind::UserDivider : PreviewHitKind::Item, pos, hidden);
 				}
 			};
 			appendZone(Segment::A1);
 			append(boundary[0], PreviewHitKind::Boundary, {});
 			appendZone(Segment::B1);
-			more->size = compact ? ButtonSizeEnum::oneOne : ButtonSizeEnum::twoTwo;
 			append(more, PreviewHitKind::More, {});
 			append(boundary[1], PreviewHitKind::Boundary, {});
 			appendZone(Segment::A2);
 			appendZone(Segment::More);
-			more->state->state = expanded && panelButtons.HasButtons() ? WidgetState::Selected : WidgetState::None;
 		}
 		void BuildGeometry();
 	};
 
 	D2D1_RECT_F PreviewTestAccess::HintBounds(const BarContentInstance& instance)
 	{
+		if (!instance.state_->hint.shown) return {};
 		const auto& r = instance.state_->hintRect;
 		return D2D1::RectF(float(r.left),float(r.top),float(r.right),float(r.bottom));
 	}
@@ -588,6 +729,55 @@ namespace Inkeys::UI::Bar
 	{
 		for (const auto& b : instance.state_->main)
 			if (b->preset == BarButtonPresetEnum::Geometry && b->badge) b->badge->shown = true;
+	}
+	void PreviewTestAccess::AlignMainButtonPixelPhase(BarContentInstance& instance, BarButtonPresetEnum preset, D2D1_POINT_2F reference)
+	{
+		auto& state = *instance.state_;
+		const auto* button = state.Preset(preset);
+		if (!button) return;
+		const auto phase = [](double coordinate) { return coordinate - std::floor(coordinate); };
+		const auto zoom = state.frame.scale;
+		const double deltaX = (phase(reference.x) - phase(button->button.inhX * zoom)) / zoom;
+		const double deltaY = (phase(reference.y) - phase(button->button.inhY * zoom)) / zoom;
+		state.body.UpInh(UiInheritClass(state.body.inhX + deltaX, state.body.inhY + deltaY));
+		state.BuildGeometry();
+	}
+	double PreviewTestAccess::PressTarget(const BarContentInstance& instance, const PreviewHit& hit)
+	{
+		const auto& state = *instance.state_;
+		if (hit.kind == PreviewHitKind::Close) return state.press.tar;
+		const auto button = state.ButtonAt(hit);
+		return button ? static_cast<double>(button->pressScale.tar) : 0.0;
+	}
+	double PreviewTestAccess::PressScale(const BarContentInstance& instance, const PreviewHit& hit)
+	{
+		const auto& state = *instance.state_;
+		if (hit.kind == PreviewHitKind::Close) return state.press.val;
+		const auto button = state.ButtonAt(hit);
+		return button ? static_cast<double>(button->pressScale.val) : 0.0;
+	}
+	std::optional<PreviewTestAccess::CollapseSample> PreviewTestAccess::SampleCollapse(
+		const BarContentInstance& instance, BarButtonPresetEnum preset)
+	{
+		const auto* button = instance.state_->Preset(preset);
+		if (!button) return std::nullopt;
+		return CollapseSample{button->button.x.val, button->button.x.tar, button->icon.pct.val};
+	}
+	bool PreviewTestAccess::IsCollapsedTo(const BarContentInstance& instance, BarButtonPresetEnum hidden, BarButtonPresetEnum anchor)
+	{
+		const auto* button = instance.state_->Preset(hidden);
+		const auto* target = instance.state_->Preset(anchor);
+		return button && target && !button->IsVisible() && target->IsVisible()
+			&& std::abs(button->button.x.val - target->button.x.val) < 0.001
+			&& std::abs(button->button.y.val - target->button.y.val) < 0.001
+			&& button->icon.pct.val == 0.0 && button->name.pct.val == 0.0;
+	}
+	bool PreviewTestAccess::KeepMoreOpenAfterAction(BarContentInstance& instance, const PreviewHit& hit)
+	{
+		const auto button = instance.state_->ButtonAt(hit);
+		if (!button) return false;
+		button->closeMoreAfterAction = false;
+		return true;
 	}
 	bool PreviewTestAccess::OwnsInactiveActions(const BarContentInstance& instance)
 	{
@@ -615,6 +805,11 @@ namespace Inkeys::UI::Bar
 		}
 		return values;
 	}
+	std::wstring PreviewTestAccess::ButtonLabel(const BarContentInstance& instance, BarButtonPresetEnum preset)
+	{
+		const auto* button = instance.state_->Preset(preset);
+		return button ? button->name.content.GetTar() : std::wstring{};
+	}
 
 	BarContentInstance::BarContentInstance() : state_(std::make_unique<State>()) {}
 	BarContentInstance::~BarContentInstance() = default;
@@ -623,15 +818,17 @@ namespace Inkeys::UI::Bar
 		auto& s = *state_;
 		const bool changed = !s.prototypes || !(s.model == model);
 		if (!changed && revision == s.revision) return;
+		ReleasePress();
 		if (changed)
 		{
+			s.Rebuild(model);
 			s.model = model;
 			s.editWidth = 0;
-			s.Rebuild();
 			s.lifted.reset();
 		}
 		if (revision != s.revision) s.lifted.reset();
 		s.revision = revision;
+		s.ClearHint();
 		s.Invalidate();
 	}
 	bool BarContentInstance::Lift(Position pos, std::uint64_t revision)
@@ -641,7 +838,9 @@ namespace Inkeys::UI::Bar
 			|| pos.index >= s.model[pos.segment].size()) return false;
 		if (std::none_of(s.presented.items.begin(),s.presented.items.end(),[&](const PreviewHit& item)
 			{ return item.position && SamePosition(*item.position,pos); })) return false;
-		s.editWidth = (std::max)(static_cast<double>(s.body.w.val), static_cast<double>(s.body.w.tar));
+		// 越过拖动阈值：先让按压回弹，再抓起（隐藏并收拢）。
+		ReleasePress();
+		s.editWidth = s.targetWidth;
 		s.lifted = pos;
 		s.Invalidate();
 		return true;
@@ -650,6 +849,7 @@ namespace Inkeys::UI::Bar
 	{
 		if (!state_->lifted) return;
 		state_->lifted.reset();
+		state_->ClearHint();
 		state_->Invalidate();
 	}
 	bool BarContentInstance::Place(const BarLayoutModel& accepted, Position gap, std::uint64_t revision)
@@ -677,30 +877,112 @@ namespace Inkeys::UI::Bar
 			const auto& id = accepted[gap.segment][gap.index].Id;
 			const auto expected = Insert(s.model,id,gap,catalog);
 			if (!expected || !(*expected == accepted)) return false;
-			placed = s.Make(id);
+			placed = s.Make(id, true);
+			s.styleDirty = true;
 		}
 		target.insert(target.begin() + gap.index,placed);
 		s.model = accepted;
 		s.lifted.reset();
+		if (!s.HasVisibleMoreItems(s.model)) s.expanded = false;
+		s.ClearHint();
 		s.Invalidate();
 		return true;
 	}
 	void BarContentInstance::SetMoreExpanded(bool value)
 	{
-		if (state_->expanded == value) return;
+		if (state_->expanded == value || (value && !state_->HasVisibleMoreItems(state_->model))) return;
 		state_->expanded = value;
 		state_->Invalidate();
+	}
+	void BarContentInstance::SetToolMode(StateModeSelectEnum mode)
+	{
+		if (state_->mode == mode) return;
+		state_->mode = mode;
+		state_->Invalidate();
+	}
+	StateModeSelectEnum BarContentInstance::ToolMode() const { return state_->mode; }
+	bool BarContentInstance::MoreExpanded() const { return state_->expanded; }
+	bool BarContentInstance::Press(const PreviewHit& hit)
+	{
+		auto& s = *state_;
+		ReleasePress();
+		if (hit.kind == PreviewHitKind::Close && s.expanded && s.panelButtons.HasButtons())
+			SetClosePressed(true);
+		else if (auto b = s.ButtonAt(hit))
+		{
+			UI3::StopButtonHoverVisual(*b,true);
+			UI3::SetButtonPressedVisual(*b,true);
+			RetargetPressScale(b->pressScale, true);
+			s.pressed = std::move(b);
+		}
+		else return false;
+		if (s.hovered && s.hovered != s.pressed) UI3::StopButtonHoverVisual(*s.hovered,true);
+		s.hovered.reset();
+		// 按下不是“未按键的鼠标移动”：作废提示来源，抬起后须重新移动才计时。
+		s.hintSource = {};
+		return true;
+	}
+	bool BarContentInstance::SetClosePressed(bool pressed)
+	{
+		auto& s = *state_;
+		if (pressed == s.closePressed) return false;
+		s.closePressed = pressed;
+		RetargetPressScale(s.press, pressed);
+		return true;
+	}
+	void BarContentInstance::ReleasePress()
+	{
+		auto& s = *state_;
+		if (!s.pressed && !s.closePressed) return;
+		if (s.pressed)
+		{
+			UI3::SetButtonPressedVisual(*s.pressed,false);
+			RetargetPressScale(s.pressed->pressScale, false);
+			s.pressed.reset();
+		}
+		SetClosePressed(false);
+		s.hoverSuppressedSerial = s.inputs.pointerSerial;
+	}
+	bool BarContentInstance::Activate(const PreviewHit& hit)
+	{
+		auto& s = *state_;
+		const bool wasExpanded = s.expanded;
+		const auto wasMode = s.mode;
+		if (hit.kind == PreviewHitKind::Close) s.expanded = false;
+		else if (hit.kind == PreviewHitKind::More)
+		{
+			if (!s.HasVisibleMoreItems(s.model)) return false;
+			s.expanded = !s.expanded;
+		}
+		else if (auto b = s.ButtonAt(hit))
+		{
+			if (hit.position && hit.position->segment == Segment::More)
+			{
+				// 与真实主栏一致：面板项默认先收起 More 再执行动作（预览不执行功能）。
+				if (b->closeMoreAfterAction) s.expanded = false;
+			}
+			else switch (b->preset.load())
+			{
+			case BarButtonPresetEnum::Select: s.mode = StateModeSelectEnum::IdtSelection; break;
+			case BarButtonPresetEnum::Draw: s.mode = StateModeSelectEnum::IdtPen; break;
+			case BarButtonPresetEnum::Eraser: s.mode = StateModeSelectEnum::IdtEraser; break;
+			case BarButtonPresetEnum::Geometry: s.mode = StateModeSelectEnum::IdtShape; break;
+			default: break;
+			}
+		}
+		const bool changed = wasExpanded != s.expanded || wasMode != s.mode;
+		if (changed) s.Invalidate();
+		return changed;
 	}
 	void BarContentInstance::Suspend()
 	{
 		auto& s = *state_;
 		s.clock.SuspendForIdle(s.inputs.time);
+		ReleasePress();
 		s.lifted.reset();
 		if (s.hovered) UI3::StopButtonHoverVisual(*s.hovered,true);
 		s.hovered.reset();
-		s.hintText.clear();
-		s.hintShown = false;
-		s.blockedHintSerial = s.inputs.pointerSerial;
+		s.ClearHint();
 		s.Invalidate();
 	}
 	UIRendering& BarContentInstance::Renderer() { return state_->renderer; }
@@ -713,11 +995,13 @@ namespace Inkeys::UI::Bar
 		auto add = [&](const ButtonPtr& b)
 		{
 			b->button.Inherit(UiInheritEnum::CenterFromTopLeft,body);
+			// 隐藏实例（投影隐藏、抓起项）仍在列表里做收拢与淡出，但不参与命中与插入缝。
+			if (!b->IsVisible()) return;
 			auto hit = identities.at(b.get());
 			hit.rect = Pixels(b->button,frame.scale);
 			pending.items.push_back(hit);
 		};
-		if (expanded && panelButtons.HasButtons() && opacity.val > 0.000001)
+		if (expanded && panelButtons.HasButtons() && panel.pct.val > 0.000001)
 		{
 			pending.items.push_back({PreviewHitKind::Panel,{},Pixels(panel,frame.scale)});
 			for (auto& b : panelButtons.explicitMore) add(b);
@@ -733,7 +1017,7 @@ namespace Inkeys::UI::Bar
 				{
 					auto item = h;
 					// 小尺寸的 Redo 与 Recall 共用一个编辑位置，缝隙越过整个组合。
-					if (redo && zone == Segment::A1 && inputs.sizeMode == BarSizeMode::Compact
+					if (redo && redo->IsVisible() && zone == Segment::A1 && inputs.sizeMode == BarSizeMode::Compact
 						&& model[zone][h.position->index].Id == BarButtonId::Recall)
 					{
 						const auto companion = Pixels(redo->button,frame.scale);
@@ -761,6 +1045,13 @@ namespace Inkeys::UI::Bar
 				{
 					auto r = Pixels(more->button,frame.scale);
 					vertical(lifted && lifted->segment == zone ? lifted->index : zone == Segment::More ? model[zone].size() : 0,zone == Segment::More ? (r.left+r.right)/2 : rtl ? r.right : r.left,r);
+					if (zone == Segment::B1)
+					{
+						// 空 B1 锚在 More 的边缘。只让缝隙伸入按钮半个间距，More 中心仍是纯收纳区。
+						auto& area = pending.gaps.back().area;
+						if (rtl) area.left = r.right - pending.dividerReach;
+						else area.right = r.left + pending.dividerReach;
+					}
 				}
 				continue;
 			}
@@ -821,6 +1112,15 @@ namespace Inkeys::UI::Bar
 	{
 		return HitGeometry(Geometry(),point);
 	}
+	bool BarContentInstance::ShouldDismissMoreOnPress(bool overPreview, D2D1_POINT_2F point) const
+	{
+		// 展开或重排后可能仍显示旧像素。命中失效期间跳过外按，等宿主确认新帧。
+		if (!MoreExpanded() || !Geometry().frameId) return false;
+		if (!overPreview) return true;
+		const auto hit = HitTest(point);
+		return hit.kind != PreviewHitKind::More && hit.kind != PreviewHitKind::Panel
+			&& hit.kind != PreviewHitKind::Close && (!hit.position || hit.position->segment != Segment::More);
+	}
 	std::vector<PreviewGap> BarContentInstance::InsertionGaps(D2D1_POINT_2F p) const
 	{
 		std::vector<PreviewGap> result;
@@ -853,11 +1153,7 @@ namespace Inkeys::UI::Bar
 	{
 		auto& s = *state_;
 		const bool languageChanged = s.initialized && inputs.typography.revision != s.inputs.typography.revision;
-		if (!s.prototypes)
-		{
-			s.PreparePrototypes();
-			s.Rebuild();
-		}
+		if (!s.prototypes) s.Rebuild(s.model);
 		else if (languageChanged)
 		{
 			s.PreparePrototypes();
@@ -865,8 +1161,8 @@ namespace Inkeys::UI::Bar
 			for (size_t z = 0; z < s.entries.size(); ++z)
 				for (size_t i = 0; i < s.entries[z].size(); ++i)
 					if (auto& b = s.entries[z][i])
-						if (auto fresh = s.Make(s.model.segments[z][i].Id))
-							b->name.SetStringImmediate(fresh->name.content.GetTar());
+						s.RefreshLabel(s.model.segments[z][i].Id, *b);
+			for (auto& [id, button] : s.singletons) s.RefreshLabel(id, *button);
 		}
 		if (!s.formats || inputs.writeFactory != s.inputs.writeFactory || inputs.fonts != s.inputs.fonts || languageChanged)
 			s.formats = std::make_unique<FormatCache>(inputs.writeFactory);
@@ -883,112 +1179,172 @@ namespace Inkeys::UI::Bar
 		auto& frame = s.frame;
 		frame.frameId = ++s.serial;
 		frame.revision = s.revision;
+		const bool compact = inputs.sizeMode == BarSizeMode::Compact;
 		const auto& metrics = ResolveBarSizeMetrics(inputs.sizeMode);
 		const auto packed = ResolveBarButtonListLayout(s.main,BarButtonListLayoutKind::Main,{},inputs.sizeMode);
 		const auto order = inputs.iconOrder == 3 ? BarIconOrder::RightToLeft : BarIconOrder::LeftToRight;
 		const double dt = s.clock.Tick(inputs.time);
 		const bool animate = UiAnimationEnabled && s.initialized;
 		const double rate = UiAnimationSpeedRate;
-		UiAnimationAdvanceContextClass tick{dt,rate,animate,!animate};
-		ButtonAnimationContext motion{dt,rate,animate,!animate};
+		const UiAnimationAdvanceContextClass tick{dt,rate,animate,!animate};
+		ButtonAnimationContext motion;
+		motion.dtSeconds = dt; motion.speedRate = rate;
+		motion.animationEnabled = animate; motion.forceReplace = !animate;
 		const double light = GetThemeLightWeight();
 		const bool dark = light < 0.5;
 		s.body.lightMaterial = s.panel.lightMaterial = light;
-		const bool grows = packed.width > s.body.w.val;
-		const auto curve = grows ? UiCurveEnum::EaseOutBack : UiCurveEnum::EaseOutCubic;
-		s.body.w.SetTar(packed.width,UiDefaultOperationDur,nullopt,false,{curve,curve,0,false});
-		frame.active = UiAdvanceAnimation(s.body.w,tick).active;
-		s.body.fill->SetDirect(GetThemeColor(ThemeColorEnum::Surface));
-		s.body.frame->SetDirect(GetThemeColor(ThemeColorEnum::SurfaceFrame));
-		s.body.h.SetDirect(metrics.barHeight);
 		const bool open = s.expanded && s.panelButtons.HasButtons();
-		auto advancePanel = [&](UiValueClass& value, UiCurveEnum ease)
-		{
-			value.SetTar(open ? 1.0 : 0.0,UiDefaultOperationDur,nullopt,false,{ease,ease,0,false});
-			frame.active |= UiAdvanceAnimation(value,tick).active;
-		};
-		advancePanel(s.progress,open ? UiCurveEnum::EaseOutBack : UiCurveEnum::EaseInBack);
-		advancePanel(s.opacity,open ? UiCurveEnum::EaseOutSine : UiCurveEnum::EaseInSine);
+
+		// 相机（R3）只由目标包络决定：主栏上方常驻一行 More 面板（含 Back 峰值与阴影）的预留，
+		// More 达到两行及以上时预留随之增高（预览区向下扩展），主栏下方对称预留一行；
+		// 缩放取高度适配、可用宽度与预览区高度三者最小，与 More 开合进度和动画中的宽度无关。
 		const double shadow = ThemeMaterial::SurfaceShadowOutsetDip + RenderingAttribute::dirtyAntialiasPadding;
-		if (!s.lifted && s.body.w.IsSame()) s.editWidth = 0;
-		// 抓起期间锁住适配上限，否则在窄宿主里底板越缩短，按钮反而越大。
-		double envelope = (std::max)({packed.width,static_cast<double>(s.body.w.val),s.editWidth});
-		double panelSpace = 0, targetPanelSpace = 0;
-		double targetWidth = (std::max)(packed.width,s.editWidth);
-		if (open || s.opacity.val > 0)
+		const auto moreGrid = ResolveBarButtonListLayout(s.panelButtons.explicitMore,BarButtonListLayoutKind::GroupedGrid,{},inputs.sizeMode);
+		const auto moreSize = MeasureMoreGrid(moreGrid,compact ? metrics.gap : BarMorePanelGap);
+		const double oneRow = BarMorePanelPadding * 2 + ButtonOneSideDip;
+		const double peak = UiGetCurveExtrema(UiCurveEnum::EaseOutBack).maximum;
+		auto reserveFor = [&](double panelHeight)
 		{
-			const auto grid = ResolveBarButtonListLayout(s.panelButtons.explicitMore,BarButtonListLayoutKind::GroupedGrid,{},inputs.sizeMode);
-			const auto size = MeasureMoreGrid(grid,metrics.gap);
-			// 以当前姿态预约空间，反向关闭时从同一位置释放。
-			const double overshoot = (std::max)(0.0,static_cast<double>(s.progress.val));
-			const double height = size.height + BarMorePanelAnchorGap + metrics.barHeight/2;
-			panelSpace = height * overshoot;
-			if (open)
-			{
-				targetWidth = (std::max)(targetWidth,size.width);
-				targetPanelSpace = height;
-			}
-			envelope = (std::max)(envelope, size.width * overshoot);
+			// 与 PositionContentMore 同一套展开几何：中心离 More 锚点 D·p，高度由紧凑态线性插值到面板高度。
+			const double anchorHalf = compact ? metrics.barHeight / 2 + metrics.attachedGap
+				: (s.more && s.more->size == ButtonSizeEnum::twoTwo ? ButtonTwoSideDip : ButtonOneSideDip) / 2 + BarMorePanelAnchorGap;
+			const double distance = (anchorHalf + panelHeight / 2) * peak;
+			const double height = BarMorePanelCompactHeight + (panelHeight - BarMorePanelCompactHeight) * peak;
+			return (std::max)(0.0, distance + height / 2 - metrics.barHeight / 2) + shadow;
+		};
+		const double topTarget = reserveFor((std::max)(oneRow, s.panelButtons.HasButtons() ? moreSize.height : 0.0));
+		const double bottomReserve = reserveFor(oneRow);
+		if (!s.lifted) s.editWidth = 0;
+		s.targetWidth = packed.width;
+		const double morePeakWidth = BarMorePanelCompactWidth + (moreSize.width - BarMorePanelCompactWidth) * peak;
+		const double moreEnvelope = (std::max)(moreSize.width, morePeakWidth) + 2 * shadow;
+		const double mainEnvelope = (std::max)(packed.width, s.editWidth) + 2 * shadow;
+		const double envelope = s.panelButtons.HasButtons() ? (std::max)(mainEnvelope, moreEnvelope) : mainEnvelope;
+		const double targetExtent = topTarget + metrics.barHeight + bottomReserve;
+		const double zoomTarget = (std::min)({inputs.targetHeight / metrics.barHeight, inputs.width / envelope,
+			inputs.height / targetExtent});
+		if (animate)
+		{
+			const UiCurveSpecClass cameraCurve{UiCurveEnum::EaseOutCubic,UiCurveEnum::EaseOutCubic,0,false};
+			s.cameraZoom.SetTar(zoomTarget,UiDefaultOperationDur,nullopt,false,cameraCurve);
+			s.cameraTop.SetTar(topTarget,UiDefaultOperationDur,nullopt,false,cameraCurve);
 		}
-		frame.scale = (std::min)(inputs.targetHeight/metrics.barHeight,inputs.width/(envelope+2*shadow));
-		frame.scale = (std::min)(frame.scale, inputs.height/(metrics.barHeight+panelSpace+2*shadow));
-		const double zoom = frame.scale;
-		const double bodyTop = (std::max)((inputs.height/zoom-metrics.barHeight)/2, panelSpace+shadow);
-		s.body.UpInh(UiInheritClass((inputs.width/zoom-s.body.w.val)/2,bodyTop));
+		else
+		{
+			s.cameraZoom.SetDirect(zoomTarget);
+			s.cameraTop.SetDirect(topTarget);
+		}
+		frame.active = UiAdvanceAnimation(s.cameraZoom,tick).active;
+		frame.active |= UiAdvanceAnimation(s.cameraTop,tick).active;
+		double zoom = s.cameraZoom.val;
+		// 网格尺寸立即采用新布局，相机仍在过渡。先给当前网格预留峰值包络，避免面板在缩放落定前越界。
+		if (s.panelButtons.HasButtons())
+			zoom = (std::min)({zoom, inputs.width / moreEnvelope, inputs.height / targetExtent});
+		frame.scale = zoom;
+		const double extentDip = (std::max)(static_cast<double>(s.cameraTop.val), topTarget) + metrics.barHeight + bottomReserve;
+		const double cappedHeight = (std::min)(std::ceil(extentDip * zoom), inputs.height);
+		float extentPixels = static_cast<float>(cappedHeight);
+		if (extentPixels > cappedHeight) extentPixels = std::nextafter(extentPixels, 0.0f);
 		if (!s.initialized) s.renderer.ConfigureLocalizedTypography();
 		else s.renderer.RefreshLocalizedTypography();
 		s.renderer.UpdateFontRenderingPolicy(inputs.fractionalFont);
 		s.renderer.SetFrameZoom(zoom);
-		const double targetScale = (std::min)({inputs.targetHeight/metrics.barHeight,inputs.width/(targetWidth+2*shadow),
-			inputs.height/(metrics.barHeight+targetPanelSpace+2*shadow)});
 		frame.active |= s.renderer.FontAnimationsActive();
-		s.renderer.BeginFontFrame(inputs.time,tick,targetScale);
+		s.renderer.BeginFontFrame(inputs.time,tick,zoomTarget);
 		s.renderer.SetFontTargetScale(1.0);
-		for (const auto& p : packed.placements)
+
+		// 与真实主栏同一编排：批次决策 → 按钮目标（含隐藏锚定）→ 底板目标；预览无主按钮、无折叠、无换边，底板居中。
+		const auto batch = ResolveMainBarBatch(s.batch, {s.visible, packed.width, UiDefaultOperationDur, order,
+			false, false, false, false});
+		const MainBarThemeColor themeColor = [](ThemeColorEnum role) { return GetThemeColor(role); };
+		ApplyMainBarButtonTargets(s.main, [&](BarButtonPresetEnum id) { return s.Preset(id); }, packed, batch,
+			{false, true, s.mode == StateModeSelectEnum::IdtShape, !s.initialized, dark, metrics.barHeight / 2,
+				UiDefaultOperationDur, order, s.recall, ButtonPressCurve(), ButtonReleaseCurve(), themeColor}, s.renderer);
+		BarButtonClass* lifted = s.lifted ? s.entries[static_cast<size_t>(s.lifted->segment)][s.lifted->index].get() : nullptr;
+		const auto retargetLiftPosition = [&](UiValueClass& value, double target)
 		{
-			auto& b = *p.button;
-			b.button.x.SetTar(ResolveBarMainIconX(p.x,packed.width,order,true),UiDefaultOperationDur);
-			b.button.y.SetTar(p.y,UiDefaultOperationDur);
-			const bool separator = b.preset == BarButtonPresetEnum::Divider;
-			if (separator)
+			UiSetLayoutPositionTarget(value, target, batch.duration, batch.forceRestart || batch.layoutChanged, batch.valueCurve);
+		};
+		if (lifted && s.lifted->segment != Segment::More)
+		{
+			// 共享层只为投影隐藏的固定工具选锚点，其他被抓起的主栏项就近收拢。
+			switch (lifted->preset.load())
 			{
-				b.button.w.SetTar(p.width,UiDefaultOperationDur);
-				b.button.h.SetTar(p.height,UiDefaultOperationDur);
-				b.button.fill->SetDirect(GetThemeColor(ThemeColorEnum::Divider));
-				b.button.frame->SetDirect(GetThemeColor(ThemeColorEnum::Divider));
-				b.button.frameLightPct->SetDirect(1);
-				b.button.frameCursorLightIntensityScale = BarGeometryAttributeDividerCursorLightIntensity;
+			case BarButtonPresetEnum::Eraser: case BarButtonPresetEnum::Geometry:
+			case BarButtonPresetEnum::Recall: case BarButtonPresetEnum::Redo:
+			case BarButtonPresetEnum::Freeze: case BarButtonPresetEnum::Pierce:
+			case BarButtonPresetEnum::CanvasDebug: case BarButtonPresetEnum::EndShow:
+				break;
+			default:
+				AnchorHiddenBarButton(s.main, lifted, nullptr, retargetLiftPosition);
+				break;
 			}
+		}
+		ApplyMainBarBodyTargets(s.body, batch, {packed.width, metrics.barHeight, std::nullopt, metrics,
+			false, true, animate, UiDefaultOperationDur, themeColor});
+		frame.active |= AdvanceShapeVisual(s.body,motion).active;
+		s.body.UpInh(UiInheritClass(inputs.width / zoom / 2 + s.body.x.val - s.body.w.val / 2, s.cameraTop.val));
+		auto advanceButton = [&](BarButtonClass& b, bool moreItem)
+		{
+			b.button.lightMaterial = light;
+			ButtonAnimationContext context = motion;
+			context.visible = b.IsVisible() && (!moreItem || open);
+			context.hoverAllowed = b.state->state != WidgetState::Disable && b.state->state != WidgetState::Selected;
+			frame.active |= Bar::AdvanceButtonVisual(b,context).active;
+		};
+		for (const auto& b : s.main)
+		{
+			advanceButton(*b,false);
+			b->button.Inherit(UiInheritEnum::CenterFromTopLeft,s.body);
+		}
+		// 禁用动画时，先同步进度再定位，避免重复准备同一时刻的画面时补画上一帧。
+		ApplyMainBarMoreTargets(s.progress,s.opacity,open,UiDefaultOperationDur);
+		auto advanceMore = [&]
+		{
+			for (auto* value : {&s.progress, &s.opacity})
+			{
+				const auto result = UiAdvanceAnimation(*value,tick);
+				frame.active |= result.changed || result.active;
+			}
+		};
+		if (!animate) advanceMore();
+		PositionContentMore(s.Chrome(),s.more.get(),s.body,s.panelButtons,inputs.sizeMode,s.progress,s.opacity,
+			open,false,inputs.width,extentPixels,zoom,{},dark,s.closePressed,s.closeHover,s.renderer,shadow);
+		if (animate) advanceMore();
+		if (lifted && s.lifted->segment == Segment::More)
+		{
+			// 网格不会定位隐藏项；预览保留这个实例，向相邻项（或空面板的入口）收拢并淡出。
+			if (std::any_of(s.panelButtons.explicitMore.begin(), s.panelButtons.explicitMore.end(),
+				[](const auto& button) { return button && button->IsVisible(); }))
+				AnchorHiddenBarButton(s.panelButtons.explicitMore, lifted, nullptr, retargetLiftPosition);
 			else
 			{
-				const auto kind = b.size == ButtonSizeEnum::oneOne ? ButtonVisualLayoutKind::StandardOneOne
-					: b.size == ButtonSizeEnum::twoOne ? ButtonVisualLayoutKind::StandardTwoOne : ButtonVisualLayoutKind::StandardTwoTwo;
-				UI3::ConfigureButtonVisualTargets(b,kind,UiDefaultOperationDur,1,false,
-					b.preset == BarButtonPresetEnum::More && b.size == ButtonSizeEnum::twoTwo ? std::optional<double>{34} : nullopt,
-					nullopt,b.LabelFontSize(ResolveButtonVisualMetrics(kind).primaryFontSizeDip),
-					b.preset == BarButtonPresetEnum::Geometry ? &s.renderer : nullptr);
-				UI3::RetargetButtonInteractionVisual(dark,b,true,b.state->state != WidgetState::Disable,
-					b.state->state == WidgetState::Selected,UiDefaultOperationDur);
-				if (b.size == ButtonSizeEnum::oneOne) b.name.pct.SetTar(0,UiDefaultOperationDur);
+				retargetLiftPosition(lifted->button.x, s.more->button.x.tar);
+				retargetLiftPosition(lifted->button.y, s.more->button.y.tar);
+				lifted->lastDrawX = s.more->button.x.tar;
+				lifted->lastDrawY = s.more->button.y.tar;
 			}
-			frame.active |= Bar::AdvanceButtonVisual(b,motion).active;
-			b.button.Inherit(UiInheritEnum::CenterFromTopLeft,s.body);
+			UI3::RetargetButtonInteractionVisual(dark, *lifted, false, true,
+				lifted->state->state == WidgetState::Selected, UiDefaultOperationDur);
 		}
-		PositionContentMore(s.Chrome(),s.more.get(),s.body,s.panelButtons,inputs.sizeMode,s.progress,s.opacity,
-			open,false,inputs.width,inputs.height,zoom,{},dark,false,s.closeHover,s.renderer,shadow);
-		for (auto& b : s.panelButtons.explicitMore)
-			frame.active |= Bar::AdvanceButtonVisual(*b,motion).active;
-		frame.active |= UI3::AdvanceShapeVisual(s.close,motion).active;
+		frame.active |= UiAdvanceAnimation(s.press,tick).active;
+		for (auto& b : s.panelButtons.explicitMore) advanceButton(*b,true);
+		frame.active |= AdvanceShapeVisual(s.close,motion).active;
+		frame.active |= AdvanceSvgVisual(s.closeSvg,motion).active;
+		// 定位函数写的是宽高目标；推进后再按本帧尺寸居中，避免第一次画 X 时沿用上一帧尺寸。
+		s.closeSvg.UpInh(UiInheritClass(s.closeSvg.x.val - s.closeSvg.w.val / 2.0,
+			s.closeSvg.y.val - s.closeSvg.h.val / 2.0));
+		// 批次时间轴与实栏一样在推进末尾前进，提示门禁读取推进后的状态。
+		s.batch.timeline.Advance(dt,rate);
+		frame.active |= s.batch.timeline.IsActive();
+
 		s.BuildGeometry();
 		ButtonPtr hovered;
-		if (inputs.pointer && inputs.mouse && !inputs.editing && !s.lifted)
-		{
-			const auto hit = HitGeometry(s.pending,*inputs.pointer);
-			if (hit.kind == PreviewHitKind::More) hovered = s.more;
-			else if (hit.kind == PreviewHitKind::Companion) hovered = s.redo;
-			else if (hit.kind == PreviewHitKind::Item)
-				hovered = s.entries[static_cast<size_t>(hit.position->segment)][hit.position->index];
-		}
+		if (s.hoverSuppressedSerial && *s.hoverSuppressedSerial != inputs.pointerSerial) s.hoverSuppressedSerial.reset();
+		const bool canHover = inputs.pointer && inputs.mouse && !inputs.editing && !s.lifted
+			&& !s.pressed && !s.closePressed && !s.hoverSuppressedSerial;
+		if (canHover)
+			hovered = s.ButtonAt(HitGeometry(s.pending,*inputs.pointer));
 		if (s.hovered != hovered)
 		{
 			if (s.hovered) UI3::StopButtonHoverVisual(*s.hovered,false);
@@ -996,32 +1352,34 @@ namespace Inkeys::UI::Bar
 			s.hovered = hovered;
 			frame.active = true;
 		}
-		const bool movingLayout = !s.body.w.IsSame() || !s.progress.IsSame()
-			|| std::any_of(s.main.begin(),s.main.end(),[](const auto& b){return !b->button.x.IsSame() || !b->button.y.IsSame();});
-		if (movingLayout || inputs.editing || s.lifted || !inputs.mouse) s.blockedHintSerial = inputs.pointerSerial;
-		const bool hintAllowed = !s.blockedHintSerial || *s.blockedHintSerial != inputs.pointerSerial;
-		auto text = hovered && hintAllowed ? hovered->name.content.GetTar() : std::wstring{};
-		std::replace(text.begin(),text.end(),L'\n',L' ');
-		if (text != s.hintText && (!s.hintShown || text.empty())) { s.entered = inputs.time; s.hintShown = false; }
-		s.hintText = text;
-		if (!text.empty())
+		// 提示来源只随新的指针移动登记（与真实主栏输入线程一致）；门禁与延时由共享层判定，只在小尺寸显示。
+		if (inputs.pointerSerial != s.hintSerial)
 		{
-			const auto due = s.entered + std::chrono::milliseconds(500);
-			if (inputs.time >= due) s.hintShown = true;
-			else frame.hintDeadline = due;
-			if (s.hintShown)
-			{
-				const auto size = s.renderer.MeasureText(text,BarHoverHintFontSizeDip);
-				s.hintRect = ResolveBarHoverHintRect(inputs.pointer->x,inputs.pointer->y,
-					((std::min)(std::ceil(double(size.width)),BarHoverHintMaxTextWidthDip)+2*BarHoverHintPaddingXDip)*zoom,
-					(std::ceil(size.height)+2*BarHoverHintPaddingYDip)*zoom,BarHoverHintCursorOffsetDip*zoom,
-					{shadow*zoom,shadow*zoom,inputs.width-shadow*zoom,inputs.height-shadow*zoom});
-			}
+			s.hintSerial = inputs.pointerSerial;
+			s.hintSource.mouse = canHover;
+			s.hintSource.screen = inputs.pointer ? POINT{std::lround(inputs.pointer->x), std::lround(inputs.pointer->y)} : POINT{};
+			s.hintSource.main = hovered;
+			const auto identity = hovered ? s.identities.find(hovered.get()) : s.identities.end();
+			s.hintSource.more = identity != s.identities.end() && identity->second.position
+				&& identity->second.position->segment == Segment::More;
+		}
+		if (!canHover) s.hintSource = {};
+		const auto hint = UpdateMainBarHoverHint(s.hint, s.hintSource, {inputs.sizeMode, false,
+			!canHover, s.batch.timeline.IsActive(), false, !s.progress.IsSame() || !s.opacity.IsSame(),
+			[] { return true; }, [] { return std::wstring{}; }, [open] { return open; }, inputs.time});
+		frame.active |= hint.changed;
+		frame.hintDeadline = hint.deadline;
+		if (s.hint.shown)
+		{
+			const LONG inset = static_cast<LONG>(std::ceil(shadow * zoom));
+			s.hintRect = PositionMainBarHoverHint(s.renderer, s.hint.text, zoom, s.hintSource.screen, POINT{},
+				RECT{inset, inset, static_cast<LONG>(inputs.width) - inset, static_cast<LONG>(extentPixels) - inset},
+				inputs.width, extentPixels);
 		}
 		UiFrameLightingInput lights;
 		for (auto& b : s.main)
 		{
-			if (b->preset == BarButtonPresetEnum::Divider) continue;
+			if (b->preset == BarButtonPresetEnum::Divider || !b->IsVisible()) continue;
 			lights.primaryAnchor = D2D1::Point2F(static_cast<float>(b->button.inhX+b->button.w.val/2),
 				static_cast<float>(b->button.inhY+b->button.h.val/2));
 			lights.primaryAnchorAvailable = true;
@@ -1037,24 +1395,8 @@ namespace Inkeys::UI::Bar
 		s.lighting.SetFrameZoom(zoom);
 		frame.active |= s.lighting.PrepareFrameLighting(dt,{},lights);
 		s.renderer.SetFrameLightingSnapshot(s.lighting.SnapshotFrameLighting(),inputs.edgeLighting);
-		// 提供实际内容包络；阴影、过冲与最上层提示都参与宿主的纹理预算。
-		auto bounds = s.pending.body;
-		auto include = [&](D2D1_RECT_F r)
-		{
-			bounds.left = (std::min)(bounds.left,r.left); bounds.right = (std::max)(bounds.right,r.right);
-			bounds.top = (std::min)(bounds.top,r.top); bounds.bottom = (std::max)(bounds.bottom,r.bottom);
-		};
-		for (const auto& item : s.pending.items) include(item.rect);
-		if (s.panel.pct.val > 0.000001) include(Pixels(s.panel,zoom));
-		if (inputs.reserveHintSpace)
-		{
-			// 宿主按包络裁图时为提示预留上沿，避免 500ms 后按钮从静止指针下移走。
-			bounds.top = (std::max)(float(shadow*zoom),bounds.top-float((BarHoverHintMaxHeightDip+BarHoverHintCursorOffsetDip)*zoom));
-		}
-		if (s.hintShown) include(D2D1::RectF(static_cast<float>(s.hintRect.left),static_cast<float>(s.hintRect.top),
-			static_cast<float>(s.hintRect.right),static_cast<float>(s.hintRect.bottom)));
-		const auto outset = static_cast<float>(std::ceil(shadow*zoom));
-		frame.bounds = D2D1::RectF(bounds.left-outset,bounds.top-outset,bounds.right+outset,bounds.bottom+outset);
+		// 预览区是稳定矩形（上沿紧贴宿主原点），宿主裁框不随 More 开合、提示或动画中间值变化。
+		frame.bounds = D2D1::RectF(0, 0, static_cast<float>(inputs.width), extentPixels);
 		frame.extent = D2D1::SizeF(frame.bounds.right-frame.bounds.left,frame.bounds.bottom-frame.bounds.top);
 		s.initialized = true;
 		if (!frame.active) s.clock.SuspendForIdle(inputs.time);
@@ -1094,8 +1436,8 @@ namespace Inkeys::UI::Bar
 		if (s.panel.pct.val > 0.000001)
 			DrawContentMore(s.renderer,dc,s.morePanel,s.Chrome(),s.body,s.panelButtons,nullptr);
 		DrawContentBody(s.renderer,dc,s.mainPanel,s.body,s.main,s.visible,nullptr,0);
-		if (s.hintShown)
-			DrawContentHint(s.renderer,dc,s.hintRect,s.hintText,s.frame.scale,s.body.lightMaterial,
+		if (s.hint.shown)
+			DrawContentHint(s.renderer,dc,s.hintRect,s.hint.text,s.frame.scale,s.body.lightMaterial,
 				s.hintShape,*s.formats,s.inputs.fonts);
 
 		s.drawn = frame.frameId;
@@ -1106,7 +1448,7 @@ namespace Inkeys::UI::Bar
 		return MakeBarLocalizedTypographyServices().localizedTypography();
 	}
 	HRESULT BarContentInstance::DrawGhost(FrameTarget& target, const std::variant<Position,std::string>& source,
-		D2D1_POINT_2F point, const std::wstring& hint, bool danger)
+		D2D1_POINT_2F point, const std::wstring& hint, std::optional<COLORREF> dangerOutline)
 	{
 		auto& s = *state_;
 		auto* dc = target.DeviceContext();
@@ -1151,17 +1493,41 @@ namespace Inkeys::UI::Bar
 			if (button.size == ButtonSizeEnum::oneOne) button.name.pct.SetDirect(0);
 		}
 		(void)Bar::AdvanceButtonVisual(button,{0,1,false,true});
-		s.renderer.SetFrameZoom(zoom*1.05);
-		const double x = point.x/(zoom*1.05)-button.button.w.val/2;
-		const double y = point.y/(zoom*1.05)-button.button.h.val/2;
-		button.button.lightMaterial = GetThemeLightWeight();
+		const double ghostZoom = zoom * 1.05;
+		const double x = point.x / ghostZoom - button.button.w.val / 2;
+		const double y = point.y / ghostZoom - button.button.h.val / 2;
+		// 使用已推进的主栏材质参数（含主题、半径、边框及阴影），仅改几何。
+		auto background = s.body;
+		background.w.SetDirect(button.button.w.val + 2 * ButtonGapDip);
+		background.h.SetDirect(button.button.h.val + 2 * ButtonGapDip);
+		background.UpInh(UiInheritClass(x - ButtonGapDip, y - ButtonGapDip));
+
+		s.renderer.SetFrameZoom(ghostZoom);
+		button.button.lightMaterial = background.lightMaterial;
 		button.button.themeSurface = button.preset != BarButtonPresetEnum::Divider;
-		button.button.pct.SetDirect(danger ? 0.4 : 0.85);
-		s.renderer.SetResidentContentOpacity(danger ? 0.45 : 1);
-		DrawButtonVisual(s.renderer,dc,button,UiInheritClass(x,y));
-		s.renderer.SetResidentContentOpacity(1);
+		button.button.pct.SetDirect(1);
+		if (dangerOutline)
+		{
+			// 底板、阴影和按钮先合成，再整体降低透明度；描边和跟随浮窗保持清晰。
+			const auto pixels = target.PixelSize();
+			dc->PushLayer(D2D1::LayerParameters1(D2D1::RectF(0, 0, float(pixels.width), float(pixels.height)),
+				nullptr, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1::IdentityMatrix(), 0.45f, nullptr,
+				D2D1_LAYER_OPTIONS1_NONE), nullptr);
+		}
+		s.renderer.Shape(dc, background, UiInheritClass(background.inhX, background.inhY));
+		DrawButtonVisual(s.renderer, dc, button, UiInheritClass(x, y));
+		if (dangerOutline)
+		{
+			dc->PopLayer();
+			const auto rect = Pixels(background, ghostZoom);
+			const float rx = static_cast<float>(background.rw->val * ghostZoom);
+			const float ry = static_cast<float>(background.rh->val * ghostZoom);
+			if (auto* brush = s.renderer.ContentSolidBrush(*dangerOutline))
+				dc->DrawRoundedRectangle(D2D1::RoundedRect(rect, rx, ry), brush, static_cast<float>(ghostZoom));
+		}
 		s.renderer.SetFrameZoom(zoom);
-		return DrawFollowingHint(target,point,hint,button.button.h.val/2+BarHoverHintCursorOffsetDip);
+		return DrawFollowingHint(target, point, hint,
+			(button.button.h.val / 2 + ButtonGapDip) * 1.05 + BarHoverHintCursorOffsetDip);
 	}
 	HRESULT BarContentInstance::DrawFollowingHint(FrameTarget& target, D2D1_POINT_2F point, const std::wstring& hint, double offsetDip)
 	{

@@ -1918,6 +1918,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			LocalFree(arguments);
 			return Inkeys::UI::Bar::RunUi3GoldenDump(outputDirectory.c_str());
 		}
+		if (count > 1 && wcscmp(arguments[1], L"--ui3-trace-dump") == 0)
+		{
+			if (count != 3) { LocalFree(arguments); return 2; }
+			const std::wstring outputDirectory = arguments[2];
+			LocalFree(arguments);
+			return Inkeys::UI::Bar::RunUi3TraceDump(outputDirectory.c_str());
+		}
 		// 第二宿主验证：主栏内容画进测试自建的帧目标与外部上下文；不创建任何 HWND。
 		if (count > 1 && wcscmp(arguments[1], L"--ui3-host-offscreen-test") == 0)
 		{

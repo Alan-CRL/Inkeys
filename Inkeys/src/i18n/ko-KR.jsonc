@@ -1345,6 +1345,7 @@
       "DragStore": "더보기에 넣기",
       "DragDelete": "놓으면 삭제",
       "DragCancelAdd": "놓으면 추가 취소",
+      "TrashLabel": "여기로 끌어다 놓아 삭제",
       "DragNotAllowed": "이 버튼은 원래 영역 안에서만 옮길 수 있습니다",
       "DragFixed": "고정 구분선은 옮길 수 없습니다",
       "DragNotHere": "여기에 놓을 수 없습니다"

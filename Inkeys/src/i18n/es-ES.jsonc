@@ -1345,6 +1345,7 @@
       "DragStore": "Guardar en Más",
       "DragDelete": "Suelta para eliminar",
       "DragCancelAdd": "Suelta para cancelar la adición",
+      "TrashLabel": "Arrastra aquí para eliminar",
       "DragNotAllowed": "Este botón solo puede moverse dentro de su zona",
       "DragFixed": "Los separadores fijos no se pueden mover",
       "DragNotHere": "No se puede soltar aquí"

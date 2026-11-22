@@ -1345,6 +1345,7 @@
       "DragStore": "Move to More",
       "DragDelete": "Release to delete",
       "DragCancelAdd": "Release to cancel adding",
+      "TrashLabel": "Drag here to delete",
       "DragNotAllowed": "This button can only be moved within its area",
       "DragFixed": "Fixed dividers cannot be moved",
       "DragNotHere": "Cannot drop here"

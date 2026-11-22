@@ -1345,6 +1345,7 @@
       "DragStore": "Unter „Mehr“ ablegen",
       "DragDelete": "Loslassen zum Löschen",
       "DragCancelAdd": "Loslassen, um das Hinzufügen abzubrechen",
+      "TrashLabel": "Zum Löschen hierher ziehen",
       "DragNotAllowed": "Diese Schaltfläche lässt sich nur in ihrem Bereich verschieben",
       "DragFixed": "Feste Trennlinien können nicht verschoben werden",
       "DragNotHere": "Hier nicht ablegbar"

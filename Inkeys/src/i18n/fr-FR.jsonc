@@ -1345,6 +1345,7 @@
       "DragStore": "Ranger dans Plus",
       "DragDelete": "Relâcher pour supprimer",
       "DragCancelAdd": "Relâcher pour annuler l’ajout",
+      "TrashLabel": "Glisser ici pour supprimer",
       "DragNotAllowed": "Ce bouton ne peut être déplacé que dans sa zone",
       "DragFixed": "Les séparateurs fixes ne peuvent pas être déplacés",
       "DragNotHere": "Impossible de déposer ici"

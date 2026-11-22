@@ -1345,6 +1345,7 @@
       "DragStore": "その他にしまう",
       "DragDelete": "離すと削除",
       "DragCancelAdd": "離すと追加を取り消し",
+      "TrashLabel": "ここにドラッグして削除",
       "DragNotAllowed": "このボタンは元のエリア内でのみ移動できます",
       "DragFixed": "固定の区切り線は移動できません",
       "DragNotHere": "ここには配置できません"

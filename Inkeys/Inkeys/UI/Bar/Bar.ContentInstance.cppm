@@ -1,6 +1,7 @@
 ﻿module;
 
 #include "../../../IdtMain.h"
+#include "../../../IdtState.h"
 #include <d2d1_1.h>
 #include <dwrite_1.h>
 #include <chrono>
@@ -25,7 +26,7 @@ export namespace Inkeys::UI::Bar
 		BarSizeMode sizeMode = BarSizeMode::Large;
 		int iconOrder = 2;
 		bool presentation = false, whiteboardEnabled = true, freezeAvailable = true;
-		bool settingsVisible = true, mouse = true, editing = false, reserveHintSpace = false;
+		bool settingsVisible = true, mouse = true, editing = false;
 		bool edgeLighting = true, dynamicLighting = true, fractionalFont = false;
 		// 指针、可用宽高和命中几何均用目标局部像素。
 		std::optional<D2D1_POINT_2F> pointer;
@@ -75,6 +76,17 @@ export namespace Inkeys::UI::Bar
 		bool Place(const BarLayoutModel& accepted, Position originalGap, std::uint64_t revision);
 		void CancelLift();
 		void SetMoreExpanded(bool expanded);
+		// 沙盒工具模式（默认绘制）：只影响预览自身的投影与按钮样式，与真实主栏状态独立。
+		void SetToolMode(StateModeSelectEnum mode);
+		StateModeSelectEnum ToolMode() const;
+		bool MoreExpanded() const;
+		// 设置侧输入适配：按下即呈现与真实主栏相同的按压视觉；ReleasePress 只清视觉；
+		// Activate 只在宿主确认同一实例、同一版本的点击后调用，执行沙盒动作（工具模式、More/X、面板项收起）。
+		bool Press(const PreviewHit& hit);
+		// X 捕获期间只切换按压视觉，由宿主按抬起位置决定是否关闭。
+		bool SetClosePressed(bool pressed);
+		void ReleasePress();
+		bool Activate(const PreviewHit& hit);
 		void Suspend();
 		PreviewFrame Advance(const PreviewInputs& inputs);
 		UI3::UIRendering& Renderer();
@@ -82,12 +94,13 @@ export namespace Inkeys::UI::Bar
 		// 浮层与预览共用同代上下文；point 是浮层纹理内的像素坐标。
 		HRESULT DrawFollowingHint(UI3::FrameTarget& target, D2D1_POINT_2F point, const std::wstring& hint, double offsetDip);
 		HRESULT DrawGhost(UI3::FrameTarget& target, const std::variant<Position,std::string>& source,
-			D2D1_POINT_2F point, const std::wstring& hint, bool danger);
+			D2D1_POINT_2F point, const std::wstring& hint, std::optional<COLORREF> dangerOutline);
 		// 宿主负责 Begin/End，EndDraw 成功后才确认本帧几何。
 		HRESULT Draw(UI3::FrameTarget& target, const PreviewFrame& frame);
 		void ConfirmFrame(std::uint64_t frameId, bool succeeded);
 		const PreviewGeometry& Geometry() const;
 		PreviewHit HitTest(D2D1_POINT_2F point) const;
+		bool ShouldDismissMoreOnPress(bool overPreview, D2D1_POINT_2F point) const;
 		std::vector<PreviewGap> InsertionGaps(D2D1_POINT_2F point) const;
 	private:
 		friend struct PreviewTestAccess;
@@ -102,8 +115,16 @@ namespace Inkeys::UI::Bar
 	{
 		static D2D1_RECT_F HintBounds(const BarContentInstance& instance);
 		static void ShowGeometryBadge(BarContentInstance& instance);
+		static void AlignMainButtonPixelPhase(BarContentInstance& instance, BarButtonPresetEnum preset, D2D1_POINT_2F reference);
+		static double PressTarget(const BarContentInstance& instance, const PreviewHit& hit);
+		static double PressScale(const BarContentInstance& instance, const PreviewHit& hit);
+		struct CollapseSample { double x, targetX, opacity; };
+		static std::optional<CollapseSample> SampleCollapse(const BarContentInstance& instance, BarButtonPresetEnum preset);
+		static bool IsCollapsedTo(const BarContentInstance& instance, BarButtonPresetEnum hidden, BarButtonPresetEnum anchor);
+		static bool KeepMoreOpenAfterAction(BarContentInstance& instance, const PreviewHit& hit);
 		static bool OwnsInactiveActions(const BarContentInstance& instance);
 		static std::vector<double> ButtonState(const BarContentInstance& instance);
+		static std::wstring ButtonLabel(const BarContentInstance& instance, BarButtonPresetEnum preset);
 	};
 	struct MoreChrome
 	{

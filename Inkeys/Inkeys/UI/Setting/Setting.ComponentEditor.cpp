@@ -85,17 +85,17 @@ namespace Inkeys::UI::Setting::ComponentEditor
 			std::optional<BarLayoutModel> model;
 			PreviewFrame visible;
 			std::optional<D2D1_POINT_2F> drawnPointer;
-			DragSession drag;
+			PreviewPressInput<BarContentInstance, PreviewHit> input;
 			std::variant<Position, std::string> source;
-			PreviewHit pressed;
 			int lastFrame = -1;
 			ImGuiID capture = 0;
-			bool expanded = false, dirty = true;
-			double moreSince = -1, fixedUntil = 0;
+			bool dirty = true;
+			double fixedUntil = 0;
 			ImVec2 lastMouse{};
 			std::optional<ImVec2> cursorStart, cursorEnd;
-			float trashAmount = 0, trashHover = 0;
-			bool discardPending = false;
+			float trashAmount = 0;
+			bool trashEnabled = false, trashHot = false;
+			bool discardPending = false, previewReady = false;
 			float scrollPosition = -1;
 			int releasedFrames = 0;
 			struct Style
@@ -116,32 +116,31 @@ namespace Inkeys::UI::Setting::ComponentEditor
 				target.BindRenderer(nullptr);
 				target.Discard();
 			}
-			void Cancel()
+			void Cancel(bool fadeTrash = false)
 			{
-				drag.Cancel();
-				instance.CancelLift();
+				input.Cancel(instance);
+				ClearCapture();
+				if (!fadeTrash) trashAmount = 0;
+			}
+			void ClearCapture()
+			{
 				if (capture && ImGui::GetActiveID() == capture) ImGui::ClearActiveID();
 				cursorStart.reset();
 				cursorEnd.reset();
-				moreSince = -1;
-				trashAmount = trashHover = 0;
 				releasedFrames = 0;
 				scrollPosition = -1;
 				dirty = true;
 			}
 			bool Device(const Pipeline::DeviceEpoch &epoch)
 			{
-				if (discardPending)
-				{
-					discardPending = false;
-					dc.Reset();
-				}
-				if (dc && generation == epoch.generation) return true;
-				if (dc)
+				if (!discardPending && dc && generation == epoch.generation) return true;
+				// 同一代目标丢失也要取消手势，不把旧按压带进重建的纹理。
+				if (discardPending || dc)
 				{
 					Cancel();
 					instance.Suspend();
 				}
+				discardPending = false;
 				target.Discard();
 				dc.Reset();
 				preview = {};
@@ -213,28 +212,29 @@ namespace Inkeys::UI::Setting::ComponentEditor
 	}
 	bool DragActive()
 	{
-		return editor && editor->drag.Phase() == DragPhase::Dragging;
+		return editor && editor->input.drag.Phase() == DragPhase::Dragging;
 	}
 	void BeginLibraryDrag(const char *id, ImVec2 point, bool touch)
 	{
 		auto &e = Session();
-		if (!id || !e.model || e.drag.Phase() != DragPhase::Idle) return;
+		if (!id || !e.previewReady || e.input.drag.Phase() != DragPhase::Idle) return;
 		e.source = std::string(id);
 		const auto kind = ImGui::GetIO().MouseSource == ImGuiMouseSource_Pen ? DragPointerKind::Pen
 						  : touch											 ? DragPointerKind::Touch
 																			 : DragPointerKind::Mouse;
-		e.drag.BeginDragging(kind == DragPointerKind::Mouse ? 0 : 1, kind, Pt(point), {e.revision});
+		e.input.drag.BeginDragging(kind == DragPointerKind::Mouse ? 0 : 1, kind, Pt(point), {e.revision});
 		ImGui::SetActiveID(e.capture, ImGui::GetCurrentWindow());
 		e.dirty = true;
 		Wake();
 	}
-	void Draw(ImGuiWindow* scroll, void (*queueWrite)())
+	void Draw(ImGuiWindow* scroll, void (*queueWrite)(), float pageOpacity, bool inputBlocked)
 	{
 		auto &e = Session();
 		auto &io = ImGui::GetIO();
 		auto *window = ImGui::GetCurrentWindow();
 		e.capture = window->GetID("##component-preview");
 		e.lastFrame = ImGui::GetFrameCount();
+		e.previewReady = false;
 		auto &buttons = barUISet.barButtonSet;
 		auto published = buttons.ReadBarLayout();
 		if (!published)
@@ -252,6 +252,7 @@ namespace Inkeys::UI::Setting::ComponentEditor
 		auto epoch = Pipeline::GetDeviceEpoch();
 		if (!e.Device(epoch))
 		{
+			e.Cancel();
 			Wake();
 			return;
 		}
@@ -270,7 +271,6 @@ namespace Inkeys::UI::Setting::ComponentEditor
 		in.width = width;
 		in.height = (std::max)(Design::Pixels(80), scroll->InnerClipRect.GetHeight());
 		in.targetHeight = Design::Pixels(64);
-		in.reserveHintSpace = true;
 		in.sizeMode = NormalizeBarSizeMode(cfg.SizeMode.load());
 		in.iconOrder = config.UI.Bar.IconOrder.load();
 		in.edgeLighting = cfg.EdgeLighting.Enable.load();
@@ -292,16 +292,16 @@ namespace Inkeys::UI::Setting::ComponentEditor
 			return source == ImGuiMouseSource_TouchScreen ? DragPointerKind::Touch
 				: source == ImGuiMouseSource_Pen ? DragPointerKind::Pen : DragPointerKind::Mouse;
 		};
-		bool sourceChanged = e.drag.Phase() != DragPhase::Idle && kind != e.drag.Kind();
-		if (e.drag.Phase() != DragPhase::Idle)
+		bool sourceChanged = e.input.drag.Phase() != DragPhase::Idle && kind != e.input.drag.Kind();
+		if (e.input.drag.Phase() != DragPhase::Idle)
 			for (const ImGuiInputEvent &event : ImGui::GetCurrentContext()->InputEventsTrail)
-				if ((event.Type == ImGuiInputEventType_MousePos && toKind(event.MousePos.MouseSource) != e.drag.Kind()) ||
-					(event.Type == ImGuiInputEventType_MouseButton && toKind(event.MouseButton.MouseSource) != e.drag.Kind()))
+				if ((event.Type == ImGuiInputEventType_MousePos && toKind(event.MousePos.MouseSource) != e.input.drag.Kind()) ||
+					(event.Type == ImGuiInputEventType_MouseButton && toKind(event.MouseButton.MouseSource) != e.input.drag.Kind()))
 					sourceChanged = true;
 		// 原生捕获被夺走后收不到抬起，ImGui 会一直认为按住，下一次点击才补发抬起（可能落到别处）。
 		// 设置页渲染线程无法查询窗口线程的捕获，鼠标拖动时改用与线程无关的物理主按钮状态：
 		// 系统已松开而 ImGui 仍认为按住，连续 3 帧即取消。触摸没有可靠的等价状态，不做此判定。
-		if (e.drag.Phase() != DragPhase::Idle && e.drag.Kind() == DragPointerKind::Mouse && io.MouseDown[0])
+		if (e.input.drag.Phase() != DragPhase::Idle && e.input.drag.Kind() == DragPointerKind::Mouse && io.MouseDown[0])
 		{
 			const int primary = ::GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON;
 			e.releasedFrames = (::GetAsyncKeyState(primary) & 0x8000) ? 0 : e.releasedFrames + 1;
@@ -321,36 +321,44 @@ namespace Inkeys::UI::Setting::ComponentEditor
 		if (e.lastMouse.x != mouse.x || e.lastMouse.y != mouse.y) ++e.pointerSerial;
 		in.pointerSerial = e.pointerSerial;
 		e.lastMouse = mouse;
-		const bool cancelled = (ImGui::GetCurrentContext()->CurrentItemFlags & ImGuiItemFlags_Disabled) || io.AppFocusLost || ImGui::IsKeyPressed(ImGuiKey_Escape) ||
-							   (e.drag.Phase() != DragPhase::Idle && ImGui::GetActiveID() != e.capture) || sourceChanged || captureLost;
+		const bool cancelled = inputBlocked || (ImGui::GetCurrentContext()->CurrentItemFlags & ImGuiItemFlags_Disabled) || io.AppFocusLost || ImGui::IsKeyPressed(ImGuiKey_Escape) ||
+							   (e.input.drag.Phase() != DragPhase::Idle && ImGui::GetActiveID() != e.capture) || sourceChanged || captureLost;
 		if (cancelled)
 		{
 			e.Cancel();
 			e.fixedUntil = 0;
 		}
-		auto hit = e.instance.HitTest(local);
+		const auto presentedHit = e.instance.HitTest(local);
 		const double now = ImGui::GetTime();
-		if (e.drag.Phase() == DragPhase::Idle && !cancelled && over && free && !ImGui::IsAnyItemHovered() &&
-			ImGui::IsMouseClicked(0))
+		const bool leftPress = ImGui::IsMouseClicked(0);
+		// 整个设置窗口都可收起 More（含组件库、其他控件和空白）；这段逻辑只随组件页提交。
+		const auto* viewport = ImGui::GetMainViewport();
+		const ImRect settingsRect(viewport->Pos, {viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y});
+		// 观察按下边沿，允许同一点击继续交给 ImGui 控件处理。
+		if (!inputBlocked && (io.MouseClicked[0] || io.MouseClicked[1]) && settingsRect.Contains(mouse)
+			&& e.instance.ShouldDismissMoreOnPress(over, local))
 		{
-			if (hit.kind == PreviewHitKind::Boundary)
+			e.instance.SetMoreExpanded(false);
+			e.dirty = true;
+		}
+		if (e.input.drag.Phase() == DragPhase::Idle && !cancelled && over && free && !ImGui::IsAnyItemHovered() && leftPress)
+		{
+			if (presentedHit.kind == PreviewHitKind::Boundary)
 				e.fixedUntil = now + 0.8;
-			else if (hit.position || hit.kind == PreviewHitKind::More || hit.kind == PreviewHitKind::Close)
+			else if (presentedHit.position || presentedHit.kind == PreviewHitKind::More || presentedHit.kind == PreviewHitKind::Close)
 			{
-				e.pressed = hit;
-				if (hit.position) e.source = *hit.position;
-				e.drag.Press(pointer, kind, Pt(mouse), {e.revision}, Design::Pixels(1));
+				if (presentedHit.position) e.source = *presentedHit.position;
+				e.dirty |= e.input.Begin(e.instance, presentedHit, pointer, kind, Pt(mouse), e.revision, Design::Pixels(1));
 				ImGui::SetActiveID(e.capture, window);
 			}
 		}
-		if (e.drag.Phase() != DragPhase::Idle)
+		if (e.input.drag.Phase() != DragPhase::Idle)
 		{
 			ImGui::KeepAliveID(e.capture);
-			if (e.drag.Move(pointer, Pt(mouse)) &&
-				(!e.pressed.position || !e.instance.Lift(*e.pressed.position, e.drag.Payload().token)))
+			if (!e.input.Update(e.instance, pointer, Pt(mouse), presentedHit, over, io.MouseDown[0], e.dirty))
 				e.Cancel();
 		}
-		in.editing = DragActive();
+		in.editing = DragActive() || e.input.CloseHeld();
 		Editor::Style style{in.width,
 							in.height,
 							in.targetHeight,
@@ -386,18 +394,23 @@ namespace Inkeys::UI::Setting::ComponentEditor
 			}
 			else
 			{
-				if (e.drag.Phase() != DragPhase::Idle) e.Cancel();
+				e.Cancel();
 				Wake();
 				return;
 			}
 		}
+		e.previewReady = !inputBlocked;
 		offset = Offset(origin, e.visible);
 		local = {mouse.x - offset.x, mouse.y - offset.y};
-		hit = e.instance.HitTest(local);
-		e.preview.Image(window->DrawList, offset, e.visible.bounds);
+		const auto hit = e.instance.HitTest(local);
+		Design::PageBlockScope previewBlock("##component-preview-block");
+		auto* list = window->DrawList;
+		const int imageBegin = list->VtxBuffer.Size;
+		e.preview.Image(list, offset, e.visible.bounds);
+		const int imageEnd = list->VtxBuffer.Size;
 		ImGui::Dummy({width, e.visible.extent.height + Design::Pixels(Design::RowGap)});
 		const bool dragging = DragActive();
-		const bool release = pointer == e.drag.PointerId() && ImGui::IsMouseReleased(0);
+		const bool release = pointer == e.input.drag.PointerId() && ImGui::IsMouseReleased(0);
 		const auto &palette = Design::GetPalette();
 		const auto &keys = I18nKey.SettingsUI.Component;
 		if (dragging)
@@ -415,44 +428,69 @@ namespace Inkeys::UI::Setting::ComponentEditor
 				e.scrollPosition = std::clamp(e.scrollPosition + speed * Design::Pixels(1200) * io.DeltaTime, 0.f, scroll->ScrollMax.y);
 				ImGui::SetScrollY(scroll, e.scrollPosition);
 			}
-			const bool clipped = window->ClipRect.Contains(mouse);
-			const bool more = clipped && hit.kind == PreviewHitKind::More;
-			if (more && e.moreSince < 0) e.moreSince = now;
-			if (!more) e.moreSince = -1;
-			if (more && !e.expanded && now - e.moreSince >= 0.5)
+		}
+		const bool clipped = window->ClipRect.Contains(mouse);
+		const auto *from = std::get_if<Position>(&e.source);
+		const float step =
+			UiAnimationEnabled ? 1.f - std::exp(-io.DeltaTime * 16.f * float(UiAnimationSpeedRate)) : 1.f;
+		e.trashAmount += ((dragging ? 1.f : 0.f) - e.trashAmount) * step;
+		if (!dragging && e.trashAmount < 1.f / 255) e.trashAmount = 0;
+
+		const auto& bounds = e.visible.bounds;
+		bool trash = false;
+		if (dragging || e.trashAmount > 0)
+		{
+			const std::string trashLabel = IA(keys.TrashLabel);
+			const float padding = Design::Pixels(16), glyph = Design::Pixels(16), gap = Design::Pixels(8);
+			const float labelWidth = Design::TextWidth(trashLabel.c_str());
+			const auto r = TrashBounds(bounds, e.instance.Geometry().body.bottom,
+				padding * 2 + glyph + gap + labelWidth, Design::Pixels(36));
+			const ImRect capsule({offset.x + r.left, offset.y + r.top}, {offset.x + r.right, offset.y + r.bottom});
+			// 松手后冻结最后的配色，淡出期间只绘制，命中仍由当前拖动决定。
+			if (dragging)
 			{
-				e.expanded = true;
-				e.instance.SetMoreExpanded(true);
-				e.dirty = true;
+				trash = clipped && capsule.Contains(mouse);
+				e.trashEnabled = !from || Remove(*published, *from, catalog).has_value();
+				e.trashHot = trash && e.trashEnabled;
 			}
-			const auto *from = std::get_if<Position>(&e.source);
-			const ItemSource source =
-				from ? ItemSource(*from) : ItemSource(std::string_view(std::get<std::string>(e.source)));
-			const bool removable = !from || Remove(*published, *from, catalog).has_value();
-			const float step =
-				UiAnimationEnabled ? 1.f - std::exp(-io.DeltaTime * 16.f * float(UiAnimationSpeedRate)) : 1.f;
-			e.trashAmount += (1 - e.trashAmount) * step;
-			ImVec2 center{viewport.Max.x - Design::Pixels(42),
-						  viewport.Max.y - Design::Pixels(42) + Design::Pixels(12) * (1 - e.trashAmount)};
-			const bool trash = std::hypot(mouse.x - center.x, mouse.y - center.y) <= Design::Pixels(36);
-			e.trashHover += ((trash && removable ? 1.f : 0.f) - e.trashHover) * step;
-			auto *front = ImGui::GetForegroundDrawList();
-			const auto color = trash && removable ? palette.card
-							   : removable		  ? palette.accent
-												  : palette.textDisabled;
-			auto fade = [&](ImU32 c) {
+			const auto fade = [&](ImU32 c) {
 				return (c & ~IM_COL32_A_MASK) | (ImU32((c >> IM_COL32_A_SHIFT) * e.trashAmount) << IM_COL32_A_SHIFT);
 			};
-			front->AddCircleFilled(center, Design::Pixels(24 + 4 * e.trashHover), fade(trash && removable ? palette.criticalText : palette.card));
-			// 与设置页其他删除入口一致，使用 Fluent 删除字形；靠近时随热区一起放大。
-			const float glyph = Design::Pixels(10.0F + 2.0F * e.trashHover);
-			ImFluent::DrawIcon(front, "\ue74d", {center.x - glyph, center.y - glyph}, {center.x + glyph, center.y + glyph},
-							   18.0F + 3.0F * e.trashHover, fade(color));
-			auto gaps = clipped ? e.instance.InsertionGaps(local) : std::vector<PreviewGap>{};
+			if (capsule.GetHeight() > 0)
+			{
+				// 与设置标题栏危险按钮使用相同的主题填充和反色前景。
+				const auto ink = fade(e.trashHot ? ImGui::ColorConvertFloat4ToU32(ImFluent::GetStyle().Colors[ImFluentCol_TextOnAccentPrimary])
+					: e.trashEnabled ? palette.textPrimary : palette.textDisabled);
+				const auto fill = fade(e.trashHot ? ImGui::ColorConvertFloat4ToU32(ImFluent::GetStyle().Colors[ImFluentCol_SystemFillCritical]) : palette.card);
+				const float rounding = capsule.GetHeight() / 2;
+				list->AddRectFilled(capsule.Min, capsule.Max, fill, rounding);
+				if (!e.trashHot) list->AddRect(capsule.Min, capsule.Max, fade(palette.stroke), rounding);
+				const float centerY = capsule.GetCenter().y;
+				const float glyphLeft = capsule.Min.x + padding;
+				const float textLeft = glyphLeft + glyph + gap;
+				list->PushClipRect(capsule.Min, capsule.Max, true);
+				ImFluent::DrawIcon(list, "\ue74d", {glyphLeft, centerY - glyph / 2},
+					{glyphLeft + glyph, centerY + glyph / 2}, 16.0F, ink);
+				const float textWidth = (std::min)(labelWidth + 1, capsule.Max.x - padding - textLeft);
+				if (textWidth > 0)
+					Design::TextAt(trashLabel.c_str(), {textLeft, centerY - Design::TextHeight(trashLabel.c_str(), labelWidth + 1) / 2},
+						textWidth, ImFluentTextStyle_Body, ink);
+				list->PopClipRect();
+			}
+		}
+		if (dragging)
+		{
+			const ItemSource source =
+				from ? ItemSource(*from) : ItemSource(std::string_view(std::get<std::string>(e.source)));
+			const ImRect previewRect({offset.x + bounds.left, offset.y + bounds.top},
+				{offset.x + bounds.right, offset.y + bounds.bottom});
+			const bool outsidePreview = !previewRect.Contains(mouse);
+			auto gaps = clipped && !outsidePreview ? e.instance.InsertionGaps(local) : std::vector<PreviewGap>{};
 			std::vector<Position> positions;
 			for (const auto &gap : gaps)
 				positions.push_back(gap.position);
-			const auto drop = ResolveDrop(*published, source, catalog, trash, more, positions);
+			const auto drop = ResolveDragFrameDrop(e.input, e.instance, hit, clipped, now, e.dirty,
+				*published, source, catalog, trash, outsidePreview, positions);
 			if (drop.action == DropAction::Insert)
 			{
 				auto gap = std::find_if(gaps.begin(), gaps.end(), [&](const auto &g) {
@@ -475,39 +513,34 @@ namespace Inkeys::UI::Setting::ComponentEditor
 				e.cursorStart.reset();
 				e.cursorEnd.reset();
 			}
-			// 不可放置时区分原因：默认 A1/A2 按钮只能区内调整；其他来源统一为“不能放在这里”；
-			// 指针既不在预览上也不在垃圾桶上时不显示提示。
-			const bool overPreview = clipped && mouse.x >= origin.x && mouse.x < origin.x + width &&
-									 mouse.y >= origin.y && mouse.y < origin.y + e.visible.extent.height;
-			const bool fixedSource = from && catalog.contains((*published)[from->segment][from->index].Id) &&
-									 catalog.at((*published)[from->segment][from->index].Id).zone != Segment::B1 &&
-									 (*published)[from->segment][from->index].Id != BarButtonId::UserDivider;
-			const char *hint = drop.action == DropAction::Insert	? keys.DragInsert
-							   : drop.action == DropAction::Store		? keys.DragStore
-							   : drop.action == DropAction::Delete		? keys.DragDelete
-							   : drop.action == DropAction::CancelAdd ? keys.DragCancelAdd
-							   : !overPreview && !trash				? nullptr
-							   : fixedSource							? keys.DragNotAllowed
-																		: keys.DragNotHere;
+			const char* hint = drop.action == DropAction::Insert     ? keys.DragInsert
+				: drop.action == DropAction::Store     ? keys.DragStore
+				: drop.action == DropAction::Delete    ? keys.DragDelete
+				: drop.action == DropAction::CancelAdd ? keys.DragCancelAdd
+				: drop.action == DropAction::NotAllowed ? keys.DragNotAllowed : keys.DragNotHere;
+			const bool danger = drop.action == DropAction::Delete || e.trashHot;
+			const std::optional<COLORREF> outline = danger ? std::optional<COLORREF>(RGB(
+				(palette.criticalText >> IM_COL32_R_SHIFT) & 255, (palette.criticalText >> IM_COL32_G_SHIFT) & 255,
+				(palette.criticalText >> IM_COL32_B_SHIFT) & 255)) : std::nullopt;
 			const UINT w = UINT(std::ceil(Design::Pixels(512))), h = UINT(std::ceil(Design::Pixels(200)));
 			const ImVec2 ghostOrigin{std::clamp(mouse.x - w / 2, 0.f, (std::max)(0.f, io.DisplaySize.x - w)),
 									 std::clamp(mouse.y - h / 2, 0.f, (std::max)(0.f, io.DisplaySize.y - h))};
 			if (SUCCEEDED(e.Render(e.overlay, epoch, w, h, [&] {
 					return e.instance.DrawGhost(e.target, e.source, {mouse.x - ghostOrigin.x, mouse.y - ghostOrigin.y},
-												hint ? IW(hint) : std::wstring{}, trash && removable);
+												IW(hint), outline);
 				})))
-				e.overlay.Image(front, ghostOrigin, {0, 0, float(w), float(h)});
+				e.overlay.Image(ImGui::GetForegroundDrawList(), ghostOrigin, {0, 0, float(w), float(h)});
 			else
 			{
 				// 浮层绘制失败（含目标失效）：本帧不提交放下，安全取消。
+				e.previewReady = false;
 				e.Cancel();
 				Wake();
-				return;
 			}
-			if (release)
+			if (release && DragActive())
 			{
-				const auto sourceRevision = e.drag.Payload().token;
-				e.drag.Release(pointer, Pt(mouse));
+				const auto sourceRevision = e.input.drag.Payload().token;
+				e.input.drag.Release(pointer, Pt(mouse));
 				std::optional<BarLayoutModel> next;
 				if (drop.gap)
 					next = from ? Move(*published, *from, *drop.gap, catalog)
@@ -523,21 +556,13 @@ namespace Inkeys::UI::Setting::ComponentEditor
 						if (drop.gap) e.instance.Place(*next, *drop.gap, sourceRevision);
 					}
 				}
-				e.Cancel();
+				e.Cancel(true);
 				e.model = buttons.ReadBarLayout();
 				if (e.model) e.instance.SetLayout(*e.model, ++e.revision);
 			}
 		}
-		else if (release && e.drag.Release(pointer, Pt(mouse)) == DragSession::ReleaseResult::Click)
-		{
-			if (over && hit.kind == e.pressed.kind &&
-				(hit.kind == PreviewHitKind::More || hit.kind == PreviewHitKind::Close))
-			{
-				e.expanded = hit.kind == PreviewHitKind::More && !e.expanded;
-				e.instance.SetMoreExpanded(e.expanded);
-			}
-			e.Cancel();
-		}
+		else if (release && e.input.Release(e.instance, pointer, Pt(mouse), hit, presentedHit, over, e.revision, e.dirty))
+			e.ClearCapture();
 		if (e.fixedUntil > now)
 		{
 			if (!dragging)
@@ -550,9 +575,16 @@ namespace Inkeys::UI::Setting::ComponentEditor
 															IW(keys.DragFixed), 12);
 					})))
 					e.overlay.Image(ImGui::GetForegroundDrawList(), topLeft, {0, 0, float(w), float(h)});
+				else
+				{
+					e.previewReady = false;
+					e.Cancel();
+					e.fixedUntil = 0;
+				}
 			}
 			Wake();
 		}
-		if (e.dirty || dragging || frame.active || frame.hintDeadline) Wake();
+		FinishPreviewBlock(previewBlock, *list, imageBegin, imageEnd, pageOpacity);
+		if (e.dirty || dragging || e.trashAmount > 0 || frame.active || frame.hintDeadline) Wake();
 	}
 }

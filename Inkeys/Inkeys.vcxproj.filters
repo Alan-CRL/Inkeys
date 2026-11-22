@@ -2168,7 +2168,13 @@
     <ClCompile Include="Inkeys\UI\Bar\Bar.ContentInstance.cppm">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.MainContent.cppm">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.ContentInstance.cpp">
+      <Filter>Modules\Inkeys\UI\Bar</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Bar\Bar.MainContent.cpp">
       <Filter>Modules\Inkeys\UI\Bar</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Bar\Bar.ShapeEditor.cpp">

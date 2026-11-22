@@ -41,6 +41,7 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <dwmapi.h>
+#include <d2dbasetypes.h>
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -4279,7 +4280,8 @@ SettingSessionCoroutine RunSettingSession()
 				{
 					const auto& component = I18nKey.SettingsUI.Component;
 					Design::PageHeader(IA(component.N).c_str());
-					Inkeys::UI::Setting::ComponentEditor::Draw(contentWindow, QueueConfigWrite);
+					Inkeys::UI::Setting::ComponentEditor::Draw(contentWindow, QueueConfigWrite,
+						pageTransition.Opacity(), blockContentInput || holdingPage);
 					using namespace Inkeys::UI::Bar;
 					auto& buttons = barUISet.barButtonSet;
 					auto layout = buttons.ReadBarLayout();
