@@ -25,7 +25,7 @@ export namespace Inkeys::Drawing::Draw3
 	// 优先采用系统的混合显卡标志；没有时按独占显存判断（≤ 512 MiB 视为核显）。
 	GraphicsAdapterKind ClassifyGraphicsAdapter(std::uint64_t dedicatedVideoMemory,
 		GraphicsAdapterHybridFlag hybridFlag) noexcept;
-	// 返回尝试顺序（输入下标）：自动保持枚举顺序；优先核显/独显时先尝试该类，再尝试另一类，类内保持枚举顺序。
+	// 返回尝试顺序（输入下标）：自动只含 0 号（生产路径自动档不枚举，直接用默认适配器）；优先核显/独显时先尝试该类，再尝试另一类，类内保持枚举顺序。
 	std::vector<std::size_t> OrderGraphicsAdapters(const std::vector<GraphicsAdapterKind>& kinds,
 		GraphicsAdapterPreference preference);
 

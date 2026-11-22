@@ -221,6 +221,12 @@ namespace Inkeys::Drawing::Draw3
 		HRESULT CreateHardwareDevice(GraphicsAdapterPreference preference, UINT creationFlags,
 			GraphicsDeviceResources& resources)
 		{
+			// 自动档与引入 GPU 偏好前完全一致：不枚举，交给运行时选默认适配器（DXGI 0 号），失败即由外层回退 WARP。
+			// 0 号随用户在系统/驱动中选的高性能档位变化，应予尊重；未连接显示器的显卡（如 Optimus 独显）
+			// 每帧需跨卡拷贝到核显再合成，实测帧率与延迟均不如 WARP，因此不再自动尝试其他显卡。
+			if (preference == GraphicsAdapterPreference::Automatic)
+				return CreateCompatibleDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, creationFlags,
+					resources.device, resources.featureLevel, resources.context);
 			const auto candidates = EnumerateHardwareAdapters();
 			if (candidates.empty())
 			{
@@ -270,8 +276,8 @@ namespace Inkeys::Drawing::Draw3
 		order.reserve(kinds.size());
 		if (preference == GraphicsAdapterPreference::Automatic)
 		{
-			// 0 号适配器连接主显示器，先试它；不满足再按枚举顺序继续。
-			for (std::size_t i = 0; i < kinds.size(); ++i) order.push_back(i);
+			// 生产路径的自动档不经过这里（见 CreateHardwareDevice，直接用默认适配器）；为保持语义一致只返回 0 号。
+			if (!kinds.empty()) order.push_back(0);
 			return order;
 		}
 		const GraphicsAdapterKind first = preference == GraphicsAdapterPreference::Integrated
@@ -412,9 +418,9 @@ namespace Inkeys::Drawing::Draw3
 			std::fputs("[Draw3DevicePolicy] FAIL: adapter classification\n", stderr);
 			return 1;
 		}
-		// 尝试顺序：自动保持枚举顺序；优先某类时先该类、后另一类，类内保持枚举顺序。
+		// 尝试顺序：自动只试第一个；优先某类时先该类、后另一类，类内保持枚举顺序。
 		const std::vector<Kind> kinds{ Kind::Integrated, Kind::Discrete, Kind::Integrated, Kind::Discrete };
-		const std::vector<std::size_t> automaticOrder{ 0, 1, 2, 3 };
+		const std::vector<std::size_t> automaticOrder{ 0 };
 		const std::vector<std::size_t> integratedOrder{ 0, 2, 1, 3 };
 		const std::vector<std::size_t> discreteOrder{ 1, 3, 0, 2 };
 		const std::vector<Kind> onlyDiscrete{ Kind::Discrete };
@@ -422,7 +428,8 @@ namespace Inkeys::Drawing::Draw3
 			OrderGraphicsAdapters(kinds, Preference::Integrated) != integratedOrder ||
 			OrderGraphicsAdapters(kinds, Preference::Discrete) != discreteOrder ||
 			OrderGraphicsAdapters(onlyDiscrete, Preference::Integrated) != std::vector<std::size_t>{ 0 } ||
-			!OrderGraphicsAdapters({}, Preference::Discrete).empty())
+			!OrderGraphicsAdapters({}, Preference::Discrete).empty() ||
+			!OrderGraphicsAdapters({}, Preference::Automatic).empty())
 		{
 			std::fputs("[Draw3DevicePolicy] FAIL: adapter preference order\n", stderr);
 			return 1;

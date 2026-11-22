@@ -97,3 +97,8 @@
   - 核显/独显的判断：Win8+ 读 D3DKMT 混合显卡标志；没有该标志时，独占显存 ≤ 512 MiB 判为核显。
   - 合同见 `spec/native-desktop/draw3-integration.md` 与 `settings-performance-and-drawing.md`。
   - 仍需在该 Optimus 机器上实机确认：自动档能否选中 GT 630M，以及选中后 Win7Dwm 透明呈现是否正常。
+- 第 3 项实机结果与调整（2026-11-22）：
+  - GT 630M 上可以运行，但帧率与延迟都远不如软件加速（WARP 跑在 i5-2450M + HD 3000 上）。
+  - 原因分析：GT 630M 没有显示输出，DWM 在 Intel 上。Win7（WDDM 1.1）没有跨适配器共享资源机制，Win7Dwm 的 SEQUENTIAL 交换链每次 Present 都要由 NVIDIA 驱动私下把整帧经 PCIe 中转到核显的窗口表面，可能同步阻塞帧循环；硬件路径还多出 GPU 排队与拷贝时间，Win7dwm 合成对齐按 CPU 提交耗时估算会系统性错过合成；独显在轻负载下停在低频。Inkeys 每帧渲染很轻，独显算力优势体现不出来。ULW 走标准 GPU 回读、只传脏区，预计好于 Win7Dwm，但仍要等 GPU 完成，轻负载下难以超过 WARP。
+  - 独显直连（核显被屏蔽、显示器接在独显上）时 DWM 与渲染同卡，无跨卡拷贝，不受此影响。
+  - 用户决定：“自动”与原逻辑完全一致，只用默认适配器（`D3D11CreateDevice(nullptr, HARDWARE)`，即 0 号，尊重用户在系统/驱动中选的高性能档位），失败即回退 WARP，不再尝试其他显卡；手选“优先核心显卡/优先独立显卡”保持依次尝试。
