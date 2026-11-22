@@ -74,3 +74,4 @@
 - 2026-11-22：最终门禁（Debug|ARM64）。产品自检 14 项全部退出码 0 且无失败：`--state-mode-production-test`、`--draw3-renderer-commit-failure-test`、`--draw3-shape-renderer-test`（515 项）、`--draw3-renderer-upload-test`、`--draw3-laser-raster-failure-test`、`--draw3-shape-focus-hidden-test`、`--draw3-shape-core-test`、`--draw3-pen-taper-test`、`--draw3-pen-width-test`、`--draw3-laser-resources-test`、`--draw3-palm-eraser-test`、`--draw3-renderer-map-test`、`--draw3-renderer-pixel-test`、`--draw3-renderer-pixel-test-hardware`。`--draw3-eraser-hidden-test`、`--draw3-auxiliary-resource-lifecycle-test` 与 `--draw3-hidden-test` 一样以 0xE143001D 提前结束，后者经基线对照输出一致。未构建 Win32/x64。
 - 未做：设计里的“合成跳过”计数与路径 A/B 命中率的调试输出（计数字段 `tailPathStrokes`/`isolatedPathStrokes` 已有，未接输出）；强制 ClearView 缺失的整屏清回退自检。
 - 待实机验证：Win7 WARP 受保护着色器下的类型 25；兆芯；DComp 与 Win7Dwm 下选择态与绘制态切换是否还有空闪；旧 Intel 核显 4K 下的抬笔延迟；画布边缘的图形预览。
+- 2026-11-22：已提交（f30322a0 代码、7f10348d 文档）。用户决定结束本任务，实机验证留到中期重构最后统一进行，待验项已登记到父任务 `11-16-inkeys3-midterm-refactor/prd.md` 的任务地图。
