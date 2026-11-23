@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 控制器与渲染器合同"}
+{"file": ".trellis/spec/native-desktop/draw3-shaders.md", "reason": "激光与粒子着色器"}
+{"file": ".trellis/spec/shaders/build-and-encoding.md", "reason": "着色器构建与 Win7 受保护着色器"}
+{"file": ".trellis/spec/shaders/cpu-gpu-contracts.md", "reason": "CPU/GPU 结构合同"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "自检与验证要求"}

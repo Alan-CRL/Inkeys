@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>激光笔效果原型 · 阶段 B2</title>
+<style>
+  :root {
+    --panel-bg: rgba(22, 24, 28, 0.94);
+    --panel-line: rgba(255, 255, 255, 0.09);
+    --panel-text: #e8eaed;
+    --panel-dim: #9aa0a8;
+    --accent: #ff4a3d;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+    background: #101114;
+    color: var(--panel-text);
+    display: flex;
+  }
+
+  /* ---------- 舞台：下面是“课件”，上面是透明画布（等同产品的透明窗口） ---------- */
+  #stage { position: relative; flex: 1; min-width: 0; overflow: hidden; touch-action: none; cursor: none; }
+  #slide { position: absolute; inset: 0; padding: 6vh 7vw; overflow: hidden; }
+  #fx { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .bg-light #slide { background: #ffffff; color: #1c2430; }
+  .bg-dark  #slide { background: #14181f; color: #e6ebf2; }
+  .bg-photo #slide {
+    color: #ffffff;
+    background:
+      radial-gradient(60vw 45vh at 78% 18%, rgba(255, 196, 120, 0.95), transparent 62%),
+      radial-gradient(55vw 60vh at 12% 82%, rgba(38, 120, 96, 0.95), transparent 60%),
+      radial-gradient(40vw 40vh at 58% 70%, rgba(214, 92, 120, 0.85), transparent 62%),
+      radial-gradient(50vw 50vh at 24% 20%, rgba(70, 120, 210, 0.9), transparent 60%),
+      linear-gradient(135deg, #223a5e, #5a2d52);
+  }
+  .bg-custom #slide { background: #000 center / cover no-repeat; color: #fff; }
+  .bg-custom #slide > *, .bg-photo #slide .chart { display: none; }
+  .bg-photo #slide h1, .bg-photo #slide li, .bg-photo #slide .sub { text-shadow: 0 1px 12px rgba(0, 0, 0, 0.45); }
+
+  #slide h1 { font-size: clamp(26px, 3.6vw, 54px); margin: 0 0 0.25em; font-weight: 650; letter-spacing: 0.01em; }
+  #slide .sub { font-size: clamp(14px, 1.5vw, 22px); opacity: 0.62; margin-bottom: 4vh; }
+  #slide ul { margin: 0; padding-left: 1.2em; font-size: clamp(17px, 2.1vw, 32px); line-height: 2.05; max-width: 56%; }
+  #slide li::marker { color: #3b82f6; }
+  #slide .chart {
+    position: absolute; right: 7vw; bottom: 10vh; width: 30vw; height: 34vh;
+    display: flex; align-items: flex-end; gap: 6%; padding: 0 2%;
+    border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; opacity: 0.9;
+  }
+  #slide .chart i { flex: 1; border-radius: 3px 3px 0 0; background: #3b82f6; }
+  #slide .chart i:nth-child(2) { background: #22a37a; }
+  #slide .chart i:nth-child(4) { background: #e2a03f; }
+  .bg-dark #slide .chart { opacity: 0.8; }
+
+  #hud {
+    position: absolute; left: 14px; bottom: 12px; font: 12px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+    color: #fff; background: rgba(0, 0, 0, 0.55); padding: 5px 9px; border-radius: 6px; pointer-events: none;
+    font-variant-numeric: tabular-nums; white-space: pre;
+  }
+  #hint {
+    position: absolute; left: 50%; top: 14px; transform: translateX(-50%); font-size: 12.5px; color: #fff;
+    background: rgba(0, 0, 0, 0.55); padding: 6px 12px; border-radius: 999px; pointer-events: none; transition: opacity 0.4s;
+  }
+
+  /* ---------- 控制面板 ---------- */
+  #panel {
+    width: 318px; flex: none; height: 100%; overflow-y: auto; background: var(--panel-bg);
+    border-left: 1px solid var(--panel-line); font-size: 13px; padding: 14px 16px 28px;
+    scrollbar-width: thin; scrollbar-color: #444 transparent;
+  }
+  #panel h2 { font-size: 15px; margin: 0 0 2px; font-weight: 650; }
+  #panel .lead { color: var(--panel-dim); font-size: 12px; line-height: 1.55; margin: 0 0 12px; }
+  fieldset { border: 0; border-top: 1px solid var(--panel-line); margin: 0; padding: 12px 0 10px; min-width: 0; }
+  legend { padding: 0; font-weight: 650; font-size: 12.5px; color: #fff; float: left; width: 100%; margin-bottom: 8px; }
+  legend + * { clear: both; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .row > span:first-child { flex: none; width: 92px; color: var(--panel-dim); }
+  .row output { flex: none; width: 46px; text-align: right; font-variant-numeric: tabular-nums; color: #cfd3d9; }
+  input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); height: 18px; }
+  .seg { display: flex; gap: 4px; flex-wrap: wrap; }
+  button {
+    font: inherit; color: var(--panel-text); background: rgba(255, 255, 255, 0.07); border: 1px solid var(--panel-line);
+    border-radius: 6px; padding: 5px 10px; cursor: pointer;
+  }
+  button:hover { background: rgba(255, 255, 255, 0.13); }
+  button:focus-visible, input:focus-visible { outline: 2px solid #7ab7ff; outline-offset: 1px; }
+  button.on { background: var(--accent); border-color: transparent; color: #fff; }
+  button.primary { background: #2f6fed; border-color: transparent; color: #fff; }
+  .toggle { display: flex; gap: 9px; align-items: flex-start; margin: 7px 0 4px; cursor: pointer; }
+  .toggle input { margin-top: 2px; accent-color: var(--accent); width: 15px; height: 15px; flex: none; }
+  .toggle b { font-weight: 600; color: #fff; }
+  .toggle small { display: block; color: var(--panel-dim); font-size: 11.5px; line-height: 1.5; margin-top: 1px; }
+  .sub-rows { margin: 2px 0 6px 24px; }
+  .swatch { width: 24px; height: 24px; border-radius: 50%; padding: 0; border: 2px solid transparent; }
+  .swatch.on { border-color: #fff; background-clip: padding-box; }
+  input[type=color] { width: 30px; height: 26px; padding: 0; border: 0; background: none; }
+  .note { color: var(--panel-dim); font-size: 11.5px; line-height: 1.6; margin: 6px 0 0; }
+  kbd { font: 11px ui-monospace, Consolas, monospace; background: rgba(255,255,255,0.1); border-radius: 4px; padding: 1px 5px; }
+</style>
+</head>
+<body class="bg-light">
+
+<div id="stage">
+  <div id="slide">
+    <h1>第三章 · 光的折射</h1>
+    <div class="sub">物理 · 八年级上册</div>
+    <ul>
+      <li>光从一种介质斜射入另一种介质时，传播方向发生偏折</li>
+      <li>折射光线、入射光线和法线在同一平面内</li>
+      <li>空气斜射入水中时，折射角小于入射角</li>
+      <li>垂直入射时，传播方向不变</li>
+    </ul>
+    <div class="chart"><i style="height:38%"></i><i style="height:64%"></i><i style="height:52%"></i><i style="height:86%"></i><i style="height:71%"></i></div>
+  </div>
+  <canvas id="fx"></canvas>
+  <div id="hint">用鼠标、触摸或笔在这里画 · <b>空格</b> 自动演示 · 可把图片拖进来当背景</div>
+  <div id="hud"></div>
+</div>
+
+<aside id="panel">
+  <h2>激光笔效果原型</h2>
+  <p class="lead">画布与产品一样只做“覆盖”混合，不做叠加发光，所以这里看到的就是透明窗口上能做到的样子。1 像素 = 1 DIP。</p>
+
+  <fieldset>
+    <legend>预设</legend>
+    <div class="seg" id="presets">
+      <button data-preset="recommend" class="primary">推荐组合</button>
+      <button data-preset="dissolve">仅消散</button>
+      <button data-preset="legacy">现有效果</button>
+      <button data-preset="none">无效果</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="demo" class="primary">▶ 自动演示</button>
+      <label class="toggle" style="margin:0"><input type="checkbox" id="loop"><span>循环</span></label>
+      <button id="clear">清除</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>背景</legend>
+    <div class="seg" id="bgs">
+      <button data-bg="light" class="on">白底课件</button>
+      <button data-bg="dark">深色课件</button>
+      <button data-bg="photo">彩色图片</button>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>激光主体</legend>
+    <div class="row"><span>颜色</span>
+      <div class="seg" id="colors">
+        <button class="swatch on" data-color="#ff1000" style="background:#ff1000" aria-label="红"></button>
+        <button class="swatch" data-color="#00c853" style="background:#00c853" aria-label="绿"></button>
+        <button class="swatch" data-color="#2979ff" style="background:#2979ff" aria-label="蓝"></button>
+        <button class="swatch" data-color="#d500f9" style="background:#d500f9" aria-label="紫"></button>
+        <input type="color" id="customColor" value="#ff1000" aria-label="自定义颜色">
+      </div>
+    </div>
+    <div class="row"><span>粗细倍率</span><input type="range" data-p="scale" min="1" max="4" step="0.25"><output></output></div>
+    <div class="row"><span>留存时间 秒</span><input type="range" data-p="hold" min="0" max="4" step="0.1"><output></output></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>效果</legend>
+
+    <label class="toggle"><input type="checkbox" data-fx="dissolve">
+      <span><b>① 消失时化为粒子</b><small>留存结束后，轨迹不再渐隐，而是碎成粒子飘散。</small></span></label>
+    <div class="sub-rows">
+      <div class="row"><span>碎裂方式</span>
+        <div class="seg" id="modes">
+          <button data-mode="wind" class="on">随风扫过</button>
+          <button data-mode="along">沿笔迹</button>
+          <button data-mode="all">整体</button>
+        </div>
+      </div>
+      <div class="row"><span>碎裂时长 秒</span><input type="range" data-p="dissolveTime" min="0.3" max="2.5" step="0.05"><output></output></div>
+      <div class="row"><span>边缘松散度</span><input type="range" data-p="softness" min="0" max="1" step="0.05"><output></output></div>
+      <div class="row"><span>密度 粒/像素</span><input type="range" data-p="density" min="0.5" max="12" step="0.5"><output></output></div>
+      <div class="row"><span>粒子大小</span><input type="range" data-p="dustSize" min="0.6" max="3" step="0.1"><output></output></div>
+      <div class="row"><span>寿命 秒</span><input type="range" data-p="dustLife" min="0.4" max="3" step="0.1"><output></output></div>
+      <div class="row"><span>风向 度</span><input type="range" data-p="windAngle" min="0" max="355" step="5"><output></output></div>
+      <div class="row"><span>风力</span><input type="range" data-p="wind" min="0" max="160" step="5"><output></output></div>
+      <div class="row"><span>湍流</span><input type="range" data-p="turbulence" min="0" max="220" step="5"><output></output></div>
+    </div>
+
+    <label class="toggle"><input type="checkbox" data-fx="ring">
+      <span><b>② 停顿时的光环</b><small>笔停在一处时，笔尖向外荡开一圈环，强调“看这里”。</small></span></label>
+    <div class="sub-rows">
+      <div class="row"><span>触发延迟 秒</span><input type="range" data-p="ringDelay" min="0.1" max="1.2" step="0.05"><output></output></div>
+      <div class="row"><span>间隔 秒</span><input type="range" data-p="ringInterval" min="0.4" max="2" step="0.05"><output></output></div>
+      <div class="row"><span>最大半径</span><input type="range" data-p="ringRadius" min="12" max="70" step="2"><output></output></div>
+    </div>
+
+    <label class="toggle"><input type="checkbox" data-fx="ember">
+      <span><b>③ 快速移动时的余烬</b><small>只在笔速较快时从笔尖向后甩出少量粒子，贴着线很快停下。</small></span></label>
+    <div class="sub-rows">
+      <div class="row"><span>速度阈值</span><input type="range" data-p="emberThreshold" min="100" max="1500" step="50"><output></output></div>
+      <div class="row"><span>间距 像素</span><input type="range" data-p="emberSpacing" min="2" max="30" step="1"><output></output></div>
+      <div class="row"><span>粒子大小</span><input type="range" data-p="emberSize" min="0.8" max="4" step="0.1"><output></output></div>
+      <div class="row"><span>寿命 秒</span><input type="range" data-p="emberLife" min="0.15" max="1.2" step="0.05"><output></output></div>
+    </div>
+
+    <label class="toggle"><input type="checkbox" data-fx="legacy">
+      <span><b>对照：现有粒子</b><small>按产品当前默认参数近似：沿法线喷出、静止时也发射、带呼吸闪烁。</small></span></label>
+  </fieldset>
+
+  <p class="note"><kbd>空格</kbd> 自动演示　<kbd>C</kbd> 清除　<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 换背景<br>
+  左下角显示帧率与当前、峰值粒子数。峰值粒子数就是移植到计算着色器时粒子池需要的规模。</p>
+</aside>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------------------------------------------------------------- 参数
+  const P = {
+    scale: 1.5, hold: 1.0, fade: 0.8, color: '#ff1000',
+    dissolveTime: 1.1, softness: 0.35, density: 4, dustSize: 1.4, dustLife: 1.4,
+    windAngle: 200, wind: 60, turbulence: 90, mode: 'wind',
+    ringDelay: 0.35, ringInterval: 0.9, ringRadius: 34,
+    emberThreshold: 500, emberSpacing: 9, emberSize: 1.8, emberLife: 0.45,
+  };
+  const FX = { dissolve: true, ring: true, ember: false, legacy: false };
+  const PRESETS = {
+    recommend: { dissolve: true, ring: true, ember: false, legacy: false },
+    dissolve:  { dissolve: true, ring: false, ember: false, legacy: false },
+    legacy:    { dissolve: false, ring: false, ember: false, legacy: true },
+    none:      { dissolve: false, ring: false, ember: false, legacy: false },
+  };
+  // 与产品一致的主体尺寸（DIP）：实体直径 5，白芯为其 1/3，散射半宽为芯半径的 0.4，漫反射外扩 5。
+  const SOLID_D = 5, CORE_RATIO = 1 / 3, SCATTER_RATIO = 0.4, DIFFUSE = 5;
+  const RESAMPLE = 1.5; // 抬笔后按此间距重采样，供碎裂逐点判定
+
+  // ---------------------------------------------------------------- 画布
+  const stage = document.getElementById('stage');
+  const canvas = document.getElementById('fx');
+  const ctx = canvas.getContext('2d');
+  const hud = document.getElementById('hud');
+  const hint = document.getElementById('hint');
+  let W = 0, H = 0, dpr = 1;
+  function resize() {
+    dpr = Math.max(1, window.devicePixelRatio || 1);
+    W = stage.clientWidth; H = stage.clientHeight;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  }
+  new ResizeObserver(resize).observe(stage);
+  resize();
+
+  // ---------------------------------------------------------------- 颜色
+  function hexToRgb(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function mixWhite(rgb, k) { return rgb.map(c => Math.round(c + (255 - c) * k)); }
+  const css = (rgb, a = 1) => `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a})`;
+  let colRgb, colCss, scatterCss, emberCss;
+  function setColor(hex) {
+    P.color = hex; colRgb = hexToRgb(hex);
+    colCss = css(colRgb); scatterCss = css(mixWhite(colRgb, 0.94)); emberCss = css(mixWhite(colRgb, 0.55));
+  }
+  setColor(P.color);
+
+  // ---------------------------------------------------------------- 粒子池
+  // kind 0：碎裂粉尘（风 + 湍流）；1：余烬（只受阻力）；2：现有效果（匀速、带辉光与呼吸）
+  const CAP = 60000;
+  const px = new Float32Array(CAP), py = new Float32Array(CAP), vx = new Float32Array(CAP), vy = new Float32Array(CAP);
+  const age = new Float32Array(CAP), life = new Float32Array(CAP), size = new Float32Array(CAP), seed = new Float32Array(CAP);
+  const kind = new Uint8Array(CAP), tone = new Uint8Array(CAP); // tone 0：激光色；1：近白
+  let count = 0, peak = 0;
+  function spawn(k, x, y, velX, velY, lifeSec, sizePx, toneIdx) {
+    if (count >= CAP) return;
+    const i = count++;
+    px[i] = x; py[i] = y; vx[i] = velX; vy[i] = velY; age[i] = 0; life[i] = lifeSec; size[i] = sizePx;
+    kind[i] = k; tone[i] = toneIdx; seed[i] = Math.random() * 6.283;
+  }
+  function kill(i) {
+    const j = --count;
+    if (i === j) return;
+    px[i] = px[j]; py[i] = py[j]; vx[i] = vx[j]; vy[i] = vy[j]; age[i] = age[j]; life[i] = life[j];
+    size[i] = size[j]; kind[i] = kind[j]; tone[i] = tone[j]; seed[i] = seed[j];
+  }
+
+  // ---------------------------------------------------------------- 笔迹与生命周期
+  // 与产品相同：整组共用一个计时。全部抬起后留存 hold 秒，再渐隐（或碎裂）；期间再落笔，整组恢复满亮。
+  /** @type {{raw:{x:number,y:number}[], x:Float32Array|null, y:Float32Array|null, s:Float32Array|null, gone:Uint8Array|null, due:Float32Array|null, length:number, active:boolean}[]} */
+  let strokes = [];
+  let activeCount = 0, lastAllUp = 0, dissolveStart = -1, dissolveProgress = 0;
+  const rings = [];
+  const tip = { x: 0, y: 0, tx: 1, ty: 0, speed: 0, down: false, stillSince: 0, lastRing: 0, visible: false, emberCarry: 0, legacyCarry: 0, lastT: 0 };
+  let now = 0;
+
+  function reviveGroup() {
+    if (dissolveStart >= 0) {
+      // 碎裂中再落笔：已经碎掉的部分不再回来，剩下的恢复满亮。
+      for (const st of strokes) if (st.due) for (let i = 0; i < st.due.length; i++) if (st.due[i] <= dissolveProgress) st.gone[i] = 1;
+      dissolveStart = -1; dissolveProgress = 0;
+    }
+  }
+  function beginStroke(x, y) {
+    reviveGroup();
+    strokes.push({ raw: [{ x, y }], x: null, y: null, s: null, gone: null, due: null, length: 0, active: true });
+    activeCount++;
+    tip.x = x; tip.y = y; tip.speed = 0; tip.down = true; tip.visible = true; tip.stillSince = now; tip.lastRing = 0; tip.lastT = now;
+    hint.style.opacity = 0;
+    return strokes[strokes.length - 1];
+  }
+  function extendStroke(st, x, y, t) {
+    const last = st.raw[st.raw.length - 1];
+    const dx = x - last.x, dy = y - last.y, d = Math.hypot(dx, dy);
+    const dt = Math.max(1e-3, t - tip.lastT);
+    tip.lastT = t;
+    if (d < 0.5) { tip.speed *= Math.exp(-dt * 12); return; }
+    st.raw.push({ x, y });
+    const inst = d / dt;
+    tip.speed += (inst - tip.speed) * Math.min(1, dt * 18);
+    tip.tx = dx / d; tip.ty = dy / d;
+    if (FX.ember && tip.speed > P.emberThreshold) {
+      tip.emberCarry += d;
+      while (tip.emberCarry >= P.emberSpacing) {
+        tip.emberCarry -= P.emberSpacing;
+        const back = tip.speed * (0.10 + Math.random() * 0.12), side = (Math.random() - 0.5) * tip.speed * 0.16;
+        const r = SOLID_D * 0.5 * P.scale * (Math.random() - 0.5) * 2;
+        spawn(1, x - tip.ty * r, y + tip.tx * r, -tip.tx * back - tip.ty * side, -tip.ty * back + tip.tx * side,
+          P.emberLife * (0.7 + Math.random() * 0.6), P.emberSize * P.scale * (0.6 + Math.random() * 0.8) * 0.6, Math.random() < 0.3 ? 1 : 0);
+      }
+    }
+    tip.x = x; tip.y = y;
+  }
+  function endStroke(st) {
+    if (!st.active) return;
+    st.active = false; activeCount--; tip.down = false;
+    // 重采样成等间距点列
+    const raw = st.raw, xs = [raw[0].x], ys = [raw[0].y], ss = [0];
+    let carry = 0, total = 0;
+    for (let i = 1; i < raw.length; i++) {
+      const ax = raw[i - 1].x, ay = raw[i - 1].y, bx = raw[i].x, by = raw[i].y, seg = Math.hypot(bx - ax, by - ay);
+      let d = RESAMPLE - carry;
+      while (d <= seg) { const k = d / seg; xs.push(ax + (bx - ax) * k); ys.push(ay + (by - ay) * k); ss.push(total + d); d += RESAMPLE; }
+      carry = seg - (d - RESAMPLE); total += seg;
+    }
+    st.x = Float32Array.from(xs); st.y = Float32Array.from(ys); st.s = Float32Array.from(ss);
+    st.gone = new Uint8Array(xs.length); st.length = total; st.raw = null;
+    if (activeCount === 0) lastAllUp = now;
+  }
+  function clearAll() { strokes = []; activeCount = 0; dissolveStart = -1; dissolveProgress = 0; rings.length = 0; count = 0; tip.down = false; }
+
+  // 碎裂开始：给每个点分配“在进度几时碎掉”。
+  function startDissolve() {
+    dissolveStart = now; dissolveProgress = 0;
+    const a = P.windAngle * Math.PI / 180, wx = Math.cos(a), wy = Math.sin(a);
+    let lo = Infinity, hi = -Infinity;
+    for (const st of strokes) for (let i = 0; i < st.x.length; i++) { const d = st.x[i] * wx + st.y[i] * wy; if (d < lo) lo = d; if (d > hi) hi = d; }
+    const span = Math.max(1, hi - lo), soft = P.softness;
+    for (const st of strokes) {
+      st.due = new Float32Array(st.x.length);
+      for (let i = 0; i < st.x.length; i++) {
+        let base;
+        if (P.mode === 'along') base = st.length > 0 ? st.s[i] / st.length : 0;            // 从起笔处向笔尖推进
+        else if (P.mode === 'wind') base = 1 - (st.x[i] * wx + st.y[i] * wy - lo) / span;   // 下风侧先碎，粉尘吹离尚存部分
+        else base = 0.15;
+        st.due[i] = Math.min(0.999, Math.max(0.001, base * (1 - soft * 0.6) + Math.random() * soft * 0.6));
+      }
+    }
+  }
+  function emitDust(st, i) {
+    const a = P.windAngle * Math.PI / 180, wx = Math.cos(a), wy = Math.sin(a);
+    const radius = SOLID_D * 0.5 * P.scale;
+    let n = P.density * RESAMPLE; n = Math.floor(n) + (Math.random() < n % 1 ? 1 : 0);
+    for (let k = 0; k < n; k++) {
+      const ang = Math.random() * 6.283, rr = Math.sqrt(Math.random()) * radius;
+      const white = rr < radius * (CORE_RATIO + 0.15) ? 1 : 0; // 粒子沿用来源处的颜色：芯部近白，外圈激光色
+      const sp = 10 + Math.random() * 30;
+      spawn(0, st.x[i] + Math.cos(ang) * rr, st.y[i] + Math.sin(ang) * rr,
+        wx * P.wind * 0.25 + Math.cos(ang) * sp, wy * P.wind * 0.25 + Math.sin(ang) * sp,
+        P.dustLife * (0.45 + Math.random() * 0.9), P.dustSize * (0.55 + Math.random() * 0.9), white);
+    }
+  }
+
+  // ---------------------------------------------------------------- 逐帧更新
+  let groupAlpha = 1;
+  function update(dt) {
+    groupAlpha = 1;
+    if (strokes.length && activeCount === 0) {
+      const since = now - lastAllUp;
+      if (since >= P.hold) {
+        if (FX.dissolve) {
+          if (dissolveStart < 0) startDissolve();
+          const t = Math.min(1, (now - dissolveStart) / P.dissolveTime), prev = dissolveProgress;
+          dissolveProgress = t;
+          for (const st of strokes) for (let i = 0; i < st.due.length; i++)
+            if (!st.gone[i] && st.due[i] > prev && st.due[i] <= t) emitDust(st, i);
+          if (t >= 1) { strokes = []; dissolveStart = -1; dissolveProgress = 0; }
+        } else {
+          const f = (since - P.hold) / P.fade;
+          if (f >= 1) strokes = [];
+          else groupAlpha = 1 - f * f * (3 - 2 * f); // 与产品相同的平滑阶梯
+        }
+      }
+    }
+    if (tip.down) {
+      tip.speed *= Math.exp(-dt * 6);
+      if (tip.speed > 45) tip.stillSince = now;
+      if (FX.ring && now - tip.stillSince > P.ringDelay && now - tip.lastRing > P.ringInterval) {
+        rings.push({ x: tip.x, y: tip.y, t0: now }); tip.lastRing = now;
+      }
+      if (FX.legacy) emitLegacy(dt);
+    }
+    for (let i = rings.length - 1; i >= 0; i--) if (now - rings[i].t0 > 0.9) rings.splice(i, 1);
+
+    const a = P.windAngle * Math.PI / 180, wx = Math.cos(a) * P.wind, wy = Math.sin(a) * P.wind;
+    for (let i = count - 1; i >= 0; i--) {
+      age[i] += dt;
+      if (age[i] >= life[i]) { kill(i); continue; }
+      if (kind[i] === 0) {
+        // 伪旋度流场：不同位置的粒子朝不同方向卷，整体再被风带走
+        const fa = Math.sin(px[i] * 0.011 + now * 0.9 + seed[i] * 0.15) * 1.9 + Math.cos(py[i] * 0.013 - now * 0.7) * 1.9;
+        const ax = Math.cos(fa) * P.turbulence + wx - vx[i] * 1.6, ay = Math.sin(fa) * P.turbulence + wy - vy[i] * 1.6;
+        vx[i] += ax * dt; vy[i] += ay * dt;
+      } else if (kind[i] === 1) {
+        const k = Math.exp(-dt * 7); vx[i] *= k; vy[i] *= k;
+      }
+      px[i] += vx[i] * dt; py[i] += vy[i] * dt;
+    }
+    if (count > peak) peak = count;
+  }
+  // 现有产品粒子的近似：静止 6 个/秒；运动按 1.8 DIP 间距，上限 90 个/秒；沿法线 ±25° 喷出。
+  function emitLegacy(dt) {
+    const rate = Math.min(90, 6 + tip.speed / 1.8);
+    tip.legacyCarry += rate * dt;
+    while (tip.legacyCarry >= 1) {
+      tip.legacyCarry -= 1;
+      const side = Math.random() < 0.5 ? 1 : -1, defl = (Math.random() * 2 - 1) * 25 * Math.PI / 180;
+      const nx = -tip.ty * side, ny = tip.tx * side, c = Math.cos(defl), s = Math.sin(defl);
+      const dx = nx * c - ny * s, dy = nx * s + ny * c, sp = 18 + Math.random() * 22;
+      spawn(2, tip.x, tip.y, dx * sp, dy * sp, 0.55 + Math.random() * 0.2, 0.28 + Math.pow(Math.random(), 2) * 1.12, 0);
+    }
+  }
+
+  // ---------------------------------------------------------------- 绘制
+  function tracePath(st) {
+    // 活动笔画用原始点；已抬起的按“未碎”的连续段画，孤立点画成圆点
+    ctx.beginPath();
+    if (st.raw) {
+      const r = st.raw; ctx.moveTo(r[0].x, r[0].y);
+      if (r.length === 1) ctx.lineTo(r[0].x + 0.01, r[0].y);
+      for (let i = 1; i < r.length; i++) ctx.lineTo(r[i].x, r[i].y);
+      return;
+    }
+    const n = st.x.length, due = st.due, p = dissolveProgress;
+    let open = false, runStart = -1;
+    for (let i = 0; i <= n; i++) {
+      const alive = i < n && !st.gone[i] && !(due && due[i] <= p);
+      if (alive) {
+        if (!open) { ctx.moveTo(st.x[i], st.y[i]); open = true; runStart = i; }
+        else ctx.lineTo(st.x[i], st.y[i]);
+      } else if (open) {
+        if (runStart === i - 1) ctx.lineTo(st.x[runStart] + 0.01, st.y[runStart]);
+        open = false;
+      }
+    }
+  }
+  function drawBody() {
+    const d = SOLID_D * P.scale, core = d * CORE_RATIO, scatter = core + core * SCATTER_RATIO;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const st of strokes) {
+      tracePath(st);
+      // 漫反射：实体边界处最浓，向外 DIFFUSE 像素衰减到 0（多层细描边近似）
+      for (let k = 4; k >= 1; k--) {
+        ctx.strokeStyle = colCss; ctx.globalAlpha = groupAlpha * 0.11;
+        ctx.lineWidth = d + (DIFFUSE * P.scale * 2) * (k / 4); ctx.stroke();
+      }
+      ctx.globalAlpha = groupAlpha;
+      ctx.strokeStyle = colCss; ctx.lineWidth = d; ctx.stroke();
+      ctx.strokeStyle = scatterCss; ctx.lineWidth = scatter; ctx.stroke();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = core; ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  function drawTip() {
+    if (!tip.visible) return;
+    const r = SOLID_D * 0.5 * P.scale;
+    for (let k = 4; k >= 1; k--) {
+      ctx.globalAlpha = 0.11; ctx.fillStyle = colCss;
+      ctx.beginPath(); ctx.arc(tip.x, tip.y, r + DIFFUSE * P.scale * (k / 4), 0, 6.283); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = colCss; ctx.beginPath(); ctx.arc(tip.x, tip.y, r, 0, 6.283); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(tip.x, tip.y, r * CORE_RATIO * 1.4, 0, 6.283); ctx.fill();
+  }
+  function drawRings() {
+    for (const ring of rings) {
+      const t = (now - ring.t0) / 0.9, e = 1 - Math.pow(1 - t, 3);
+      ctx.globalAlpha = (1 - t) * (1 - t) * 0.9;
+      ctx.strokeStyle = colCss; ctx.lineWidth = Math.max(0.6, 2.4 * P.scale * (1 - t));
+      ctx.beginPath(); ctx.arc(ring.x, ring.y, SOLID_D * 0.5 * P.scale + e * P.ringRadius * P.scale, 0, 6.283); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  function drawParticles() {
+    for (let i = 0; i < count; i++) {
+      const t = age[i] / life[i];
+      if (kind[i] === 2) {
+        // 现有效果：辉光在下、核心在上；半径行程 10% 后收缩到 0.2 倍；亮度带呼吸
+        const shrink = t < 0.1 ? 1 : 1 - (t - 0.1) / 0.9 * 0.8, r = size[i] * P.scale * shrink;
+        const breath = 1 + 0.18 * Math.sin(age[i] * 6.283 * 1.1 + seed[i]), fadeOut = 1 - t * t;
+        ctx.globalAlpha = 0.18 * fadeOut; ctx.fillStyle = 'rgb(255,82,102)';
+        ctx.beginPath(); ctx.arc(px[i], py[i], r * 2, 0, 6.283); ctx.fill();
+        ctx.globalAlpha = Math.min(1, 0.85 * breath) * fadeOut; ctx.fillStyle = colCss;
+        ctx.beginPath(); ctx.arc(px[i], py[i], r, 0, 6.283); ctx.fill();
+        continue;
+      }
+      const s = size[i] * (kind[i] === 0 ? 1 - 0.55 * t : 1 - 0.7 * t);
+      ctx.globalAlpha = kind[i] === 0 ? Math.pow(1 - t, 1.4) : (1 - t);
+      ctx.fillStyle = tone[i] ? (kind[i] === 0 ? scatterCss : emberCss) : colCss;
+      if (s <= 1.6) ctx.fillRect(px[i] - s * 0.5, py[i] - s * 0.5, s, s);
+      else { ctx.beginPath(); ctx.arc(px[i], py[i], s * 0.5, 0, 6.283); ctx.fill(); }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  let lastFrame = performance.now(), fps = 60, hudTimer = 0;
+  function frame(ms) {
+    const dt = Math.min(0.05, (ms - lastFrame) / 1000); lastFrame = ms; now = ms / 1000;
+    runDemo();
+    update(dt);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    drawParticles(); // 与产品相同的顺序：粒子在激光主体之下
+    drawRings();
+    drawBody();
+    drawTip();
+    fps += (1 / Math.max(dt, 1e-4) - fps) * 0.08;
+    if ((hudTimer += dt) > 0.2) {
+      hudTimer = 0;
+      hud.textContent = `帧率 ${fps.toFixed(0).padStart(3)}   粒子 ${String(count).padStart(5)}   峰值 ${String(peak).padStart(5)}`;
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------------------------------------------------------------- 输入
+  let manual = null;
+  const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  stage.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    stopDemo();
+    stage.setPointerCapture(e.pointerId);
+    const [x, y] = local(e); manual = beginStroke(x, y);
+  });
+  stage.addEventListener('pointermove', e => {
+    const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    if (manual) {
+      for (const c of list.length ? list : [e]) { const [x, y] = local(c); extendStroke(manual, x, y, (c.timeStamp || performance.now()) / 1000); }
+    } else if (!demo) { const [x, y] = local(e); tip.x = x; tip.y = y; tip.visible = true; }
+  });
+  const release = () => { if (manual) { endStroke(manual); manual = null; } };
+  stage.addEventListener('pointerup', release);
+  stage.addEventListener('pointercancel', release);
+  stage.addEventListener('pointerleave', () => { if (!manual && !demo) tip.visible = false; });
+
+  // ---------------------------------------------------------------- 自动演示
+  // 固定脚本：圈住第三条要点 → 停在图表最高柱上 → 快速划一道下划线。便于在同一动作下比较各效果。
+  let demo = null;
+  function buildDemo() {
+    const li = document.querySelectorAll('#slide li')[2], bar = document.querySelectorAll('#slide .chart i')[3];
+    const sr = stage.getBoundingClientRect(), custom = document.body.classList.contains('bg-custom');
+    const box = el => { const r = el.getBoundingClientRect(); return { x: r.left - sr.left, y: r.top - sr.top, w: r.width, h: r.height }; };
+    let a = { x: W * 0.12, y: H * 0.42, w: W * 0.4, h: H * 0.08 }, b = { x: W * 0.7, y: H * 0.45, w: W * 0.05, h: H * 0.3 };
+    if (!custom && li) {
+      const range = document.createRange(); range.selectNodeContents(li);
+      const r = range.getBoundingClientRect(); a = { x: r.left - sr.left, y: r.top - sr.top, w: r.width, h: r.height };
+    }
+    if (!custom && bar && bar.offsetParent) b = box(bar);
+    const cx = a.x + a.w / 2, cy = a.y + a.h / 2, rx = a.w / 2 + 22, ry = a.h / 2 + 14;
+    const ease = t => t * t * (3 - 2 * t);
+    return [
+      { dur: 1.25, at: t => { const g = -2.4 + ease(t) * 6.9; return [cx + Math.cos(g) * rx, cy + Math.sin(g) * ry]; } },
+      { gap: 0.55 },
+      { dur: 1.9, at: t => [b.x + b.w / 2 + Math.sin(t * 40) * 0.2, b.y + 14] },
+      { gap: 0.25 },
+      { dur: 0.42, at: t => [a.x - 6 + ease(t) * (a.w + 12), a.y + a.h + 9 + Math.sin(t * 3.14) * 3] },
+      { gap: 0.2 },
+    ];
+  }
+  function startDemo() {
+    release(); clearAll(); peak = 0;
+    demo = { steps: buildDemo(), index: 0, t0: now, stroke: null };
+    document.getElementById('demo').textContent = '■ 停止演示';
+  }
+  function stopDemo() {
+    if (!demo) return;
+    if (demo.stroke) endStroke(demo.stroke);
+    demo = null; document.getElementById('demo').textContent = '▶ 自动演示';
+  }
+  function runDemo() {
+    if (!demo) return;
+    if (demo.index >= demo.steps.length) {
+      if (strokes.length === 0 && count === 0) { if (document.getElementById('loop').checked) startDemo(); else stopDemo(); }
+      return;
+    }
+    const step = demo.steps[demo.index], t = now - demo.t0;
+    if (step.gap !== undefined) { if (t >= step.gap) { demo.index++; demo.t0 = now; } return; }
+    const [x, y] = step.at(Math.min(1, t / step.dur));
+    if (!demo.stroke) demo.stroke = beginStroke(x, y); else extendStroke(demo.stroke, x, y, now);
+    if (t >= step.dur) { endStroke(demo.stroke); demo.stroke = null; demo.index++; demo.t0 = now; }
+  }
+
+  // ---------------------------------------------------------------- 面板
+  const fmt = v => (Math.abs(v) >= 100 || Number.isInteger(v)) ? String(Math.round(v)) : v.toFixed(2).replace(/0$/, '');
+  document.querySelectorAll('input[data-p]').forEach(input => {
+    const key = input.dataset.p, out = input.nextElementSibling;
+    input.value = P[key]; out.textContent = fmt(P[key]);
+    input.addEventListener('input', () => { P[key] = parseFloat(input.value); out.textContent = fmt(P[key]); });
+  });
+  const fxInputs = document.querySelectorAll('input[data-fx]');
+  const syncFx = () => fxInputs.forEach(i => { i.checked = FX[i.dataset.fx]; });
+  fxInputs.forEach(i => i.addEventListener('change', () => { FX[i.dataset.fx] = i.checked; }));
+  syncFx();
+  function pick(group, attr, value) { group.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset[attr] === value)); }
+  const setBg = name => {
+    document.getElementById('slide').style.backgroundImage = ''; // 撤掉拖入的图片
+    document.body.className = 'bg-' + name; pick(document.getElementById('bgs'), 'bg', name);
+  };
+  document.getElementById('bgs').addEventListener('click', e => { if (e.target.dataset.bg) setBg(e.target.dataset.bg); });
+  document.getElementById('modes').addEventListener('click', e => { if (e.target.dataset.mode) { P.mode = e.target.dataset.mode; pick(e.currentTarget, 'mode', P.mode); } });
+  document.getElementById('colors').addEventListener('click', e => {
+    if (!e.target.dataset.color) return;
+    setColor(e.target.dataset.color); pick(e.currentTarget, 'color', P.color); document.getElementById('customColor').value = P.color;
+  });
+  document.getElementById('customColor').addEventListener('input', e => { setColor(e.target.value); pick(document.getElementById('colors'), 'color', ''); });
+  document.getElementById('presets').addEventListener('click', e => {
+    const preset = PRESETS[e.target.dataset.preset]; if (!preset) return;
+    Object.assign(FX, preset); syncFx();
+  });
+  document.getElementById('demo').addEventListener('click', () => demo ? stopDemo() : startDemo());
+  document.getElementById('clear').addEventListener('click', () => { stopDemo(); clearAll(); peak = 0; });
+  window.addEventListener('keydown', e => {
+    if (e.target instanceof HTMLInputElement && e.target.type !== 'checkbox' && e.target.type !== 'range') return;
+    if (e.code === 'Space') { e.preventDefault(); demo ? stopDemo() : startDemo(); }
+    else if (e.key === 'c' || e.key === 'C') { stopDemo(); clearAll(); peak = 0; }
+    else if (e.key === '1') setBg('light'); else if (e.key === '2') setBg('dark'); else if (e.key === '3') setBg('photo');
+  });
+  // 拖入图片作为背景
+  stage.addEventListener('dragover', e => e.preventDefault());
+  stage.addEventListener('drop', e => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    document.getElementById('slide').style.backgroundImage = `url(${URL.createObjectURL(file)})`;
+    document.body.className = 'bg-custom'; pick(document.getElementById('bgs'), 'bg', '');
+  });
+
+  // 供自动检查读取状态
+  window.__laser = { P, FX, startDemo, stopDemo, stats: () => ({ count, peak, strokes: strokes.length, fps, dissolving: dissolveStart >= 0 }) };
+})();
+</script>
+</body>
+</html>
