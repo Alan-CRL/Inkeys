@@ -61,6 +61,8 @@
 - 画布设备、adapter、交换链和 RTS 信息在实际初始化/恢复/Resize 边界发布。初始化新代次清旧成功详情，停止后明确标为最后记录；Hardware 偏好不等于实际 Hardware，DComp 偏好不等于最终呈现模式。
 - 初始化文本不依赖 ConsoleOutput、不解析日志、不轮询设备；只在 owner 查询 GetDesc/GetDesc1，设置 getter 短锁复制缓存。
 
+- 设备性能看板维度（2026-11-23 起 7 个）：书写、荧光笔、橡皮、激光笔、图形、漫游、粒子。新增维度只能追加在末尾，并在 `Draw3.DevicePerformanceJson.h` 里把它的键列为可选（`kFirstOptionalCounter`）：旧账本缺键时按空计数读入，不升文件版本、不丢日桶。看板按 `kDimensionCount` 循环出行，另需补文案键 `Dashboard.Dimension.*` 与预览数据。
+
 ## 4. Validation & Error Matrix
 
 | 条件 | 必须行为 |
