@@ -57,36 +57,13 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 
     if (type == 10)
     {
-        LaserGpuParticle particle = LaserParticleData[(globalBufferOffset + instanceId) % LASER_PARTICLE_CAPACITY];
-        // globalColor.x 选择绘制批次：0 画主体之下的飘散与光波，1 画主体之上的行进粒子。
-        if (particle.alive == 0 || particle.opacity <= 0.0 ||
-            particle.currentRadius <= 0.0 ||
-            (particle.source.kind == 0u) != (globalColor.x > 0.5))
-        {
-            // 环形区中已过期或未释放的槽生成退化图元。
-            output.pos = float4(-2.0, -2.0, 0.0, 1.0);
-            output.p1 = 0.0;
-            output.p2 = 0.0;
-            return output;
-        }
-
-        // 粒子都是不带光晕的实心点。亮度字段按种类复用：行进粒子是透明度层次，
-        // 飘散粒子是白芯比例，点击光波是半线宽（取负传给 PS 作为环形标记）。
-        float ringHalfWidth = 0.0;
-        float brightness = particle.currentBrightness;
-        float3 particleColor = particle.source.color.rgb;
-        if (particle.source.kind == LASER_PARTICLE_DISSOLVE)
-        {
-            particleColor = lerp(particleColor, 1.0, 0.94 * saturate(brightness));
-            brightness = 1.0;
-        }
-        else if (particle.source.kind == LASER_PARTICLE_CLICK_WAVE)
-        {
-            ringHalfWidth = max(brightness, 1e-4);
-            brightness = 1.0;
-        }
-        float outerRadius = particle.currentRadius + ringHalfWidth;
-        float2 center = particle.position;
+        // 点击光波：独立图元，不经过粒子池。每圈占 InkData 两个连续槽：
+        // 第一槽为圆心、当前环半径、半线宽；第二槽为颜色 rgb 与整圈透明度。数值由 CPU 每帧按曲线求好。
+        InkPoint ring = InkData[globalBufferOffset + itemIndex * 2];
+        InkPoint tint = InkData[globalBufferOffset + itemIndex * 2 + 1];
+        float ringHalfWidth = max(ring.time, 1e-4);
+        float outerRadius = max(ring.r, 0.0) + ringHalfWidth;
+        float2 center = ring.pos;
         float2 rectMin = center - outerRadius - 2.0;
         float2 rectMax = center + outerRadius + 2.0;
         float2 worldPos = lerp(rectMin, rectMax, templatePos);
@@ -94,10 +71,11 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
             -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
         output.pixPos = worldPos;
         output.p1 = center;
-        output.p2 = float2(-ringHalfWidth, brightness);
-        output.r1 = particle.currentRadius;
-        output.r2 = particle.opacity * particle.source.color.a;
-        output.color = float4(particleColor, particle.source.color.a);
+        // p2.x 取负的半线宽，像素着色器据此只画半径 r1 处的一圈细线。
+        output.p2 = float2(-ringHalfWidth, 1.0);
+        output.r1 = ring.r;
+        output.r2 = tint.time;
+        output.color = float4(tint.pos, tint.r, 1.0);
         return output;
     }
 

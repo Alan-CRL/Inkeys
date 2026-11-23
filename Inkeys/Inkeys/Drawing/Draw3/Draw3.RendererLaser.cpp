@@ -80,11 +80,9 @@ namespace Inkeys::Drawing::Draw3
 		laserParticleSystem_.Configure(configuration);
 	}
 
-	bool InkRenderer::ReadCanvasPixels(std::vector<uint32_t>& pixels, uint32_t& width, uint32_t& height)
+	bool InkRenderer::VisitCanvasPixels(CanvasPixelVisitor visitor, void* visitorContext)
 	{
-		pixels.clear();
-		width = height = 0;
-		if (!device || !context || !layerL2Texture) return false;
+		if (!visitor || !device || !context || !layerL2Texture) return false;
 		D3D11_TEXTURE2D_DESC description = {};
 		layerL2Texture->GetDesc(&description);
 		description.Usage = D3D11_USAGE_STAGING;
@@ -97,22 +95,38 @@ namespace Inkeys::Drawing::Draw3
 		context->CopyResource(staging.Get(), layerL2Texture.Get());
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
 		if (FAILED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
-		bool copied = false;
 		try
 		{
-			pixels.resize(static_cast<size_t>(description.Width) * description.Height);
-			for (UINT row = 0; row < description.Height; ++row)
-				std::memcpy(pixels.data() + static_cast<size_t>(row) * description.Width,
-					static_cast<const uint8_t*>(mapped.pData) + static_cast<size_t>(row) * mapped.RowPitch,
-					static_cast<size_t>(description.Width) * sizeof(uint32_t));
-			copied = true;
+			visitor(visitorContext, static_cast<const uint32_t*>(mapped.pData), mapped.RowPitch,
+				description.Width, description.Height);
 		}
-		catch (const std::bad_alloc&) { pixels.clear(); }
+		catch (...)
+		{
+			context->Unmap(staging.Get(), 0);
+			throw;
+		}
 		context->Unmap(staging.Get(), 0);
-		if (!copied) return false;
-		width = description.Width;
-		height = description.Height;
 		return true;
+	}
+
+	void InkRenderer::PrepareLaserParticles() noexcept
+	{
+		if (!context || !backBufferRTV || !laserParticleSystem_.Prepare()) return;
+		// 与 WarmUpLaserShaders 相同的做法：零宽高视口下提交一次真实绘制，驱动现在就编译粒子着色器。
+		D3D11_VIEWPORT savedViewport = {};
+		UINT viewportCount = 1;
+		context->RSGetViewports(&viewportCount, &savedViewport);
+		const D3D11_VIEWPORT emptyViewport = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+		context->RSSetViewports(1, &emptyViewport);
+		SetOMTarget(backBufferRTV.Get());
+		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
+		context->RSSetState(rasterState.Get());
+		laserParticleSystem_.WarmUp();
+		context->VSSetShader(vertexShader.Get(), nullptr, 0);
+		context->PSSetShader(pixelShader.Get(), nullptr, 0);
+		ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
+		context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
+		context->RSSetViewports(1, &savedViewport);
 	}
 
 	bool InkRenderer::LaserParticlesAvailable() const noexcept
@@ -494,43 +508,59 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
+	void InkRenderer::DrawLaserClickWaves(std::span<const LaserClickWaveVisual> waves)
+	{
+		if (waves.empty() || !backBufferRTV) return;
+		size_t startIndex = 0;
+		while (startIndex < waves.size())
+		{
+			// 每圈占 InkData 两个槽。
+			const size_t batchCount = std::min(waves.size() - startIndex, kMaxBufferCapacity / 2);
+			if (FAILED(UploadStructuredBuffer(inkDataBuffer.Get(), waves.data() + startIndex,
+				static_cast<UINT>(batchCount * sizeof(LaserClickWaveVisual)), 0, D3D11_MAP_WRITE_DISCARD))) return;
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (FAILED(context->Map(globalCB.Get(), 0,
+				D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
+			auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
+			constants->width = viewportWidth;
+			constants->height = viewportHeight;
+			constants->shapeType = 10.0f;
+			constants->bufferOffset = 0;
+			constants->color = {};
+			constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
+			context->Unmap(globalCB.Get(), 0);
+
+			SetOMTarget(backBufferRTV.Get());
+			context->IASetInputLayout(nullptr);
+			context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			context->VSSetShader(vertexShader.Get(), nullptr, 0);
+			ID3D11ShaderResourceView* inkResources[] = { inkDataSRV.Get() };
+			context->VSSetShaderResources(0, 1, inkResources);
+			ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
+			context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
+			context->PSSetShader(pixelShader.Get(), nullptr, 0);
+			context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
+			context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
+			context->RSSetState(rasterState.Get());
+			context->Draw(static_cast<UINT>(batchCount) * 6, 0);
+			ID3D11ShaderResourceView* nullResource[] = { nullptr };
+			context->VSSetShaderResources(0, 1, nullResource);
+			startIndex += batchCount;
+		}
+	}
+
 	void InkRenderer::DrawLaserParticles(LaserParticlePass pass)
 	{
-		const auto range = laserParticleSystem_.ActiveRange();
-		ID3D11ShaderResourceView* particleResource = laserParticleSystem_.ParticleShaderResourceView();
-		if (range.count == 0 || !particleResource || !backBufferRTV) return;
-
-		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(context->Map(globalCB.Get(), 0,
-			D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return;
-		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
-		constants->width = viewportWidth;
-		constants->height = viewportHeight;
-		constants->shapeType = 10.0f;
-		constants->bufferOffset = range.start;
-		// x 选择批次：0 画主体之下的飘散与光波，1 画主体之上的行进粒子。
-		constants->color = DirectX::XMFLOAT4(pass == LaserParticlePass::OverBody ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
-		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
-		constants->padding[0] = 0.0f;
-		constants->padding[1] = 0.0f;
-		constants->padding[2] = 0.0f;
-		context->Unmap(globalCB.Get(), 0);
-
+		if (laserParticleSystem_.ActiveRange().count == 0 || !backBufferRTV) return;
 		SetOMTarget(backBufferRTV.Get());
-		context->IASetInputLayout(nullptr);
-		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		context->VSSetShader(vertexShader.Get(), nullptr, 0);
-		context->VSSetShaderResources(8, 1, &particleResource);
-		ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
-		context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
-		context->PSSetShader(pixelShader.Get(), nullptr, 0);
-		context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
 		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
 		context->RSSetState(rasterState.Get());
-		context->DrawInstanced(6, range.count, 0, 0);
-
-		ID3D11ShaderResourceView* nullParticle[] = { nullptr };
-		context->VSSetShaderResources(8, 1, nullParticle);
+		if (!laserParticleSystem_.Draw(pass, viewportWidth, viewportHeight)) return;
+		// 粒子用自己的着色器和 b0。画完把墨迹管线的默认绑定交还，后续绘制不必关心这里改过什么。
+		context->VSSetShader(vertexShader.Get(), nullptr, 0);
+		context->PSSetShader(pixelShader.Get(), nullptr, 0);
+		ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
+		context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
 	}
 
 	void InkRenderer::WarmUpLaserShaders() noexcept

@@ -542,6 +542,7 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::size_t> pageCount = 0;
 		std::atomic_bool currentPageHasContent = false;
 		std::atomic_bool laserVisible = false;
+		std::atomic_bool laserHoldsBar = false;
 		mutable std::mutex whiteboardMutex;
 		Bridge::WhiteboardStyleToken whiteboardStyle;
 		bool whiteboardStylePending = false;
@@ -1021,6 +1022,7 @@ namespace Inkeys::Drawing::Draw3
 			pageCount.store(0, std::memory_order_release);
 			currentPageHasContent.store(false, std::memory_order_release);
 			laserVisible.store(false, std::memory_order_release);
+			laserHoldsBar.store(false, std::memory_order_release);
 			// 新 Host 生命周期不能沿用上次运行的撤回/重做可用性。
 			canUndo.store(false, std::memory_order_release);
 			canRedo.store(false, std::memory_order_release);
@@ -1278,12 +1280,14 @@ namespace Inkeys::Drawing::Draw3
 			self->PublishRuntimeRevision();
 		}
 
-		static void ObserveLaserVisibility(void* context, bool visible)
+		static void ObserveLaserVisibility(void* context, bool visible, bool holdsBar)
 		{
 			auto* self = static_cast<Impl*>(context);
 			// 激光随时间改变，只推进运行时版本，文档内容版本仍由墨迹提交维护。
-			if (self && self->laserVisible.exchange(visible, std::memory_order_acq_rel) != visible)
-				self->PublishRuntimeRevision();
+			if (!self) return;
+			const bool visibleChanged = self->laserVisible.exchange(visible, std::memory_order_acq_rel) != visible;
+			const bool holdChanged = self->laserHoldsBar.exchange(holdsBar, std::memory_order_acq_rel) != holdsBar;
+			if (visibleChanged || holdChanged) self->PublishRuntimeRevision();
 		}
 
 		static void ObserveWhiteboardThemeEdited(void* context, WhiteboardTheme theme) noexcept
@@ -2987,6 +2991,7 @@ namespace Inkeys::Drawing::Draw3
 		snapshot.currentPageHasContent =
 			impl_->currentPageHasContent.load(std::memory_order_acquire);
 		snapshot.laserVisible = impl_->laserVisible.load(std::memory_order_acquire);
+		snapshot.laserHoldsBar = impl_->laserHoldsBar.load(std::memory_order_acquire);
 		{
 			std::scoped_lock lock(impl_->whiteboardMutex);
 			snapshot.whiteboardStyle = impl_->whiteboardStyle;

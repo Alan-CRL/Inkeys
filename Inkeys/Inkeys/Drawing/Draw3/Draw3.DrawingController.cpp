@@ -5559,11 +5559,14 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		}
 
+		// visible：画布上还有激光主体或任何粒子，窗口要保留；holdsBar：激光主体还在，主栏保持完整。
+		// 只剩飘散粒子时 visible 为真而 holdsBar 为假：主栏先收起，窗口等粒子飘完再隐藏。
 		void PublishLaserVisibility(const DrawingControllerRuntimeObserver& observer,
-			bool& lastPublished, bool visible)
+			uint8_t& lastPublished, bool visible, bool holdsBar)
 		{
-			if (std::exchange(lastPublished, visible) != visible && observer.laserVisibilityChanged)
-				observer.laserVisibilityChanged(observer.context, visible);
+			const auto state = static_cast<uint8_t>((visible ? 1u : 0u) | (holdsBar ? 2u : 0u));
+			if (std::exchange(lastPublished, state) != state && observer.laserVisibilityChanged)
+				observer.laserVisibilityChanged(observer.context, visible, holdsBar);
 		}
 
 		struct LaserTipVisual
@@ -7381,7 +7384,7 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 		{
-			// WARP 使用生产的逐笔烘焙、类型 11 和 Compute Shader。
+			// WARP 使用生产的逐笔烘焙、类型 11 和粒子着色器。
 			LaserTrailLifecycle lifecycle;
 			BeginLaserContact(lifecycle);
 			EndLaserContact(lifecycle, 1000);
@@ -7504,7 +7507,7 @@ namespace Inkeys::Drawing::Draw3
 					[](const LaserParticleSeed& seed) { return seed.group == 2; }) >= 3,
 				"a dot keeps its minimum seeds within a capped mixed batch");
 
-			check(renderer.LaserParticlesAvailable(), "WARP compute is available");
+			check(renderer.LaserParticlesAvailable(), "WARP particle pool is available");
 			{
 				LaserParticleDirtyTracker tracker;
 				constexpr RECT bounds{ 8, 8, 32, 32 };
@@ -7582,15 +7585,16 @@ namespace Inkeys::Drawing::Draw3
 			std::vector<bool> visibility;
 			DrawingControllerRuntimeObserver observer;
 			observer.context = &visibility;
-			observer.laserVisibilityChanged = [](void* context, bool visible)
+			observer.laserVisibilityChanged = [](void* context, bool visible, bool)
 			{
 				static_cast<std::vector<bool>*>(context)->push_back(visible);
 			};
-			bool published = false;
+			uint8_t published = 0;
 			const auto publish = [&]
 			{
 				PublishLaserVisibility(observer, published,
-					LaserTrailVisible(lifecycle.phase, renderer.HasActiveLaserParticles()));
+					LaserTrailVisible(lifecycle.phase, renderer.HasActiveLaserParticles()),
+					LaserTrailHoldsBar(lifecycle.phase));
 			};
 			publish();
 			check(EvaluateLaserTrailOpacity(lifecycle, 2899, 1000, 1.0, true) == 1.0f &&
@@ -7604,6 +7608,10 @@ namespace Inkeys::Drawing::Draw3
 			renderer.StepLaserParticles(5500, 1000, {});
 			publish();
 			check(visibility == std::vector<bool>{ true, false }, "particle tail expiry publishes invisible");
+			check(LaserTrailHoldsBar(LaserTrailPhase::Active) && LaserTrailHoldsBar(LaserTrailPhase::Hold) &&
+				LaserTrailHoldsBar(LaserTrailPhase::Fade) && !LaserTrailHoldsBar(LaserTrailPhase::Dissolve) &&
+				!LaserTrailHoldsBar(LaserTrailPhase::Inactive),
+				"the bar stays full only while the laser body is present; drifting particles alone release it");
 
 			LaserTrailLifecycle legacy;
 			BeginLaserContact(legacy);
@@ -7614,7 +7622,7 @@ namespace Inkeys::Drawing::Draw3
 			check(readFront(legacyPixels, {}, legacyOpacity), "read ordinary fade reference");
 			LaserParticleSystem unavailable;
 			check(!unavailable.Initialize(renderer.device.Get(), renderer.context.Get(), {}, {}),
-				"device without compute bytecode rejects particle initialization");
+				"missing shader bytecode rejects particle initialization");
 			for (const bool available : { false, true })
 			{
 				const uint32_t requested = LaserParticleOptions::Enabled |
@@ -7700,14 +7708,15 @@ namespace Inkeys::Drawing::Draw3
 			std::vector<bool> visibilityEvents;
 			DrawingControllerRuntimeObserver observer;
 			observer.context = &visibilityEvents;
-			observer.laserVisibilityChanged = [](void* context, bool visible)
+			observer.laserVisibilityChanged = [](void* context, bool visible, bool)
 			{
 				static_cast<std::vector<bool>*>(context)->push_back(visible);
 			};
-			bool published = false;
+			uint8_t published = 0;
 			const auto publish = [&](bool hasParticles = false)
 			{
-				PublishLaserVisibility(observer, published, LaserTrailVisible(lifecycle.phase, hasParticles));
+				PublishLaserVisibility(observer, published, LaserTrailVisible(lifecycle.phase, hasParticles),
+					LaserTrailHoldsBar(lifecycle.phase));
 			};
 			const auto colorTexture = renderer.laserCompositedColor.texture;
 			BeginLaserContact(lifecycle);
@@ -7762,12 +7771,13 @@ namespace Inkeys::Drawing::Draw3
 				"visible Fade continues with the selection timer");
 			opacity = EvaluateLaserTrailOpacity(lifecycle, 3100, 1000, 1.0);
 			publish(true);
-			check(published && opacity == 0.0f && !ReleaseLaserResourcesIfUnused(renderer, false, published),
-				"live particles alone retain visibility and the textures");
+			check(published == 1 && opacity == 0.0f,
+				"live particles alone keep the canvas visible but release the bar");
 			publish();
-			check(!published && visibilityEvents == std::vector<bool>{ true, false } &&
+			// 第二个 true 是“主体结束、只剩粒子”那一次：可见性没变，主栏占用变了，同样要发布。
+			check(!published && visibilityEvents == std::vector<bool>{ true, true, false } &&
 				!UndoBakedLaserStroke(baked, renderer, false, false, stable, dirty, lifecycle, opacity) &&
-				ReleaseLaserResourcesIfUnused(renderer, false, published) && renderer.LaserResourceBytes() == 0 &&
+				ReleaseLaserResourcesIfUnused(renderer, false, lifecycle.phase != LaserTrailPhase::Inactive) && renderer.LaserResourceBytes() == 0 &&
 				SelectionReleasesTimerPeriod(true, false, published),
 				"expiration publishes false, drops undo eligibility and releases unselected resources");
 		}
@@ -13657,8 +13667,9 @@ namespace Inkeys::Drawing::Draw3
 			configuration.laserParticleOptions = LaserParticleOptions::Defaults;
 			DrawingController controller(input, window, renderer, presentation, configuration);
 			check(!window.Handle() && controller.GetLaserParticleOptions() == LaserParticleOptions::Defaults &&
-				EffectiveLaserParticleEffects(controller.GetLaserParticleOptions(), renderer.LaserParticlesAvailable()) == 0,
-				"stored particle preference is retained while missing resources disable every effect");
+				EffectiveLaserParticleEffects(controller.GetLaserParticleOptions(), renderer.LaserParticlesAvailable()) ==
+					LaserParticleOptions::ClickWave,
+				"stored particle preference is retained; without a particle pool only the click wave stays effective");
 			const auto wakeBefore = input.CaptureWakeGeneration();
 			controller.SetLaserParticleOptions(LaserParticleOptions::Defaults);
 			check(input.CaptureWakeGeneration() == wakeBefore, "unchanged particle options do not wake the owner");
@@ -13671,10 +13682,10 @@ namespace Inkeys::Drawing::Draw3
 					{
 						const uint32_t requested = LaserParticleOptions::Pack(enabled,
 							(children & 1u) != 0, (children & 2u) != 0, (children & 4u) != 0);
-						// 点击光波只看自己的开关，其余子项还要总开关开启。
+						// 点击光波是独立图元，只看自己的开关；其余子项要总开关开启且粒子池可用。
 						const uint32_t packed = children << 1;
-						check(EffectiveLaserParticleEffects(requested, available) == (!available ? 0u :
-							(packed & LaserParticleOptions::ClickWave) | (enabled ? packed & ~LaserParticleOptions::ClickWave : 0u)),
+						check(EffectiveLaserParticleEffects(requested, available) == ((packed & LaserParticleOptions::ClickWave) |
+							((enabled && available) ? packed & ~LaserParticleOptions::ClickWave : 0u)),
 							"particle capability matrix");
 					}
 			const auto& particles = configuration.laserParticleConfig;
@@ -17691,7 +17702,7 @@ namespace Inkeys::Drawing::Draw3
 		float laserGatherFallbackOpacity = 1.0f;
 		bool stopLaserDissolveBatch = false;
 		bool hasLiveLaserParticles = false;
-		bool publishedLaserVisibility = false;
+		uint8_t publishedLaserVisibility = 0;
 		bool publishedLaserUndo = false;
 		float laserOpacity = 0.0f;
 		RECT laserStableBounds = {};
@@ -17713,6 +17724,11 @@ namespace Inkeys::Drawing::Draw3
 		shapePrimitiveScratch.reserve(kLaserReservedContactCount * 2);
 		std::vector<LaserParticleSeed> laserParticleSeeds;
 		laserParticleSeeds.reserve(kLaserReservedContactCount);
+		// 点击光波是独立图元：状态只在这里，每帧按曲线求出形态后直接绘制，不进粒子池。
+		std::vector<LaserClickWave> laserClickWaves;
+		std::vector<LaserClickWaveVisual> laserClickWaveVisuals;
+		laserClickWaves.reserve(kLaserReservedContactCount);
+		laserClickWaveVisuals.reserve(kLaserReservedContactCount);
 		HighlighterGeometry completedHighlighterScratch;
 		std::vector<InkPoint> redoRebuildPoints;
 		HighlighterGeometry redoHighlighterScratch;
@@ -17762,6 +17778,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (nextEffects == 0)
 			{
+				laserClickWaves.clear();
 				laserParticleSnapshot = {};
 				hasLiveLaserParticles = false;
 				laserLifecycle.minimumHoldDurationSeconds = 0.0;
@@ -17773,7 +17790,8 @@ namespace Inkeys::Drawing::Draw3
 		};
 		auto publishLaserState = [&]
 		{
-			PublishLaserVisibility(observer_, publishedLaserVisibility, laserVisible());
+			PublishLaserVisibility(observer_, publishedLaserVisibility, laserVisible(),
+				LaserTrailHoldsBar(laserLifecycle.phase));
 			const bool canUndo = !bakedLaserStrokes.empty();
 			if (std::exchange(publishedLaserUndo, canUndo) != canUndo &&
 				publishHistoryAvailability()) publishWhiteboard();
@@ -17900,6 +17918,7 @@ namespace Inkeys::Drawing::Draw3
 				renderer_.ResetLaserParticles();
 				laserParticleDirtyTracker.Clear();
 				laserParticleSeeds.clear();
+				laserClickWaves.clear();
 				hasLiveLaserParticles = false;
 			}
 			publishLaserState();
@@ -17919,6 +17938,9 @@ namespace Inkeys::Drawing::Draw3
 				const WindowSize size = window_.Size();
 				laserResourcesReady = renderer_.EnsureLaserResources(size.width, size.height);
 				if (laserResourcesReady) renderer_.EnsureLaserIncrementalCoverageResources();
+				// 开了行进粒子或激光飘散时顺便把粒子池建好并预热，第一笔落下时不必现场创建。
+				if (effectiveLaserParticleEffects & (LaserParticleOptions::Trail | LaserParticleOptions::Dissolve))
+					renderer_.PrepareLaserParticles();
 				else DiagnosticOutput::Line(DiagnosticOutput::OutWarn) << "[Laser] resources unavailable until tool re-entry or graphics reset." << std::endl;
 			}
 			return laserResourcesReady;
@@ -19880,16 +19902,20 @@ namespace Inkeys::Drawing::Draw3
 						laserCoverageMode = LaserCoverageMode::FullRedraw;
 						renderer_.ClearLaserIncrementalCoverage();
 					}
-					if (laserClick && renderer_.LaserParticlesAvailable() &&
-						(effectiveLaserParticleEffects & LaserParticleOptions::ClickWave))
+					if (laserClick && (effectiveLaserParticleEffects & LaserParticleOptions::ClickWave))
 					{
 						const auto& down = runtime.handle.record->DownSnapshot();
 						const auto tint = ColorForTool(DrawingTool::Laser, runtime.visualStyle);
-						const float color[4] = { tint.x, tint.y, tint.z, 1.0f };
 						// 光波尺寸跟随激光实体半径，实体半径已含粗细设置与 DPI 缩放。
-						AppendLaserClickParticleSeeds(laserParticleSeeds, down.position.x, down.position.y,
-							LaserSolidRadius(ProductTargetScale(runtime.visualStyle)), color, runtime.laserParticleSeed,
-							static_cast<uint32_t>(runtime.laserLayerId), laserParticleConfiguration);
+						const LaserClickWave wave = { down.position.x, down.position.y,
+							LaserSolidRadius(ProductTargetScale(runtime.visualStyle)), { tint.x, tint.y, tint.z, 1.0f },
+							snapshot.qpc, static_cast<uint32_t>(runtime.laserLayerId) };
+						laserClickWaves.push_back(wave);
+						// 重绘范围与结束时刻沿用粒子的登记方式：整个寿命内的最大包络，到期后清一次残影。
+						laserParticleDirtyTracker.Add(LaserClickWaveBounds(wave, laserParticleConfiguration),
+							LaserParticleLifetimeDeadlineQpc(snapshot.qpc, qpcFrequency,
+								laserParticleConfiguration.clickWaveLifetimeMilliseconds));
+						hasLiveLaserParticles = true;
 					}
 					finalizeLaserRuntime(runtime, snapshot.qpc, laserCancelled, syntheticTerminal);
 					if (metricsState_ && !laserCancelled && !syntheticTerminal)
@@ -20009,7 +20035,9 @@ namespace Inkeys::Drawing::Draw3
 
 		auto releaseUnusedLaserResources = [&]
 		{
-			if (!ReleaseLaserResourcesIfUnused(renderer_, laserResourceSelection, laserVisible())) return;
+			// 激光纹理只跟主体走；只剩粒子（含清空画布的飘散）时不需要它，也不为粒子去创建它。
+			if (!ReleaseLaserResourcesIfUnused(renderer_, laserResourceSelection,
+				laserLifecycle.phase != LaserTrailPhase::Inactive)) return;
 			laserIncrementalEnsureAttempted = false;
 			laserResourcesReady = false;
 		};
@@ -20020,7 +20048,7 @@ namespace Inkeys::Drawing::Draw3
 			if (selected && !laserResourceSelection) laserIncrementalEnsureAttempted = false;
 			laserResourceSelection = selected;
 			if (!selected) finishHeldLaserContacts(false);
-			if (KeepLaserResources(selected, laserVisible())) prepareLaserSelectionResources();
+			if (KeepLaserResources(selected, laserLifecycle.phase != LaserTrailPhase::Inactive)) prepareLaserSelectionResources();
 			else releaseUnusedLaserResources();
 		};
 
@@ -22022,13 +22050,11 @@ namespace Inkeys::Drawing::Draw3
 			viewportVisibleClear = true;
 			pendingLaserBakeDirty = {};
 			laserTipVisuals.clear();
-			laserParticleSeeds.clear();
 			previousCursorVisuals.clear();
 			currentCursorVisuals.clear();
-			laserIncrementalEnsureAttempted = false;
-			finishHeldLaserContacts(true);
+			// 清空只动墨迹：激光轨迹、它的粒子和已经在飘的清空粒子都照常走完。
 			resetGpuForPageSwitch(frameDirty, particleSnapshot,
-				forceFullPresent, width, height);
+				forceFullPresent, width, height, true);
 			publishCurrentPageContent();
 			return true;
 		};
@@ -22770,16 +22796,6 @@ namespace Inkeys::Drawing::Draw3
 				// 重做直接复用唯一Clear事务，包括快照、当前页边界与保存请求。
 				if (command.type == CanvasCommandType::Clear || redoClear)
 				{
-					if (command.type == CanvasCommandType::Clear && !currentPageHasContent() && laserVisible())
-					{
-						finishHeldLaserContacts(true);
-						clearLaserTrail();
-						particleSnapshot = {};
-						forceFullPresent = true;
-						shortcutResult.result = Shortcuts::Result::Applied;
-						reportCommand(command.type);
-						continue;
-					}
 					if (command.shortcut && !currentPageHasContent())
 					{
 						shortcutResult.result = Shortcuts::Result::NoContent;
@@ -22837,16 +22853,33 @@ namespace Inkeys::Drawing::Draw3
 					if (command.type == CanvasCommandType::Clear &&
 						(effectiveLaserParticleEffects & LaserParticleOptions::ClearDissolve))
 					{
-						std::vector<uint32_t> canvasPixels;
-						uint32_t canvasWidth = 0, canvasHeight = 0;
-						if (renderer_.ReadCanvasPixels(canvasPixels, canvasWidth, canvasHeight))
-							AppendCanvasClearParticleSeeds(clearSeeds, canvasPixels, canvasWidth, canvasHeight,
-								configuration_.dpiScale, LaserDissolveWindAngleDegrees(latchedLaserParticleOptions),
-								MixLaserSeed(static_cast<uint32_t>(rasterPipelineGeneration)));
+						struct ClearSeedRequest
+						{
+							std::vector<LaserParticleSeed>* seeds;
+							float dpiScale;
+							float windAngleDegrees;
+							uint32_t seedBase;
+						} request = { &clearSeeds, configuration_.dpiScale,
+							LaserDissolveWindAngleDegrees(latchedLaserParticleOptions),
+							MixLaserSeed(static_cast<uint32_t>(rasterPipelineGeneration)) };
+						// 直接在映射出来的读回内存上取样，不再另存一份整屏像素。
+						renderer_.VisitCanvasPixels([](void* context, const uint32_t* canvasPixels, size_t rowPitchBytes,
+							uint32_t canvasWidth, uint32_t canvasHeight)
+							{
+								const auto& request = *static_cast<ClearSeedRequest*>(context);
+								AppendCanvasClearParticleSeeds(*request.seeds, canvasPixels, rowPitchBytes,
+									canvasWidth, canvasHeight, request.dpiScale, request.windAngleDegrees, request.seedBase);
+							}, &request);
+					}
+					if (!clearSeeds.empty())
+					{
+						// 先让界面知道画布上还有东西，再发布“当前页已空”：否则选择态下辅助窗可能在粒子出现前被隐藏。
+						hasLiveLaserParticles = true;
+						publishLaserState();
 					}
 					const bool cleared = clearCurrentPage(frameDirty, particleSnapshot,
 						forceFullPresent, width, height, std::move(continuation));
-					// 清空会重置粒子池与待发射种子，所以在它之后再交给本帧的粒子推进。
+					// 种子交给本帧稍后的粒子推进；没清成时本帧末尾会按粒子池的真实状态改回可见性。
 					if (cleared && !clearSeeds.empty())
 						laserParticleSeeds.insert(laserParticleSeeds.end(), clearSeeds.begin(), clearSeeds.end());
 					if (cleared && activeWorkspace == Bridge::Workspace::Desktop)
@@ -22896,12 +22929,14 @@ namespace Inkeys::Drawing::Draw3
 						{
 							const bool endDissolve = laserDissolveHasBatch && bakedLaserStrokes.empty();
 							renderer_.RemoveLaserParticleGroup(removedGroup, endDissolve);
+							std::erase_if(laserClickWaves, [removedGroup](const LaserClickWave& wave)
+								{ return wave.group == removedGroup; });
 							if (bakedLaserStrokes.empty())
 							{
 								finishLaserDissolve();
 								if (endDissolve) stopLaserDissolveBatch = false;
 							}
-							hasLiveLaserParticles = renderer_.HasActiveLaserParticles();
+							hasLiveLaserParticles = renderer_.HasActiveLaserParticles() || !laserClickWaves.empty();
 							if (!renderer_.LaserParticlesAvailable())
 							{
 								LARGE_INTEGER failureTime = {};
@@ -24036,7 +24071,8 @@ namespace Inkeys::Drawing::Draw3
 				UnionRectInPlace(frameDirty, previousLaserParticleBounds);
 				UnionRectInPlace(frameDirty, currentLaserParticleBounds);
 			}
-			const bool particleAnimationActive = laserParticleSnapshot.hasActive || renderer_.HasActiveLaserParticles();
+			const bool particleAnimationActive = laserParticleSnapshot.hasActive || renderer_.HasActiveLaserParticles() ||
+				!laserClickWaves.empty();
 			publishShapeUi();
 			hasLiveLaserParticles = particleAnimationActive;
 			if (laserOpacityChanged ||
@@ -24921,8 +24957,18 @@ namespace Inkeys::Drawing::Draw3
 					laserLifecycle.dissolveStartQpc, frameQpc.QuadPart, qpcFrequency);
 			}
 			laserParticleSeeds.clear();
-			hasLiveLaserParticles = renderer_.HasActiveLaserParticles();
-			const bool shouldDrawLaserParticles = effectiveLaserParticleEffects != 0 && hasLiveLaserParticles;
+			// 点击光波：按曲线求出本帧的半径、线宽和透明度，结束的移出。
+			laserClickWaveVisuals.clear();
+			std::erase_if(laserClickWaves, [&](const LaserClickWave& wave)
+			{
+				LaserClickWaveVisual visual;
+				if (!EvaluateLaserClickWave(wave, frameQpc.QuadPart, qpcFrequency, laserParticleConfiguration, visual))
+					return true;
+				laserClickWaveVisuals.push_back(visual);
+				return false;
+			});
+			const bool shouldDrawLaserParticles = renderer_.HasActiveLaserParticles();
+			hasLiveLaserParticles = shouldDrawLaserParticles || !laserClickWaves.empty();
 
 			drainActiveShapeControlBarrier(frameDirty);
 			if (devicePerformance_ && devicePerformance_->RecordingEnabled())
@@ -25453,6 +25499,7 @@ namespace Inkeys::Drawing::Draw3
 						MetricsLaserCall(metricsState_ ? metricsState_->LaserCosts() : nullptr, 3,
 							metricsState_ ? metricsState_->metricFrequency : 0, [&] { return renderer_.DrawLaserParticles(); });
 					}
+					if (!laserClickWaveVisuals.empty()) renderer_.DrawLaserClickWaves(laserClickWaveVisuals);
 					if (laserLifecycle.phase != LaserTrailPhase::Inactive && laserOpacity > 0.0f)
 					{
 						// 已烘颜色使用点采样，轨迹范围之外的全零像素可跳过。

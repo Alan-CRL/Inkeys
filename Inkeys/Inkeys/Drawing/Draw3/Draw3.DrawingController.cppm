@@ -116,7 +116,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool (*recoveryRetryAllowed)(void*, std::uint64_t) noexcept = nullptr;
 		// 绘制线程直接调用：白板当前页视口变化（平移/翻页/冷页恢复/进入或离开白板）。必须无锁、不等待。
 		void (*whiteboardViewportChanged)(void*, const WhiteboardViewportSample&) noexcept = nullptr;
-		void (*laserVisibilityChanged)(void*, bool) = nullptr;
+		// 第二个参数：激光主体是否还在（主栏据此决定是否保持完整）。
+		void (*laserVisibilityChanged)(void*, bool, bool) = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。

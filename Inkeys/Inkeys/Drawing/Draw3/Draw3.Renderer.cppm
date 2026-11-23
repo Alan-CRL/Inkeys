@@ -364,8 +364,10 @@ export namespace Inkeys::Drawing::Draw3
 		void ClearLaserIncrementalCoverage();
 		// 批量绘制 Laser 笔尖，不修改任何画布层。
 		void DrawLaserDots(std::span<const LaserDot> dots);
-		// 固定实例绘制 GPU 粒子；死亡槽在 VS 中退化。
+		// 固定实例绘制粒子池；过期、未释放和空槽在粒子顶点着色器中退化。
 		void DrawLaserParticles(LaserParticlePass pass = LaserParticlePass::UnderBody);
+		// 点击光波：独立的环形图元，走墨迹着色器的类型 10，不经过粒子池。
+		void DrawLaserClickWaves(std::span<const LaserClickWaveVisual> waves);
 		// 以零像素 draw call 预热可用路径；主体在选择时就绪后再预热完整 Laser 路径。
 		// 消除 Qualcomm/Adreno 等延迟编译驱动的首笔卡顿；对 Nvidia/AMD/Intel/WARP 无额外开销。
 		void WarmUpLaserShaders() noexcept;
@@ -375,9 +377,14 @@ export namespace Inkeys::Drawing::Draw3
 		void ConfigureLaserParticles(
 			const LaserParticleConfig& configuration) noexcept;
 		bool LaserParticlesAvailable() const noexcept;
-		// 把已落定的画布层（L2，预乘 BGRA）读回 CPU，供清空时生成飘散粒子；临时纹理用完即释放。
-		bool ReadCanvasPixels(std::vector<uint32_t>& pixels, uint32_t& width, uint32_t& height);
-		// 一次绑定 UAV，按顺序完成存量更新与本帧全部 contact 发射。
+		// 提前建好粒子池并预热粒子着色器（选中激光笔且开了粒子效果时调用），第一笔落下时不再现场创建。
+		void PrepareLaserParticles() noexcept;
+		// 把已落定的画布层（L2，预乘 BGRA）映射给 visitor 只读访问，供清空时生成飘散粒子。
+		// 不另存一份像素；临时读回纹理用完即释放。
+		using CanvasPixelVisitor = void (*)(void* context, const uint32_t* pixels, size_t rowPitchBytes,
+			uint32_t width, uint32_t height);
+		bool VisitCanvasPixels(CanvasPixelVisitor visitor, void* context);
+		// 推进粒子池时钟并写入本帧出生的粒子；没有计算着色器派发。
 		bool HasActiveLaserParticles() const noexcept;
 		void StepLaserParticles(int64_t nowQpc, int64_t qpcFrequency,
 			std::span<const LaserParticleSeed> seeds, uint32_t dissolveSeedCount = 0,

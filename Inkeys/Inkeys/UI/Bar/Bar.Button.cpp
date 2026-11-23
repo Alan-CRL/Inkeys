@@ -80,9 +80,9 @@ void BarButtonSetClass::ExecuteClearClick(bool doubleClickContinuation)
 	}
 	const bool selectionMode =
 		GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection;
+	// 清空只针对墨迹：页面上只有激光轨迹时按空页处理，激光照常走完自己的留存与飘散。
 	const BarClearClickAction action = ResolveBarClearClickAction(
-		selectionMode, Inkeys::Drawing::Draw3::DrawpadHasVisibleContent(
-			Inkeys::UI::Bar::CurrentPageHasContent(), Inkeys::UI::Bar::LaserVisible()),
+		selectionMode, Inkeys::UI::Bar::CurrentPageHasContent(),
 		doubleClickContinuation, clearAttemptedForDoubleClick,
 		clearAcceptedForDoubleClick);
 	if (action == BarClearClickAction::EnterSelection)

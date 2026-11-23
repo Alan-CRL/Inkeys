@@ -1619,6 +1619,7 @@ namespace Inkeys::UI::Bar
 	export std::size_t DebugStatusIndicatorCount() noexcept;
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export bool DebugModeEnabled() noexcept;
+	// laserVisible 传“激光主体是否还在”：只剩飘散粒子时为假，主栏不必等粒子飘完。
 	export void SetCurrentPageHasContent(bool hasContent, bool laserVisible = false) noexcept;
 	export bool LaserVisible() noexcept;
 	export void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);

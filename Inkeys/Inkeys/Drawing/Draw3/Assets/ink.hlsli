@@ -1,7 +1,5 @@
 ﻿// ink.hlsli
 
-#include "laserParticleCommon.hlsli"
-
 // 1. 常量缓冲区 (b0)
 cbuffer ScreenBuffer : register(b0)
 {
@@ -81,7 +79,7 @@ Texture2D LiveOperatorAdd : register(t4);
 Texture2D LiveOperatorRetain : register(t5);
 Texture2D LaserCompositedColor : register(t6);
 Texture2D LaserStrokeCoverage : register(t7);
-StructuredBuffer<LaserGpuParticle> LaserParticleData : register(t8);
+// t8 原为粒子池，现由独立的粒子着色器读取，这里保留空位。
 Texture2D LaserLiveCoverage : register(t9);
 Texture2DArray HistoryEarlierAdd : register(t10);
 Texture2DArray HistoryEarlierRetain : register(t11);

@@ -137,6 +137,12 @@ export namespace Inkeys::Drawing::Draw3
 		return phase != LaserTrailPhase::Inactive || hasActiveParticles;
 	}
 
+	// 激光主体还在（书写、留存、渐隐）时主栏保持完整；只剩随风飘散的粒子时主栏可以先收起，窗口等粒子飘完再隐藏。
+	constexpr bool LaserTrailHoldsBar(LaserTrailPhase phase) noexcept
+	{
+		return phase != LaserTrailPhase::Inactive && phase != LaserTrailPhase::Dissolve;
+	}
+
 	constexpr bool KeepLaserResources(bool laserSelected, bool laserVisible) noexcept
 	{
 		return laserSelected || laserVisible;

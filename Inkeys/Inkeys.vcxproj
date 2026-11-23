@@ -1275,10 +1275,10 @@
     <None Include="Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl" />
     <None Include="Inkeys\Drawing\Draw3\Assets\inkVertexShader.cso" />
     <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli" />
-    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl" />
-    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.cso" />
-    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl" />
-    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.cso" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticlePS.hlsl" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticlePS.cso" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleVS.hlsl" />
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleVS.cso" />
     <None Include="additional\ink_stroke_modeler\README.md" />
     <None Include="exe\DesktopDrawpadBlocker.exe" />
     <None Include="PptCOM.dll" />
@@ -1557,17 +1557,17 @@
       <AdditionalIncludeDirectories>$(IntDir)fxc_utf8\draw3;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <Visible>false</Visible>
     </FxCompile>
-    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl">
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleVS.hlsl">
       <ShaderModel>5.0</ShaderModel>
-      <ShaderType>Compute</ShaderType>
-      <ObjectFileOutput>$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.cso</ObjectFileOutput>
+      <ShaderType>Vertex</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleVS.cso</ObjectFileOutput>
       <AdditionalIncludeDirectories>$(IntDir)fxc_utf8\draw3;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <Visible>false</Visible>
     </FxCompile>
-    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl">
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticlePS.hlsl">
       <ShaderModel>5.0</ShaderModel>
-      <ShaderType>Compute</ShaderType>
-      <ObjectFileOutput>$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.cso</ObjectFileOutput>
+      <ShaderType>Pixel</ShaderType>
+      <ObjectFileOutput>$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticlePS.cso</ObjectFileOutput>
       <AdditionalIncludeDirectories>$(IntDir)fxc_utf8\draw3;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <Visible>false</Visible>
     </FxCompile>
@@ -1605,8 +1605,8 @@
   </Target>
   <!-- FXC 10.1 不接受 BOM；只在中间目录生成 Draw3 的无 BOM 副本。 -->
   <Target Name="PrepareDraw3FxcCompatibleHlsl" BeforeTargets="FxCompile"
-          Inputs="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\ink.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\shape.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\shapeVertexShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\shapePixelShader.hlsl"
-          Outputs="$(IntDir)fxc_utf8\draw3\EraserGripVisual.h;$(IntDir)fxc_utf8\draw3\ink.hlsli;$(IntDir)fxc_utf8\draw3\laserParticleCommon.hlsli;$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl;$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl;$(IntDir)fxc_utf8\draw3\shape.hlsli;$(IntDir)fxc_utf8\draw3\shapeVertexShader.hlsl;$(IntDir)fxc_utf8\draw3\shapePixelShader.hlsl">
+          Inputs="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\ink.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleCommon.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkPixelShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleVS.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticlePS.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\shape.hlsli;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\shapeVertexShader.hlsl;$(ProjectDir)Inkeys\Drawing\Draw3\Assets\shapePixelShader.hlsl"
+          Outputs="$(IntDir)fxc_utf8\draw3\EraserGripVisual.h;$(IntDir)fxc_utf8\draw3\ink.hlsli;$(IntDir)fxc_utf8\draw3\laserParticleCommon.hlsli;$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl;$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl;$(IntDir)fxc_utf8\draw3\laserParticleVS.hlsl;$(IntDir)fxc_utf8\draw3\laserParticlePS.hlsl;$(IntDir)fxc_utf8\draw3\shape.hlsli;$(IntDir)fxc_utf8\draw3\shapeVertexShader.hlsl;$(IntDir)fxc_utf8\draw3\shapePixelShader.hlsl">
     <MakeDir Directories="$(IntDir)fxc_utf8\draw3" />
     <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\EraserGripVisual.h">
       <Output TaskParameter="Lines" ItemName="_Draw3FxcEraserVisualLines" />
@@ -1624,11 +1624,11 @@
     <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\inkVertexShader.hlsl">
       <Output TaskParameter="Lines" ItemName="_Draw3FxcVertexLines" />
     </ReadLinesFromFile>
-    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleUpdateCS.hlsl">
-      <Output TaskParameter="Lines" ItemName="_Draw3FxcLaserUpdateLines" />
+    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleVS.hlsl">
+      <Output TaskParameter="Lines" ItemName="_Draw3FxcLaserParticleVSLines" />
     </ReadLinesFromFile>
-    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticleEmitCS.hlsl">
-      <Output TaskParameter="Lines" ItemName="_Draw3FxcLaserEmitLines" />
+    <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\laserParticlePS.hlsl">
+      <Output TaskParameter="Lines" ItemName="_Draw3FxcLaserParticlePSLines" />
     </ReadLinesFromFile>
     <ReadLinesFromFile File="$(ProjectDir)Inkeys\Drawing\Draw3\Assets\shape.hlsli">
       <Output TaskParameter="Lines" ItemName="_Draw3FxcshapeLines" />
@@ -1646,7 +1646,7 @@
     <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\laserParticleCommon.hlsli" Lines="@(_Draw3FxcLaserCommonLines)" Overwrite="true" Encoding="ASCII" />
     <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\inkPixelShader.hlsl" Lines="@(_Draw3FxcPixelLines)" Overwrite="true" Encoding="ASCII" />
     <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\inkVertexShader.hlsl" Lines="@(_Draw3FxcVertexLines)" Overwrite="true" Encoding="ASCII" />
-    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\laserParticleUpdateCS.hlsl" Lines="@(_Draw3FxcLaserUpdateLines)" Overwrite="true" Encoding="ASCII" />
-    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\laserParticleEmitCS.hlsl" Lines="@(_Draw3FxcLaserEmitLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\laserParticleVS.hlsl" Lines="@(_Draw3FxcLaserParticleVSLines)" Overwrite="true" Encoding="ASCII" />
+    <WriteLinesToFile File="$(IntDir)fxc_utf8\draw3\laserParticlePS.hlsl" Lines="@(_Draw3FxcLaserParticlePSLines)" Overwrite="true" Encoding="ASCII" />
   </Target>
 </Project>

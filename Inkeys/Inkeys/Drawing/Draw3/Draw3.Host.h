@@ -402,6 +402,8 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
 		bool laserVisible = false;
+		// 激光主体还在（不含只剩飘散粒子的阶段）；主栏据此保持完整，窗口显隐仍看 laserVisible。
+		bool laserHoldsBar = false;
 		Bridge::WhiteboardStyleToken whiteboardStyle;
 		WhiteboardTheme whiteboardTheme;
 		std::uint64_t whiteboardGeneration = 0;

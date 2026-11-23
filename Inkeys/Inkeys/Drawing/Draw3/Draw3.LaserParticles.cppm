@@ -21,11 +21,11 @@ export namespace Inkeys::Drawing::Draw3
 	inline constexpr uint32_t kLaserParticleCapacity = 32768;
 	inline constexpr uint32_t kLaserParticleDirtyRegionCapacity = 512;
 
-	enum class LaserParticleKind : uint32_t { Trail, ClickWave, Dissolve };
-	// 飘散与光波画在激光主体之下；行进粒子画在主体之上，压住光晕但避开实体。
+	// 点击光波不是粒子：它是独立图元，见下方 LaserClickWave。
+	enum class LaserParticleKind : uint32_t { Trail = 0, Dissolve = 2 };
+	// 飘散画在激光主体之下；行进粒子画在主体之上，压住光晕但避开实体。
 	enum class LaserParticlePass : uint32_t { UnderBody, OverBody };
-	static_assert(static_cast<uint32_t>(LaserParticleKind::ClickWave) == 1u); // 与 UpdateCS 的种类常量同步。
-	static_assert(static_cast<uint32_t>(LaserParticleKind::Dissolve) == 2u);
+	static_assert(static_cast<uint32_t>(LaserParticleKind::Dissolve) == 2u); // 与粒子着色器的种类常量同步。
 
 	struct LaserDissolveParameters
 	{
@@ -118,12 +118,11 @@ export namespace Inkeys::Drawing::Draw3
 
 	constexpr uint32_t EffectiveLaserParticleEffects(uint32_t requested, bool available) noexcept
 	{
-		if (!available) return 0u;
-		// 点击光波不属于画布粒子效果，只看它自己的开关；其余三项还要总开关开启。
+		// 点击光波是独立图元，不依赖粒子池，只看它自己的开关；其余三项要总开关开启且粒子池可用。
 		const uint32_t particles = LaserParticleOptions::Trail | LaserParticleOptions::Dissolve |
 			LaserParticleOptions::ClearDissolve;
 		return (requested & LaserParticleOptions::ClickWave) |
-			((requested & LaserParticleOptions::Enabled) ? requested & particles : 0u);
+			((available && (requested & LaserParticleOptions::Enabled)) ? requested & particles : 0u);
 	}
 
 	constexpr float LaserDissolveWindAngleDegrees(uint32_t requested) noexcept
@@ -172,6 +171,36 @@ export namespace Inkeys::Drawing::Draw3
 	bool IsLaserParticleClick(double durationSeconds, float maximumDisplacementSquaredPx,
 		float dpiScale, const LaserParticleConfig& configuration) noexcept;
 
+	// 点击光波：一个随时间扩散的圆环。状态只在 CPU，每帧按曲线求出半径、线宽、透明度后
+	// 作为普通墨迹图元绘制（InkData 两个槽），不占粒子池，也不需要粒子着色器。
+	struct LaserClickWave
+	{
+		float x = 0.0f;
+		float y = 0.0f;
+		float entityRadius = 0.0f;
+		float color[4] = {};
+		int64_t startQpc = 0;
+		uint32_t group = 0;
+	};
+
+	// 与 InkData 的两个连续槽逐字段对应：{圆心, 环半径, 半线宽} {rgb, 透明度}。
+	struct LaserClickWaveVisual
+	{
+		float x = 0.0f;
+		float y = 0.0f;
+		float radius = 0.0f;
+		float halfWidth = 0.0f;
+		float color[3] = {};
+		float opacity = 0.0f;
+	};
+	static_assert(sizeof(LaserClickWaveVisual) == 32);
+
+	// 求光波在 nowQpc 的形态；已结束返回 false。
+	bool EvaluateLaserClickWave(const LaserClickWave& wave, int64_t nowQpc, int64_t qpcFrequency,
+		const LaserParticleConfig& configuration, LaserClickWaveVisual& visual) noexcept;
+	// 光波整个寿命内可能覆盖的范围（含抗锯齿边距）。
+	RECT LaserClickWaveBounds(const LaserClickWave& wave, const LaserParticleConfig& configuration) noexcept;
+
 	// 来源提交画布像素、运动参数和自身颜色；模拟层不读取笔迹或材质。
 	struct LaserParticleSeed
 	{
@@ -194,28 +223,51 @@ export namespace Inkeys::Drawing::Draw3
 		LaserParticleKind kind = LaserParticleKind::Trail;
 	};
 
+	// 写入粒子池的紧凑记录（与 laserParticleCommon.hlsli 同步）。出生时由 CPU 写一次，
+	// 之后不再改写：位置、大小、透明度都由顶点着色器按这些参数和时钟求值。
 	struct LaserGpuParticle
 	{
-		LaserParticleSeed source;
 		float position[2];
-		float currentRadius;
-		float opacity;
-		float currentBrightness;
-		uint32_t birthMilliseconds;
-		uint32_t alive;
+		float motion[2];           // 行进：初速度 × 寿命秒数；飘散：风速终值向量
+		float motionParameters[4]; // 行进：呼吸角频率、相位、幅度、渐入时长倒数；飘散：加速快慢、蜿蜒幅度、散开位移 xy
+		float shapeParameters[4];  // 半径、亮度；行进 z：位移与收缩行程之比；飘散 zw：出生位置的风场值
+		uint32_t color;            // RGBA8 直通色
+		uint32_t lifetimeMilliseconds; // 0 为空槽
+		uint32_t releaseMilliseconds;  // 粒子池时钟下的出生时刻（含释放延时）
+		uint32_t kindAndBatch;         // 低 2 位种类，高位为激光飘散批次号
 	};
 
 	static_assert(sizeof(LaserParticleSeed) == 88);
-	static_assert(offsetof(LaserParticleSeed, color) == 16);
-	static_assert(offsetof(LaserParticleSeed, dragPerSecond) == 48);
-	static_assert(offsetof(LaserParticleSeed, lifetimeMilliseconds) == 68);
-	static_assert(offsetof(LaserParticleSeed, group) == 80);
-	static_assert(offsetof(LaserParticleSeed, kind) == 84);
-	static_assert(sizeof(LaserGpuParticle) == 116);
-	static_assert(offsetof(LaserGpuParticle, position) == 88);
-	static_assert(offsetof(LaserGpuParticle, opacity) == 100);
-	static_assert(offsetof(LaserGpuParticle, birthMilliseconds) == 108);
-	static_assert(offsetof(LaserGpuParticle, alive) == 112);
+	static_assert(sizeof(LaserGpuParticle) == 64);
+	static_assert(offsetof(LaserGpuParticle, motionParameters) == 16);
+	static_assert(offsetof(LaserGpuParticle, color) == 48);
+	static_assert(offsetof(LaserGpuParticle, kindAndBatch) == 60);
+
+	// 每次绘制随常量缓冲区下发的时钟与汇聚状态。
+	struct LaserParticleClock
+	{
+		uint32_t nowMilliseconds = 0;
+		uint32_t gatherMilliseconds = 0;
+		uint32_t gatherBatch = 0;     // 0 表示没有批次在汇聚
+		float gatherRemaining = 1.0f; // 1 - 汇聚进度
+	};
+
+	struct LaserParticleState
+	{
+		float x = 0.0f;
+		float y = 0.0f;
+		float radius = 0.0f;
+		float opacity = 0.0f; // 不含颜色自身的透明度
+		float white = 0.0f;   // 飘散粒子向白色混合的比例
+		bool visible = false;
+	};
+
+	// 把来源层的种子压成粒子池记录；bornMilliseconds 为粒子池时钟，dissolveBatch 只对激光飘散批次非零。
+	LaserGpuParticle PackLaserParticle(const LaserParticleSeed& seed, uint32_t bornMilliseconds,
+		uint32_t dissolveBatch) noexcept;
+	// 顶点着色器求值的 CPU 镜像，只供自检核对两边的运动模型。
+	LaserParticleState EvaluateLaserParticle(const LaserGpuParticle& particle, const LaserParticleClock& clock,
+		float dipPerPixel, const LaserParticleConfig& configuration) noexcept;
 
 	struct LaserParticleEmissionSchedule
 	{
@@ -241,17 +293,15 @@ export namespace Inkeys::Drawing::Draw3
 		float tangentX, float tangentY, float entityRadius,
 		float dpiScale, const float (&color)[4], uint32_t count,
 		uint32_t seedBase, uint32_t group, const LaserParticleConfig& configuration);
-	void AppendLaserClickParticleSeeds(std::vector<LaserParticleSeed>& seeds, float x, float y,
-		float entityRadius, const float (&color)[4], uint32_t seedBase, uint32_t group,
-		const LaserParticleConfig& configuration);
 
 	void AppendLaserDissolveParticleSeed(std::vector<LaserParticleSeed>& seeds,
 		const LaserDissolveFront& front, float x, float y, float tangentX, float tangentY,
 		float radius, float coreRadius, float dpiScale, const float (&color)[4],
 		uint32_t random, uint32_t group, float windAngleDegrees, bool point = false);
-	// 从清空前的画布像素（预乘 BGRA，行优先）生成飘散种子，返回追加的数量。
+	// 从清空前的画布像素（预乘 BGRA，行优先，每行 rowPitchBytes 字节）生成飘散种子，返回追加的数量。
+	// 直接读映射出来的读回内存，不另存一份；高 DPI 下按整数步长抽样，扫描量随之成平方下降。
 	uint32_t AppendCanvasClearParticleSeeds(std::vector<LaserParticleSeed>& seeds,
-		std::span<const uint32_t> premultipliedBgra, uint32_t width, uint32_t height,
+		const uint32_t* premultipliedBgra, size_t rowPitchBytes, uint32_t width, uint32_t height,
 		float dpiScale, float windAngleDegrees, uint32_t seedBase);
 
 	struct LaserParticleBatchEnvelope
@@ -278,6 +328,8 @@ export namespace Inkeys::Drawing::Draw3
 		void ExtendLatestDissolve(uint64_t expiresMilliseconds) noexcept;
 		void EndLatestDissolve(uint64_t nowMilliseconds) noexcept;
 		void Expire(uint64_t nowMilliseconds) noexcept;
+		// 最近一批激光飘散仍在环内的槽区间；已退出环时为空。
+		LaserParticleActiveRange LatestDissolveRange() const noexcept;
 
 	private:
 		struct Batch { uint32_t count; uint64_t expiresMilliseconds; };
@@ -323,46 +375,66 @@ export namespace Inkeys::Drawing::Draw3
 		Region* latestDissolve_ = nullptr;
 	};
 
-	// 管理固定 D3D11 粒子池和仅使用 u0 的 Compute Shader 调度。
+	// 管理固定容量的 D3D11 粒子池。没有计算着色器：CPU 在出生时把记录写进环形区间，
+	// 每帧只有一到两次实例化绘制，状态由顶点着色器求值。池与着色器在第一次有粒子时才创建，
+	// 画布粒子效果关闭时不占显存，也不碰任何粒子相关的驱动路径。
 	class LaserParticleSystem
 	{
 	public:
 		bool Initialize(ID3D11Device* device, ID3D11DeviceContext* context,
-			LaserParticleShaderBytecode updateShader,
-			LaserParticleShaderBytecode emitShader) noexcept;
+			LaserParticleShaderBytecode vertexShader,
+			LaserParticleShaderBytecode pixelShader) noexcept;
 		void Release() noexcept;
 		void Configure(const LaserParticleConfig& configuration) noexcept;
 		bool IsAvailable() const noexcept;
+		// GPU 资源是否已经创建（自检用）。
+		bool ResourcesCreated() const noexcept { return particleBuffer_ != nullptr; }
+		ID3D11Buffer* ParticleBuffer() const noexcept { return particleBuffer_.Get(); }
 		void Step(int64_t nowQpc, int64_t qpcFrequency,
 			std::span<const LaserParticleSeed> seeds, uint32_t dissolveSeedCount = 0,
 			LaserDissolveParticleControl dissolve = {}) noexcept;
+		// 调用方先设好渲染目标、混合与光栅状态；返回是否提交了绘制（改动了着色器与输入装配状态）。
+		bool Draw(LaserParticlePass pass, float viewportWidth, float viewportHeight) noexcept;
+		// 提前创建粒子池与着色器；只有这一次调用真正创建了资源时返回 true。
+		bool Prepare() noexcept;
+		// 用一粒空槽提交一次绘制，让延迟编译的驱动现在就编好粒子着色器；调用方负责把视口设为零。
+		void WarmUp() noexcept;
 		void RemoveGroup(uint32_t group, bool endDissolve) noexcept;
 		void Reset() noexcept;
 		LaserParticleActiveRange ActiveRange() const noexcept { return ring_.Range(); }
-		ID3D11ShaderResourceView* ParticleShaderResourceView() const noexcept;
+		LaserParticleClock Clock() const noexcept { return clock_; }
+		float DipPerPixel() const noexcept { return dipPerPixel_; }
 
 	private:
-		bool DispatchUpdate(uint32_t start, uint32_t count, uint32_t milliseconds,
-			uint32_t mode, uint32_t group, uint32_t gatherMilliseconds, float gatherProgress) noexcept;
-		void BindComputeParticles() noexcept;
-		void UnbindComputeResources() noexcept;
+		bool EnsureResources() noexcept;
+		bool Submit(uint32_t start, uint32_t count, LaserParticleKind kind,
+			float viewportWidth, float viewportHeight) noexcept;
+		bool Upload(uint32_t start, uint32_t count) noexcept;
+		bool KillSlots(LaserParticleActiveRange range) noexcept;
 
 		Microsoft::WRL::ComPtr<ID3D11Device> device_;
 		Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
-		Microsoft::WRL::ComPtr<ID3D11ComputeShader> updateShader_;
-		Microsoft::WRL::ComPtr<ID3D11ComputeShader> emitShader_;
+		Microsoft::WRL::ComPtr<ID3D11VertexShader> vertexShader_;
+		Microsoft::WRL::ComPtr<ID3D11PixelShader> pixelShader_;
 		Microsoft::WRL::ComPtr<ID3D11Buffer> particleBuffer_;
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> particleSRV_;
-		Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> particleUAV_;
-		Microsoft::WRL::ComPtr<ID3D11Buffer> updateConstants_;
-		Microsoft::WRL::ComPtr<ID3D11Buffer> emitConstants_;
-		Microsoft::WRL::ComPtr<ID3D11Buffer> seedBuffer_;
-		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> seedSRV_;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> drawConstants_;
+		LaserParticleShaderBytecode vertexBytecode_ = {};
+		LaserParticleShaderBytecode pixelBytecode_ = {};
+		// 打包与清零共用的上传暂存区，以及每个槽所属的分组（撤回某一笔时按它找槽）。
+		std::unique_ptr<LaserGpuParticle[]> staging_;
+		std::unique_ptr<uint32_t[]> slotGroups_;
 		LaserParticleConfig configuration_ = {};
 		LaserParticleActiveRing ring_;
+		LaserParticleClock clock_ = {};
 		int64_t clockOriginQpc_ = 0;
 		uint64_t lastMilliseconds_ = 0;
-		uint32_t dissolveBirthMilliseconds_ = 0;
+		// 两类粒子各自最晚的结束时刻：某一类已全部结束时跳过它那一次绘制。
+		uint64_t trailEndMilliseconds_ = 0;
+		uint64_t driftEndMilliseconds_ = 0;
+		uint32_t dissolveBatch_ = 0;       // 最近一批激光飘散的批次号
+		uint32_t gatheringBatch_ = 0;      // 已进入过汇聚的批次，汇聚被撤销时整批作废
+		float dipPerPixel_ = 1.0f;
 		bool available_ = false;
 	};
 }

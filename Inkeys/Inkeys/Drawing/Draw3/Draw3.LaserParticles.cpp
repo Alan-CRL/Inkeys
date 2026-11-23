@@ -194,7 +194,7 @@ namespace Inkeys::Drawing::Draw3
 			seed.breathingRampSeconds = config.breathingRampSeconds;
 			seed.lifetimeMilliseconds = static_cast<uint32_t>(std::ceil(1000.0f * std::lerp(
 				config.minimumLifetimeSeconds, config.maximumLifetimeSeconds, SampleParticleSeed(random ^ 0x27D4EB2Fu))));
-			// 寿命减速曲线 1 - smoothstep 的积分为 1/2，与 UpdateCS 使用同一个运动模型。
+			// 寿命减速曲线 1 - smoothstep 的积分为 1/2，与粒子着色器使用同一个运动模型。
 			seed.maximumTravelDistance = 0.5f * speed * seed.lifetimeMilliseconds * 0.001f;
 			seed.randomSeed = random;
 			seed.group = group;
@@ -202,24 +202,150 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
-	void AppendLaserClickParticleSeeds(std::vector<LaserParticleSeed>& seeds, float x, float y,
-		float entityRadius, const float (&color)[4], uint32_t seedBase, uint32_t group,
-		const LaserParticleConfig& config)
+	bool EvaluateLaserClickWave(const LaserClickWave& wave, int64_t nowQpc, int64_t qpcFrequency,
+		const LaserParticleConfig& config, LaserClickWaveVisual& visual) noexcept
 	{
-		// 一圈光波就是一个环形图元：radius 为起始半径，maximumTravelDistance 为向外扩的距离，
-		// brightness 借作起始半线宽（像素），由 VS/PS 画成细线。
-		LaserParticleSeed seed;
-		seed.position[0] = x;
-		seed.position[1] = y;
-		std::copy_n(color, 4, seed.color);
-		seed.radius = entityRadius;
-		seed.maximumTravelDistance = config.clickWaveExpansionRatio * entityRadius;
-		seed.brightness = 0.5f * config.clickWaveLineWidthRatio * entityRadius;
-		seed.lifetimeMilliseconds = config.clickWaveLifetimeMilliseconds;
-		seed.randomSeed = HashParticleSeed(seedBase);
-		seed.group = group;
-		seed.kind = LaserParticleKind::ClickWave;
-		seeds.push_back(seed);
+		if (qpcFrequency <= 0 || !IsFinitePositive(wave.entityRadius)) return false;
+		const double elapsed = static_cast<double>((std::max)(nowQpc - wave.startQpc, int64_t{0})) * 1000.0 /
+			static_cast<double>(qpcFrequency);
+		if (!(elapsed < static_cast<double>(config.clickWaveLifetimeMilliseconds))) return false;
+		// 一圈细线从实体边缘向外荡开：先快后慢，线宽与透明度随扩散衰减。
+		const float fade = 1.0f - static_cast<float>(elapsed / config.clickWaveLifetimeMilliseconds);
+		visual.x = wave.x;
+		visual.y = wave.y;
+		visual.radius = wave.entityRadius * (1.0f + (1.0f - fade * fade * fade) * config.clickWaveExpansionRatio);
+		visual.halfWidth = 0.5f * config.clickWaveLineWidthRatio * wave.entityRadius * (std::max)(fade, 0.25f);
+		std::copy_n(wave.color, 3, visual.color);
+		visual.opacity = 0.9f * fade * fade * std::clamp(wave.color[3], 0.0f, 1.0f);
+		return true;
+	}
+
+	RECT LaserClickWaveBounds(const LaserClickWave& wave, const LaserParticleConfig& config) noexcept
+	{
+		// 最大环半径 + 起始半线宽，四边另加 2px 抗锯齿边距（与类型 10 的顶点外扩一致）。
+		const double padding = static_cast<double>(wave.entityRadius) *
+			(1.0 + config.clickWaveExpansionRatio + 0.5 * config.clickWaveLineWidthRatio) + 2.0;
+		if (!std::isfinite(padding) || !std::isfinite(wave.x) || !std::isfinite(wave.y)) return {};
+		return { SaturatingFloorToLong(wave.x - padding), SaturatingFloorToLong(wave.y - padding),
+			SaturatingCeilToLong(wave.x + padding), SaturatingCeilToLong(wave.y + padding) };
+	}
+
+	namespace
+	{
+		// 与 laserParticleVS.hlsl 的 DriftWindField 相同：坐标取“风向, 法向”基下的 DIP。
+		void DriftWindField(float x, float y, float& fieldX, float& fieldY) noexcept
+		{
+			fieldX = std::sin(x * -0.01376f + y * 0.03007f) + 0.6f * std::sin(x * 0.04706f + y * 0.05930f + 1.7f);
+			fieldY = std::sin(x * 0.01200f + y * 0.04325f + 0.6f);
+		}
+
+		uint32_t PackUnorm8(float value) noexcept
+		{
+			return static_cast<uint32_t>(std::lround(std::clamp(std::isfinite(value) ? value : 0.0f, 0.0f, 1.0f) * 255.0f));
+		}
+
+		float Smoothstep01(float value) noexcept
+		{
+			const float t = std::clamp(value, 0.0f, 1.0f);
+			return t * t * (3.0f - 2.0f * t);
+		}
+	}
+
+	LaserGpuParticle PackLaserParticle(const LaserParticleSeed& seed, uint32_t bornMilliseconds,
+		uint32_t dissolveBatch) noexcept
+	{
+		LaserGpuParticle particle = {};
+		particle.position[0] = seed.position[0];
+		particle.position[1] = seed.position[1];
+		particle.shapeParameters[0] = seed.radius;
+		particle.shapeParameters[1] = seed.brightness;
+		particle.color = PackUnorm8(seed.color[0]) | (PackUnorm8(seed.color[1]) << 8) |
+			(PackUnorm8(seed.color[2]) << 16) | (PackUnorm8(seed.color[3]) << 24);
+		particle.lifetimeMilliseconds = seed.lifetimeMilliseconds;
+		particle.releaseMilliseconds = bornMilliseconds + seed.releaseDelayMilliseconds;
+		if (seed.kind == LaserParticleKind::Dissolve)
+		{
+			// 种子字段复用见 AppendDriftParticleSeed。凡是每粒固定不变的量都在这里算好，
+			// 顶点着色器每帧只剩两次 exp 和三次 sin。
+			particle.motion[0] = seed.velocity[0];
+			particle.motion[1] = seed.velocity[1];
+			const float speed = (std::max)(std::hypot(seed.velocity[0], seed.velocity[1]), kMinimumPositiveValue);
+			const float windX = seed.velocity[0] / speed, windY = seed.velocity[1] / speed;
+			particle.motionParameters[0] = (std::max)(seed.dragPerSecond, kMinimumPositiveValue);
+			particle.motionParameters[1] = seed.breathingAmplitude;
+			particle.motionParameters[2] = std::cos(seed.breathingPhase) * seed.angularSpeedRadians;
+			particle.motionParameters[3] = std::sin(seed.breathingPhase) * seed.angularSpeedRadians;
+			const float dipPerPixel = seed.breathingFrequencyHz;
+			DriftWindField((seed.position[0] * windX + seed.position[1] * windY) * dipPerPixel,
+				(seed.position[1] * windX - seed.position[0] * windY) * dipPerPixel,
+				particle.shapeParameters[2], particle.shapeParameters[3]);
+			particle.kindAndBatch = static_cast<uint32_t>(LaserParticleKind::Dissolve) | (dissolveBatch << 2);
+		}
+		else
+		{
+			const float lifetimeSeconds = seed.lifetimeMilliseconds * 0.001f;
+			particle.motion[0] = seed.velocity[0] * lifetimeSeconds;
+			particle.motion[1] = seed.velocity[1] * lifetimeSeconds;
+			particle.motionParameters[0] = kTwoPi * seed.breathingFrequencyHz;
+			particle.motionParameters[1] = seed.breathingPhase;
+			particle.motionParameters[2] = seed.breathingAmplitude;
+			particle.motionParameters[3] = 1.0f / (std::max)(seed.breathingRampSeconds, kMinimumPositiveValue);
+			particle.shapeParameters[2] = std::hypot(particle.motion[0], particle.motion[1]) /
+				(std::max)(seed.maximumTravelDistance, kMinimumPositiveValue);
+			particle.kindAndBatch = static_cast<uint32_t>(LaserParticleKind::Trail);
+		}
+		return particle;
+	}
+
+	LaserParticleState EvaluateLaserParticle(const LaserGpuParticle& particle, const LaserParticleClock& clock,
+		float dipPerPixel, const LaserParticleConfig& config) noexcept
+	{
+		LaserParticleState state;
+		const uint32_t kind = particle.kindAndBatch & 3u;
+		const bool gathering = clock.gatherBatch != 0 && (particle.kindAndBatch >> 2) == clock.gatherBatch;
+		const uint32_t elapsed = (gathering ? clock.gatherMilliseconds : clock.nowMilliseconds) -
+			particle.releaseMilliseconds;
+		if (elapsed >= particle.lifetimeMilliseconds) return state;
+		const float age = static_cast<float>(elapsed) * 0.001f;
+		const float life = static_cast<float>(elapsed) / static_cast<float>(particle.lifetimeMilliseconds);
+		if (kind == static_cast<uint32_t>(LaserParticleKind::Dissolve))
+		{
+			const float speed = (std::max)(std::hypot(particle.motion[0], particle.motion[1]), kMinimumPositiveValue);
+			const float windX = particle.motion[0] / speed, windY = particle.motion[1] / speed;
+			const float drag = particle.motionParameters[0];
+			const float travel = speed * (age - (1.0f - std::exp(-drag * age)) / drag);
+			float fieldX = 0.0f, fieldY = 0.0f;
+			DriftWindField((particle.position[0] * windX + particle.position[1] * windY + travel) * dipPerPixel,
+				(particle.position[1] * windX - particle.position[0] * windY) * dipPerPixel, fieldX, fieldY);
+			const float meanderX = (fieldX - particle.shapeParameters[2]) * particle.motionParameters[1];
+			const float meanderY = (fieldY - particle.shapeParameters[3]) * particle.motionParameters[1];
+			const float burst = 1.0f - std::exp(-3.0f * age);
+			const float remaining = gathering ? clock.gatherRemaining : 1.0f;
+			state.x = particle.position[0] + (windX * (travel + 0.32f * meanderY) - windY * meanderX +
+				particle.motionParameters[2] * burst) * remaining;
+			state.y = particle.position[1] + (windY * (travel + 0.32f * meanderY) + windX * meanderX +
+				particle.motionParameters[3] * burst) * remaining;
+			state.radius = particle.shapeParameters[0] * std::lerp(1.0f, kLaserDissolveParameters.endRadiusScale, life);
+			state.opacity = (1.0f - life * life) * remaining;
+			const float whiteness = std::clamp(1.0f - age / kLaserDissolveParameters.whiteFadeSeconds, 0.0f, 1.0f);
+			state.white = 0.94f * std::clamp(particle.shapeParameters[1] * whiteness * whiteness, 0.0f, 1.0f);
+		}
+		else
+		{
+			const float progress = life - life * life * life * (1.0f - 0.5f * life);
+			state.x = particle.position[0] + particle.motion[0] * progress;
+			state.y = particle.position[1] + particle.motion[1] * progress;
+			const float travel = std::clamp(progress * particle.shapeParameters[2], 0.0f, 1.0f);
+			const float shrink = Smoothstep01((travel - config.shrinkStartTravelRatio) /
+				(1.0f - config.shrinkStartTravelRatio));
+			state.radius = particle.shapeParameters[0] * std::lerp(1.0f, config.endRadiusScale, shrink);
+			const float brightness = std::clamp(particle.shapeParameters[1] + particle.motionParameters[2] *
+				std::sin(particle.motionParameters[0] * age + particle.motionParameters[1]) *
+				Smoothstep01(age * particle.motionParameters[3]), 0.0f, 1.0f);
+			state.opacity = (1.0f - Smoothstep01(life)) * brightness;
+		}
+		state.visible = state.radius > 0.0f && state.opacity > 0.0f;
+		return state;
 	}
 
 	LaserDissolveFront MakeLaserDissolveFront() noexcept
@@ -286,7 +412,7 @@ namespace Inkeys::Drawing::Draw3
 		const float windX = std::cos(windAngle), windY = std::sin(windAngle);
 		seed.velocity[0] = windX * windSpeed;
 		seed.velocity[1] = windY * windSpeed;
-		// 颜色只存来源色；白芯比例放在亮度字段，由 UpdateCS 在出生后很快褪掉。
+		// 颜色只存来源色；白芯比例放在亮度字段，由粒子着色器在出生后很快褪掉。
 		std::copy_n(color, 4, seed.color);
 		seed.brightness = white;
 		seed.radius = std::lerp(config.minimumRadiusDip, config.maximumRadiusDip,
@@ -298,7 +424,7 @@ namespace Inkeys::Drawing::Draw3
 			std::cos(0.027f * acrossDip - 0.011f * alongDip - 0.4f);
 		seed.dragPerSecond = config.accelerationPerSecond * gust * std::lerp(1.0f - config.accelerationJitter,
 			1.0f + config.accelerationJitter, SampleParticleSeed(random ^ 0xD3A2646Cu));
-		// 飘散不做呼吸亮度，复用这几个种子字段把风场参数传给 UpdateCS：
+		// 飘散不做呼吸亮度，复用这几个种子字段把风场参数交给 PackLaserParticle：
 		// 蜿蜒幅度、像素到 DIP 的系数、出生时散开的方向与距离。
 		seed.breathingAmplitude = config.meanderDip * dpiScale;
 		seed.breathingFrequencyHz = 1.0f / dpiScale;
@@ -344,26 +470,40 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	uint32_t AppendCanvasClearParticleSeeds(std::vector<LaserParticleSeed>& seeds,
-		std::span<const uint32_t> premultipliedBgra, uint32_t width, uint32_t height,
+		const uint32_t* premultipliedBgra, size_t rowPitchBytes, uint32_t width, uint32_t height,
 		float dpiScale, float windAngleDegrees, uint32_t seedBase)
 	{
 		const auto& config = kCanvasClearParticleParameters;
-		if (width == 0 || height == 0 || !IsFinitePositive(dpiScale) ||
-			premultipliedBgra.size() < static_cast<size_t>(width) * height) return 0;
-		const size_t pixelCount = static_cast<size_t>(width) * height;
-		// 第一遍只数有墨迹的像素，据此把粒子数摊到整页：墨迹多时按比例变稀，不会只落在画面上半部。
+		if (!premultipliedBgra || width == 0 || height == 0 || !IsFinitePositive(dpiScale) ||
+			rowPitchBytes < static_cast<size_t>(width) * sizeof(uint32_t)) return 0;
+		const auto rowAt = [&](uint32_t y)
+		{
+			return reinterpret_cast<const uint32_t*>(
+				reinterpret_cast<const uint8_t*>(premultipliedBgra) + static_cast<size_t>(y) * rowPitchBytes);
+		};
+		// 粒子密度按 DIP 定，所以高 DPI 下不必逐像素看：每 step × step 个像素取一个代表，
+		// 4K 两倍缩放时扫描量降到四分之一。笔迹在这个缩放下至少有几个像素宽，不会被漏掉。
+		const uint32_t step = (std::max)(1u, static_cast<uint32_t>(dpiScale));
+		// 第一遍只数有墨迹的取样点，据此把粒子数摊到整页：墨迹多时按比例变稀，不会只落在画面上半部。
 		size_t inked = 0;
-		for (size_t i = 0; i < pixelCount; ++i)
-			inked += (premultipliedBgra[i] >> 24) >= config.minimumAlpha;
+		for (uint32_t y = 0; y < height; y += step)
+		{
+			const uint32_t* row = rowAt(y);
+			for (uint32_t x = 0; x < width; x += step)
+				inked += (row[x] >> 24) >= config.minimumAlpha;
+		}
 		if (inked == 0) return 0;
+		// 每个取样点代表 step² 个像素。
 		const double wanted = (std::min)(static_cast<double>(config.maximumSeeds),
-			static_cast<double>(inked) * config.seedsPerSquareDip / (static_cast<double>(dpiScale) * dpiScale));
+			static_cast<double>(inked) * step * step * config.seedsPerSquareDip /
+			(static_cast<double>(dpiScale) * dpiScale));
 		const auto threshold = static_cast<uint32_t>((std::min)(1.0, wanted / static_cast<double>(inked)) * 16777216.0);
 		const size_t first = seeds.size();
-		for (uint32_t y = 0; y < height; ++y)
+		seeds.reserve(first + static_cast<size_t>(wanted) + 64);
+		for (uint32_t y = 0; y < height; y += step)
 		{
-			const uint32_t* row = premultipliedBgra.data() + static_cast<size_t>(y) * width;
-			for (uint32_t x = 0; x < width; ++x)
+			const uint32_t* row = rowAt(y);
+			for (uint32_t x = 0; x < width; x += step)
 			{
 				const uint32_t pixel = row[x];
 				const uint32_t alpha = pixel >> 24;
@@ -380,8 +520,9 @@ namespace Inkeys::Drawing::Draw3
 					static_cast<float>(alpha) / 255.0f };
 				// 墨迹当帧就清掉了，粒子大多立刻出现，少数稍晚，避免齐刷刷同时起飞。
 				const float late = SampleParticleSeed(random ^ 0x7F4A7C15u);
-				AppendDriftParticleSeed(seeds, x + SampleParticleSeed(random ^ 0x967A889Bu),
-					y + SampleParticleSeed(random ^ 0x02E5BE93u), 0.0f, dpiScale, color, random,
+				// 出生位置在取样格内随机，抽样不会留下网格痕迹。
+				AppendDriftParticleSeed(seeds, static_cast<float>(x) + SampleParticleSeed(random ^ 0x967A889Bu) * step,
+					static_cast<float>(y) + SampleParticleSeed(random ^ 0x02E5BE93u) * step, 0.0f, dpiScale, color, random,
 					kCanvasClearParticleGroup, windAngleDegrees,
 					static_cast<uint32_t>(config.releaseMilliseconds * late * late));
 			}
@@ -395,7 +536,7 @@ namespace Inkeys::Drawing::Draw3
 		LaserParticleBatchEnvelope envelope;
 		for (const auto& seed : seeds)
 		{
-			// 第二个 radius 盖住点击光波的半线宽（不超过起始半径），四边另加 2px 抗锯齿边距。
+			// 行程 + 粒子自身大小，四边另加 2px 抗锯齿边距。
 			const double padding = static_cast<double>(seed.maximumTravelDistance) + 2.0 * seed.radius + 2.0;
 			const double x = seed.position[0], y = seed.position[1];
 			if (!std::isfinite(padding) || !std::isfinite(x) || !std::isfinite(y)) continue;
@@ -482,6 +623,20 @@ namespace Inkeys::Drawing::Draw3
 		if (latestDissolve_ == kLaserParticleCapacity) return;
 		batches_[latestDissolve_].expiresMilliseconds = nowMilliseconds;
 		latestDissolve_ = kLaserParticleCapacity;
+	}
+
+	LaserParticleActiveRange LaserParticleActiveRing::LatestDissolveRange() const noexcept
+	{
+		if (latestDissolve_ == kLaserParticleCapacity) return {};
+		// 批次按写入顺序首尾相接，从活跃区间起点累加即可定位。
+		uint32_t slot = Range().start;
+		for (uint32_t i = 0; i < batchCount_; ++i)
+		{
+			const uint32_t batch = (first_ + i) % kLaserParticleCapacity;
+			if (batch == latestDissolve_) return { slot, batches_[batch].count };
+			slot = (slot + batches_[batch].count) % kLaserParticleCapacity;
+		}
+		return {};
 	}
 
 	void LaserParticleActiveRing::Expire(uint64_t nowMilliseconds) noexcept
