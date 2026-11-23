@@ -1184,7 +1184,8 @@
           "Eraser": "Radierer",
           "Laser": "Laserpointer",
           "Shape": "Formen",
-          "Pan": "Verschieben"
+          "Pan": "Verschieben",
+          "Particles": "Partikel"
         },
         "Recording":
         {

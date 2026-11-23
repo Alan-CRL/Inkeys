@@ -22,8 +22,8 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 	// - 无限制渲染帧率：整帧耗时只扣除人为等待（帧率等待、DWM 对齐、上一帧 GPU 已完成时的 waitable 显示节拍），
 	//   等 GPU 的时间保留，表示拿掉这些限制后整帧能跑到的帧率。
 	// 负载百分比只衡量设备能否按画布帧率推进帧循环（见 MakeFigure）；渲染帧率另含显示器与呈现同步的损失，只用于显示。
-	inline constexpr std::size_t kDimensionCount = 6;
-	inline constexpr std::size_t kCounterCount = kDimensionCount + 1; // [0] 总体，[1..6] 各维度
+	inline constexpr std::size_t kDimensionCount = 7;
+	inline constexpr std::size_t kCounterCount = kDimensionCount + 1; // [0] 总体，[1..7] 各维度
 	inline constexpr std::size_t kMaxUsageDays = 7;
 	inline constexpr std::size_t kMaxSignatures = 8;
 	// 单段累加上限（约 2.3 小时 120 FPS 不停顿）；超过后到下次移交前不再累加，避免 double 累积误差。
@@ -44,7 +44,8 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 	inline constexpr int kMinDisplayHz = 10;
 	inline constexpr int kMaxDisplayHz = 1000;
 
-	enum class Dimension : std::uint8_t { Writing, Highlighter, Eraser, Laser, Shape, Pan };
+	// Particles：画布上有粒子在飘（行进粒子、激光飘散、清空飘散）的帧，可与工具维度同帧并计。
+	enum class Dimension : std::uint8_t { Writing, Highlighter, Eraser, Laser, Shape, Pan, Particles };
 
 	constexpr std::uint32_t DimensionBit(Dimension dimension) noexcept
 	{

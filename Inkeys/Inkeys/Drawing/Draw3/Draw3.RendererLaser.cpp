@@ -109,6 +109,53 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 
+	void InkRenderer::ReleaseIdleLaserParticles() noexcept
+	{
+		laserParticleSystem_.ReleaseIdleResources();
+	}
+
+	bool InkRenderer::CaptureCanvasClearSnapshot()
+	{
+		if (!device || !context || !layerL2Texture) return false;
+		D3D11_TEXTURE2D_DESC description = {};
+		layerL2Texture->GetDesc(&description);
+		description.Usage = D3D11_USAGE_DEFAULT;
+		description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		description.CPUAccessFlags = 0;
+		description.MiscFlags = 0;
+		D3D11_TEXTURE2D_DESC existing = {};
+		if (canvasClearSnapshot_) canvasClearSnapshot_->GetDesc(&existing);
+		// 上一次清空的过渡还没结束就再次清空：尺寸相同时直接复用那张纹理。
+		if (!canvasClearSnapshotSRV_ || existing.Width != description.Width || existing.Height != description.Height)
+		{
+			ReleaseCanvasClearSnapshot();
+			if (FAILED(device->CreateTexture2D(&description, nullptr, canvasClearSnapshot_.GetAddressOf())) ||
+				FAILED(device->CreateShaderResourceView(canvasClearSnapshot_.Get(), nullptr,
+					canvasClearSnapshotSRV_.GetAddressOf())))
+			{
+				ReleaseCanvasClearSnapshot();
+				return false;
+			}
+		}
+		context->CopyResource(canvasClearSnapshot_.Get(), layerL2Texture.Get());
+		return true;
+	}
+
+	bool InkRenderer::ResolveCanvasClearSnapshot(ID3D11RenderTargetView* dstRTV, RECT rect,
+		const LaserDissolveFront& front)
+	{
+		if (!canvasClearSnapshotSRV_) return false;
+		// 画布层与已烘激光颜色一样是预乘颜色，类型 11 的“采样 × 碎裂遮罩”可以原样复用，不需要新的着色器分支。
+		return DrawLaserRectPass(dstRTV, rect, 1.0f, 11.0f, canvasClearSnapshotSRV_.Get(), 6,
+			operatorResolveBlendState.Get(), nullptr, 0, front);
+	}
+
+	void InkRenderer::ReleaseCanvasClearSnapshot() noexcept
+	{
+		canvasClearSnapshotSRV_.Reset();
+		canvasClearSnapshot_.Reset();
+	}
+
 	void InkRenderer::PrepareLaserParticles() noexcept
 	{
 		if (!context || !backBufferRTV || !laserParticleSystem_.Prepare()) return;

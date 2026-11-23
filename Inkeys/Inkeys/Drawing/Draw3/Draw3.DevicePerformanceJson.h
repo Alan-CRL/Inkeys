@@ -17,7 +17,9 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 	inline constexpr const char* kFileSchema = "inkeys.device-performance";
 	inline constexpr int kFileVersion = 4; // 4：渲染帧按 DWM 合成周期计数、去掉限制间隔，不兼容 1–3
 	inline constexpr std::array<const char*, kCounterCount> kCounterNames =
-		{ "all", "writing", "highlighter", "eraser", "laser", "shape", "pan" };
+		{ "all", "writing", "highlighter", "eraser", "laser", "shape", "pan", "particles" };
+	// 这个下标起的计数器是后来加的：旧账本里没有对应的键，按空计数读入，不丢弃整个日桶。
+	inline constexpr std::size_t kFirstOptionalCounter = 7;
 
 	namespace Detail
 	{
@@ -228,7 +230,11 @@ namespace Inkeys::Drawing::Draw3::DevicePerformance
 					valid = IsValidDate(day.date) && Detail::DisplayFromJson(bucket["display"], day.display);
 				}
 				for (std::size_t i = 0; valid && i < kCounterCount; ++i)
+				{
+					// 后加的维度在旧账本里没有键：保持空计数。键存在但内容非法仍按坏桶丢弃。
+					if (i >= kFirstOptionalCounter && !bucket.isMember(kCounterNames[i])) continue;
 					valid = Detail::CounterFromJson(bucket[kCounterNames[i]], day.counters[i]);
+				}
 				// 维度计数不能超过总体（总体每帧只计一次）。
 				for (std::size_t i = 1; valid && i < kCounterCount; ++i)
 					valid = day.counters[i].frames <= day.counters[0].frames &&

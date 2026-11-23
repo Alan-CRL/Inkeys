@@ -1184,7 +1184,8 @@
           "Eraser": "Gomma",
           "Laser": "Puntatore laser",
           "Shape": "Forme",
-          "Pan": "Spostamento"
+          "Pan": "Spostamento",
+          "Particles": "Particelle"
         },
         "Recording":
         {

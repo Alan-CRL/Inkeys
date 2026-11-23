@@ -1184,7 +1184,8 @@
           "Eraser": "Borracha",
           "Laser": "Apontador laser",
           "Shape": "Formas",
-          "Pan": "Deslocamento"
+          "Pan": "Deslocamento",
+          "Particles": "Partículas"
         },
         "Recording":
         {

@@ -1184,7 +1184,8 @@
           "Eraser": "Gomme",
           "Laser": "Pointeur laser",
           "Shape": "Formes",
-          "Pan": "Déplacement"
+          "Pan": "Déplacement",
+          "Particles": "Particules"
         },
         "Recording":
         {

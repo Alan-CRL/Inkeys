@@ -278,6 +278,20 @@ namespace Inkeys::Drawing::Draw3
 		return Upload(0, 1);
 	}
 
+	void LaserParticleSystem::ReleaseIdleResources() noexcept
+	{
+		if (!particleBuffer_ || ring_.Range().count != 0) return;
+		// 只归还占内存的对象；设备、字节码和可用状态保留，下次有粒子时 EnsureResources 重新创建。
+		vertexShader_.Reset();
+		pixelShader_.Reset();
+		particleSRV_.Reset();
+		particleBuffer_.Reset();
+		drawConstants_.Reset();
+		staging_.reset();
+		slotGroups_.reset();
+		Reset();
+	}
+
 	void LaserParticleSystem::WarmUp() noexcept
 	{
 		if (available_ && particleBuffer_) Submit(0, 1, LaserParticleKind::Trail, 1.0f, 1.0f);

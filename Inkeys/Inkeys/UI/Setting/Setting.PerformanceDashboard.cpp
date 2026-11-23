@@ -123,7 +123,8 @@ namespace Inkeys::UI::Setting::Design
 			case Dimension::Eraser: return IA(I18nKey.SettingsUI.Performance.Dashboard.Dimension.Eraser);
 			case Dimension::Laser: return IA(I18nKey.SettingsUI.Performance.Dashboard.Dimension.Laser);
 			case Dimension::Shape: return IA(I18nKey.SettingsUI.Performance.Dashboard.Dimension.Shape);
-			default: return IA(I18nKey.SettingsUI.Performance.Dashboard.Dimension.Pan);
+			case Dimension::Pan: return IA(I18nKey.SettingsUI.Performance.Dashboard.Dimension.Pan);
+			default: return IA(I18nKey.SettingsUI.Performance.Dashboard.Dimension.Particles);
 			}
 		}
 
@@ -508,11 +509,11 @@ namespace Inkeys::UI::Setting::Design
 		Preset preset{};
 		switch (preview)
 		{
-		case PerformanceDashboardPreview::Ample: preset = { 24.0, { 22.0, 18.0, 31.0, 27.0, 20.0, 35.0 }, 0, 0 }; break;
-		case PerformanceDashboardPreview::Moderate: preset = { 63.0, { 58.0, -1.0, 74.0, 66.0, -1.0, 69.0 }, 1u << 3, 0 }; break;
-		case PerformanceDashboardPreview::Tight: preset = { 88.0, { 84.0, 71.0, 97.0, 79.0, 92.0, 103.0 }, 0, 0 }; break;
-		case PerformanceDashboardPreview::Overloaded: preset = { 142.0, { 131.0, 118.0, 168.0, 104.0, 125.0, 151.0 }, 0, 0 }; break;
-		default: preset = { 47.0, { 45.0, -1.0, 52.0, -1.0, -1.0, 49.0 }, 0, 60 }; break; // Previous：旧签名 60 FPS
+		case PerformanceDashboardPreview::Ample: preset = { 24.0, { 22.0, 18.0, 31.0, 27.0, 20.0, 35.0, 29.0 }, 0, 0 }; break;
+		case PerformanceDashboardPreview::Moderate: preset = { 63.0, { 58.0, -1.0, 74.0, 66.0, -1.0, 69.0, 71.0 }, 1u << 3, 0 }; break;
+		case PerformanceDashboardPreview::Tight: preset = { 88.0, { 84.0, 71.0, 97.0, 79.0, 92.0, 103.0, 95.0 }, 0, 0 }; break;
+		case PerformanceDashboardPreview::Overloaded: preset = { 142.0, { 131.0, 118.0, 168.0, 104.0, 125.0, 151.0, 137.0 }, 0, 0 }; break;
+		default: preset = { 47.0, { 45.0, -1.0, 52.0, -1.0, -1.0, 49.0, -1.0 }, 0, 60 }; break; // Previous：旧签名 60 FPS
 		}
 		const int fps = preset.frameRate > 0 ? preset.frameRate : (frameRate > 0 ? frameRate : 120);
 		// 虚拟计数：负载 < 100% 时帧循环跟得上（渲染/计算帧率 = 画布帧率），

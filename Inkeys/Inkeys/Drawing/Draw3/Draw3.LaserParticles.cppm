@@ -69,7 +69,6 @@ export namespace Inkeys::Drawing::Draw3
 		uint32_t maximumSeeds = 16384;
 		float seedsPerSquareDip = 0.5f; // 每平方 DIP 墨迹的粒子数；超出上限时整页同比变稀
 		uint32_t minimumAlpha = 48; // 低于它的像素视为没有墨迹（抗锯齿边缘）
-		uint32_t releaseMilliseconds = 260;
 	};
 	inline constexpr CanvasClearParticleParameters kCanvasClearParticleParameters;
 	inline constexpr uint32_t kCanvasClearParticleGroup = 0xFFFFFFFFu; // 不与任何激光笔画的分组号相同
@@ -86,6 +85,8 @@ export namespace Inkeys::Drawing::Draw3
 	};
 
 	LaserDissolveFront MakeLaserDissolveFront() noexcept;
+	// 碎裂遮罩把所有像素都碎完时的进度（之后遮罩恒为零）。
+	float LaserDissolveCrumbleEndProgress() noexcept;
 	float LaserDissolveCoverage(const LaserDissolveFront& front, float x, float y) noexcept;
 	uint32_t LaserDissolveSeedCount(double lengthDip) noexcept;
 
@@ -300,9 +301,12 @@ export namespace Inkeys::Drawing::Draw3
 		uint32_t random, uint32_t group, float windAngleDegrees, bool point = false);
 	// 从清空前的画布像素（预乘 BGRA，行优先，每行 rowPitchBytes 字节）生成飘散种子，返回追加的数量。
 	// 直接读映射出来的读回内存，不另存一份；高 DPI 下按整数步长抽样，扫描量随之成平方下降。
+	// 每粒的释放时刻取它出生像素在碎裂遮罩 front 下消失的时刻，与画布快照的碎裂对齐；
+	// inkBounds 返回取样到的墨迹范围（像素）。
 	uint32_t AppendCanvasClearParticleSeeds(std::vector<LaserParticleSeed>& seeds,
 		const uint32_t* premultipliedBgra, size_t rowPitchBytes, uint32_t width, uint32_t height,
-		float dpiScale, float windAngleDegrees, uint32_t seedBase);
+		float dpiScale, float windAngleDegrees, uint32_t seedBase,
+		const LaserDissolveFront& front, RECT* inkBounds = nullptr);
 
 	struct LaserParticleBatchEnvelope
 	{
@@ -399,6 +403,8 @@ export namespace Inkeys::Drawing::Draw3
 		bool Prepare() noexcept;
 		// 用一粒空槽提交一次绘制，让延迟编译的驱动现在就编好粒子着色器；调用方负责把视口设为零。
 		void WarmUp() noexcept;
+		// 没有存活粒子时归还粒子池、着色器与暂存区；系统仍可用，下次有粒子时重新创建。
+		void ReleaseIdleResources() noexcept;
 		void RemoveGroup(uint32_t group, bool endDissolve) noexcept;
 		void Reset() noexcept;
 		LaserParticleActiveRange ActiveRange() const noexcept { return ring_.Range(); }

@@ -796,6 +796,7 @@ namespace Inkeys::Drawing::Draw3
 		layerL0.retainTexture.Reset();
 		l0Content_ = l1Content_ = {};
 		ReleaseLaserResources();
+		ReleaseCanvasClearSnapshot(); // 与画布同尺寸，尺寸变化后不能再用。
 	}
 
 	void InkRenderer::ReleaseResources()
@@ -1469,8 +1470,26 @@ namespace Inkeys::Drawing::Draw3
 				for (uint32_t y = 20; y < 30; ++y)
 					for (uint32_t x = 10; x < 50; ++x) canvas[y * 64u + x] = 0x80800000u; // 预乘 BGRA：半透明红
 				std::vector<LaserParticleSeed> cleared;
+				const auto clearFront = MakeLaserDissolveFront();
+				RECT inkBounds = {};
 				const auto clearedCount = AppendCanvasClearParticleSeeds(cleared, canvas.data(), 64u * 4u, 64, 64, 1.0f,
-					kLaserDissolveParameters.rightUpWindAngleDegrees, 7);
+					kLaserDissolveParameters.rightUpWindAngleDegrees, 7, clearFront, &inkBounds);
+				// 粒子的释放时刻与碎裂遮罩对齐：每粒都在遮罩碎完之前、自己那个像素消失的时刻出现，而且先后不一。
+				const auto crumbleEndMilliseconds = static_cast<uint32_t>(std::ceil(LaserDissolveCrumbleEndProgress() *
+					kLaserDissolveParameters.durationMilliseconds));
+				check(inkBounds.left <= 10 && inkBounds.top <= 20 && inkBounds.right >= 50 && inkBounds.bottom >= 30 &&
+					inkBounds.left >= 8 && inkBounds.bottom <= 32 && !cleared.empty() &&
+					std::all_of(cleared.begin(), cleared.end(), [&](const LaserParticleSeed& seed)
+					{
+						auto vanished = clearFront;
+						vanished.progress = (seed.releaseDelayMilliseconds + 1) /
+							static_cast<float>(kLaserDissolveParameters.durationMilliseconds);
+						return seed.releaseDelayMilliseconds <= crumbleEndMilliseconds + 1 &&
+							LaserDissolveCoverage(vanished, seed.position[0], seed.position[1]) == 0.0f;
+					}) &&
+					std::any_of(cleared.begin(), cleared.end(), [&](const LaserParticleSeed& seed)
+						{ return seed.releaseDelayMilliseconds != cleared.front().releaseDelayMilliseconds; }),
+					"clear particles appear as their own pixel crumbles, inside the reported ink bounds");
 				check(clearedCount == cleared.size() && clearedCount > 100 && clearedCount <= 400 &&
 					std::all_of(cleared.begin(), cleared.end(), [](const LaserParticleSeed& seed)
 					{
@@ -1479,16 +1498,15 @@ namespace Inkeys::Drawing::Draw3
 							seed.kind == LaserParticleKind::Dissolve && seed.group == kCanvasClearParticleGroup &&
 							std::abs(seed.color[0] - 1.0f) < 0.01f && seed.color[1] == 0.0f && seed.color[2] == 0.0f &&
 							std::abs(seed.color[3] - 128.0f / 255.0f) < 0.001f && seed.brightness == 0.0f &&
-							seed.velocity[0] > 0.0f && seed.velocity[1] < 0.0f &&
-							seed.releaseDelayMilliseconds <= kCanvasClearParticleParameters.releaseMilliseconds;
+							seed.velocity[0] > 0.0f && seed.velocity[1] < 0.0f;
 					}), "clear dissolve seeds are born on inked pixels with their straight color and the chosen wind");
 				const std::vector<uint32_t> emptyCanvas(64u * 64u, 0u);
 				check(AppendCanvasClearParticleSeeds(cleared, emptyCanvas.data(), 64u * 4u, 64, 64, 1.0f,
-					kLaserDissolveParameters.leftUpWindAngleDegrees, 7) == 0, "an empty canvas emits no clear particles");
+					kLaserDissolveParameters.leftUpWindAngleDegrees, 7, clearFront) == 0, "an empty canvas emits no clear particles");
 				// 两倍缩放：按 2×2 抽样，同样的墨迹面积（DIP）得到同量级的粒子，出生位置仍落在墨迹上。
 				std::vector<LaserParticleSeed> sampled;
 				const auto sampledCount = AppendCanvasClearParticleSeeds(sampled, canvas.data(), 64u * 4u, 64, 64, 2.0f,
-					kLaserDissolveParameters.leftUpWindAngleDegrees, 7);
+					kLaserDissolveParameters.leftUpWindAngleDegrees, 7, clearFront);
 				check(sampledCount > 20 && sampledCount <= 100 &&
 					std::all_of(sampled.begin(), sampled.end(), [](const LaserParticleSeed& seed)
 					{
@@ -1502,6 +1520,51 @@ namespace Inkeys::Drawing::Draw3
 						*static_cast<Readback*>(context) = { rowPitchBytes, canvasWidth, canvasHeight, canvasPixels != nullptr };
 					}, &readback) && readback.width == 64 && readback.height == 64 && readback.pitch >= 64u * 4u &&
 					readback.hasPixels, "canvas readback maps the settled layer in place");
+
+				// 清空过渡：清空前的画布留一份快照，用碎裂遮罩逐渐画没。进度 0 原样、中途部分像素消失、碎完后全空。
+				renderer.ClearRTV(renderer.layerL2RTV.Get(), { 0.0f, 0.0f, 0.5f, 0.5f });
+				check(!renderer.HasCanvasClearSnapshot() && renderer.CaptureCanvasClearSnapshot() &&
+					renderer.HasCanvasClearSnapshot(), "clearing keeps one snapshot of the canvas");
+				renderer.ClearRTV(renderer.layerL2RTV.Get(), { 0.0f, 0.0f, 0.0f, 0.0f });
+				const RECT wholeCanvas = { 0, 0, 64, 64 };
+				const auto crumbleAt = [&](float progress, size_t& opaque, size_t& transparent)
+				{
+					auto front = clearFront;
+					front.progress = progress;
+					renderer.ClearRTV(renderer.backBufferRTV.Get(), { 0.0f, 0.0f, 0.0f, 0.0f });
+					if (!renderer.ResolveCanvasClearSnapshot(renderer.backBufferRTV.Get(), wholeCanvas, front)) return false;
+					const auto image = pixels(renderer.backBufferTexture.Get());
+					opaque = transparent = 0;
+					for (size_t i = 3; i < image.size(); i += 4)
+					{
+						opaque += image[i] > 120;
+						transparent += image[i] == 0;
+					}
+					return image.size() == 64 * 64 * 4;
+				};
+				size_t opaque = 0, transparent = 0;
+				check(crumbleAt(0.0f, opaque, transparent) && opaque == 64 * 64, "the snapshot starts as the untouched canvas");
+				check(crumbleAt(0.3f, opaque, transparent) && opaque > 400 && transparent > 400,
+					"halfway through, the snapshot has crumbled pixel by pixel");
+				check(crumbleAt(LaserDissolveCrumbleEndProgress(), opaque, transparent) && transparent == 64 * 64,
+					"at the crumble end nothing of the snapshot is left");
+				renderer.ReleaseCanvasClearSnapshot();
+				check(!renderer.HasCanvasClearSnapshot() &&
+					!renderer.ResolveCanvasClearSnapshot(renderer.backBufferRTV.Get(), wholeCanvas, clearFront),
+					"the snapshot is released after the transition");
+
+				// 粒子池闲时归还：没有存活粒子时释放，系统仍可用，下次有粒子时重建。
+				auto& system = renderer.laserParticleSystem_;
+				renderer.StepLaserParticles(8000, 1000, cleared);
+				renderer.ReleaseIdleLaserParticles();
+				check(system.ResourcesCreated() && renderer.HasActiveLaserParticles(), "a pool with live particles is kept");
+				renderer.ResetLaserParticles();
+				renderer.ReleaseIdleLaserParticles();
+				check(!system.ResourcesCreated() && renderer.LaserParticlesAvailable(), "an idle pool is returned but stays available");
+				renderer.StepLaserParticles(9000, 1000, cleared);
+				check(system.ResourcesCreated() && renderer.HasActiveLaserParticles(), "the pool is rebuilt on the next particle");
+				renderer.ResetLaserParticles();
+				renderer.ReleaseIdleLaserParticles();
 			}
 			std::vector<unsigned char> laserReference;
 			for (int cycle = 0; cycle < 3; ++cycle)

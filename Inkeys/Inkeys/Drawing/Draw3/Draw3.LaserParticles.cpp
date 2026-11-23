@@ -355,6 +355,14 @@ namespace Inkeys::Drawing::Draw3
 		return { 0.0f, 0.0f, kLaserDissolveParameters.crumbleMidpoint - 1.0f, 1.0f };
 	}
 
+	float LaserDissolveCrumbleEndProgress() noexcept
+	{
+		// 与 LaserDissolveEdgeCenter 同一公式取阈值上限，再加上单个像素淡出的半宽。
+		const auto& config = kLaserDissolveParameters;
+		const float latest = std::clamp(config.crumbleMidpoint + 0.5f * config.noiseAmplitude, 0.0f, 1.0f);
+		return (std::min)(1.0f, 2.0f * config.edgeHalfWidth + (1.0f - 2.0f * config.edgeHalfWidth) * latest);
+	}
+
 	static float LaserDissolveEdgeCenter(const LaserDissolveFront& front, float x, float y) noexcept
 	{
 		// 粒子坐标取其覆盖的像素中心；与类型 11 的 SV_POSITION 使用同一哈希。
@@ -471,8 +479,10 @@ namespace Inkeys::Drawing::Draw3
 
 	uint32_t AppendCanvasClearParticleSeeds(std::vector<LaserParticleSeed>& seeds,
 		const uint32_t* premultipliedBgra, size_t rowPitchBytes, uint32_t width, uint32_t height,
-		float dpiScale, float windAngleDegrees, uint32_t seedBase)
+		float dpiScale, float windAngleDegrees, uint32_t seedBase,
+		const LaserDissolveFront& front, RECT* inkBounds)
 	{
+		if (inkBounds) *inkBounds = {};
 		const auto& config = kCanvasClearParticleParameters;
 		if (!premultipliedBgra || width == 0 || height == 0 || !IsFinitePositive(dpiScale) ||
 			rowPitchBytes < static_cast<size_t>(width) * sizeof(uint32_t)) return 0;
@@ -486,13 +496,27 @@ namespace Inkeys::Drawing::Draw3
 		const uint32_t step = (std::max)(1u, static_cast<uint32_t>(dpiScale));
 		// 第一遍只数有墨迹的取样点，据此把粒子数摊到整页：墨迹多时按比例变稀，不会只落在画面上半部。
 		size_t inked = 0;
+		uint32_t minimumX = width, minimumY = height, maximumX = 0, maximumY = 0;
 		for (uint32_t y = 0; y < height; y += step)
 		{
 			const uint32_t* row = rowAt(y);
 			for (uint32_t x = 0; x < width; x += step)
-				inked += (row[x] >> 24) >= config.minimumAlpha;
+			{
+				if ((row[x] >> 24) < config.minimumAlpha) continue;
+				++inked;
+				minimumX = (std::min)(minimumX, x);
+				maximumX = (std::max)(maximumX, x);
+				minimumY = (std::min)(minimumY, y);
+				maximumY = (std::max)(maximumY, y);
+			}
 		}
 		if (inked == 0) return 0;
+		// 四周各放宽一个步长，盖住取样点之间和抗锯齿边缘上没被数到的像素。
+		if (inkBounds)
+			*inkBounds = { static_cast<LONG>(minimumX) - static_cast<LONG>(step),
+				static_cast<LONG>(minimumY) - static_cast<LONG>(step),
+				static_cast<LONG>(maximumX) + 2 * static_cast<LONG>(step),
+				static_cast<LONG>(maximumY) + 2 * static_cast<LONG>(step) };
 		// 每个取样点代表 step² 个像素。
 		const double wanted = (std::min)(static_cast<double>(config.maximumSeeds),
 			static_cast<double>(inked) * step * step * config.seedsPerSquareDip /
@@ -518,13 +542,15 @@ namespace Inkeys::Drawing::Draw3
 					(std::min)(1.0f, static_cast<float>((pixel >> 8) & 0xFFu) * inverse),
 					(std::min)(1.0f, static_cast<float>(pixel & 0xFFu) * inverse),
 					static_cast<float>(alpha) / 255.0f };
-				// 墨迹当帧就清掉了，粒子大多立刻出现，少数稍晚，避免齐刷刷同时起飞。
-				const float late = SampleParticleSeed(random ^ 0x7F4A7C15u);
 				// 出生位置在取样格内随机，抽样不会留下网格痕迹。
-				AppendDriftParticleSeed(seeds, static_cast<float>(x) + SampleParticleSeed(random ^ 0x967A889Bu) * step,
-					static_cast<float>(y) + SampleParticleSeed(random ^ 0x02E5BE93u) * step, 0.0f, dpiScale, color, random,
+				const float bornX = static_cast<float>(x) + SampleParticleSeed(random ^ 0x967A889Bu) * step;
+				const float bornY = static_cast<float>(y) + SampleParticleSeed(random ^ 0x02E5BE93u) * step;
+				// 清空前的画布快照按同一张遮罩逐像素碎掉：粒子在自己那个像素消失的时刻出现，
+				// 画面由墨迹连续过渡到粒子，不会先空一下再冒出点来。
+				AppendDriftParticleSeed(seeds, bornX, bornY, 0.0f, dpiScale, color, random,
 					kCanvasClearParticleGroup, windAngleDegrees,
-					static_cast<uint32_t>(config.releaseMilliseconds * late * late));
+					static_cast<uint32_t>(std::ceil(LaserDissolveReleaseProgress(front, bornX, bornY) *
+						kLaserDissolveParameters.durationMilliseconds)));
 			}
 		}
 		return static_cast<uint32_t>(seeds.size() - first);

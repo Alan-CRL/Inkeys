@@ -17729,6 +17729,18 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<LaserClickWaveVisual> laserClickWaveVisuals;
 		laserClickWaves.reserve(kLaserReservedContactCount);
 		laserClickWaveVisuals.reserve(kLaserReservedContactCount);
+		// 清空飘散的过渡：清空前的画布快照按碎裂遮罩逐渐画没，粒子在各自像素消失时出现。
+		// 起始时刻取清空那一帧的粒子时钟（为 0 表示还没到那一帧的推进点）。
+		bool canvasClearCrumbleActive = false;
+		int64_t canvasClearCrumbleStartQpc = 0;
+		LaserDissolveFront canvasClearCrumbleFront;
+		RECT canvasClearCrumbleBounds = {};
+		auto cancelCanvasClearCrumble = [&]
+		{
+			if (!canvasClearCrumbleActive) return;
+			canvasClearCrumbleActive = false;
+			renderer_.ReleaseCanvasClearSnapshot();
+		};
 		HighlighterGeometry completedHighlighterScratch;
 		std::vector<InkPoint> redoRebuildPoints;
 		HighlighterGeometry redoHighlighterScratch;
@@ -20035,6 +20047,11 @@ namespace Inkeys::Drawing::Draw3
 
 		auto releaseUnusedLaserResources = [&]
 		{
+			// 粒子池闲时归还：没有存活粒子和待发射种子，且不是“选中激光笔并开着激光粒子”（那时保持预热）。
+			if (!renderer_.HasActiveLaserParticles() && laserParticleSeeds.empty() &&
+				!(laserResourceSelection && (effectiveLaserParticleEffects &
+					(LaserParticleOptions::Trail | LaserParticleOptions::Dissolve))))
+				renderer_.ReleaseIdleLaserParticles();
 			// 激光纹理只跟主体走；只剩粒子（含清空画布的飘散）时不需要它，也不为粒子去创建它。
 			if (!ReleaseLaserResourcesIfUnused(renderer_, laserResourceSelection,
 				laserLifecycle.phase != LaserTrailPhase::Inactive)) return;
@@ -21076,6 +21093,8 @@ namespace Inkeys::Drawing::Draw3
 			int width, int height, bool preserveLaser = false)
 		{
 			// 统一权威安装入口也覆盖异步load，不能复用旧页的对象修订缓存或编辑会话。
+			// 换页、恢复、撤回清空等都从这里走：上一页清空留下的碎裂过渡立即作废（本函数随后整屏重画）。
+			cancelCanvasClearCrumble();
 			if (endCanvasFocus) endCanvasFocus(CanvasFocusEndReason::PageSwitch,frameDirty);
 			++shapeUi.documentGeneration; renderer_.ClearShapeRenderCache();
 			// 逻辑换页/工作区/恢复/Clear 立即退休旧起笔，不等待 Present 或物理接触归零。
@@ -22850,6 +22869,9 @@ namespace Inkeys::Drawing::Draw3
 					// 清空前读回画布，把墨迹像素变成随风飘散的粒子。读回失败只是没有粒子，不影响清空；
 					// 重做出来的清空不播放。
 					std::vector<LaserParticleSeed> clearSeeds;
+					const LaserDissolveFront clearCrumbleFront = MakeLaserDissolveFront();
+					RECT clearInkBounds = {};
+					bool crumbleCaptured = false;
 					if (command.type == CanvasCommandType::Clear &&
 						(effectiveLaserParticleEffects & LaserParticleOptions::ClearDissolve))
 					{
@@ -22859,17 +22881,30 @@ namespace Inkeys::Drawing::Draw3
 							float dpiScale;
 							float windAngleDegrees;
 							uint32_t seedBase;
+							LaserDissolveFront front;
+							RECT* inkBounds;
 						} request = { &clearSeeds, configuration_.dpiScale,
 							LaserDissolveWindAngleDegrees(latchedLaserParticleOptions),
-							MixLaserSeed(static_cast<uint32_t>(rasterPipelineGeneration)) };
+							MixLaserSeed(static_cast<uint32_t>(rasterPipelineGeneration)),
+							clearCrumbleFront, &clearInkBounds };
 						// 直接在映射出来的读回内存上取样，不再另存一份整屏像素。
 						renderer_.VisitCanvasPixels([](void* context, const uint32_t* canvasPixels, size_t rowPitchBytes,
 							uint32_t canvasWidth, uint32_t canvasHeight)
 							{
 								const auto& request = *static_cast<ClearSeedRequest*>(context);
 								AppendCanvasClearParticleSeeds(*request.seeds, canvasPixels, rowPitchBytes,
-									canvasWidth, canvasHeight, request.dpiScale, request.windAngleDegrees, request.seedBase);
+									canvasWidth, canvasHeight, request.dpiScale, request.windAngleDegrees, request.seedBase,
+									request.front, request.inkBounds);
 							}, &request);
+						if (!clearSeeds.empty())
+						{
+							// 上一次清空的过渡若还在，先只撤掉状态：快照纹理由下面的捕获直接复用。
+							canvasClearCrumbleActive = false;
+							crumbleCaptured = renderer_.CaptureCanvasClearSnapshot();
+							// 留不下快照（显存不足等）就没有东西可碎：粒子改为当帧全部出现。
+							if (!crumbleCaptured)
+								for (LaserParticleSeed& seed : clearSeeds) seed.releaseDelayMilliseconds = 0;
+						}
 					}
 					if (!clearSeeds.empty())
 					{
@@ -22882,6 +22917,14 @@ namespace Inkeys::Drawing::Draw3
 					// 种子交给本帧稍后的粒子推进；没清成时本帧末尾会按粒子池的真实状态改回可见性。
 					if (cleared && !clearSeeds.empty())
 						laserParticleSeeds.insert(laserParticleSeeds.end(), clearSeeds.begin(), clearSeeds.end());
+					if (cleared && crumbleCaptured)
+					{
+						canvasClearCrumbleActive = true;
+						canvasClearCrumbleStartQpc = 0;
+						canvasClearCrumbleFront = clearCrumbleFront;
+						canvasClearCrumbleBounds = ClampRectToCanvas(clearInkBounds, width, height);
+					}
+					else if (crumbleCaptured) renderer_.ReleaseCanvasClearSnapshot();
 					if (cleared && activeWorkspace == Bridge::Workspace::Desktop)
 					{
 						// 第二次有效 Clear 会替换更老的恢复点。
@@ -24072,7 +24115,7 @@ namespace Inkeys::Drawing::Draw3
 				UnionRectInPlace(frameDirty, currentLaserParticleBounds);
 			}
 			const bool particleAnimationActive = laserParticleSnapshot.hasActive || renderer_.HasActiveLaserParticles() ||
-				!laserClickWaves.empty();
+				!laserClickWaves.empty() || canvasClearCrumbleActive;
 			publishShapeUi();
 			hasLiveLaserParticles = particleAnimationActive;
 			if (laserOpacityChanged ||
@@ -24957,6 +25000,22 @@ namespace Inkeys::Drawing::Draw3
 					laserLifecycle.dissolveStartQpc, frameQpc.QuadPart, qpcFrequency);
 			}
 			laserParticleSeeds.clear();
+			if (canvasClearCrumbleActive)
+			{
+				// 与清空粒子同一帧起算，粒子的释放时刻才能和各像素的消失时刻对上。
+				if (canvasClearCrumbleStartQpc == 0) canvasClearCrumbleStartQpc = frameQpc.QuadPart;
+				canvasClearCrumbleFront.progress = LaserDissolveProgress(
+					canvasClearCrumbleStartQpc, frameQpc.QuadPart, qpcFrequency);
+				if (canvasClearCrumbleFront.progress >= LaserDissolveCrumbleEndProgress() ||
+					!renderer_.HasCanvasClearSnapshot())
+				{
+					// 碎完（或快照因尺寸变化已被释放）：归还纹理，并整屏重画一次，不留任何残影。
+					cancelCanvasClearCrumble();
+					const WindowSize crumbleCanvasSize = window_.Size();
+					UnionRectInPlace(frameDirty, GetFullCanvasRect(crumbleCanvasSize.width, crumbleCanvasSize.height));
+				}
+				else UnionRectInPlace(frameDirty, canvasClearCrumbleBounds);
+			}
 			// 点击光波：按曲线求出本帧的半径、线宽和透明度，结束的移出。
 			laserClickWaveVisuals.clear();
 			std::erase_if(laserClickWaves, [&](const LaserClickWave& wave)
@@ -25493,6 +25552,13 @@ namespace Inkeys::Drawing::Draw3
 					rasterSubmissionFailed = true;
 				else
 				{
+					// 清空前的画布快照按碎裂遮罩画在最下面：墨迹不是当帧消失，而是在约半秒里逐像素碎成粒子。
+					RECT crumbleDirty = {};
+					if (canvasClearCrumbleActive &&
+						IntersectRect(&crumbleDirty, &canvasClearCrumbleBounds, &frameDirty) &&
+						!renderer_.ResolveCanvasClearSnapshot(renderer_.backBufferRTV.Get(), crumbleDirty,
+							canvasClearCrumbleFront))
+						cancelCanvasClearCrumble();
 					// 飘散与光波先于激光主体绘制，托衬在主体下方；行进粒子在主体之后另画一次。
 					if (shouldDrawLaserParticles)
 					{
@@ -25698,6 +25764,9 @@ namespace Inkeys::Drawing::Draw3
 					// 激光笔抬起后的保持/淡出仍在按帧率出帧，属于激光笔负载。
 					if (laserLifecycle.phase == LaserTrailPhase::Hold || laserTrailAnimating())
 						dimensions |= DevicePerformance::DimensionBit(DevicePerformance::Dimension::Laser);
+					// 画布上有粒子在飘（行进粒子、激光飘散、清空飘散及其碎裂过渡）的帧记入粒子维度，可与工具维度同帧并计。
+					if (renderer_.HasActiveLaserParticles() || canvasClearCrumbleActive)
+						dimensions |= DevicePerformance::DimensionBit(DevicePerformance::Dimension::Particles);
 				}
 				// 测量挂起到下一轮开始时结算；帧率截止等待分支会更新结束时刻并标记为按帧率推进。
 				pendingFrame = {};

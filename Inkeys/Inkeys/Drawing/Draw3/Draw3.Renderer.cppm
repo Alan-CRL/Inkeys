@@ -379,6 +379,15 @@ export namespace Inkeys::Drawing::Draw3
 		bool LaserParticlesAvailable() const noexcept;
 		// 提前建好粒子池并预热粒子着色器（选中激光笔且开了粒子效果时调用），第一笔落下时不再现场创建。
 		void PrepareLaserParticles() noexcept;
+		// 没有存活粒子时归还粒子池（约 2 MB 显存与 2 MB 内存），下次有粒子时自动重建。
+		void ReleaseIdleLaserParticles() noexcept;
+		// 清空飘散的过渡：清空前把画布层（L2）留一份，之后每帧用激光飘散同一张碎裂遮罩（类型 11）
+		// 把它画在粒子下面，直到碎完后释放。只在过渡的约半秒里占一张整屏纹理。
+		bool CaptureCanvasClearSnapshot();
+		// 快照已不在（例如窗口尺寸变化后被释放）时返回 false。
+		bool ResolveCanvasClearSnapshot(ID3D11RenderTargetView* dstRTV, RECT rect, const LaserDissolveFront& front);
+		void ReleaseCanvasClearSnapshot() noexcept;
+		bool HasCanvasClearSnapshot() const noexcept { return canvasClearSnapshotSRV_ != nullptr; }
 		// 把已落定的画布层（L2，预乘 BGRA）映射给 visitor 只读访问，供清空时生成飘散粒子。
 		// 不另存一份像素；临时读回纹理用完即释放。
 		using CanvasPixelVisitor = void (*)(void* context, const uint32_t* pixels, size_t rowPitchBytes,
@@ -585,6 +594,8 @@ export namespace Inkeys::Drawing::Draw3
 		LaserDissolveFront uploadedLaserDissolveFront_ = {};
 		bool laserStyleCacheValid_ = false;
 		LaserParticleSystem laserParticleSystem_;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> canvasClearSnapshot_;
+		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> canvasClearSnapshotSRV_;
 		Microsoft::WRL::ComPtr<IDXGIAdapter3> videoMemoryAdapter_;
 		// 单 contact Laser 的实时尾部 coverage 按需创建，避免非 Laser 会话分配额外画布。
 		LaserCoverageResources laserLiveCoverage;

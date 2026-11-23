@@ -1184,7 +1184,8 @@
           "Eraser": "지우개",
           "Laser": "레이저 포인터",
           "Shape": "도형",
-          "Pan": "이동"
+          "Pan": "이동",
+          "Particles": "파티클"
         },
         "Recording":
         {

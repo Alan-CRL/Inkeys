@@ -1188,6 +1188,7 @@ inline constexpr struct I18nKeyRoot
                     const char* Laser = "SettingsUI/Performance/Dashboard/Dimension/Laser";
                     const char* Shape = "SettingsUI/Performance/Dashboard/Dimension/Shape";
                     const char* Pan = "SettingsUI/Performance/Dashboard/Dimension/Pan";
+                    const char* Particles = "SettingsUI/Performance/Dashboard/Dimension/Particles";
                 } Dimension{};
                 struct Node__SettingsUI__Performance__Dashboard__Recording
                 {
