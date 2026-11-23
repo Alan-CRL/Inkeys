@@ -114,7 +114,8 @@ export namespace Inkeys::Drawing::Draw3
 		Inactive,
 		Active,
 		Hold,
-		Fade
+		Fade,
+		Dissolve
 	};
 
 	// 保存整组激光轨迹的 contact 计数和最后一次全部抬笔时刻。
@@ -123,8 +124,23 @@ export namespace Inkeys::Drawing::Draw3
 		LaserTrailPhase phase = LaserTrailPhase::Inactive;
 		uint32_t activeContactCount = 0;
 		int64_t lastAllUpQpc = 0;
+		int64_t latestTerminalQpc = 0;
+		int64_t metricLastAllUpQpc = 0; // 沿用按消费顺序结束整批的真实终态。
 		double minimumHoldDurationSeconds = 0.0;
+		int64_t dissolveStartQpc = 0;
+		int64_t fallbackFadeStartQpc = 0;
+		float fallbackFadeOpacity = 1.0f;
 	};
+
+	constexpr bool LaserTrailVisible(LaserTrailPhase phase, bool hasActiveParticles) noexcept
+	{
+		return phase != LaserTrailPhase::Inactive || hasActiveParticles;
+	}
+
+	constexpr bool KeepLaserResources(bool laserSelected, bool laserVisible) noexcept
+	{
+		return laserSelected || laserVisible;
+	}
 
 	// 同一帧可多次求值；只在帧首到最终生命周期结果的边沿退休瞬态资源。
 	constexpr bool LaserTrailExpiredThisFrame(
@@ -189,7 +205,7 @@ export namespace Inkeys::Drawing::Draw3
 	// 新 contact 在完全消失前会恢复整组满亮并重新进入 Active。
 	void BeginLaserContact(LaserTrailLifecycle& lifecycle) noexcept;
 	// 只有最后一根 Laser 抬起时才开始 Hold 计时。
-	void EndLaserContact(LaserTrailLifecycle& lifecycle, int64_t upQpc) noexcept;
+	void EndLaserContact(LaserTrailLifecycle& lifecycle, int64_t upQpc, bool syntheticTerminal = false) noexcept;
 	// 当前批次实际发射粒子后，主体 Hold 不得早于粒子寿命结束。
 	void RequireLaserMinimumHold(
 		LaserTrailLifecycle& lifecycle, double minimumSeconds) noexcept;
@@ -197,7 +213,15 @@ export namespace Inkeys::Drawing::Draw3
 		const LaserTrailLifecycle& lifecycle, double configuredSeconds) noexcept;
 	// 根据当前设置即时重算 Hold/Fade，并返回平滑后的整组 opacity。
 	float EvaluateLaserTrailOpacity(LaserTrailLifecycle& lifecycle,
-		int64_t nowQpc, int64_t qpcFrequency, double holdDurationSeconds) noexcept;
+		int64_t nowQpc, int64_t qpcFrequency, double holdDurationSeconds,
+		bool dissolveEnabled = false, bool deferDissolve = false) noexcept;
+	void StartLaserDissolveFallback(LaserTrailLifecycle& lifecycle, int64_t nowQpc, float opacity) noexcept;
+	float LaserDissolveProgress(int64_t startQpc, int64_t nowQpc, int64_t qpcFrequency) noexcept;
+	float LaserDissolveGatherProgress(int64_t startQpc, int64_t nowQpc, int64_t qpcFrequency) noexcept;
+	constexpr LaserTrailPhase LaserDissolvePhaseAt(float progress) noexcept
+	{
+		return progress < 1.0f ? LaserTrailPhase::Dissolve : LaserTrailPhase::Inactive;
+	}
 	// 最后一个 contact 结束且仍有未烘干层时，才允许进入批次烘干。
 	bool ShouldBakeLaserBatch(
 		const LaserTrailLifecycle& lifecycle, size_t pendingLayerCount) noexcept;
@@ -233,7 +257,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool drawingCursorDuringContactEnabled = false; // 默认落笔时隐藏应用光标；外部可显式开启。
 		bool translucentInkCursorEnabled = false; // 默认使用不透明 Ink 光标；开启后恢复半透明外观。
 		bool mouseUsesSystemCursor = true; // 普通绘制工具默认使用系统箭头；Eraser/Laser 始终保留专用光标。
-		bool laserParticlesEnabled = false; // 保留配置兼容字段；当前产品在 Controller 强制关闭粒子。
+		uint32_t laserParticleOptions = LaserParticleOptions::Defaults;
 		bool laserMultiTouchDrawingEnabled = false; // 默认只接受第一根 Touch，外部可显式启用激光笔多指绘图。
 		LaserParticleConfig laserParticleConfig = {};
 		double laserHoldDurationSeconds = 1.0; // 最后一根激光笔抬起后的满亮留存时间。

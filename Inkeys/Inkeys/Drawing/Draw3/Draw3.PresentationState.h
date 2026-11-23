@@ -102,13 +102,32 @@ namespace Inkeys::Drawing::Draw3
 		return true;
 	}
 
+	constexpr bool DrawpadHasVisibleContent(bool hasInk, bool laserVisible) noexcept
+	{
+		return hasInk || laserVisible;
+	}
+
+	constexpr bool ShouldCompactDrawpadBar(bool whiteboard, bool selectionMode,
+		bool hasInk, bool laserVisible) noexcept
+	{
+		return !whiteboard && selectionMode && !DrawpadHasVisibleContent(hasInk, laserVisible);
+	}
+
+	inline bool UsesDrawpadInkHandoff(const HostRuntimeSnapshot& runtime) noexcept
+	{
+		return DrawpadHasVisibleContent(runtime.currentPageHasContent, runtime.laserVisible) &&
+			runtime.workspace != Bridge::Workspace::Whiteboard &&
+			(runtime.presentationMode == HostPresentationMode::DirectCompositionVisualTree ||
+				runtime.presentationMode == HostPresentationMode::DwmBlurBehind);
+	}
+
 	constexpr DrawpadPresentationSurface ResolveDrawpadPresentationSurface(
-		bool selectionMode, bool currentPageHasContent,
+		bool selectionMode, bool currentPageHasContent, bool laserVisible,
 		bool auxiliaryFullFrameClean, bool auxiliaryAvailable) noexcept
 	{
 		// ULW 单窗口：选择态 Drawpad 保持可见并穿透，空页也不隐藏（内容为空即全透明）。
 		if (!selectionMode || !auxiliaryAvailable) return DrawpadPresentationSurface::Primary;
-		return !currentPageHasContent && auxiliaryFullFrameClean
+		return !DrawpadHasVisibleContent(currentPageHasContent, laserVisible) && auxiliaryFullFrameClean
 			? DrawpadPresentationSurface::Hidden
 			: DrawpadPresentationSurface::Presentation;
 	}

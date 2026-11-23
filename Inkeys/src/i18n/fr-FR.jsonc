@@ -801,11 +801,22 @@
       },
       "Laser":
       {
-        "N": "Pointeur laser",
+        "N": "Effets du canevas",
         "Particles":
         {
-          "N": "Particules du pointeur laser",
-          "E": "BETA : afficher des particules autour de la traînée du laser."
+          "N": "Effets de particules du canevas",
+          "E": "L'encre devient une fine poussière que le vent emporte.",
+          "Direction": "Direction de la dérive",
+          "DirectionLeftUp": "Vers le haut à gauche",
+          "DirectionRightUp": "Vers le haut à droite",
+          "Trail": "Particules de traînée du pointeur laser",
+          "Dissolve": "Dissolution du pointeur laser",
+          "Clear": "Dissolution lors de l'effacement"
+        },
+        "ClickWave":
+        {
+          "N": "Onde au clic du pointeur laser",
+          "E": "Un appui bref fait naître une onde à partir du point."
         }
       },
       "Haptics":

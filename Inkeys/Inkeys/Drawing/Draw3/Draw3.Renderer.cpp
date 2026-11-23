@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
@@ -366,17 +367,39 @@ namespace Inkeys::Drawing::Draw3
 		tracking->rects[best] = unite(add, tracking->rects[best]);
 	}
 
-	void InkRenderer::SetLaserCoverageTarget(const LaserCoverageResources& layer)
+	void InkRenderer::BindLaserCoverageTarget(const LaserCoverageResources& layer)
 	{
 		UnbindLaserCoverageShaderResources();
-		ID3D11RenderTargetView* targets[] = { layer.rtv.Get() };
-		context->OMSetRenderTargets(1, targets, nullptr);
-		if (dsState) context->OMSetDepthStencilState(dsState.Get(), 0);
+		SetOMTarget(layer.rtv.Get());
 	}
 
-	void InkRenderer::SetLaserLiveCoverageTarget()
+	void InkRenderer::NoteLaserCoverageWrite(LaserCoverageResources& layer, RECT bounds) noexcept
 	{
-		SetLaserCoverageTarget(laserLiveCoverage);
+		if (bounds.left >= bounds.right || bounds.top >= bounds.bottom) return;
+		RECT& written = layer.writtenBounds;
+		if (written.left >= written.right || written.top >= written.bottom)
+			written = bounds;
+		else
+			written = { (std::min)(written.left, bounds.left), (std::min)(written.top, bounds.top),
+				(std::max)(written.right, bounds.right), (std::max)(written.bottom, bounds.bottom) };
+	}
+
+	void InkRenderer::SetLaserCoverageTarget(LaserCoverageResources& layer)
+	{
+		layer.contentUnknown = true;
+		BindLaserCoverageTarget(layer);
+	}
+
+	void InkRenderer::SetLaserCoverageTarget(LaserCoverageResources& layer, RECT writeBounds)
+	{
+		// 批量上传可能在已经画过一部分后失败，先登记整个可能写入的范围。
+		NoteLaserCoverageWrite(layer, writeBounds);
+		BindLaserCoverageTarget(layer);
+	}
+
+	void InkRenderer::SetLaserLiveCoverageTarget(RECT writeBounds)
+	{
+		SetLaserCoverageTarget(laserLiveCoverage, writeBounds);
 	}
 
 	void InkRenderer::ClearRTV(ID3D11RenderTargetView* renderTargetView, DirectX::XMFLOAT4 color)
@@ -451,11 +474,57 @@ namespace Inkeys::Drawing::Draw3
 		if (&layer == &layerL1) ++stableLayerEpoch_;
 	}
 
-	void InkRenderer::ClearLaserCoverage(const LaserCoverageResources& layer)
+	void InkRenderer::ClearLaserCoverage(LaserCoverageResources& layer)
 	{
 		if (!layer.rtv) return;
 		UnbindLaserCoverageShaderResources();
 		ClearRTV(layer.rtv.Get(), kTransparentLayerClearColor);
+		layer.writtenBounds = {};
+		layer.contentUnknown = false;
+		++laserCounters_.fullClears;
+	}
+
+	void InkRenderer::ClearLaserCoverageContent(LaserCoverageResources& layer)
+	{
+		if (!layer.rtv) return;
+		if (layer.contentUnknown)
+		{
+			ClearLaserCoverage(layer);
+			return;
+		}
+		const RECT canvas = { 0, 0, static_cast<LONG>(viewportWidth), static_cast<LONG>(viewportHeight) };
+		RECT rect = {};
+		if (!IntersectRect(&rect, &layer.writtenBounds, &canvas))
+		{
+			layer.writtenBounds = {};
+			++laserCounters_.skippedClears;
+			return;
+		}
+		// 激光写域已经包含抗锯齿余量，直接用裁剪后的面积判断 1/16 分界线。
+		const auto area = static_cast<long long>(rect.right - rect.left) * (rect.bottom - rect.top);
+		if (area * kOperatorContentPartialClearDivisor > static_cast<long long>(canvas.right) * canvas.bottom)
+		{
+			ClearLaserCoverage(layer);
+			return;
+		}
+		if (context1_)
+		{
+			const float transparent[4] = {};
+			UnbindLaserCoverageShaderResources();
+			context1_->ClearView(layer.rtv.Get(), transparent, &rect, 1);
+			++laserCounters_.rectClears;
+		}
+		else
+		{
+			// 类型 12 提交失败时仍须清掉旧像素，避免下一批继承残影。
+			if (!ClearLaserRect(layer, rect))
+			{
+				ClearLaserCoverage(layer);
+				return;
+			}
+			context->OMSetRenderTargets(0, nullptr, nullptr);
+		}
+		layer.writtenBounds = {};
 	}
 
 	void InkRenderer::UnbindLaserCoverageShaderResources()
@@ -466,56 +535,72 @@ namespace Inkeys::Drawing::Draw3
 		context->PSSetShaderResources(6, ARRAYSIZE(nullLaserResources), nullLaserResources);
 	}
 
-	void InkRenderer::ClearAllLaserCoverage()
+	void InkRenderer::ClearLaserCompositedColor()
 	{
-		ClearLaserCoverage(laserCompositedColor);
-		ClearLaserIncrementalCoverage();
-		if (context) context->OMSetRenderTargets(0, nullptr, nullptr);
-		laserBakeScratchColor_ = {}; // Laser 生命周期结束后归还按需分配的全尺寸 scratch。
+		ClearLaserCoverageContent(laserCompositedColor);
 	}
 
-	bool InkRenderer::BeginLaserBake()
+	void InkRenderer::ClearAllLaserCoverage()
 	{
+		ClearLaserCompositedColor();
+		ClearLaserIncrementalCoverage();
+		if (context) context->OMSetRenderTargets(0, nullptr, nullptr);
+		laserBakeScratchColor_.Reset();
+		laserBakeBackupRect_ = {};
+	}
+
+	bool InkRenderer::BeginLaserBake(RECT bounds, bool needsBackup)
+	{
+		laserBakeBackupRect_ = {};
 		if (!device || !context || !laserCompositedColor.texture ||
 			!laserCompositedColor.rtv) return false;
-		D3D11_TEXTURE2D_DESC committedDescription = {};
-		laserCompositedColor.texture->GetDesc(&committedDescription);
-		if (committedDescription.Width == 0 || committedDescription.Height == 0) return false;
-		if (laserBakeScratchColor_.texture)
+		if (!needsBackup) return true;
+
+		D3D11_TEXTURE2D_DESC description = {};
+		laserCompositedColor.texture->GetDesc(&description);
+		const RECT canvas = { 0, 0, static_cast<LONG>(description.Width), static_cast<LONG>(description.Height) };
+		RECT backup = {};
+		if (!IntersectRect(&backup, &bounds, &canvas)) return true;
+		if (!laserBakeScratchColor_)
 		{
-			D3D11_TEXTURE2D_DESC scratchDescription = {};
-			laserBakeScratchColor_.texture->GetDesc(&scratchDescription);
-			if (scratchDescription.Width != committedDescription.Width ||
-				scratchDescription.Height != committedDescription.Height ||
-				scratchDescription.Format != committedDescription.Format)
-				laserBakeScratchColor_ = {};
+			// 副本只用于区域拷贝，尺寸随已烘颜色重建，不需要 RTV 或 SRV。
+			description.BindFlags = 0;
+			if (FAILED(device->CreateTexture2D(&description, nullptr,
+				laserBakeScratchColor_.GetAddressOf()))) return false;
+			++laserCounters_.backupAllocations;
 		}
-		if (!laserBakeScratchColor_.texture &&
-			!CreateLaserCoverageResources(committedDescription.Width,
-				committedDescription.Height, laserBakeScratchColor_))
-		{
-			laserBakeScratchColor_ = {};
-			return false;
-		}
-		if (!laserBakeScratchColor_.rtv || !laserBakeScratchColor_.srv) return false;
-		// 先解绑读写槽，再从最后已提交颜色复制；失败重试永远从同一状态起步。
+
 		UnbindLaserCoverageShaderResources();
 		context->OMSetRenderTargets(0, nullptr, nullptr);
-		context->CopyResource(laserBakeScratchColor_.texture.Get(),
-			laserCompositedColor.texture.Get());
+		CopyResource(laserBakeScratchColor_.Get(), laserCompositedColor.texture.Get(), backup);
+		laserBakeBackupRect_ = backup;
+		++laserCounters_.bakeCopies;
 		return true;
 	}
 
 	ID3D11RenderTargetView* InkRenderer::LaserBakeTarget() const noexcept
 	{
-		return laserBakeScratchColor_.rtv.Get();
+		return laserCompositedColor.rtv.Get();
 	}
 
-	void InkRenderer::CommitLaserBake() noexcept
+	void InkRenderer::CommitLaserBake(RECT bounds) noexcept
 	{
+		// 只有整批成功才扩展已烘写域，回滚后仍保留批前的清除范围。
+		NoteLaserCoverageWrite(laserCompositedColor, bounds);
+		laserBakeBackupRect_ = {};
 		UnbindLaserCoverageShaderResources();
 		if (context) context->OMSetRenderTargets(0, nullptr, nullptr);
-		std::swap(laserCompositedColor, laserBakeScratchColor_);
+	}
+
+	void InkRenderer::AbortLaserBake() noexcept
+	{
+		const RECT backup = laserBakeBackupRect_;
+		laserBakeBackupRect_ = {};
+		if (backup.left >= backup.right || backup.top >= backup.bottom) return;
+		UnbindLaserCoverageShaderResources();
+		context->OMSetRenderTargets(0, nullptr, nullptr);
+		CopyResource(laserCompositedColor.texture.Get(), laserBakeScratchColor_.Get(), backup);
+		++laserCounters_.bakeCopies;
 	}
 
 	bool InkRenderer::CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer)
@@ -578,12 +663,12 @@ namespace Inkeys::Drawing::Draw3
 	uint64_t InkRenderer::LaserResourceBytes() const noexcept
 	{
 		uint64_t bytes = 0;
-		for (const LaserCoverageResources* layer : { &laserCompositedColor,
-			&laserStrokeCoverage, &laserLiveCoverage, &laserBakeScratchColor_ })
+		for (ID3D11Texture2D* texture : { laserCompositedColor.texture.Get(),
+			laserStrokeCoverage.texture.Get(), laserLiveCoverage.texture.Get(), laserBakeScratchColor_.Get() })
 		{
-			if (!layer->texture) continue;
+			if (!texture) continue;
 			D3D11_TEXTURE2D_DESC description = {};
-			layer->texture->GetDesc(&description);
+			texture->GetDesc(&description);
 			bytes += static_cast<uint64_t>(description.Width) * description.Height * 4;
 		}
 		return bytes;
@@ -620,7 +705,9 @@ namespace Inkeys::Drawing::Draw3
 		laserCompositedColor = {};
 		laserStrokeCoverage = {};
 		laserLiveCoverage = {};
-		laserBakeScratchColor_ = {};
+		laserBakeScratchColor_.Reset();
+		laserBakeBackupRect_ = {};
+		laserUndoSavedCoverage_ = {};
 		laserIncrementalCoverageEnabled_ = false;
 		laserIncrementalCoverageUnavailable_ = false;
 		ResetLaserParticles();
@@ -775,6 +862,8 @@ namespace Inkeys::Drawing::Draw3
 		const bool restoreLaserIncremental = LaserIncrementalCoverageAvailable();
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> oldLaserCompositedTexture =
 			laserCompositedColor.texture;
+		const RECT oldLaserWrittenBounds = laserCompositedColor.writtenBounds;
+		const bool oldLaserContentUnknown = laserCompositedColor.contentUnknown;
 		ReleaseSizeDependentResources();
 
 		// waitable swapchain 在部分驱动上要求 resize 时原样保留 BufferCount/Format/Flags。
@@ -801,8 +890,13 @@ namespace Inkeys::Drawing::Draw3
 			if (oldL1RetainTexture) CopyResource(layerL1.retainTexture.Get(), oldL1RetainTexture.Get(), keepRect); // 保留正在绘制的稳定前缀。
 			MarkOperatorLayerUntracked(layerL1); // 拷贝绕过了绑定记账：L1 内容范围未知，下一次清除必须整屏。
 			if (oldLaserCompositedTexture && laserCompositedColor.texture)
+			{
 				CopyResource(laserCompositedColor.texture.Get(),
 					oldLaserCompositedTexture.Get(), keepRect);
+				// 新纹理在复制区之外已清零。旧内容未知时，整个复制区都可能有像素。
+				if (oldLaserContentUnknown) laserCompositedColor.writtenBounds = keepRect;
+				else IntersectRect(&laserCompositedColor.writtenBounds, &oldLaserWrittenBounds, &keepRect);
+			}
 		}
 		return true;
 	}
@@ -1104,6 +1198,205 @@ namespace Inkeys::Drawing::Draw3
 			check(!renderer.EnsureLaserResources(64, 64) && renderer.LaserResourceBytes() == 0,
 				"partial allocation failure publishes no Laser group");
 			renderer.failLaserPreparationAfterColor_ = false;
+			{
+				LaserParticleActiveRing ring;
+				if (!check(ring.Initialize(), "particle ring metadata allocation")) return 1;
+				ring.Append(kLaserParticleCapacity - 2, 10);
+				ring.Expire(10);
+				ring.Append(4, 20);
+				check(ring.Range().start == kLaserParticleCapacity - 2 && ring.Range().count == 4 &&
+					ring.Cursor() == 2, "particle range crosses the ring end");
+				ring.Append(kLaserParticleCapacity - 2, 30);
+				check(ring.Range().start == 0 && ring.Range().count == kLaserParticleCapacity,
+					"particle ring caps an overwrite and keeps the surviving old slots");
+				ring.Expire(20);
+				check(ring.Range().start == 2 && ring.Range().count == kLaserParticleCapacity - 2,
+					"expired front batch contracts the ring");
+				ring.Append(2, 25);
+				ring.Expire(25);
+				check(ring.Range().start == 2 && ring.Range().count == kLaserParticleCapacity - 2,
+					"expired tail batch contracts the ring");
+				ring.Expire(30);
+				check(ring.Range().count == 0, "expired particle ring is empty");
+			}
+			{
+				// 直接派发产品内嵌的两个 CS，仅在无窗口自检中读取已写槽。
+				auto& system = renderer.laserParticleSystem_;
+				if (!check(renderer.LaserParticlesAvailable() && !renderer.HasActiveLaserParticles(),
+					"real WARP particle resources start empty")) return 1;
+				const LaserParticleConfig config;
+				const float trailColor[] = { 0.15f, 0.5f, 1.0f, 1.0f };
+				const float clickColor[] = { 1.0f, 0.2f, 0.0f, 1.0f };
+				std::vector<LaserParticleSeed> seeds;
+				AppendLaserTrailParticleSeeds(seeds, 30, 30, 1, 0, 2, 1.0f, trailColor, 3, 76, 14, config);
+				const float clickRadius = LaserSolidRadius();
+				AppendLaserClickParticleSeeds(seeds, 32, 32, clickRadius, clickColor, 92, 15, config);
+				const size_t ringIndex = 3;
+				if (!check(seeds.size() == ringIndex + 1, "trail seeds plus one wave ring")) return 1;
+				check(std::abs(seeds[0].velocity[1]) > std::abs(seeds[0].velocity[0]) &&
+					std::abs(std::abs(seeds[0].position[1] - 30.0f) - (2.0f * config.trailBirthOffsetRatio + seeds[0].radius)) < 0.0001f &&
+					(seeds[0].position[1] - 30.0f) * seeds[0].velocity[1] > 0.0f &&
+					seeds[0].radius >= config.minimumRadiusDip && seeds[0].radius <= config.maximumRadiusDip,
+					"trail is born at the body edge and launches outward; size stays in the configured range");
+
+				renderer.StepLaserParticles(1000, 1000, seeds);
+				if (!check(system.ActiveRange().count == seeds.size(), "first upload activates only its own slots"))
+					return 1;
+				Microsoft::WRL::ComPtr<ID3D11Resource> pool;
+				system.ParticleShaderResourceView()->GetResource(pool.GetAddressOf());
+				const auto bytes = static_cast<UINT>(seeds.size() * sizeof(LaserGpuParticle));
+				D3D11_BUFFER_DESC stagingDescription = {};
+				stagingDescription.ByteWidth = bytes;
+				stagingDescription.Usage = D3D11_USAGE_STAGING;
+				stagingDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+				Microsoft::WRL::ComPtr<ID3D11Buffer> staging;
+				if (!check(SUCCEEDED(testDevice->CreateBuffer(&stagingDescription, nullptr, staging.GetAddressOf())),
+					"particle readback staging buffer")) return 1;
+				std::vector<LaserGpuParticle> states(seeds.size());
+				const auto readParticles = [&]
+				{
+					const D3D11_BOX range = { 0, 0, 0, bytes, 1, 1 };
+					testContext->CopySubresourceRegion(staging.Get(), 0, 0, 0, 0, pool.Get(), 0, &range);
+					D3D11_MAPPED_SUBRESOURCE mapped = {};
+					if (!check(SUCCEEDED(testContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)),
+						"particle state readback")) return false;
+					std::memcpy(states.data(), mapped.pData, bytes);
+					testContext->Unmap(staging.Get(), 0);
+					return true;
+				};
+				const auto alive = [](const LaserGpuParticle& particle) { return particle.alive != 0; };
+				if (!readParticles()) return 1;
+				check(std::all_of(states.begin(), states.end(), alive) &&
+					states[0].source.color[2] == trailColor[2] && states[ringIndex].source.color[0] == clickColor[0] &&
+					states[ringIndex].source.kind == LaserParticleKind::ClickWave &&
+					states[ringIndex].source.group == 15 &&
+					states[ringIndex].source.randomSeed == seeds[ringIndex].randomSeed &&
+					states[ringIndex].currentRadius == clickRadius, "GPU seed count, colors, kind, group and random seed");
+
+				renderer.StepLaserParticles(1050, 1000, {});
+				if (!readParticles()) return 1;
+				const float trailLife = seeds[0].lifetimeMilliseconds * 0.001f, trailU = 0.050f / trailLife;
+				const float trailTravel = trailLife * (trailU - trailU * trailU * trailU * (1.0f - 0.5f * trailU));
+				const auto ringRadius = [&](float milliseconds)
+				{
+					const float fade = 1.0f - milliseconds / config.clickWaveLifetimeMilliseconds;
+					return clickRadius * (1.0f + (1.0f - fade * fade * fade) * config.clickWaveExpansionRatio);
+				};
+				check(std::abs(states[0].position[0] - (seeds[0].position[0] + seeds[0].velocity[0] * trailTravel)) < 0.001f &&
+					std::abs(states[0].position[1] - (seeds[0].position[1] + seeds[0].velocity[1] * trailTravel)) < 0.001f &&
+					std::abs(states[ringIndex].currentRadius - ringRadius(50.0f)) < 0.01f &&
+					states[ringIndex].position[0] == 32.0f && states[ringIndex].position[1] == 32.0f,
+					"GPU trail deceleration agrees with CPU calculation and the wave expands around the click");
+
+				renderer.StepLaserParticles(1150, 1000, {});
+				if (!readParticles()) return 1;
+				const auto& ring = states[ringIndex];
+				const float ringFade = 1.0f - 150.0f / config.clickWaveLifetimeMilliseconds;
+				check(std::abs(ring.currentRadius - ringRadius(150.0f)) < 0.01f &&
+					std::abs(ring.currentBrightness - 0.5f * config.clickWaveLineWidthRatio * clickRadius * ringFade) < 0.001f &&
+					std::abs(ring.opacity - 0.9f * ringFade * ringFade) < 0.001f,
+					"wave radius, line width and opacity follow the configured curves");
+
+				renderer.StepLaserParticles(2000, 1000, {});
+				if (!readParticles()) return 1;
+				check(!renderer.HasActiveLaserParticles() && std::none_of(states.begin(), states.end(), alive),
+					"expiry clears every emitted GPU slot and the CPU range");
+				Microsoft::WRL::ComPtr<ID3D11Query> query;
+				const D3D11_QUERY_DESC queryDescription = { D3D11_QUERY_PIPELINE_STATISTICS, 0 };
+				if (!check(SUCCEEDED(testDevice->CreateQuery(&queryDescription, query.GetAddressOf())),
+					"particle empty-pool statistics query")) return 1;
+				testContext->Begin(query.Get());
+				renderer.StepLaserParticles(2001, 1000, {});
+				renderer.DrawLaserParticles();
+				testContext->End(query.Get());
+				if (!readParticles()) return 1; // 同一 context 的读取完成后，前序统计也已执行。
+				D3D11_QUERY_DATA_PIPELINE_STATISTICS stats = {};
+				check(testContext->GetData(query.Get(), &stats, sizeof(stats), 0) == S_OK &&
+					stats.CSInvocations == 0 && stats.IAVertices == 0,
+					"empty pool submits neither Dispatch nor DrawInstanced");
+
+				// 游标已跳过第一批；真实 VS 必须加区间起点，PS 必须用每粒自己的颜色。
+				std::array<LaserParticleSeed, 2> sprites = {};
+				for (auto& sprite : sprites)
+				{
+					sprite.position[1] = 16.5f;
+					sprite.radius = 2.0f;
+					sprite.color[3] = 1.0f;
+					sprite.lifetimeMilliseconds = 100;
+				}
+				sprites[0].position[0] = 12.5f;
+				sprites[0].color[0] = 1.0f;
+				sprites[1].position[0] = 50.5f;
+				sprites[1].color[2] = 1.0f;
+				renderer.StepLaserParticles(2002, 1000, sprites);
+				renderer.DrawLaserParticles(LaserParticlePass::OverBody);
+				const auto spritePixels = pixels(renderer.backBufferTexture.Get());
+				const size_t red = (16 * 64 + 12) * 4, blue = (16 * 64 + 50) * 4;
+				check(spritePixels.size() == 64 * 64 * 4 &&
+					spritePixels[red + 2] > 200 && spritePixels[red] < 8 &&
+					spritePixels[blue] > 200 && spritePixels[blue + 2] < 8,
+					"active instances render two independent premultiplied colors");
+				renderer.ResetLaserParticles();
+
+				// 直接检查 UAV 写入结果：撤回必须清除同组在途和尚未释放的种子。
+				std::vector<LaserParticleSeed> dust;
+				const auto front = MakeLaserDissolveFront();
+				for (uint32_t i = 0; i < 4; ++i)
+				{
+					AppendLaserDissolveParticleSeed(dust, front, 32, 32, 1, 0, 3, 1,
+						1.0f, trailColor, 76 + i, i < 2 ? 14 : 15, kLaserDissolveParameters.leftUpWindAngleDegrees);
+					dust.back().releaseDelayMilliseconds = i % 2 == 0 ? 30 : 300;
+					dust.back().lifetimeMilliseconds = 600;
+				}
+				renderer.StepLaserParticles(3000, 1000, dust, static_cast<uint32_t>(dust.size()));
+				renderer.StepLaserParticles(3150, 1000, {});
+				if (!readParticles()) return 1;
+				check(states[0].opacity > 0.0f && states[1].alive != 0 && states[1].opacity == 0.0f,
+					"dissolve has both released and queued particles");
+				const auto moving = states[2];
+				renderer.RemoveLaserParticleGroup(14);
+				if (!readParticles()) return 1;
+				check(!alive(states[0]) && !alive(states[1]) && alive(states[2]) && alive(states[3]) &&
+					std::memcmp(&moving, &states[2], sizeof(moving)) == 0,
+					"undo clears both states of its own group and leaves the other unchanged");
+				renderer.StepLaserParticles(3325, 1000, {}, 0, { 3150, 0.5f, false });
+				if (!readParticles()) return 1;
+				check(alive(states[2]) && !alive(states[3]) && states[2].opacity > 0.0f &&
+					std::abs(states[2].position[0] - std::lerp(moving.position[0], dust[2].position[0], 0.5f)) < 0.001f &&
+					std::abs(states[2].position[1] - std::lerp(moving.position[1], dust[2].position[1], 0.5f)) < 0.001f,
+					"gather uses frozen analytic positions and cancels pending release");
+				renderer.StepLaserParticles(3500, 1000, {}, 0, { 3150, 1.0f, true });
+				if (!readParticles()) return 1;
+				check(!alive(states[2]) && !renderer.HasActiveLaserParticles(),
+					"completed gather clears the remaining GPU slot and its range");
+				renderer.ResetLaserParticles();
+			}
+			{
+				// 清空飘散：只在有墨迹的像素上出生，颜色还原为直通色，方向跟随所选风向。
+				std::vector<uint32_t> canvas(64u * 64u, 0u);
+				for (uint32_t y = 20; y < 30; ++y)
+					for (uint32_t x = 10; x < 50; ++x) canvas[y * 64u + x] = 0x80800000u; // 预乘 BGRA：半透明红
+				std::vector<LaserParticleSeed> cleared;
+				const auto clearedCount = AppendCanvasClearParticleSeeds(cleared, canvas, 64, 64, 1.0f,
+					kLaserDissolveParameters.rightUpWindAngleDegrees, 7);
+				check(clearedCount == cleared.size() && clearedCount > 100 && clearedCount <= 400 &&
+					std::all_of(cleared.begin(), cleared.end(), [](const LaserParticleSeed& seed)
+					{
+						return seed.position[0] >= 10.0f && seed.position[0] <= 50.0f &&
+							seed.position[1] >= 20.0f && seed.position[1] <= 30.0f &&
+							seed.kind == LaserParticleKind::Dissolve && seed.group == kCanvasClearParticleGroup &&
+							std::abs(seed.color[0] - 1.0f) < 0.01f && seed.color[1] == 0.0f && seed.color[2] == 0.0f &&
+							std::abs(seed.color[3] - 128.0f / 255.0f) < 0.001f && seed.brightness == 0.0f &&
+							seed.velocity[0] > 0.0f && seed.velocity[1] < 0.0f &&
+							seed.releaseDelayMilliseconds <= kCanvasClearParticleParameters.releaseMilliseconds;
+					}), "clear dissolve seeds are born on inked pixels with their straight color and the chosen wind");
+				check(AppendCanvasClearParticleSeeds(cleared, std::vector<uint32_t>(64u * 64u, 0u), 64, 64, 1.0f,
+					kLaserDissolveParameters.leftUpWindAngleDegrees, 7) == 0, "an empty canvas emits no clear particles");
+				std::vector<uint32_t> readback;
+				uint32_t readbackWidth = 0, readbackHeight = 0;
+				check(renderer.ReadCanvasPixels(readback, readbackWidth, readbackHeight) && readbackWidth == 64 &&
+					readbackHeight == 64 && readback.size() == 64u * 64u, "canvas readback returns the settled layer");
+			}
 			std::vector<unsigned char> laserReference;
 			for (int cycle = 0; cycle < 3; ++cycle)
 			{
@@ -1122,15 +1415,17 @@ namespace Inkeys::Drawing::Draw3
 				renderer.ConfigureLaserStyle(1, DirectX::XMFLOAT4(1, 0, 0, 1));
 				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
 				const std::array<InkPoint, 2> laser{ InkPoint{ 8, 24, 2, 0 }, InkPoint{ 40, 24, 2, 1 } };
-				check(renderer.DrawLaserCoverage(laser) == 0 &&
-					renderer.ResolveLaserStrokeCoverage(renderer.laserCompositedColor.rtv.Get(), { 0, 0, 64, 64 }),
-					"selected Laser renders into real committed pixels");
+				const RECT resolveRect = { 0, 0, 64, 64 };
+				if (check(renderer.DrawLaserCoverage(laser) == 0 &&
+					renderer.ResolveLaserStrokeCoverage(renderer.LaserBakeTarget(), resolveRect),
+					"selected Laser renders into real committed pixels"))
+					renderer.CommitLaserBake(resolveRect);
 				const auto colorPixels = pixels(renderer.laserCompositedColor.texture.Get());
 				check(!colorPixels.empty() && colorPixels[(24 * 64 + 20) * 4 + 3] > 0,
 					"selected Laser pixels are visible");
 				if (cycle == 0) laserReference = colorPixels;
 				else check(colorPixels == laserReference, "re-entry pixel output is identical");
-				check(renderer.EnsureLaserIncrementalCoverageResources() && renderer.BeginLaserBake() &&
+				check(renderer.EnsureLaserIncrementalCoverageResources() && renderer.BeginLaserBake(resolveRect, true) &&
 					renderer.LaserResourceBytes() == 4ull * 64 * 64 * 4, "live and transactional scratch are accounted");
 				report("live_and_bake");
 				renderer.SetOMTarget(renderer.laserStrokeCoverage.rtv.Get());
@@ -1153,9 +1448,11 @@ namespace Inkeys::Drawing::Draw3
 				"select before resize");
 			renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
 			const std::array<InkPoint, 2> resizeLaser{ InkPoint{ 8, 24, 2, 0 }, InkPoint{ 40, 24, 2, 1 } };
-			check(renderer.DrawLaserCoverage(resizeLaser) == 0 &&
-				renderer.ResolveLaserStrokeCoverage(renderer.laserCompositedColor.rtv.Get(), { 0, 0, 64, 64 }),
-				"real committed content before resize");
+			const RECT resizeResolveRect = { 0, 0, 64, 64 };
+			if (check(renderer.DrawLaserCoverage(resizeLaser) == 0 &&
+				renderer.ResolveLaserStrokeCoverage(renderer.LaserBakeTarget(), resizeResolveRect),
+				"real committed content before resize"))
+				renderer.CommitLaserBake(resizeResolveRect);
 			const auto beforeResize = pixels(renderer.laserCompositedColor.texture.Get());
 			check(renderer.Resize(swapChain.Get(), 96, 80) && renderer.LaserResourcesAvailable() &&
 				renderer.LaserResourceBytes() == 3ull * 96 * 80 * 4, "selected resize rebuilds only selected group");

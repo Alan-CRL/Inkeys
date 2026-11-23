@@ -801,11 +801,22 @@
       },
       "Laser":
       {
-        "N": "Indicator laser",
+        "N": "Efecte ale pânzei",
         "Particles":
         {
-          "N": "Particule pentru indicatorul laser",
-          "E": "BETA: afișează particule în jurul urmei laserului."
+          "N": "Efecte de particule ale pânzei",
+          "E": "Cerneala se preface în praf fin și se risipește în vânt.",
+          "Direction": "Direcția de plutire",
+          "DirectionLeftUp": "Spre stânga sus",
+          "DirectionRightUp": "Spre dreapta sus",
+          "Trail": "Particule de urmă ale indicatorului laser",
+          "Dissolve": "Risipirea indicatorului laser",
+          "Clear": "Risipire la golire"
+        },
+        "ClickWave":
+        {
+          "N": "Undă la clic a indicatorului laser",
+          "E": "O atingere rapidă pornește o undă din acel punct."
         }
       },
       "Haptics":

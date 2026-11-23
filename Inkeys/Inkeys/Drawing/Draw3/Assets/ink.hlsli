@@ -27,6 +27,8 @@ cbuffer LaserStyleBuffer : register(b1)
     float4 laserEdgeColor;
     float4 laserGlowColor;
     float4 laserParameters;
+    float4 laserDissolveProjection; // direction.xy, minimum, inverse span
+    float4 laserDissolveEdge;       // progress, noise amplitude, edge half width, padding
 };
 
 // History cache pass 独立使用 b2，不改变普通墨迹和 Laser 的 b0/b1 布局。

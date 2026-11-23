@@ -323,6 +323,28 @@ OperatorOutput ResolveLaserMaterial(float4 coverage, float opacity)
     return output;
 }
 
+float LaserDissolveMask(float2 position)
+{
+    uint2 pixel = uint2(position);
+    uint hash = pixel.x ^ (pixel.y * 0x9E3779B9u);
+    hash ^= hash >> 16;
+    hash *= 0x7FEB352Du;
+    hash ^= hash >> 15;
+    hash *= 0x846CA68Bu;
+    hash ^= hash >> 16;
+    // 两个哈希取平均（三角分布）：开头和收尾碎得少、中间多，碎裂有缓入缓出，不是一下子全碎。
+    uint second = (hash ^ 0x68E31DA4u) * 0x9E3779B9u;
+    second ^= second >> 16;
+    float noise = (float(hash & 0x00FFFFFFu) + float(second >> 8)) / 33554432.0;
+    float projection = position.x * laserDissolveProjection.x +
+        position.y * laserDissolveProjection.y;
+    float base = 1.0 - (projection - laserDissolveProjection.z) * laserDissolveProjection.w;
+    float edge = laserDissolveEdge.z;
+    float center = edge + (1.0 - 2.0 * edge) *
+        saturate(base + (noise - 0.5) * laserDissolveEdge.y);
+    return 1.0 - smoothstep(center - edge, center + edge, laserDissolveEdge.x);
+}
+
 OperatorOutput main(PS_INPUT input)
 {
     int type = (int) (input.shapeType + 0.5);
@@ -338,25 +360,13 @@ OperatorOutput main(PS_INPUT input)
                 distanceToCenter, input.r1 > 0.0 ? input.r1 : laserRadii.y),
                 input.r2 * laserParameters.x);
 
-        float coreCoverage = LaserAaCoverage(distanceToCenter - input.r1);
-        float glowExtent = max(input.p2.x, 1e-4);
-        float glowRadius = input.r1 + glowExtent;
-        float glowDistance = max(distanceToCenter - input.r1, 0.0);
-        float glowCoverage = LaserAaCoverage(distanceToCenter - glowRadius) *
-            pow(saturate(1.0 - glowDistance / glowExtent), 1.6);
-        float opacity = saturate(input.r2);
-        float brightness = saturate(input.color.y);
-        float3 glowColor = float3(
-            globalPadding.x, input.color.z, input.color.w) * brightness;
-        // 粒子核心直接复用激光所选外套色（borderColor），不再向白色混合；
-        // 只保留生命周期与呼吸带来的亮度变化，避免白底上发灰发白。
-        float3 coreColor = laserBorderColor.rgb * brightness;
-        float4 particle = 0.0;
-        particle = LayerPremultiplied(particle,
-            float4(glowColor, globalPadding.y), glowCoverage);
-        particle = LayerPremultiplied(particle,
-            float4(coreColor, 0.96), coreCoverage);
-        particle *= opacity;
+        // 实心点，没有光晕。p2.x 为负时是点击光波：取负的半线宽，只画半径 r1 处的一圈细线。
+        float coverage = input.p2.x < 0.0
+            ? LaserAaCoverage(abs(distanceToCenter - input.r1) + input.p2.x)
+            : 0.96 * LaserAaCoverage(distanceToCenter - input.r1);
+        // p2.y 的亮度层次只乘透明度，颜色保持纯激光色，不会被压成深色。
+        float4 particle = float4(input.color.rgb, 1.0) *
+            (coverage * saturate(input.r2) * saturate(input.p2.y));
         OperatorOutput particleOutput;
         particleOutput.add = particle;
         particleOutput.retain = (1.0 - particle.a).xxxx;
@@ -454,6 +464,9 @@ OperatorOutput main(PS_INPUT input)
     {
         float4 color = LaserCompositedColor.Sample(OperatorSampler, input.uv) *
             saturate(laserParameters.x);
+        // Keep the original premultiplied values when the sweep is disabled.
+        [branch] if (laserDissolveEdge.x > 0.0)
+            color *= laserDissolveEdge.x >= 1.0 ? 0.0 : LaserDissolveMask(input.pos.xy);
         OperatorOutput stableOutput;
         stableOutput.add = color;
         stableOutput.retain = (1.0 - color.a).xxxx;

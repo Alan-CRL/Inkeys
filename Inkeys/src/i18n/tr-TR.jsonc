@@ -801,11 +801,22 @@
       },
       "Laser":
       {
-        "N": "Lazer işaretçi",
+        "N": "Tuval efektleri",
         "Particles":
         {
-          "N": "Lazer parçacıkları",
-          "E": "BETA: Lazer izinin etrafında parçacıklar gösterin."
+          "N": "Tuval parçacık efektleri",
+          "E": "Mürekkep ince toza dönüşür ve rüzgârla savrulur.",
+          "Direction": "Savrulma yönü",
+          "DirectionLeftUp": "Sol yukarı",
+          "DirectionRightUp": "Sağ yukarı",
+          "Trail": "Lazer işaretçi iz parçacıkları",
+          "Dissolve": "Lazer işaretçi dağılması",
+          "Clear": "Temizlerken dağılma"
+        },
+        "ClickWave":
+        {
+          "N": "Lazer işaretçi tıklama dalgası",
+          "E": "Hızlı bir dokunuş, noktadan bir dalga yayar."
         }
       },
       "Haptics":

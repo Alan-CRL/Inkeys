@@ -23,16 +23,22 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (lifecycle.phase == LaserTrailPhase::Inactive)
 			lifecycle.minimumHoldDurationSeconds = 0.0;
+		if (lifecycle.activeContactCount == 0) lifecycle.latestTerminalQpc = 0;
 		++lifecycle.activeContactCount;
+		lifecycle.dissolveStartQpc = 0;
+		lifecycle.fallbackFadeStartQpc = 0;
 		lifecycle.phase = LaserTrailPhase::Active;
 	}
 
-	void EndLaserContact(LaserTrailLifecycle& lifecycle, int64_t upQpc) noexcept
+	void EndLaserContact(LaserTrailLifecycle& lifecycle, int64_t upQpc, bool syntheticTerminal) noexcept
 	{
 		if (lifecycle.activeContactCount == 0) return;
+		// 多指终态可乱序消费，留存从本批最晚的终态开始。
+		lifecycle.latestTerminalQpc = (std::max)(lifecycle.latestTerminalQpc, upQpc);
 		--lifecycle.activeContactCount;
 		if (lifecycle.activeContactCount != 0) return;
-		lifecycle.lastAllUpQpc = upQpc;
+		lifecycle.lastAllUpQpc = lifecycle.latestTerminalQpc;
+		lifecycle.metricLastAllUpQpc = syntheticTerminal ? 0 : upQpc;
 		lifecycle.phase = LaserTrailPhase::Hold;
 	}
 
@@ -55,8 +61,34 @@ namespace Inkeys::Drawing::Draw3
 		return std::max(configuredSeconds, minimumSeconds);
 	}
 
+	float LaserDissolveProgress(int64_t startQpc, int64_t nowQpc, int64_t qpcFrequency) noexcept
+	{
+		if (qpcFrequency <= 0) return 1.0f;
+		const double elapsed = static_cast<double>(nowQpc - startQpc) / static_cast<double>(qpcFrequency);
+		return static_cast<float>(std::clamp(elapsed * 1000.0 /
+			kLaserDissolveParameters.durationMilliseconds, 0.0, 1.0));
+	}
+
+	float LaserDissolveGatherProgress(int64_t startQpc, int64_t nowQpc, int64_t qpcFrequency) noexcept
+	{
+		if (qpcFrequency <= 0) return 1.0f;
+		const double elapsed = static_cast<double>(nowQpc - startQpc) / static_cast<double>(qpcFrequency);
+		const float t = static_cast<float>(std::clamp(elapsed * 1000.0 /
+			kLaserDissolveParameters.gatherMilliseconds, 0.0, 1.0));
+		return t * t * (3.0f - 2.0f * t);
+	}
+
+	void StartLaserDissolveFallback(LaserTrailLifecycle& lifecycle, int64_t nowQpc, float opacity) noexcept
+	{
+		lifecycle.phase = LaserTrailPhase::Fade;
+		lifecycle.dissolveStartQpc = 0;
+		lifecycle.fallbackFadeStartQpc = nowQpc;
+		lifecycle.fallbackFadeOpacity = opacity;
+	}
+
 	float EvaluateLaserTrailOpacity(LaserTrailLifecycle& lifecycle,
-		int64_t nowQpc, int64_t qpcFrequency, double holdDurationSeconds) noexcept
+		int64_t nowQpc, int64_t qpcFrequency, double holdDurationSeconds,
+		bool dissolveEnabled, bool deferDissolve) noexcept
 	{
 		if (lifecycle.phase == LaserTrailPhase::Inactive) return 0.0f;
 		if (lifecycle.activeContactCount != 0 || lifecycle.phase == LaserTrailPhase::Active)
@@ -70,19 +102,43 @@ namespace Inkeys::Drawing::Draw3
 			lifecycle = {};
 			return 0.0f;
 		}
+		if (lifecycle.phase == LaserTrailPhase::Dissolve)
+		{
+			if (!dissolveEnabled)
+				StartLaserDissolveFallback(lifecycle, nowQpc,
+					1.0f - LaserDissolveProgress(lifecycle.dissolveStartQpc, nowQpc, qpcFrequency));
+			else if (LaserDissolvePhaseAt(LaserDissolveProgress(lifecycle.dissolveStartQpc,
+				nowQpc, qpcFrequency)) == LaserTrailPhase::Dissolve)
+				return 1.0f;
+			else
+			{
+				lifecycle = {};
+				return 0.0f;
+			}
+		}
 		holdDurationSeconds = EffectiveLaserHoldDurationSeconds(
 			lifecycle, holdDurationSeconds);
 
 		const double elapsedSeconds = std::max(0.0,
 			static_cast<double>(nowQpc - lifecycle.lastAllUpQpc) /
 			static_cast<double>(qpcFrequency));
-		if (elapsedSeconds < holdDurationSeconds)
+		const bool fallback = lifecycle.fallbackFadeStartQpc > 0;
+		if (!fallback)
 		{
-			lifecycle.phase = LaserTrailPhase::Hold;
-			return 1.0f;
+			if (elapsedSeconds < holdDurationSeconds || deferDissolve)
+			{
+				lifecycle.phase = LaserTrailPhase::Hold;
+				return 1.0f;
+			}
+			if (dissolveEnabled && lifecycle.phase != LaserTrailPhase::Fade)
+			{
+				lifecycle.phase = LaserTrailPhase::Dissolve;
+				lifecycle.dissolveStartQpc = nowQpc;
+				return 1.0f;
+			}
 		}
-		const double fadeProgress = (elapsedSeconds - holdDurationSeconds) /
-			kLaserFadeDurationSeconds;
+		const double fadeProgress = (fallback ? static_cast<double>(nowQpc - lifecycle.fallbackFadeStartQpc) /
+			static_cast<double>(qpcFrequency) : elapsedSeconds - holdDurationSeconds) / kLaserFadeDurationSeconds;
 		if (fadeProgress >= 1.0)
 		{
 			lifecycle = {};
@@ -91,7 +147,7 @@ namespace Inkeys::Drawing::Draw3
 		lifecycle.phase = LaserTrailPhase::Fade;
 		const float t = std::clamp(static_cast<float>(fadeProgress), 0.0f, 1.0f);
 		const float smooth = t * t * (3.0f - 2.0f * t);
-		return 1.0f - smooth;
+		return fallback ? lifecycle.fallbackFadeOpacity * (1.0f - smooth) : 1.0f - smooth;
 	}
 
 	bool ShouldBakeLaserBatch(

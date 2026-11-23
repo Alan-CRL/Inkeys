@@ -1619,7 +1619,8 @@ namespace Inkeys::UI::Bar
 	export std::size_t DebugStatusIndicatorCount() noexcept;
 	export void SetDebugOptions(bool enable, bool showFrameRate);
 	export bool DebugModeEnabled() noexcept;
-	export void SetCurrentPageHasContent(bool hasContent) noexcept;
+	export void SetCurrentPageHasContent(bool hasContent, bool laserVisible = false) noexcept;
+	export bool LaserVisible() noexcept;
 	export void NoteRecallHistoryAvailability(bool canUndo, bool canRedo);
 	export bool CurrentPageHasContent() noexcept;
 	export void RefreshToolState() noexcept;

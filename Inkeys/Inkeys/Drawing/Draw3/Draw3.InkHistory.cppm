@@ -182,6 +182,7 @@ export namespace Inkeys::Drawing::Draw3
 		CanvasOperationKind kind = CanvasOperationKind::Append;
 		RenderItemId item;
 		std::optional<InkStroke> before, after;
+		uint64_t operationSequence = 0;
 	};
 
 	// Render sidecar 管理绘制项可见性与 Tile；文档操作 journal 由页面 runtime 统一持有。

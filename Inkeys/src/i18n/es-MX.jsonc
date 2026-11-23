@@ -801,11 +801,22 @@
       },
       "Laser":
       {
-        "N": "Puntero láser",
+        "N": "Efectos del lienzo",
         "Particles":
         {
-          "N": "Partículas del puntero láser",
-          "E": "BETA: mostrar partículas alrededor de la estela del láser."
+          "N": "Efectos de partículas del lienzo",
+          "E": "La tinta se vuelve polvo fino y se la lleva el viento.",
+          "Direction": "Dirección de la deriva",
+          "DirectionLeftUp": "Hacia arriba a la izquierda",
+          "DirectionRightUp": "Hacia arriba a la derecha",
+          "Trail": "Partículas de rastro del puntero láser",
+          "Dissolve": "Disolución del puntero láser",
+          "Clear": "Disolución al borrar todo"
+        },
+        "ClickWave":
+        {
+          "N": "Onda al hacer clic del puntero láser",
+          "E": "Un toque rápido lanza una onda desde el punto."
         }
       },
       "Haptics":

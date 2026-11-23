@@ -45,6 +45,7 @@ void RequestBarBorderCursorSuspend();
 namespace
 {
 	IdtAtomic<bool> currentPageHasContent = false;
+	IdtAtomic<bool> laserVisibleOnCanvas = false;
 	std::atomic_bool contentStateUpdatesReady = false;
 	std::atomic_bool pptPresentationActive = false;
 	// 几何只使用渲染线程已接管的场景；语义发布不能提前改变在途帧的 dock 线。
@@ -379,10 +380,12 @@ namespace Inkeys::UI::Bar
 		return BarUiDebugModeEnabled;
 	}
 
-	void SetCurrentPageHasContent(bool hasContent) noexcept
+	void SetCurrentPageHasContent(bool hasContent, bool laserVisible) noexcept
 	{
-		if (static_cast<bool>(currentPageHasContent) == hasContent) return;
+		if (static_cast<bool>(currentPageHasContent) == hasContent &&
+			static_cast<bool>(laserVisibleOnCanvas) == laserVisible) return;
 		currentPageHasContent = hasContent;
+		laserVisibleOnCanvas = laserVisible;
 		if (contentStateUpdatesReady.load(std::memory_order_acquire))
 			barUISet.UpdateRendering();
 	}
@@ -401,6 +404,11 @@ namespace Inkeys::UI::Bar
 	bool CurrentPageHasContent() noexcept
 	{
 		return currentPageHasContent;
+	}
+
+	bool LaserVisible() noexcept
+	{
+		return laserVisibleOnCanvas;
 	}
 
 	void SetPptPresentationActive(bool active) noexcept

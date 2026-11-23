@@ -982,21 +982,25 @@ namespace
 			&& !MoveModePansCanvas(false, Workspace::Desktop)
 			&& !MoveModePansCanvas(false, Workspace::Presentation),
 			"only whiteboard Move mode pans the canvas")) ++failures;
-		if (!Expect(ResolveDrawpadPresentationSurface(true, false, true, true) ==
+		if (!Expect(ResolveDrawpadPresentationSurface(true, false, false, true, true) ==
 			DrawpadPresentationSurface::Hidden,
 			"clean empty selection hides both drawpad surfaces")) ++failures;
-		if (!Expect(ResolveDrawpadPresentationSurface(true, false, false, true) ==
+		if (!Expect(ResolveDrawpadPresentationSurface(true, false, false, false, true) ==
 			DrawpadPresentationSurface::Presentation,
 			"empty selection waits for full-frame clean")) ++failures;
-		if (!Expect(ResolveDrawpadPresentationSurface(true, true, false, true) ==
+		if (!Expect(ResolveDrawpadPresentationSurface(true, true, false, false, true) ==
 			DrawpadPresentationSurface::Presentation,
 			"content selection uses the auxiliary surface")) ++failures;
-		if (!Expect(ResolveDrawpadPresentationSurface(false, false, true, true) ==
+		// 仅有激光轨迹时同样由辅助窗接力，轨迹消失并验证全透明后才隐藏。
+		if (!Expect(ResolveDrawpadPresentationSurface(true, false, true, true, true) ==
+			DrawpadPresentationSurface::Presentation,
+			"laser-only selection keeps the auxiliary surface")) ++failures;
+		if (!Expect(ResolveDrawpadPresentationSurface(false, false, false, true, true) ==
 			DrawpadPresentationSurface::Primary,
 			"drawing mode uses the primary surface")) ++failures;
-		if (!Expect(ResolveDrawpadPresentationSurface(true, false, true, false) ==
+		if (!Expect(ResolveDrawpadPresentationSurface(true, false, false, true, false) ==
 			DrawpadPresentationSurface::Primary
-			&& ResolveDrawpadPresentationSurface(true, true, false, false) ==
+			&& ResolveDrawpadPresentationSurface(true, true, false, false, false) ==
 			DrawpadPresentationSurface::Primary,
 			"ULW selection keeps the click-through primary drawpad visible")) ++failures;
 	}

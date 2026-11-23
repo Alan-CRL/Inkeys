@@ -801,11 +801,22 @@
       },
       "Laser":
       {
-        "N": "Laserpointer",
+        "N": "Leinwandeffekte",
         "Particles":
         {
-          "N": "Laserpointer-Partikel",
-          "E": "BETA: Partikel um die Laserspur anzeigen."
+          "N": "Partikeleffekte der Leinwand",
+          "E": "Tinte wird zu feinem Staub und weht mit dem Wind davon.",
+          "Direction": "Driftrichtung",
+          "DirectionLeftUp": "Nach links oben",
+          "DirectionRightUp": "Nach rechts oben",
+          "Trail": "Spurpartikel des Laserpointers",
+          "Dissolve": "Auflösen des Laserpointers",
+          "Clear": "Auflösen beim Leeren"
+        },
+        "ClickWave":
+        {
+          "N": "Klick-Welle des Laserpointers",
+          "E": "Ein kurzes Tippen lässt vom Punkt aus eine Welle ausgehen."
         }
       },
       "Haptics":

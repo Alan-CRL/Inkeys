@@ -801,11 +801,22 @@
       },
       "Laser":
       {
-        "N": "Laser pointer",
+        "N": "Canvas effects",
         "Particles":
         {
-          "N": "Laser pointer particles",
-          "E": "BETA: Display particles around the laser trail."
+          "N": "Canvas particle effects",
+          "E": "Ink turns to fine dust and drifts away on the wind.",
+          "Direction": "Drift direction",
+          "DirectionLeftUp": "Up and to the left",
+          "DirectionRightUp": "Up and to the right",
+          "Trail": "Laser pointer trail particles",
+          "Dissolve": "Laser pointer dissolve",
+          "Clear": "Dissolve when clearing"
+        },
+        "ClickWave":
+        {
+          "N": "Laser pointer click ripple",
+          "E": "A quick tap sends a ripple out from the point."
         }
       },
       "Haptics":

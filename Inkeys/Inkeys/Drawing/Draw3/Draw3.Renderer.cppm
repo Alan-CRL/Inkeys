@@ -49,6 +49,15 @@ export namespace Inkeys::Drawing::Draw3
 		uint64_t shapePartialClears = 0;
 		uint64_t shapeSkippedClears = 0;
 	};
+	// 激光纹理操作按张累计，供自检读取。
+	struct LaserSurfaceCounters
+	{
+		uint64_t fullClears = 0;
+		uint64_t rectClears = 0;
+		uint64_t skippedClears = 0;
+		uint64_t bakeCopies = 0;
+		uint64_t backupAllocations = 0;
+	};
 	inline constexpr float kLaserSolidDiameterAt96Dpi = 5.0f;
 	inline constexpr float kLaserCoreDiameterRatio = 1.0f / 3.0f;
 	inline constexpr float kLaserDiffuseExtentAt96Dpi = 5.0f;
@@ -177,9 +186,11 @@ export namespace Inkeys::Drawing::Draw3
 		DirectX::XMFLOAT4 edgeColor = {};
 		DirectX::XMFLOAT4 glowColor = {};
 		DirectX::XMFLOAT4 parameters = {};
+		DirectX::XMFLOAT4 dissolveProjection = {};
+		DirectX::XMFLOAT4 dissolveEdge = {};
 	};
 
-	static_assert(sizeof(LaserStyleConstants) == 112,
+	static_assert(sizeof(LaserStyleConstants) == 144,
 		"LaserStyleConstants 必须与 HLSL b1 保持 16 字节对齐");
 
 	struct HighlighterGeometry
@@ -205,6 +216,9 @@ export namespace Inkeys::Drawing::Draw3
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
 		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+		// 内容已知时，writtenBounds 之外全为零。刚创建或未声明范围的写入视为未知。
+		RECT writtenBounds = {};
+		bool contentUnknown = true;
 	};
 
 	struct TrustedL2SnapshotCompositeRequest
@@ -324,7 +338,8 @@ export namespace Inkeys::Drawing::Draw3
 			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity = 1.0f);
 		// 将已烘干的预乘颜色层按整组 opacity 叠加到目标。
 		bool ResolveLaserCompositedColor(
-			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity);
+			ID3D11RenderTargetView* dstRTV, RECT rect, float opacity,
+			const LaserDissolveFront& front = {});
 		// 以不混合的矩形写零局部清理单笔 scratch。
 		bool ClearLaserCoverageRect(RECT rect);
 		bool ClearLaserLiveCoverageRect(RECT rect);
@@ -334,10 +349,15 @@ export namespace Inkeys::Drawing::Draw3
 		void ReleaseLaserResources() noexcept;
 		// 当前持有纹理的名义像素字节，不包含驱动/进程内存口径。
 		uint64_t LaserResourceBytes() const noexcept;
-		// Bake 只改独立 scratch；全部 pass 成功后才交换成可见稳定颜色。
-		bool BeginLaserBake();
+		// 烘焙原位写颜色。多层先备份本批写域，失败时 Abort 拷回。
+		bool BeginLaserBake(RECT bounds, bool needsBackup);
 		ID3D11RenderTargetView* LaserBakeTarget() const noexcept;
-		void CommitLaserBake() noexcept;
+		void CommitLaserBake(RECT bounds) noexcept;
+		void AbortLaserBake() noexcept;
+		// 撤回使用同一颜色事务；活动的增量 coverage 在期间临时换出。
+		bool BeginLaserUndo(RECT rect, bool preserveIncrementalCoverage);
+		bool ReplayLaserStroke(std::span<const InkPoint> points, RECT rect, int rasterWidth, int rasterHeight);
+		void FinishLaserUndo(bool succeeded, RECT remainingBounds);
 		// 仅在绘制线程选择 Laser 后创建 L0 coverage；失败在本次资源会话降级到完整重绘。
 		bool EnsureLaserIncrementalCoverageResources();
 		bool LaserIncrementalCoverageAvailable() const noexcept;
@@ -345,7 +365,7 @@ export namespace Inkeys::Drawing::Draw3
 		// 批量绘制 Laser 笔尖，不修改任何画布层。
 		void DrawLaserDots(std::span<const LaserDot> dots);
 		// 固定实例绘制 GPU 粒子；死亡槽在 VS 中退化。
-		void DrawLaserParticles();
+		void DrawLaserParticles(LaserParticlePass pass = LaserParticlePass::UnderBody);
 		// 以零像素 draw call 预热可用路径；主体在选择时就绪后再预热完整 Laser 路径。
 		// 消除 Qualcomm/Adreno 等延迟编译驱动的首笔卡顿；对 Nvidia/AMD/Intel/WARP 无额外开销。
 		void WarmUpLaserShaders() noexcept;
@@ -353,12 +373,16 @@ export namespace Inkeys::Drawing::Draw3
 		void ConfigureLaserStyle(float dpiScale,
 			DirectX::XMFLOAT4 shellColor) noexcept;
 		void ConfigureLaserParticles(
-			const LaserParticleConfig& configuration, float dpiScale) noexcept;
+			const LaserParticleConfig& configuration) noexcept;
 		bool LaserParticlesAvailable() const noexcept;
+		// 把已落定的画布层（L2，预乘 BGRA）读回 CPU，供清空时生成飘散粒子；临时纹理用完即释放。
+		bool ReadCanvasPixels(std::vector<uint32_t>& pixels, uint32_t& width, uint32_t& height);
 		// 一次绑定 UAV，按顺序完成存量更新与本帧全部 contact 发射。
-		void StepLaserParticles(float wallDeltaSeconds, float motionDeltaSeconds,
-			bool simulateExisting,
-			std::span<const LaserParticleEmissionRequest> emissionRequests) noexcept;
+		bool HasActiveLaserParticles() const noexcept;
+		void StepLaserParticles(int64_t nowQpc, int64_t qpcFrequency,
+			std::span<const LaserParticleSeed> seeds, uint32_t dissolveSeedCount = 0,
+			LaserDissolveParticleControl dissolve = {}) noexcept;
+		void RemoveLaserParticleGroup(uint32_t group, bool endDissolve = false) noexcept;
 		void ResetLaserParticles() noexcept;
 		// 返回本进程当前 local/non-local GPU 显存占用；旧 DXGI 不支持时返回负值。
 		double QueryVideoMemoryUsageMiB() const noexcept;
@@ -414,10 +438,10 @@ export namespace Inkeys::Drawing::Draw3
 		// 或 MarkOperatorLayerUntracked（失败或范围不明），否则该层的登记与实际内容不一致。
 		void BindOperatorTarget(const OperatorLayerResources& layer);
 		void NoteOperatorWrite(const OperatorLayerResources& layer, const RECT& writeBounds) noexcept;
-		// 绑定单张 Laser coverage RTV。
-		void SetLaserCoverageTarget(const LaserCoverageResources& layer);
-		// 绑定按需创建的单 contact Laser live coverage RTV。
-		void SetLaserLiveCoverageTarget();
+		// 未声明写域的绑定视为内容未知。预热显式声明空写域。
+		void SetLaserCoverageTarget(LaserCoverageResources& layer);
+		void SetLaserCoverageTarget(LaserCoverageResources& layer, RECT writeBounds);
+		void SetLaserLiveCoverageTarget(RECT writeBounds);
 		// 使用指定颜色清空渲染目标。
 		void ClearRTV(ID3D11RenderTargetView* renderTargetView, DirectX::XMFLOAT4 color);
 		// 将操作层恢复为不改变下层的单位操作。
@@ -436,8 +460,10 @@ export namespace Inkeys::Drawing::Draw3
 		// 清除、未声明范围的绑定、绘制后补登记、标记未知、纹理重建。抬笔路径 A 用它确认 L1 里只有本笔自己追加的内容。
 		uint64_t StableLayerEpoch() const noexcept { return stableLayerEpoch_; }
 		void CountCompletedStroke(bool tailPath) noexcept { ++(tailPath ? operatorCounters_.tailPathStrokes : operatorCounters_.isolatedPathStrokes); }
-		void ClearLaserCoverage(const LaserCoverageResources& layer);
+		const LaserSurfaceCounters& LaserCounters() const noexcept { return laserCounters_; }
+		void ClearLaserCoverage(LaserCoverageResources& layer);
 		void ClearAllLaserCoverage();
+		void ClearLaserCompositedColor();
 		// 创建依赖窗口尺寸的 backbuffer 和三层画布资源。
 		bool CreateSizeDependentResources(IDXGISwapChain1* swapChain, UINT width, UINT height);
 		// 释放依赖窗口尺寸的资源。
@@ -481,8 +507,9 @@ export namespace Inkeys::Drawing::Draw3
 		};
 		OperatorContentTracking l0Content_, l1Content_;
 		OperatorLayerCounters operatorCounters_;
+		LaserSurfaceCounters laserCounters_;
 		uint64_t stableLayerEpoch_ = 0;
-		Microsoft::WRL::ComPtr<ID3D11DeviceContext1> context1_; // Win7 未装平台更新时为空，局部清除退回整屏
+		Microsoft::WRL::ComPtr<ID3D11DeviceContext1> context1_; // 当前设备支持 ClearView 时才持有。
 		// 只有 L0、L1 记账；其他操作层返回空指针。
 		OperatorContentTracking* ContentTrackingFor(const OperatorLayerResources& layer) noexcept;
 		const OperatorContentTracking* ContentTrackingFor(const OperatorLayerResources& layer) const noexcept;
@@ -529,14 +556,18 @@ export namespace Inkeys::Drawing::Draw3
 		void ReleaseTrustedL2SnapshotResources() noexcept;
 		void ReleaseTrustedL2SnapshotPipeline() noexcept;
 		void UnbindLaserCoverageShaderResources();
-		bool UpdateLaserStyleConstants(float opacity);
+		void BindLaserCoverageTarget(const LaserCoverageResources& layer);
+		void NoteLaserCoverageWrite(LaserCoverageResources& layer, RECT bounds) noexcept;
+		void ClearLaserCoverageContent(LaserCoverageResources& layer);
+		bool ClearLaserRect(LaserCoverageResources& layer, RECT rect);
+		bool UpdateLaserStyleConstants(float opacity, const LaserDissolveFront& front = {});
 		bool DrawDebugTexture(ID3D11ShaderResourceView* source, UINT sourceWidth, UINT sourceHeight,
 			RECT target, int sourceLeft, int sourceTop, ID3D11BlendState* blendState) noexcept;
 		bool DrawLaserRectPass(ID3D11RenderTargetView* dstRTV, RECT rect,
 			float opacity, float shapeType, ID3D11ShaderResourceView* source,
 			UINT sourceSlot, ID3D11BlendState* blendState,
 			ID3D11ShaderResourceView* secondarySource = nullptr,
-			UINT secondarySourceSlot = 0);
+			UINT secondarySourceSlot = 0, const LaserDissolveFront& front = {});
 		// 从资源中加载并创建墨迹着色器。
 		bool LoadShaders(D3D_DRIVER_TYPE driver);
 		float shapeRoundedCornerRadiusPixels_ = kShapeRoundedCornerRadiusAt96Dpi;
@@ -544,18 +575,16 @@ export namespace Inkeys::Drawing::Draw3
 		uint64_t laserStyleGeneration_ = 1;
 		uint64_t uploadedLaserStyleGeneration_ = 0;
 		float uploadedLaserStyleOpacity_ = -1.0f;
+		LaserDissolveFront uploadedLaserDissolveFront_ = {};
 		bool laserStyleCacheValid_ = false;
-		float laserParticleGlowRadiusScale_ = LaserParticleConfig{}.glowRadiusScale;
-		float laserParticleGlowRed_ = LaserParticleConfig{}.glowRed;
-		float laserParticleGlowGreen_ = LaserParticleConfig{}.glowGreen;
-		float laserParticleGlowBlue_ = LaserParticleConfig{}.glowBlue;
-		float laserParticleGlowAlpha_ = LaserParticleConfig{}.glowAlpha;
 		LaserParticleSystem laserParticleSystem_;
 		Microsoft::WRL::ComPtr<IDXGIAdapter3> videoMemoryAdapter_;
 		// 单 contact Laser 的实时尾部 coverage 按需创建，避免非 Laser 会话分配额外画布。
 		LaserCoverageResources laserLiveCoverage;
-		// 仅在完成笔画的事务烘干时按需分配，与已提交 t6 同尺寸。
-		LaserCoverageResources laserBakeScratchColor_;
+		// 多层烘焙和撤回按需分配。非空矩形记录当前事务备份了哪些像素。
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> laserBakeScratchColor_;
+		RECT laserBakeBackupRect_ = {};
+		LaserCoverageResources laserUndoSavedCoverage_;
 		bool laserIncrementalCoverageEnabled_ = false;
 		bool laserIncrementalCoverageUnavailable_ = false;
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> trustedL2SnapshotTexture_;

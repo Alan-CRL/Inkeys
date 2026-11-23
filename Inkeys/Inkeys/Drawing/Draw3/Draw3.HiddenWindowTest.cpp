@@ -1096,7 +1096,7 @@ namespace Inkeys::Drawing::Draw3
 				const auto state = ProductHost().RuntimeSnapshot();
 				const bool auxiliary = HostModeUsesAuxiliarySelection(state.presentationMode);
 				const auto surface = ResolveDrawpadPresentationSurface(
-					state.selectionMode, state.currentPageHasContent,
+					state.selectionMode, state.currentPageHasContent, state.laserVisible,
 					state.auxiliaryFullFrameClean, auxiliary);
 				if (!auxiliary)
 				{

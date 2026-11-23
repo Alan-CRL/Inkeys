@@ -7,6 +7,7 @@
 // 历史遗留问题
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.Product.h"
+#include "../../Drawing/Draw3/Draw3.PresentationState.h"
 
 #include "../../../IdtConfiguration.h"
 #include "../../Window/Window.Legacy.hpp"
@@ -80,7 +81,8 @@ void BarButtonSetClass::ExecuteClearClick(bool doubleClickContinuation)
 	const bool selectionMode =
 		GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection;
 	const BarClearClickAction action = ResolveBarClearClickAction(
-		selectionMode, Inkeys::UI::Bar::CurrentPageHasContent(),
+		selectionMode, Inkeys::Drawing::Draw3::DrawpadHasVisibleContent(
+			Inkeys::UI::Bar::CurrentPageHasContent(), Inkeys::UI::Bar::LaserVisible()),
 		doubleClickContinuation, clearAttemptedForDoubleClick,
 		clearAcceptedForDoubleClick);
 	if (action == BarClearClickAction::EnterSelection)
@@ -998,7 +1000,11 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	const bool featureEnabled = IsWhiteboardFeatureEnabled();
 	const bool separate = GetSelectAndClickThroughMode() == 1;
 	const bool selection = stateMode.StateModeSelect == StateModeSelectEnum::IdtSelection;
-	const bool compactSelection = !whiteboard && selection && !hasContent;
+	const bool laserVisible = Inkeys::UI::Bar::LaserVisible();
+	const bool compactSelection = Inkeys::Drawing::Draw3::ShouldCompactDrawpadBar(
+		whiteboard, selection, hasContent, laserVisible);
+	const bool selectionWithoutContent = selection &&
+		!Inkeys::Drawing::Draw3::DrawpadHasVisibleContent(hasContent, laserVisible);
 	const bool freezeAvailable = Inkeys::UI::Freeze::IsAvailable();
 	const bool freezeActive = Inkeys::UI::Freeze::IsActive();
 	// 放大 API 不可用时按钮照常显示、布局不变，只保持禁用；不能并入 IsAvailable（它决定可见性与 A2 布局）。
@@ -1011,7 +1017,7 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 	const bool hasMoreButtons = GetMoreButtonSnapshot().HasButtons();
 	const bool moreOpen = !fold && barUISet.barState.moreExpanded && hasMoreButtons;
 	const auto a2 = Inkeys::UI::Bar::ResolveBarA2Projection(
-		presentation, whiteboard, featureEnabled, separate, selection && !hasContent, freezeAvailable);
+		presentation, whiteboard, featureEnabled, separate, selectionWithoutContent, freezeAvailable);
 	const auto recall = barUISet.RecallChromeView(compactSelection);
 	if (fold || !hasMoreButtons) barUISet.barState.moreExpanded = false;
 	const auto apply = [&](BarButtonClass* button)
@@ -1037,7 +1043,7 @@ void BarButtonSetClass::ApplyMainPresentationLocked(const StateModeClass& stateM
 			state = !canvasDebugVisual && stateMode.StateModeSelect == StateModeSelectEnum::IdtShape ? BarWidgetState::Selected : BarWidgetState::None;
 			break;
 		case BarButtonPresetEnum::Clean:
-			state = selection && !hasContent ? BarWidgetState::Disable : BarWidgetState::None;
+			state = selectionWithoutContent ? BarWidgetState::Disable : BarWidgetState::None;
 			break;
 		case BarButtonPresetEnum::Whiteboard:
 			size = a2.whiteboardTwoTwo ? BarButtonSizeEnum::twoTwo : BarButtonSizeEnum::twoOne;
@@ -1724,9 +1730,9 @@ namespace
 {
 	bool IsCompactSelectionBar()
 	{
-		return !Inkeys::UI::Bar::WhiteboardActive()
-			&& GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection
-			&& !Inkeys::UI::Bar::CurrentPageHasContent();
+		return Inkeys::Drawing::Draw3::ShouldCompactDrawpadBar(Inkeys::UI::Bar::WhiteboardActive(),
+			GetStateModeSnapshot().StateModeSelect == StateModeSelectEnum::IdtSelection,
+			Inkeys::UI::Bar::CurrentPageHasContent(), Inkeys::UI::Bar::LaserVisible());
 	}
 
 	void ApplyRecallAvailabilityLocked(BarUISetClass& owner,

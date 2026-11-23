@@ -2266,6 +2266,29 @@ namespace Inkeys::UI::Setting::Design
 		return content;
 	}
 
+	InlineRowContent InlineStack(InlineRowContent upper, InlineRowContent lower,
+		const char* visibilityId, bool visible)
+	{
+		InlineRowContent content;
+		content.visibilityId = visibilityId; content.visible = visible;
+		// 分割线上下各留一个控件间距。
+		content.height = [upper, lower](float width)
+		{
+			return upper.height(width) + Pixels(ControlSpacing) * 2.0F + 1.0F + lower.height(width);
+		};
+		content.render = [upper, lower, visible](const LayoutRect& bounds)
+		{
+			const float upperHeight = upper.height(bounds.Width());
+			const float line = bounds.top + upperHeight + Pixels(ControlSpacing);
+			ImFluent::BeginDisabled(!visible); // 收起动画期间保留显示但不可交互。
+			upper.render({ bounds.left, bounds.top, bounds.right, bounds.top + upperHeight });
+			ImGui::GetWindowDrawList()->AddLine({ bounds.left, line }, { bounds.right, line }, GetPalette().stroke, 1);
+			lower.render({ bounds.left, line + 1.0F + Pixels(ControlSpacing), bounds.right, bounds.bottom });
+			ImFluent::EndDisabled();
+		};
+		return content;
+	}
+
 	namespace
 	{
 		struct PreviewSelectorGeometry

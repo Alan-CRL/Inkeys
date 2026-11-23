@@ -877,7 +877,10 @@ namespace
 				drawingDefaults.UI.FrameRate != 60 || drawingDefaults.Drawing.FrameRate != 120 ||
 				!drawingDefaults.Drawing.MultiTouchEnabled || !drawingDefaults.Drawing.PenTailCorrectionEnabled ||
 				drawingDefaults.Drawing.InkPredictionMode != 2 || drawingDefaults.Drawing.Laser.MultiTouchEnabled ||
-				drawingDefaults.Drawing.Laser.ParticlesEnabled || !drawingDefaults.Drawing.MultiTouchTools.Pen ||
+				drawingDefaults.Drawing.Particles.Enabled || drawingDefaults.Drawing.Particles.Direction != 0 ||
+				!drawingDefaults.Drawing.Particles.LaserTrail || !drawingDefaults.Drawing.Particles.LaserDissolve ||
+				!drawingDefaults.Drawing.Particles.ClearDissolve || !drawingDefaults.Drawing.Laser.ClickWaveEnabled ||
+				!drawingDefaults.Drawing.MultiTouchTools.Pen ||
 				!drawingDefaults.Drawing.MultiTouchTools.Highlighter || !drawingDefaults.Drawing.MultiTouchTools.Eraser ||
 				!drawingDefaults.Drawing.MultiTouchTools.Shape || drawingDefaults.UI.DesktopCanvasNonFullscreen) return 1;
 			for (const int frameRate : { 30, 60, 120, 240 })
@@ -889,14 +892,24 @@ namespace
 					drawingDefaults.Drawing.MultiTouchEnabled = false;
 					drawingDefaults.Drawing.PenTailCorrectionEnabled = prediction != 0;
 					drawingDefaults.Drawing.Laser.MultiTouchEnabled = true;
-					drawingDefaults.Drawing.Laser.ParticlesEnabled = prediction == 1;
+					drawingDefaults.Drawing.Particles.Enabled = prediction == 1;
+					drawingDefaults.Drawing.Particles.Direction = prediction == 2 ? 1 : 0;
+					drawingDefaults.Drawing.Particles.LaserTrail = prediction == 0;
+					drawingDefaults.Drawing.Particles.LaserDissolve = prediction == 2;
+					drawingDefaults.Drawing.Particles.ClearDissolve = prediction != 2;
+					drawingDefaults.Drawing.Laser.ClickWaveEnabled = prediction == 1;
 					Inkeys::Config restoredDrawing;
 					if (!drawingDefaults.Write() || !restoredDrawing.ReadAll() ||
 						restoredDrawing.UI.FrameRate.load() != drawingDefaults.UI.FrameRate.load() ||
 						restoredDrawing.Drawing.FrameRate != frameRate || restoredDrawing.Drawing.InkPredictionMode != prediction ||
 						restoredDrawing.Drawing.MultiTouchEnabled || !restoredDrawing.Drawing.Laser.MultiTouchEnabled ||
 						restoredDrawing.Drawing.PenTailCorrectionEnabled.load() != (prediction != 0) ||
-						restoredDrawing.Drawing.Laser.ParticlesEnabled.load() != (prediction == 1)) return 1;
+						restoredDrawing.Drawing.Particles.Enabled.load() != (prediction == 1) ||
+						restoredDrawing.Drawing.Particles.Direction.load() != (prediction == 2 ? 1 : 0) ||
+						restoredDrawing.Drawing.Particles.LaserTrail.load() != (prediction == 0) ||
+						restoredDrawing.Drawing.Particles.LaserDissolve.load() != (prediction == 2) ||
+						restoredDrawing.Drawing.Particles.ClearDissolve.load() != (prediction != 2) ||
+						restoredDrawing.Drawing.Laser.ClickWaveEnabled.load() != (prediction == 1)) return 1;
 				}
 			// 全局关闭不清除激光子偏好；类型错误和超宽整数不能变成合法的离散选项。
 			for (const char* invalid : { "true", "false", "30.0", "\"60\"", "-1", "0", "90", "4294967326", "18446744073709551615" })
@@ -3254,8 +3267,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			Inkeys::Drawing::Draw3::ProductHost().SetCanvasPanInertiaOptions({
 				panInertia.Enabled.load(), panInertia.Mouse.load(), panInertia.Touchpad.load(),
 				panInertia.Touch.load(), panInertia.Pen.load(), panInertia.PenTail.load() });
-			Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(
-				config.Drawing.Laser.MultiTouchEnabled, config.Drawing.Laser.ParticlesEnabled);
+			const auto& laser = config.Drawing.Laser;
+			const auto& particles = config.Drawing.Particles;
+			Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(laser.MultiTouchEnabled.load(), {
+				particles.Enabled.load(), particles.Direction.load() == 1, particles.LaserTrail.load(),
+				particles.LaserDissolve.load(), particles.ClearDissolve.load(), laser.ClickWaveEnabled.load() });
 			Inkeys::Drawing::Draw3::ProductHost().SetDevicePerformanceRecording(
 				config.Drawing.DevicePerformanceRecording);
 			InitializeEraserInputPreferences();

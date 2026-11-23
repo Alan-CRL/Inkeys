@@ -401,6 +401,7 @@ namespace Inkeys::Drawing::Draw3
 		std::size_t currentPageIndex = 0;
 		std::size_t pageCount = 0;
 		bool currentPageHasContent = false;
+		bool laserVisible = false;
 		Bridge::WhiteboardStyleToken whiteboardStyle;
 		WhiteboardTheme whiteboardTheme;
 		std::uint64_t whiteboardGeneration = 0;
@@ -445,6 +446,17 @@ namespace Inkeys::Drawing::Draw3
 	int RunHostWorkspaceTransitionInputProductionProbe() noexcept;
 
 	// 产品生命周期外壳：只附着 Window Service HWND，独立持有 Draw3 设备和 RTS。
+	// 设置页与启动时发布的粒子相关偏好；总开关只管三项飘散/行进效果，点击光波独立。
+	struct CanvasParticleOptions
+	{
+		bool enabled = false;
+		bool windRightUp = false; // false 向左上，true 向右上
+		bool laserTrail = true;
+		bool laserDissolve = true;
+		bool clearDissolve = true;
+		bool laserClickWave = true;
+	};
+
 	class Host
 	{
 	public:
@@ -481,7 +493,7 @@ namespace Inkeys::Drawing::Draw3
 		// 多指绘图按工具的子项（激光笔由 SetLaserOptions 发布）；只在通用多指总开关开启时生效。
 		void SetMultiTouchToolOptions(bool pen, bool highlighter, bool eraser, bool shape) noexcept;
 		void SetCanvasPanInertiaOptions(CanvasPanInertiaOptions options) noexcept;
-		void SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept;
+		void SetLaserOptions(bool multiTouchEnabled, const CanvasParticleOptions& particles) noexcept;
 		void SetPalmEraserOptions(const PalmEraser::Settings& options);
 		PalmEraser::Settings PalmEraserOptions() const;
 		// 画布调试：enabled 为设置开关，visual 为可视化模式；绘制 owner 应用，关闭时无额外开销。

@@ -3953,6 +3953,14 @@ SettingSessionCoroutine RunSettingSession()
 					}
 
 					auto& drawingOptions = Inkeys::config.Drawing;
+					const auto publishLaserOptions = [&]()
+					{
+						const auto& laser = drawingOptions.Laser;
+						const auto& particles = drawingOptions.Particles;
+						Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(laser.MultiTouchEnabled.load(), {
+							particles.Enabled.load(), particles.Direction.load() == 1, particles.LaserTrail.load(),
+							particles.LaserDissolve.load(), particles.ClearDissolve.load(), laser.ClickWaveEnabled.load() });
+					};
 					bool multiTouchEnabled = drawingOptions.MultiTouchEnabled;
 					bool penTailCorrectionEnabled = drawingOptions.PenTailCorrectionEnabled;
 					const int savedPredictionMode = drawingOptions.InkPredictionMode.load();
@@ -3972,7 +3980,7 @@ SettingSessionCoroutine RunSettingSession()
 							auto& host = Inkeys::Drawing::Draw3::ProductHost();
 							host.SetGeneralDrawingOptions(multiTouchEnabled, penTailCorrectionEnabled, predictionMode);
 							// 隐藏只停用激光多指，不覆盖保存的子项偏好。
-							host.SetLaserOptions(drawingOptions.Laser.MultiTouchEnabled.load(), false);
+							publishLaserOptions();
 							QueueConfigWrite();
 						}
 					};
@@ -4012,12 +4020,42 @@ SettingSessionCoroutine RunSettingSession()
 						}
 
 						Design::SectionHeader(IA(I18nKey.SettingsUI.Draw.Laser.N).c_str());
-						// 粒子效果暂不可用，仅保留说明，不提供启用入口。
-						ImGui::BeginDisabled();
-						Design::SettingRow("##draw-laser-particles", IA(I18nKey.SettingsUI.Draw.Laser.Particles.N).c_str(),
-							IA(I18nKey.SettingsUI.Draw.Laser.Particles.E).c_str(), "\ue734", 0.0F, 0.0F,
-							[](const Inkeys::UI::Setting::LayoutRect&) {});
-						ImGui::EndDisabled();
+						auto& laser = drawingOptions.Laser;
+						auto& particleOptions = drawingOptions.Particles;
+						bool particles = particleOptions.Enabled.load(), trail = particleOptions.LaserTrail.load();
+						bool dissolve = particleOptions.LaserDissolve.load(), clearDissolve = particleOptions.ClearDissolve.load();
+						int direction = particleOptions.Direction.load() == 1 ? 1 : 0;
+						bool directionChanged = false, trailChanged = false, dissolveChanged = false, clearDissolveChanged = false;
+						const auto& keys = I18nKey.SettingsUI.Draw.Laser.Particles;
+						// 总开关下方依次是飘散方向、分割线、三个子项；总开关关闭时整块带动画收起，子项各自的选择保留。
+						const std::string directionLabel = IA(keys.Direction);
+						const std::vector<std::string> directions{ IA(keys.DirectionLeftUp), IA(keys.DirectionRightUp) };
+						const auto details = Design::InlineStack(
+							Design::InlineCombo("##draw-particle-direction", directionLabel.c_str(), direction, directions, directionChanged),
+							Design::InlineCheckboxes("##draw-particle-effects", {
+								{ IA(keys.Trail), &trail, &trailChanged },
+								{ IA(keys.Dissolve), &dissolve, &dissolveChanged },
+								{ IA(keys.Clear), &clearDissolve, &clearDissolveChanged } }),
+							"##draw-particle-details", particles);
+						const bool particlesChanged = Design::ToggleRow("##draw-canvas-particles",
+							IA(keys.N).c_str(), IA(keys.E).c_str(), "\ue734", particles, nullptr, &details);
+						// 点击光波不属于粒子效果，独立一行。
+						const auto& clickKeys = I18nKey.SettingsUI.Draw.Laser.ClickWave;
+						bool clickWave = laser.ClickWaveEnabled.load();
+						const bool clickWaveChanged = Design::ToggleRow("##draw-laser-click-wave",
+							IA(clickKeys.N).c_str(), IA(clickKeys.E).c_str(), "\ue7c9", clickWave);
+						if (particlesChanged || directionChanged || trailChanged || dissolveChanged || clearDissolveChanged ||
+							clickWaveChanged)
+						{
+							particleOptions.Enabled = particles;
+							particleOptions.Direction = direction;
+							particleOptions.LaserTrail = trail;
+							particleOptions.LaserDissolve = dissolve;
+							particleOptions.ClearDissolve = clearDissolve;
+							laser.ClickWaveEnabled = clickWave;
+							publishLaserOptions();
+							QueueConfigWrite();
+						}
 					}
 					else
 					{
@@ -4052,7 +4090,7 @@ SettingSessionCoroutine RunSettingSession()
 						if (multiTouchLaserChanged)
 						{
 							drawingOptions.Laser.MultiTouchEnabled = multiTouchLaser;
-							Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(multiTouchLaser, false);
+							publishLaserOptions();
 							QueueConfigWrite();
 						}
 						bool reconnectEnabled = Inkeys::config.Experimental.Inkeys3.Draw3.InterruptedStrokeReconnect;

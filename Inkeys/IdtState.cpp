@@ -718,7 +718,8 @@ namespace
 			? Inkeys::Drawing::Draw3::HostOutputTarget::SelectionUlw
 			: Inkeys::Drawing::Draw3::HostOutputTarget::PrimaryDrawpad;
 		if (workspace != Workspace::Whiteboard && runtime.selectionMode && auxiliaryAvailable &&
-			!runtime.currentPageHasContent && !runtime.auxiliaryFullFrameClean)
+			!Inkeys::Drawing::Draw3::DrawpadHasVisibleContent(runtime.currentPageHasContent, runtime.laserVisible) &&
+			!runtime.auxiliaryFullFrameClean)
 			return false;
 		return runtime.requestedOutputTarget == expectedTarget &&
 			runtime.readyOutputTarget == expectedTarget &&
@@ -1061,9 +1062,7 @@ namespace
 		static std::shared_ptr<ShownFrameRequest> receipt;
 		static unsigned attempts = 0, retireFailures = 0;
 		auto& service = GetService();
-		const bool inkPair = runtime.currentPageHasContent && runtime.workspace != Workspace::Whiteboard &&
-			(runtime.presentationMode == HostPresentationMode::DirectCompositionVisualTree ||
-				runtime.presentationMode == HostPresentationMode::DwmBlurBehind);
+		const bool inkPair = UsesDrawpadInkHandoff(runtime);
 		auto key = DrawpadShownFrameKey(runtime, modeRevision, scene.revision, 0, 0);
 		// 新工作区已经过自己的窗口事务；同一工作区内的换页沿用原先的显隐路径。
 		const bool knownWorkspace = settled && settled->hostGeneration == key.hostGeneration &&
@@ -1100,7 +1099,7 @@ namespace
 					const auto state = ProductRuntimeSnapshot();
 					const auto wanted = ProductHost().ProductBridge().Snapshot();
 					return wanted.revision == key.productRevision && state.running && !state.consumerFatal &&
-						state.lastPresentSucceeded && state.currentPageHasContent && !Draw3RecoveryNeedsUiRelease(state, wanted) &&
+						state.lastPresentSucceeded && UsesDrawpadInkHandoff(state) && !Draw3RecoveryNeedsUiRelease(state, wanted) &&
 						DrawpadPresentationReady(wanted, state) && key == DrawpadShownFrameKey(state,
 							key.modeRevision, key.workspaceRevision, key.primaryGeneration, key.auxiliaryGeneration);
 				};
@@ -1259,7 +1258,7 @@ namespace
 
 		// 白板空页仍保留完整绘制栏和主 Drawpad；选择只表示拖动态，不切辅助 ULW。
 		Inkeys::UI::Bar::SetCurrentPageHasContent(
-			whiteboard || runtime.currentPageHasContent);
+			whiteboard || runtime.currentPageHasContent, runtime.laserVisible);
 		Inkeys::UI::Bar::NoteRecallHistoryAvailability(
 			runtime.canUndo, runtime.canRedo);
 		const bool targetReady = Inkeys::Drawing::Draw3::DrawpadPresentationReady(
@@ -1291,7 +1290,7 @@ namespace
 			visibility = Inkeys::Window::DrawpadSurfaceVisibility::Primary;
 		}
 		else switch (Inkeys::Drawing::Draw3::ResolveDrawpadPresentationSurface(
-			selectionMode, runtime.currentPageHasContent,
+			selectionMode, runtime.currentPageHasContent, runtime.laserVisible,
 			runtime.auxiliaryFullFrameClean,
 			Inkeys::Drawing::Draw3::HostModeUsesAuxiliarySelection(runtime.presentationMode)))
 		{
@@ -4768,7 +4767,9 @@ void StateMonitoring()
 		const bool safeRelease = stoppedOrFatalSafetyExit || protectedExit;
 		const WorkspaceWindowPolicy policy{ request.revision, request.desired == Workspace::Whiteboard,
 			desired.selectionMode, basicControl || safeRelease || (!request.minimized && request.desired != Workspace::Whiteboard &&
-				desired.selectionMode && snapshot.workspace == request.desired && !snapshot.currentPageHasContent && snapshot.auxiliaryFullFrameClean
+				desired.selectionMode && snapshot.workspace == request.desired &&
+				!Inkeys::Drawing::Draw3::DrawpadHasVisibleContent(snapshot.currentPageHasContent, snapshot.laserVisible) &&
+				snapshot.auxiliaryFullFrameClean
 				&& Inkeys::Drawing::Draw3::HostModeUsesAuxiliarySelection(snapshot.presentationMode)), request.minimized,
 			Inkeys::Drawing::Draw3::HostModeUsesAuxiliarySelection(snapshot.presentationMode) };
 		const auto nativeGuard = [epoch = request.revision, safeRelease, expected = snapshot.recovery,

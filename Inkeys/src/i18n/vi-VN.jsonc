@@ -801,11 +801,22 @@
       },
       "Laser":
       {
-        "N": "Bút laser",
+        "N": "Hiệu ứng bảng vẽ",
         "Particles":
         {
-          "N": "Hạt hiệu ứng laser",
-          "E": "BETA: Hiển thị các hạt xung quanh vệt laser."
+          "N": "Hiệu ứng hạt của bảng vẽ",
+          "E": "Nét mực hóa thành bụi mịn rồi tan theo gió.",
+          "Direction": "Hướng bay",
+          "DirectionLeftUp": "Lên trên bên trái",
+          "DirectionRightUp": "Lên trên bên phải",
+          "Trail": "Hạt vệt của bút laser",
+          "Dissolve": "Tan biến của bút laser",
+          "Clear": "Tan biến khi xóa hết"
+        },
+        "ClickWave":
+        {
+          "N": "Sóng khi nhấp của bút laser",
+          "E": "Chạm nhanh sẽ tạo một vòng sóng lan ra từ điểm đó."
         }
       },
       "Haptics":

@@ -801,11 +801,22 @@
       },
       "Laser":
       {
-        "N": "Apontador laser",
+        "N": "Efeitos da tela",
         "Particles":
         {
-          "N": "Partículas do laser",
-          "E": "BETA: exibe partículas ao redor do trajeto do laser."
+          "N": "Efeitos de partículas da tela",
+          "E": "A tinta vira poeira fina e se vai com o vento.",
+          "Direction": "Direção da deriva",
+          "DirectionLeftUp": "Para cima à esquerda",
+          "DirectionRightUp": "Para cima à direita",
+          "Trail": "Partículas de rastro do ponteiro laser",
+          "Dissolve": "Dissolução do ponteiro laser",
+          "Clear": "Dissolução ao limpar"
+        },
+        "ClickWave":
+        {
+          "N": "Onda ao clicar do ponteiro laser",
+          "E": "Um toque rápido lança uma onda a partir do ponto."
         }
       },
       "Haptics":

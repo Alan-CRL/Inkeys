@@ -2,50 +2,42 @@
 #ifndef LASER_PARTICLE_COMMON_HLSLI
 #define LASER_PARTICLE_COMMON_HLSLI
 
-#define LASER_PARTICLE_CAPACITY 2048u
+#define LASER_PARTICLE_CAPACITY 32768u
+#define LASER_PARTICLE_CLICK_WAVE 1u
+#define LASER_PARTICLE_DISSOLVE 2u
 
-// 与 C++ LaserGpuParticle 保持 80 字节；状态只由 Compute Shader 更新。
-struct LaserGpuParticle
+// Match C++ LaserParticleSeed (88 bytes) and LaserGpuParticle (116 bytes).
+struct LaserParticleSeed
 {
     float2 position;
     float2 velocity;
-    float ageSeconds;
-    float lifetimeSeconds;
-    float traveledDistance;
-    float maximumTravelDistance;
-    float baseRadius;
-    float currentRadius;
-    float opacity;
-    float baseBrightness;
-    float currentBrightness;
+    float4 color;
+    float radius;
+    float brightness;
     float breathingFrequencyHz;
     float breathingPhase;
+    float dragPerSecond;
+    float angularSpeedRadians;
+    float maximumTravelDistance;
     float breathingAmplitude;
     float breathingRampSeconds;
-    uint seed;
-    uint alive;
-    uint padding;
+    uint lifetimeMilliseconds;
+    uint releaseDelayMilliseconds;
+    uint randomSeed;
+    uint group;
+    uint kind;
 };
 
-uint LaserParticleHash(uint value)
+struct LaserGpuParticle
 {
-    value ^= value >> 16;
-    value *= 0x7FEB352Du;
-    value ^= value >> 15;
-    value *= 0x846CA68Bu;
-    return value ^ (value >> 16);
-}
-
-float LaserParticleRandom01(uint value)
-{
-    return (float) (LaserParticleHash(value) & 0x00FFFFFFu) / 16777216.0;
-}
-
-float2 LaserParticleSafeNormalize(float2 value, float2 fallbackValue)
-{
-    float valueLength = length(value);
-    return valueLength > 1e-5 ? value / valueLength : fallbackValue;
-}
+    LaserParticleSeed source;
+    float2 position;
+    float currentRadius;
+    float opacity;
+    float currentBrightness;
+    uint birthMilliseconds;
+    uint alive;
+};
 
 #ifdef LASER_PARTICLE_COMPUTE_RESOURCES
 RWStructuredBuffer<LaserGpuParticle> LaserParticles : register(u0);

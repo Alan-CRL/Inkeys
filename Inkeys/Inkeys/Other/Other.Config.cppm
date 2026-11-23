@@ -545,9 +545,18 @@ GROUP(UI, \
 		GROUP(AutoSave, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
 		) \
+		/* 画布粒子效果：总开关默认关闭；Direction 0 向左上、1 向右上；子项保留各自选择。 */ \
+		GROUP(Particles, \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enabled, false) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Direction, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, LaserTrail, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, LaserDissolve, true) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ClearDissolve, true) \
+		) \
 		GROUP(Laser, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, MultiTouchEnabled, false) \
-			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ParticlesEnabled, false) \
+			/* 点击光波不属于画布粒子效果，独立开关。 */ \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ClickWaveEnabled, true) \
 		) \
 		GROUP(Whiteboard, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<WhiteboardThemePreference>, DefaultTheme, WhiteboardThemePreference{}) \

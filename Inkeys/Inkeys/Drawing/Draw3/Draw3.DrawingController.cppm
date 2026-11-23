@@ -116,6 +116,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool (*recoveryRetryAllowed)(void*, std::uint64_t) noexcept = nullptr;
 		// 绘制线程直接调用：白板当前页视口变化（平移/翻页/冷页恢复/进入或离开白板）。必须无锁、不等待。
 		void (*whiteboardViewportChanged)(void*, const WhiteboardViewportSample&) noexcept = nullptr;
+		void (*laserVisibilityChanged)(void*, bool) = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。
@@ -174,9 +175,9 @@ export namespace Inkeys::Drawing::Draw3
 		bool GetMouseUsesSystemCursor() const noexcept;
 		// 由产品 Host 在绘制 owner 同步；首次调用启用独立的鼠标/笔类型。
 		void SetCursorSettings(const CursorSettings& settings) noexcept;
-		// 产品暂禁用激光粒子；兼容入口保留，任何启用请求均保持关闭。
-		void SetLaserParticlesEnabled(bool enabled) noexcept;
-		bool GetLaserParticlesEnabled() const noexcept;
+		// 发布偏好，绘制线程在 Inactive 边界锁存本组粒子开关。
+		void SetLaserParticleOptions(uint32_t requested) noexcept;
+		uint32_t GetLaserParticleOptions() const noexcept;
 		// 控制激光笔是否接受同时按下的多根 Touch；只影响之后开始的 contact。
 		void SetLaserMultiTouchDrawingEnabled(bool enabled) noexcept;
 		// 多指绘图按工具的子项（kMultiTouchTool* 位）；只影响之后开始的 contact，总开关仍在通用偏好。
@@ -229,7 +230,7 @@ export namespace Inkeys::Drawing::Draw3
 		std::atomic<bool> translucentInkCursorEnabled_ = false;
 		// 低位保存设备样式与产品策略，高位保存四种样式的独立百分比。
 		std::atomic<uint64_t> cursorSettings_ = 0;
-		std::atomic<bool> laserParticlesEnabled_ = false;
+		std::atomic<uint32_t> laserParticleOptions_ = 0;
 		std::atomic<bool> laserMultiTouchDrawingEnabled_ = false;
 		std::atomic<uint32_t> multiTouchTools_ = kMultiTouchToolsAll;
 		std::atomic<double> laserHoldDurationSeconds_ = 1.0;

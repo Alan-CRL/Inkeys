@@ -801,11 +801,22 @@
       },
       "Laser":
       {
-        "N": "Penunjuk laser",
+        "N": "Efek kanvas",
         "Particles":
         {
-          "N": "Partikel laser",
-          "E": "BETA: Tampilkan partikel di sekitar jejak laser."
+          "N": "Efek partikel kanvas",
+          "E": "Tinta berubah menjadi debu halus dan terbawa angin.",
+          "Direction": "Arah hanyut",
+          "DirectionLeftUp": "Ke kiri atas",
+          "DirectionRightUp": "Ke kanan atas",
+          "Trail": "Partikel jejak penunjuk laser",
+          "Dissolve": "Peluruhan penunjuk laser",
+          "Clear": "Peluruhan saat mengosongkan"
+        },
+        "ClickWave":
+        {
+          "N": "Gelombang klik penunjuk laser",
+          "E": "Ketukan cepat memunculkan gelombang dari titik tersebut."
         }
       },
       "Haptics":

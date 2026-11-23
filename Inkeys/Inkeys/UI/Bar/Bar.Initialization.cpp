@@ -185,8 +185,8 @@ namespace Inkeys::UI::Bar
 		(void)Inkeys::Startup::Report(Inkeys::Startup::Milestone::BarMediaReady);
 
 		// 首次布局直接读取 Draw3 内容快照，避免依赖监控线程稍后的修订通知。
-		SetCurrentPageHasContent(
-			Inkeys::Drawing::Draw3::ProductRuntimeSnapshot().currentPageHasContent);
+		const auto drawpadRuntime = Inkeys::Drawing::Draw3::ProductRuntimeSnapshot();
+		SetCurrentPageHasContent(drawpadRuntime.currentPageHasContent, drawpadRuntime.laserVisible);
 		// 初始化 按钮 们
 		barUISet.barButtonSet.PresetInitialization();
 		barUISet.barButtonSet.RegisterBuiltInComponents();

@@ -48,6 +48,7 @@
 
 #include "Draw3.Bridge.h"
 #include "Draw3.Host.h"
+#include "Draw3.PresentationState.h"
 #include "Draw3.CanvasPanSettings.h"
 #include "Draw3.TouchpadNavigation.h"
 #include "Draw3.Recovery.h"
@@ -525,6 +526,7 @@ namespace Inkeys::Drawing::Draw3
 			CanvasRuntimeHistory history;
 			draw3::shapes::RevisionAllocator shapeRevisionAllocator;
 			std::vector<CanvasOperation> operations;
+			std::vector<uint64_t> appendOperationSequences;
 			size_t operationCursor = 0, operationFloor = 0;
 			bool operationsInitialized = false;
 			InkRasterStateToken rasterState = 0;
@@ -536,6 +538,7 @@ namespace Inkeys::Drawing::Draw3
 			bool intervalLoadPending = false;
 			bool previousClearUndoAvailable = true; // 跨 Clear 恢复成功后消费，阻止进入更早画布。
 			bool clearRedoAvailable = false; // 仅Clear撤销恢复后有效，新笔迹提交会取消。
+			uint64_t clearOperationSequence = 0;
 			std::optional<draw3::uink::Draw3UInkCanvasSnapshot> boundaryFallback;
 			// 只在跨最近 Clear 撤销后保留后继 CPU 分支，不保存 GPU 后像。
 			std::shared_ptr<ClearRedoContinuation> clearRedoContinuation;
@@ -549,7 +552,8 @@ namespace Inkeys::Drawing::Draw3
 			floor = 0;
 			for (const auto& item : runtime.history.Items()) if (item.visible)
 			{
-				operations.push_back({CanvasOperationKind::Append,item.id,{},{}});
+				operations.push_back({CanvasOperationKind::Append,item.id,{},{},
+					item.id.index < runtime.appendOperationSequences.size() ? runtime.appendOperationSequences[item.id.index] : 0});
 				if (item.id.index < runtime.undoFloor) floor = operations.size();
 			}
 			cursor = operations.size();
@@ -569,16 +573,60 @@ namespace Inkeys::Drawing::Draw3
 		{
 			if (runtime.operationsInitialized) return;
 			runtime.operations = LegacyOperationJournal(runtime, runtime.operationCursor, runtime.operationFloor);
+			runtime.appendOperationSequences.clear();
 			runtime.operationsInitialized = true;
+		}
+
+		void RecordDocumentOperation(CanvasPageRuntimeState& runtime, uint64_t sequence,
+			std::optional<CanvasOperation> operation)
+		{
+			// Clear 是可换回旧画布的历史边界；普通画笔和编辑共用页内 journal。
+			if (!operation)
+			{
+				runtime.clearOperationSequence = sequence;
+				return;
+			}
+			// 普通追加仍延迟建 journal；恢复或导入的旧项默认为序号零。
+			if (!runtime.operationsInitialized)
+			{
+				runtime.appendOperationSequences.resize(static_cast<size_t>(operation->item.index) + 1);
+				runtime.appendOperationSequences.back() = sequence;
+				return;
+			}
+			operation->operationSequence = sequence;
+			runtime.operations.resize(runtime.operationCursor);
+			runtime.operations.push_back(std::move(*operation));
+			runtime.operationCursor = runtime.operations.size();
 		}
 
 		void RecordRuntimeAppend(CanvasPageRuntimeState& runtime, RenderItemId item)
 		{
-			// 未使用操作历史的普通笔会话不做全页扫描；第一次 Undo/编辑时再从可见性迁移。
-			if (!runtime.operationsInitialized) return;
-			runtime.operations.resize(runtime.operationCursor);
-			runtime.operations.push_back({CanvasOperationKind::Append,item,{},{}});
-			runtime.operationCursor = runtime.operations.size();
+			RecordDocumentOperation(runtime, runtime.afterStates[item.index],
+				CanvasOperation{ CanvasOperationKind::Append, item, {}, {} });
+		}
+
+		uint64_t LatestDocumentOperationSequence(const CanvasPageRuntimeState& runtime)
+		{
+			if (runtime.operationsInitialized)
+			{
+				if (runtime.operationCursor > runtime.operationFloor)
+					return runtime.operations[runtime.operationCursor - 1].operationSequence;
+			}
+			else if (const auto visible = runtime.history.LastVisibleItem();
+				visible && visible->index >= runtime.undoFloor && visible->index < runtime.appendOperationSequences.size())
+				return runtime.appendOperationSequences[visible->index];
+			return runtime.clearOperationSequence;
+		}
+
+		void RestampRedoneDocumentOperation(CanvasPageRuntimeState& runtime, uint64_t sequence) noexcept
+		{
+			// 重做重新成为最近的文档操作；撤销只后移游标，露出原序号。
+			runtime.operations[runtime.operationCursor - 1].operationSequence = sequence;
+		}
+
+		bool ShouldUndoLaser(uint64_t laserSequence, uint64_t documentSequence) noexcept
+		{
+			return laserSequence > documentSequence;
 		}
 
 		bool SameShapeSemantics(draw3::shapes::ShapeObject first, draw3::shapes::ShapeObject second)
@@ -652,9 +700,6 @@ namespace Inkeys::Drawing::Draw3
 			// 编辑是低频事务：sidecar 和 journal 在局部候选里完整准备后再替换文档。
 			CanvasPageRuntimeState candidate = runtime;
 			EnsureOperationJournal(candidate);
-			candidate.operations.resize(candidate.operationCursor);
-			candidate.operations.push_back({CanvasOperationKind::Replace,id,existing,replacement});
-			candidate.operationCursor = candidate.operations.size();
 			candidate.history.DiscardRedoBranch();
 			std::vector<SignedTileCoordinate> affected = item->compositionTiles;
 			affected.insert(affected.end(),footprint->compositionTiles.begin(),footprint->compositionTiles.end());
@@ -663,6 +708,8 @@ namespace Inkeys::Drawing::Draw3
 			candidate.clearRedoAvailable = false; candidate.clearRedoContinuation.reset(); candidate.intervalLoadPending = false;
 			const auto beforeState = candidate.rasterState;
 			candidate.rasterState = allocateToken();
+			RecordDocumentOperation(candidate, candidate.rasterState,
+				CanvasOperation{ CanvasOperationKind::Replace, id, existing, replacement });
 			candidate.shapeRevisionAllocator.Next(after.id,after.revision);
 			if (!canvas.ReplaceStroke(strokeIndex,std::move(replacement))) return {};
 			runtime = std::move(candidate);
@@ -2477,6 +2524,7 @@ namespace Inkeys::Drawing::Draw3
 			uint32_t debugPreviousContactId = 0; // 断触续接前一个接触的 cid，仅供画布调试板显示。
 			uint32_t laserParticleSeed = 0;
 			uint64_t laserLayerId = 0;
+			float laserMaximumDownDisplacementSquaredPx = 0.0f;
 			uint32_t laserParticleSeedCursor = 0;
 			float laserParticleFractionalEmission = 0.0f;
 			float laserParticleTangentX = 0.0f;
@@ -2978,22 +3026,32 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		}
 
-		template<class CompleteModel, class FinishMouse>
+		template<class ConsumeSnapshot>
 		void RetireLaserToolRuntimes(std::span<RuntimeStroke*> active,
-			ContactInputCoordinator& input, CompleteModel&& completeModel, FinishMouse&& finishMouse)
+			ContactInputCoordinator& input, int64_t qpc, bool cancel, ConsumeSnapshot&& consume)
 		{
 			for (RuntimeStroke* runtime : active)
 			{
-				// 掌擦已锁存为持久 Eraser；原来选过 Laser 不代表仍属于激光临时会话。
-				if (!runtime || runtime->tool != DrawingTool::Laser) continue;
-				if (!runtime->ended)
+				// 掌擦已锁存为持久 Eraser；切笔只结束仍属于激光的物理路由。
+				if (!runtime || runtime->tool != DrawingTool::Laser || runtime->ended) continue;
+				ContactSnapshot latest;
+				if (!cancel && input.TryReadSnapshot(runtime->handle, latest) &&
+					latest.sequence != runtime->lastConsumedSequence)
 				{
-					ContactSnapshot terminal = runtime->lastInputSnapshot;
-					terminal.phase = ContactPhase::Cancelled;
-					completeModel(*runtime, terminal, true);
+					if (latest.phase == ContactPhase::Up || latest.phase == ContactPhase::Cancelled)
+					{
+						consume(*runtime, latest, false);
+						input.DiscardUntilTerminal(runtime->handle);
+						continue;
+					}
+					// 先消费读到的真实 Move，合成 Up 才能在最新位置闭合模型。
+					if (latest.phase == ContactPhase::Move) consume(*runtime, latest, false);
+					if (runtime->tool != DrawingTool::Laser) continue;
 				}
-				runtime->cancelled = true;
-				finishMouse(*runtime);
+				ContactSnapshot terminal = runtime->lastInputSnapshot;
+				terminal.phase = cancel ? ContactPhase::Cancelled : ContactPhase::Up;
+				terminal.qpc = (std::max)(terminal.qpc, qpc);
+				consume(*runtime, terminal, true);
 				input.DiscardUntilTerminal(runtime->handle);
 			}
 		}
@@ -3895,11 +3953,12 @@ namespace Inkeys::Drawing::Draw3
 			return pan.ObserveMoveMode(pansNow);
 		}
 
-		// Selection 整段释放 1 ms 高精度计时器；白板移动模式的平移/惯性活动期必须保持，
+		// 选择态空闲时释放 1 ms 计时器；激光仍可见或白板正在平移时必须保持，
 		// 否则逐帧平移会在默认计时器分辨率下抖动。
-		constexpr bool SelectionReleasesTimerPeriod(bool selectionMode, bool canvasPanActive) noexcept
+		constexpr bool SelectionReleasesTimerPeriod(bool selectionMode, bool canvasPanActive,
+			bool laserVisible = false) noexcept
 		{
-			return selectionMode && !canvasPanActive;
+			return selectionMode && !canvasPanActive && !laserVisible;
 		}
 
 		// 白板视角的会话内侧表：不写 UInk、不改 revision；被驱逐的冷页重载后按页恢复。
@@ -5181,13 +5240,13 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (!phase.boundaries.enabled || terminal.phase != ContactPhase::Up) return;
 				const auto* source = FindLive(key);
-				if (!source || !source->terminalObserved || final.stored.exists || lifecycle.lastAllUpQpc != terminal.qpc)
+				if (!source || !source->terminalObserved || final.stored.exists || lifecycle.metricLastAllUpQpc != terminal.qpc)
 				{ FailPhase(RuntimeMetricsPhaseFailure::Order); return; }
 				final = {};
 				final.stored.exists = true; final.stored.key = key; final.stored.canvas = source->canvas;
 				final.stored.terminalSequence = terminal.sequence; final.stored.terminalQpc = terminal.qpc;
 				final.stored.terminalAdmission = terminal.admissionRevision;
-				final.ordinal = source->contactOrdinal; final.laser = true; final.lastAllUpQpc = lifecycle.lastAllUpQpc;
+				final.ordinal = source->contactOrdinal; final.laser = true; final.lastAllUpQpc = lifecycle.metricLastAllUpQpc;
 				final.holdSeen = lifecycle.phase == LaserTrailPhase::Hold;
 				phaseChanged = true;
 			}
@@ -5206,7 +5265,7 @@ namespace Inkeys::Drawing::Draw3
 				if (lastLaserPhase != lifecycle.phase) ++phase.terminal.laserPhaseTransitions;
 				lastLaserPhase = lifecycle.phase;
 				final.holdSeen |= lifecycle.phase == LaserTrailPhase::Hold;
-				final.fadeSeen |= lifecycle.phase == LaserTrailPhase::Fade;
+				final.fadeSeen |= lifecycle.phase == LaserTrailPhase::Fade || lifecycle.phase == LaserTrailPhase::Dissolve;
 			}
 			void ObserveLaserExpiry(RECT stable, RECT live, RECT previousParticles, RECT particles) noexcept
 			{
@@ -5465,7 +5524,47 @@ namespace Inkeys::Drawing::Draw3
 			RECT liveBounds = {};
 			RECT bounds = {};
 			bool cancelled = false;
+			uint64_t operationSequence = 0;
 		};
+
+		struct BakedLaserStroke
+		{
+			std::vector<InkPoint> points;
+			ProductVisualStyle visualStyle;
+			RECT bounds = {};
+			WindowSize rasterSize = {};
+			uint64_t batchId = 0;
+			uint64_t layerId = 0;
+			uint64_t operationSequence = 0;
+		};
+
+		struct LaserTerminalOperation
+		{
+			uint64_t layerId;
+			int64_t qpc;
+		};
+
+		auto LatestBakedLaserStroke(std::vector<BakedLaserStroke>& strokes)
+		{
+			// 各支可乱序抬起；撤回比抬起序号，重烘仍按保存的批次及批内 Down 顺序。
+			return std::max_element(strokes.begin(), strokes.end(),
+				[](const BakedLaserStroke& a, const BakedLaserStroke& b)
+				{ return a.operationSequence < b.operationSequence; });
+		}
+
+		bool ReleaseLaserResourcesIfUnused(InkRenderer& renderer, bool selected, bool visible)
+		{
+			if (KeepLaserResources(selected, visible)) return false;
+			if (renderer.LaserResourceBytes() != 0) renderer.ReleaseLaserResources();
+			return true;
+		}
+
+		void PublishLaserVisibility(const DrawingControllerRuntimeObserver& observer,
+			bool& lastPublished, bool visible)
+		{
+			if (std::exchange(lastPublished, visible) != visible && observer.laserVisibilityChanged)
+				observer.laserVisibilityChanged(observer.context, visible);
+		}
 
 		struct LaserTipVisual
 		{
@@ -5479,6 +5578,37 @@ namespace Inkeys::Drawing::Draw3
 			const auto iterator = std::find_if(layers.begin(), layers.end(),
 				[id](const LaserStrokeLayer& layer) { return layer.id == id; });
 			return iterator == layers.end() ? nullptr : &*iterator;
+		}
+
+		template<class AllocateSequence>
+		void AssignLaserTerminalOperations(std::vector<LaserTerminalOperation>& terminals,
+			std::vector<LaserStrokeLayer>& layers, std::vector<BakedLaserStroke>& baked,
+			AllocateSequence&& allocateSequence)
+		{
+			// 等本帧终态收齐再编号。已提前烘焙的层也参与排序，且不改变像素合成顺序。
+			if (terminals.size() > 1)
+				std::stable_sort(terminals.begin(), terminals.end(),
+					[](const LaserTerminalOperation& a, const LaserTerminalOperation& b) { return a.qpc < b.qpc; });
+			for (const auto& terminal : terminals)
+			{
+				if (auto* layer = FindLaserStrokeLayer(layers, terminal.layerId))
+				{
+					layer->operationSequence = allocateSequence();
+					continue;
+				}
+				const auto it = std::lower_bound(baked.begin(), baked.end(), terminal.layerId,
+					[](const BakedLaserStroke& stroke, uint64_t id) { return stroke.layerId < id; });
+				if (it != baked.end() && it->layerId == terminal.layerId)
+					it->operationSequence = allocateSequence();
+			}
+			terminals.clear();
+		}
+
+		LaserTrailLifecycle LaserTrailAfterBakedLoss(LaserTrailLifecycle lifecycle, bool hasWritingLayer) noexcept
+		{
+			if (!hasWritingLayer) return {};
+			lifecycle.phase = LaserTrailPhase::Active;
+			return lifecycle;
 		}
 
 		RECT RemovePalmLaserLayer(std::vector<LaserStrokeLayer>& layers, RuntimeStroke& runtime)
@@ -5522,11 +5652,11 @@ namespace Inkeys::Drawing::Draw3
 					return false;
 				const std::span<const InkPoint> stablePoints = visiblePoints.subspan(
 					ranges.stableFirstIndex, ranges.stablePointCount);
-				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
-				if (renderer.DrawLaserCoverage(stablePoints) != 0)
-					return false;
 				const RECT stableDirty = RectFromLaserPoints(
 					stablePoints, dpiScale, width, height);
+				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage, stableDirty);
+				if (renderer.DrawLaserCoverage(stablePoints) != 0)
+					return false;
 				UnionRectInPlace(nextStableBounds, stableDirty);
 				UnionRectInPlace(dirty, stableDirty);
 			}
@@ -5540,7 +5670,7 @@ namespace Inkeys::Drawing::Draw3
 				livePoints, dpiScale, width, height);
 			if (!livePoints.empty())
 			{
-				renderer.SetLaserLiveCoverageTarget();
+				renderer.SetLaserLiveCoverageTarget(nextLiveBounds);
 				if (renderer.DrawLaserCoverage(livePoints) != 0)
 					return false;
 			}
@@ -5577,11 +5707,16 @@ namespace Inkeys::Drawing::Draw3
 
 		void FinalizeLaserRuntime(std::vector<LaserStrokeLayer>& layers, RuntimeStroke& runtime,
 			LaserTrailLifecycle& lifecycle, int64_t terminalQpc, bool cancelled,
-			float modelDpiScale, int width, int height)
+			float modelDpiScale, int width, int height, uint64_t operationSequence = 0,
+			bool syntheticTerminal = false)
 		{
 			LaserStrokeLayer* layer = FindLaserStrokeLayer(layers, runtime.laserLayerId);
-			if (layer) UnionRectInPlace(runtime.visibleDirty, layer->bounds);
-			EndLaserContact(lifecycle, terminalQpc);
+			if (layer)
+			{
+				layer->operationSequence = operationSequence;
+				UnionRectInPlace(runtime.visibleDirty, layer->bounds);
+			}
+			EndLaserContact(lifecycle, terminalQpc, syntheticTerminal);
 			// 普通与合成 Up 都先冻结自有 CPU 层，再允许 Runtime 回收；保留其他 Laser。
 			FinalizeLaserStrokeLayer(layers, runtime, cancelled, modelDpiScale, width, height);
 			if (layer) UnionRectInPlace(runtime.visibleDirty, layer->bounds);
@@ -5591,7 +5726,7 @@ namespace Inkeys::Drawing::Draw3
 			InkRenderer& renderer, float dpiScale, int width, int height,
 			RECT& compositedBounds, RECT& bakeDirty, LaserCoverageMode& coverageMode,
 			void (*afterLayer)(InkRenderer&, size_t, void*) = nullptr,
-			void* afterLayerContext = nullptr)
+			void* afterLayerContext = nullptr, std::vector<BakedLaserStroke>* bakedStrokes = nullptr)
 		{
 			if (std::none_of(layers.begin(), layers.end(), [](const LaserStrokeLayer& layer)
 				{ return ShouldCompositeLaserLayer(layer.cancelled,
@@ -5601,7 +5736,23 @@ namespace Inkeys::Drawing::Draw3
 				layers.clear();
 				return true;
 			}
-			if (!renderer.BeginLaserBake()) return false;
+			if (bakedStrokes && bakedStrokes->size() + layers.size() > bakedStrokes->capacity())
+				bakedStrokes->reserve((std::max)(bakedStrokes->size() + layers.size(),
+					bakedStrokes->capacity() * 2));
+			const auto finishBake = [&]
+			{
+				if (bakedStrokes)
+				{
+					const uint64_t batchId = layers.front().id;
+					// 多指逐笔解析后 source-over；按批次及 Down 顺序保存，每笔使用各自的 coverage。
+					for (auto& layer : layers)
+						if (!layer.cancelled && !IsEmptyRect(layer.bounds) && !layer.completedPoints.empty())
+							bakedStrokes->push_back({ std::move(layer.completedPoints), layer.visualStyle,
+								layer.bounds, { width, height }, batchId, layer.id, layer.operationSequence });
+				}
+				renderer.ClearLaserIncrementalCoverage();
+				layers.clear();
+			};
 			RECT nextCompositedBounds = compositedBounds;
 			if (coverageMode == LaserCoverageMode::Incremental && layers.size() == 1 &&
 				renderer.LaserIncrementalCoverageAvailable())
@@ -5623,8 +5774,10 @@ namespace Inkeys::Drawing::Draw3
 					}
 					else if (!IsEmptyRect(layer.bounds))
 					{
-						if (renderer.ResolveLaserIncrementalCoverage(
-							renderer.LaserBakeTarget(), layer.bounds))
+						// 解析只有一次 Draw，所有同步失败点都在提交之前。
+						if (renderer.BeginLaserBake(layer.bounds, false) &&
+							renderer.ResolveLaserIncrementalCoverage(
+								renderer.LaserBakeTarget(), layer.bounds))
 						{
 							UnionRectInPlace(nextCompositedBounds, layer.bounds);
 						}
@@ -5637,47 +5790,56 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (incrementalBakeSucceeded)
 				{
-					renderer.CommitLaserBake();
+					renderer.CommitLaserBake(layer.bounds);
 					compositedBounds = nextCompositedBounds;
-					renderer.ClearLaserIncrementalCoverage();
-					layers.clear();
+					finishBake();
 					return true;
 				}
 				renderer.ClearLaserIncrementalCoverage();
-				// 增量 resolve 可能已写 scratch；完整回退先恢复已提交底色。
-			if (!renderer.BeginLaserBake()) return false;
 			}
-			size_t completedLayerCount = 0;
+			// 多次 source-over 可能只完成前几层，先把会被写到的颜色范围备份。
+			RECT bakeBounds = {};
+			size_t bakeLayerCount = 0;
 			for (LaserStrokeLayer& layer : layers)
 			{
-				const std::vector<InkPoint>& points = LaserStrokeLayerPoints(layer);
+				const auto& points = LaserStrokeLayerPoints(layer);
 				if (!ShouldCompositeLaserLayer(layer.cancelled, points.size())) continue;
 				layer.bounds = RectFromLaserPoints(points, ProductTargetScale(layer.visualStyle), width, height);
 				if (IsEmptyRect(layer.bounds)) continue;
+				UnionRectInPlace(bakeBounds, layer.bounds);
+				++bakeLayerCount;
+			}
+			if (!renderer.BeginLaserBake(bakeBounds, bakeLayerCount > 1)) return false;
+			size_t completedLayerCount = 0;
+			for (LaserStrokeLayer& layer : layers)
+			{
+				const auto& points = LaserStrokeLayerPoints(layer);
+				if (!ShouldCompositeLaserLayer(layer.cancelled, points.size()) || IsEmptyRect(layer.bounds)) continue;
 				UnionRectInPlace(bakeDirty, layer.bounds);
 				// 每支笔先独立生成 coverage，再按 Down 顺序烘入稳定预乘颜色。
 				ConfigureLaserRendererStyle(renderer, layer.visualStyle, dpiScale);
 				if (!renderer.ClearLaserCoverageRect(layer.bounds))
 				{
 					coverageMode = LaserCoverageMode::FullRedraw;
+					renderer.AbortLaserBake();
 					return false;
 				}
-				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
+				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage, layer.bounds);
 				if (renderer.DrawLaserCoverage(points) != 0 ||
 					!renderer.ResolveLaserStrokeCoverage(
 						renderer.LaserBakeTarget(), layer.bounds))
 				{
 					coverageMode = LaserCoverageMode::FullRedraw;
+					renderer.AbortLaserBake();
 					return false;
 				}
 				UnionRectInPlace(nextCompositedBounds, layer.bounds);
 				// 仅显式无窗口故障测试传入回调，生产路径没有状态注入。
 				if (afterLayer) afterLayer(renderer, ++completedLayerCount, afterLayerContext);
 			}
-			renderer.CommitLaserBake();
+			renderer.CommitLaserBake(bakeBounds);
 			compositedBounds = nextCompositedBounds;
-			renderer.ClearLaserIncrementalCoverage();
-			layers.clear();
+			finishBake();
 			return true;
 		}
 
@@ -5719,10 +5881,52 @@ namespace Inkeys::Drawing::Draw3
 				// 仅处理最终 frame dirty 的交集；完整几何和 Down 顺序保持不变。
 				ConfigureLaserRendererStyle(renderer, layer.visualStyle, dpiScale);
 				if (!renderer.ClearLaserCoverageRect(resolveBounds)) return false;
-				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage);
+				renderer.SetLaserCoverageTarget(renderer.laserStrokeCoverage,
+					renderer.laserScissorRasterState ? resolveBounds : layer.bounds);
 				if (renderer.DrawLaserCoverage(points, resolveBounds) != 0 ||
 					!renderer.ResolveLaserStrokeCoverage(target, resolveBounds))
 					return false;
+			}
+			return true;
+		}
+
+		bool UndoBakedLaserStroke(std::vector<BakedLaserStroke>& strokes, InkRenderer& renderer,
+			bool preserveIncrementalCoverage, bool hasPendingLayers, RECT& compositedBounds,
+			RECT& dirty, LaserTrailLifecycle& lifecycle, float& opacity, uint32_t* removedGroup = nullptr)
+		{
+			if (lifecycle.phase == LaserTrailPhase::Inactive) return false;
+			const auto removed = LatestBakedLaserStroke(strokes);
+			if (removed == strokes.end()) return false;
+			const RECT affected = removed->bounds;
+			RECT remainingBounds = {};
+			for (auto it = strokes.begin(); it != strokes.end(); ++it)
+				if (it != removed) UnionRectInPlace(remainingBounds, it->bounds);
+			if (!IsEmptyRect(affected))
+			{
+				if (!renderer.BeginLaserUndo(affected, preserveIncrementalCoverage)) return false;
+				const bool rebuilt = [&]
+				{
+					for (auto it = strokes.begin(); it != strokes.end(); ++it)
+					{
+						RECT clipped = {};
+						if (it == removed || !IntersectRect(&clipped, &it->bounds, &affected)) continue;
+						ConfigureLaserRendererStyle(renderer, it->visualStyle, ProductTargetScale(it->visualStyle));
+						if (!renderer.ReplayLaserStroke(it->points, clipped, it->rasterSize.width, it->rasterSize.height))
+							return false;
+					}
+					return true;
+				}();
+				renderer.FinishLaserUndo(rebuilt, remainingBounds);
+				if (!rebuilt) return false;
+				UnionRectInPlace(dirty, affected);
+			}
+			if (removedGroup) *removedGroup = static_cast<uint32_t>(removed->layerId);
+			strokes.erase(removed);
+			compositedBounds = remainingBounds;
+			if (strokes.empty() && !hasPendingLayers)
+			{
+				lifecycle = {};
+				opacity = 0.0f;
 			}
 			return true;
 		}
@@ -5946,12 +6150,128 @@ namespace Inkeys::Drawing::Draw3
 			return value ^ (value >> 16);
 		}
 
+		uint32_t AppendLaserDissolveSeeds(std::vector<LaserParticleSeed>& seeds,
+			const std::vector<BakedLaserStroke>& strokes, const LaserDissolveFront& front,
+			float windAngleDegrees = kLaserDissolveParameters.leftUpWindAngleDegrees)
+		{
+			const auto segmentLengthDip = [](const InkPoint& from, const InkPoint& to, float scale)
+			{
+				const double length = std::hypot(static_cast<double>(to.x) - from.x,
+					static_cast<double>(to.y) - from.y) / scale;
+				return std::isfinite(length) ? length : 0.0;
+			};
+			constexpr uint32_t minimumDotSeeds = 3;
+			const auto pointEquivalentLength = [](float radiusDip)
+			{
+				// 用标准笔宽把圆面积折成等效笔迹长度，共用飘散密度和整批上限。
+				const double area = static_cast<double>(kPi) * radiusDip * radiusDip;
+				return (std::max)(area / (2.0 * LaserSolidRadius()),
+					static_cast<double>(minimumDotSeeds) / kLaserDissolveParameters.seedsPerDip);
+			};
+			double totalLength = 0.0;
+			double pointLength = 0.0;
+			size_t pointCount = 0;
+			for (const auto& stroke : strokes)
+			{
+				if (stroke.points.empty()) continue;
+				const float scale = ProductTargetScale(stroke.visualStyle);
+				const double strokeStart = totalLength;
+				for (size_t i = 1; i < stroke.points.size(); ++i)
+					totalLength += segmentLengthDip(stroke.points[i - 1], stroke.points[i], scale);
+				if (totalLength == strokeStart)
+				{
+					pointLength += pointEquivalentLength(LaserSolidRadius(scale) / scale);
+					++pointCount;
+				}
+			}
+			const auto& config = kLaserDissolveParameters;
+			// 先给每个圆点保底，避免长笔迹触及上限时跳过圆点；保底本身超限时一并降密。
+			const uint32_t reservedPerDot = pointCount <= config.maximumSeeds / minimumDotSeeds ? minimumDotSeeds : 0;
+			const uint32_t reserved = static_cast<uint32_t>(pointCount * reservedPerDot);
+			const double reservedDotLength = static_cast<double>(reservedPerDot) / config.seedsPerDip;
+			const double sampleLength = totalLength + pointLength - reservedDotLength * pointCount;
+			const uint32_t count = (std::min)(config.maximumSeeds - reserved, LaserDissolveSeedCount(sampleLength));
+			if (count == 0 && reserved == 0) return 0;
+			seeds.reserve(seeds.size() + reserved + count);
+			// 其余容量按整组的等效长度分层采样，超限时同比降低密度。
+			const double spacing = count != 0 ? sampleLength / count : 0.0;
+			double start = 0.0;
+			uint32_t next = 0;
+			const auto sampleSpan = [&](double length, const auto& emit)
+			{
+				if (length <= 0.0) return;
+				for (; next < count; ++next)
+				{
+					const uint32_t random = MixLaserSeed(next * 0x9E3779B9u);
+					const double jitter = (static_cast<double>(random & 0xFFFFu) + 0.5) / 65536.0;
+					const double position = spacing * (next + jitter);
+					if (position >= start + length) break;
+					emit(static_cast<float>((position - start) / length), random);
+				}
+				start += length;
+			};
+			for (const auto& stroke : strokes)
+			{
+				if (stroke.points.empty()) continue;
+				const float scale = ProductTargetScale(stroke.visualStyle);
+				const auto tint = ColorForTool(DrawingTool::Laser, stroke.visualStyle);
+				const float color[4] = { tint.x, tint.y, tint.z, 1.0f };
+				const float radius = LaserSolidRadius(scale);
+				const uint32_t group = static_cast<uint32_t>(stroke.layerId);
+				const double strokeStart = start;
+				for (size_t i = 1; i < stroke.points.size(); ++i)
+				{
+					const auto& from = stroke.points[i - 1];
+					const auto& to = stroke.points[i];
+					const double length = segmentLengthDip(from, to, scale);
+					if (length <= 0.0) continue;
+					const double lengthPx = length * scale;
+					sampleSpan(length, [&](float t, uint32_t random)
+					{
+						AppendLaserDissolveParticleSeed(seeds, front, std::lerp(from.x, to.x, t),
+							std::lerp(from.y, to.y, t), static_cast<float>((to.x - from.x) / lengthPx),
+							static_cast<float>((to.y - from.y) / lengthPx), radius, LaserCoreRadius(radius),
+							scale, color, random ^ group, group, windAngleDegrees);
+					});
+				}
+				if (start == strokeStart)
+				{
+					const auto& point = stroke.points.front();
+					const auto emitPoint = [&](uint32_t random)
+					{
+						AppendLaserDissolveParticleSeed(seeds, front, point.x, point.y, 0.0f, 0.0f,
+							radius, LaserCoreRadius(radius), scale, color, random ^ group, group, windAngleDegrees, true);
+					};
+					for (uint32_t i = 0; i < reservedPerDot; ++i)
+						emitPoint(MixLaserSeed(i * 0x9E3779B9u ^ 0x85EBCA6Bu));
+					sampleSpan(pointEquivalentLength(radius / scale) - reservedDotLength,
+						[&](float, uint32_t random) { emitPoint(random); });
+				}
+			}
+			return reserved + next;
+		}
+
 		uint32_t LaserSeedForHandle(const ContactHandle& handle) noexcept
 		{
 			if (!handle.record) return MixLaserSeed(static_cast<uint32_t>(handle.generation));
 			return MixLaserSeed(handle.record->TabletContextId() * 0x9E3779B9u ^
 				handle.record->ContactId() * 0x85EBCA6Bu ^
 				static_cast<uint32_t>(handle.generation));
+		}
+
+		bool ObserveLaserClickSnapshot(RuntimeStroke& runtime, const ContactSnapshot& down,
+			const ContactSnapshot& snapshot, bool syntheticTerminal, int64_t qpcFrequency,
+			const LaserParticleConfig& config) noexcept
+		{
+			if (syntheticTerminal) return false;
+			// 只统计绘制线程消费的位置，包含实际 Up 的位置，不追踪输入端合并的样本。
+			const float dx = snapshot.position.x - down.position.x;
+			const float dy = snapshot.position.y - down.position.y;
+			runtime.laserMaximumDownDisplacementSquaredPx = (std::max)(
+				runtime.laserMaximumDownDisplacementSquaredPx, dx * dx + dy * dy);
+			return snapshot.phase == ContactPhase::Up && snapshot.qpc >= down.qpc &&
+				IsLaserParticleClick(QpcDeltaSeconds(snapshot.qpc, down.qpc, qpcFrequency),
+					runtime.laserMaximumDownDisplacementSquaredPx, ProductTargetScale(runtime.visualStyle), config);
 		}
 
 		void ResetLaserParticleEmitterState(RuntimeStroke& runtime) noexcept
@@ -5961,6 +6281,29 @@ namespace Inkeys::Drawing::Draw3
 			runtime.laserParticleTangentX = 0.0f;
 			runtime.laserParticleTangentY = 0.0f;
 			runtime.hasLaserParticleTangent = false;
+		}
+
+		bool ApplyLaserParticleEffects(uint32_t& effectiveEffects, uint32_t nextEffects,
+			InkRenderer& renderer, LaserParticleDirtyTracker& tracker, std::vector<LaserParticleSeed>& seeds,
+			const RECT& previousBounds, RECT& redraw) noexcept
+		{
+			if (effectiveEffects == nextEffects) return false;
+			effectiveEffects = nextEffects;
+			if (nextEffects == 0)
+			{
+				// 清池前登记上一帧的绘制范围，同一次状态切换只登记一次。
+				UnionRectInPlace(redraw, previousBounds);
+				renderer.ResetLaserParticles();
+				tracker.Clear();
+				seeds.clear();
+			}
+			return true;
+		}
+
+		bool ShouldStepLaserParticles(bool hasActive, uint32_t effectiveEffects, bool hasSeeds) noexcept
+		{
+			// 设置只约束新发射，非空环必须推进到最终回收。
+			return hasActive || (effectiveEffects != 0 && hasSeeds);
 		}
 
 		struct LaserParticleEmissionSource
@@ -6683,6 +7026,17 @@ namespace Inkeys::Drawing::Draw3
 				readBackBufferBGRA(pixels);
 		};
 
+		auto takeLaserCounters = [&renderer, before = renderer.LaserCounters()]() mutable
+		{
+			const auto& after = renderer.LaserCounters();
+			const LaserSurfaceCounters delta = {
+				after.fullClears - before.fullClears, after.rectClears - before.rectClears,
+				after.skippedClears - before.skippedClears, after.bakeCopies - before.bakeCopies,
+				after.backupAllocations - before.backupAllocations
+			};
+			before = after;
+			return delta;
+		};
 		renderer.ClearAllLaserCoverage();
 		std::vector<uint8_t> blank;
 		check(readCompositedBGRA(blank), "read transparent baseline BGRA");
@@ -6714,10 +7068,14 @@ namespace Inkeys::Drawing::Draw3
 			failure.switched = true;
 		};
 		// 第一层按生产 shader 成功 source-over，第二层用真实 Map 失败中断。
+		(void)takeLaserCounters();
 		const bool failedBake = MetricsLaserCall(&actualCosts, 1, costFrequency.QuadPart, [&] { return BakeLaserStrokeLayers(retryLayers, renderer,
 			1.0f, 64, 64, retryBounds, retryDirty, retryMode,
 			afterLayer, &injection); });
 		renderer.inkDataBuffer = writableInkBuffer;
+		const auto failedBakeWork = takeLaserCounters();
+		check(failedBakeWork.bakeCopies == 2 && failedBakeWork.backupAllocations == 1,
+			"failed multi-layer bake backs up and restores one region");
 		check(injection.switched, "fault begins only after first layer");
 		check(!failedBake, "second-layer Map failure reports failed bake");
 		check(retryLayers.size() == 2 && retryLayers[0].id == 1 &&
@@ -6731,6 +7089,9 @@ namespace Inkeys::Drawing::Draw3
 		check(MetricsLaserCall(&actualCosts, 1, costFrequency.QuadPart, [&] { return BakeLaserStrokeLayers(retryLayers, renderer, 1.0f, 64, 64,
 			retryBounds, retryDirty, retryMode); }),
 			"restored buffer submits retained layers once");
+		const auto retryBakeWork = takeLaserCounters();
+		check(retryBakeWork.bakeCopies == 1 && retryBakeWork.backupAllocations == 0,
+			"multi-layer retry backs up one region and reuses its texture");
 		std::vector<uint8_t> afterRetry;
 		check(readCompositedBGRA(afterRetry), "read retried two-layer BGRA");
 		check(afterRetry == expected && retryLayers.empty(),
@@ -6751,6 +7112,696 @@ namespace Inkeys::Drawing::Draw3
 		check(actualCosts.bakeCalls == 3 && actualCosts.bakeFailures == 1 &&
 			(actualCosts.stageAvailableMask & 2u) != 0 && (actualCosts.stageCpuAvailableMask & 2u) != 0,
 			"N1 actual WARP bake success/failure shares the production wall/CPU collector");
+
+		// 用生产生命周期和绘制函数走空闲、书写、留存及消失后的落笔。
+		{
+			const std::array<InkPoint, 3> firstStroke = { InkPoint{ 12.0f, 20.0f, 3.0f, 0.0f },
+				InkPoint{ 30.0f, 26.0f, 3.0f, 0.5f }, InkPoint{ 46.0f, 40.0f, 3.0f, 1.0f } };
+			const std::array<InkPoint, 2> secondStroke = { InkPoint{ 40.0f, 14.0f, 3.0f, 0.0f },
+				InkPoint{ 18.0f, 44.0f, 3.0f, 1.0f } };
+			// 靠近角落使裁剪后的写域小于 64×64 的 1/16，同时覆盖稳定段和尾段。
+			const std::array<InkPoint, 3> tinyStroke = { InkPoint{ 4.75f, 4.75f, 0.5f, 0.0f },
+				InkPoint{ 5.25f, 4.75f, 0.5f, 0.5f }, InkPoint{ 5.75f, 4.75f, 0.5f, 1.0f } };
+			const auto makeSingle = [](std::span<const InkPoint> points)
+			{
+				std::vector<LaserStrokeLayer> layers(1);
+				layers.front().visualStyle = { 0xFF2020FFu, 5.0f };
+				layers.front().completedPoints.assign(points.begin(), points.end());
+				return layers;
+			};
+			RECT stableBounds = {};
+			const auto bakeReference = [&](std::span<const InkPoint> points, std::vector<uint8_t>& pixels)
+			{
+				auto layers = makeSingle(points);
+				RECT dirty = {};
+				auto mode = LaserCoverageMode::FullRedraw;
+				return BakeLaserStrokeLayers(layers, renderer, 1.0f, 64, 64, stableBounds, dirty, mode) &&
+					readCompositedBGRA(pixels);
+			};
+			renderer.ClearAllLaserCoverage();
+			std::vector<uint8_t> referenceFirst, referenceBoth, referenceTiny, actual;
+			check(bakeReference(firstStroke, referenceFirst) && referenceFirst != blank, "first full-redraw reference");
+			check(bakeReference(secondStroke, referenceBoth) && referenceBoth != referenceFirst, "second full-redraw reference");
+			renderer.ClearAllLaserCoverage();
+			stableBounds = {};
+			check(bakeReference(tinyStroke, referenceTiny) && referenceTiny != blank, "tiny full-redraw reference");
+
+			check(renderer.EnsureLaserIncrementalCoverageResources(), "single-contact coverage resources");
+			renderer.ClearAllLaserCoverage();
+			stableBounds = {};
+			LaserTrailLifecycle lifecycle;
+			const auto down = [&]
+			{
+				if (lifecycle.phase == LaserTrailPhase::Inactive)
+				{
+					renderer.ClearAllLaserCoverage();
+					stableBounds = {};
+				}
+				BeginLaserContact(lifecycle);
+				return takeLaserCounters();
+			};
+			const auto writeAndLift = [&](std::span<const InkPoint> points, int64_t upQpc,
+				uint64_t fullClears, uint64_t rectClears, uint64_t skippedClears)
+			{
+				auto layers = makeSingle(points);
+				auto mode = SelectLaserCoverageMode(LaserCoverageMode::Inactive,
+					layers.size(), renderer.LaserIncrementalCoverageAvailable());
+				check(mode == LaserCoverageMode::Incremental, "single-contact Down selects incremental coverage");
+				for (size_t count = 2; count <= points.size(); ++count)
+				{
+					RECT frameDirty = {};
+					check(UpdateLaserIncrementalCoverage(layers.front(), points.first(count),
+						points.first(count), 0.25, renderer, 1.0f, 64, 64, frameDirty),
+						"single-contact Move updates coverage");
+				}
+				const auto move = takeLaserCounters();
+				check(move.fullClears == 0 && move.rectClears == points.size() - 2 &&
+					move.bakeCopies == 0 && move.backupAllocations == 0, "Move only replaces an existing live tail");
+
+				EndLaserContact(lifecycle, upQpc);
+				RECT dirty = {};
+				check(lifecycle.phase == LaserTrailPhase::Hold && ShouldBakeLaserBatch(lifecycle, layers.size()) &&
+					BakeLaserStrokeLayers(layers, renderer, 1.0f, 64, 64, stableBounds, dirty, mode) &&
+					layers.empty() && mode == LaserCoverageMode::Incremental, "single-contact Up bakes incrementally");
+				const auto lift = takeLaserCounters();
+				check(lift.fullClears == fullClears && lift.rectClears == rectClears &&
+					lift.skippedClears == skippedClears && lift.bakeCopies == 0 && lift.backupAllocations == 0,
+					"single-contact Up clears by write range without any bake copies or allocation");
+			};
+
+			(void)takeLaserCounters();
+			const auto idle = down();
+			check(idle.fullClears == 0 && idle.rectClears == 0 && idle.skippedClears == 3,
+				"idle Down skips all three unwritten textures");
+			writeAndLift(firstStroke, 1000, 2, 1, 0);
+			check(readCompositedBGRA(actual) && actual == referenceFirst, "first incremental bake matches reference bytes");
+
+			check(EvaluateLaserTrailOpacity(lifecycle, 1250, 1000, 1.0) == 1.0f &&
+				lifecycle.phase == LaserTrailPhase::Hold, "second Down occurs during Hold");
+			const auto hold = down();
+			check(hold.fullClears == 0 && hold.rectClears == 0 && hold.skippedClears == 0,
+				"Down during Hold keeps previous baked colour");
+			writeAndLift(secondStroke, 1500, 1, 1, 1);
+			check(readCompositedBGRA(actual) && actual == referenceBoth, "second incremental bake matches reference bytes");
+
+			const auto expire = [&](int64_t nowQpc)
+			{
+				const auto previousPhase = lifecycle.phase;
+				check(EvaluateLaserTrailOpacity(lifecycle, nowQpc, 1000, 1.0) == 0.0f &&
+					LaserTrailExpiredThisFrame(previousPhase, lifecycle.phase), "trail reaches the production expiry edge");
+				renderer.ClearAllLaserCoverage();
+				stableBounds = {};
+				return takeLaserCounters();
+			};
+			const auto expired = expire(3500);
+			check(expired.fullClears == 1 && expired.rectClears == 0 && expired.skippedClears == 2 &&
+				readCompositedBGRA(actual) && actual == blank, "expiry clears only the large baked colour");
+			const auto nextDown = down();
+			check(nextDown.fullClears == 0 && nextDown.rectClears == 0 && nextDown.skippedClears == 3,
+				"Down after expiry skips all three cleared textures");
+
+			writeAndLift(tinyStroke, 4000, 0, 3, 0);
+			check(readCompositedBGRA(actual) && actual == referenceTiny, "tiny incremental bake matches reference bytes");
+			renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
+			check(renderer.ResolveLaserIncrementalCoverage(renderer.backBufferRTV.Get(), fullRect) &&
+				readBackBufferBGRA(actual) && actual == blank, "tiny Up leaves no stable or live coverage pixels");
+			const auto tinyExpired = expire(6000);
+			check(tinyExpired.fullClears == 0 && tinyExpired.rectClears == 1 && tinyExpired.skippedClears == 2 &&
+				readCompositedBGRA(actual) && actual == blank, "tiny rectangle clear leaves no baked colour");
+		}
+
+		// S2：单指增量批次 A 与随后同批烘焙的 B、C 相交。
+		{
+			std::vector<BakedLaserStroke> baked;
+			RECT stable = {}, dirty = {};
+			LaserTrailLifecycle lifecycle;
+			float opacity = 1.0f;
+			const auto makeThird = []
+			{
+				std::vector<LaserStrokeLayer> layers(1);
+				auto& layer = layers.front();
+				layer.id = 3;
+				layer.operationSequence = 6;
+				layer.visualStyle = { 0x40FF20FFu, 5.0f };
+				layer.completedPoints = { { 14.25f, 31.5f, 3.0f, 0.0f },
+					{ 33.0f, 27.0f, 3.0f, 0.5f }, { 50.0f, 34.0f, 3.0f, 1.0f } };
+				return layers;
+			};
+			const auto bake = [&](std::vector<LaserStrokeLayer>& layers, LaserCoverageMode mode,
+				bool record)
+			{
+				return BakeLaserStrokeLayers(layers, renderer, 1.0f, 64, 64, stable, dirty,
+					mode, nullptr, nullptr, record ? &baked : nullptr);
+			};
+			renderer.ClearAllLaserCoverage();
+			std::vector<uint8_t> referenceA;
+			auto onlyA = makeLayers();
+			onlyA.resize(1);
+			check(bake(onlyA, LaserCoverageMode::Incremental, false) &&
+				readCompositedBGRA(referenceA) && referenceA != blank, "A-alone incremental pixel reference");
+			renderer.ClearAllLaserCoverage();
+			stable = {};
+			auto first = makeLayers();
+			first.resize(1);
+			first.front().operationSequence = 2;
+			auto pair = makeLayers();
+			pair.erase(pair.begin());
+			pair.front().operationSequence = 4;
+			auto third = makeThird();
+			pair.push_back(std::move(third.front()));
+			check(bake(first, LaserCoverageMode::Incremental, true) &&
+				bake(pair, LaserCoverageMode::FullRedraw, true) &&
+				baked.size() == 3 && baked[0].batchId != baked[1].batchId && baked[1].batchId == baked[2].batchId,
+				"same-batch layers retain Down order and the next batch retains a distinct identity");
+			std::vector<uint8_t> full, actual;
+			check(readCompositedBGRA(full) && full != expected, "C changes the overlapping AB reference");
+			BeginLaserContact(lifecycle);
+			EndLaserContact(lifecycle, 1000);
+			opacity = EvaluateLaserTrailOpacity(lifecycle, 2300, 1000, 1.0);
+			const float fadeOpacity = opacity;
+
+			std::array<uint8_t, 16> guid = {};
+			guid[0] = 87;
+			InkPage page{ InkGuid(guid) };
+			auto* canvas = page.GetOrCreateCanvas(kDefaultDeviceKey);
+			CanvasPageRuntimeState history;
+			const auto appendInk = [&](uint64_t sequence)
+			{
+				if (!canvas) return false;
+				InkStroke ink({ StoredInkType::Pen, 0, 1.0f, 0 },
+					{ { 6, 8, 4 }, { 42, 8, 4 } });
+				auto footprint = BuildStrokeTileFootprint(ink);
+				const auto index = footprint ? canvas->AppendStroke(std::move(ink)) : std::nullopt;
+				const auto item = index ? history.history.AppendStroke(*index, std::move(*footprint)) : std::nullopt;
+				if (!item) return false;
+				history.afterStates.push_back(sequence);
+				RecordRuntimeAppend(history, *item);
+				return true;
+			};
+			const auto undo = [&](bool preserveCoverage, bool pending)
+			{
+				dirty = {};
+				return UndoBakedLaserStroke(baked, renderer, preserveCoverage, pending, stable, dirty, lifecycle, opacity);
+			};
+			check(appendInk(3) && appendInk(5) &&
+				LatestDocumentOperationSequence(history) == 5 &&
+				ShouldUndoLaser(6, LatestDocumentOperationSequence(history)),
+				"Laser C is newer than the top document operation");
+			renderer.inkDataBuffer = unwritableInkBuffer;
+			const bool failedUndo = !undo(false, false);
+			renderer.inkDataBuffer = writableInkBuffer;
+			check(failedUndo && baked.size() == 3 && readCompositedBGRA(actual) && actual == full,
+				"a failed undo retains both the baked pixels and history");
+			check(undo(false, false) && readCompositedBGRA(actual) && actual == expected,
+				"undo C restores every byte of the AB reference");
+			const auto unchangedOutside = [&]
+			{
+				if (actual.size() != full.size() || actual.empty() || IsEmptyRect(dirty)) return false;
+				for (LONG y = 0; y < 64; ++y)
+					for (LONG x = 0; x < 64; ++x)
+					{
+						if (x >= dirty.left && x < dirty.right && y >= dirty.top && y < dirty.bottom) continue;
+						const size_t offset = (static_cast<size_t>(y) * 64 + x) * 4;
+						if (std::memcmp(actual.data() + offset, full.data() + offset, 4) != 0) return false;
+					}
+				return true;
+			};
+			check(unchangedOutside(), "undo leaves pixels outside C's affected rectangle untouched");
+			check(lifecycle.phase == LaserTrailPhase::Fade && lifecycle.lastAllUpQpc == 1000 &&
+				opacity == fadeOpacity, "undo preserves the group's timer and current opacity");
+
+			uint64_t token = 6;
+			const auto allocate = [&] { return ++token; };
+			check(!ShouldUndoLaser(4, LatestDocumentOperationSequence(history)) && canvas &&
+				ApplyRuntimeJournalCpu(*canvas, history, false, allocate) &&
+				LatestDocumentOperationSequence(history) == 3 &&
+				ShouldUndoLaser(4, LatestDocumentOperationSequence(history)),
+				"interleaved undo first chooses newer ink, then the exposed Laser B");
+			const auto redo = history.history.LastRedoItem();
+			check(undo(false, false) && readCompositedBGRA(actual) && actual == referenceA &&
+				redo.has_value() && history.history.LastRedoItem() == redo && history.operationCursor == 1,
+				"undo B matches A alone byte for byte and retains the document redo branch");
+			check(lifecycle.lastAllUpQpc == 1000 && opacity == fadeOpacity &&
+				undo(false, false) && readCompositedBGRA(actual) && actual == blank &&
+				baked.empty() && lifecycle.phase == LaserTrailPhase::Inactive && opacity == 0.0f,
+				"the last undo leaves a transparent inactive trail");
+			check(canvas && ApplyRuntimeJournalCpu(*canvas, history, true, allocate),
+				"document redo still executes after Laser undo");
+			if (history.operationCursor == 2)
+			{
+				RestampRedoneDocumentOperation(history, allocate());
+				check(!ShouldUndoLaser(6, LatestDocumentOperationSequence(history)),
+					"redo becomes the newest document operation");
+			}
+
+			// 撤回时第三笔仍在写；独立工作纹理必须完整保住实时与稳定 coverage。
+			pair = makeLayers();
+			pair[0].operationSequence = 2;
+			pair[1].operationSequence = 4;
+			check(bake(pair, LaserCoverageMode::FullRedraw, true), "bake AB before starting an active C");
+			BeginLaserContact(lifecycle);
+			opacity = 1.0f;
+			third = makeThird();
+			auto liveMode = LaserCoverageMode::Incremental;
+			const auto& points = third.front().completedPoints;
+			check(UpdateLaserIncrementalCoverage(third.front(), points, points, 0.1,
+				renderer, 1.0f, 64, 64, dirty), "prepare both live and stable coverage for unbaked C");
+			const auto readLive = [&](std::vector<uint8_t>& pixels)
+			{
+				renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
+				return DrawLaserStrokeLayers(third, renderer, renderer.backBufferRTV.Get(), fullRect,
+					1.0f, liveMode) && readBackBufferBGRA(pixels);
+			};
+			std::vector<uint8_t> liveBefore, liveAfter;
+			check(readLive(liveBefore) && liveBefore != blank && undo(true, true) &&
+				readLive(liveAfter) && liveAfter == liveBefore && liveMode == LaserCoverageMode::Incremental &&
+				baked.size() == 1 && baked.front().operationSequence == 2 && third.size() == 1 &&
+				lifecycle.phase == LaserTrailPhase::Active && lifecycle.activeContactCount == 1,
+				"active C is excluded while B is undone and live coverage remains byte-identical");
+		}
+
+		{
+			// WARP 使用生产的逐笔烘焙、类型 11 和 Compute Shader。
+			LaserTrailLifecycle lifecycle;
+			BeginLaserContact(lifecycle);
+			EndLaserContact(lifecycle, 1000);
+			check(EvaluateLaserTrailOpacity(lifecycle, 1999, 1000, 1.0, true) == 1.0f &&
+				lifecycle.phase == LaserTrailPhase::Hold &&
+				EvaluateLaserTrailOpacity(lifecycle, 2000, 1000, 1.0, true) == 1.0f &&
+				lifecycle.phase == LaserTrailPhase::Dissolve && lifecycle.dissolveStartQpc == 2000,
+				"dissolve replaces fade at the hold boundary");
+			auto failure = lifecycle;
+			StartLaserDissolveFallback(failure, 2450, 0.5f);
+			check(EvaluateLaserTrailOpacity(failure, 2450, 1000, 1.0) == 0.5f &&
+				EvaluateLaserTrailOpacity(failure, 2850, 1000, 1.0) == 0.25f,
+				"runtime loss fades from retained visibility");
+
+			const auto readFront = [&](std::vector<uint8_t>& pixels, const LaserDissolveFront& front,
+				float opacity = 1.0f, bool drawParticles = false)
+			{
+				renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
+				if (drawParticles) renderer.DrawLaserParticles();
+				return renderer.ResolveLaserCompositedColor(renderer.backBufferRTV.Get(), fullRect, opacity, front) &&
+					readBackBufferBGRA(pixels);
+			};
+			const auto sourceFront = MakeLaserDissolveFront();
+			auto front = sourceFront;
+			// 整条线在进度约 0.06–0.33 内碎完，取 0.2 作为“碎到一半”的参考。
+			front.progress = 0.2f;
+			RECT stable = {}, dirty = {};
+			auto mode = LaserCoverageMode::FullRedraw;
+			auto layers = makeLayers();
+			auto alone = layers;
+			alone.resize(1);
+			renderer.ClearAllLaserCoverage();
+			std::vector<uint8_t> maskedA;
+			check(BakeLaserStrokeLayers(alone, renderer, 1.0f, 64, 64, stable, dirty, mode) &&
+				readFront(maskedA, front) && maskedA != blank, "masked A-only reference");
+			renderer.ClearAllLaserCoverage();
+			stable = {};
+			layers[0].operationSequence = 1;
+			layers[1].operationSequence = 2;
+			std::vector<BakedLaserStroke> baked;
+			check(BakeLaserStrokeLayers(layers, renderer, 1.0f, 64, 64, stable, dirty, mode,
+				nullptr, nullptr, &baked), "bake two dissolve strokes");
+			std::vector<uint8_t> baseline, current;
+			check(readCompositedBGRA(baseline) && baseline == expected &&
+				readFront(current, sourceFront) && current == baseline, "zero sweep keeps ordinary baked bytes");
+			auto previous = baseline;
+			bool matched = baseline.size() == 64u * 64u * 4u;
+			for (const int64_t now : { 2200, 2450, 2675, 2900 })
+			{
+				front.progress = LaserDissolveProgress(2000, now, 1000);
+				if (!readFront(current, front) || current.size() != baseline.size()) { matched = false; break; }
+				for (size_t i = 3; matched && i < current.size(); i += 4)
+				{
+					const float x = static_cast<float>((i / 4) % 64) + 0.5f;
+					const float y = static_cast<float>((i / 4) / 64) + 0.5f;
+					const float mask = LaserDissolveCoverage(front, x, y);
+					matched = current[i] <= previous[i] &&
+						std::abs(current[i] - static_cast<float>(baseline[i]) * mask) <= 1.0f;
+				}
+				previous = current;
+			}
+			check(matched && current == blank, "WARP sweep matches CPU alpha and decreases monotonically to zero");
+
+			std::vector<LaserParticleSeed> seeds;
+			const auto count = AppendLaserDissolveSeeds(seeds, baked, sourceFront);
+			check(count > 0 && count == seeds.size() &&
+				std::all_of(seeds.begin(), seeds.end(), [&](const LaserParticleSeed& seed)
+				{
+					auto releaseFront = sourceFront;
+					releaseFront.progress = static_cast<float>(seed.releaseDelayMilliseconds) /
+						kLaserDissolveParameters.durationMilliseconds;
+					return LaserDissolveCoverage(releaseFront, seed.position[0], seed.position[1]) < 0.001f;
+				}), "baked records emit when the seed pixel is erased");
+			auto longStrokes = baked;
+			for (auto& stroke : longStrokes)
+				stroke.points = { { 0, 16, 1, 0 }, { 12000, 16, 1, 1 } };
+			std::vector<LaserParticleSeed> capped;
+			const auto cappedCount = AppendLaserDissolveSeeds(capped, longStrokes, sourceFront);
+			const auto secondCount = std::count_if(capped.begin(), capped.end(),
+				[](const LaserParticleSeed& seed) { return seed.group == 2; });
+			check(cappedCount == kLaserDissolveParameters.maximumSeeds && capped.size() == cappedCount &&
+				static_cast<size_t>(secondCount) == cappedCount / 2 && !capped.empty() && capped.back().position[0] > 11990.0f,
+				"seed cap proportionally samples both complete strokes");
+
+			auto dots = baked;
+			dots.resize(2);
+			dots[0].points = { { 16, 16, 1, 0 } };
+			dots[1].points = { { 40, 40, 1, 0 }, { 40, 40, 1, 1 } };
+			std::vector<LaserParticleSeed> dotSeeds;
+			const auto dotCount = AppendLaserDissolveSeeds(dotSeeds, dots, sourceFront);
+			check(dotCount == dotSeeds.size(), "dot seed count matches appended seeds");
+			for (const auto& dot : dots)
+			{
+				const float radius = LaserSolidRadius(ProductTargetScale(dot.visualStyle));
+				const float core = LaserCoreRadius(radius);
+				const auto tint = ColorForTool(DrawingTool::Laser, dot.visualStyle);
+				unsigned groupCount = 0;
+				bool matchesDot = true;
+				for (const auto& seed : dotSeeds)
+				{
+					if (seed.group != dot.layerId) continue;
+					++groupCount;
+					const float distance = std::hypot(seed.position[0] - dot.points.front().x,
+						seed.position[1] - dot.points.front().y);
+					const float white = 1.0f - std::clamp((distance - core) / (radius - core), 0.0f, 1.0f);
+					// 种子只带激光色，白芯比例放在亮度字段里，由着色器在出生后很快褪掉。
+					matchesDot &= distance <= radius + 0.0001f && seed.kind == LaserParticleKind::Dissolve &&
+						seed.color[0] == tint.x && seed.color[1] == tint.y && seed.color[2] == tint.z &&
+						std::abs(seed.brightness - white) < 0.0001f;
+				}
+				check(groupCount >= 3 && matchesDot, "single-point and zero-length strokes emit within the dot with radial whiteness");
+			}
+
+			auto mixed = longStrokes;
+			mixed.resize(2);
+			mixed.back().points = dots.back().points;
+			dotSeeds.clear();
+			check(AppendLaserDissolveSeeds(dotSeeds, mixed, sourceFront) == kLaserDissolveParameters.maximumSeeds &&
+				std::count_if(dotSeeds.begin(), dotSeeds.end(),
+					[](const LaserParticleSeed& seed) { return seed.group == 2; }) >= 3,
+				"a dot keeps its minimum seeds within a capped mixed batch");
+
+			check(renderer.LaserParticlesAvailable(), "WARP compute is available");
+			{
+				LaserParticleDirtyTracker tracker;
+				constexpr RECT bounds{ 8, 8, 32, 32 };
+				LaserParticleSeed shortDissolve;
+				shortDissolve.kind = LaserParticleKind::Dissolve;
+				shortDissolve.lifetimeMilliseconds = 380;
+				const std::span<const LaserParticleSeed> batch(&shortDissolve, 1);
+				renderer.ResetLaserParticles();
+				renderer.StepLaserParticles(2000, 1000, batch, 1);
+				renderer.StepLaserParticles(2350, 1000, {});
+				tracker.Add(bounds, 2380, true);
+				check(tracker.Snapshot(2400, 2350).hasActive,
+					"frame-start pruning preserves the batch at its last GPU age");
+				const auto gatherEnd = LaserParticleLifetimeDeadlineQpc(2400, 1000,
+					kLaserDissolveParameters.gatherMilliseconds);
+				tracker.ExtendLatestDissolve(gatherEnd);
+				renderer.StepLaserParticles(2400, 1000, {}, 0, { 2350, 0.0f, false, gatherEnd });
+				renderer.StepLaserParticles(gatherEnd - 1, 1000, {}, 0, { 2350, 0.99f, false, gatherEnd });
+				const auto gathering = tracker.Snapshot(gatherEnd - 1);
+				check(renderer.HasActiveLaserParticles() && gathering.hasActive && !gathering.expiredAny &&
+					gathering.activeBounds.left == bounds.left && gathering.activeBounds.right == bounds.right,
+					"short dissolve batch keeps its active range and dirty region past its original expiry");
+				check(tracker.Snapshot(gatherEnd).expiredAny, "gather deadline bounds the extended dirty lifetime");
+				renderer.StepLaserParticles(gatherEnd, 1000, {}, 0, { 2350, 1.0f, true, gatherEnd });
+				check(!renderer.HasActiveLaserParticles(), "short dissolve batch retires at gather end");
+
+				renderer.StepLaserParticles(3000, 1000, batch, 1);
+				tracker.Add(bounds, 3380, true);
+				uint32_t effects = LaserParticleOptions::Effects;
+				std::vector<LaserParticleSeed> pending{ shortDissolve };
+				RECT redraw = {};
+				check(ShouldStepLaserParticles(renderer.HasActiveLaserParticles(), 0, false),
+					"an active ring still advances when effects are disabled");
+				const auto disabled = EffectiveLaserParticleEffects(0u,
+					renderer.LaserParticlesAvailable());
+				check(ApplyLaserParticleEffects(effects, disabled, renderer, tracker, pending, bounds, redraw) &&
+					effects == 0 && pending.empty() && !renderer.HasActiveLaserParticles() &&
+					!tracker.Snapshot(3000).hasActive && redraw.left == bounds.left && redraw.top == bounds.top &&
+					redraw.right == bounds.right && redraw.bottom == bounds.bottom,
+					"disabling at the Down boundary clears a live tail and dirties its previous footprint");
+				redraw = {};
+				check(!ApplyLaserParticleEffects(effects, disabled, renderer, tracker, pending, bounds, redraw) &&
+					IsEmptyRect(redraw) && !ShouldStepLaserParticles(renderer.HasActiveLaserParticles(), effects, false),
+					"applying the same disabled preference adds no redraw and leaves the ring idle");
+			}
+			renderer.ResetLaserParticles();
+			renderer.StepLaserParticles(2000, 1000, seeds, count);
+			renderer.StepLaserParticles(2200, 1000, {});
+			renderer.StepLaserParticles(2450, 1000, {});
+			front.progress = 0.2f;
+			check(readFront(current, front) && current != baseline && current != blank,
+				"real baked body is partially dissolved before gathering");
+			for (const int64_t now : { 2450, 2625, 2800 })
+			{
+				const float gather = LaserDissolveGatherProgress(2450, now, 1000);
+				front.progress = 0.2f * (1.0f - gather);
+				renderer.StepLaserParticles(now, 1000, {}, 0, { 2450, gather, gather == 1.0f });
+				check(readFront(current, front, 1.0f, true), "draw a gather frame with particles");
+			}
+			check(current == baseline && !renderer.HasActiveLaserParticles(),
+				"gather end restores baked bytes and retires particles");
+
+			renderer.ResetLaserParticles();
+			renderer.StepLaserParticles(2000, 1000, seeds, count);
+			renderer.StepLaserParticles(2450, 1000, {});
+			front.progress = 0.2f;
+			float opacity = 1.0f;
+			uint32_t removedGroup = 0;
+			check(UndoBakedLaserStroke(baked, renderer, false, false, stable, dirty, lifecycle, opacity, &removedGroup) &&
+				removedGroup == 2 && lifecycle.phase == LaserTrailPhase::Dissolve && lifecycle.dissolveStartQpc == 2000,
+				"dissolve undo selects the group and keeps the clock");
+			renderer.RemoveLaserParticleGroup(removedGroup);
+			check(readFront(current, front) && current == maskedA, "undo preserves remaining body pixels");
+
+			std::vector<bool> visibility;
+			DrawingControllerRuntimeObserver observer;
+			observer.context = &visibility;
+			observer.laserVisibilityChanged = [](void* context, bool visible)
+			{
+				static_cast<std::vector<bool>*>(context)->push_back(visible);
+			};
+			bool published = false;
+			const auto publish = [&]
+			{
+				PublishLaserVisibility(observer, published,
+					LaserTrailVisible(lifecycle.phase, renderer.HasActiveLaserParticles()));
+			};
+			publish();
+			check(EvaluateLaserTrailOpacity(lifecycle, 2899, 1000, 1.0, true) == 1.0f &&
+				EvaluateLaserTrailOpacity(lifecycle, 2900, 1000, 1.0, true) == 0.0f &&
+				lifecycle.phase == LaserTrailPhase::Inactive, "dissolve lasts exactly 900 ms");
+			renderer.StepLaserParticles(2900, 1000, {});
+			publish();
+			check(renderer.HasActiveLaserParticles() && visibility == std::vector<bool>{ true },
+				"visibility stays published through the particle-only tail");
+			// 最晚释放（约 0.4 秒）加最长寿命 2.5 秒之后，粒子尾巴才全部过期。
+			renderer.StepLaserParticles(5500, 1000, {});
+			publish();
+			check(visibility == std::vector<bool>{ true, false }, "particle tail expiry publishes invisible");
+
+			LaserTrailLifecycle legacy;
+			BeginLaserContact(legacy);
+			EndLaserContact(legacy, 1000);
+			auto fallback = legacy;
+			const float legacyOpacity = EvaluateLaserTrailOpacity(legacy, 2400, 1000, 1.0);
+			std::vector<uint8_t> legacyPixels;
+			check(readFront(legacyPixels, {}, legacyOpacity), "read ordinary fade reference");
+			LaserParticleSystem unavailable;
+			check(!unavailable.Initialize(renderer.device.Get(), renderer.context.Get(), {}, {}),
+				"device without compute bytecode rejects particle initialization");
+			for (const bool available : { false, true })
+			{
+				const uint32_t requested = LaserParticleOptions::Enabled |
+					(available ? LaserParticleOptions::Trail : LaserParticleOptions::Dissolve);
+				const auto effects = EffectiveLaserParticleEffects(requested,
+					available ? renderer.LaserParticlesAvailable() : unavailable.IsAvailable());
+				auto noDissolve = fallback;
+				const float evaluated = EvaluateLaserTrailOpacity(noDissolve, 2400, 1000, 1.0,
+					(effects & LaserParticleOptions::Dissolve) != 0);
+				check(noDissolve.phase == LaserTrailPhase::Fade && evaluated == legacyOpacity &&
+					readFront(current, {}, evaluated) && current == legacyPixels,
+					"disabled or unavailable dissolve keeps the ordinary fade bytes");
+			}
+			renderer.ResetLaserParticles();
+		}
+
+		{
+			std::vector<LaserStrokeLayer> layers(1);
+			layers.front().id = 3;
+			std::vector<BakedLaserStroke> baked(2);
+			baked[0].layerId = 1;
+			baked[1].layerId = 2;
+			// A 在 B 前落笔、B 先抬。C 尚未烘焙，与 A 同刻时按消费次序编号。
+			std::vector<LaserTerminalOperation> terminals{ { 1, 1200 }, { 2, 1100 }, { 3, 1200 } };
+			uint64_t nextSequence = 1;
+			AssignLaserTerminalOperations(terminals, layers, baked, [&] { return nextSequence++; });
+			check(terminals.empty() && baked[0].operationSequence == 2 &&
+				baked[1].operationSequence == 1 && layers.front().operationSequence == 3,
+				"same-frame Laser terminals use QPC then consumption order across early bake");
+			check(LatestBakedLaserStroke(baked)->layerId == 1, "undo chooses A after B lifted first");
+
+			LaserTrailLifecycle lifecycle;
+			BeginLaserContact(lifecycle);
+			BeginLaserContact(lifecycle);
+			EndLaserContact(lifecycle, 1200);
+			const auto writing = LaserTrailAfterBakedLoss(lifecycle, true);
+			check(writing.phase == LaserTrailPhase::Active && writing.activeContactCount == 1 &&
+				LaserTrailVisible(writing.phase, false), "loss of baked pixels retains the active Laser layer");
+			lifecycle = writing;
+			EndLaserContact(lifecycle, 1100);
+			check(lifecycle.phase == LaserTrailPhase::Hold && lifecycle.lastAllUpQpc == 1200 &&
+				lifecycle.metricLastAllUpQpc == 1100,
+				"Laser Hold uses the maximum terminal QPC while metrics keep the final consumed Up");
+			const auto inactive = LaserTrailAfterBakedLoss(lifecycle, false);
+			check(inactive.phase == LaserTrailPhase::Inactive && inactive.activeContactCount == 0 &&
+				inactive.lastAllUpQpc == 0 && !LaserTrailVisible(inactive.phase, false),
+				"loss of baked pixels without a writing layer immediately ends the Laser trail");
+		}
+
+		// 切笔沿用正常终态冻结；在无输入的时间点检查发布、清空和资源回收。
+		{
+			renderer.ClearAllLaserCoverage();
+			LaserTrailLifecycle lifecycle;
+			std::vector<BakedLaserStroke> baked;
+			auto layers = makeLayers();
+			layers.resize(1);
+			RuntimeStroke held(1000.0f);
+			held.tool = DrawingTool::Laser;
+			held.laserLayerId = layers.front().id;
+			held.lastInputSnapshot.qpc = 1000;
+			held.stroke.realPoints = std::move(layers.front().completedPoints);
+			layers.front().runtime = &held;
+			ContactInputCoordinator input;
+			ContactSnapshot down;
+			down.position = { held.stroke.realPoints.front().x, held.stroke.realPoints.front().y };
+			down.qpc = 1000;
+			down.phase = ContactPhase::Down;
+			ContactRecord* record = nullptr;
+			if (input.PublishDown(0xF6, 1, InputDeviceType::Touch, down) &&
+				input.TryDequeue(record) && record)
+			{
+				held.handle = { record, record->Generation() };
+				held.lastInputSnapshot = record->DownSnapshot();
+				held.lastConsumedSequence = held.lastInputSnapshot.sequence;
+			}
+			check(held.handle.record != nullptr, "held Laser has a real input route");
+			auto move = down;
+			move.position.x += 4.0f;
+			move.qpc = 1100;
+			move.phase = ContactPhase::Move;
+			check(input.PublishMove(0xF6, 1, move), "publish a Laser Move before switching tools");
+			std::array<RuntimeStroke*, 1> active{ &held };
+			std::vector<bool> visibilityEvents;
+			DrawingControllerRuntimeObserver observer;
+			observer.context = &visibilityEvents;
+			observer.laserVisibilityChanged = [](void* context, bool visible)
+			{
+				static_cast<std::vector<bool>*>(context)->push_back(visible);
+			};
+			bool published = false;
+			const auto publish = [&](bool hasParticles = false)
+			{
+				PublishLaserVisibility(observer, published, LaserTrailVisible(lifecycle.phase, hasParticles));
+			};
+			const auto colorTexture = renderer.laserCompositedColor.texture;
+			BeginLaserContact(lifecycle);
+			publish();
+			check(published && visibilityEvents == std::vector<bool>{ true }, "Down publishes visible Laser");
+			bool consumedMove = false, sealedAtMove = false;
+			RetireLaserToolRuntimes(active, input, 1200, false,
+				[&](RuntimeStroke& runtime, const ContactSnapshot& snapshot, bool synthetic)
+				{
+					if (!synthetic)
+					{
+						consumedMove = snapshot.phase == ContactPhase::Move && snapshot.qpc == move.qpc;
+						runtime.lastInputSnapshot = snapshot;
+						runtime.lastConsumedSequence = snapshot.sequence;
+						return;
+					}
+					sealedAtMove = consumedMove && snapshot.position.x == move.position.x &&
+						snapshot.sequence == runtime.lastConsumedSequence;
+					runtime.ended = snapshot.phase == ContactPhase::Up;
+					FinalizeLaserRuntime(layers, runtime, lifecycle, snapshot.qpc, false, 1.0f, 64, 64, 1, synthetic);
+				});
+			check(sealedAtMove, "tool switch consumes the latest published Move before synthesizing Up");
+			RECT stable = {}, dirty = {};
+			auto mode = LaserCoverageMode::Incremental;
+			std::vector<uint8_t> pixels;
+			check(held.ended && !held.cancelled && held.laserLayerId == 0 &&
+				lifecycle.phase == LaserTrailPhase::Hold && lifecycle.lastAllUpQpc == 1200 &&
+				lifecycle.metricLastAllUpQpc == 0 && ShouldBakeLaserBatch(lifecycle, layers.size()) &&
+				BakeLaserStrokeLayers(layers, renderer, 1.0f, 64, 64, stable, dirty, mode, nullptr, nullptr, &baked) &&
+				baked.size() == 1 && readCompositedBGRA(pixels) && pixels != blank,
+				"leaving the tool lifts, freezes and bakes the held contact");
+			auto physicalUp = down;
+			physicalUp.qpc = 1300;
+			physicalUp.phase = ContactPhase::Up;
+			check(input.HasQuarantinedContacts() && input.PublishUp(0xF6, 1, physicalUp) &&
+				!input.HasQuarantinedContacts() && lifecycle.lastAllUpQpc == 1200,
+				"late physical Up only returns the retired route and cannot restart Hold");
+			float opacity = EvaluateLaserTrailOpacity(lifecycle, 1500, 1000, 1.0);
+			publish();
+			check(published && opacity == 1.0f && visibilityEvents.size() == 1 &&
+				!ReleaseLaserResourcesIfUnused(renderer, false, published) &&
+				renderer.EnsureLaserResources(64, 64) &&
+				renderer.laserCompositedColor.texture.Get() == colorTexture.Get(),
+				"Hold keeps the texture and returning to Laser reuses it");
+			std::vector<uint8_t> afterReturn;
+			check(readCompositedBGRA(afterReturn) && afterReturn == pixels && lifecycle.lastAllUpQpc == 1200,
+				"switching back keeps both the exact baked color and the original timer");
+			opacity = EvaluateLaserTrailOpacity(lifecycle, 2600, 1000, 1.0);
+			publish();
+			check(published && lifecycle.phase == LaserTrailPhase::Fade && opacity > 0 &&
+				opacity < 1 && !SelectionReleasesTimerPeriod(true, false, published),
+				"visible Fade continues with the selection timer");
+			opacity = EvaluateLaserTrailOpacity(lifecycle, 3100, 1000, 1.0);
+			publish(true);
+			check(published && opacity == 0.0f && !ReleaseLaserResourcesIfUnused(renderer, false, published),
+				"live particles alone retain visibility and the textures");
+			publish();
+			check(!published && visibilityEvents == std::vector<bool>{ true, false } &&
+				!UndoBakedLaserStroke(baked, renderer, false, false, stable, dirty, lifecycle, opacity) &&
+				ReleaseLaserResourcesIfUnused(renderer, false, published) && renderer.LaserResourceBytes() == 0 &&
+				SelectionReleasesTimerPeriod(true, false, published),
+				"expiration publishes false, drops undo eligibility and releases unselected resources");
+		}
+
+		// UI 的两个缩栏调用和交接守卫共用这些无窗口规则。
+		{
+			HostRuntimeSnapshot runtime;
+			runtime.workspace = Bridge::Workspace::Desktop;
+			runtime.presentationMode = HostPresentationMode::DirectCompositionVisualTree;
+			runtime.laserVisible = true;
+			check(!ShouldCompactDrawpadBar(false, true, false, true) && UsesDrawpadInkHandoff(runtime) &&
+				ResolveDrawpadPresentationSurface(true, false, true, true, true) == DrawpadPresentationSurface::Presentation &&
+				ResolveDrawpadPresentationSurface(false, false, true, false, true) == DrawpadPresentationSurface::Primary,
+				"Laser alone keeps the full bar and enables the auxiliary and primary handoff");
+			runtime.laserVisible = false;
+			check(ShouldCompactDrawpadBar(false, true, false, false) && !UsesDrawpadInkHandoff(runtime) &&
+				ResolveDrawpadPresentationSurface(true, false, false, false, true) == DrawpadPresentationSurface::Presentation &&
+				ResolveDrawpadPresentationSurface(true, false, false, true, true) == DrawpadPresentationSurface::Hidden,
+				"after expiration the auxiliary retires only after a verified transparent full frame");
+			runtime.currentPageHasContent = true;
+			check(UsesDrawpadInkHandoff(runtime) && !ShouldCompactDrawpadBar(false, true, true, false),
+				"persistent ink still preserves both selection behaviors");
+			runtime.laserVisible = true;
+			runtime.currentPageHasContent = false;
+			runtime.presentationMode = HostPresentationMode::DwmBlurBehind;
+			check(UsesDrawpadInkHandoff(runtime), "Win7 DWM uses the same Laser handoff gate");
+			runtime.workspace = Bridge::Workspace::Whiteboard;
+			check(!UsesDrawpadInkHandoff(runtime), "whiteboard move mode never hands off the drawpad pair");
+			runtime.workspace = Bridge::Workspace::Desktop;
+			runtime.presentationMode = HostPresentationMode::UlwDirtyRect;
+			check(!UsesDrawpadInkHandoff(runtime) &&
+				ResolveDrawpadPresentationSurface(true, false, true, false, false) == DrawpadPresentationSurface::Primary &&
+				!ShouldCompactDrawpadBar(true, true, false, false), "main ULW and whiteboard keep their single-surface behavior");
+		}
 
 		// 复用离屏 WARP 目标，直接覆盖上屏合成的空层分派。
 		auto& l0 = renderer.layerL0;
@@ -7434,12 +8485,11 @@ namespace Inkeys::Drawing::Draw3
 				check(consumePalm(ContactPhase::Move, 1100, 120), "accepted palm Move produces real model geometry");
 				if (endedBeforeExit) check(consumePalm(ContactPhase::Up, 1120, 140), "palm may finish before Laser exit");
 				std::array<RuntimeStroke*, 2> contacts{ &palm, &laser };
-				unsigned cancelledModels = 0, finishedMouse = 0;
-				RetireLaserToolRuntimes(contacts, input,
-					[&](RuntimeStroke& runtime, const ContactSnapshot&, bool cancelled)
-					{ ++cancelledModels; runtime.ended = true; runtime.cancelled = cancelled; },
-					[&](RuntimeStroke&) { ++finishedMouse; });
-				check(laser.cancelled && laser.ended && cancelledModels == 1 && finishedMouse == 1
+				unsigned completedModels = 0;
+				RetireLaserToolRuntimes(contacts, input, 1130, false,
+					[&](RuntimeStroke& runtime, const ContactSnapshot& terminal, bool)
+					{ ++completedModels; runtime.ended = terminal.phase == ContactPhase::Up; });
+				check(!laser.cancelled && laser.ended && completedModels == 1
 					&& !palm.cancelled && palm.tool == DrawingTool::Eraser && palm.selectedTool == DrawingTool::Laser,
 					"tool exit retires Laser without cancelling accepted palm content");
 				if (!endedBeforeExit)
@@ -12604,19 +13654,76 @@ namespace Inkeys::Drawing::Draw3
 			InkRenderer renderer;
 			TransparentPresentationController presentation;
 			auto configuration = CreateStrokeModelConfiguration(96);
-			configuration.laserParticlesEnabled = true;
+			configuration.laserParticleOptions = LaserParticleOptions::Defaults;
 			DrawingController controller(input, window, renderer, presentation, configuration);
-			check(!window.Handle() && !controller.GetLaserParticlesEnabled(),
-				"particle startup request cannot enable disabled product capability");
+			check(!window.Handle() && controller.GetLaserParticleOptions() == LaserParticleOptions::Defaults &&
+				EffectiveLaserParticleEffects(controller.GetLaserParticleOptions(), renderer.LaserParticlesAvailable()) == 0,
+				"stored particle preference is retained while missing resources disable every effect");
 			const auto wakeBefore = input.CaptureWakeGeneration();
-			const bool pendingBefore = input.HasPendingWork();
-			for (bool request : { true, true, false, false, true })
-			{
-				controller.SetLaserParticlesEnabled(request);
-				check(!controller.GetLaserParticlesEnabled() && input.CaptureWakeGeneration() == wakeBefore &&
-					input.HasPendingWork() == pendingBefore,
-					"particle setter stays disabled without redundant control wake");
-			}
+			controller.SetLaserParticleOptions(LaserParticleOptions::Defaults);
+			check(input.CaptureWakeGeneration() == wakeBefore, "unchanged particle options do not wake the owner");
+			controller.SetLaserParticleOptions(LaserParticleOptions::Enabled | LaserParticleOptions::ClickWave);
+			check(controller.GetLaserParticleOptions() == (LaserParticleOptions::Enabled | LaserParticleOptions::ClickWave) &&
+				input.CaptureWakeGeneration() != wakeBefore, "changed particle options reach the drawing owner");
+			for (bool enabled : { false, true })
+				for (bool available : { false, true })
+					for (uint32_t children = 0; children < 8; ++children)
+					{
+						const uint32_t requested = LaserParticleOptions::Pack(enabled,
+							(children & 1u) != 0, (children & 2u) != 0, (children & 4u) != 0);
+						// 点击光波只看自己的开关，其余子项还要总开关开启。
+						const uint32_t packed = children << 1;
+						check(EffectiveLaserParticleEffects(requested, available) == (!available ? 0u :
+							(packed & LaserParticleOptions::ClickWave) | (enabled ? packed & ~LaserParticleOptions::ClickWave : 0u)),
+							"particle capability matrix");
+					}
+			const auto& particles = configuration.laserParticleConfig;
+			check(IsLaserParticleClick(0.250, 144.0f, 2.0f, particles) &&
+				!IsLaserParticleClick(0.250001, 144.0f, 2.0f, particles) &&
+				!IsLaserParticleClick(0.250, 144.01f, 2.0f, particles) &&
+				!IsLaserParticleClick(-0.001, 0.0f, 1.0f, particles), "inclusive time and DIP click limits");
+			check(ScheduleLaserParticleEmission(0.02f, 0.0f, 0.0f, 120, particles).count == 0 &&
+				ScheduleLaserParticleEmission(0.02f, 0.0f, 0.9f, 120, particles).count == 1,
+				"stationary pen emits only at the idle rate");
+			const auto slow = ScheduleLaserParticleEmission(0.03f, 30.0f, 0.0f, 120, particles);
+			const auto fast = ScheduleLaserParticleEmission(0.03f, 160.0f, 0.0f, 120, particles);
+			const auto capped = ScheduleLaserParticleEmission(0.03f, 4000.0f, 0.0f, 1, particles);
+			check(slow.emissionRatePerSecond < fast.emissionRatePerSecond && slow.count < fast.count &&
+				capped.emissionRatePerSecond == particles.maximumEmissionRatePerSecond && capped.count == 1,
+				"trail rate follows real pen speed within the frame budget");
+			const auto up = ResolveLaserParticleEmissionDirection(2.0f, 0.0f, 0.0f, 0.5f, particles);
+			const auto down = ResolveLaserParticleEmissionDirection(2.0f, 0.0f, 1.0f, 0.5f, particles);
+			check(up.valid && down.valid && up.y < -0.9f && down.y > 0.9f &&
+				up.x < 0.0f && std::abs(up.x - down.x) < 0.0001f &&
+				!ResolveLaserParticleEmissionDirection(0.0f, 0.0f, 0.5f, 0.5f, particles).valid,
+				"trail launches to both sides with a slight backward lean");
+		}
+		{
+			RuntimeStroke runtime(1.0f);
+			const LaserParticleConfig particles;
+			ContactSnapshot down;
+			down.position = { 10.0f, 20.0f };
+			down.qpc = 1000;
+			auto sample = down;
+			sample.qpc = 1100;
+			sample.phase = ContactPhase::Move;
+			check(!ObserveLaserClickSnapshot(runtime, down, sample, false, 1000, particles),
+				"Move does not trigger a click");
+			sample.phase = ContactPhase::Cancelled;
+			check(!ObserveLaserClickSnapshot(runtime, down, sample, false, 1000, particles),
+				"Cancel does not trigger a click");
+			sample.phase = ContactPhase::Up;
+			check(!ObserveLaserClickSnapshot(runtime, down, sample, true, 1000, particles) &&
+				ObserveLaserClickSnapshot(runtime, down, sample, false, 1000, particles),
+				"only a physical Up triggers a click");
+			sample.phase = ContactPhase::Move;
+			sample.position.x = 17.0f;
+			check(!ObserveLaserClickSnapshot(runtime, down, sample, false, 1000, particles),
+				"outward Move only records displacement");
+			sample.phase = ContactPhase::Up;
+			sample.position = down.position;
+			check(!ObserveLaserClickSnapshot(runtime, down, sample, false, 1000, particles),
+				"consumed outward Move disqualifies a click after returning");
 		}
 		for (const auto [profileId, fps] : {
 			std::pair{ StrokeTimingProfileId::Fps30, 30.0 }, std::pair{ StrokeTimingProfileId::Fps60, 60.0 },
@@ -12708,6 +13815,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			return {};
 		};
+
 		if (!input.PublishDown(tablet, 1, InputDeviceType::Touch,
 			sample(10.0f, ContactPhase::Down))) return 1;
 		const ContactHandle first = dequeueContact();
@@ -15330,7 +16438,7 @@ namespace Inkeys::Drawing::Draw3
 		interruptedStrokeReconnectEnabled_(configuration_.interruptedStrokeReconnectEnabled),
 		drawingCursorDuringContactEnabled_(configuration_.drawingCursorDuringContactEnabled),
 		translucentInkCursorEnabled_(configuration_.translucentInkCursorEnabled),
-		laserParticlesEnabled_(false), // 产品暂禁用粒子，兼容配置中的 true 不能绕过能力门禁。
+		laserParticleOptions_(configuration.laserParticleOptions),
 		laserMultiTouchDrawingEnabled_(configuration_.laserMultiTouchDrawingEnabled),
 		laserHoldDurationSeconds_(std::isfinite(configuration_.laserHoldDurationSeconds) &&
 			configuration_.laserHoldDurationSeconds >= 0.0
@@ -15368,8 +16476,7 @@ namespace Inkeys::Drawing::Draw3
 		ConfigureLaserRendererStyle(renderer_, currentProductVisualStyle,
 			configuration_.dpiScale);
 		renderer_.ConfigureShapePrimitives(configuration_.dpiScale);
-		renderer_.ConfigureLaserParticles(
-			configuration_.laserParticleConfig, configuration_.dpiScale);
+		renderer_.ConfigureLaserParticles(configuration_.laserParticleConfig);
 		if (haptics_) haptics_->SetEnabled(configuration_.hapticFeedbackEnabled);
 	}
 
@@ -15505,16 +16612,15 @@ namespace Inkeys::Drawing::Draw3
 		window_.RequestDrawingCursorRender();
 	}
 
-	void DrawingController::SetLaserParticlesEnabled(bool /*enabled*/) noexcept
+	void DrawingController::SetLaserParticleOptions(uint32_t requested) noexcept
 	{
-		// 兼容入口保留，但当前产品拒绝任何启用请求；仅真实关闭变化才唤醒清理。
-		if (laserParticlesEnabled_.exchange(false, std::memory_order_acq_rel))
+		if (laserParticleOptions_.exchange(requested, std::memory_order_acq_rel) != requested)
 			input_.PublishControlWake();
 	}
 
-	bool DrawingController::GetLaserParticlesEnabled() const noexcept
+	uint32_t DrawingController::GetLaserParticleOptions() const noexcept
 	{
-		return laserParticlesEnabled_.load(std::memory_order_acquire);
+		return laserParticleOptions_.load(std::memory_order_acquire);
 	}
 
 	void DrawingController::SetLaserMultiTouchDrawingEnabled(bool enabled) noexcept
@@ -15883,6 +16989,7 @@ namespace Inkeys::Drawing::Draw3
 		pageRuntimeStates.reserve(8);
 		pageRuntimeStates.emplace_back();
 		uint64_t nextRasterStateToken = 1;
+		// 文档提交的 afterState 与激光抬起共用同一个绘制线程序号源。
 		auto allocateRasterStateToken = [&]()
 		{
 			if (nextRasterStateToken == 0) nextRasterStateToken = 1;
@@ -16104,6 +17211,7 @@ namespace Inkeys::Drawing::Draw3
 			return currentPageIndex_ < pageRuntimeStates.size() &&
 				pageRuntimeStates[currentPageIndex_].history.LastVisibleItem().has_value();
 		};
+		std::vector<BakedLaserStroke> bakedLaserStrokes;
 		bool publishedCanUndo = false;
 		bool publishedCanRedo = false;
 		auto publishHistoryAvailability = [&]()
@@ -16135,6 +17243,7 @@ namespace Inkeys::Drawing::Draw3
 						canUndo = true;
 				}
 			}
+			canUndo |= !bakedLaserStrokes.empty();
 			// 命令分派优先操作当前构造，主栏可用性也必须读取同一会话，而不是后面的文档历史。
 			if (shapeUi.construction && shapeUi.construction->session.Status().active)
 			{
@@ -16570,13 +17679,27 @@ namespace Inkeys::Drawing::Draw3
 		int64_t lastTouchPanEndQpc = 0;
 		int64_t suppressedPenTerminalQpc = 0;
 		LaserTrailLifecycle laserLifecycle;
-		ProductVisualStyle laserTrailVisualStyle = currentProductVisualStyle;
+		LaserDissolveFront laserDissolveFront;
+		bool laserDissolvePrepared = false;
+		bool laserDissolveHasBatch = false;
+		int64_t laserGatherStartQpc = 0;
+		int64_t laserGatherEndQpc = 0;
+		int64_t laserGatherFreezeQpc = 0;
+		int64_t lastDissolveParticleQpc = 0;
+		float laserGatherInitialProgress = 0.0f;
+		LaserTrailLifecycle laserGatherFallback;
+		float laserGatherFallbackOpacity = 1.0f;
+		bool stopLaserDissolveBatch = false;
+		bool hasLiveLaserParticles = false;
+		bool publishedLaserVisibility = false;
+		bool publishedLaserUndo = false;
 		float laserOpacity = 0.0f;
 		RECT laserStableBounds = {};
 		RECT laserLiveBounds = {};
 		RECT pendingLaserBakeDirty = {};
 		bool pendingLaserBakeFailed = false;
 		std::vector<LaserStrokeLayer> laserStrokeLayers;
+		std::vector<LaserTerminalOperation> laserTerminalOperations;
 		LaserCoverageMode laserCoverageMode = LaserCoverageMode::Inactive;
 		bool laserIncrementalEnsureAttempted = false;
 		bool laserResourcesReady = false;
@@ -16585,23 +17708,23 @@ namespace Inkeys::Drawing::Draw3
 		std::vector<LaserTipVisual> laserTipVisuals;
 		std::vector<ShapePrimitive> shapePrimitiveScratch;
 		laserStrokeLayers.reserve(kLaserReservedContactCount);
+		laserTerminalOperations.reserve(kLaserReservedContactCount);
 		laserTipVisuals.reserve(kPreheatedStrokeCount + 1);
 		shapePrimitiveScratch.reserve(kLaserReservedContactCount * 2);
-		std::vector<LaserParticleEmissionRequest> laserParticleEmissionRequests;
-		laserParticleEmissionRequests.reserve(kLaserReservedContactCount);
+		std::vector<LaserParticleSeed> laserParticleSeeds;
+		laserParticleSeeds.reserve(kLaserReservedContactCount);
 		HighlighterGeometry completedHighlighterScratch;
 		std::vector<InkPoint> redoRebuildPoints;
 		HighlighterGeometry redoHighlighterScratch;
 		LaserParticleDirtyTracker laserParticleDirtyTracker;
+		LaserParticleDirtySnapshot laserParticleSnapshot;
 		const LaserParticleConfig laserParticleConfiguration =
 			IsValidLaserParticleConfig(configuration_.laserParticleConfig)
 			? configuration_.laserParticleConfig : LaserParticleConfig{};
 		RECT previousLaserParticleBounds = {};
 		RECT previousLaserTipBounds = {};
-		int64_t lastLaserParticleSimulationQpc = 0;
-		bool particlesWereEnabled =
-			laserParticlesEnabled_.load(std::memory_order_acquire) &&
-			renderer_.LaserParticlesAvailable();
+		int64_t lastLaserParticleFrameQpc = 0;
+		uint32_t latchedLaserParticleOptions = GetLaserParticleOptions();
 		bool viewportRefreshPending = false;
 		bool viewportRefreshClearsTransient = false;
 		CanvasRenderTilePlan viewportTilePlan;
@@ -16621,10 +17744,174 @@ namespace Inkeys::Drawing::Draw3
 		InkViewport trustedSnapshotViewport = {};
 		// 有效状态：只在激光生命周期为 Inactive 时才同步开关，
 		// 避免开关在绘制中/Hold/Fade 期间立即生效打断当前笔画或粒子动画。
-		bool particlesEnabledEffective = particlesWereEnabled;
+		uint32_t effectiveLaserParticleEffects =
+			EffectiveLaserParticleEffects(latchedLaserParticleOptions, renderer_.LaserParticlesAvailable());
+		auto applyLaserParticleSettings = [&](RECT& redraw)
+		{
+			// 帧首和空闲后的 Down 共用一个锁存入口，资源失效可在任意阶段生效。
+			if (laserLifecycle.phase == LaserTrailPhase::Inactive)
+				latchedLaserParticleOptions = GetLaserParticleOptions();
+			const uint32_t nextEffects =
+				EffectiveLaserParticleEffects(latchedLaserParticleOptions, renderer_.LaserParticlesAvailable());
+			if (!ApplyLaserParticleEffects(effectiveLaserParticleEffects, nextEffects, renderer_,
+				laserParticleDirtyTracker, laserParticleSeeds, previousLaserParticleBounds, redraw)) return;
+			for (RuntimeStroke* runtime : active)
+			{
+				if (runtime && runtime->tool == DrawingTool::Laser)
+					ResetLaserParticleEmitterState(*runtime);
+			}
+			if (nextEffects == 0)
+			{
+				laserParticleSnapshot = {};
+				hasLiveLaserParticles = false;
+				laserLifecycle.minimumHoldDurationSeconds = 0.0;
+			}
+		};
+		auto laserVisible = [&]() noexcept
+		{
+			return LaserTrailVisible(laserLifecycle.phase, hasLiveLaserParticles);
+		};
+		auto publishLaserState = [&]
+		{
+			PublishLaserVisibility(observer_, publishedLaserVisibility, laserVisible());
+			const bool canUndo = !bakedLaserStrokes.empty();
+			if (std::exchange(publishedLaserUndo, canUndo) != canUndo &&
+				publishHistoryAvailability()) publishWhiteboard();
+		};
+		auto resetLaserDissolve = [&]
+		{
+			laserDissolveFront = {};
+			laserDissolvePrepared = false;
+			laserDissolveHasBatch = false;
+			laserGatherStartQpc = 0;
+			laserGatherEndQpc = 0;
+			laserGatherFreezeQpc = 0;
+			lastDissolveParticleQpc = 0;
+			laserGatherFallback = {};
+			laserGatherFallbackOpacity = 1.0f;
+			stopLaserDissolveBatch = false;
+		};
+		auto finishLaserDissolve = [&]
+		{
+			if (laserDissolveHasBatch)
+			{
+				laserParticleDirtyTracker.EndLatestDissolve();
+				stopLaserDissolveBatch = true;
+			}
+			laserDissolveHasBatch = false;
+			laserDissolvePrepared = false;
+			laserGatherStartQpc = 0;
+			laserGatherEndQpc = 0;
+			laserDissolveFront = {};
+		};
+		auto laserGatherProgress = [&](int64_t nowQpc)
+		{
+			return LaserDissolveGatherProgress(laserGatherStartQpc, nowQpc, qpcFrequency);
+		};
+		auto fallbackLaserDissolve = [&](int64_t nowQpc)
+		{
+			const float opacity = 1.0f - laserDissolveFront.progress;
+			if (laserLifecycle.phase == LaserTrailPhase::Dissolve)
+			{
+				StartLaserDissolveFallback(laserLifecycle, nowQpc, opacity);
+				laserOpacity = opacity;
+			}
+			else if (laserGatherStartQpc != 0)
+			{
+				// 汇聚失效只淡出旧主体；新写的 coverage 保持满亮。
+				laserGatherFallback.lastAllUpQpc = nowQpc;
+				StartLaserDissolveFallback(laserGatherFallback, nowQpc, opacity);
+				laserGatherFallbackOpacity = opacity;
+			}
+			finishLaserDissolve();
+		};
+		auto animateLaserTrail = [&](int64_t nowQpc, double hold)
+		{
+			const bool dissolveEnabled = (effectiveLaserParticleEffects & LaserParticleOptions::Dissolve) &&
+				renderer_.LaserParticlesAvailable();
+			if (!dissolveEnabled &&
+				(laserLifecycle.phase == LaserTrailPhase::Dissolve || laserGatherStartQpc != 0))
+				fallbackLaserDissolve(nowQpc);
+			if (laserGatherStartQpc != 0)
+			{
+				const float gather = laserGatherProgress(nowQpc);
+				laserDissolveFront.progress = laserGatherInitialProgress * (1.0f - gather);
+				if (gather >= 1.0f)
+				{
+					UnionRectInPlace(pendingLaserBakeDirty, laserStableBounds);
+					finishLaserDissolve();
+				}
+			}
+			if (laserGatherFallback.phase != LaserTrailPhase::Inactive)
+			{
+				laserGatherFallbackOpacity = EvaluateLaserTrailOpacity(laserGatherFallback, nowQpc, qpcFrequency, 0.0);
+				if (laserGatherFallback.phase == LaserTrailPhase::Inactive)
+				{
+					UnionRectInPlace(pendingLaserBakeDirty, laserStableBounds);
+					renderer_.ClearLaserCompositedColor();
+					laserStableBounds = {};
+					bakedLaserStrokes.clear();
+					laserGatherFallbackOpacity = 1.0f;
+				}
+			}
+			if (laserLifecycle.phase == LaserTrailPhase::Dissolve && !laserDissolvePrepared)
+				laserLifecycle.dissolveStartQpc = nowQpc;
+			return EvaluateLaserTrailOpacity(laserLifecycle, nowQpc, qpcFrequency, hold, dissolveEnabled,
+				laserGatherStartQpc != 0 || laserGatherFallback.phase != LaserTrailPhase::Inactive);
+		};
+		auto laserTrailAnimating = [&]
+		{
+			return laserLifecycle.phase == LaserTrailPhase::Fade || laserLifecycle.phase == LaserTrailPhase::Dissolve ||
+				laserGatherStartQpc != 0 || laserGatherFallback.phase != LaserTrailPhase::Inactive || stopLaserDissolveBatch;
+		};
+		auto clearLaserTrail = [&](bool preserveWriting = false, bool particlesLost = false)
+		{
+			const bool keepWriting = preserveWriting && std::any_of(laserStrokeLayers.begin(), laserStrokeLayers.end(),
+				[](const LaserStrokeLayer& layer) { return layer.runtime != nullptr; });
+			if (metricsState_) metricsState_->ObserveIndependentClear();
+			renderer_.ClearAllLaserCoverage();
+			laserStableBounds = {};
+			bakedLaserStrokes.clear();
+			pendingLaserBakeDirty = {};
+			pendingLaserBakeFailed = false;
+			if (laserDissolveHasBatch && keepWriting && !particlesLost)
+				laserParticleDirtyTracker.EndLatestDissolve();
+			const bool stopPreservedBatch = keepWriting && !particlesLost &&
+				(laserDissolveHasBatch || stopLaserDissolveBatch);
+			resetLaserDissolve();
+			stopLaserDissolveBatch = stopPreservedBatch;
+			laserLifecycle = LaserTrailAfterBakedLoss(laserLifecycle, keepWriting);
+			if (keepWriting)
+			{
+				// 已烘颜色丢失时保留本批 CPU 层，清过的 coverage 由完整路径重画。
+				laserCoverageMode = LaserCoverageMode::FullRedraw;
+				laserOpacity = 1.0f;
+			}
+			else
+			{
+				laserOpacity = 0.0f;
+				laserLiveBounds = {};
+				laserStrokeLayers.clear();
+				laserTerminalOperations.clear();
+				laserCoverageMode = LaserCoverageMode::Inactive;
+			}
+			if (!keepWriting || particlesLost)
+			{
+				renderer_.ResetLaserParticles();
+				laserParticleDirtyTracker.Clear();
+				laserParticleSeeds.clear();
+				hasLiveLaserParticles = false;
+			}
+			publishLaserState();
+		};
+		auto clearLaserTrailOnException = [&]() noexcept
+		{
+			// 清理回调自身也可能抛出，退出仍须传递原异常。
+			try { clearLaserTrail(); }
+			catch (...) {}
+		};
 		auto prepareLaserSelectionResources = [&]() -> bool
 		{
-			if (window_.SelectionMode() || window_.ActiveTool() != DrawingTool::Laser) return false;
 			if (laserResourcesReady && !renderer_.LaserResourcesAvailable()) laserIncrementalEnsureAttempted = false;
 			if (!laserIncrementalEnsureAttempted)
 			{
@@ -17495,7 +18782,8 @@ namespace Inkeys::Drawing::Draw3
 					selectedToolSupportsOverride);
 				const bool rightEraser=deviceType==InputDeviceType::MouseRight && selectedToolSupportsOverride && !window_.SelectionMode();
 				const DrawingTool tool = (invertedEraser || rightEraser) ? DrawingTool::Eraser : batchTool;
-				if (tool == DrawingTool::Laser && !prepareLaserSelectionResources())
+				if (tool == DrawingTool::Laser && (downTool != DrawingTool::Laser ||
+					window_.SelectionMode() || !prepareLaserSelectionResources()))
 				{
 					// Discard 后 producer 可复用 record；先保存已登记的 Touch 身份，再退休手势接触。
 					const uint64_t rejectedTouchKey = deviceType == InputDeviceType::Touch
@@ -17949,6 +19237,7 @@ namespace Inkeys::Drawing::Draw3
 				runtime->shape.Reset();
 				runtime->laserParticleSeed = LaserSeedForHandle(handle);
 				runtime->laserLayerId = 0;
+				runtime->laserMaximumDownDisplacementSquaredPx = 0.0f;
 				ResetLaserParticleEmitterState(*runtime);
 				runtime->metricEligibleQpc = down.qpc;
 				float baseDiameter = CanvasDiameterForTool(
@@ -18073,14 +19362,18 @@ namespace Inkeys::Drawing::Draw3
 					const WindowSize laserSize = window_.Size();
 					if (laserLifecycle.phase == LaserTrailPhase::Inactive)
 					{
+						// 空闲等待可直接出队 Down，不能等下一次动画求值才读取新偏好。
+						applyLaserParticleSettings(pendingLaserBakeDirty);
 						if (metricsState_) metricsState_->ObserveIndependentClear();
 						renderer_.ClearAllLaserCoverage();
 						laserStableBounds = {};
 						laserLiveBounds = {};
 						laserStrokeLayers.clear();
+						bakedLaserStrokes.clear();
 						laserCoverageMode = LaserCoverageMode::Inactive;
 					}
 					else if (laserLifecycle.phase != LaserTrailPhase::Active &&
+						laserGatherStartQpc == 0 && laserGatherFallback.phase == LaserTrailPhase::Inactive &&
 						!laserStrokeLayers.empty())
 					{
 						// 同帧发生"最后 Up → 新 Down"时，也先把上一批按原顺序烘干。
@@ -18089,7 +19382,7 @@ namespace Inkeys::Drawing::Draw3
 							metricsState_ ? metricsState_->metricFrequency : 0, [&] { return BakeLaserStrokeLayers(laserStrokeLayers, renderer_,
 							configuration_.dpiScale, laserSize.width, laserSize.height,
 							laserStableBounds, pendingLaserBakeDirty,
-							laserCoverageMode); });
+							laserCoverageMode, nullptr, nullptr, &bakedLaserStrokes); });
 						if (baked)
 						{
 							laserLiveBounds = {};
@@ -18109,7 +19402,6 @@ namespace Inkeys::Drawing::Draw3
 						laserCoverageMode = LaserCoverageMode::Inactive;
 					}
 					runtime->laserLayerId = nextLaserLayerId++;
-					laserTrailVisualStyle = runtime->visualStyle;
 					LaserStrokeLayer layer{
 						.id = runtime->laserLayerId, .runtime = runtime,
 						.visualStyle = runtime->visualStyle };
@@ -18123,8 +19415,26 @@ namespace Inkeys::Drawing::Draw3
 					{
 						renderer_.ClearLaserIncrementalCoverage();
 					}
+					if (laserLifecycle.phase == LaserTrailPhase::Dissolve && laserDissolveFront.progress > 0.0f)
+					{
+						LARGE_INTEGER gatherNow = {};
+						QueryPerformanceCounter(&gatherNow);
+						laserGatherStartQpc = gatherNow.QuadPart;
+						laserGatherEndQpc = LaserParticleLifetimeDeadlineQpc(laserGatherStartQpc,
+							qpcFrequency, kLaserDissolveParameters.gatherMilliseconds);
+						if (laserDissolveHasBatch)
+							laserParticleDirtyTracker.ExtendLatestDissolve(laserGatherEndQpc);
+						laserGatherFreezeQpc = lastDissolveParticleQpc;
+						laserGatherInitialProgress = laserDissolveFront.progress;
+					}
+					else if (laserLifecycle.phase == LaserTrailPhase::Dissolve)
+					{
+						// 在前沿尚未移动时落笔，无须开始汇聚。
+						finishLaserDissolve();
+					}
 					BeginLaserContact(laserLifecycle);
 					laserOpacity = 1.0f;
+					publishLaserState();
 					// Down 只重置时间累计；得到首条非退化 L0 切线前不发射。
 				}
 				active.push_back(runtime);
@@ -18311,18 +19621,29 @@ namespace Inkeys::Drawing::Draw3
 				runtime.reconnectDeadlineQpc = 0;
 			};
 
-		auto consumeLatestSnapshot = [&](RuntimeStroke& runtime) -> bool
+		auto finalizeLaserRuntime = [&](RuntimeStroke& runtime, int64_t qpc, bool cancelled, bool syntheticTerminal = false)
+		{
+			if (!cancelled && runtime.laserLayerId != 0)
+				laserTerminalOperations.push_back({ runtime.laserLayerId, qpc });
+			const WindowSize size = window_.Size();
+			FinalizeLaserRuntime(laserStrokeLayers, runtime, laserLifecycle,
+				qpc, cancelled, configuration_.dpiScale, size.width, size.height, 0, syntheticTerminal);
+		};
+
+		auto consumeLatestSnapshot = [&](RuntimeStroke& runtime, const ContactSnapshot* captured = nullptr,
+			bool syntheticTerminal = false) -> bool
 			{
-				runtime.laserParticleMovedThisFrame = false;
 				if (runtime.ended || runtime.awaitingReconnect) return false;
 				ContactSnapshot snapshot;
-				if (!input_.TryReadSnapshot(runtime.handle, snapshot) ||
-					snapshot.sequence == runtime.lastConsumedSequence) return false;
+				if (captured) snapshot = *captured;
+				else if (!input_.TryReadSnapshot(runtime.handle, snapshot)) return false;
+				if (!syntheticTerminal && snapshot.sequence == runtime.lastConsumedSequence) return false;
 				traceInputConsumption(runtime.handle, snapshot);
 				NoteTailInputSnapshot(runtime, snapshot); // 必须先保存 Up 之前的已消费位置。
 				runtime.lastConsumedSequence = snapshot.sequence;
 				runtime.lastInputSnapshot = snapshot;
-				if (metricsState_)
+				// 切工具的合成 Up 只闭合模型，不登记真实输入终态。
+				if (metricsState_ && !syntheticTerminal)
 				{
 					metricsState_->renderAttempt = true;
 					metricsState_->NoteConsumed(MetricKey(runtime.handle), snapshot.sequence);
@@ -18336,7 +19657,7 @@ namespace Inkeys::Drawing::Draw3
 						metricsState_->Invalidate(MetricKey(runtime.handle), ContentMetricInvalidationReason::Cancelled);
 				}
 				if (snapshot.phase == ContactPhase::Down) return false;
-				const bool palmChanged = observePalm(runtime, snapshot);
+				const bool palmChanged = !syntheticTerminal && observePalm(runtime, snapshot);
 				if (runtime.palmObservationOnly)
 				{
 					if (runtime.palm.locked || snapshot.phase == ContactPhase::Up || snapshot.phase == ContactPhase::Cancelled)
@@ -18347,6 +19668,9 @@ namespace Inkeys::Drawing::Draw3
 					}
 					return false;
 				}
+				const bool laserClick = runtime.tool == DrawingTool::Laser && runtime.laserLayerId != 0 &&
+					ObserveLaserClickSnapshot(runtime, runtime.handle.record->DownSnapshot(), snapshot,
+						syntheticTerminal, qpcFrequency, laserParticleConfiguration);
 				ContactSnapshot modelSnapshot = snapshot;
 				if (runtime.suppressPressure) modelSnapshot.pressure = -1.0f;
 				bool shapeRawChanged = false;
@@ -18400,7 +19724,7 @@ namespace Inkeys::Drawing::Draw3
 					(runtime.tool == DrawingTool::Pen ||
 						runtime.tool == DrawingTool::HardPen) && !runtime.shape.active;
 				const bool positionMoved = distanceSquared > kRawMoveThresholdPx * kRawMoveThresholdPx;
-				runtime.laserParticleMovedThisFrame = positionMoved;
+				runtime.laserParticleMovedThisFrame |= positionMoved;
 				const bool stylusStateChanged = HasStylusStateChange(modelSnapshot, runtime.lastModelSnapshot);
 				if (runtime.stroke.widthMode == StrokeWidthMode::SpeedEraser)
 				{
@@ -18511,7 +19835,7 @@ namespace Inkeys::Drawing::Draw3
 						}
 					}
 					else AppendRuntimeModeledPoints(runtime, inputSpeed, inputTime);
-					if (metricsState_)
+					if (metricsState_ && !syntheticTerminal)
 						metricsState_->Adopt(MetricKey(runtime.handle), snapshot,
 							runtime.shape.active ? ContentMetricAdoptionKind::Shape : ContentMetricAdoptionKind::Model,
 							MetricGeometryChanged(metricsGeometryBefore, runtime));
@@ -18556,11 +19880,20 @@ namespace Inkeys::Drawing::Draw3
 						laserCoverageMode = LaserCoverageMode::FullRedraw;
 						renderer_.ClearLaserIncrementalCoverage();
 					}
-					const WindowSize laserSize = window_.Size();
-					FinalizeLaserRuntime(laserStrokeLayers, runtime, laserLifecycle,
-						snapshot.qpc, laserCancelled,
-						configuration_.dpiScale, laserSize.width, laserSize.height);
-					if (metricsState_ && !laserCancelled) metricsState_->CaptureLaserFinal(MetricKey(runtime.handle), snapshot, laserLifecycle);
+					if (laserClick && renderer_.LaserParticlesAvailable() &&
+						(effectiveLaserParticleEffects & LaserParticleOptions::ClickWave))
+					{
+						const auto& down = runtime.handle.record->DownSnapshot();
+						const auto tint = ColorForTool(DrawingTool::Laser, runtime.visualStyle);
+						const float color[4] = { tint.x, tint.y, tint.z, 1.0f };
+						// 光波尺寸跟随激光实体半径，实体半径已含粗细设置与 DPI 缩放。
+						AppendLaserClickParticleSeeds(laserParticleSeeds, down.position.x, down.position.y,
+							LaserSolidRadius(ProductTargetScale(runtime.visualStyle)), color, runtime.laserParticleSeed,
+							static_cast<uint32_t>(runtime.laserLayerId), laserParticleConfiguration);
+					}
+					finalizeLaserRuntime(runtime, snapshot.qpc, laserCancelled, syntheticTerminal);
+					if (metricsState_ && !laserCancelled && !syntheticTerminal)
+						metricsState_->CaptureLaserFinal(MetricKey(runtime.handle), snapshot, laserLifecycle);
 				}
 				if (terminal && runtime.shape.active)
 				{
@@ -18655,56 +19988,40 @@ namespace Inkeys::Drawing::Draw3
 			}
 			hapticCanvasBound = false;
 			hapticUiSource.reset();
-			if (metricsState_) metricsState_->ObserveIndependentClear();
-			renderer_.ClearAllLaserCoverage();
-			renderer_.ResetLaserParticles();
-			laserLifecycle = {};
-			laserOpacity = 0.0f;
-			laserStableBounds = {};
-			laserLiveBounds = {};
-			laserStrokeLayers.clear();
-			laserCoverageMode = LaserCoverageMode::Inactive;
-			laserParticleDirtyTracker.Clear();
+			clearLaserTrail();
 			window_.RequestFullPresent();
 			if (activePresentationTarget) TracePptTiming("contacts_sealed",
 				activePresentationTarget->sessionRevision,
 				activePresentationTarget->targetRevision);
 		};
 
-		auto synchronizeLaserResources = [&]()
+		auto finishHeldLaserContacts = [&](bool cancel)
+		{
+			if (laserLifecycle.activeContactCount == 0) return;
+			LARGE_INTEGER now = {};
+			QueryPerformanceCounter(&now);
+			RetireLaserToolRuntimes(active, input_, now.QuadPart, cancel,
+				[&](RuntimeStroke& runtime, const ContactSnapshot& snapshot, bool synthetic)
+				{
+					consumeLatestSnapshot(runtime, &snapshot, synthetic);
+				});
+		};
+
+		auto releaseUnusedLaserResources = [&]
+		{
+			if (!ReleaseLaserResourcesIfUnused(renderer_, laserResourceSelection, laserVisible())) return;
+			laserIncrementalEnsureAttempted = false;
+			laserResourcesReady = false;
+		};
+
+		auto synchronizeLaserResources = [&]
 		{
 			const bool selected = !window_.SelectionMode() && window_.ActiveTool() == DrawingTool::Laser;
 			if (selected && !laserResourceSelection) laserIncrementalEnsureAttempted = false;
 			laserResourceSelection = selected;
-			if (selected && prepareLaserSelectionResources()) return;
-			if (!selected)
-			{
-				laserIncrementalEnsureAttempted = false;
-				laserResourcesReady = false;
-			}
-			if (laserLifecycle.phase == LaserTrailPhase::Inactive && laserStrokeLayers.empty() &&
-				renderer_.LaserResourceBytes() == 0) return;
-			// 工具离开是 Laser 临时会话的终态；不把已按下的旧路由转交给新工具。
-			RetireLaserToolRuntimes(active, input_, completeModelUp, finishMouseSpeedEraser);
-			if (metricsState_) metricsState_->ObserveIndependentClear();
-			laserLifecycle = {};
-			laserOpacity = 0.0f;
-			laserStableBounds = {};
-			laserLiveBounds = {};
-			laserStrokeLayers.clear();
-			laserCoverageMode = LaserCoverageMode::Inactive;
-			pendingLaserBakeDirty = {};
-			pendingLaserBakeFailed = false;
-			laserTipVisuals.clear();
-			laserParticleEmissionRequests.clear();
-			laserParticleDirtyTracker.Clear();
-			previousLaserParticleBounds = {};
-			previousLaserTipBounds = {};
-			lastLaserParticleSimulationQpc = 0;
-			renderer_.ReleaseLaserResources();
-			laserResourcesReady = false;
-			if (!selected) laserIncrementalEnsureAttempted = false;
-			window_.RequestFullPresent(); // 全帧重绘清除已提交的旧 Laser/粒子像素。
+			if (!selected) finishHeldLaserContacts(false);
+			if (KeepLaserResources(selected, laserVisible())) prepareLaserSelectionResources();
+			else releaseUnusedLaserResources();
 		};
 
 			bool commandBoundaryPending = false;
@@ -18745,6 +20062,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 				// Selection：白板移动模式的 Touch/鼠标左键成为平移触点（不经建笔、不受多指书写开关限制）；
 				// 笔、鼠标右键、另一类设备及桌面/PPT 的 Selection 丢弃到终态。
+				synchronizeLaserResources();
 				if (window_.SelectionMode() && HandleSelectionDown(input_, handle, true, activeWorkspace,
 					canvasPan, CanvasPanScaleFromSnapshot(window_.CanvasPanDisplayContextSnapshot()),
 					&suppressPenUntilRelease))
@@ -18754,6 +20072,19 @@ namespace Inkeys::Drawing::Draw3
 					// 画布调试可视化模式：接触照常出队，但只登记为探测接触，不建笔/擦除/手掌橡皮/历史。
 					registerCanvasDebugProbe(handle);
 					return;
+				}
+				if (laserLifecycle.activeContactCount != 0 && window_.ActiveTool() == DrawingTool::Laser)
+				{
+					const int64_t downQpc = record->DownSnapshot().qpc;
+					// 关闭断笔接续时 Down 可能先出队；只补消费早于该 Down 的激光终态。
+					for (RuntimeStroke* runtime : active)
+					{
+						ContactSnapshot terminal;
+						if (runtime->ended || runtime->tool != DrawingTool::Laser ||
+							!input_.TryReadSnapshot(runtime->handle, terminal) || terminal.qpc >= downQpc ||
+							(terminal.phase != ContactPhase::Up && terminal.phase != ContactPhase::Cancelled)) continue;
+						consumeLatestSnapshot(*runtime, &terminal);
+					}
 				}
 				initializeStroke(handle); // 出队后立即固定本地 generation。
 			};
@@ -19130,7 +20461,7 @@ namespace Inkeys::Drawing::Draw3
 			bool primaryCursorSourceVisible = false;
 			size_t runtimeCursorSourceCount = 0;
 #endif
-			if (cursorTool == DrawingTool::Laser)
+			if (cursorTool == DrawingTool::Laser && window_.ActiveTool() == DrawingTool::Laser)
 			{
 				const DrawingCursorVisual primary = ResolveLaserDrawingCursorVisual(
 					penSample, mouseSample, window_.CursorOwner(),
@@ -19209,7 +20540,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (runtime && !runtime->ended && !runtime->awaitingReconnect && !runtime->palmObservationOnly &&
 					runtime->metricDeviceType == InputDeviceType::Touch &&
-					runtime->tool == DrawingTool::Laser)
+					runtime->tool == DrawingTool::Laser && window_.ActiveTool() == DrawingTool::Laser)
 				{
 					const ContactSnapshot& snapshot = runtime->lastModelSnapshot;
 					// Touch 笔尖沿用各自 Down 样式，避免多 contact 调色后互相串色。
@@ -19714,7 +21045,7 @@ namespace Inkeys::Drawing::Draw3
 
 			auto resetGpuForPageSwitch = [&](RECT& frameDirty,
 			LaserParticleDirtySnapshot& particleSnapshot, bool& forceFullPresent,
-			int width, int height)
+			int width, int height, bool preserveLaser = false)
 		{
 			// 统一权威安装入口也覆盖异步load，不能复用旧页的对象修订缓存或编辑会话。
 			if (endCanvasFocus) endCanvasFocus(CanvasFocusEndReason::PageSwitch,frameDirty);
@@ -19734,21 +21065,15 @@ namespace Inkeys::Drawing::Draw3
 			if (metricsState_) metricsState_->wholeL2Clear = true;
 			renderer_.ClearOperatorLayer(renderer_.layerL1);
 			renderer_.ClearOperatorLayer(renderer_.layerL0);
-			if (metricsState_) metricsState_->ObserveIndependentClear();
-			renderer_.ClearAllLaserCoverage();
 			renderer_.ClearRTV(renderer_.backBufferRTV.Get(), kTransparentLayerClearColor);
-			laserLifecycle = {};
-			laserOpacity = 0.0f;
-			laserStableBounds = {};
-			laserLiveBounds = {};
-			laserStrokeLayers.clear();
-			laserCoverageMode = LaserCoverageMode::Inactive;
-			renderer_.ResetLaserParticles();
-			laserParticleDirtyTracker.Clear();
-			particleSnapshot = {};
-			lastLaserParticleSimulationQpc = 0;
-			previousLaserParticleBounds = {};
-			previousLaserTipBounds = {};
+			if (!preserveLaser)
+			{
+				clearLaserTrail();
+				particleSnapshot = {};
+				lastLaserParticleFrameQpc = 0;
+				previousLaserParticleBounds = {};
+				previousLaserTipBounds = {};
+			}
 			forceFullPresent = true;
 			if (metricsState_ && currentPageIndex_ < pageRuntimeStates.size() &&
 				pageRuntimeStates[currentPageIndex_].history.Items().empty())
@@ -19760,7 +21085,7 @@ namespace Inkeys::Drawing::Draw3
 
 		auto restoreAfterDocumentSlotSwitch = [&](RECT& frameDirty,
 			LaserParticleDirtySnapshot& particleSnapshot, bool& forceFullPresent,
-			int width, int height)
+			int width, int height, bool preserveLaser = false)
 		{
 			// CPU 文档切换后，所有绑定旧 page/raster identity 的 GPU 状态必须失效。
 			historyGpuCache.DiscardHotPreimages();
@@ -19779,13 +21104,13 @@ namespace Inkeys::Drawing::Draw3
 			viewportVisibleClear = true;
 			pendingLaserBakeDirty = {};
 			laserTipVisuals.clear();
-			laserParticleEmissionRequests.clear();
+			laserParticleSeeds.clear();
 			previousCursorVisuals.clear();
 			currentCursorVisuals.clear();
 			laserIncrementalEnsureAttempted = false;
 			publishedCurrentPageHasContent = !currentPageHasContent();
 			resetGpuForPageSwitch(frameDirty, particleSnapshot,
-				forceFullPresent, width, height);
+				forceFullPresent, width, height, preserveLaser);
 			const CompositionRestoreResult restored = restorePageContent(
 				currentPageIndex_, width, height, false);
 			if (restored.path == CompositionRestorePath::Failed)
@@ -20678,6 +22003,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			pageRuntimeStates[currentPageIndex_].clearUndoHistory = std::move(undoHistory);
+			RecordDocumentOperation(pageRuntimeStates[currentPageIndex_], allocateRasterStateToken(), std::nullopt);
 			historyGpuCache.DiscardHotPreimages();
 			historyGpuCache.DiscardCompositionCache();
 			compositionMaintenance.clear();
@@ -20696,10 +22022,11 @@ namespace Inkeys::Drawing::Draw3
 			viewportVisibleClear = true;
 			pendingLaserBakeDirty = {};
 			laserTipVisuals.clear();
-			laserParticleEmissionRequests.clear();
+			laserParticleSeeds.clear();
 			previousCursorVisuals.clear();
 			currentCursorVisuals.clear();
 			laserIncrementalEnsureAttempted = false;
+			finishHeldLaserContacts(true);
 			resetGpuForPageSwitch(frameDirty, particleSnapshot,
 				forceFullPresent, width, height);
 			publishCurrentPageContent();
@@ -20729,7 +22056,7 @@ namespace Inkeys::Drawing::Draw3
 			pageRuntimeStates[currentPageIndex_].clearRedoAvailable = true;
 			pageRuntimeStates[currentPageIndex_].clearRedoContinuation = std::move(continuation);
 			restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
-				forceFullPresent, width, height);
+				forceFullPresent, width, height, true);
 			return true;
 		};
 
@@ -20753,10 +22080,18 @@ namespace Inkeys::Drawing::Draw3
 			pageRuntimeStates[currentPageIndex_] = std::move(replacementRuntime);
 			if (activeWorkspace == Bridge::Workspace::Desktop) desktopClearRecovery.reset();
 			renderer_.ClearShapeRenderCache();
-			restoreAfterDocumentSlotSwitch(frameDirty,particleSnapshot,forceFullPresent,width,height);
+			restoreAfterDocumentSlotSwitch(frameDirty,particleSnapshot,forceFullPresent,width,height,true);
 			return true;
 		};
 
+		auto undoTargetsLaser = [&]()
+		{
+			const auto last = LatestBakedLaserStroke(bakedLaserStrokes);
+			if (last == bakedLaserStrokes.end()) return false;
+			const uint64_t documentSequence = currentPageIndex_ < pageRuntimeStates.size()
+				? LatestDocumentOperationSequence(pageRuntimeStates[currentPageIndex_]) : 0;
+			return ShouldUndoLaser(last->operationSequence, documentSequence);
+		};
 		// 设备性能看板：本帧做过一次性重活（设备恢复、合成变化、Resize、共享层重建、画布命令），不计入统计。
 		// 不能用 forceFullPresent 代替：平移帧每帧都强制全帧，会让漫游维度永远没有数据。
 		bool performanceHeavyFrame = false;
@@ -20789,6 +22124,7 @@ namespace Inkeys::Drawing::Draw3
 				forceFullPresent = true;
 			};
 			CanvasCommand command;
+			// 跨清屏撤回会更换文档场景并重置栅格指标，等活动触点按正常路径退役。
 			while (active.empty())
 			{
 				if (!shapeDeferredCommands.empty() || window_.TryDequeueCanvasCommand(command))
@@ -20848,7 +22184,8 @@ namespace Inkeys::Drawing::Draw3
 				{
 					forwardShapeConstruction(frameDirty); continue;
 				}
-				if (command.type == CanvasCommandType::Clear || command.type == CanvasCommandType::Undo || command.type == CanvasCommandType::Redo ||
+				const bool undoLaser = command.type == CanvasCommandType::Undo && undoTargetsLaser();
+				if (command.type == CanvasCommandType::Clear || (command.type == CanvasCommandType::Undo && !undoLaser) || command.type == CanvasCommandType::Redo ||
 					ShapeCommandChangesScene(command,activeWorkspace,currentPageIndex_,activePresentationTarget) || command.type == CanvasCommandType::TranslateViewport)
 				{
 					const auto focusReason = command.type == CanvasCommandType::Clear ? CanvasFocusEndReason::Clear :
@@ -21081,7 +22418,7 @@ namespace Inkeys::Drawing::Draw3
 								(void)capturePresentationAutoSave();
 								if (*installed == currentPageIndex_)
 									restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
-										forceFullPresent, width, height);
+										forceFullPresent, width, height, true);
 							}
 							// 历史加载可能跨过同 lane 翻页；成功或失败终态都交回当前实际页，停放槽不发回执。
 							if (StageResolvedPresentationScene(activeWorkspace, activePresentationKey,
@@ -21433,6 +22770,16 @@ namespace Inkeys::Drawing::Draw3
 				// 重做直接复用唯一Clear事务，包括快照、当前页边界与保存请求。
 				if (command.type == CanvasCommandType::Clear || redoClear)
 				{
+					if (command.type == CanvasCommandType::Clear && !currentPageHasContent() && laserVisible())
+					{
+						finishHeldLaserContacts(true);
+						clearLaserTrail();
+						particleSnapshot = {};
+						forceFullPresent = true;
+						shortcutResult.result = Shortcuts::Result::Applied;
+						reportCommand(command.type);
+						continue;
+					}
 					if (command.shortcut && !currentPageHasContent())
 					{
 						shortcutResult.result = Shortcuts::Result::NoContent;
@@ -21484,8 +22831,24 @@ namespace Inkeys::Drawing::Draw3
 						activeWorkspace == Bridge::Workspace::Desktop)
 						desktopDiskRequested = captureDesktopAutoSave(
 							DesktopAutoSaveTrigger::Clear, &desktopFileGuid);
+					// 清空前读回画布，把墨迹像素变成随风飘散的粒子。读回失败只是没有粒子，不影响清空；
+					// 重做出来的清空不播放。
+					std::vector<LaserParticleSeed> clearSeeds;
+					if (command.type == CanvasCommandType::Clear &&
+						(effectiveLaserParticleEffects & LaserParticleOptions::ClearDissolve))
+					{
+						std::vector<uint32_t> canvasPixels;
+						uint32_t canvasWidth = 0, canvasHeight = 0;
+						if (renderer_.ReadCanvasPixels(canvasPixels, canvasWidth, canvasHeight))
+							AppendCanvasClearParticleSeeds(clearSeeds, canvasPixels, canvasWidth, canvasHeight,
+								configuration_.dpiScale, LaserDissolveWindAngleDegrees(latchedLaserParticleOptions),
+								MixLaserSeed(static_cast<uint32_t>(rasterPipelineGeneration)));
+					}
 					const bool cleared = clearCurrentPage(frameDirty, particleSnapshot,
 						forceFullPresent, width, height, std::move(continuation));
+					// 清空会重置粒子池与待发射种子，所以在它之后再交给本帧的粒子推进。
+					if (cleared && !clearSeeds.empty())
+						laserParticleSeeds.insert(laserParticleSeeds.end(), clearSeeds.begin(), clearSeeds.end());
 					if (cleared && activeWorkspace == Bridge::Workspace::Desktop)
 					{
 						// 第二次有效 Clear 会替换更老的恢复点。
@@ -21520,6 +22883,40 @@ namespace Inkeys::Drawing::Draw3
 				}
 				if (command.type == CanvasCommandType::Undo)
 				{
+					if (undoLaser)
+					{
+						const bool removeParticleGroup = laserLifecycle.phase == LaserTrailPhase::Dissolve ||
+							laserGatherStartQpc != 0;
+						uint32_t removedGroup = 0;
+						const bool undone = UndoBakedLaserStroke(bakedLaserStrokes, renderer_,
+							laserCoverageMode == LaserCoverageMode::Incremental, !laserStrokeLayers.empty(),
+							laserStableBounds, frameDirty, laserLifecycle, laserOpacity,
+							removeParticleGroup ? &removedGroup : nullptr);
+						if (undone && removeParticleGroup)
+						{
+							const bool endDissolve = laserDissolveHasBatch && bakedLaserStrokes.empty();
+							renderer_.RemoveLaserParticleGroup(removedGroup, endDissolve);
+							if (bakedLaserStrokes.empty())
+							{
+								finishLaserDissolve();
+								if (endDissolve) stopLaserDissolveBatch = false;
+							}
+							hasLiveLaserParticles = renderer_.HasActiveLaserParticles();
+							if (!renderer_.LaserParticlesAvailable())
+							{
+								LARGE_INTEGER failureTime = {};
+								QueryPerformanceCounter(&failureTime);
+								fallbackLaserDissolve(failureTime.QuadPart);
+								laserParticleDirtyTracker.Clear();
+								particleSnapshot = {};
+								hasLiveLaserParticles = false;
+							}
+						}
+						publishLaserState();
+						shortcutResult.result = undone ? Shortcuts::Result::Applied : Shortcuts::Result::Failed;
+						reportCommand(command.type);
+						continue;
+					}
 					renderer_.InvalidateTrustedL2Snapshot();
 					trustedSnapshotSignatureValid = false;
 					bool changed = undoCurrentPage(frameDirty);
@@ -21610,6 +23007,7 @@ namespace Inkeys::Drawing::Draw3
 					const bool redone = redoCurrentPage(frameDirty);
 					if (redone)
 					{
+						RestampRedoneDocumentOperation(pageRuntimeStates[currentPageIndex_], allocateRasterStateToken());
 						markPresentationMutation();
 						publishCurrentPageContent();
 					}
@@ -22000,9 +23398,8 @@ namespace Inkeys::Drawing::Draw3
 			else if (selectionModeChanged) appliedSelectionMode = selectionMode;
 			// 全帧净化校验只服务辅助窗的空页隐藏；主窗承担选择态时不能据此每帧强制整帧。
 			if (!selectionUsesAuxiliary) auxiliaryCleanVerificationPending = false;
-			// 选择模式整段释放高精度计时器；进入绘制模式时只尝试一次。
-			// 白板移动模式的平移/惯性活动期保持 1 ms 计时器，否则帧节拍会抖动。
-			timerPeriod.SetSelectionMode(SelectionReleasesTimerPeriod(selectionMode, canvasPan.Active()));
+			// 选择期间仍可渲染激光淡出；与白板平移一样保留 1 ms 帧节拍。
+			timerPeriod.SetSelectionMode(SelectionReleasesTimerPeriod(selectionMode, canvasPan.Active(), laserVisible()));
 			const ProductVisualStyle nextProductVisualStyle =
 				window_.ProductVisualStyleSnapshot();
 			if (!ProductVisualStyleEqual(
@@ -22121,16 +23518,13 @@ namespace Inkeys::Drawing::Draw3
 				renderer_.ClearRTV(renderer_.layerL2RTV.Get(), kTransparentLayerClearColor);
 				renderer_.ClearOperatorLayer(renderer_.layerL1);
 				renderer_.ClearOperatorLayer(renderer_.layerL0);
-				if (metricsState_) metricsState_->ObserveIndependentClear();
-				renderer_.ClearAllLaserCoverage();
-				renderer_.ResetLaserParticles();
+				clearLaserTrail(true, true);
 				renderer_.ClearRTV(renderer_.backBufferRTV.Get(), kTransparentLayerClearColor);
 				const LiveRasterSubmission rebuilt = RebuildActiveLayers(active, renderer_,
 					recoveredSize.width, recoveredSize.height, shapePrimitiveScratch);
 				rasterSubmissionFailed |= !rebuilt.succeeded;
 				activeLayerRebuildPending = !rebuilt.succeeded;
 				laserIncrementalEnsureAttempted = false;
-				laserStableBounds = {};
 				laserLiveBounds = {};
 				for (LaserStrokeLayer& layer : laserStrokeLayers)
 				{
@@ -22141,16 +23535,13 @@ namespace Inkeys::Drawing::Draw3
 						ProductTargetScale(layer.visualStyle), recoveredSize.width, recoveredSize.height);
 					UnionRectInPlace(laserLiveBounds, layer.bounds);
 				}
-				laserCoverageMode = laserStrokeLayers.empty()
-					? LaserCoverageMode::Inactive : LaserCoverageMode::FullRedraw;
-				pendingLaserBakeDirty = {};
-				laserParticleDirtyTracker.Clear();
-				lastLaserParticleSimulationQpc = 0;
+				lastLaserParticleFrameQpc = 0;
 				previousLaserParticleBounds = {};
 				previousLaserTipBounds = {};
-				particlesWereEnabled = laserParticlesEnabled_.load(std::memory_order_acquire) &&
-					renderer_.LaserParticlesAvailable();
-				particlesEnabledEffective = particlesWereEnabled;
+				if (laserLifecycle.phase == LaserTrailPhase::Inactive)
+					latchedLaserParticleOptions = GetLaserParticleOptions();
+				effectiveLaserParticleEffects =
+					EffectiveLaserParticleEffects(latchedLaserParticleOptions, renderer_.LaserParticlesAvailable());
 				forceFullPresent = true;
 				UnionRectInPlace(viewportRecoveryDirty, fullCanvas);
 				renderer_.WarmUpLaserShaders();
@@ -22199,6 +23590,11 @@ namespace Inkeys::Drawing::Draw3
 				// 窗口尺寸变化后触点坐标系与视口覆盖都已失效：立即终止平移手势与惯性。
 				if (canvasPan.Active()) stopCanvasNavigation("resize");
 				const WindowSize size = window_.Size();
+				if (!renderer_.LaserResourcesAvailable())
+				{
+					// Resize 若未能重建颜色纹理，旧颜色已无效，撤回不得把它复活。
+					clearLaserTrail(true);
+				}
 				laserIncrementalEnsureAttempted = false;
 				synchronizeLaserResources();
 				historyGpuCache.DiscardHotPreimages();
@@ -22233,6 +23629,12 @@ namespace Inkeys::Drawing::Draw3
 				activeLayerRebuildPending = !rebuilt.succeeded;
 				laserStableBounds = ClampRectToCanvas(
 					laserStableBounds, size.width, size.height);
+				// Resize 仅保留纹理交集，重放也不能把裁掉的像素重新画进来。
+				const bool hadBakedStrokes = !bakedLaserStrokes.empty();
+				for (auto& stroke : bakedLaserStrokes)
+					stroke.bounds = ClampRectToCanvas(stroke.bounds, size.width, size.height);
+				std::erase_if(bakedLaserStrokes, [](const BakedLaserStroke& stroke) { return IsEmptyRect(stroke.bounds); });
+				if (hadBakedStrokes && bakedLaserStrokes.empty()) clearLaserTrail(true);
 				laserLiveBounds = {};
 				for (LaserStrokeLayer& layer : laserStrokeLayers)
 				{
@@ -22356,8 +23758,7 @@ namespace Inkeys::Drawing::Draw3
 						penEraserHoverLane.Invalidate();invertedPenEraserHoverLane.Invalidate();
 						renderer_.ClearOperatorLayer(renderer_.layerL1);
 						renderer_.ClearOperatorLayer(renderer_.layerL0);
-						if (metricsState_) metricsState_->ObserveIndependentClear();
-						renderer_.ClearAllLaserCoverage();
+						clearLaserTrail(true);
 					}
 					viewportTilePlan = {};
 					viewportTilePlanIndex = 0;
@@ -22605,51 +24006,27 @@ namespace Inkeys::Drawing::Draw3
 			{
 				auto& sample = metricsState_->frame.laser;
 				sample.collected = true;
-				if (laserLifecycle.lastAllUpQpc > 0) sample.lastAllUpQpc = laserLifecycle.lastAllUpQpc;
+				if (laserLifecycle.metricLastAllUpQpc > 0) sample.lastAllUpQpc = laserLifecycle.metricLastAllUpQpc;
 				sample.effectiveHoldSeconds = EffectiveLaserHoldDurationSeconds(laserLifecycle, animationLaserHold);
 				sample.fadeSeconds = kLaserFadeDurationSeconds;
 				metricsState_->ObserveLaserPhase(laserLifecycle);
 			}
-			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
-				animationQpc.QuadPart, qpcFrequency, animationLaserHold);
+			laserOpacity = animateLaserTrail(animationQpc.QuadPart, animationLaserHold);
 			if (metricsState_) metricsState_->ObserveLaserPhase(laserLifecycle);
-			const bool laserFadeActive = laserLifecycle.phase == LaserTrailPhase::Fade;
+			if (laserLifecycle.phase == LaserTrailPhase::Inactive) bakedLaserStrokes.clear();
+			const bool laserAnimationActive = laserTrailAnimating();
 			bool laserOpacityChanged =
 				std::abs(previousLaserOpacity - laserOpacity) > 0.0001f;
-			const bool particlesEnabled =
-				laserParticlesEnabled_.load(std::memory_order_acquire) &&
-				renderer_.LaserParticlesAvailable();
-			// 只在 Inactive（屏幕上无激光笔画）时才更新有效状态，
-			// 确保开关切换在当前笔画/Hold/Fade 全部消失后的下一笔才生效。
-			if (laserLifecycle.phase == LaserTrailPhase::Inactive)
-				particlesEnabledEffective = particlesEnabled;
-
 			RECT frameDirty = {};
 			validateShapeUiContext(frameDirty);
 			UnionRectInPlace(frameDirty, viewportRecoveryDirty);
 			UnionRectInPlace(frameDirty, pendingLaserBakeDirty);
 			pendingLaserBakeDirty = {};
-			if (particlesWereEnabled != particlesEnabledEffective)
-			{
-				for (RuntimeStroke* runtime : active)
-				{
-					if (runtime && runtime->tool == DrawingTool::Laser)
-						ResetLaserParticleEmitterState(*runtime);
-				}
-				if (!particlesEnabledEffective)
-				{
-					// 关闭后的下一绘制帧清空 GPU 状态，并用旧保守区清除透明窗口残影。
-					UnionRectInPlace(frameDirty, previousLaserParticleBounds);
-					renderer_.ResetLaserParticles();
-					laserParticleDirtyTracker.Clear();
-					lastLaserParticleSimulationQpc = 0;
-					laserLifecycle.minimumHoldDurationSeconds = 0.0;
-				}
-				particlesWereEnabled = particlesEnabledEffective;
-			}
+			applyLaserParticleSettings(frameDirty);
 			const WindowSize animationCanvasSize = window_.Size();
-			LaserParticleDirtySnapshot laserParticleSnapshot =
-				laserParticleDirtyTracker.Snapshot(animationQpc.QuadPart);
+			// Down 可能在本帧稍后触发汇聚，当前飘散批先按可冻结的 GPU 年龄回收。
+			laserParticleSnapshot = laserParticleDirtyTracker.Snapshot(animationQpc.QuadPart,
+				laserLifecycle.phase == LaserTrailPhase::Dissolve && laserDissolveHasBatch ? lastDissolveParticleQpc : 0);
 			RECT currentLaserParticleBounds = ClampRectToCanvas(
 				laserParticleSnapshot.activeBounds,
 				animationCanvasSize.width, animationCanvasSize.height);
@@ -22659,18 +24036,9 @@ namespace Inkeys::Drawing::Draw3
 				UnionRectInPlace(frameDirty, previousLaserParticleBounds);
 				UnionRectInPlace(frameDirty, currentLaserParticleBounds);
 			}
-			const bool particleAnimationActive = laserParticleSnapshot.hasActive;
+			const bool particleAnimationActive = laserParticleSnapshot.hasActive || renderer_.HasActiveLaserParticles();
 			publishShapeUi();
-			if (selectionMode && !currentPageHasContent() &&
-				auxiliaryCleanVerificationPending && active.empty() &&
-				laserLifecycle.phase == LaserTrailPhase::Inactive &&
-				!particleAnimationActive &&
-				// 画布调试板常驻时窗口永远不会全透明；继续强制全帧校验会让绘制线程无等待地满速呈现。
-				!(canvasDebugOverlay && canvasDebugOverlay->PlateVisible()))
-			{
-				// 最后一帧瞬态内容结束后做全帧 ULW 校验，不能按局部脏区推断窗口已净。
-				forceFullPresent = true;
-			}
+			hasLiveLaserParticles = particleAnimationActive;
 			if (laserOpacityChanged ||
 				LaserTrailExpiredThisFrame(previousLaserPhase, laserLifecycle.phase))
 			{
@@ -22686,7 +24054,7 @@ namespace Inkeys::Drawing::Draw3
 					size.width, size.height);
 				if (commandBoundaryPending && !window_.HasPendingCanvasCommand())
 					commandBoundaryPending = false;
-				if (activeWorkspace == Bridge::Workspace::Presentation &&
+				if (active.empty() && activeWorkspace == Bridge::Workspace::Presentation &&
 					activePresentationTarget && observer_.presentationLoadRequested &&
 					activePresentationMutationRevision == 0 &&
 					activePresentationQueuedRevision == 0)
@@ -22703,6 +24071,18 @@ namespace Inkeys::Drawing::Draw3
 						});
 				publishCurrentLoadProgress();
 			}
+			// 过期和粒子到期都可发生在静止期，必须在 idle 前发布。
+			publishLaserState();
+			releaseUnusedLaserResources();
+			if (selectionMode && !currentPageHasContent() &&
+				auxiliaryCleanVerificationPending && active.empty() &&
+				!laserVisible() &&
+				// 画布调试板常驻时窗口永远不会全透明；继续强制全帧校验会让绘制线程无等待地满速呈现。
+				!(canvasDebugOverlay && canvasDebugOverlay->PlateVisible()))
+			{
+				// 最后一帧瞬态内容结束后做全帧 ULW 校验，不能按局部脏区推断窗口已净。
+				forceFullPresent = true;
+			}
 			// 命令处理后、idle 判定前同步白板纹理；主题/页/工作区变化必须能唤起整屏重合成。
 			syncWhiteboardPattern(forceFullPresent);
 			publishWhiteboardViewport(); // 翻页/冷页视角恢复/TranslateViewport/工作区切换在命令处理后落到这里。
@@ -22710,7 +24090,7 @@ namespace Inkeys::Drawing::Draw3
 				!debugProbeContacts.empty() ||
 				viewportRefreshPending || viewportRecoveryPending;
 			// Stop/终态可能发生在帧初计时器判定之后，进入等待前同步释放。
-			timerPeriod.SetSelectionMode(SelectionReleasesTimerPeriod(window_.SelectionMode(), canvasPan.Active()));
+			timerPeriod.SetSelectionMode(SelectionReleasesTimerPeriod(window_.SelectionMode(), canvasPan.Active(), laserVisible()));
 			// 画布调试：板子/标记变化必须在 idle 判定之前并入 frameDirty，否则静止画布不会刷新它们。
 			RECT canvasDebugInjectedBounds = {};
 			bool canvasDebugInjected = false;
@@ -22718,7 +24098,7 @@ namespace Inkeys::Drawing::Draw3
 				prepareCanvasDebug(frameDirty, canvasDebugInjectedBounds, canvasDebugInjected);
 			if (active.empty() && !navigationActive && !forceFullPresent && !drawingCursorRequested &&
 				!speedEraserHoverAnimating &&
-				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty) &&
+				!laserAnimationActive && !particleAnimationActive && laserParticleSeeds.empty() && IsEmptyRect(frameDirty) &&
 				!compositionMaintenance.empty())
 			{
 				// 后台预建前先让 ULW 最后一帧上屏，不让它排在大量 tile 之后。
@@ -22752,7 +24132,7 @@ namespace Inkeys::Drawing::Draw3
 			// 槽内仍有留到下一帧的预览时不能进入 idle，否则其唤醒已被消费，需等下一次输入才执行。
 			if (active.empty() && !navigationActive && !forceFullPresent && !drawingCursorRequested &&
 				!speedEraserHoverAnimating && !shapePreviewSlot.held &&
-				!laserFadeActive && !particleAnimationActive && IsEmptyRect(frameDirty))
+				!laserAnimationActive && !particleAnimationActive && laserParticleSeeds.empty() && IsEmptyRect(frameDirty))
 			{
 				if (!completeUlwBeforeIdle()) continue; // idle/Hold 等待前 ULW 最后一帧必须上屏。
 				// 抬笔进入空闲：把本段设备性能累加移交账本（短锁合并，不做 I/O）。
@@ -22838,9 +24218,10 @@ namespace Inkeys::Drawing::Draw3
 			LARGE_INTEGER frameQpc = {};
 			QueryPerformanceCounter(&frameQpc);
 			const float laserParticleWallDeltaSeconds =
-				lastLaserParticleSimulationQpc > 0
+				lastLaserParticleFrameQpc > 0
 				? static_cast<float>(QpcDeltaSeconds(frameQpc.QuadPart,
-					lastLaserParticleSimulationQpc, qpcFrequency)) : 0.0f;
+					lastLaserParticleFrameQpc, qpcFrequency)) : 0.0f;
+			lastLaserParticleFrameQpc = frameQpc.QuadPart;
 			MetricsStageScope geometryCost(metricsState_ ? metricsState_->CurrentCosts() : nullptr,
 				RuntimeMetricsCostStage::GeometryRasterSubmit, metricsState_ ? metricsState_->metricFrequency : 0);
 			bool hasEndedStroke = false;
@@ -22849,7 +24230,11 @@ namespace Inkeys::Drawing::Draw3
 			const bool interruptedStrokeReconnectEnabled =
 				GetInterruptedStrokeReconnectEnabled();
 			for (RuntimeStroke* runtime : active)
-				if (runtime) runtime->modelInputThisFrame = false;
+				if (runtime)
+				{
+					runtime->modelInputThisFrame = false;
+					runtime->laserParticleMovedThisFrame = false;
+				}
 			if (!interruptedStrokeReconnectEnabled)
 			{
 					drainIngressBatch();
@@ -22909,11 +24294,7 @@ namespace Inkeys::Drawing::Draw3
 				runtime.stroke.predictedPoints.clear();
 				completeModelUp(runtime, terminal, false);
 				if (runtime.tool == DrawingTool::Laser)
-				{
-					const WindowSize laserSize = window_.Size();
-					FinalizeLaserRuntime(laserStrokeLayers, runtime, laserLifecycle,
-						terminal.qpc, false, configuration_.dpiScale, laserSize.width, laserSize.height);
-				}
+					finalizeLaserRuntime(runtime, terminal.qpc, false);
 				runtime.lastInputSnapshot = terminal;
 				finishMouseSpeedEraser(runtime);
 				if (runtime.touchGestureKey && !gestureAlreadyRetired) touchContacts.Release(runtime.touchGestureKey);
@@ -22932,6 +24313,8 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 			FinishActivatedPalmNeighbors(palmActivations, active, finishInterrupted);
+			AssignLaserTerminalOperations(laserTerminalOperations, laserStrokeLayers,
+				bakedLaserStrokes, allocateRasterStateToken);
 			palmInterruptQpc = 0;
 			hasEndedStroke = hasEndedStroke || std::any_of(active.begin(), active.end(),
 				[](const RuntimeStroke* runtime) { return runtime && runtime->ended; });
@@ -23041,13 +24424,12 @@ namespace Inkeys::Drawing::Draw3
 			{
 				auto& sample = metricsState_->frame.laser;
 				sample.collected = true;
-				if (laserLifecycle.lastAllUpQpc > 0) sample.lastAllUpQpc = laserLifecycle.lastAllUpQpc;
+				if (laserLifecycle.metricLastAllUpQpc > 0) sample.lastAllUpQpc = laserLifecycle.metricLastAllUpQpc;
 				sample.effectiveHoldSeconds = EffectiveLaserHoldDurationSeconds(laserLifecycle, inputLaserHold);
 				sample.fadeSeconds = kLaserFadeDurationSeconds;
 				metricsState_->ObserveLaserPhase(laserLifecycle);
 			}
-			laserOpacity = EvaluateLaserTrailOpacity(laserLifecycle,
-				frameQpc.QuadPart, qpcFrequency, inputLaserHold);
+			laserOpacity = animateLaserTrail(frameQpc.QuadPart, inputLaserHold);
 			if (metricsState_) metricsState_->ObserveLaserPhase(laserLifecycle);
 			laserOpacityChanged = laserOpacityChanged ||
 				std::abs(preInputLaserOpacity - laserOpacity) > 0.0001f;
@@ -23064,7 +24446,12 @@ namespace Inkeys::Drawing::Draw3
 				laserStableBounds = {};
 				laserLiveBounds = {};
 				laserStrokeLayers.clear();
+				bakedLaserStrokes.clear();
 				laserCoverageMode = LaserCoverageMode::Inactive;
+				// 主体退出后，仅保留既有粒子批次，让它们按自己的寿命结束。
+				laserDissolveHasBatch = false;
+				laserDissolvePrepared = false;
+				laserDissolveFront = {};
 			}
 			// Up 后同帧新 Down 可能刚完成旧批次 Bake；必须在本帧基础合成前消费该 dirty。
 			UnionRectInPlace(frameDirty, pendingLaserBakeDirty);
@@ -23119,8 +24506,7 @@ namespace Inkeys::Drawing::Draw3
 				window_.ClearActiveDrawingCursorTool();
 
 			const WindowSize size = window_.Size();
-			laserParticleEmissionRequests.clear();
-			uint32_t spawnedLaserParticleCount = 0;
+			uint32_t spawnedTrailParticleCount = 0;
 			RECT currentFrameLaserParticleBatchBounds = {};
 			const RECT previousLaserLiveBounds = laserLiveBounds;
 			RECT currentLaserLiveBounds = {};
@@ -23283,24 +24669,23 @@ namespace Inkeys::Drawing::Draw3
 						stroke.predictedPoints.clear();
 						stroke.l0DrawPoints.clear();
 					}
-					if (particlesEnabledEffective && !runtime->ended)
+					if ((effectiveLaserParticleEffects & LaserParticleOptions::Trail) && !runtime->ended)
 					{
 						const LaserParticleEmissionSource source =
 							ResolveLaserParticleEmissionSource(*runtime);
 						if (!source.valid)
 						{
-							// 首条有效切线出现前不累计静止基线，避免随后补出 Down 爆发。
+							// 尚无有效切线时不积攒发射额度。
 							runtime->laserParticleFractionalEmission = 0.0f;
 						}
 						else
 						{
 							const uint32_t remainingBudget =
-								spawnedLaserParticleCount <
+								spawnedTrailParticleCount <
 								laserParticleConfiguration.maximumSpawnPerFrame
 								? laserParticleConfiguration.maximumSpawnPerFrame -
-									spawnedLaserParticleCount : 0;
-							const float dpiScale = std::max(
-								configuration_.dpiScale, 0.01f);
+									spawnedTrailParticleCount : 0;
+							const float dpiScale = ProductTargetScale(runtime->visualStyle);
 							// 只有真实输入速度决定密度；L0 prediction 只提供出生位置和切线。
 							const float motionSpeedDipPerSecond =
 								runtime->laserParticleMovedThisFrame
@@ -23315,26 +24700,17 @@ namespace Inkeys::Drawing::Draw3
 								schedule.fractionalParticles;
 							if (schedule.count > 0)
 							{
-								const LaserParticleEmissionRequest request = {
-									source.positionX, source.positionY,
-									source.tangentX, source.tangentY,
-									source.entityRadius, schedule.count,
-									MixLaserSeed(runtime->laserParticleSeed ^
-										runtime->laserParticleSeedCursor *
-										0x9E3779B9u) };
-								laserParticleEmissionRequests.push_back(request);
+								const auto tint = ColorForTool(DrawingTool::Laser, runtime->visualStyle);
+								const float color[4] = { tint.x, tint.y, tint.z, 1.0f };
+								AppendLaserTrailParticleSeeds(laserParticleSeeds, source.positionX, source.positionY,
+									source.tangentX, source.tangentY, source.entityRadius,
+									dpiScale, color, schedule.count,
+									MixLaserSeed(runtime->laserParticleSeed ^ runtime->laserParticleSeedCursor * 0x9E3779B9u),
+									static_cast<uint32_t>(runtime->laserLayerId), laserParticleConfiguration);
 								runtime->laserParticleSeedCursor += schedule.count;
-								spawnedLaserParticleCount += schedule.count;
-								const RECT particleBounds =
-									ConservativeLaserParticleBatchBounds(
-										request, laserParticleConfiguration,
-										configuration_.dpiScale,
-										kLaserCoreDiameterRatio);
-								UnionRectInPlace(
-									currentFrameLaserParticleBatchBounds,
-									particleBounds);
+								spawnedTrailParticleCount += schedule.count;
 							}
-							// 超出 96 粒预算的整数发射额当帧丢弃，只保留不足一粒的小数。
+							// 超出本帧粒子预算的整数发射额当帧丢弃，只保留不足一粒的小数。
 						}
 					}
 					continue; // Laser 不写普通 L1/L0，也不进入后续 L2 完成路径。
@@ -23438,18 +24814,7 @@ namespace Inkeys::Drawing::Draw3
 					runtime->metricVisible = true;
 				runtime->reconnectVisualRefresh = false;
 			}
-			if (spawnedLaserParticleCount > 0 &&
-				!IsEmptyRect(currentFrameLaserParticleBatchBounds))
-			{
-				// 同一帧的全部请求共享一次未裁剪包络；下一帧不会延长本批次寿命。
-				laserParticleDirtyTracker.Add(
-					currentFrameLaserParticleBatchBounds,
-					LaserParticleLifetimeDeadlineQpc(
-						frameQpc.QuadPart, qpcFrequency,
-						laserParticleConfiguration));
-				RequireLaserMinimumHold(laserLifecycle,
-					laserParticleConfiguration.maximumLifetimeSeconds);
-			}
+
 			if (hasLaserRuntime || !laserStrokeLayers.empty())
 			{
 				currentLaserLiveBounds = {};
@@ -23462,7 +24827,9 @@ namespace Inkeys::Drawing::Draw3
 				}
 				laserLiveBounds = currentLaserLiveBounds;
 			}
-			if (ShouldBakeLaserBatch(laserLifecycle, laserStrokeLayers.size()))
+			// 汇聚期间新笔保持原覆盖层，避免烘进仍被前沿遮罩的旧主体。
+			if (laserGatherStartQpc == 0 && laserGatherFallback.phase == LaserTrailPhase::Inactive &&
+				ShouldBakeLaserBatch(laserLifecycle, laserStrokeLayers.size()))
 			{
 				if (metricsState_) metricsState_->Mark(RuntimeMetricsFrameReason::LaserBake);
 				// 同批次最后一支抬起后一次性烘干，随后 Hold/Fade 只解析稳定颜色。
@@ -23470,7 +24837,7 @@ namespace Inkeys::Drawing::Draw3
 				const bool baked = MetricsLaserCall(metricsState_ ? metricsState_->LaserCosts() : nullptr, 1,
 					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return BakeLaserStrokeLayers(laserStrokeLayers, renderer_,
 					configuration_.dpiScale, size.width, size.height, laserStableBounds,
-					frameDirty, laserCoverageMode); });
+					frameDirty, laserCoverageMode, nullptr, nullptr, &bakedLaserStrokes); });
 				rasterSubmissionFailed |= !baked;
 				if (metricsState_) metricsState_->ObserveLaserBake(baked);
 				if (baked)
@@ -23481,6 +24848,19 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 
+			uint32_t dissolveSeedCount = 0;
+			if (laserLifecycle.phase == LaserTrailPhase::Dissolve && !laserDissolvePrepared &&
+				laserStrokeLayers.empty())
+			{
+				// 从实际上传帧起算；刚抬起的最后一批此时也已进入逐笔记录。
+				laserLifecycle.dissolveStartQpc = frameQpc.QuadPart;
+				laserDissolveFront = MakeLaserDissolveFront();
+				dissolveSeedCount = AppendLaserDissolveSeeds(laserParticleSeeds, bakedLaserStrokes, laserDissolveFront,
+					LaserDissolveWindAngleDegrees(latchedLaserParticleOptions));
+				laserDissolvePrepared = true;
+				laserDissolveHasBatch = dissolveSeedCount != 0;
+			}
+
 			if (metricsState_)
 			{
 				auto& sample = metricsState_->frame.laser;
@@ -23488,32 +24868,61 @@ namespace Inkeys::Drawing::Draw3
 				sample.trailPhase = static_cast<uint32_t>(laserLifecycle.phase);
 				sample.coverageMode = static_cast<uint32_t>(laserCoverageMode);
 				sample.activeContactCount = laserLifecycle.activeContactCount;
-				if (laserLifecycle.lastAllUpQpc > 0) sample.lastAllUpQpc = laserLifecycle.lastAllUpQpc;
+				if (laserLifecycle.metricLastAllUpQpc > 0) sample.lastAllUpQpc = laserLifecycle.metricLastAllUpQpc;
 				sample.opacity = laserOpacity;
 				sample.layerCount = static_cast<uint32_t>(laserStrokeLayers.size());
-				sample.particleRequestedCount = spawnedLaserParticleCount;
-				sample.particlesEnabled = particlesEnabledEffective;
+				sample.particleRequestedCount = static_cast<uint32_t>(laserParticleSeeds.size());
+				sample.particlesEnabled = effectiveLaserParticleEffects != 0;
 				sample.particlesAvailable = renderer_.LaserParticlesAvailable();
 				sample.particlesActive = laserParticleSnapshot.hasActive;
 				metricsState_->laserQuiet = laserLifecycle.phase == LaserTrailPhase::Inactive &&
-					laserStrokeLayers.empty() && !laserParticleSnapshot.hasActive && laserParticleEmissionRequests.empty();
+					laserStrokeLayers.empty() && !laserParticleSnapshot.hasActive && laserParticleSeeds.empty();
 			}
-			const bool shouldStepLaserParticles = particlesEnabledEffective &&
-				(laserParticleSnapshot.hasActive || laserParticleSnapshot.expiredAny ||
-					!laserParticleEmissionRequests.empty());
-			const bool shouldDrawLaserParticles = particlesEnabledEffective &&
-				(laserParticleSnapshot.hasActive ||
-					!laserParticleEmissionRequests.empty());
+			const bool shouldStepLaserParticles = ShouldStepLaserParticles(
+				renderer_.HasActiveLaserParticles(), effectiveLaserParticleEffects, !laserParticleSeeds.empty());
+			const LaserDissolveParticleControl particleControl = {
+				laserGatherStartQpc != 0 && laserDissolveHasBatch ? laserGatherFreezeQpc : 0,
+				laserGatherStartQpc != 0 ? laserGatherProgress(frameQpc.QuadPart) : 0.0f,
+				std::exchange(stopLaserDissolveBatch, false),
+				laserDissolveHasBatch ? laserGatherEndQpc : 0 };
 			if (shouldStepLaserParticles)
 			{
 				MetricsLaserCall(metricsState_ ? metricsState_->LaserCosts() : nullptr, 2,
 					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return renderer_.StepLaserParticles(
-					laserParticleWallDeltaSeconds, laserParticleWallDeltaSeconds,
-					laserParticleSnapshot.hasActive || laserParticleSnapshot.expiredAny,
-					laserParticleEmissionRequests); });
-				lastLaserParticleSimulationQpc = frameQpc.QuadPart;
-				// 刚到期批次仍提交最后一次 update，但不再绘制退化实例。
+						frameQpc.QuadPart, qpcFrequency, laserParticleSeeds, dissolveSeedCount, particleControl); });
+				if (!renderer_.LaserParticlesAvailable())
+				{
+					// Compute 失效当帧撤销粒子，保留已经计入 frameDirty 的旧包络。
+					applyLaserParticleSettings(frameDirty);
+					fallbackLaserDissolve(frameQpc.QuadPart);
+					UnionRectInPlace(frameDirty, laserStableBounds);
+				}
+				else if (!laserParticleSeeds.empty())
+				{
+					const std::span<const LaserParticleSeed> seeds = laserParticleSeeds;
+					const auto trackBatch = [&](std::span<const LaserParticleSeed> batch, bool dissolve)
+					{
+						const auto envelope = ConservativeLaserParticleBatchBounds(batch);
+						UnionRectInPlace(currentFrameLaserParticleBatchBounds, envelope.bounds);
+						laserParticleDirtyTracker.Add(envelope.bounds, LaserParticleLifetimeDeadlineQpc(
+							frameQpc.QuadPart, qpcFrequency, envelope.maximumLifetimeMilliseconds), dissolve);
+					};
+					trackBatch(seeds.first(seeds.size() - dissolveSeedCount), false);
+					if (dissolveSeedCount != 0) trackBatch(seeds.last(dissolveSeedCount), true);
+					if (spawnedTrailParticleCount > 0)
+						RequireLaserMinimumHold(laserLifecycle,
+							std::ceil(1000.0 * laserParticleConfiguration.maximumLifetimeSeconds) / 1000.0);
+				}
 			}
+			if (laserLifecycle.phase == LaserTrailPhase::Dissolve && laserDissolvePrepared)
+			{
+				lastDissolveParticleQpc = frameQpc.QuadPart;
+				laserDissolveFront.progress = LaserDissolveProgress(
+					laserLifecycle.dissolveStartQpc, frameQpc.QuadPart, qpcFrequency);
+			}
+			laserParticleSeeds.clear();
+			hasLiveLaserParticles = renderer_.HasActiveLaserParticles();
+			const bool shouldDrawLaserParticles = effectiveLaserParticleEffects != 0 && hasLiveLaserParticles;
 
 			drainActiveShapeControlBarrier(frameDirty);
 			if (devicePerformance_ && devicePerformance_->RecordingEnabled())
@@ -23880,6 +25289,8 @@ namespace Inkeys::Drawing::Draw3
 				currentFrameLaserParticleBatchBounds);
 			currentLaserParticleBounds = ClampRectToCanvas(
 				currentLaserParticleUnclippedBounds, size.width, size.height);
+			publishLaserState();
+			releaseUnusedLaserResources();
 			if (!IsEmptyRect(previousLaserParticleBounds) ||
 				!IsEmptyRect(currentLaserParticleBounds))
 			{
@@ -23905,7 +25316,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				UnionRectInPlace(frameDirty, currentLaserTipBounds);
 			}
-			if (laserOpacityChanged || laserLifecycle.phase == LaserTrailPhase::Fade)
+			if (laserOpacityChanged || laserTrailAnimating())
 			{
 				UnionRectInPlace(frameDirty, laserStableBounds);
 				UnionRectInPlace(frameDirty, laserLiveBounds);
@@ -24036,19 +25447,21 @@ namespace Inkeys::Drawing::Draw3
 					rasterSubmissionFailed = true;
 				else
 				{
-					// 粒子先于激光主体绘制，使粒子辉光托衬在墨迹主体下方，避免遮挡演示内容。
+					// 飘散与光波先于激光主体绘制，托衬在主体下方；行进粒子在主体之后另画一次。
 					if (shouldDrawLaserParticles)
 					{
-						ConfigureLaserRendererStyle(renderer_, laserTrailVisualStyle,
-							configuration_.dpiScale);
 						MetricsLaserCall(metricsState_ ? metricsState_->LaserCosts() : nullptr, 3,
 							metricsState_ ? metricsState_->metricFrequency : 0, [&] { return renderer_.DrawLaserParticles(); });
 					}
 					if (laserLifecycle.phase != LaserTrailPhase::Inactive && laserOpacity > 0.0f)
 					{
-						if (!IsEmptyRect(laserStableBounds) &&
+						// 已烘颜色使用点采样，轨迹范围之外的全零像素可跳过。
+						RECT bakedDirty = {};
+						if (IntersectRect(&bakedDirty, &laserStableBounds, &frameDirty) &&
 							!renderer_.ResolveLaserCompositedColor(
-								renderer_.backBufferRTV.Get(), frameDirty, laserOpacity))
+								renderer_.backBufferRTV.Get(), bakedDirty,
+								laserGatherFallback.phase == LaserTrailPhase::Inactive ? laserOpacity : laserGatherFallbackOpacity,
+								laserDissolveFront))
 							rasterSubmissionFailed = true;
 						if (!rasterSubmissionFailed &&
 							!DrawLaserStrokeLayers(laserStrokeLayers, renderer_,
@@ -24056,6 +25469,10 @@ namespace Inkeys::Drawing::Draw3
 								configuration_.dpiScale, laserCoverageMode))
 							rasterSubmissionFailed = true;
 					}
+					// 行进粒子压在主体光晕之上、笔尖圆点之下。它们出生在内芯散射带之外并向外走，
+					// 所以不需要额外的遮罩或纹理来避开内芯。
+					if (!rasterSubmissionFailed && shouldDrawLaserParticles)
+						renderer_.DrawLaserParticles(LaserParticlePass::OverBody);
 					if (!rasterSubmissionFailed)
 					{
 						for (const LaserTipVisual& visual : laserTipVisuals)
@@ -24232,7 +25649,7 @@ namespace Inkeys::Drawing::Draw3
 					if (navigationInProgress || canvasPan.Active())
 						dimensions |= DevicePerformance::DimensionBit(DevicePerformance::Dimension::Pan);
 					// 激光笔抬起后的保持/淡出仍在按帧率出帧，属于激光笔负载。
-					if (laserLifecycle.phase == LaserTrailPhase::Hold || laserLifecycle.phase == LaserTrailPhase::Fade)
+					if (laserLifecycle.phase == LaserTrailPhase::Hold || laserTrailAnimating())
 						dimensions |= DevicePerformance::DimensionBit(DevicePerformance::Dimension::Laser);
 				}
 				// 测量挂起到下一轮开始时结算；帧率截止等待分支会更新结束时刻并标记为按帧率推进。
@@ -24318,8 +25735,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			else if (navigationActive || speedEraserHoverAnimating ||
 				mouseSpeedEraser().NeedsAnimation(mouseVisualSeconds) ||
-				laserLifecycle.phase == LaserTrailPhase::Fade ||
-				laserParticleSnapshot.hasActive)
+				laserTrailAnimating() ||
+				hasLiveLaserParticles)
 			{
 				if (!rasterSubmissionFailed) serviceUlwBeforeFrameWait(); // 光栅失败帧的最终纹理不可读回
 				const double workMs = GetQpcTimeMilliseconds() - frameStartMs;
@@ -24374,12 +25791,14 @@ namespace Inkeys::Drawing::Draw3
 		}
 		catch (const std::bad_alloc&)
 		{
+			clearLaserTrailOnException();
 			if (metricsState_) metricsState_->EndContacts(ContentMetricInvalidationReason::Fatal);
 			DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=run_exception result=not_queued reason=allocation\n");
 			throw;
 		}
 		catch (const std::exception& error)
 		{
+			clearLaserTrailOnException();
 			if (metricsState_) metricsState_->EndContacts(ContentMetricInvalidationReason::Fatal);
 			// Run 的局部 history 仍存活时尽力封口；随后原异常继续交 Host 受控退出。
 			DiagnosticOutput::Printf(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=run_exception reason=%s\n", error.what());
@@ -24404,7 +25823,13 @@ namespace Inkeys::Drawing::Draw3
 			}
 			throw;
 		}
+		catch (...)
+		{
+			clearLaserTrailOnException();
+			throw;
+		}
 
+		clearLaserTrail();
 		if (metrics_) metrics_->EndIdle(GetQpcTimeMilliseconds());
 		// 退出前结算最后一轮：它之后没有下一轮，帧间隔无效，只计耗时与是否提交。
 		pendingFrame.paced = false;

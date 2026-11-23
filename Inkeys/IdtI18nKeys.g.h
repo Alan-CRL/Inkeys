@@ -809,7 +809,18 @@ inline constexpr struct I18nKeyRoot
                 {
                     const char* N = "SettingsUI/Draw/Laser/Particles/N";
                     const char* E = "SettingsUI/Draw/Laser/Particles/E";
+                    const char* Direction = "SettingsUI/Draw/Laser/Particles/Direction";
+                    const char* DirectionLeftUp = "SettingsUI/Draw/Laser/Particles/DirectionLeftUp";
+                    const char* DirectionRightUp = "SettingsUI/Draw/Laser/Particles/DirectionRightUp";
+                    const char* Trail = "SettingsUI/Draw/Laser/Particles/Trail";
+                    const char* Dissolve = "SettingsUI/Draw/Laser/Particles/Dissolve";
+                    const char* Clear = "SettingsUI/Draw/Laser/Particles/Clear";
                 } Particles{};
+                struct Node__SettingsUI__Draw__Laser__ClickWave
+                {
+                    const char* N = "SettingsUI/Draw/Laser/ClickWave/N";
+                    const char* E = "SettingsUI/Draw/Laser/ClickWave/E";
+                } ClickWave{};
             } Laser{};
             struct Node__SettingsUI__Draw__Haptics
             {

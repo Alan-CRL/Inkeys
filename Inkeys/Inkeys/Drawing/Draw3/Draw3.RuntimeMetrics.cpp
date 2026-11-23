@@ -1137,6 +1137,7 @@ namespace Inkeys::Drawing::Draw3
 				case LaserTrailPhase::Active: phaseName = "Active"; break;
 				case LaserTrailPhase::Hold: phaseName = "Hold"; break;
 				case LaserTrailPhase::Fade: phaseName = "Fade"; break;
+				case LaserTrailPhase::Dissolve: phaseName = "Dissolve"; break;
 				}
 				const char* coverageName = "Unknown";
 				switch (static_cast<LaserCoverageMode>(l.coverageMode))

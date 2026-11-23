@@ -57,21 +57,35 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 
     if (type == 10)
     {
-        LaserGpuParticle particle = LaserParticleData[instanceId];
+        LaserGpuParticle particle = LaserParticleData[(globalBufferOffset + instanceId) % LASER_PARTICLE_CAPACITY];
+        // globalColor.x 选择绘制批次：0 画主体之下的飘散与光波，1 画主体之上的行进粒子。
         if (particle.alive == 0 || particle.opacity <= 0.0 ||
-            particle.currentRadius <= 0.0)
+            particle.currentRadius <= 0.0 ||
+            (particle.source.kind == 0u) != (globalColor.x > 0.5))
         {
-            // 固定实例绘制中，死亡槽生成退化图元，不需要 GPU 计数器回读。
+            // 环形区中已过期或未释放的槽生成退化图元。
             output.pos = float4(-2.0, -2.0, 0.0, 1.0);
             output.p1 = 0.0;
             output.p2 = 0.0;
             return output;
         }
 
-        // 比例辉光叠加固定 2 DIP 地板，确保最小粒子在任意 DPI 下均有肉眼可见的辉光。
-        float glowExtent = max(particle.currentRadius *
-            max(globalColor.x, 0.0) + 2.0 * laserParameters.y, 1e-4);
-        float outerRadius = particle.currentRadius + glowExtent;
+        // 粒子都是不带光晕的实心点。亮度字段按种类复用：行进粒子是透明度层次，
+        // 飘散粒子是白芯比例，点击光波是半线宽（取负传给 PS 作为环形标记）。
+        float ringHalfWidth = 0.0;
+        float brightness = particle.currentBrightness;
+        float3 particleColor = particle.source.color.rgb;
+        if (particle.source.kind == LASER_PARTICLE_DISSOLVE)
+        {
+            particleColor = lerp(particleColor, 1.0, 0.94 * saturate(brightness));
+            brightness = 1.0;
+        }
+        else if (particle.source.kind == LASER_PARTICLE_CLICK_WAVE)
+        {
+            ringHalfWidth = max(brightness, 1e-4);
+            brightness = 1.0;
+        }
+        float outerRadius = particle.currentRadius + ringHalfWidth;
         float2 center = particle.position;
         float2 rectMin = center - outerRadius - 2.0;
         float2 rectMax = center + outerRadius + 2.0;
@@ -80,10 +94,10 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
             -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
         output.pixPos = worldPos;
         output.p1 = center;
-        output.p2 = float2(glowExtent, particle.baseBrightness);
+        output.p2 = float2(-ringHalfWidth, brightness);
         output.r1 = particle.currentRadius;
-        output.r2 = particle.opacity;
-        output.color.y = particle.currentBrightness;
+        output.r2 = particle.opacity * particle.source.color.a;
+        output.color = float4(particleColor, particle.source.color.a);
         return output;
     }
 

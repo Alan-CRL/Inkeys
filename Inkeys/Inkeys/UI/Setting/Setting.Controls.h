@@ -153,6 +153,10 @@ namespace Inkeys::UI::Setting::Design
 	// 每项的 value/changed 指针须存活到对应行提交结束；收起期间不产生事件。
 	InlineRowContent InlineCheckboxes(const char* id, std::vector<CheckboxSpec> items,
 		const char* visibilityId = nullptr, bool visible = true);
+	// 把两块内联区上下叠放，中间画一条分割线；显隐动画由这里的 visibilityId 统一控制，
+	// 收起期间整块禁交互。两块内容自身不要再传 visibilityId。
+	InlineRowContent InlineStack(InlineRowContent upper, InlineRowContent lower,
+		const char* visibilityId = nullptr, bool visible = true);
 	struct PreviewSelectorItem
 	{
 		std::string label;

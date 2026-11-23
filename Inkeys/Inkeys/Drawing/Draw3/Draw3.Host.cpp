@@ -498,7 +498,7 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic_uint32_t generalDrawingOptions = 3u | (2u << 2);
 		std::atomic<LiveTaperOptions> liveTaperOptions{ LiveTaperOptions{} };
 		std::optional<LiveTaperOptions> appliedLiveTaperOptions;
-		std::atomic_uint32_t laserOptions = 0;
+		std::atomic_uint32_t laserOptions = LaserParticleOptions::Defaults << 1;
 		std::atomic_uint32_t multiTouchTools = kMultiTouchToolsAll;
 		uint32_t appliedMultiTouchTools = UINT32_MAX;
 		std::atomic_uint32_t canvasPanInertiaOptions = CanvasPanInertiaOptions{}.Encode();
@@ -541,6 +541,7 @@ namespace Inkeys::Drawing::Draw3
 		std::atomic<std::size_t> currentPageIndex = 0;
 		std::atomic<std::size_t> pageCount = 0;
 		std::atomic_bool currentPageHasContent = false;
+		std::atomic_bool laserVisible = false;
 		mutable std::mutex whiteboardMutex;
 		Bridge::WhiteboardStyleToken whiteboardStyle;
 		bool whiteboardStylePending = false;
@@ -1019,6 +1020,7 @@ namespace Inkeys::Drawing::Draw3
 			currentPageIndex.store(0, std::memory_order_release);
 			pageCount.store(0, std::memory_order_release);
 			currentPageHasContent.store(false, std::memory_order_release);
+			laserVisible.store(false, std::memory_order_release);
 			// 新 Host 生命周期不能沿用上次运行的撤回/重做可用性。
 			canUndo.store(false, std::memory_order_release);
 			canRedo.store(false, std::memory_order_release);
@@ -1274,6 +1276,14 @@ namespace Inkeys::Drawing::Draw3
 			}
 			self->contentCondition.notify_all();
 			self->PublishRuntimeRevision();
+		}
+
+		static void ObserveLaserVisibility(void* context, bool visible)
+		{
+			auto* self = static_cast<Impl*>(context);
+			// 激光随时间改变，只推进运行时版本，文档内容版本仍由墨迹提交维护。
+			if (self && self->laserVisible.exchange(visible, std::memory_order_acq_rel) != visible)
+				self->PublishRuntimeRevision();
 		}
 
 		static void ObserveWhiteboardThemeEdited(void* context, WhiteboardTheme theme) noexcept
@@ -1857,11 +1867,11 @@ namespace Inkeys::Drawing::Draw3
 					appliedMultiTouchTools = tools;
 				}
 				const uint32_t savedLaser = laserOptions.load(std::memory_order_acquire);
-				const uint32_t effectiveLaser = (savedLaser & 2u) | ((general & 1u) ? savedLaser & 1u : 0u);
+				const uint32_t effectiveLaser = (savedLaser & ~1u) | ((general & 1u) ? savedLaser & 1u : 0u);
 				if (effectiveLaser != appliedLaserOptions)
 				{
 					drawing->SetLaserMultiTouchDrawingEnabled((effectiveLaser & 1u) != 0);
-					drawing->SetLaserParticlesEnabled((effectiveLaser & 2u) != 0);
+					drawing->SetLaserParticleOptions(effectiveLaser >> 1);
 					appliedLaserOptions = effectiveLaser;
 				}
 				drawing->SetDrawingHapticsEnabled(drawingHapticsEnabled.load(std::memory_order_acquire));
@@ -2168,7 +2178,7 @@ namespace Inkeys::Drawing::Draw3
 				committedHeight.load(std::memory_order_acquire) != request->height ||
 				(request->target == HostOutputTarget::SelectionUlw &&
 					(currentPageHasContent.load(std::memory_order_acquire) ||
-						!auxiliaryFullFrameClean.load(std::memory_order_acquire)))) return;
+						laserVisible.load(std::memory_order_acquire) || !auxiliaryFullFrameClean.load(std::memory_order_acquire)))) return;
 			const auto target = request->target == HostOutputTarget::SelectionUlw
 				? TransparentOutputTarget::SelectionUlw : TransparentOutputTarget::PrimaryDrawpad;
 			if (presentation.ReleaseAuxiliaryReadbackResources(target,
@@ -2427,6 +2437,7 @@ namespace Inkeys::Drawing::Draw3
 								startOptions.enableHiddenTestContactInjection ? &ObservePenDiagnostics : nullptr
 							};
 							observer.historyAvailabilityChanged = &ObserveHistoryAvailability;
+							observer.laserVisibilityChanged = &ObserveLaserVisibility;
 							observer.whiteboardChanged = &ObserveWhiteboard;
 							observer.whiteboardExitSaved = &ObserveWhiteboardExit;
 							observer.whiteboardRoot = startOptions.autoSaveRoot;
@@ -2975,6 +2986,7 @@ namespace Inkeys::Drawing::Draw3
 		// 再读取布尔值，避免把新 revision 与旧内容拼成不可重试的快照。
 		snapshot.currentPageHasContent =
 			impl_->currentPageHasContent.load(std::memory_order_acquire);
+		snapshot.laserVisible = impl_->laserVisible.load(std::memory_order_acquire);
 		{
 			std::scoped_lock lock(impl_->whiteboardMutex);
 			snapshot.whiteboardStyle = impl_->whiteboardStyle;
@@ -3080,7 +3092,7 @@ namespace Inkeys::Drawing::Draw3
 			expected.requestedOutputRevision != expected.readyOutputRevision ||
 			expected.presentedContentRevision != expected.contentRevision ||
 			(expected.readyOutputTarget == HostOutputTarget::SelectionUlw &&
-				(expected.currentPageHasContent || !expected.auxiliaryFullFrameClean))) return;
+				(expected.currentPageHasContent || expected.laserVisible || !expected.auxiliaryFullFrameClean))) return;
 		const Impl::AuxiliaryReleaseRequest request{ expected.hostGeneration,
 			expected.appliedProductRevision, expected.readyOutputRevision,
 			expected.presentedContentRevision, expected.successfulPresentCount,
@@ -3251,10 +3263,14 @@ namespace Inkeys::Drawing::Draw3
 			(void)impl_->input.PublishControlWake();
 	}
 
-	void Host::SetLaserOptions(bool multiTouchEnabled, bool particlesEnabled) noexcept
+	void Host::SetLaserOptions(bool multiTouchEnabled, const CanvasParticleOptions& particles) noexcept
 	{
 		// 保存原始子偏好；总开关只影响 owner 计算的有效值，重新开启后可恢复。
-		const uint32_t next = (multiTouchEnabled ? 1u : 0u) | (particlesEnabled ? 2u : 0u);
+		const uint32_t requested = LaserParticleOptions::Pack(particles.enabled, particles.laserTrail,
+			particles.laserClickWave, particles.laserDissolve) |
+			(particles.clearDissolve ? LaserParticleOptions::ClearDissolve : 0u) |
+			(particles.windRightUp ? LaserParticleOptions::WindRightUp : 0u);
+		const uint32_t next = (multiTouchEnabled ? 1u : 0u) | (requested << 1);
 		if (impl_->laserOptions.exchange(next, std::memory_order_acq_rel) != next)
 			(void)impl_->input.PublishControlWake();
 	}

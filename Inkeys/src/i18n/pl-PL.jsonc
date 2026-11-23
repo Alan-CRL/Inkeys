@@ -801,11 +801,22 @@
       },
       "Laser":
       {
-        "N": "Wskaźnik laserowy",
+        "N": "Efekty płótna",
         "Particles":
         {
-          "N": "Cząsteczki wskaźnika laserowego",
-          "E": "BETA: wyświetlaj cząsteczki wokół śladu lasera."
+          "N": "Efekty cząsteczkowe płótna",
+          "E": "Atrament zamienia się w drobny pył i ulatuje z wiatrem.",
+          "Direction": "Kierunek unoszenia",
+          "DirectionLeftUp": "W lewo do góry",
+          "DirectionRightUp": "W prawo do góry",
+          "Trail": "Cząsteczki śladu wskaźnika laserowego",
+          "Dissolve": "Rozpraszanie wskaźnika laserowego",
+          "Clear": "Rozpraszanie przy czyszczeniu"
+        },
+        "ClickWave":
+        {
+          "N": "Fala po kliknięciu wskaźnika laserowego",
+          "E": "Szybkie dotknięcie wywołuje falę rozchodzącą się od punktu."
         }
       },
       "Haptics":

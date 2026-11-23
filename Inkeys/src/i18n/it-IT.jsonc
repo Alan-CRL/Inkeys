@@ -801,11 +801,22 @@
       },
       "Laser":
       {
-        "N": "Puntatore laser",
+        "N": "Effetti dell'area di disegno",
         "Particles":
         {
-          "N": "Particelle del puntatore laser",
-          "E": "BETA: mostra particelle attorno alla scia del laser."
+          "N": "Effetti particellari dell'area di disegno",
+          "E": "L'inchiostro diventa polvere sottile e vola via nel vento.",
+          "Direction": "Direzione della deriva",
+          "DirectionLeftUp": "In alto a sinistra",
+          "DirectionRightUp": "In alto a destra",
+          "Trail": "Particelle di scia del puntatore laser",
+          "Dissolve": "Dissolvenza del puntatore laser",
+          "Clear": "Dissolvenza durante la cancellazione"
+        },
+        "ClickWave":
+        {
+          "N": "Onda al clic del puntatore laser",
+          "E": "Un tocco rapido fa partire un'onda dal punto."
         }
       },
       "Haptics":

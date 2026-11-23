@@ -12,6 +12,7 @@
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <span>
+#include <utility>
 #include <windows.h>
 
 module Inkeys.Drawing.Draw3.renderer;
@@ -74,19 +75,44 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	void InkRenderer::ConfigureLaserParticles(
-		const LaserParticleConfig& configuration, float dpiScale) noexcept
+		const LaserParticleConfig& configuration) noexcept
 	{
-		const LaserParticleConfig effectiveConfiguration =
-			IsValidLaserParticleConfig(configuration)
-			? configuration : LaserParticleConfig{};
-		laserParticleGlowRadiusScale_ =
-			effectiveConfiguration.glowRadiusScale;
-		laserParticleGlowRed_ = effectiveConfiguration.glowRed;
-		laserParticleGlowGreen_ = effectiveConfiguration.glowGreen;
-		laserParticleGlowBlue_ = effectiveConfiguration.glowBlue;
-		laserParticleGlowAlpha_ = effectiveConfiguration.glowAlpha;
-		laserParticleSystem_.Configure(
-			effectiveConfiguration, dpiScale, kLaserCoreDiameterRatio);
+		laserParticleSystem_.Configure(configuration);
+	}
+
+	bool InkRenderer::ReadCanvasPixels(std::vector<uint32_t>& pixels, uint32_t& width, uint32_t& height)
+	{
+		pixels.clear();
+		width = height = 0;
+		if (!device || !context || !layerL2Texture) return false;
+		D3D11_TEXTURE2D_DESC description = {};
+		layerL2Texture->GetDesc(&description);
+		description.Usage = D3D11_USAGE_STAGING;
+		description.BindFlags = 0;
+		description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		description.MiscFlags = 0;
+		// 只在清空那一帧用一次，不常驻：读回纹理随函数返回释放。
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+		if (FAILED(device->CreateTexture2D(&description, nullptr, staging.GetAddressOf()))) return false;
+		context->CopyResource(staging.Get(), layerL2Texture.Get());
+		D3D11_MAPPED_SUBRESOURCE mapped = {};
+		if (FAILED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
+		bool copied = false;
+		try
+		{
+			pixels.resize(static_cast<size_t>(description.Width) * description.Height);
+			for (UINT row = 0; row < description.Height; ++row)
+				std::memcpy(pixels.data() + static_cast<size_t>(row) * description.Width,
+					static_cast<const uint8_t*>(mapped.pData) + static_cast<size_t>(row) * mapped.RowPitch,
+					static_cast<size_t>(description.Width) * sizeof(uint32_t));
+			copied = true;
+		}
+		catch (const std::bad_alloc&) { pixels.clear(); }
+		context->Unmap(staging.Get(), 0);
+		if (!copied) return false;
+		width = description.Width;
+		height = description.Height;
+		return true;
 	}
 
 	bool InkRenderer::LaserParticlesAvailable() const noexcept
@@ -94,12 +120,21 @@ namespace Inkeys::Drawing::Draw3
 		return laserParticleSystem_.IsAvailable();
 	}
 
-	void InkRenderer::StepLaserParticles(float wallDeltaSeconds,
-		float motionDeltaSeconds, bool simulateExisting,
-		std::span<const LaserParticleEmissionRequest> emissionRequests) noexcept
+	bool InkRenderer::HasActiveLaserParticles() const noexcept
 	{
-		laserParticleSystem_.Step(wallDeltaSeconds, motionDeltaSeconds,
-			simulateExisting, emissionRequests);
+		return laserParticleSystem_.ActiveRange().count != 0;
+	}
+
+	void InkRenderer::StepLaserParticles(int64_t nowQpc, int64_t qpcFrequency,
+		std::span<const LaserParticleSeed> seeds, uint32_t dissolveSeedCount,
+		LaserDissolveParticleControl dissolve) noexcept
+	{
+		laserParticleSystem_.Step(nowQpc, qpcFrequency, seeds, dissolveSeedCount, dissolve);
+	}
+
+	void InkRenderer::RemoveLaserParticleGroup(uint32_t group, bool endDissolve) noexcept
+	{
+		laserParticleSystem_.RemoveGroup(group, endDissolve);
 	}
 
 	void InkRenderer::ResetLaserParticles() noexcept
@@ -107,15 +142,20 @@ namespace Inkeys::Drawing::Draw3
 		laserParticleSystem_.Reset();
 	}
 
-	bool InkRenderer::UpdateLaserStyleConstants(float opacity)
+	bool InkRenderer::UpdateLaserStyleConstants(float opacity, const LaserDissolveFront& front)
 	{
 		if (!laserStyleCB) return false;
 		const float clampedOpacity = std::clamp(opacity, 0.0f, 1.0f);
+		const LaserDissolveFront effectiveFront = front.progress > 0.0f ? front : LaserDissolveFront{};
 		if (laserStyleCacheValid_ &&
 			uploadedLaserStyleGeneration_ == laserStyleGeneration_ &&
-			uploadedLaserStyleOpacity_ == clampedOpacity)
+			uploadedLaserStyleOpacity_ == clampedOpacity && uploadedLaserDissolveFront_ == effectiveFront)
 			return true;
 		laserStyleConstants_.parameters.x = clampedOpacity;
+		laserStyleConstants_.dissolveProjection = DirectX::XMFLOAT4(effectiveFront.directionX,
+			effectiveFront.directionY, effectiveFront.projectionMinimum, effectiveFront.inverseProjectionSpan);
+		laserStyleConstants_.dissolveEdge = DirectX::XMFLOAT4(effectiveFront.progress,
+			kLaserDissolveParameters.noiseAmplitude, kLaserDissolveParameters.edgeHalfWidth, 0.0f);
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
 		if (FAILED(context->Map(laserStyleCB.Get(), 0,
 			D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
@@ -127,6 +167,7 @@ namespace Inkeys::Drawing::Draw3
 		context->Unmap(laserStyleCB.Get(), 0);
 		uploadedLaserStyleGeneration_ = laserStyleGeneration_;
 		uploadedLaserStyleOpacity_ = clampedOpacity;
+		uploadedLaserDissolveFront_ = effectiveFront;
 		laserStyleCacheValid_ = true;
 		return true;
 	}
@@ -207,7 +248,7 @@ namespace Inkeys::Drawing::Draw3
 	bool InkRenderer::DrawLaserRectPass(ID3D11RenderTargetView* dstRTV, RECT rect,
 		float opacity, float shapeType, ID3D11ShaderResourceView* source,
 		UINT sourceSlot, ID3D11BlendState* blendState,
-		ID3D11ShaderResourceView* secondarySource, UINT secondarySourceSlot)
+		ID3D11ShaderResourceView* secondarySource, UINT secondarySourceSlot, const LaserDissolveFront& front)
 	{
 		if (!dstRTV) return false;
 		rect.left = std::max(0L, rect.left);
@@ -215,7 +256,7 @@ namespace Inkeys::Drawing::Draw3
 		rect.right = std::min(static_cast<LONG>(viewportWidth), rect.right);
 		rect.bottom = std::min(static_cast<LONG>(viewportHeight), rect.bottom);
 		if (rect.left >= rect.right || rect.top >= rect.bottom) return true;
-		if (!UpdateLaserStyleConstants(opacity)) return false;
+		if (!UpdateLaserStyleConstants(opacity, front)) return false;
 
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
 		if (FAILED(context->Map(globalCB.Get(), 0,
@@ -291,25 +332,93 @@ namespace Inkeys::Drawing::Draw3
 	}
 
 	bool InkRenderer::ResolveLaserCompositedColor(
-		ID3D11RenderTargetView* dstRTV, RECT rect, float opacity)
+		ID3D11RenderTargetView* dstRTV, RECT rect, float opacity, const LaserDissolveFront& front)
 	{
 		if (!laserCompositedColor.srv) return false;
 		return DrawLaserRectPass(dstRTV, rect, opacity, 11.0f,
-			laserCompositedColor.srv.Get(), 6, operatorResolveBlendState.Get());
+			laserCompositedColor.srv.Get(), 6, operatorResolveBlendState.Get(), nullptr, 0, front);
+	}
+
+	bool InkRenderer::ClearLaserRect(LaserCoverageResources& layer, RECT rect)
+	{
+		if (!layer.rtv) return false;
+		const RECT canvas = { 0, 0, static_cast<LONG>(viewportWidth), static_cast<LONG>(viewportHeight) };
+		RECT clipped = {};
+		if (!IntersectRect(&clipped, &rect, &canvas)) return true;
+		if (!DrawLaserRectPass(layer.rtv.Get(), clipped, 1.0f, 12.0f, nullptr, 0, nullptr))
+			return false;
+
+		++laserCounters_.rectClears;
+		const RECT& written = layer.writtenBounds;
+		// 局部擦除只有覆盖全部已知写域时才归空，实时尾段不会累积历帧写域。
+		if (!layer.contentUnknown && clipped.left <= written.left && clipped.top <= written.top &&
+			clipped.right >= written.right && clipped.bottom >= written.bottom)
+			layer.writtenBounds = {};
+		return true;
+	}
+
+	bool InkRenderer::BeginLaserUndo(RECT rect, bool preserveIncrementalCoverage)
+	{
+		LaserCoverageResources replayCoverage;
+		if (preserveIncrementalCoverage &&
+			!CreateLaserCoverageResources(static_cast<UINT>(viewportWidth),
+				static_cast<UINT>(viewportHeight), replayCoverage)) return false;
+		if (!BeginLaserBake(rect, true)) return false;
+		if (preserveIncrementalCoverage)
+		{
+			// 活动笔的 t7 前缀需原样保留，临时纹理只用作撤回的逐笔 coverage。
+			laserUndoSavedCoverage_ = std::move(laserStrokeCoverage);
+			laserStrokeCoverage = std::move(replayCoverage);
+		}
+		// 至事务提交才更新已烘写域，回滚时保留原范围。
+		if (!DrawLaserRectPass(LaserBakeTarget(), rect, 1.0f, 12.0f, nullptr, 0, nullptr))
+		{
+			FinishLaserUndo(false, {});
+			return false;
+		}
+		++laserCounters_.rectClears;
+		return true;
+	}
+
+	bool InkRenderer::ReplayLaserStroke(std::span<const InkPoint> points, RECT rect,
+		int rasterWidth, int rasterHeight)
+	{
+		if (!ClearLaserCoverageRect(rect)) return false;
+		const float width = viewportWidth, height = viewportHeight;
+		SetLaserCoverageTarget(laserStrokeCoverage, laserScissorRasterState ? rect :
+			RECT{ 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) });
+		// Resize 只拷贝旧像素。胶囊使用原视口生成坐标和 AA，再在当前纹理中解析。
+		const float originalWidth = static_cast<float>(rasterWidth);
+		const float originalHeight = static_cast<float>(rasterHeight);
+		const bool resized = originalWidth != width || originalHeight != height;
+		if (resized) SetScreenSize(originalWidth, originalHeight);
+		const bool drawn = DrawLaserCoverage(points, rect) == 0;
+		if (resized) SetScreenSize(width, height);
+		return drawn && ResolveLaserStrokeCoverage(LaserBakeTarget(), rect);
+	}
+
+	void InkRenderer::FinishLaserUndo(bool succeeded, RECT remainingBounds)
+	{
+		if (succeeded)
+		{
+			laserCompositedColor.writtenBounds = remainingBounds;
+			CommitLaserBake({});
+		}
+		else AbortLaserBake();
+		if (laserUndoSavedCoverage_.rtv)
+			laserStrokeCoverage = std::exchange(laserUndoSavedCoverage_, {});
+		else
+			ClearLaserIncrementalCoverage(); // 下一批不能继承重烘时的 scratch。
 	}
 
 	bool InkRenderer::ClearLaserCoverageRect(RECT rect)
 	{
-		if (!laserStrokeCoverage.rtv) return false;
-		return DrawLaserRectPass(laserStrokeCoverage.rtv.Get(), rect, 1.0f,
-			12.0f, nullptr, 0, nullptr);
+		return ClearLaserRect(laserStrokeCoverage, rect);
 	}
 
 	bool InkRenderer::ClearLaserLiveCoverageRect(RECT rect)
 	{
-		if (!laserLiveCoverage.rtv) return false;
-		return DrawLaserRectPass(laserLiveCoverage.rtv.Get(), rect, 1.0f,
-			12.0f, nullptr, 0, nullptr);
+		return ClearLaserRect(laserLiveCoverage, rect);
 	}
 
 	bool InkRenderer::EnsureLaserIncrementalCoverageResources()
@@ -340,8 +449,8 @@ namespace Inkeys::Drawing::Draw3
 
 	void InkRenderer::ClearLaserIncrementalCoverage()
 	{
-		ClearLaserCoverage(laserStrokeCoverage);
-		ClearLaserCoverage(laserLiveCoverage);
+		ClearLaserCoverageContent(laserStrokeCoverage);
+		ClearLaserCoverageContent(laserLiveCoverage);
 	}
 
 	void InkRenderer::DrawLaserDots(std::span<const LaserDot> dots)
@@ -385,12 +494,11 @@ namespace Inkeys::Drawing::Draw3
 		}
 	}
 
-	void InkRenderer::DrawLaserParticles()
+	void InkRenderer::DrawLaserParticles(LaserParticlePass pass)
 	{
-		ID3D11ShaderResourceView* particleResource =
-			laserParticleSystem_.ParticleShaderResourceView();
-		if (!particleResource || !backBufferRTV ||
-			!UpdateLaserStyleConstants(1.0f)) return;
+		const auto range = laserParticleSystem_.ActiveRange();
+		ID3D11ShaderResourceView* particleResource = laserParticleSystem_.ParticleShaderResourceView();
+		if (range.count == 0 || !particleResource || !backBufferRTV) return;
 
 		D3D11_MAPPED_SUBRESOURCE mapped = {};
 		if (FAILED(context->Map(globalCB.Get(), 0,
@@ -399,15 +507,12 @@ namespace Inkeys::Drawing::Draw3
 		constants->width = viewportWidth;
 		constants->height = viewportHeight;
 		constants->shapeType = 10.0f;
-		constants->bufferOffset = 0;
-		// shape 10：color.x 传辉光半径倍率，color.zw 与 padding.xy 传辉光颜色。
-		// 其余槽位由 shader 忽略，显式清零以免保留无效状态。
-		constants->color = DirectX::XMFLOAT4(
-			laserParticleGlowRadiusScale_, 0.0f,
-			laserParticleGlowGreen_, laserParticleGlowBlue_);
+		constants->bufferOffset = range.start;
+		// x 选择批次：0 画主体之下的飘散与光波，1 画主体之上的行进粒子。
+		constants->color = DirectX::XMFLOAT4(pass == LaserParticlePass::OverBody ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
 		constants->operatorKind = static_cast<uint32_t>(InkOperatorKind::Draw);
-		constants->padding[0] = laserParticleGlowRed_;
-		constants->padding[1] = laserParticleGlowAlpha_;
+		constants->padding[0] = 0.0f;
+		constants->padding[1] = 0.0f;
 		constants->padding[2] = 0.0f;
 		context->Unmap(globalCB.Get(), 0);
 
@@ -416,13 +521,13 @@ namespace Inkeys::Drawing::Draw3
 		context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		context->VSSetShader(vertexShader.Get(), nullptr, 0);
 		context->VSSetShaderResources(8, 1, &particleResource);
-		ID3D11Buffer* constantBuffers[] = { globalCB.Get(), laserStyleCB.Get() };
+		ID3D11Buffer* constantBuffers[] = { globalCB.Get() };
 		context->VSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
 		context->PSSetShader(pixelShader.Get(), nullptr, 0);
 		context->PSSetConstantBuffers(0, ARRAYSIZE(constantBuffers), constantBuffers);
 		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
 		context->RSSetState(rasterState.Get());
-		context->DrawInstanced(6, kLaserParticleCapacity, 0, 0);
+		context->DrawInstanced(6, range.count, 0, 0);
 
 		ID3D11ShaderResourceView* nullParticle[] = { nullptr };
 		context->VSSetShaderResources(8, 1, nullParticle);
@@ -444,9 +549,6 @@ namespace Inkeys::Drawing::Draw3
 		const D3D11_VIEWPORT emptyVP = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
 		context->RSSetViewports(1, &emptyVP);
 
-		// shape 10: 粒子 VS/PS（DrawLaserParticles 内部含所有绑定与 DrawInstanced）
-		DrawLaserParticles();
-
 		// shape 9: 激光笔尖 LaserDot（需至少1条数据以通过 dots.empty() 检查）
 		const std::array<LaserDot, 1> warmUpDots = {
 			LaserDot{ 0.0f, 0.0f, 1.0f }
@@ -461,14 +563,16 @@ namespace Inkeys::Drawing::Draw3
 				InkPoint{ 0.0f, 0.0f, 1.0f, 0.0f },
 				InkPoint{ 1.0f, 0.0f, 1.0f, 0.0f }
 			};
-			ClearLaserCoverageRect(warmUpRect);                              // shape 12
-			SetLaserCoverageTarget(laserStrokeCoverage);
+			DrawLaserRectPass(laserStrokeCoverage.rtv.Get(), warmUpRect, 1.0f,
+				12.0f, nullptr, 0, nullptr); // 零视口只预热，不登记清除或写域。
+			SetLaserCoverageTarget(laserStrokeCoverage, RECT{});
 			DrawLaserCoverage(warmUpPts);                                    // shape 7
 			ResolveLaserStrokeCoverage(                                      // shape 8
 				laserCompositedColor.rtv.Get(), warmUpRect);
 			if (LaserIncrementalCoverageAvailable())
 			{
-				ClearLaserLiveCoverageRect(warmUpRect);
+				DrawLaserRectPass(laserLiveCoverage.rtv.Get(), warmUpRect, 1.0f,
+					12.0f, nullptr, 0, nullptr);
 				ResolveLaserIncrementalCoverage( // shape 13
 					laserCompositedColor.rtv.Get(), warmUpRect);
 			}
