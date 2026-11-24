@@ -8,7 +8,7 @@
 
 - `RenderPipeline::Scheduler::SetFrameRate(int)` 与进程级 `RenderPipeline::SetFrameRate(int) noexcept`：共享界面帧率。
 - `Host::SetGeneralDrawingOptions(bool multiTouch, bool tailCorrection, int predictionMode) noexcept`：传统头不前置声明 module 所属枚举；Controller 内部接口使用 `InkPredictionMode`。
-- `Host::SetLaserOptions(bool multiTouch, bool particles) noexcept`：多指偏好受 Host 的全局多指约束；粒子参数保留兼容，但由 Controller 强制关闭。
+- `Host::SetLaserOptions(bool multiTouch, const CanvasParticleOptions& particles) noexcept`：多指偏好受 Host 的全局多指约束；`CanvasParticleOptions` 含总开关、飘散方向、三个子项、点击光波与数量上限 `limit`（0–3），打包为 `LaserParticleOptions`（数量上限占 bit6–7，`PackLimit` / `LaserParticleLimitFromOptions`）后交给 Controller。
 - `CreateStrokeModelConfiguration(int dpiX, StrokeTimingProfileId profile = Fps120)`：整套画布模型参数。
 - `Host::CanvasInformation() const -> std::string`：复制 owner 已发布的 UTF-8 初始化文本，不在 UI 线程访问 COM。
 
@@ -25,7 +25,9 @@
 | Drawing.PenTailCorrectionEnabled | true | 新笔锁存，完成态拟合读取该笔值 |
 | Drawing.InkPredictionMode | 2；0/1/2 | 新笔锁存，0=Disabled、1=StrokeEnd、2=Kalman |
 | Drawing.Laser.MultiTouchEnabled | false | 多指绘图的“激光笔”子项：后续新 Laser Touch，受全局多指约束 |
-| Drawing.Laser.ParticlesEnabled | false，兼容字段 | 产品忽略启用值，构造与setter均强制关闭 |
+| Drawing.Particles.{Enabled,Direction,LaserTrail,LaserDissolve,ClearDissolve} | false/0/true/true/true | 效果位在激光生命周期 Inactive 时锁存；Direction 0 向左上、1 向右上 |
+| Drawing.Particles.Limit | 1；0–3 = 低/中/高/极致，类型错误、越界、超宽整数回落 1 | 不随激光生命周期锁存：每帧帧首及清空/激光飘散建池前生效；换档清空飘散池（合同见 shaders/cpu-gpu-contracts.md 粒子一节） |
+| Drawing.Laser.ClickWaveEnabled | true | 点击光波独立于粒子总开关 |
 | Experimental.Inkeys3.Draw3.PresentationMode | 0；自动/DComp/Win7Dwm/ULW = 0/1/2/3 | 下次启动；缺少新键时将旧 EnableDirectComposition 的 false 映射为 ULW，true 映射为自动 |
 | Experimental.Inkeys3.Draw3.RenderAcceleration | 0；自动/硬件加速/软件加速 = 0/1/2 | 下次启动；自动 = 硬件优先、失败回退 WARP；硬件加速 = 只用硬件，不回退；软件加速 = WARP。设备丢失恢复沿用同一策略。缺少新键时旧 EnableHardwareAcceleration=false 迁移为软件加速，true 或缺键为自动 |
 | Experimental.Inkeys3.Draw3.AdapterPreference | 0；自动/优先核显/优先独显 = 0/1/2，越界或非整数按 0 | 下次启动；只决定硬件尝试顺序（软件加速档不读取），设备丢失恢复沿用同一快照。自动 = 与引入偏好前完全一致，只用默认适配器（`D3D11CreateDevice(nullptr, HARDWARE)`，即 DXGI 0 号，尊重用户在系统/驱动中选的高性能档位），失败不再尝试其他显卡（2026-11-22，Optimus 未接显示器的独显实测不如 WARP）；优先核显/独显 = 先按枚举顺序尝试该类全部适配器，再尝试另一类；第一个能建出 11_0 设备的即采用，全部失败再按 RenderAcceleration 决定是否回退 WARP。软件适配器（`DXGI_ADAPTER_FLAG_SOFTWARE` 或 0x1414/0x8C）不参与硬件尝试。分类：Win8+ 读 D3DKMT 混合显卡标志（HybridIntegrated/HybridDiscrete），没有时按独占显存 ≤ 512 MiB 判为核显（2026-11-21） |
@@ -47,7 +49,7 @@
 - 关闭尾修正只跳过 FinalizeStoredStroke 的 FitCompletedPenGeometry，保留正常 taper、公切线、真实 Up、Stored 和历史提交。当前修正使用 ReconstructAdaptiveTerminalTail，旧阶段二“尚未接产品”是历史说明。
 - 全局单指限制 Touch，不限制 Pen/Mouse，不截断已准入笔画。拒收触点走 DiscardUntilTerminal，保留 Up/Cancel；手势登记必须对称，不让被忽略触点中途接管。真正接入旧笔的接续不能被新增单指策略误拒。
 - 激光多指有效值是全局多指与保存子偏好的合取；隐藏不清空子偏好。Host 在 render owner 应用，setter 幂等，不能每批重复 control wake 导致空转。
-- 粒子条目不显示toggle，仅保留BETA禁用说明；Controller构造配置true、setter请求true也始终关闭，不因旧配置恢复，重复请求不产生额外wake。保留算法/Shader/配置字段，不扩大为资源清理任务。
+- 画布粒子效果（B2 起可用，C1.3 加数量上限）：绘制效果页“画布效果”区，总开关下方内联“飘散方向”“粒子数量上限”两个下拉（同一块、中间无分割线，`Design::InlineCombos`），分割线后为三个子项复选框；总开关关闭时整块收起并保留选择；“中”带推荐后缀。
 - 绘制页先“绘图环境”（设备项）、后“通用”；移除统一新笔提示但保留每笔锁存。界面60FPS、画布120FPS、精准显示本地化推荐标记，数据值不变；侧栏性能与实验glyph对调，不改变路由。
 - 原硬件加速、DComp、兆芯兼容三项迁移至性能页并重启生效：硬件加速改为 RenderAcceleration 下拉，DComp 开关改为 PresentationMode 下拉（旧键仅在缺少新键时迁移），兆芯兼容继续使用原键。
 - 软件调试 → 画布初始化信息：标题下按需显示呈现方式回退警告（交换链类型由呈现方式固定，没有交换链回退，2026-11-20 删除 `DebugSoftware.SwapChainFallback` 与 `PresentationFallbackReport::chainWarning`）。自动后端回退仅记录日志；主动指定后端失败才提示。正文展示实际状态。警告沿用黄色信息条，持有本代首次尝试的失败原因，外层窗口重建时传递。正文末尾由设置页追加两行进程级状态（2026-11-21 阶段 A2）：`GPU 调度类：HIGH (4)`（取读回值；读回失败显示最近成功请求的类并注明“未读回”；从未成功为“不可用”）与 `电源节流：已关闭执行速度节流/系统默认/不支持/设置失败（错误码 N）`。只显示当前状态，不显示回退过程；文本由 `FormatProcessSchedulingInformation(LastProcessSchedulingResult())` 生成（读缓存，不调用系统 API），与画布文本拼成同一字符串供显示与复制。
@@ -73,7 +75,7 @@
 | 关闭预测后 Up | 不调用禁用 predictor；正常模型收尾与真实终点保留 |
 | 尾拟合拒绝/关闭 | 保持合法完成基线，其他笔锋处理照常 |
 | 关闭多指后再打开 | 激光子项恢复原保存值，不写成 false |
-| 旧配置或调用方请求开启粒子 | 构造/setter/Get均保持关闭，UI无toggle，不增加wake |
+| Particles.Limit 非法值 | 读盘回落为 1（中）；Host 打包只取低 2 位，`LaserParticleLimitFromOptions` 不会得到越界档位 |
 | GPU/呈现/输入回退 | 信息显示实际 WARP/ULW/BasicXY/Mouse，与同代设备一致 |
 | 查询失败或停止 | 显示不可用/错误或历史标记，不用模板冒充当前成功 |
 
@@ -86,7 +88,7 @@
 ## 6. Tests Required
 
 - 配置真实磁盘 roundtrip、缺项、类型/整数宽度/白名单、激光子偏好保留。
-- 真实Controller对象使用粒子配置true构造，再重复setter(true/false)，Get始终false且wake generation/pending不变；不Attach/Initialize/Run，不创建HWND。
+- `--config-boundary-test` 覆盖 Particles.Limit 默认值、四档往返与非法类型；`--draw3-parked-desktop-exit-test` 的 `RunLaserParticleOptionsProductionTest` 经 Host 生产路径验证四档往返且 `EffectiveLaserParticleEffects` 不受档位位影响。
 - 真实 Scheduler 30/60、运行时切档、多客户端同批、idle/Stop。
 - 真实模型/生产 probe 覆盖三预测模式、四帧率、尾修正开关、并发笔快照、候选接续、终态回收及池复用；不能只断言枚举或对末端 helper 手工赋值。
 - 初始化文本发布/合并、新代清理、停止标记和真实 owner 回退路径；无窗口结果不能宣称实体 GPU、RTS 或桌面视觉验收。

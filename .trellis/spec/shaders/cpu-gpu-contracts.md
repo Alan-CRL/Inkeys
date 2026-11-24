@@ -97,7 +97,7 @@ snapshot pass 的全部出口都必须解绑 VS/PS `b3`。
 | `t5` | LiveOperatorRetain |
 | `t6` | LaserCompositedColor，已完成轨迹的预乘颜色 (`R8G8B8A8_UNORM`) |
 | `t7` | LaserStrokeCoverage，可复用的单笔 coverage scratch (`R8G8B8A8_UNORM`) |
-| `t8` | LaserParticleData，固定 2048 槽、每槽 80 bytes 的粒子池 SRV |
+| `t8` | 留空（B2 第四轮起粒子改用专用 `laserParticleVS.hlsl` 的 `t0`，见下文粒子一节） |
 | `t9` | LaserLiveCoverage，单 contact 当前 L0/prediction coverage (`R8G8B8A8_UNORM`) |
 | `t10` | HistoryEarlierAdd，单 slice `Texture2DArray` SRV (`B8G8R8A8_UNORM`) |
 | `t11` | HistoryEarlierRetain，单 slice `Texture2DArray` SRV (`R16_FLOAT`) |
@@ -421,92 +421,86 @@ if (singleContact && liveCoverageAvailable) {
         ResolveLaserStrokeCoverage(backBuffer, layer.bounds);
     }
 }
-```
-
-## Scenario: D3D11 Laser Particle Compute Pipeline
+## Scenario: D3D11 Laser Particle Pools and Clear Spawn（2026-11-24 阶段 C1.3 起）
 
 ### 1. Scope / Trigger
 
-修改 `draw3.laser_particles`、粒子镜像布局、CS 常量、资源寄存器、shape `10` 或粒子 dirty 策略时，必须同步本节。
+修改 `Inkeys.Drawing.Draw3.laser_particles`（`Draw3.LaserParticles*`、`Draw3.LaserParticleSystem.cpp`）、`laserParticleCommon.hlsli` / `laserParticleVS.hlsl` / `laserParticlePS.hlsl` / `laserParticleSpawnCS.hlsl`、粒子常量缓冲区、档位表、粒子脏区策略或清空飘散流程时，必须同步本节。
+
+历史：B2 第四轮（2026-11-23）删除了每帧模拟用的 UpdateCS/EmitCS，改为“出生写一次、VS 按出生参数 + 时钟求值”；C1.3 重新引入一个**只在清空时运行一次**的生成计算着色器，并把单池拆为两池、容量改为按档位。
 
 ### 2. Signatures
 
-- `LaserGpuParticle`，固定 `80 bytes`
-- `LaserParticleEmissionRequest { positionX, positionY, tangentX, tangentY, entityRadius, count, seedBase }`
-- `LaserParticleDirtyTracker::Snapshot(nowQpc) -> { activeBounds, hasActive, expiredAny }`
-- `LaserParticleSystem::Initialize/Configure/Step/Simulate/Emit/Reset`
-- `LaserParticleSystem::Step(wallDt, motionDt, simulateExisting, emissionRequests)`
-- `InkRenderer::DrawLaserParticles()` 固定调用 `DrawInstanced(6, 2048, 0, 0)`
+- `LaserGpuParticle`：`64 bytes`（位置、motion、motionParameters、shapeParameters、RGBA8 直通色、寿命、释放时刻、`kindAndBatch`）。
+- `LaserDriftParticle { LaserGpuParticle particle; uint32_t group; }`：CPU 直写记录，`68 bytes`；`particle.releaseMilliseconds` 存相对延迟，上传时加出生时刻并写批号。
+- 档位：`LaserParticleLimit { Low, Medium, High, Extreme }`，`kLaserParticleLimitTiers = { {32768,16384}, {131072,65536}, {524288,262144}, {1048576,524288} }`（飘散池槽数, 单次上限）。行进池固定 `kLaserTrailPoolCapacity = 8192`。批次表固定 `kLaserParticleMaximumBatches = 8192`，暂存块 `kLaserParticleStagingChunk = 16384`。
+- `LaserParticleSystem::Step(now, freq, trailSeeds, plainDrift, dissolveDrift, dipPerPixel, dissolveControl, const LaserClearSpawnRequest*) -> LaserParticleStepResult`
+- `SetLimit / EffectiveLimit / MaximumSeeds / PrepareDriftPool / ReleaseIdleDriftPool / ReleaseIdleResources / PollClearSpawn / GpuClearSpawnAvailable`
+- `LaserParticleActiveRing::Initialize(capacity) / Append -> LaserParticleBatchId / TrimTail(id, count)`
+- `CanvasRuntimeHistory::VisibleContentBounds(InkPixelBounds region)`：给定页面区域内可见项范围（逐项求交后合并），C2 页面级空间索引将接管其实现。
 
 ### 3. Contracts
 
-- 容量是编译期契约：粒子固定 `2048` 槽，每槽 `80 bytes`，结构化缓冲总计 `163840 bytes`；粒子缓冲、SRV/UAV、两个 CS 和两个常量缓冲只在 renderer Init/Release 创建销毁，Resize 不重建。buffer 创建不提供 CPU 零数组，资源就绪后必须用 UpdateCS 的 `resetAll` 在 GPU 初始化；reset 失败则释放资源并标记不可用。
-- CS 资源表：
-
-| Stage | Register | Resource |
-|---|---|---|
-| UpdateCS/EmitCS | `u0` | `RWStructuredBuffer<LaserGpuParticle>` |
-| VS shape 10 | `t8` | 同一粒子缓冲的 SRV |
-
-- Update 常量为 `32 bytes`：`float4(wallDeltaSeconds, motionDeltaSeconds, shrinkStartTravelRatio, endRadiusScale)`、`uint2(resetAll, particleCapacity)` 和 `float2` padding。Emit 常量为 `112 bytes`：`uint4 + 6*float4`，依次承载循环槽/数量/容量/seed、出生位置/切线、实体半径/核心比例/寿命范围、速度/偏转/半径范围、亮度/呼吸振幅、呼吸频率/渐入/尺寸分布指数，以及尺寸-亮度和尺寸-射程相关度。CPU 结构必须 `static_assert(size % 16 == 0)` 并与 HLSL 字段顺序一致。
-- `LaserGpuParticle` 只保存屏幕位置、固定速度、年龄/寿命、累计/最大行程、出生/当前半径、Alpha、基础/当前亮度、呼吸参数、seed/alive 和一个尾部 padding；CPU 必须用 `sizeof/offsetof`、HLSL 必须用字段顺序共同锁定 `80 bytes`。
-- 一帧粒子工作先取得一次 CPU dirty snapshot；controller 的 idle/timer、simulation、draw 和 dirty 决策共同复用该结果。无 active batch、无刚到期批次且无 emission request 时不得 Dispatch 或 `DrawInstanced`；active 刚到期必须再提交一次 update 清理 GPU alive 槽，并用上一帧 bounds 清一次基础层，但不再提交粒子 draw。
-- `Step` 前先 `VSSetShaderResources(8, null)`，一次绑定 `u0`，随后按原顺序可选 Dispatch update、逐 request Map emit `b0` 并 Dispatch，最后统一解除 `u0`、`b0` 和 CS。绘制结束再解除 VS `t8`。请求顺序、seed、spawn cursor 和 dispatch 顺序不得改变；禁止依赖 D3D11 自动冲突修复，也禁止重新引入 CS `t0/t1` 路径 SRV。
-- EmitCS 使用 CPU 管理的循环槽覆盖最旧粒子，不使用 Append/Consume、计数器、间接绘制或回读。每粒以 50/50 概率选择正/负法线，在所选法线附近均匀偏转 `±25°`；尺寸使用 `pow(random, 2.8)` 偏小分布映射到 `0.28–1.15 DIP`，亮度以 72% 尺寸层级和 28% 独立样本映射到 `0.42–1.0`，速度以 70% 独立样本和 30% 反向尺寸层级映射到 `10–17 DIP/s`，寿命为 `0.7–1.0s`。画笔前向速度不得进入粒子速度。
-- Emit 请求的屏幕锚点直接使用本帧 `l0DrawPoints.back()`，切线来自最后一个非退化 L0 段；重复点沿用上一有效切线，首次真实移动前没有有效方向时不发射。prediction 可以改变新粒子的锚点/切线，但不能参与发射密度或存量状态。
-- UpdateCS 用实际 wall time 累计年龄，用最多 `1/30s` 的 motion dt 推进；固定速度和 Alpha 都乘 `1-smoothstep(0,1,age/lifetime)`。粒子按实际累计行程计算尺寸，前 10% 保持出生半径，之后 smoothstep 到 20%；达到自身寿命立即死亡。
-- 粒子出生后 UpdateCS 不再读取路径、画笔、prediction 或 Up 状态；Up/Cancel 只停止 CPU 新请求。禁止 path slot/generation、弧长、segment cursor、端点阻塞淡出、路径追赶和 prediction correction。
-- 每粒写入 `0.42–1.0` 基础亮度、`0.8–1.4Hz` 呼吸频率、随机相位和 `0.12` 振幅；VS 通过 `SV_InstanceID` 取槽，死亡槽生成屏幕外退化图元。呼吸亮度只乘核心/辉光 RGB，不乘 Alpha。
-- shape `10` 的 VS 以 `currentRadius * glowRadiusScale + 2 * dpiScale` 得到逐粒辉光范围，默认 `glowRadiusScale=2.0`，并把出生基础亮度通过现有 `p2` 传给 PS；PS 核心直接使用当前 `LaserStyleConstants.borderColor`，只乘生命周期/呼吸亮度，不再向白混合。粒子辉光仍使用 `(1.0, 0.32, 0.40)`、峰值 Alpha `0.18` 和 `pow(1.6)` 距离衰减，继续输出预乘 Alpha operator-resolve。
+- **两池**：行进池（8192 槽，只放 Trail）与飘散池（档位决定槽数，放清空飘散普通批与激光飘散批）。共用 VS/PS、常量缓冲区、时钟与 1 MB 暂存块。`Draw(OverBody)` 只画行进池，`Draw(UnderBody)` 只画飘散池，各自只遍历自己的活跃区间。
+- **显存上限只由档位决定**：飘散池 = 槽数 × 64 B（极致 64 MiB），另有行进池 512 KiB；任何事件叠加都不增长。单次上限 = 飘散池一半，一批满额清空 + 一批满额激光飘散可同时完整存在，第三个满额批起按先进先出淘汰最旧批。
+- **容量与寻址**：容量必须是 2 的幂；VS 下标为 `(activeStart + instanceId) & capacityMask`，`capacityMask` 由 `LaserParticleDrawConstants` 偏移 52 下发（结构 64 字节）。槽位用池掩码，批次下标按批次上限取模。
+- **懒创建与闲时归还**：池与着色器在第一次需要时创建；飘散池在环为空时每帧单独归还（含生成着色器、UAV、counters）；整个系统在无存活粒子、无待上传记录且未处于“选中激光笔并开着激光粒子”的预热状态时归还。`Prepare/WarmUp` 只建行进池预热共享着色器。
+- **档位**：配置 `Drawing.Particles.Limit`（0–3，默认 1），经 `LaserParticleOptions` bit6–7 下发；控制器不经激光生命周期锁存，每帧帧首以及清空/激光飘散建池前读取原始选项并 `SetLimit`（同档为空操作，设备重建后由此恢复）。生效档变化时清空并归还飘散池、移除飘散脏区（加入本帧脏区）、丢弃按旧档位排队的飘散记录与 GPU 请求、激光飘散改走淡出退路；本帧已有入队飘散批时，换档推迟到下一帧帧首。
+- **逐级降档**：飘散池缓冲区/SRV 创建失败时依次尝试更低档，成功档记为本设备会话上限并写一条 Warn 日志；低档也失败则飘散池不可用（行进池不受影响）。生成前先 `PrepareDriftPool()` 取实际单次上限，返回 0 时走无粒子退路。
+- **CPU 直写**：激光飘散与 CPU 清空退路用 `MakeDriftParticle` 直接生成记录与批次包络，与旧“种子 + 打包”逐字段一致（`Reference*` 函数仅供自检对照）。
+- **清空 GPU 生成**（`laserParticleSpawnCS.hlsl`，`cs_5_0`，8×8 线程组，单入口按 `mode` 分三遍：0 清槽、1 计数、2 生成）：
+  - 输入为清空快照 `t0`（预乘 BGRA，`Load`），输出 `u0` 飘散池、`u1` 16 字节 counters（inked、written）。
+  - 每物理像素一线程：α ≥ 48 计入墨迹；`wanted = min(maximumSeeds, inked × 0.5 / dpiScale²)`，阈值 `uint(min(1, wanted/inked) × 2^24)`，随机数 `Hash((x ^ y*0x9E3779B9) + seedBase)`；其余字段公式与 `MakeDriftParticle` 相同（公共函数在 `laserParticleCommon.hlsli`）；释放时刻按出生像素的碎裂遮罩。100% 缩放与 CPU 原算法逐粒一致，200% 缩放统计一致（CPU 按 2×2 代表像素抽样）。
+  - 请求在清页成功后入队，在本帧 `Step` 中执行：环中追加 `reservedCount` 普通批（`slotGroups` 整段写 `kCanvasClearParticleGroup`）、派发前解除 VS SRV、三遍派发后解除 CS 的 UAV/SRV/常量缓冲区、counters 复制到 staging；`PollClearSpawn` 用 `DO_NOT_WAIT` 异步读回，只有设备代次与批次身份仍有效且仍是尾批时才 `TrimTail(min(written, reserved))`；written 为 0 时整批撤销并同步移除该批脏区。
+  - 生成资源任一创建失败：本设备会话改走 CPU 退路（读回 + 抽样 + 直写）。
+- **清空事务与范围**：先用历史查询得到屏幕范围（逐项与视口求交，四周放宽 2 px；栅格待恢复、视口待刷新或恢复、L2 未完整呈现、图形焦点编辑时用整张画布）；范围为空不建池、不捕获快照、不出粒子；范围非空才建池、捕获快照；碎裂范围 = 历史范围（CPU 退路同）。批次脏区 = 范围扩大最坏行程常量上界（`ConservativeCanvasClearParticleBounds`）。
+- **脏区种类**：`LaserParticleDirtyTracker` 按 `Other`（行进）、`ClearDrift`、`LaserDissolve` 分开登记；只为 `Step` 实际接纳的批次登记。
+- **内存**：待上传记录数组超过 16384 条时上传后归还容量；种子/记录生成以 `std::bad_alloc` 兜底，失败只丢本次粒子。
 
 ### 4. Validation & Error Matrix
 
 | Condition | Required behavior |
 |---|---|
-| feature level < 11_0 | `Initialize` 返回 false，renderer 继续创建 VS/PS 和主体资源 |
-| CS/buffer/SRV/UAV 任一创建失败 | 释放已建粒子资源、诊断一次、`IsAvailable == false` |
-| GPU 初始 reset 失败 | 释放粒子资源并令 `IsAvailable == false`，不得读取未初始化槽 |
-| snapshot 无 active 且 request 为空 | 无到期事件时 update、emit 和 draw 全部跳过；若刚到期，执行最后一次 update，仅旧 bounds 进入基础重建且不 draw |
-| 无有效 L0 切线 | 不发射并清空该 contact 的小数余量，不形成 Down 补发 |
-| 非有限请求位置/切线或退化切线 | Emit 忽略该请求，不移动循环槽 |
-| update/emit 常量 Map 失败 | update 失败时解绑并释放粒子系统，避免旧 alive 槽重现；emit 失败跳过该请求且不得移动循环槽，批次末仍统一解绑 Compute 状态 |
-| particle pool wrap | 新发射覆盖循环槽，不分配、不回读 |
-| UAV/SRV 切换 | 显式解绑后再切换 stage；Debug Layer 不应报告同资源读写冲突 |
-| Up/Cancel/prediction 跳变 | 既有粒子的速度、位置和寿命不被控制器修正 |
+| feature level < 11_0 或字节码缺失 | `Initialize` 返回 false，粒子不可用，激光其余功能照常 |
+| 共享着色器/常量缓冲区创建失败 | `Release()`，本设备会话粒子不可用 |
+| 飘散池建池失败 | 逐级降档；全部失败则仅飘散不可用，激光飘散走淡出退路，清空只碎裂 |
+| 行进池建池失败 | 仅行进粒子丢弃，飘散照常 |
+| 生成着色器/UAV/counters 失败 | 记一次日志，清空走 CPU 退路 |
+| 回读未就绪 | 保持预留长度与保守脏区，不阻塞 |
+| 回读时批次已淘汰、非尾批、设备重建、换档、Reset、空闲归还 | 丢弃结果，不改环 |
+| 快照捕获失败 | CPU 退路，粒子释放延迟清零 |
+| 清页失败 | 释放快照，不入队 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：新粒子从当前 L0 笔尖向两侧法线随机喷射；prediction 尾替换、回缩、急弯和 Up 都不改变既有粒子的屏幕空间轨迹。
-- Base：没有活粒子且没有新请求时不提交 compute/draw；设备不支持 CS 时仅无粒子。
-- Bad：每帧重建粒子 buffer、让存量粒子重新采样 L0、用 `CopyResource/Map` 回读位置，或同时绑定 `u0` 与 `t8`。
+- Good：极致档写满半屏后清空，清空当帧没有整屏读回，CPU 开销与粒子数无关；粒子与碎裂同帧开始。
+- Base：未启用清空飘散或范围为空时不建池、不捕获快照。
+- Bad：生成前不确定实际档位就按请求档生成；派发时 VS 仍绑定粒子 SRV；回读结果不校验批次身份就裁剪；把同一 D3D 上下文共享给测试夹具里另一个 `InkRenderer`（`Init` 会改视口）。
 
 ### 6. Tests Required
 
-- 静态断言 `LaserGpuParticle == 80 bytes` 及关键 `offsetof`，解析 HLSL 字段顺序，并断言 Update `32 bytes`、Emit `112 bytes` 且均 16 字节对齐。
-- 单元测试 Down 零爆发、静止 6/s、移动 2.5 DIP 密度、72/s 与全局 96 预算、无整数积压、双侧法线与 `±25°` 偏转、偏小尺寸分布、尺寸/亮度和尺寸/射程相关度、`10–17 DIP/s`、`0.7–1.0s` 与 8.5 DIP 行程上限、速度/Alpha 单调性、按行程缩至 20%、比例辉光与核心色相、呼吸与 Alpha 分离、Up/prediction 无修正、批次 dirty 到期和 resize 后重裁剪。
-- 静态搜索确认 UpdateCS/EmitCS 仅声明 `u0/b0`，VS 仅在 `t8` 读取，初始化使用空 initial data + GPU reset，controller 通过单个 batched `Step` 提交，并且路径结构、generation、弧长、segment cursor、端点淡出和 prediction correction 不在粒子源码中。
-- 完整 ARM64 解决方案构建必须让 FXC 成功编译 VS、PS、UpdateCS、EmitCS；人工启用 D3D11 Debug Layer 检查 SRV/UAV 冲突。
+- `--draw3-laser-resources-test`（`RunLaserResourceLifecycleValidation`）：四档容量与 64 MiB 实际创建、拆池分流与分绘、满额双批、降档注入（飘散/行进分别）、`TrimTail` 代次、分块跨环上传、直写与参考实现逐字段对照、GPU/CPU 1x 逐粒（整数字段完全一致；浮点 burst.x/y、birthWind.x/y 相对 ≤1.7e-3 且绝对 ≤4e-5，其余 ≤1e-4）、2x 统计、触顶、零粒、回读作废、清槽、生成后绘制、生成资源失败注入。
+- `--draw3-laser-raster-failure-test`（`RunLaserRasterFailureProductionProbe`）：激光直写对照、接纳退路、墨迹范围覆盖 L2（笔、荧光笔、图形、单点、擦除、平移、视口两侧与内外混合）、清空事务、零粒脏区撤销、范围为空不建池、切档与帧中切档（独立 WARP 设备）、待上传数组容量回收。
+- `--config-boundary-test`：Limit 默认、四档往返、非法值回落。`--draw3-parked-desktop-exit-test`：四档经 Host 生产路径往返且不影响效果位。
+- 每次修改上述合同后做变异验证（改坏一处确认用例失败）。
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```cpp
-context->CSSetUnorderedAccessViews(0, 1, &particleUav, nullptr);
-// particle SRV 仍绑定在 VS t8。
-context->Dispatch(32, 1, 1);
+const uint32_t maximum = kLaserParticleLimitTiers[requested].maximumSeeds; // 首次建池可能降档
+AppendLaserDissolveSeeds(pending.dissolveDrift, envelope, dpp, strokes, front, maximum, wind);
 ```
 
 #### Correct
 
 ```cpp
-const auto snapshot = dirtyTracker.Snapshot(nowQpc); // 每帧只 prune/扫描一次
-if (snapshot.hasActive || snapshot.expiredAny || !requests.empty()) {
-    particleSystem.Step(wallDt, motionDt,
-        snapshot.hasActive || snapshot.expiredAny, requests);
-}
-if (snapshot.hasActive || !requests.empty()) particleSystem.Draw();
-// Step 内只绑定一次 UAV：update -> emit(request 0..N) -> 统一解绑。
+const uint32_t maximum = renderer.PrepareLaserDriftPool(); // 先建池，取实际生效档的单次上限
+if (maximum == 0) fallbackLaserDissolve(now);               // 飘散池不可用：淡出退路
+else AppendLaserDissolveSeeds(pending.dissolveDrift, envelope, dpp, strokes, front, maximum, wind);
+```
+
 ```
 
 ## 合成矩形独立上传（2026-10-15）

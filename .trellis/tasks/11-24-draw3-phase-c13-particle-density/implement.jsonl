@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/draw3-shaders.md", "reason": "粒子 VS/常量缓冲区与 C++ 逐字段同步的约定、Win7 受保护着色器注意事项"}
+{"file": ".trellis/spec/shaders/cpu-gpu-contracts.md", "reason": "激光粒子管线与 dirty 策略契约（部分已过时，以 design.md 为准）"}
+{"file": ".trellis/spec/shaders/build-and-encoding.md", "reason": "hlsl 编码与 cso 不提交"}
+{"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "激光粒子运行时契约"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "绘制设置项、配置字段与下发约定"}
+{"file": ".trellis/spec/native-desktop/settings-navigation.md", "reason": "设置页布局与导航测试耦合"}
+{"file": ".trellis/tasks/archive/2026-11/11-22-draw3-phase-b2-laser/design.md", "reason": "粒子池、飘散与清空粒子的原始设计"}
+{"file": ".trellis/tasks/11-24-draw3-phase-c13-particle-density/research/clear-frame-benchmark.md", "reason": "清空当帧开销实测与每格最多 1 粒的饱和问题"}
