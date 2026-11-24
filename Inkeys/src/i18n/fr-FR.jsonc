@@ -1144,6 +1144,11 @@
       {
         "N": "Relecture asynchrone en mode UpdateLayeredWindow"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "Composition en plusieurs étapes par image en mode UpdateLayeredWindow",
+        "E": "Les changements dans des zones éloignées de l’écran sont soumis séparément pour réduire la charge et la latence lors de l’écriture à plusieurs doigts. Les mises à jour de différentes zones peuvent s’afficher avec une image de décalage."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Ne pas limiter les mouvements de la souris à la fréquence d’images du canevas pendant le dessin",

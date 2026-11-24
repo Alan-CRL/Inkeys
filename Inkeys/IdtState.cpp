@@ -693,6 +693,8 @@ namespace
 			IsComputerInteractionMode(stateMode.StateModeSelect);
 		state.autoSaveEnabled = Inkeys::config.Drawing.AutoSave.Enable;
 		Inkeys::Drawing::Draw3::PublishProductState(state);
+		Inkeys::Drawing::Draw3::ProductHost().SetUlwMultiStepCommitEnabled(
+			Inkeys::config.Experimental.Inkeys3.Draw3.EnableUlwMultiStepCommit.load());
 		// 与工具同锁发布；可视化位由修订推导，因此每次工具变化都会同步更新 Draw3。
 		Inkeys::Drawing::Draw3::ProductHost().SetCanvasDebugOptions(
 			IsCanvasDebugEnabled(), IsCanvasDebugVisualActive());

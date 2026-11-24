@@ -397,11 +397,57 @@ namespace
 		rtsExtended.nowMs = 1020.0;
 		check(Empty(path.Update(rtsExtended)), "an unchanged input path adds no dirty area");
 	}
+	// 帧脏区统计：相交才合并、整屏帧单独计数、未登记的扩大保守计入。
+	void CheckDirtyStats(Checks& check)
+	{
+		DirtyStatsProbe probe;
+		DirtyStatsSummary summary;
+		RECT frame = {};
+		const auto add = [&](const RECT& rect)
+		{
+			probe.Add(frame, rect);
+			if (frame.left >= frame.right) frame = rect;
+			else
+			{
+				frame.left = (std::min)(frame.left, rect.left); frame.top = (std::min)(frame.top, rect.top);
+				frame.right = (std::max)(frame.right, rect.right); frame.bottom = (std::max)(frame.bottom, rect.bottom);
+			}
+		};
+		// 第一帧：两个相交的矩形加一个远处的矩形，应得到 2 个区域。
+		probe.BeginFrame(true);
+		add(RECT{ 0, 0, 100, 100 });
+		add(RECT{ 50, 50, 150, 150 });
+		add(RECT{ 900, 900, 1000, 1000 });
+		check(!probe.EndFrame(false, 1000, 1000, 1000, summary), "the window stays open within one second");
+		// 第二帧：强制整屏。
+		frame = {};
+		probe.BeginFrame(true);
+		add(RECT{ 0, 0, 10, 10 });
+		check(!probe.EndFrame(true, 1000, 1000, 1500, summary), "a full frame does not close the window early");
+		// 第三帧：脏区被未登记的路径扩大。
+		frame = {};
+		probe.BeginFrame(true);
+		add(RECT{ 0, 0, 100, 100 });
+		frame = RECT{ 0, 0, 500, 500 };
+		probe.Reconcile(frame);
+		check(probe.EndFrame(false, 1000, 1000, 2100, summary), "the window closes after one second");
+		check(summary.frames == 2 && summary.fullFrames == 1 && summary.multiFrames == 1,
+			"frames are split into partial, full and multi-region");
+		check(summary.regionsMax == 2 && summary.untracked == 1 && summary.overflow == 0,
+			"intersecting rectangles merge and untracked growth is counted");
+		// 多区域帧：外接矩形整屏 100%，区域为 150×150 + 100×100 = 3.25%。
+		check(std::abs(summary.multiBoundsPercent - 100.0) < 1e-6 && std::abs(summary.multiRegionPercent - 3.25) < 1e-6,
+			"multi-region areas are reported as canvas percentages");
+		// 第三帧被保守地并成 500×500 一个区域。
+		check(std::abs(summary.boundsPercent - 62.5) < 1e-6 && std::abs(summary.regionPercent - (3.25 + 25.0) / 2.0) < 1e-6,
+			"untracked growth is counted as its bounding rectangle");
+	}
 }
 
 int RunCanvasDebugTests()
 {
 	Checks check;
+	CheckDirtyStats(check);
 	CheckPureFunctions(check);
 	CheckPlateAndDirty(check);
 	CheckPerformanceSnapshot(check);

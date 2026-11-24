@@ -74,6 +74,7 @@ int RunDraw3MouseInputTests();
 int RunSpeedEraserTests();
 int RunPalmEraserTests();
 int RunCanvasDebugTests();
+int RunDraw3DirtyRegionTests();
 int RunDraw3CanvasPanTests();
 int RunDraw3FrameLatencyGateTests();
 int RunDraw3UlwReadbackPacingTests();
@@ -1740,6 +1741,7 @@ int main(int argc, char** argv)
 	bool settingEraserOnly = false;
 	bool palmEraserOnly = false;
 	bool canvasDebugOnly = false;
+	bool draw3DirtyRegionOnly = false;
 	bool canvasPanOnly = false;
 	bool frameLatencyGateOnly = false;
 	bool ulwReadbackPacingOnly = false;
@@ -1768,6 +1770,7 @@ int main(int argc, char** argv)
 		settingEraserOnly |= argument == "--setting-eraser-only";
 		palmEraserOnly |= argument == "--palm-eraser-only";
 		canvasDebugOnly |= argument == "--canvas-debug-only";
+		draw3DirtyRegionOnly |= argument == "--draw3-dirty-region-only";
 		canvasPanOnly |= argument == "--canvas-pan-only";
 		frameLatencyGateOnly |= argument == "--frame-latency-gate-only";
 		ulwReadbackPacingOnly |= argument == "--ulw-readback-pacing-only";
@@ -1824,6 +1827,7 @@ int main(int argc, char** argv)
 	}
 	if (palmEraserOnly) return RunPalmEraserTests() == 0 ? 0 : 1;
 	if (canvasDebugOnly) return RunCanvasDebugTests() == 0 ? 0 : 1;
+	if (draw3DirtyRegionOnly) return RunDraw3DirtyRegionTests() == 0 ? 0 : 1;
 	if (canvasPanOnly) return RunDraw3CanvasPanTests() == 0 ? 0 : 1;
 	if (frameLatencyGateOnly) return RunDraw3FrameLatencyGateTests() == 0 ? 0 : 1;
 	if (ulwReadbackPacingOnly) return RunDraw3UlwReadbackPacingTests() == 0 ? 0 : 1;
@@ -1902,6 +1906,7 @@ int main(int argc, char** argv)
 	failureCount += RunSpeedEraserTests();
 	failureCount += RunPalmEraserTests();
 	failureCount += RunCanvasDebugTests();
+	failureCount += RunDraw3DirtyRegionTests();
 	failureCount += RunDraw3CanvasPanTests();
 	failureCount += RunDraw3FrameLatencyGateTests();
 	failureCount += RunDraw3UlwReadbackPacingTests();

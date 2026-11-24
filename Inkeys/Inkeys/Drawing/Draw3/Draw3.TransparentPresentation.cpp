@@ -13,6 +13,8 @@
 #include "Draw3.PresentationFallbackReport.h"
 #include "Draw3.UlwReadbackPacing.h"
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
@@ -30,6 +32,7 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <vector>
 #include <windows.h>
@@ -51,6 +54,7 @@
 module Inkeys.Drawing.Draw3.transparent_presentation;
 
 import Inkeys.Drawing.Draw3.diagnostics;
+import Inkeys.Drawing.Draw3.dirty_region;
 
 namespace Inkeys::Drawing::Draw3
 {
@@ -465,12 +469,19 @@ namespace Inkeys::Drawing::Draw3
 						pixel[0] <= alpha && pixel[1] <= alpha && pixel[2] <= alpha;
 				}
 			}
-			afterCopy(); // 最终像素检查完成后立即 Unmap staging texture。
+			afterCopy();
 			result.fullFrameAllZeroAlpha = presentFull && result.allZeroAlpha &&
 				dirty.left == 0 && dirty.top == 0 && dirty.right == dibWidth &&
 				dirty.bottom == dibHeight;
 			return result;
 		}
+
+		struct UlwBatchStats
+		{
+			UINT calls = 0;
+			std::uint64_t committedArea = 0;
+			std::uint64_t copiedArea = 0;
+		};
 
 		struct UlwDirtyRectPresenter
 		{
@@ -495,6 +506,9 @@ namespace Inkeys::Drawing::Draw3
 			bool presentFailureLogged = false;
 			bool pixelDiagnosticLogged = false;
 			bool forceFullUlwUpdate = false;
+			std::atomic<bool> multiStepCommitEnabled{ true };
+			UINT lastCommittedRectCount = 0;
+			DirtyRegion* testCommitRects = nullptr; // 仅流水线自测记录实际调用的区域。
 			bool needsFullReadback = true;
 			bool committedFullFrameClean = false;
 			ULONGLONG lastPixelDiagnosticTick = 0;
@@ -512,8 +526,9 @@ namespace Inkeys::Drawing::Draw3
 			{
 				bool active = false;
 				int slot = 0;
-				RECT dirty{};
+				DirtyRegion region;
 				bool presentFull = false;
+				bool multiStepCommit = false;
 				double issuedMs = 0.0;   // 拷贝入队时刻
 				double contentMs = 0.0;  // 本次提交包含的最早一帧写入纹理的时刻（节流合并时早于 issuedMs）
 				double deadlineMs = 0.0; // 对齐时瞄准的截止，0 = 未对齐
@@ -537,19 +552,20 @@ namespace Inkeys::Drawing::Draw3
 				double startMs = 0.0;
 				std::uint32_t immediate = 0, deferred = 0, probeHit = 0, backpressure = 0, frameEnd = 0, beforeIdle = 0, skipped = 0, commits = 0;
 				double mapWaitSumMs = 0.0, mapWaitMaxMs = 0.0, lagSumMs = 0.0, lagMaxMs = 0.0, rowsSumMs = 0.0, ulwSumMs = 0.0;
+				std::uint64_t ulwCalls = 0, committedArea = 0, copiedArea = 0;
 				std::uint32_t alignedCommits = 0, lateCount = 0;
 				double leadSumMs = 0.0, leadMinMs = 0.0;
 			};
 			bool asyncFused = false; // 探测出现非“仍在绘制”的错误或第二个槽建不出来：改走同步，由 Impl 记为会话级熔断
 			Microsoft::WRL::ComPtr<ID3D11Texture2D> stagingTextureAlt; // 第二个 Staging 槽，仅异步时创建
 			Commit pending;
-			RECT accumulatedDirty{};
+			DirtyRegion accumulatedDirty;
 			bool hasAccumulated = false;
 			double accumulatedSinceMs = 0.0;
 			UlwReadbackPacing pacing;
 			UlwCommitPlanner planner;
 			PipelineSummary pipelineSummary;
-			// 成功的 UpdateLayeredWindow 次数与最近一次的完成时刻（单调递增，Reset 不清零），供设备性能统计按刷新周期计数
+			// 成功提交批次数与最近一次的完成时刻（单调递增，Reset 不清零），供设备性能统计按刷新周期计数。
 			std::uint64_t completedUpdates = 0;
 			double lastUpdateMs = 0.0;
 
@@ -561,7 +577,7 @@ namespace Inkeys::Drawing::Draw3
 			void ClearAccumulated() noexcept
 			{
 				hasAccumulated = false;
-				accumulatedDirty = {};
+				accumulatedDirty.Clear();
 				accumulatedSinceMs = 0.0;
 			}
 
@@ -574,18 +590,19 @@ namespace Inkeys::Drawing::Draw3
 				planner.ForgetLastCommit();
 			}
 
-			void Fail(const char* stage, RECT dirty, bool presentFull, DWORD error = ERROR_SUCCESS, HRESULT hresult = S_OK)
+			void Fail(const char* stage, RECT dirty, bool presentFull, DWORD error = ERROR_SUCCESS,
+				HRESULT hresult = S_OK, const UlwBatchStats& batch = {})
 			{
 				if (presentFailureLogged) return;
 				DiagnosticOutput::Line(DiagnosticOutput::OutError) << "[Draw3Diag][ulw] stage=" << stage
 					<< " result=failed hresult=0x" << std::hex
 					<< static_cast<unsigned long>(hresult) << std::dec << std::endl;
-				LogPresentEvent("failure", dirty, presentFull, error, hresult);
+				LogPresentEvent("failure", dirty, presentFull, error, hresult, batch);
 				presentFailureLogged = true;
 			}
 
 			void LogPresentEvent(const char* eventName, RECT dirty, bool presentFull,
-				DWORD error = ERROR_SUCCESS, HRESULT hresult = S_OK)
+				DWORD error = ERROR_SUCCESS, HRESULT hresult = S_OK, const UlwBatchStats& batch = {})
 			{
 				if (!eventName) return;
 				RECT windowRect = {};
@@ -622,13 +639,16 @@ namespace Inkeys::Drawing::Draw3
 					<< static_cast<unsigned>(lastBlend.AlphaFormat)
 					<< " hdcSrc=0x" << std::hex << reinterpret_cast<UINT_PTR>(memoryDC)
 					<< " flags=0x" << std::hex << lastUpdateFlags << std::dec
+					<< " ulwCalls=" << batch.calls << " committedArea=" << batch.committedArea
+					<< " copiedArea=" << batch.copiedArea
 					<< " hresult=0x" << std::hex << static_cast<unsigned long>(hresult)
 					<< std::dec << " error=" << error << std::endl;
 			}
 
 			void LogPixelDiagnostic(const UlwPixelDiagnostic& pixels, ULONGLONG tick,
 				RECT dirty, bool presentFull, BOOL updated, DWORD error,
-				double copyMapMs, double mapWaitMs, const char* point, ULONGLONG rowsMs, ULONGLONG ulwMs)
+				double copyMapMs, double mapWaitMs, const char* point, ULONGLONG rowsMs, ULONGLONG ulwMs,
+				const UlwBatchStats& batch)
 			{
 				// 仅 Draw3 调试开关开启时采样：写入日志 Draw3 通道。
 				DiagnosticOutput::Line line(DiagnosticOutput::Target{ DiagnosticOutput::Stream::Output, Inkeys::Log::Channel::Draw3 });
@@ -640,6 +660,8 @@ namespace Inkeys::Drawing::Draw3
 					<< " fullUpdateOverride=" << (forceFullUlwUpdate ? 1 : 0)
 					<< " copy_map_ms=" << copyMapMs << " map_wait_ms=" << mapWaitMs << " point=" << point
 					<< " rows_ms=" << rowsMs << " ulw_ms=" << ulwMs
+					<< " ulwCalls=" << batch.calls << " committedArea=" << batch.committedArea
+					<< " copiedArea=" << batch.copiedArea
 					<< " api=" << (updated ? "success" : "failed") << " error=" << error
 					<< " underlay=" << (applyPrimaryHitUnderlay ? 1 : 0) << " pixels=" << pixels.pixelCount;
 				const auto writeStatistics = [&](const char* name, const UlwPixelStatistics& stats)
@@ -710,6 +732,7 @@ namespace Inkeys::Drawing::Draw3
 				window = nullptr;
 				committedFullFrameClean = false;
 				lastObservation = {};
+				lastCommittedRectCount = 0;
 				presentSuccessLogged = false;
 				presentFailureLogged = false;
 				pixelDiagnosticLogged = false;
@@ -850,24 +873,24 @@ namespace Inkeys::Drawing::Draw3
 			enum class FramePrepare : std::uint8_t { Failed, Ready };
 
 			// 校验资源、按需重建 Staging/DIB 并裁剪脏区。Resize 可与本帧交错：范围同时受最终纹理、Staging 和 DIB 限制。
-			FramePrepare PrepareFrame(ID3D11Texture2D* finalTexture, RECT& dirty, bool& presentFull, bool dualSlot, RECT& copyBounds)
+			FramePrepare PrepareFrame(ID3D11Texture2D* finalTexture, DirtyRegion& region, bool& presentFull, bool dualSlot, RECT& copyBounds)
 			{
 				if (!context || !device || !finalTexture)
 				{
-					Fail("resource", dirty, presentFull);
+					Fail("resource", region.Bounds(), presentFull);
 					return FramePrepare::Failed;
 				}
 				D3D11_TEXTURE2D_DESC finalDescription = {};
 				finalTexture->GetDesc(&finalDescription);
 				if (!EnsureStagingSlots(finalDescription.Width, finalDescription.Height, dualSlot))
 				{
-					Fail("staging", dirty, presentFull);
+					Fail("staging", region.Bounds(), presentFull);
 					return FramePrepare::Failed;
 				}
 				if (!EnsureWindowDib())
 				{
 					const DWORD error = GetLastError();
-					Fail("window-dib", dirty, presentFull, error,
+					Fail("window-dib", region.Bounds(), presentFull, error,
 						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
 					return FramePrepare::Failed;
 				}
@@ -875,18 +898,26 @@ namespace Inkeys::Drawing::Draw3
 				if (needsFullReadback) presentFull = true;
 				finalTextureWidth = finalDescription.Width;
 				finalTextureHeight = finalDescription.Height;
-				const LONG copyWidth = std::min({ static_cast<LONG>(stagingWidth), static_cast<LONG>(dibWidth),
+				const LONG copyWidth = (std::min)({ static_cast<LONG>(stagingWidth), static_cast<LONG>(dibWidth),
 					static_cast<LONG>(finalDescription.Width) });
-				const LONG copyHeight = std::min({ static_cast<LONG>(stagingHeight), static_cast<LONG>(dibHeight),
+				const LONG copyHeight = (std::min)({ static_cast<LONG>(stagingHeight), static_cast<LONG>(dibHeight),
 					static_cast<LONG>(finalDescription.Height) });
 				if (copyWidth <= 0 || copyHeight <= 0)
 				{
-					Fail("empty-size", dirty, presentFull);
+					Fail("empty-size", region.Bounds(), presentFull);
 					return FramePrepare::Failed;
 				}
 				copyBounds = RECT{ 0, 0, copyWidth, copyHeight };
-				if (presentFull) dirty = copyBounds; // 全量呈现时忽略传入脏区。
-				dirty = ClipUlwRect(dirty, copyBounds);
+				if (presentFull)
+				{
+					region.Clear();
+					region.Add(copyBounds);
+				}
+				else
+				{
+					region.ClipTo(copyWidth, copyHeight);
+					region.Normalize(kReadbackDirtyCost);
+				}
 				return FramePrepare::Ready;
 			}
 
@@ -900,14 +931,18 @@ namespace Inkeys::Drawing::Draw3
 				presentFailureLogged = false;
 			}
 
-			void IssueCopy(ID3D11Texture2D* finalTexture, int slot, RECT dirty) noexcept
+			void IssueCopy(ID3D11Texture2D* finalTexture, const Commit& commit) noexcept
 			{
-				const D3D11_BOX sourceRegion = {
-					static_cast<UINT>(dirty.left), static_cast<UINT>(dirty.top), 0,
-					static_cast<UINT>(dirty.right), static_cast<UINT>(dirty.bottom), 1
-				};
-				context->CopySubresourceRegion(SlotTexture(slot), 0, static_cast<UINT>(dirty.left),
-					static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion); // 只把脏区从最终纹理拷到可读纹理。
+				ID3D11Texture2D* staging = SlotTexture(commit.slot);
+				for (const RECT& dirty : commit.region.Rects())
+				{
+					const D3D11_BOX sourceRegion = {
+						static_cast<UINT>(dirty.left), static_cast<UINT>(dirty.top), 0,
+						static_cast<UINT>(dirty.right), static_cast<UINT>(dirty.bottom), 1
+					};
+					context->CopySubresourceRegion(staging, 0, static_cast<UINT>(dirty.left),
+						static_cast<UINT>(dirty.top), 0, finalTexture, 0, &sourceRegion);
+				}
 			}
 
 			static const char* CompletionPointName(CompletionPoint point) noexcept
@@ -925,10 +960,12 @@ namespace Inkeys::Drawing::Draw3
 
 			// 读回 slot 中的脏区，逐行复制到 DIB 并调用 UpdateLayeredWindowIndirect。
 			// wait=false 只探测一次（DO_NOT_WAIT）：GPU 未完成时返回 notReady，什么也不做；不轮询、不自旋。
-			Completion CompleteCommit(int slot, RECT dirty, bool presentFull, bool wait, CompletionPoint point, double issuedMs)
+			Completion CompleteCommit(const Commit& commit, bool wait, CompletionPoint point)
 			{
 				Completion completion;
-				ID3D11Texture2D* staging = SlotTexture(slot);
+				const RECT dirty = commit.region.Bounds();
+				const bool presentFull = commit.presentFull;
+				ID3D11Texture2D* staging = SlotTexture(commit.slot);
 				if (!staging)
 				{
 					completion.ok = false;
@@ -969,15 +1006,25 @@ namespace Inkeys::Drawing::Draw3
 				if (inspectPixels) pixels.emplace();
 				const auto copyRows = [&]<bool InspectPixels>()
 				{
-					return CopyAndInspectUlwDirtyRows<InspectPixels>(
-						static_cast<const BYTE*>(mapped.pData), mapped.RowPitch,
-						static_cast<BYTE*>(dibBits), dibWidth, dibHeight, dirty, presentFull,
-						applyPrimaryHitUnderlay, [&] { context->Unmap(staging, 0); },
-						InspectPixels ? &*pixels : nullptr);
+					UlwDirtyCopyResult result;
+					result.fullFrameAllZeroAlpha = presentFull;
+					// 只能从本槽已拷出的区域读回；提交用的外接矩形可能含有旧的 staging 像素。
+					for (const RECT& rect : commit.region.Rects())
+					{
+						const UlwDirtyCopyResult copied = CopyAndInspectUlwDirtyRows<InspectPixels>(
+							static_cast<const BYTE*>(mapped.pData), mapped.RowPitch,
+							static_cast<BYTE*>(dibBits), dibWidth, dibHeight, rect, presentFull,
+							applyPrimaryHitUnderlay, [] {}, InspectPixels ? &*pixels : nullptr);
+						result.allZeroAlpha = result.allZeroAlpha && copied.allZeroAlpha;
+						result.premultipliedAlphaValid = result.premultipliedAlphaValid && copied.premultipliedAlphaValid;
+						result.fullFrameAllZeroAlpha = result.fullFrameAllZeroAlpha && copied.fullFrameAllZeroAlpha;
+					}
+					return result;
 				};
 				// 非采样帧使用单遍 SIMD 实例，不执行任何诊断像素统计；采样帧走标量诊断实例。
 				const UlwDirtyCopyResult copyResult = inspectPixels ?
 					copyRows.operator()<true>() : copyRows.operator()<false>();
+				context->Unmap(staging, 0);
 				const double rowsFinishedMs = QpcMilliseconds();
 				completion.rowsMs = rowsFinishedMs - mappedMs;
 				const ULONGLONG rowsFinishedTick = inspectPixels ? GetTickCount64() : 0;
@@ -992,13 +1039,17 @@ namespace Inkeys::Drawing::Draw3
 				lastObservation.updatedRegionAllZeroAlpha = copyResult.allZeroAlpha;
 				lastObservation.fullFrameAllZeroAlpha = copyResult.fullFrameAllZeroAlpha;
 
+				UlwBatchStats batch;
+				batch.copiedArea = static_cast<std::uint64_t>(commit.region.Area());
+				pipelineSummary.copiedArea += batch.copiedArea;
+
 				RECT windowRect = {};
 				if (!GetWindowRect(window, &windowRect))
 				{
 					const DWORD error = GetLastError();
 					completion.ok = false;
 					Fail("window-rect", dirty, presentFull, error,
-						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
+						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL, batch);
 					return completion;
 				}
 				POINT destinationPoint = { windowRect.left, windowRect.top };
@@ -1018,27 +1069,56 @@ namespace Inkeys::Drawing::Draw3
 				update.pptSrc = &sourcePoint;
 				update.pblend = &blend;
 				update.dwFlags = ULW_ALPHA;
-				update.prcDirty = presentFull || forceFullUlwUpdate ? nullptr : &dirty;
+				const bool fullUpdate = presentFull || forceFullUlwUpdate;
+				const RECT fullDib{ 0, 0, dibWidth, dibHeight };
+				std::span<const RECT> commitRects(fullUpdate ? &fullDib : &dirty, 1);
+				DirtyRegion commitRegion;
+				if (!fullUpdate && commit.multiStepCommit && commit.region.Rects().size() > 1)
+				{
+					// USER32 只读取持久 DIB，可以为了减少调用而扩大提交区。
+					commitRegion = commit.region;
+					commitRegion.Normalize(kUlwCommitDirtyCost);
+					commitRects = commitRegion.Rects();
+				}
+
+				if (testCommitRects) testCommitRects->Clear();
+				BOOL updated = FALSE;
+				DWORD error = ERROR_SUCCESS;
 				const ULONGLONG ulwStartedTick = inspectPixels ? GetTickCount64() : 0;
-				const BOOL updated = UpdateLayeredWindowIndirect(window, &update);
-				const DWORD error = updated ? ERROR_SUCCESS : GetLastError(); // 日志前锁存本次 API 错误。
+				for (const RECT& rect : commitRects)
+				{
+					update.prcDirty = fullUpdate ? nullptr : &rect;
+					if (testCommitRects) testCommitRects->Add(rect);
+					++batch.calls;
+					updated = UpdateLayeredWindowIndirect(window, &update);
+					if (!updated)
+					{
+						error = GetLastError(); // 日志前锁存本次 API 错误。
+						break;
+					}
+					batch.committedArea += static_cast<std::uint64_t>(rect.right - rect.left) *
+						static_cast<std::uint64_t>(rect.bottom - rect.top);
+				}
 				const double ulwFinishedMs = QpcMilliseconds();
+				pipelineSummary.ulwCalls += batch.calls;
+				pipelineSummary.committedArea += batch.committedArea;
 				completion.ulwMs = ulwFinishedMs - rowsFinishedMs;
 				if (inspectPixels) LogPixelDiagnostic(*pixels, diagnosticTick, dirty, presentFull, updated, error,
-					mappedMs - issuedMs, completion.mapWaitMs, CompletionPointName(point),
-					rowsFinishedTick - diagnosticTick, GetTickCount64() - ulwStartedTick);
+					mappedMs - commit.issuedMs, completion.mapWaitMs, CompletionPointName(point),
+					rowsFinishedTick - diagnosticTick, GetTickCount64() - ulwStartedTick, batch);
 				if (!updated)
 				{
 					completion.ok = false;
 					Fail("UpdateLayeredWindowIndirect", dirty, presentFull, error,
-						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL);
+						error != ERROR_SUCCESS ? HRESULT_FROM_WIN32(error) : E_FAIL, batch);
 					return completion;
 				}
 				++completedUpdates;
+				lastCommittedRectCount = batch.calls;
 				lastUpdateMs = ulwFinishedMs;
 				if (!presentSuccessLogged || presentFailureLogged)
 				{
-					LogPresentEvent(presentFailureLogged ? "recovery" : "success", dirty, presentFull);
+					LogPresentEvent(presentFailureLogged ? "recovery" : "success", dirty, presentFull, ERROR_SUCCESS, S_OK, batch);
 					presentSuccessLogged = true;
 				}
 				needsFullReadback = false;
@@ -1048,23 +1128,31 @@ namespace Inkeys::Drawing::Draw3
 				return completion;
 			}
 
-			// 同步读回（辅助输出、异步关闭或熔断）：保持原流程，单 Staging，拷贝后阻塞 Map，每帧提交。
 			bool Present(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull)
+			{
+				DirtyRegion region;
+				region.Add(dirty);
+				return PresentSync(finalTexture, region, presentFull);
+			}
+
+			// 同步读回（辅助输出、异步关闭或熔断）：单 Staging，拷贝后阻塞 Map，每帧提交。
+			bool PresentSync(ID3D11Texture2D* finalTexture, DirtyRegion region, bool presentFull)
 			{
 				lastObservation = {};
 				lastObservation.ulw = true;
 				lastObservation.usedDirtyRect = !presentFull && !forceFullUlwUpdate;
 				RECT copyBounds = {};
-				if (PrepareFrame(finalTexture, dirty, presentFull, false, copyBounds) == FramePrepare::Failed) return false;
+				if (PrepareFrame(finalTexture, region, presentFull, false, copyBounds) == FramePrepare::Failed) return false;
 				lastObservation.usedDirtyRect = !presentFull && !forceFullUlwUpdate;
-				if (IsEmptyUlwRect(dirty))
+				if (region.Empty())
 				{
-					LogEmptySuccess(dirty, presentFull);
+					LogEmptySuccess(region.Bounds(), presentFull);
 					return true;
 				}
-				const double issuedMs = QpcMilliseconds();
-				IssueCopy(finalTexture, 0, dirty);
-				return CompleteCommit(0, dirty, presentFull, true, CompletionPoint::Sync, issuedMs).ok;
+				const Commit issued{ true, 0, region, presentFull,
+					multiStepCommitEnabled.load(std::memory_order_relaxed), QpcMilliseconds() };
+				IssueCopy(finalTexture, issued);
+				return CompleteCommit(issued, true, CompletionPoint::Sync).ok;
 			}
 
 			// 完成待完成提交；wait=false 只探测一次。完成（成功或失败）后清除 pending，失败时下一次整帧读回。
@@ -1073,8 +1161,7 @@ namespace Inkeys::Drawing::Draw3
 			Completion CompletePending(bool wait, CompletionPoint point, bool measureCommit = false)
 			{
 				if (!pending.active) return {};
-				const Completion completion = CompleteCommit(pending.slot, pending.dirty, pending.presentFull,
-					wait, point, pending.issuedMs);
+				const Completion completion = CompleteCommit(pending, wait, point);
 				if (completion.notReady) return completion;
 				const Commit done = pending;
 				pending = {};
@@ -1117,14 +1204,15 @@ namespace Inkeys::Drawing::Draw3
 
 			// 拷出一次提交：入队拷贝并 Flush（否则命令可能留在缓冲区，帧开头探测永远不就绪）；
 			// 上一次提交仍待完成时先阻塞完成它（C2 背压：DIB 按顺序写入，CPU 最多领先一帧）；completeNow 时立即完成本次。
-			IssueResult IssueCommit(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull, double contentMs,
+			IssueResult IssueCommit(ID3D11Texture2D* finalTexture, const DirtyRegion& region, bool presentFull, double contentMs,
 				double deadlineMs, bool completeNow, CompletionPoint completePoint, double nowMs, double refreshMs, bool forced)
 			{
 				IssueResult result;
 				const int slot = pending.active ? (pending.slot ^ 1) : 0;
-				IssueCopy(finalTexture, slot, dirty);
+				const Commit issued{ true, slot, region, presentFull,
+					multiStepCommitEnabled.load(std::memory_order_relaxed), nowMs, contentMs, deadlineMs };
+				IssueCopy(finalTexture, issued);
 				context->Flush();
-				const Commit issued{ true, slot, dirty, presentFull, nowMs, contentMs, deadlineMs };
 				ClearAccumulated();
 				planner.OnCommitIssued(nowMs, deadlineMs, refreshMs, forced);
 				if (pending.active)
@@ -1153,44 +1241,45 @@ namespace Inkeys::Drawing::Draw3
 
 			// 异步读回的 Present（主画布）：本帧照常画进纹理后，先判定是否拷出（节流/对齐），再拷贝入队、背压、按模式完成。
 			// 返回成功 = 本帧已进入提交流程且此前完成的提交都成功（与 DComp Present1 同口径：已提交，不等于已上屏）。
-			bool PresentAsync(ID3D11Texture2D* finalTexture, RECT dirty, bool presentFull,
+			bool PresentAsync(ID3D11Texture2D* finalTexture, DirtyRegion region, bool presentFull,
 				const UlwFrameTiming& timing, double& waitedMs)
 			{
 				lastObservation = {};
 				lastObservation.ulw = true;
 				RECT copyBounds = {};
-				if (PrepareFrame(finalTexture, dirty, presentFull, true, copyBounds) == FramePrepare::Failed) return false;
+				if (PrepareFrame(finalTexture, region, presentFull, true, copyBounds) == FramePrepare::Failed) return false;
+				double contentMs = timing.nowMs;
+				if (hasAccumulated && !presentFull)
+				{
+					DirtyRegion clippedAccumulated = accumulatedDirty;
+					clippedAccumulated.ClipTo(copyBounds.right, copyBounds.bottom);
+					region.Add(clippedAccumulated);
+					region.Normalize(kReadbackDirtyCost);
+					contentMs = accumulatedSinceMs;
+				}
 				if (asyncFused)
 				{
 					// 熔断（第二个槽建不出来等）：先完成残留提交，再把累计脏区并入本帧走同步路径。
 					const Completion previous = CompletePending(true, CompletionPoint::Present);
 					waitedMs += previous.mapWaitMs;
 					if (!previous.ok) return false;
-					if (hasAccumulated && !presentFull) dirty = UnionUlwRect(dirty, ClipUlwRect(accumulatedDirty, copyBounds));
 					ClearAccumulated();
 					stagingTextureAlt.Reset(); // 同步路径只用一个槽，释放第二个槽的显存
-					return Present(finalTexture, dirty, presentFull);
+					return PresentSync(finalTexture, region, presentFull);
 				}
-				RECT merged = dirty;
-				double contentMs = timing.nowMs;
 				if (presentFull) ClearAccumulated();
-				else if (hasAccumulated)
+				if (region.Empty())
 				{
-					merged = UnionUlwRect(merged, ClipUlwRect(accumulatedDirty, copyBounds));
-					contentMs = accumulatedSinceMs;
-				}
-				if (IsEmptyUlwRect(merged))
-				{
-					LogEmptySuccess(merged, presentFull);
+					LogEmptySuccess(region.Bounds(), presentFull);
 					return true;
 				}
 				UlwCommitDecision decision = planner.Decide(timing.nowMs, timing.frameIntervalMs, timing.refreshMs,
 					timing.aligned, *timing.clock);
 				if (!presentFull && !decision.commit)
 				{
-					// 本帧照常画进纹理，只把脏区并入累计矩形，留给本周期最后赶得上的一帧（或进入空闲前）一起读回。
+					// 本帧照常画进纹理，只把脏区并入累计区域，留给本周期最后赶得上的一帧（或进入空闲前）一起读回。
 					if (!hasAccumulated) accumulatedSinceMs = timing.nowMs;
-					accumulatedDirty = merged;
+					accumulatedDirty = region;
 					hasAccumulated = true;
 					++pipelineSummary.skipped;
 					return true;
@@ -1198,7 +1287,7 @@ namespace Inkeys::Drawing::Draw3
 				if (timing.frameStartMs > 0.0) planner.OnFrameWorkMeasured(timing.nowMs - timing.frameStartMs);
 				// 整帧（Resize、恢复、输出交接、清屏等）不延后：调用方依赖它立即上屏。
 				const bool completeNow = presentFull || pacing.ShouldCompleteAtFrameEnd(false, timing.nowMs);
-				const IssueResult issued = IssueCommit(finalTexture, merged, presentFull, contentMs,
+				const IssueResult issued = IssueCommit(finalTexture, region, presentFull, contentMs,
 					decision.deadlineMs, completeNow, CompletionPoint::Present, timing.nowMs, timing.refreshMs, presentFull);
 				waitedMs += issued.waitedMs;
 				if (!issued.ok) return false;
@@ -1292,7 +1381,9 @@ namespace Inkeys::Drawing::Draw3
 					<< " commitLagAvgMs=" << (commits ? summary.lagSumMs / commits : 0.0)
 					<< " commitLagMaxMs=" << summary.lagMaxMs
 					<< " rowsAvgMs=" << (commits ? summary.rowsSumMs / commits : 0.0)
-					<< " ulwAvgMs=" << (commits ? summary.ulwSumMs / commits : 0.0) << std::endl;
+					<< " ulwAvgMs=" << (commits ? summary.ulwSumMs / commits : 0.0)
+					<< " ulwCalls=" << summary.ulwCalls << " committedArea=" << summary.committedArea
+					<< " copiedArea=" << summary.copiedArea << std::endl;
 				if (aligned || summary.alignedCommits)
 					DiagnosticOutput::Line() << "[Draw3Diag][ulw-align] aligned=" << summary.alignedCommits
 						<< " periodMs=" << periodMs << " marginMs=" << kCompositionDeadlineMarginMs
@@ -2147,19 +2238,15 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		}
 
-		HRESULT PresentSwapChain(RECT dirty, bool presentFull)
+		HRESULT PresentSwapChain(std::span<RECT> dirtyRects, bool presentFull, UINT& dirtyRectCount)
 		{
 			if (!swapChain) return E_FAIL;
 			DXGI_PRESENT_PARAMETERS parameters = {};
 			if (!presentFull)
 			{
-				dirty.left = std::max(0L, dirty.left);
-				dirty.top = std::max(0L, dirty.top);
-				dirty.right = std::min(static_cast<LONG>(width), dirty.right);
-				dirty.bottom = std::min(static_cast<LONG>(height), dirty.bottom);
-				if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) return S_OK;
-				parameters.DirtyRectsCount = 1;
-				parameters.pDirtyRects = &dirty;
+				if (dirtyRects.empty()) return S_OK;
+				parameters.DirtyRectsCount = static_cast<UINT>(dirtyRects.size());
+				parameters.pDirtyRects = dirtyRects.data();
 			}
 			// 帧循环外的呈现（清屏、整帧等）没有令牌时先补等一次，不绕过排队上限；超时照常 Present。
 			if (frameLatencyWaitHandle && frameLatencyGate.NeedsWaitBeforePresent())
@@ -2176,6 +2263,7 @@ namespace Inkeys::Drawing::Draw3
 					presentLatencyWait.timedOut = true;
 				}
 			}
+			dirtyRectCount = presentFull ? 1u : parameters.DirtyRectsCount;
 			const HRESULT result = swapChain->Present1(0, 0, &parameters);
 			// 只有实际调用且成功的 Present1 才消耗令牌；上面的空矩形早退不算。
 			frameLatencyGate.OnPresentCalled(SUCCEEDED(result));
@@ -2532,31 +2620,60 @@ namespace Inkeys::Drawing::Draw3
 	bool TransparentPresentationController::Present(
 		RECT dirty, bool presentFull, std::uint64_t contentRevision)
 	{
+		return Present(std::span<const RECT>(&dirty, 1), presentFull, contentRevision);
+	}
+
+	bool TransparentPresentationController::Present(
+		std::span<const RECT> dirtyRects, bool presentFull, std::uint64_t contentRevision)
+	{
+		const RECT surfaceBounds{ 0, 0, static_cast<LONG>(impl_->width), static_cast<LONG>(impl_->height) };
+		std::array<RECT, 16> clippedRects;
+		size_t clippedCount = 0;
+		RECT dirtyBounds = {};
+		for (const RECT& rect : dirtyRects)
+		{
+			const RECT clipped = ClipUlwRect(rect, surfaceBounds);
+			if (IsEmptyUlwRect(clipped)) continue;
+			dirtyBounds = UnionUlwRect(dirtyBounds, clipped);
+			if (clippedCount < clippedRects.size()) clippedRects[clippedCount] = clipped;
+			++clippedCount;
+		}
 		bool succeeded = false;
 		const TransparentOutputTarget target = impl_->requestedOutputTarget;
 		if (target == TransparentOutputTarget::SelectionUlw)
 		{
 			succeeded = impl_->selectionUlwPresenter.Present(
-				impl_->renderer->backBufferTexture.Get(), dirty, presentFull);
+				impl_->renderer->backBufferTexture.Get(), dirtyBounds, presentFull);
 			impl_->lastObservation = impl_->selectionUlwPresenter.lastObservation;
 			if (!succeeded) impl_->SetFailure(E_FAIL);
 		}
 		else if (IsUlwMode(impl_->activeMode))
 		{
 			UlwDirtyRectPresenter& presenter = impl_->primaryUlwPresenter;
+			DirtyRegion region;
+			if (clippedCount > clippedRects.size())
+			{
+				// 超过裁剪缓冲区容量时仍须覆盖全部输入。
+				region.Add(dirtyBounds);
+			}
+			else
+			{
+				for (const RECT& rect : std::span<const RECT>(clippedRects.data(), clippedCount))
+					region.Add(rect);
+			}
 			// 熔断后残留的待完成提交/累计脏区仍经异步入口收尾（内部改走同步），不能被同步路径跳过。
 			if (impl_->UlwAsyncActive() || presenter.pending.active || presenter.hasAccumulated)
 			{
 				// 异步读回：Present 内的背压与即时完成的阻塞 Map 经帧外补等通道计入等待（design §5.7）。
 				const UlwFrameTiming timing = impl_->MakeUlwTiming(QpcMilliseconds());
 				double waitedMs = 0.0;
-				succeeded = presenter.PresentAsync(impl_->renderer->backBufferTexture.Get(), dirty, presentFull, timing, waitedMs);
+				succeeded = presenter.PresentAsync(impl_->renderer->backBufferTexture.Get(), region, presentFull, timing, waitedMs);
 				impl_->presentLatencyWait.waitedMs += waitedMs;
 				impl_->SyncUlwFuse();
 				presenter.MaybeLogPipelineSummary(timing.nowMs, timing.refreshMs, timing.aligned);
 			}
-			else succeeded = presenter.Present(
-				impl_->renderer->backBufferTexture.Get(), dirty, presentFull); // ULW 需要 CPU 读回并调用 UpdateLayeredWindow。
+			else succeeded = presenter.PresentSync(
+				impl_->renderer->backBufferTexture.Get(), region, presentFull); // ULW 需要 CPU 读回并调用 UpdateLayeredWindow。
 			impl_->lastObservation = presenter.lastObservation;
 			if (succeeded) impl_->dcompHandoffBarrier.Cancel();
 			else impl_->SetFailure(E_FAIL);
@@ -2564,7 +2681,15 @@ namespace Inkeys::Drawing::Draw3
 		else
 		{
 			const char* submitStage = "IDXGISwapChain1::Present1";
-			HRESULT result = impl_->PresentSwapChain(dirty, presentFull); // GPU 路径直接 Present1，DWM 读取 alpha。
+			if (clippedCount > clippedRects.size())
+			{
+				// 帧循环已在合成前折叠超限区域；其他调用方也必须已合成外接矩形。
+				clippedRects[0] = dirtyBounds;
+				clippedCount = 1;
+			}
+			UINT dirtyRectCount = 0;
+			HRESULT result = impl_->PresentSwapChain(std::span<RECT>(clippedRects.data(), clippedCount),
+				presentFull, dirtyRectCount); // GPU 路径直接 Present1，DWM 读取 alpha。
 			impl_->lastSwapChainPresent = result; // 隐藏准备仍接受 OCCLUDED，显示后须核对原始结果。
 			if (impl_->dcompHandoffBarrier.Consume(
 				IsGpuMode(impl_->activeMode), presentFull,
@@ -2587,6 +2712,8 @@ namespace Inkeys::Drawing::Draw3
 			}
 			succeeded = SUCCEEDED(result);
 			impl_->lastObservation = {};
+			impl_->lastObservation.usedDirtyRect = !presentFull && dirtyRectCount != 0;
+			impl_->lastObservation.dirtyRectCount = dirtyRectCount;
 			if (!succeeded || impl_->presentFailureLogged || !impl_->presentSuccessLogged ||
 				impl_->lastLoggedOutputTarget != target)
 			{
@@ -2601,8 +2728,9 @@ namespace Inkeys::Drawing::Draw3
 							? "DrawpadPresentation" : "Drawpad")
 						<< " hwnd=0x" << std::hex << reinterpret_cast<UINT_PTR>(impl_->primaryWindow)
 						<< " size=" << std::dec << impl_->width << "x" << impl_->height
-						<< " dirty=(" << dirty.left << "," << dirty.top << ","
-						<< dirty.right << "," << dirty.bottom << ")"
+						<< " dirty=(" << dirtyBounds.left << "," << dirtyBounds.top << ","
+						<< dirtyBounds.right << "," << dirtyBounds.bottom << ")"
+						<< " dirtyRectCount=" << dirtyRectCount
 						<< " full=" << (presentFull ? 1 : 0)
 						<< " result=0x" << std::hex << static_cast<unsigned long>(result)
 						<< std::dec << std::endl;
@@ -2615,6 +2743,8 @@ namespace Inkeys::Drawing::Draw3
 				impl_->SetFailure(result);
 			}
 		}
+		if (target == TransparentOutputTarget::SelectionUlw) impl_->lastObservation.dirtyRectCount = 1;
+		impl_->lastObservation.dirtyBounds = dirtyBounds;
 		impl_->lastObservation.outputTarget = target;
 		impl_->lastObservation.outputRevision = impl_->requestedOutputRevision;
 		impl_->lastObservation.presentedContentRevision = contentRevision;
@@ -2723,6 +2853,11 @@ namespace Inkeys::Drawing::Draw3
 		impl_->RefreshUlwCompositionState("composition-changed"); // WM_DWMCOMPOSITIONCHANGED / DPI 变化
 		if (!succeeded) impl_->SetFailure(IsDwmBlurBehindMode(impl_->activeMode) ? impl_->fallbackResult : E_FAIL);
 		return succeeded;
+	}
+
+	void TransparentPresentationController::SetUlwMultiStepCommitEnabled(bool enabled) noexcept
+	{
+		impl_->primaryUlwPresenter.multiStepCommitEnabled.store(enabled, std::memory_order_relaxed);
 	}
 
 	UlwFrameReport TransparentPresentationController::BeginUlwFrame(double frameStartMs, double targetFrameMs)
@@ -2901,7 +3036,10 @@ namespace Inkeys::Drawing::Draw3
 
 	TransparentPresentObservation TransparentPresentationController::LastPresentObservation() const
 	{
-		return impl_->lastObservation;
+		TransparentPresentObservation observation = impl_->lastObservation;
+		if (observation.ulw && observation.outputTarget == TransparentOutputTarget::PrimaryDrawpad)
+			observation.dirtyRectCount = impl_->primaryUlwPresenter.lastCommittedRectCount;
+		return observation;
 	}
 
 	bool TransparentPresentationController::IsGpuTransparentComposition() const
@@ -3423,7 +3561,9 @@ namespace Inkeys::Drawing::Draw3
 					// C1 在本帧绘制之前：探测上一帧、到点拷出累计脏区。
 					if (frame % 5 == 4) ok = asyncPresenter.ServiceFrameStart(finalTexture.Get(), timing, waitedMs);
 					if (!full) drawFrame(dirty);
-					ok = ok && asyncPresenter.PresentAsync(finalTexture.Get(), dirty, full, timing, waitedMs);
+					DirtyRegion region;
+					region.Add(dirty);
+					ok = ok && asyncPresenter.PresentAsync(finalTexture.Get(), region, full, timing, waitedMs);
 					ok = ok && syncPresenter.Present(finalTexture.Get(), dirty, full);
 					// 帧尾（固定帧截止等待前，晚于 Present 约 0.6 帧）：累计脏区到点拷出。
 					if (frame % 3 == 2)
@@ -3472,6 +3612,149 @@ namespace Inkeys::Drawing::Draw3
 			runScenario("throttle_240", 1000.0 / 240.0, false, 80, false, true);
 			runScenario("pipelined_throttle_240", 1000.0 / 240.0, true, 80, false, true);
 			runScenario("pipelined_resize", 1000.0 / 60.0, true, 40, true, false);
+
+			// 小尺寸流水用例保留原样；扩大窗口后才能构造超过 ULW 合并阈值的间隔。
+			constexpr int regionWidth = 1024;
+			constexpr int regionHeight = 512;
+			constexpr UINT regionRowPitch = regionWidth * 4;
+			finalDescription.Width = regionWidth;
+			finalDescription.Height = regionHeight;
+			if (check(SetWindowPos(window, nullptr, 0, 0, regionWidth, regionHeight,
+				SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != FALSE, "multi-region window size") &&
+				check(SUCCEEDED(device->CreateTexture2D(&finalDescription, nullptr,
+					finalTexture.ReleaseAndGetAddressOf())), "multi-region final texture"))
+			{
+				constexpr RECT fullRect{ 0, 0, regionWidth, regionHeight };
+				constexpr std::array<RECT, 2> farRects{ RECT{ 8, 8, 24, 24 }, RECT{ 1000, 488, 1016, 504 } };
+				constexpr std::array<RECT, 1> farBounds{ RECT{ 8, 8, 1016, 504 } };
+				constexpr std::array<RECT, 2> overlapRects{ farRects[0], RECT{ 16, 8, 32, 24 } };
+				constexpr std::array<RECT, 1> overlapBounds{ RECT{ 8, 8, 32, 24 } };
+				constexpr std::array<RECT, 2> adjacentRects{ farRects[0], RECT{ 24, 8, 40, 24 } };
+				constexpr std::array<RECT, 1> adjacentBounds{ RECT{ 8, 8, 40, 24 } };
+				constexpr std::array<RECT, 2> commitMergeRects{ farRects[0], RECT{ 300, 200, 316, 216 } };
+				constexpr std::array<RECT, 1> commitMergeBounds{ RECT{ 8, 8, 316, 216 } };
+				constexpr std::array<RECT, 1> fullRects{ fullRect };
+				constexpr D3D11_BOX sentinelBox{ 128, 128, 0, 129, 129, 1 };
+				constexpr size_t sentinelOffset = sentinelBox.top * regionRowPitch + sentinelBox.left * 4;
+				constexpr DWORD initialPixel = 0xFF000000u;
+				constexpr DWORD retainedPixel = 0xFF00FF00u;
+				constexpr DWORD sentinelPixel = 0xFFFFFFFFu;
+				const std::vector<DWORD> initialPixels(static_cast<size_t>(regionWidth) * regionHeight, initialPixel);
+				const auto writeSentinel = [&](DWORD pixel)
+				{
+					context->UpdateSubresource(finalTexture.Get(), 0, &sentinelBox, &pixel, sizeof(pixel), 0);
+				};
+
+				for (const bool async : { false, true })
+				{
+					DirtyRegion actualCommits;
+					UlwDirtyRectPresenter presenter;
+					UlwDirtyRectPresenter reference;
+					presenter.diagnosticRole = reference.diagnosticRole = "SelfTest";
+					presenter.applyPrimaryHitUnderlay = reference.applyPrimaryHitUnderlay = true;
+					if (check(presenter.Initialize(window, device.Get(), context.Get(), regionWidth, regionHeight) &&
+						reference.Initialize(window, device.Get(), context.Get(), regionWidth, regionHeight) &&
+						presenter.dibWidth == regionWidth && presenter.dibHeight == regionHeight &&
+						reference.dibWidth == regionWidth && reference.dibHeight == regionHeight, "multi-region presenters"))
+					{
+						// 保证多步用例不受启动环境的整窗提交覆盖项影响。
+						presenter.forceFullUlwUpdate = false;
+						presenter.testCommitRects = &actualCommits;
+						const auto runCase = [&](const char* name, const std::array<RECT, 2>& dirtyRects,
+							std::span<const RECT> expectedCommits, std::uint64_t expectedCopiedArea,
+							bool multiStep, bool presentFull = false, bool skipFirst = false)
+						{
+							UlwFrameTiming timing;
+							timing.nowMs = 1000.0;
+							timing.frameIntervalMs = 4.0;
+							timing.refreshMs = 16.0;
+							timing.clock = &invalidClock;
+							double waitedMs = 0.0;
+							presenter.pacing.Reset();
+							for (int sample = 0; async && sample < 3; ++sample)
+								presenter.pacing.OnFrameMeasured(12.0, timing.frameIntervalMs, 4.0, timing.nowMs);
+							const auto submit = [&](const DirtyRegion& region, bool full)
+							{
+								return async ? presenter.PresentAsync(finalTexture.Get(), region, full, timing, waitedMs)
+									: presenter.PresentSync(finalTexture.Get(), region, full);
+							};
+							presenter.multiStepCommitEnabled.store(multiStep, std::memory_order_relaxed);
+							context->UpdateSubresource(finalTexture.Get(), 0, nullptr, initialPixels.data(), regionRowPitch, 0);
+							if (!check(submit({}, true), name)) return;
+							auto* const dib = static_cast<BYTE*>(presenter.dibBits);
+							// 让 DIB 哨兵区别于槽里的旧像素和纹理里的新像素，两种误读都能检出。
+							if (!presentFull) std::memcpy(dib + sentinelOffset, &retainedPixel, sizeof(retainedPixel));
+							const auto callsBefore = presenter.pipelineSummary.ulwCalls;
+							const auto copyAreaBefore = presenter.pipelineSummary.copiedArea;
+							const auto committedAreaBefore = presenter.pipelineSummary.committedArea;
+							const auto batchesBefore = presenter.completedUpdates;
+
+							// 开、关两组写入相同的像素；标记之外另外写入一个哨兵像素。
+							seed = 0x2468ACE1u;
+							drawFrame(dirtyRects[0]);
+							DirtyRegion region;
+							if (skipFirst)
+							{
+								DirtyRegion first;
+								first.Add(dirtyRects[0]);
+								timing.nowMs += 1.0;
+								if (!check(submit(first, false) && presenter.hasAccumulated && !presenter.pending.active &&
+									presenter.pipelineSummary.ulwCalls == callsBefore, "planner skipped first region")) return;
+							}
+							else region.Add(dirtyRects[0]);
+							drawFrame(dirtyRects[1]);
+							region.Add(dirtyRects[1]);
+							writeSentinel(sentinelPixel);
+							timing.nowMs = 1000.0 + 2.0 * timing.refreshMs;
+							if (!check(submit(region, presentFull), name)) return;
+							if (async && !presentFull)
+							{
+								check(presenter.pending.active && presenter.pipelineSummary.ulwCalls == callsBefore,
+									"multi-region batch deferred before changing flag");
+								presenter.multiStepCommitEnabled.store(!multiStep, std::memory_order_relaxed);
+								if (!check(presenter.CompleteBeforeIdle(finalTexture.Get(), timing.nowMs, waitedMs), name)) return;
+							}
+
+							check(presenter.pipelineSummary.ulwCalls - callsBefore == expectedCommits.size() &&
+								presenter.lastCommittedRectCount == expectedCommits.size() &&
+								presenter.completedUpdates - batchesBefore == 1, name);
+							check(actualCommits.Rects().size() == expectedCommits.size() &&
+								std::equal(actualCommits.Rects().begin(), actualCommits.Rects().end(), expectedCommits.begin(),
+									[](const RECT& actual, const RECT& expected) { return EqualRect(&actual, &expected) != FALSE; }),
+								"ULW committed expected rectangles in order");
+							std::uint64_t expectedCommittedArea = 0;
+							for (const RECT& rect : expectedCommits)
+								expectedCommittedArea += static_cast<std::uint64_t>(rect.right - rect.left) * (rect.bottom - rect.top);
+							check(presenter.pipelineSummary.copiedArea - copyAreaBefore == expectedCopiedArea &&
+								presenter.pipelineSummary.committedArea - committedAreaBefore == expectedCommittedArea,
+								"ULW copied and committed expected areas");
+
+							const DWORD expectedSentinel = presentFull ? sentinelPixel : retainedPixel;
+							check(std::memcmp(dib + sentinelOffset, &expectedSentinel, sizeof(expectedSentinel)) == 0,
+								"ULW DIB retained pixels outside partial copy");
+							// 局部呈现后复原未声明的哨兵，再与同一纹理的整帧读回逐字节比较。
+							if (!presentFull) writeSentinel(retainedPixel);
+							if (check(reference.Present(finalTexture.Get(), fullRect, true), "multi-region full reference"))
+								check(std::memcmp(dib, reference.dibBits, initialPixels.size() * sizeof(DWORD)) == 0,
+									"ULW multi-region DIB equals full reference");
+						};
+
+						runCase("far rects with multi-step enabled", farRects, farRects, 512, true);
+						runCase("far rects with multi-step disabled", farRects, farBounds, 512, false);
+						runCase("overlapping rects", overlapRects, overlapBounds, 24 * 16, true);
+						runCase("adjacent rects", adjacentRects, adjacentBounds, 32 * 16, true);
+						runCase("readback split and commit merged", commitMergeRects, commitMergeBounds, 512, true);
+						runCase("multi-region full present", farRects, fullRects, regionWidth * regionHeight, true, true);
+						if (async)
+						{
+							const std::array<RECT, 2> accumulatedCommits{ farRects[1], farRects[0] };
+							runCase("multi-region planner accumulation", farRects, accumulatedCommits, 512, true, false, true);
+						}
+					}
+					presenter.Reset();
+					reference.Reset();
+				}
+			}
 		}
 		catch (const std::exception& error)
 		{

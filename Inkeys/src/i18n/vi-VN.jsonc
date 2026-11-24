@@ -1144,6 +1144,11 @@
       {
         "N": "Đọc ngược bất đồng bộ ở chế độ UpdateLayeredWindow"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "Tổng hợp nhiều bước trong mỗi khung hình ở chế độ UpdateLayeredWindow",
+        "E": "Các thay đổi ở những vùng cách xa nhau trên màn hình được gửi riêng để giảm tải và độ trễ khi viết bằng nhiều ngón tay. Các vùng khác nhau có thể hiển thị lệch nhau một khung hình."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Không giới hạn chuyển động chuột theo tốc độ khung hình trang vẽ khi vẽ",

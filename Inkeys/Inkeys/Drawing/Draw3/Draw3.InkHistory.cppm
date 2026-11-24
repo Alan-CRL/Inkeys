@@ -11,6 +11,7 @@
 
 export module Inkeys.Drawing.Draw3.ink_history;
 
+import Inkeys.Drawing.Draw3.dirty_region;
 import Inkeys.Drawing.Draw3.ink_document;
 
 export namespace Inkeys::Drawing::Draw3
@@ -66,6 +67,9 @@ export namespace Inkeys::Drawing::Draw3
 	std::optional<StrokeTileFootprint> BuildStrokeTileFootprint(
 		const InkStroke& stroke,
 		std::optional<InkPixelBounds> visibleBounds = std::nullopt);
+	// 将撤回瓦片合并并裁成屏幕脏区，交由调用方按自身代价规整。
+	DirtyRegion BuildStrokeScreenRegion(std::span<const SignedTileCoordinate> undoTiles,
+		float viewportX, float viewportY, int canvasWidth, int canvasHeight);
 	std::optional<size_t> CountTilesCoveringPixelBounds(
 		InkPixelBounds bounds, uint32_t tileSize) noexcept;
 

@@ -324,6 +324,7 @@ namespace Inkeys::Drawing::Draw3
 		int frameRate = 120; // 仅在启动时选择画布模型参数组。
 		InputPreference inputPreference = InputPreference::Automatic;
 		bool largeScreenTouchMode = false;
+		bool enableUlwMultiStepCommit = true;
 	};
 
 	// 只供显式 hidden caller 读取 worker 事实，不加到普通帧/RuntimeSnapshot 热路。
@@ -498,6 +499,7 @@ namespace Inkeys::Drawing::Draw3
 		void SetLaserOptions(bool multiTouchEnabled, const CanvasParticleOptions& particles) noexcept;
 		void SetPalmEraserOptions(const PalmEraser::Settings& options);
 		PalmEraser::Settings PalmEraserOptions() const;
+		void SetUlwMultiStepCommitEnabled(bool enabled) noexcept;
 		// 画布调试：enabled 为设置开关，visual 为可视化模式；绘制 owner 应用，关闭时无额外开销。
 		void SetCanvasDebugOptions(bool enabled, bool visual) noexcept;
 		bool CanvasDebugEnabled() const noexcept;

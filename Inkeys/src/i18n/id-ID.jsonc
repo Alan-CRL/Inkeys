@@ -1144,6 +1144,11 @@
       {
         "N": "Pembacaan balik asinkron dalam mode UpdateLayeredWindow"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "Komposisi beberapa tahap per frame dalam mode UpdateLayeredWindow",
+        "E": "Perubahan di area layar yang berjauhan dikirim secara terpisah untuk mengurangi beban dan latensi saat menulis dengan banyak jari. Perubahan di tiap area dapat tampil dengan selisih satu frame."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Jangan batasi gerakan mouse ke laju bingkai kanvas saat menggambar",

@@ -1144,6 +1144,11 @@
       {
         "N": "Asynchroniczny odczyt zwrotny w trybie UpdateLayeredWindow"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "Wieloetapowe składanie klatki w trybie UpdateLayeredWindow",
+        "E": "Zmiany w odległych od siebie obszarach ekranu są przesyłane osobno, aby zmniejszyć obciążenie i opóźnienie podczas pisania wieloma palcami. Zmiany w różnych obszarach mogą pojawiać się z różnicą jednej klatki."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Nie ograniczaj ruchu myszy do liczby klatek płótna podczas rysowania",

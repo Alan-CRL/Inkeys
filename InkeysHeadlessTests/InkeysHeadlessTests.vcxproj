@@ -142,6 +142,13 @@
 	<ClCompile Include="..\Inkeys\Inkeys\Log\Log.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DirtyRegion.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DirtyRegion.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.InkDocument.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.InkDocument.cppm" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.InkHistory.cpp" />
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.InkHistory.cppm" />
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\shape_core.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cpp" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CanvasNavigation.cppm" />
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PenCursor.cpp" />
@@ -232,6 +239,7 @@
 	<ClCompile Include="speed_eraser_tests.cpp" />
 	<ClCompile Include="palm_eraser_tests.cpp" />
 	<ClCompile Include="canvas_debug_tests.cpp" />
+	<ClCompile Include="draw3_dirty_region_tests.cpp" />
 	<ClCompile Include="draw3_canvas_pan_tests.cpp" />
 	<ClCompile Include="draw3_frame_latency_gate_tests.cpp" />
 	<ClCompile Include="draw3_ulw_readback_pacing_tests.cpp" />
@@ -280,6 +288,7 @@
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.CursorSettings.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.EraserCursor.h" />
+	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.HighlighterNib.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.h" />
 	<ClInclude Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.TimerPeriod.h" />

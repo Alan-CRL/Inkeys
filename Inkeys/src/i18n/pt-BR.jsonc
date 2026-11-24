@@ -1144,6 +1144,11 @@
       {
         "N": "Leitura assíncrona no modo UpdateLayeredWindow"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "Composição em várias etapas por quadro no modo UpdateLayeredWindow",
+        "E": "As alterações em áreas distantes da tela são enviadas separadamente para reduzir a carga e a latência ao escrever com vários dedos. As atualizações de áreas diferentes podem aparecer com um quadro de diferença."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Não limitar o movimento do mouse à taxa de quadros do desenho ao desenhar",

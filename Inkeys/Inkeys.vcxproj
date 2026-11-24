@@ -529,6 +529,7 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Navigation.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Bridge.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CursorSettings.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HighlighterNib.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.EraserCursor.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PalmEraser.h" />
@@ -1147,6 +1148,10 @@
 	</ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cppm">
+      <CompileAs>CompileAsCppModule</CompileAs>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DirtyRegion.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DirtyRegion.cppm">
       <CompileAs>CompileAsCppModule</CompileAs>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp" />

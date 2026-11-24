@@ -2398,6 +2398,7 @@ SettingSessionCoroutine RunSettingSession()
 				bool EnableZhaoxinCompatibility = Inkeys::config.Experimental.Inkeys3.Draw3.EnableZhaoxinCompatibility;
 				bool EnableWaitableWait = Inkeys::config.Experimental.Inkeys3.Draw3.EnableWaitableWait;
 				bool EnableUlwAsyncReadback = Inkeys::config.Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback;
+				bool EnableUlwMultiStepCommit = Inkeys::config.Experimental.Inkeys3.Draw3.EnableUlwMultiStepCommit;
 				Inkeys::UI::Setting::StartupPreviewPreference StartupPreviewPreferenceState{
 					Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Enable };
 				bool TouchAreaConsoleOutput = Inkeys::config.Experimental.Inkeys3.ConsoleOutput.TouchArea;
@@ -4959,6 +4960,13 @@ SettingSessionCoroutine RunSettingSession()
 						nullptr, "\ue7f4", Experimental.Inkeys3.EnableUlwAsyncReadback, restartRequired.c_str(), nullptr, true))
 					{
 						Inkeys::config.Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback = Experimental.Inkeys3.EnableUlwAsyncReadback;
+						QueueConfigWrite();
+					}
+					if (Design::ToggleRow("##draw3-ulw-multi-step-commit", IA(I18nKey.SettingsUI.Performance.UlwMultiStepCommit.N).c_str(),
+						IA(I18nKey.SettingsUI.Performance.UlwMultiStepCommit.E).c_str(), "\ue7f4", Experimental.Inkeys3.EnableUlwMultiStepCommit))
+					{
+						Inkeys::config.Experimental.Inkeys3.Draw3.EnableUlwMultiStepCommit = Experimental.Inkeys3.EnableUlwMultiStepCommit;
+						SyncDraw3State();
 						QueueConfigWrite();
 					}
 					break;

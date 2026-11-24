@@ -1144,6 +1144,11 @@
       {
         "N": "Citire asincronă în modul UpdateLayeredWindow"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "Compunere în mai multe etape pe cadru în modul UpdateLayeredWindow",
+        "E": "Modificările din zone îndepărtate ale ecranului sunt trimise separat pentru a reduce sarcina și latența la scrierea cu mai multe degete. Actualizările din zone diferite se pot afișa cu un decalaj de un cadru."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Nu limita mișcarea mouse-ului la rata de cadre a pânzei în timpul desenării",

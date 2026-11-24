@@ -1144,6 +1144,11 @@
       {
         "N": "UpdateLayeredWindow 模式下异步读回"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "UpdateLayeredWindow 模式下一帧多步合成",
+        "E": "画面上相距较远的变化分别提交，降低多指书写时的负载和延迟；不同区域可能相差一帧显示。"
+      },
       "UnthrottledMouseMove":
       {
         "N": "绘制时鼠标移动不受画布帧率限制",

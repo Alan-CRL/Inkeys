@@ -1144,6 +1144,11 @@
       {
         "N": "UpdateLayeredWindow modunda eşzamansız geri okuma"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "UpdateLayeredWindow modunda kare başına çok adımlı birleştirme",
+        "E": "Ekranda birbirinden uzak alanlardaki değişiklikler ayrı ayrı gönderilir. Böylece birden çok parmakla yazarken yük ve gecikme azalır. Farklı alanlardaki değişiklikler bir kare farkla görünebilir."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Çizim sırasında fare hareketini tuval kare hızıyla sınırlama",

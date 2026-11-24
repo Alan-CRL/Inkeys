@@ -790,6 +790,16 @@ int RunConfigMetadataTests()
 			"fresh presentation setting defaults to automatic");
 		check(draw3.DcompCompositionAlign.load() && draw3.UlwCompositionAlign.load() && draw3.Win7DwmCompositionAlign.load(),
 			"missing composition alignment settings default to always");
+		check(draw3.EnableUlwMultiStepCommit.load(), "missing ULW multi-step commit setting defaults to enabled");
+		const auto presentationUpload = presentationConfig.GetUploadInfo();
+		draw3.EnableUlwMultiStepCommit = false;
+		check(presentationConfig.GetUploadInfo() == presentationUpload, "ULW multi-step commit setting is NoUpload");
+		check(presentationConfig.Write(), "write disabled ULW multi-step commit setting");
+		const auto savedMultiStepCommit = ReadJson(file)["Experimental"]["Inkeys3"]["Draw3"]["EnableUlwMultiStepCommit"];
+		draw3.EnableUlwMultiStepCommit = true;
+		check(savedMultiStepCommit.isBool() && !savedMultiStepCommit.asBool() &&
+			presentationConfig.ReadAll() && !draw3.EnableUlwMultiStepCommit.load(),
+			"disabled ULW multi-step commit round-trips under Experimental.Inkeys3.Draw3");
 		for (const bool dcomp : { false, true })
 		{
 			for (const bool ulw : { false, true })

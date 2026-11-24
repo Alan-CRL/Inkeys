@@ -1328,6 +1328,7 @@ namespace Inkeys::Drawing::Draw3
 				impl_->undoPages[tile.slot.page].texture.Get(), sourceSubresource,
 				&sourceBox);
 			UnionRectLocal(result.dirty, tile.screenRect);
+			result.region.Add(tile.screenRect);
 		}
 
 		impl_->undoPlanner.Consume(entryId);
@@ -1509,7 +1510,9 @@ namespace Inkeys::Drawing::Draw3
 					request.canvasWidth, request.canvasHeight) ||
 					!replayRequestedRangeDirect(tile))
 				{
+					// 清除或回放可能已写入部分像素，失败也要上报尝试过的瓦片。
 					UnionRectLocal(result.dirty, tileDirty);
+					result.region.Add(tileDirty);
 					result.path = CompositionRestorePath::Failed;
 					impl_->FinishHistoryOperation(
 						request.canvasWidth, request.canvasHeight);
@@ -1517,6 +1520,7 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 			UnionRectLocal(result.dirty, tileDirty);
+			result.region.Add(tileDirty);
 			++result.tileCount;
 		}
 

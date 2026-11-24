@@ -275,6 +275,52 @@ export namespace Inkeys::Drawing::Draw3::CanvasDebug
 		int labelTileHeight_ = 0;
 	};
 
+	// 帧脏区统计（阶段 C1 诊断）：只记录、不改变脏区。约每秒给出一份汇总，
+	// 用来比较“单个外接矩形”与“相交才合并的多个区域”的面积差距。
+	struct DirtyStatsSummary
+	{
+		std::uint32_t frames = 0;        // 有脏区且未强制整屏的帧
+		std::uint32_t fullFrames = 0;    // 强制整屏的帧（不计入下面的面积）
+		std::uint32_t multiFrames = 0;   // 区域数不少于 2 的帧
+		std::uint32_t untracked = 0;     // 脏区被未登记的路径扩大的次数（按外接矩形保守计入）
+		std::uint32_t overflow = 0;      // 单帧来源超过容量的次数
+		std::uint32_t regionsMax = 0;
+		double rawAvg = 0.0;             // 平均每帧来源矩形数
+		double regionsAvg = 0.0;         // 平均每帧区域数
+		double boundsPercent = 0.0;      // 外接矩形面积占画布的平均百分比
+		double regionPercent = 0.0;      // 区域面积之和占画布的平均百分比
+		double multiBoundsPercent = 0.0; // 同上，只统计多区域帧
+		double multiRegionPercent = 0.0;
+	};
+
+	class DirtyStatsProbe
+	{
+	public:
+		void BeginFrame(bool enabled) noexcept;
+		bool Enabled() const noexcept { return enabled_; }
+		// 在矩形并入帧脏区之前调用；frameDirty 为并入前的值。
+		void Add(const RECT& frameDirty, const RECT& rect) noexcept;
+		// 帧脏区被未登记的路径扩大时，按当前外接矩形保守计入一个来源。
+		void Reconcile(const RECT& frameDirty) noexcept;
+		// 调试覆盖层自身并入的范围不计入统计，只同步镜像。
+		void Resync(const RECT& frameDirty) noexcept { mirror_ = frameDirty; }
+		// 帧脏区定稿后调用；窗口满一秒且有数据时填充 summary 并返回 true。
+		bool EndFrame(bool forcedFull, int canvasWidth, int canvasHeight,
+			std::uint64_t nowMs, DirtyStatsSummary& summary) noexcept;
+
+	private:
+		static constexpr std::size_t kCapacity = 64;
+		std::array<RECT, kCapacity> rects_ = {};
+		std::size_t count_ = 0;
+		RECT mirror_ = {};
+		bool enabled_ = false;
+		std::uint64_t windowStartMs_ = 0;
+		DirtyStatsSummary window_ = {};
+		double rawSum_ = 0.0, regionsSum_ = 0.0;
+		double boundsSum_ = 0.0, regionSum_ = 0.0;
+		double multiBoundsSum_ = 0.0, multiRegionSum_ = 0.0;
+	};
+
 	// 纯函数，便于离屏测试直接断言（无 GDI/D3D 依赖）。
 	// 手掌框是否应显示为实线：阈值有效且面积大于阈值，且宽高比不超过手掌识别使用的 3.5。
 	bool ShouldShowSolidAreaBox(float areaWidthPx, float areaHeightPx,

@@ -3995,6 +3995,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			configOnce.Experimental.Inkeys3.Draw3.EnableWaitableWait;
 		draw3StartOptions.enableUlwAsyncReadback =
 			configOnce.Experimental.Inkeys3.Draw3.EnableUlwAsyncReadback;
+		draw3StartOptions.enableUlwMultiStepCommit =
+			configOnce.Experimental.Inkeys3.Draw3.EnableUlwMultiStepCommit;
 		draw3StartOptions.enableUlwCompositionAlign =
 			configOnce.Experimental.Inkeys3.Draw3.UlwCompositionAlign;
 		draw3StartOptions.enableDcompCompositionAlign =

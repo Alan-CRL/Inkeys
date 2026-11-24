@@ -1206,4 +1206,137 @@ namespace Inkeys::Drawing::Draw3::CanvasDebug
 		UnionInto(dirty, staleBounds);
 		return dirty;
 	}
+
+	namespace
+	{
+		bool EmptyRect(const RECT& rect) noexcept { return rect.left >= rect.right || rect.top >= rect.bottom; }
+
+		bool SameDirtyRect(const RECT& a, const RECT& b) noexcept
+		{
+			if (EmptyRect(a) || EmptyRect(b)) return EmptyRect(a) && EmptyRect(b);
+			return a.left == b.left && a.top == b.top && a.right == b.right && a.bottom == b.bottom;
+		}
+
+		double RectArea(const RECT& rect) noexcept
+		{
+			return EmptyRect(rect) ? 0.0
+				: static_cast<double>(rect.right - rect.left) * static_cast<double>(rect.bottom - rect.top);
+		}
+	}
+
+	void DirtyStatsProbe::BeginFrame(bool enabled) noexcept
+	{
+		if (enabled != enabled_)
+		{
+			// 开关切换时丢弃半个窗口，避免把关闭期间的空白算进平均值。
+			window_ = {};
+			windowStartMs_ = 0;
+			rawSum_ = regionsSum_ = boundsSum_ = regionSum_ = multiBoundsSum_ = multiRegionSum_ = 0.0;
+			enabled_ = enabled;
+		}
+		count_ = 0;
+		mirror_ = {};
+	}
+
+	void DirtyStatsProbe::Add(const RECT& frameDirty, const RECT& rect) noexcept
+	{
+		Reconcile(frameDirty);
+		if (EmptyRect(rect)) return;
+		UnionInto(mirror_, rect);
+		if (count_ < kCapacity) { rects_[count_++] = rect; return; }
+		// 容量用尽：并进最后一个槽，统计结果只会偏保守。
+		UnionInto(rects_[kCapacity - 1], rect);
+		++window_.overflow;
+	}
+
+	void DirtyStatsProbe::Reconcile(const RECT& frameDirty) noexcept
+	{
+		if (SameDirtyRect(frameDirty, mirror_)) return;
+		mirror_ = frameDirty;
+		++window_.untracked;
+		if (EmptyRect(frameDirty)) return;
+		if (count_ < kCapacity) rects_[count_++] = frameDirty;
+		else UnionInto(rects_[kCapacity - 1], frameDirty);
+	}
+
+	bool DirtyStatsProbe::EndFrame(bool forcedFull, int canvasWidth, int canvasHeight,
+		std::uint64_t nowMs, DirtyStatsSummary& summary) noexcept
+	{
+		if (!enabled_) return false;
+		if (windowStartMs_ == 0) windowStartMs_ = nowMs;
+		const double canvasArea = static_cast<double>(std::max(canvasWidth, 0)) * static_cast<double>(std::max(canvasHeight, 0));
+		if (forcedFull) ++window_.fullFrames;
+		else if (canvasArea > 0.0)
+		{
+			// 裁剪到画布并去掉空矩形。
+			std::array<RECT, kCapacity> regions = {};
+			std::size_t regionCount = 0;
+			RECT bounds = {};
+			for (std::size_t index = 0; index < count_; ++index)
+			{
+				const RECT clipped = ClampRect(rects_[index], canvasWidth, canvasHeight);
+				if (EmptyRect(clipped)) continue;
+				regions[regionCount++] = clipped;
+				UnionInto(bounds, clipped);
+			}
+			if (regionCount != 0)
+			{
+				const std::size_t rawCount = regionCount;
+				// 相交的矩形合并为外接矩形，直到两两不相交（与首版合并规则一致）。
+				bool merged = true;
+				while (merged)
+				{
+					merged = false;
+					for (std::size_t a = 0; a < regionCount && !merged; ++a)
+						for (std::size_t b = a + 1; b < regionCount; ++b)
+						{
+							RECT overlap = {};
+							if (!IntersectRect(&overlap, &regions[a], &regions[b])) continue;
+							UnionInto(regions[a], regions[b]);
+							regions[b] = regions[--regionCount];
+							merged = true;
+							break;
+						}
+				}
+				double regionArea = 0.0;
+				for (std::size_t index = 0; index < regionCount; ++index) regionArea += RectArea(regions[index]);
+				const double boundsPercent = RectArea(bounds) * 100.0 / canvasArea;
+				const double regionPercent = regionArea * 100.0 / canvasArea;
+				++window_.frames;
+				rawSum_ += static_cast<double>(rawCount);
+				regionsSum_ += static_cast<double>(regionCount);
+				boundsSum_ += boundsPercent;
+				regionSum_ += regionPercent;
+				window_.regionsMax = std::max(window_.regionsMax, static_cast<std::uint32_t>(regionCount));
+				if (regionCount >= 2)
+				{
+					++window_.multiFrames;
+					multiBoundsSum_ += boundsPercent;
+					multiRegionSum_ += regionPercent;
+				}
+			}
+		}
+		if (nowMs - windowStartMs_ < 1000) return false;
+		const bool hasData = window_.frames != 0 || window_.fullFrames != 0;
+		if (hasData)
+		{
+			summary = window_;
+			if (window_.frames != 0)
+			{
+				summary.rawAvg = rawSum_ / window_.frames;
+				summary.regionsAvg = regionsSum_ / window_.frames;
+				summary.boundsPercent = boundsSum_ / window_.frames;
+				summary.regionPercent = regionSum_ / window_.frames;
+			}
+			if (window_.multiFrames != 0)
+			{
+				summary.multiBoundsPercent = multiBoundsSum_ / window_.multiFrames;
+				summary.multiRegionPercent = multiRegionSum_ / window_.multiFrames;
+			}
+		}
+		window_ = {};
+		windowStartMs_ = nowMs;
+		rawSum_ = regionsSum_ = boundsSum_ = regionSum_ = multiBoundsSum_ = multiRegionSum_ = 0.0;
+		return hasData;
+	}
 }

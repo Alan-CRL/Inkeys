@@ -1144,6 +1144,11 @@
       {
         "N": "Asynchrones Zurücklesen im UpdateLayeredWindow-Modus"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "Mehrstufige Komposition pro Frame im UpdateLayeredWindow-Modus",
+        "E": "Änderungen in weit auseinanderliegenden Bildschirmbereichen werden separat übermittelt. Das reduziert die Auslastung und Verzögerung beim Schreiben mit mehreren Fingern. Die Bereiche können um einen Frame versetzt angezeigt werden."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Mausbewegung beim Zeichnen nicht an die Bildrate der Zeichenfläche binden",

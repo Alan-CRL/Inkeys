@@ -1144,6 +1144,11 @@
       {
         "N": "UpdateLayeredWindow モードで非同期リードバック"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "UpdateLayeredWindow モードで 1 フレームを複数段階で合成",
+        "E": "画面上で離れた領域の変更を個別に反映し、複数指で書くときの負荷と遅延を減らします。領域によって表示が 1 フレームずれることがあります。"
+      },
       "UnthrottledMouseMove":
       {
         "N": "描画中のマウス移動をキャンバスのフレームレートに制限しない",

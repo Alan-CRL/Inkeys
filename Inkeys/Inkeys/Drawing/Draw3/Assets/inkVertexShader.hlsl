@@ -44,6 +44,19 @@ float3 GetEraserRectSweepPlane(float2 segment, float2 half0, float2 half1,
     return float3(0.0, 0.0, -1e20);
 }
 
+bool IsNormalPositiveRadius(float radius)
+{
+    // Check the IEEE-754 range without relying on NaN comparisons.
+    uint bits = asuint(radius);
+    return bits >= 0x00800000u && bits < 0x7f800000u;
+}
+
+bool IsValidRectSweepPoint(InkPoint sweepPoint)
+{
+    return IsNormalPositiveRadius(sweepPoint.r) && IsNormalPositiveRadius(sweepPoint.time)
+        && all((asuint(sweepPoint.pos) & 0x7fffffffu) < 0x7f800000u);
+}
+
 PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 {
     PS_INPUT output = (PS_INPUT) 0;
@@ -136,9 +149,12 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
 
     if (type == 23)
     {
+        bool holeMode = globalPadding.y >= 0.5;
+        uint segmentIndex = holeMode ? itemIndex / 4 : itemIndex;
+        uint segmentOffset = globalBufferOffset + segmentIndex;
         // 矩形橡皮保留两端各自尺寸，包围盒不能使用平均半宽高。
-        InkPoint start = InkData[globalBufferOffset + itemIndex];
-        InkPoint end = InkData[globalBufferOffset + itemIndex + 1];
+        InkPoint start = InkData[segmentOffset];
+        InkPoint end = InkData[segmentOffset + 1];
         float2 half0 = float2(start.r, start.time);
         float2 half1 = float2(end.r, end.time);
         float2 segment = end.pos - start.pos;
@@ -166,6 +182,45 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         float2 rectMin = output.p1 - 2.0;
         float2 rectMax = output.p2 + 2.0;
         float2 worldPos = lerp(rectMin, rectMax, templatePos);
+        [branch] if (holeMode)
+        {
+            uint quad = itemIndex % 4;
+            float2 holeHalf = half0 - 2.0;
+            bool hasHole = false;
+            // The first segment of every upload must draw its complete quad.
+            [branch] if (segmentIndex >= 1 && all(holeHalf >= 4.0)
+                && IsValidRectSweepPoint(start) && IsValidRectSweepPoint(end))
+            {
+                InkPoint previous = InkData[segmentOffset - 1];
+                // Supporting planes and the zero-length/contained AABB both cover
+                // the predecessor's end rect. Its own hole is covered by earlier segments.
+                hasHole = IsValidRectSweepPoint(previous);
+            }
+            if (hasHole)
+            {
+                float2 holeMin = start.pos - holeHalf;
+                float2 holeMax = start.pos + holeHalf;
+                float2 bandMin = rectMin;
+                float2 bandMax = rectMax;
+                if (quad == 0) bandMax.y = holeMin.y;
+                else if (quad == 1) bandMin.y = holeMax.y;
+                else
+                {
+                    // Overlap the horizontal bands by one pixel at each T-junction.
+                    bandMin.y = holeMin.y - 1.0;
+                    bandMax.y = holeMax.y + 1.0;
+                    if (quad == 2) bandMax.x = holeMin.x;
+                    else bandMin.x = holeMax.x;
+                }
+                bandMin = clamp(bandMin, rectMin, rectMax);
+                bandMax = clamp(bandMax, rectMin, rectMax);
+                worldPos = all(bandMax > bandMin) ? lerp(bandMin, bandMax, templatePos) : start.pos;
+            }
+            else if (quad != 0)
+            {
+                worldPos = start.pos;
+            }
+        }
         output.pos = float4((worldPos.x / screenWidth) * 2.0 - 1.0,
             -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);
         output.pixPos = worldPos;
@@ -275,6 +330,14 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
         return output;
     }
 
+    uint stripCount = 1;
+    uint quadInSegment = 0;
+    if (type == 0 && globalPadding.y >= 2.0)
+    {
+        stripCount = (uint) globalPadding.y;
+        quadInSegment = itemIndex % (2 * stripCount);
+        itemIndex /= 2 * stripCount;
+    }
     uint realIndex = globalBufferOffset + itemIndex;
     InkPoint data1 = InkData[realIndex];
     InkPoint data2 = InkData[realIndex + 1];
@@ -305,9 +368,73 @@ PS_INPUT main(uint id : SV_VertexID, uint instanceId : SV_InstanceID)
     float startRadius = type == 7 ? max(r1, 0.0) + laserRadii.z : r1;
     float endRadius = type == 7 ? max(r2, 0.0) + laserRadii.z : r2;
     float maxRadius = max(startRadius, endRadius);
-    float localX = lerp(-startRadius - 2.0, segmentLength + endRadius + 2.0, templatePos.x);
-    float localY = lerp(-maxRadius - 2.0, maxRadius + 2.0, templatePos.y);
-    float2 worldPos = p1 + tangent * localX + normal * localY;
+    // The batch-wide K comes from the largest radius in the batch. A thinner segment in
+    // the same batch uses fewer (or no) strips so that a strip never gets thinner than a
+    // few pixels: sliver triangles perturb the interpolated pixPos and fwidth(d) enough to
+    // change anti-aliased coverage visibly.
+    // Tiers keep a strip between about 6 and 12 pixels tall, so the staircase around the
+    // hole grows linearly with the radius. Must match the tiers in InkRenderer::DrawStroke.
+    uint segmentStrips = maxRadius < 24.0 ? 1 : maxRadius < 48.0 ? 8 : maxRadius < 96.0 ? 16
+        : maxRadius < 192.0 ? 32 : 64;
+    segmentStrips = min(segmentStrips, stripCount);
+    bool useStrips = segmentStrips >= 2 && segmentLength > 0.001 && abs(r1 - r2) < segmentLength
+        && IsNormalPositiveRadius(r1) && IsNormalPositiveRadius(r2);
+    float2 worldPos = p1;
+    if (stripCount == 1 || (!useStrips && quadInSegment == 0))
+    {
+        float localX = lerp(-startRadius - 2.0, segmentLength + endRadius + 2.0, templatePos.x);
+        float localY = lerp(-maxRadius - 2.0, maxRadius + 2.0, templatePos.y);
+        worldPos = p1 + tangent * localX + normal * localY;
+    }
+    else if (useStrips && quadInSegment < 2 * segmentStrips)
+    {
+        uint strip = quadInSegment / 2;
+        uint halfIndex = quadInSegment % 2;
+        float extent = maxRadius + 2.0;
+        float ya = max(-extent, lerp(-extent, extent, (float) strip / segmentStrips) - 0.5);
+        float yb = min(extent, lerp(-extent, extent, (float) (strip + 1) / segmentStrips) + 0.5);
+        float ymaxAbs = max(abs(ya), abs(yb));
+        float yminAbs = (ya <= 0.0 && yb >= 0.0) ? 0.0 : min(abs(ya), abs(yb));
+        float outer = sqrt(max(0.0, extent * extent - yminAbs * yminAbs));
+        float xa = max(-outer, -startRadius - 2.0);
+        float xb = min(segmentLength + outer, segmentLength + endRadius + 2.0);
+
+        bool hasHole = false;
+        float s = 0.0;
+        // The first segment of each upload has no predecessor in this batch.
+        [branch] if (itemIndex >= 1 && ymaxAbs < r1 - 2.0)
+        {
+            InkPoint data0 = InkData[realIndex - 1];
+            // Below radius 1 the pixel shader blends in thin-line coverage, so the
+            // previous segment is not guaranteed to have written full coverage.
+            if (IsNormalPositiveRadius(data0.r) && data0.r >= 1.0)
+            {
+                float rho = r1 - 2.0;
+                [branch] if (data0.r < rho)
+                    rho = min(rho, length(p1 - data0.pos) + data0.r);
+                if (rho > 0.0 && ymaxAbs < rho)
+                {
+                    s = sqrt(max(0.0, rho * rho - ymaxAbs * ymaxAbs));
+                    hasHole = true;
+                }
+            }
+        }
+        if (hasHole)
+        {
+            if (halfIndex == 0) xb = min(xb, -s);
+            else xa = max(xa, s);
+        }
+        else if (halfIndex != 0)
+        {
+            xb = xa;
+        }
+        if (xb > xa)
+        {
+            float localX = lerp(xa, xb, templatePos.x);
+            float localY = lerp(ya, yb, templatePos.y);
+            worldPos = p1 + tangent * localX + normal * localY;
+        }
+    }
 
     output.pos = float4((worldPos.x / screenWidth) * 2.0 - 1.0,
         -((worldPos.y / screenHeight) * 2.0 - 1.0), 0.0, 1.0);

@@ -489,6 +489,10 @@ namespace Inkeys::Drawing::Draw3
 		GraphicsDeviceResources graphics;
 		InkRenderer renderer;
 		TransparentPresentationController presentation;
+		std::atomic_bool ulwMultiStepCommitEnabled = true;
+		// 启动前已有显式发布时，Start 不能再用启动选项里的旧值覆盖它。
+		std::atomic_bool ulwMultiStepCommitPublished = false;
+		std::optional<bool> appliedUlwMultiStepCommitEnabled;
 		RealTimeStylusInput stylus;
 		std::unique_ptr<DrawingController> drawing;
 		std::atomic_bool interruptedStrokeReconnectEnabled = true;
@@ -1125,6 +1129,7 @@ namespace Inkeys::Drawing::Draw3
 					<< " contentRevision=" << observation.presentedContentRevision
 					<< " dirty=(" << dirty.left << "," << dirty.top << ","
 					<< dirty.right << "," << dirty.bottom << ")"
+					<< " dirtyRectCount=" << observation.dirtyRectCount
 					<< " full=" << (presentFull ? 1 : 0)
 					<< " hwnd=0x" << std::hex
 					<< reinterpret_cast<UINT_PTR>(outputTarget == HostOutputTarget::SelectionUlw
@@ -1811,6 +1816,13 @@ namespace Inkeys::Drawing::Draw3
 		void PumpBridgeState()
 		{
 			// 仅绘制 owner 访问 Controller；独立配置不受 bridge revision 去重影响。
+			// 呈现器按批次取值，活动接触期间也可以更新。
+			const bool multiStepCommitEnabled = ulwMultiStepCommitEnabled.load(std::memory_order_acquire);
+			if (appliedUlwMultiStepCommitEnabled != multiStepCommitEnabled)
+			{
+				presentation.SetUlwMultiStepCommitEnabled(multiStepCommitEnabled);
+				appliedUlwMultiStepCommitEnabled = multiStepCommitEnabled;
+			}
 			const bool reconnectEnabled = interruptedStrokeReconnectEnabled.load(std::memory_order_acquire);
 			if (drawing && drawing->GetInterruptedStrokeReconnectEnabled() != reconnectEnabled)
 				drawing->SetInterruptedStrokeReconnectEnabled(reconnectEnabled);
@@ -2247,6 +2259,8 @@ namespace Inkeys::Drawing::Draw3
 			this->styleCallbacks = styleCallbacks;
 			this->runtimeCallbacks = runtimeCallbacks;
 			startOptions = options;
+			if (!ulwMultiStepCommitPublished.load(std::memory_order_acquire))
+				ulwMultiStepCommitEnabled.store(options.enableUlwMultiStepCommit, std::memory_order_release);
 			hiddenTestContactInjectionEnabled = options.enableHiddenTestContactInjection;
 			attachedWindow.store(hwnd, std::memory_order_release);
 			attachedPresentationWindow.store(presentationHwnd, std::memory_order_release);
@@ -2368,6 +2382,7 @@ namespace Inkeys::Drawing::Draw3
 							static_cast<UINT>((std::max)(1, size.width)),
 							static_cast<UINT>((std::max)(1, size.height)), presentationCallbacks,
 							presentationOptions);
+						appliedUlwMultiStepCommitEnabled.reset();
 						DiagnosticOutput::Line() << "[Draw3Diag][startup] stage=presenter result="
 							<< (graphicsInitialized ? "ready" : "failed")
 							<< " mode=" << TransparentPresentModeName(presentation.ActiveMode())
@@ -3295,6 +3310,13 @@ namespace Inkeys::Drawing::Draw3
 	{
 		std::scoped_lock lock(impl_->palmEraserOptionsMutex);
 		return impl_->palmEraserOptions;
+	}
+
+	void Host::SetUlwMultiStepCommitEnabled(bool enabled) noexcept
+	{
+		impl_->ulwMultiStepCommitPublished.store(true, std::memory_order_release);
+		if (impl_->ulwMultiStepCommitEnabled.exchange(enabled, std::memory_order_acq_rel) != enabled)
+			(void)impl_->input.PublishControlWake();
 	}
 
 	void Host::SetCanvasDebugOptions(bool enabled, bool visual) noexcept

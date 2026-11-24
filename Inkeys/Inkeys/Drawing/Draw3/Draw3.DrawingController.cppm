@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <windows.h>
 #include "Draw3.Bridge.h"
@@ -202,10 +203,11 @@ export namespace Inkeys::Drawing::Draw3
 		void Run();
 	private:
 		bool CompositeLayersToBackBuffer(RECT dirty, bool orderLiveOverStable = false);
+		bool CompositeLayersToBackBuffer(std::span<const RECT> dirty, bool orderLiveOverStable = false);
 		// 在 backbuffer 已合成内容之下补画白板点阵/网格；仅白板工作区且主题非 Blank 时生效。
 		// dirty 必须是刚由 L2 重新拷贝的矩形（under 混合不幂等）。
 		void DrawWhiteboardPatternUnder(RECT dirty);
-		bool PresentFrame(RECT dirty, bool presentFull, int64_t* presentReturnQpc = nullptr);
+		bool PresentFrame(std::span<const RECT> dirtyRects, bool presentFull, int64_t* presentReturnQpc = nullptr);
 
 		ContactInputCoordinator& input_;
 		WindowController& window_;

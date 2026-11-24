@@ -1144,6 +1144,11 @@
       {
         "N": "Rilettura asincrona in modalità UpdateLayeredWindow"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "Composizione in più passaggi per fotogramma in modalità UpdateLayeredWindow",
+        "E": "Le modifiche in aree distanti dello schermo vengono inviate separatamente per ridurre il carico e la latenza quando si scrive con più dita. Gli aggiornamenti nelle diverse aree possono apparire con un fotogramma di scarto."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Non limitare il movimento del mouse alla frequenza della tela durante il disegno",

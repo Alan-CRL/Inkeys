@@ -48,6 +48,8 @@ export namespace Inkeys::Drawing::Draw3
 		uint64_t shapeFullClears = 0;
 		uint64_t shapePartialClears = 0;
 		uint64_t shapeSkippedClears = 0;
+		uint64_t regionalTailStrokes = 0;
+		uint64_t skippedActiveLayerRebuilds = 0;
 	};
 	// 激光纹理操作按张累计，供自检读取。
 	struct LaserSurfaceCounters
@@ -294,6 +296,7 @@ export namespace Inkeys::Drawing::Draw3
 		int DrawStroke(std::span<const InkPoint> points, DirectX::XMFLOAT4 color,
 			StrokeShape shape = StrokeShape::RoundCapsule,
 			InkOperatorKind operatorKind = InkOperatorKind::Draw);
+		void SetSweepOnlyStrokeGeometryEnabled(bool enabled) noexcept { sweepOnlyStrokeGeometryEnabled_ = enabled; }
 		// 绘制固定矩形 sweep，临时层使用 Add/MAX、Retain/MIN 累积覆盖率。
 		int DrawHighlighterPrimitives(std::span<const HighlighterPrimitive> primitives,
 			DirectX::XMFLOAT4 color, InkOperatorKind operatorKind = InkOperatorKind::Draw);
@@ -435,6 +438,10 @@ export namespace Inkeys::Drawing::Draw3
 		bool ApplyOperatorLayers(ID3D11RenderTargetView* dstRTV,
 			const OperatorLayerResources& stableLayer, const OperatorLayerResources& liveLayer,
 			RECT rect, OperatorLayerMergeMode mergeMode = OperatorLayerMergeMode::CoverageUnion);
+		// 批量合成要求裁剪后的矩形两两不相交。
+		bool ApplyOperatorLayers(ID3D11RenderTargetView* dstRTV,
+			const OperatorLayerResources& stableLayer, const OperatorLayerResources& liveLayer,
+			std::span<const RECT> rects, OperatorLayerMergeMode mergeMode = OperatorLayerMergeMode::CoverageUnion);
 		// 调用方仅在当前 L2 已完整清晰时显式刷新，并同时记录其 Canvas viewport。
 		bool RefreshTrustedL2Snapshot(float snapshotViewportX, float snapshotViewportY) noexcept;
 		// 先恢复当前 L2，再仅在真实世界交集内把可信快照补到透明像素下方。
@@ -465,17 +472,27 @@ export namespace Inkeys::Drawing::Draw3
 		// L0/L1：只把自上次清除以来声明过的写入范围恢复为单位操作；没有写入时不清除；存在未声明写入、
 		// 没有 ClearView 能力或各矩形面积之和超过画布 1/16 时退回整屏清除。其他层等同 ClearOperatorLayer。
 		void ClearOperatorLayerContent(const OperatorLayerResources& layer);
+		// 仅清除指定范围，保留写域登记与 L1 世代。
+		bool CanClearOperatorLayerRegion(const OperatorLayerResources& layer) const noexcept;
+		bool ClearOperatorLayerRegion(const OperatorLayerResources& layer, std::span<const RECT> rects) noexcept;
 		// L0/L1 自上次清除以来确知没有任何写入（处处为单位操作）。其他层恒为 false。
 		bool OperatorLayerEmpty(const OperatorLayerResources& layer) const noexcept;
 		// 绕过 SetOperatorTarget 直接改写层内容（拷贝、外部绑定）后调用，使下一次清除退回整屏。
 		void MarkOperatorLayerUntracked(const OperatorLayerResources& layer) noexcept;
 		// 只把一个操作层应用到目标 RGBA（另一层确知为空时使用，结果与双层合成逐像素相同）。
 		bool ApplyOperatorLayer(ID3D11RenderTargetView* dstRTV, const OperatorLayerResources& layer, RECT rect);
+		bool ApplyOperatorLayer(ID3D11RenderTargetView* dstRTV, const OperatorLayerResources& layer,
+			std::span<const RECT> rects);
 		const OperatorLayerCounters& OperatorCounters() const noexcept { return operatorCounters_; }
-		// L1 内容世代：除“声明写域的绑定”（书写中追加前缀）之外，任何改变 L1 内容的事件都会使它递增——
-		// 清除、未声明范围的绑定、绘制后补登记、标记未知、纹理重建。抬笔路径 A 用它确认 L1 里只有本笔自己追加的内容。
+		// 整层清除、非接触写入、标记未知及纹理重建推进世代，接触前缀追加与局部清除保留世代。
 		uint64_t StableLayerEpoch() const noexcept { return stableLayerEpoch_; }
+		// 自上次整层清除以来，只有来源明确的接触写入。
+		bool StableLayerContactOwned() const noexcept { return stableLayerEpoch_ == stableLayerOwnedEpoch_; }
+		// 非接触绘制若已声明写域，仍须单独标记来源。
+		void MarkStableLayerForeignWrite() noexcept { ++stableLayerEpoch_; }
 		void CountCompletedStroke(bool tailPath) noexcept { ++(tailPath ? operatorCounters_.tailPathStrokes : operatorCounters_.isolatedPathStrokes); }
+		void CountRegionalTailStroke() noexcept { ++operatorCounters_.regionalTailStrokes; }
+		void CountSkippedActiveLayerRebuild() noexcept { ++operatorCounters_.skippedActiveLayerRebuilds; }
 		const LaserSurfaceCounters& LaserCounters() const noexcept { return laserCounters_; }
 		void ClearLaserCoverage(LaserCoverageResources& layer);
 		void ClearAllLaserCoverage();
@@ -525,14 +542,18 @@ export namespace Inkeys::Drawing::Draw3
 		OperatorLayerCounters operatorCounters_;
 		LaserSurfaceCounters laserCounters_;
 		uint64_t stableLayerEpoch_ = 0;
+		uint64_t stableLayerOwnedEpoch_ = ~uint64_t{ 0 }; // 新纹理尚未清除，来源未知。
 		Microsoft::WRL::ComPtr<ID3D11DeviceContext1> context1_; // 当前设备支持 ClearView 时才持有。
 		// 只有 L0、L1 记账；其他操作层返回空指针。
 		OperatorContentTracking* ContentTrackingFor(const OperatorLayerResources& layer) noexcept;
 		const OperatorContentTracking* ContentTrackingFor(const OperatorLayerResources& layer) const noexcept;
 		void NoteOperatorContent(const OperatorLayerResources& layer, const RECT* writeBounds) noexcept;
+		void ClearOperatorLayerRects(const OperatorLayerResources& layer, std::span<const RECT> rects) noexcept;
 		// stableLayer 为空时只读 liveLayer（PS 类型 25）。
 		bool ResolveOperatorLayers(ID3D11RenderTargetView* dstRTV, const OperatorLayerResources* stableLayer,
 			const OperatorLayerResources& liveLayer, RECT rect, float shapeType);
+		bool ResolveOperatorLayers(ID3D11RenderTargetView* dstRTV, const OperatorLayerResources* stableLayer,
+			const OperatorLayerResources& liveLayer, std::span<const RECT> rects, float shapeType);
 		struct ShapeRenderCacheEntry
 		{
 			::draw3::shapes::ObjectId id;
@@ -541,6 +562,7 @@ export namespace Inkeys::Drawing::Draw3
 			::draw3::shapes::RenderData data;
 		};
 		std::vector<ShapeRenderCacheEntry> shapeRenderCache_;
+		bool sweepOnlyStrokeGeometryEnabled_ = true;
 		friend int RunRendererUploadValidation() noexcept;
 		friend int RunCanvasDebugOverlayValidation() noexcept;
 		friend int RunWhiteboardPatternValidation() noexcept;

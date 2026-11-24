@@ -66,6 +66,47 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const size_t remaining = totalPoints - startIndex;
 			const size_t batchCount = std::min(remaining, kMaxBufferCapacity);
+			// 超大坐标或尺寸可能使单精度运算丢失像素级的裁剪余量。
+			constexpr float kSweepGeometryLimit = 65536.0f;
+			UINT stripCount = 1;
+			if (shape == StrokeShape::RoundCapsule && sweepOnlyStrokeGeometryEnabled_)
+			{
+				float maxRadius = 0.0f;
+				for (const InkPoint& point : points.subspan(startIndex, batchCount))
+				{
+					if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.r) ||
+						point.r < 0.0f || std::abs(point.x) > kSweepGeometryLimit ||
+						std::abs(point.y) > kSweepGeometryLimit || point.r > kSweepGeometryLimit)
+					{
+						maxRadius = 0.0f;
+						break;
+					}
+					maxRadius = (std::max)(maxRadius, point.r);
+				}
+				// 档位让每条横条高约 6–12 像素，洞周围的阶梯余量随半径线性增长；须与顶点着色器里的档位一致。
+				stripCount = maxRadius < 24.0f ? 1 : maxRadius < 48.0f ? 8 : maxRadius < 96.0f ? 16
+					: maxRadius < 192.0f ? 32 : 64;
+			}
+			bool rectHoleMode = false;
+			if (shape == StrokeShape::EraseRectSweep && sweepOnlyStrokeGeometryEnabled_ && batchCount >= 3)
+			{
+				// 矩形扫掠的 r/time 分别存半宽、半高；任一点无效时整批回退。
+				float maxHalfExtent = 0.0f;
+				for (const InkPoint& point : points.subspan(startIndex, batchCount))
+				{
+					if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+						!std::isfinite(point.r) || !std::isfinite(point.time) ||
+						std::abs(point.x) > kSweepGeometryLimit || std::abs(point.y) > kSweepGeometryLimit ||
+						point.r <= 0.0f || point.time <= 0.0f ||
+						point.r > kSweepGeometryLimit || point.time > kSweepGeometryLimit)
+					{
+						maxHalfExtent = 0.0f;
+						break;
+					}
+					maxHalfExtent = (std::max)({ maxHalfExtent, point.r, point.time });
+				}
+				rectHoleMode = maxHalfExtent >= 24.0f;
+			}
 			D3D11_MAP mapType = D3D11_MAP_WRITE_NO_OVERWRITE;
 			if (useDefaultStructuredUpload_ || !mapNoOverwriteOnDynamicBufferSRV ||
 				m_bufferHead + batchCount > kMaxBufferCapacity)
@@ -89,6 +130,9 @@ namespace Inkeys::Drawing::Draw3
 			constants->shapeType = static_cast<float>(static_cast<uint32_t>(shape));
 			constants->bufferOffset = bufferOffset; // 上传后 head 已推进，着色器仍使用本批起点。
 			constants->operatorKind = static_cast<uint32_t>(operatorKind);
+			constants->padding[0] = 0.0f;
+			constants->padding[1] = rectHoleMode ? 1.0f : stripCount == 1 ? 0.0f : static_cast<float>(stripCount);
+			constants->padding[2] = 0.0f;
 			context->Unmap(globalCB.Get(), 0);
 
 			context->IASetInputLayout(nullptr);
@@ -102,7 +146,8 @@ namespace Inkeys::Drawing::Draw3
 			context->PSSetConstantBuffers(0, 1, constantBuffers); // operatorKind 由像素着色器读取，必须单独绑定到 PS。
 			context->OMSetBlendState(strokeOperatorBlendState.Get(), nullptr, 0xFFFFFFFF); // Add 取 MAX、Retain 取 MIN，整笔覆盖率只累计一次。
 			context->RSSetState(rasterState.Get());
-			context->Draw((static_cast<UINT>(batchCount) - 1) * 6, 0); // 每两个相邻点生成一个形状段，段数乘 6 个顶点。
+			const UINT verticesPerSegment = rectHoleMode ? 24 : stripCount == 1 ? 6 : 12 * stripCount;
+			context->Draw((static_cast<UINT>(batchCount) - 1) * verticesPerSegment, 0);
 
 			ID3D11ShaderResourceView* nullResources[] = { nullptr };
 			context->VSSetShaderResources(0, 1, nullResources);

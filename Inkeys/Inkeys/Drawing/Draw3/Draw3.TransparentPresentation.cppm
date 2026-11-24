@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <windows.h>
 
@@ -130,6 +131,9 @@ export namespace Inkeys::Drawing::Draw3
 	{
 		bool ulw = false;
 		bool usedDirtyRect = false;
+		// 主画布 ULW 记录最近成功批次的调用数；整帧记为一个区域，交换链未调用 Present1 时记为零。
+		UINT dirtyRectCount = 0;
+		RECT dirtyBounds = {};
 		bool premultipliedAlphaValid = true;
 		bool updatedRegionAllZeroAlpha = false;
 		bool fullFrameAllZeroAlpha = false;
@@ -174,12 +178,17 @@ export namespace Inkeys::Drawing::Draw3
 		// 呈现指定脏矩形或整张画布。
 		bool Present(RECT dirty, bool presentFull,
 			std::uint64_t contentRevision = 0);
+		// 交换链脏矩形必须覆盖本帧已合成的像素；超过 16 个时调用方须已合成外接矩形。
+		bool Present(std::span<const RECT> dirtyRects, bool presentFull,
+			std::uint64_t contentRevision = 0);
 		// 帧开头、消费输入之前调用：DComp waitable 交换链未持有令牌时做一次有界等待。
 		// 超时不是错误，本帧照常呈现；返回 Tripped 时已安排恢复（重建为不带 waitable 标志的交换链）。
 		FrameLatencyWaitReport PrepareFrameLatency(double targetFrameMs, bool countsTowardTrip);
 		// 取走帧循环外 Present 前补等的结果，供调用方从 Present 耗时中扣除并记入指标。
 		// ULW 异步读回在 Present 内的阻塞 Map（背压与即时完成）也经此计入等待。
 		FrameLatencyWaitReport ConsumePresentLatencyWait() noexcept;
+		// 主画布 ULW 的多步提交开关；绘制线程在拷贝入队时为整批锁存。
+		void SetUlwMultiStepCommitEnabled(bool enabled) noexcept;
 		// C1 帧开头（恢复/Resize 之后、读输入之前）：主画布 ULW 异步读回时探测上一帧是否就绪（不等待）。
 		// 其余模式立即返回。
 		UlwFrameReport BeginUlwFrame(double frameStartMs, double targetFrameMs);
@@ -206,7 +215,7 @@ export namespace Inkeys::Drawing::Draw3
 		TransparentPresentMode ActiveMode() const;
 		// 主画布实际生效的呈现状态，与选择模式输出目标无关。
 		TransparentPresentationEffectiveState EffectiveState() const noexcept;
-		// 返回绘制线程上一次真实 Present 的 ULW alpha/dirty-rect 观测。
+		// 返回绘制线程上一次呈现的区域数和 ULW alpha 观测。
 		TransparentPresentObservation LastPresentObservation() const;
 		bool ConfirmShownFrame(TransparentOutputTarget target, std::uint64_t outputRevision,
 			std::uint64_t contentRevision) noexcept;
@@ -221,7 +230,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool IsGpuTransparentComposition() const;
 		// 返回当前交换链供渲染器缩放使用；ULW 模式不建交换链，返回空（最终目标是独立纹理）。
 		IDXGISwapChain1* SwapChain() const;
-		// 单调递增的真实提交次数：DComp 实际调用且成功的 Present1，ULW 主画布/辅助输出成功的 UpdateLayeredWindow
+		// 单调递增的真实提交次数：DComp 实际调用且成功的 Present1，ULW 主画布/辅助输出成功的提交批次
 		// （节流合并跳过的帧不算）。调用方比较一轮帧循环前后的差值判断本轮是否真正提交。
 		std::uint64_t CommittedPresentCount() const noexcept;
 		// 最近一次真正提交完成的时刻（QPC 毫秒）：DComp Present1 返回、ULW UpdateLayeredWindow 返回；从未提交为 0。

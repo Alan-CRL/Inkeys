@@ -1144,6 +1144,11 @@
       {
         "N": "Asynchronous readback in UpdateLayeredWindow mode"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "Multi-step compositing of each frame in UpdateLayeredWindow mode",
+        "E": "Changes in widely separated areas of the screen are submitted separately to reduce load and latency when writing with multiple fingers. Updates in different areas may appear one frame apart."
+      },
       "UnthrottledMouseMove":
       {
         "N": "Don't limit mouse movement to the canvas frame rate while drawing",

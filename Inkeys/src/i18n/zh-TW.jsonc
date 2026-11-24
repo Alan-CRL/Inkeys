@@ -1144,6 +1144,11 @@
       {
         "N": "UpdateLayeredWindow 模式下非同步讀回"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "UpdateLayeredWindow 模式下單一影格多步合成",
+        "E": "畫面上相距較遠的變更會分別提交，以降低多指書寫時的負載與延遲；不同區域的顯示可能相差一個影格。"
+      },
       "UnthrottledMouseMove":
       {
         "N": "繪製時滑鼠移動不受畫布影格率限制",

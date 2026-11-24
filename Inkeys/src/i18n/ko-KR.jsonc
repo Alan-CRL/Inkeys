@@ -1144,6 +1144,11 @@
       {
         "N": "UpdateLayeredWindow 모드에서 비동기 리드백"
       },
+      "UlwMultiStepCommit":
+      {
+        "N": "UpdateLayeredWindow 모드에서 프레임당 여러 단계로 합성",
+        "E": "화면에서 서로 멀리 떨어진 영역의 변경 사항을 따로 제출해 여러 손가락으로 쓸 때의 부하와 지연을 줄입니다. 영역별 표시 시점에 한 프레임 차이가 날 수 있습니다."
+      },
       "UnthrottledMouseMove":
       {
         "N": "그리는 동안 마우스 이동을 캔버스 프레임 속도로 제한하지 않음",

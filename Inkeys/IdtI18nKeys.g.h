@@ -1147,6 +1147,11 @@ inline constexpr struct I18nKeyRoot
             {
                 const char* N = "SettingsUI/Performance/UlwAsyncReadback/N";
             } UlwAsyncReadback{};
+            struct Node__SettingsUI__Performance__UlwMultiStepCommit
+            {
+                const char* N = "SettingsUI/Performance/UlwMultiStepCommit/N";
+                const char* E = "SettingsUI/Performance/UlwMultiStepCommit/E";
+            } UlwMultiStepCommit{};
             struct Node__SettingsUI__Performance__UnthrottledMouseMove
             {
                 const char* N = "SettingsUI/Performance/UnthrottledMouseMove/N";

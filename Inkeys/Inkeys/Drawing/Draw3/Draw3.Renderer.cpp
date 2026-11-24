@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -23,8 +24,10 @@
 #include <d3d11.h>
 #include <d3d11_1.h>
 #include <DirectXMath.h>
+#include <DirectXPackedVector.h>
 #include <dxgi1_2.h>
 #include <limits>
+#include <span>
 #include <utility>
 #include <vector>
 #include <windows.h>
@@ -152,36 +155,88 @@ namespace Inkeys::Drawing::Draw3
 		const OperatorLayerResources& stableLayer, const OperatorLayerResources& liveLayer,
 		RECT rect, OperatorLayerMergeMode mergeMode)
 	{
-		return ResolveOperatorLayers(dstRTV, &stableLayer, liveLayer, rect,
+		return ApplyOperatorLayers(dstRTV, stableLayer, liveLayer, std::span<const RECT>(&rect, 1), mergeMode);
+	}
+
+	bool InkRenderer::ApplyOperatorLayers(ID3D11RenderTargetView* dstRTV,
+		const OperatorLayerResources& stableLayer, const OperatorLayerResources& liveLayer,
+		std::span<const RECT> rects, OperatorLayerMergeMode mergeMode)
+	{
+		return ResolveOperatorLayers(dstRTV, &stableLayer, liveLayer, rects,
 			mergeMode == OperatorLayerMergeMode::Ordered ? 2.0f : 1.0f);
 	}
 
 	bool InkRenderer::ApplyOperatorLayer(ID3D11RenderTargetView* dstRTV, const OperatorLayerResources& layer, RECT rect)
 	{
-		return ResolveOperatorLayers(dstRTV, nullptr, layer, rect, 25.0f); // PS 类型 25 只读 t4/t5。
+		return ApplyOperatorLayer(dstRTV, layer, std::span<const RECT>(&rect, 1));
+	}
+
+	bool InkRenderer::ApplyOperatorLayer(ID3D11RenderTargetView* dstRTV, const OperatorLayerResources& layer,
+		std::span<const RECT> rects)
+	{
+		return ResolveOperatorLayers(dstRTV, nullptr, layer, rects, 25.0f); // PS 类型 25 只读 t4/t5。
 	}
 
 	bool InkRenderer::ResolveOperatorLayers(ID3D11RenderTargetView* dstRTV, const OperatorLayerResources* stableLayer,
 		const OperatorLayerResources& liveLayer, RECT rect, float shapeType)
 	{
+		return ResolveOperatorLayers(dstRTV, stableLayer, liveLayer, std::span<const RECT>(&rect, 1), shapeType);
+	}
+
+	bool InkRenderer::ResolveOperatorLayers(ID3D11RenderTargetView* dstRTV, const OperatorLayerResources* stableLayer,
+		const OperatorLayerResources& liveLayer, std::span<const RECT> rects, float shapeType)
+	{
 		if (!dstRTV || !compositeVertexBuffer || !compositeVertexSRV ||
 			(stableLayer && (!stableLayer->addSRV || !stableLayer->retainSRV)) ||
 			!liveLayer.addSRV || !liveLayer.retainSRV) return false;
-		rect.left = std::max(0L, rect.left);
-		rect.top = std::max(0L, rect.top);
-		rect.right = std::min(static_cast<LONG>(viewportWidth), rect.right);
-		rect.bottom = std::min(static_cast<LONG>(viewportHeight), rect.bottom);
-		if (rect.left >= rect.right || rect.top >= rect.bottom) return true;
-
-		InkPoint rectPoints[2] = {
-			{ static_cast<float>(rect.left), static_cast<float>(rect.top), 0.0f, 0.0f },
-			{ static_cast<float>(rect.right), static_cast<float>(rect.bottom), 0.0f, 0.0f }
+		const auto clamp = [&](const RECT& rect) {
+			return RECT{ (std::max)(0L, rect.left), (std::max)(0L, rect.top),
+				(std::min)(static_cast<LONG>(viewportWidth), rect.right),
+				(std::min)(static_cast<LONG>(viewportHeight), rect.bottom) };
 		};
-		D3D11_MAPPED_SUBRESOURCE mapped = {};
-		if (FAILED(context->Map(compositeVertexBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
-		std::memcpy(mapped.pData, rectPoints, sizeof(rectPoints)); // 合成仅更新独立小资源，不能打断墨迹环形追加。
-		context->Unmap(compositeVertexBuffer.Get(), 0);
+		const auto empty = [](const RECT& rect) {
+			return rect.left >= rect.right || rect.top >= rect.bottom;
+		};
 
+		size_t first = 0;
+		RECT firstRect = {};
+		for (; first < rects.size(); ++first)
+		{
+			firstRect = clamp(rects[first]);
+			if (!empty(firstRect)) break;
+		}
+		if (first == rects.size()) return true;
+
+#ifndef NDEBUG
+		// 算子合成不幂等，正面积重叠会重复应用；共边可以合成。
+		for (size_t i = first + 1; i < rects.size(); ++i)
+		{
+			const RECT rect = clamp(rects[i]);
+			if (empty(rect)) continue;
+			for (size_t j = first; j < i; ++j)
+			{
+				const RECT previous = clamp(rects[j]);
+				assert((std::max)(rect.left, previous.left) >= (std::min)(rect.right, previous.right) ||
+					(std::max)(rect.top, previous.top) >= (std::min)(rect.bottom, previous.bottom));
+			}
+		}
+#endif
+
+		const auto uploadRect = [&](const RECT& rect) {
+			const InkPoint rectPoints[2] = {
+				{ static_cast<float>(rect.left), static_cast<float>(rect.top), 0.0f, 0.0f },
+				{ static_cast<float>(rect.right), static_cast<float>(rect.bottom), 0.0f, 0.0f }
+			};
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (FAILED(context->Map(compositeVertexBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
+			std::memcpy(mapped.pData, rectPoints, sizeof(rectPoints)); // 合成仅更新独立小资源，不能打断墨迹环形追加。
+			context->Unmap(compositeVertexBuffer.Get(), 0);
+			return true;
+		};
+
+		// 保留首个顶点上传和常量上传的顺序，任一失败时都还没有更改绑定。
+		if (!uploadRect(firstRect)) return false;
+		D3D11_MAPPED_SUBRESOURCE mapped = {};
 		if (FAILED(context->Map(globalCB.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
 		auto* constants = static_cast<GlobalShaderConstants*>(mapped.pData);
 		constants->width = viewportWidth;
@@ -216,13 +271,25 @@ namespace Inkeys::Drawing::Draw3
 		context->RSSetState(rasterState.Get());
 		context->Draw(6, 0); // 双源混合一次完成 Result = Add + Retain * Below。
 		++(stableLayer ? operatorCounters_.dualResolves : operatorCounters_.singleResolves);
+		bool succeeded = true;
+		for (const RECT& input : rects.subspan(first + 1))
+		{
+			const RECT rect = clamp(input);
+			if (empty(rect)) continue;
+			if (!uploadRect(rect))
+			{
+				succeeded = false;
+				break;
+			}
+			context->Draw(6, 0);
+		}
 
 		ID3D11ShaderResourceView* nullResources[] = { nullptr, nullptr, nullptr, nullptr, nullptr };
 		ID3D11SamplerState* nullSampler[] = { nullptr };
 		context->VSSetShaderResources(0, 1, nullResources);
 		context->PSSetShaderResources(1, ARRAYSIZE(nullResources), nullResources); // 解除 SRV 绑定，避免后续作为 RTV 时冲突。
 		context->PSSetSamplers(0, 1, nullSampler);
-		return true;
+		return succeeded;
 	}
 
 	void InkRenderer::SetScreenSize(float width, float height)
@@ -416,8 +483,64 @@ namespace Inkeys::Drawing::Draw3
 		{
 			*tracking = { {}, 0, false };
 			++operatorCounters_.fullClears;
-			if (&layer == &layerL1) ++stableLayerEpoch_;
+			if (&layer == &layerL1) stableLayerOwnedEpoch_ = ++stableLayerEpoch_;
 		}
+	}
+
+	namespace
+	{
+		RECT ExpandOperatorClearRect(const RECT& bounds, LONG width, LONG height) noexcept
+		{
+			// 声明允许使用饱和坐标，先提升精度再外扩和裁剪。
+			return {
+				static_cast<LONG>(std::clamp<long long>(static_cast<long long>(bounds.left) - kOperatorContentClearMargin, 0, width)),
+				static_cast<LONG>(std::clamp<long long>(static_cast<long long>(bounds.top) - kOperatorContentClearMargin, 0, height)),
+				static_cast<LONG>(std::clamp<long long>(static_cast<long long>(bounds.right) + kOperatorContentClearMargin, 0, width)),
+				static_cast<LONG>(std::clamp<long long>(static_cast<long long>(bounds.bottom) + kOperatorContentClearMargin, 0, height))
+			};
+		}
+	}
+
+	void InkRenderer::ClearOperatorLayerRects(const OperatorLayerResources& layer, std::span<const RECT> rects) noexcept
+	{
+		const float transparent[4] = { kTransparentLayerClearColor.x, kTransparentLayerClearColor.y,
+			kTransparentLayerClearColor.z, kTransparentLayerClearColor.w };
+		const float retainIdentity[4] = { 1.0f, 1.0f, 1.0f, 1.0f }; // Retain=1 表示不改变下层。
+		context1_->ClearView(layer.addRTV.Get(), transparent, rects.data(), static_cast<UINT>(rects.size()));
+		context1_->ClearView(layer.retainRTV.Get(), retainIdentity, rects.data(), static_cast<UINT>(rects.size()));
+	}
+
+	bool InkRenderer::CanClearOperatorLayerRegion(const OperatorLayerResources& layer) const noexcept
+	{
+		const OperatorContentTracking* tracking = ContentTrackingFor(layer);
+		return tracking && !tracking->untracked && context1_ && layer.addTexture && layer.addRTV && layer.retainRTV;
+	}
+
+	bool InkRenderer::ClearOperatorLayerRegion(const OperatorLayerResources& layer, std::span<const RECT> rects) noexcept
+	{
+		if (!CanClearOperatorLayerRegion(layer)) return false;
+		D3D11_TEXTURE2D_DESC description = {};
+		layer.addTexture->GetDesc(&description);
+		std::array<RECT, kOperatorContentRectCapacity> clearRects = {};
+		size_t clearCount = 0;
+		bool cleared = false;
+		for (const RECT& bounds : rects)
+		{
+			if (bounds.left >= bounds.right || bounds.top >= bounds.bottom) continue;
+			const RECT rect = ExpandOperatorClearRect(bounds,
+				static_cast<LONG>(description.Width), static_cast<LONG>(description.Height));
+			if (rect.left >= rect.right || rect.top >= rect.bottom) continue;
+			clearRects[clearCount++] = rect;
+			if (clearCount == clearRects.size())
+			{
+				ClearOperatorLayerRects(layer, clearRects);
+				clearCount = 0;
+				cleared = true;
+			}
+		}
+		if (clearCount != 0) ClearOperatorLayerRects(layer, std::span(clearRects).first(clearCount));
+		if (cleared || clearCount != 0) ++operatorCounters_.partialClears;
+		return true;
 	}
 
 	void InkRenderer::ClearOperatorLayerContent(const OperatorLayerResources& layer)
@@ -434,18 +557,15 @@ namespace Inkeys::Drawing::Draw3
 			++operatorCounters_.skippedClears;
 			return;
 		}
-		const LONG width = static_cast<LONG>(viewportWidth);
-		const LONG height = static_cast<LONG>(viewportHeight);
+		const LONG width = (std::max)(0L, static_cast<LONG>(viewportWidth));
+		const LONG height = (std::max)(0L, static_cast<LONG>(viewportHeight));
 		// 外扩覆盖形状合成矩形比几何包络多出的 1 像素等取整误差，再裁剪到画布；完全在画布外的矩形丢弃。
-		std::array<D3D11_RECT, kOperatorContentRectCapacity> clearRects = {};
+		std::array<RECT, kOperatorContentRectCapacity> clearRects = {};
 		UINT clearCount = 0;
 		long long area = 0;
 		for (uint32_t index = 0; index < tracking->count; ++index)
 		{
-			const RECT& bounds = tracking->rects[index];
-			const D3D11_RECT rect = {
-				(std::max)(0L, bounds.left - kOperatorContentClearMargin), (std::max)(0L, bounds.top - kOperatorContentClearMargin),
-				(std::min)(width, bounds.right + kOperatorContentClearMargin), (std::min)(height, bounds.bottom + kOperatorContentClearMargin) };
+			const RECT rect = ExpandOperatorClearRect(tracking->rects[index], width, height);
 			if (rect.left >= rect.right || rect.top >= rect.bottom) continue;
 			area += static_cast<long long>(rect.right - rect.left) * static_cast<long long>(rect.bottom - rect.top);
 			clearRects[clearCount++] = rect;
@@ -464,14 +584,10 @@ namespace Inkeys::Drawing::Draw3
 			ClearOperatorLayer(layer);
 			return;
 		}
-		const float transparent[4] = { kTransparentLayerClearColor.x, kTransparentLayerClearColor.y,
-			kTransparentLayerClearColor.z, kTransparentLayerClearColor.w };
-		const float retainIdentity[4] = { 1.0f, 1.0f, 1.0f, 1.0f }; // Retain=1 表示不改变下层。
-		context1_->ClearView(layer.addRTV.Get(), transparent, clearRects.data(), clearCount);
-		context1_->ClearView(layer.retainRTV.Get(), retainIdentity, clearRects.data(), clearCount);
+		ClearOperatorLayerRects(layer, std::span(clearRects).first(clearCount));
 		*tracking = { {}, 0, false };
 		++operatorCounters_.partialClears;
-		if (&layer == &layerL1) ++stableLayerEpoch_;
+		if (&layer == &layerL1) stableLayerOwnedEpoch_ = ++stableLayerEpoch_;
 	}
 
 	void InkRenderer::ClearLaserCoverage(LaserCoverageResources& layer)
@@ -605,6 +721,9 @@ namespace Inkeys::Drawing::Draw3
 
 	bool InkRenderer::CreateOperatorLayerResources(UINT width, UINT height, OperatorLayerResources& layer)
 	{
+		// 新纹理没有初始像素，在整层清除前保持未知。分配中途失败也不能沿用旧登记。
+		if (auto* tracking = ContentTrackingFor(layer)) *tracking = {};
+		if (&layer == &layerL1) ++stableLayerEpoch_;
 		D3D11_TEXTURE2D_DESC textureDescription = {};
 		textureDescription.Width = width;
 		textureDescription.Height = height;
@@ -756,8 +875,6 @@ namespace Inkeys::Drawing::Draw3
 		CreateTrustedL2SnapshotResources(width, height);
 		if (!CreateOperatorLayerResources(width, height, layerL1)) return false; // L1 保存当前笔画已确认前缀操作。
 		if (!CreateOperatorLayerResources(width, height, layerL0)) return false; // L0 保存每帧变化的笔锋和预测操作。
-		l0Content_ = l1Content_ = {}; // 新纹理内容未知：在一次整屏清除之前，局部清除一律退回整屏。
-		++stableLayerEpoch_;
 		// 可选 Laser 主体由工具选择控制；普通画布不预留整屏激光纹理。
 
 		SetScreenSize(static_cast<float>(width), static_cast<float>(height));
@@ -1734,6 +1851,292 @@ namespace Inkeys::Drawing::Draw3
 #endif
 	}
 
+	static int RunSweepOnlyStrokeGeometryValidation(InkRenderer& renderer, const OperatorLayerResources& layer)
+	{
+		const auto check = [](bool condition, const char* name) {
+			if (!condition) std::fprintf(stderr, "[Draw3Sweep] FAIL %s\n", name);
+			return condition;
+		};
+		const auto createReadback = [&](ID3D11Texture2D* source,
+			Microsoft::WRL::ComPtr<ID3D11Texture2D>& staging) {
+			D3D11_TEXTURE2D_DESC description = {};
+			source->GetDesc(&description);
+			description.Usage = D3D11_USAGE_STAGING;
+			description.BindFlags = description.MiscFlags = 0;
+			description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+			return renderer.device->CreateTexture2D(&description, nullptr, staging.GetAddressOf());
+		};
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> addStaging, retainStaging;
+		D3D11_BUFFER_DESC constantsDescription = {};
+		renderer.globalCB->GetDesc(&constantsDescription);
+		constantsDescription.Usage = D3D11_USAGE_STAGING;
+		constantsDescription.BindFlags = 0;
+		constantsDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> constantsStaging;
+		if (!check(SUCCEEDED(createReadback(layer.addTexture.Get(), addStaging)) &&
+			SUCCEEDED(createReadback(layer.retainTexture.Get(), retainStaging)) &&
+			SUCCEEDED(renderer.device->CreateBuffer(&constantsDescription, nullptr,
+				constantsStaging.GetAddressOf())), "create readbacks")) return 1;
+
+		D3D11_TEXTURE2D_DESC target = {};
+		layer.addTexture->GetDesc(&target);
+		renderer.SetScreenSize(static_cast<float>(target.Width), static_cast<float>(target.Height));
+		const size_t pixelCount = static_cast<size_t>(target.Width) * target.Height;
+		struct Snapshot
+		{
+			std::vector<uint32_t> add;
+			std::vector<uint16_t> retain;
+			float stripCount = 0.0f;
+		};
+		Snapshot full{ std::vector<uint32_t>(pixelCount), std::vector<uint16_t>(pixelCount) };
+		Snapshot sweep{ std::vector<uint32_t>(pixelCount), std::vector<uint16_t>(pixelCount) };
+		const auto readTexture = [&](ID3D11Texture2D* source, ID3D11Texture2D* staging,
+			void* destination, size_t rowBytes) {
+			renderer.context->CopyResource(staging, source);
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (FAILED(renderer.context->Map(staging, 0, D3D11_MAP_READ, 0, &mapped))) return false;
+			for (UINT y = 0; y < target.Height; ++y)
+				std::memcpy(static_cast<unsigned char*>(destination) + y * rowBytes,
+					static_cast<const unsigned char*>(mapped.pData) + y * static_cast<size_t>(mapped.RowPitch), rowBytes);
+			renderer.context->Unmap(staging, 0);
+			return true;
+		};
+		const auto readSnapshot = [&](Snapshot& snapshot) {
+			renderer.context->OMSetRenderTargets(0, nullptr, nullptr);
+			if (!readTexture(layer.addTexture.Get(), addStaging.Get(), snapshot.add.data(),
+				target.Width * sizeof(snapshot.add.front())) ||
+				!readTexture(layer.retainTexture.Get(), retainStaging.Get(), snapshot.retain.data(),
+					target.Width * sizeof(snapshot.retain.front()))) return false;
+			renderer.context->CopyResource(constantsStaging.Get(), renderer.globalCB.Get());
+			D3D11_MAPPED_SUBRESOURCE mapped = {};
+			if (FAILED(renderer.context->Map(constantsStaging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
+			// 从提交后的常量缓冲读回末批的 K，防止两个路径都退化为原四边形。
+			snapshot.stripCount = static_cast<const GlobalShaderConstants*>(mapped.pData)->padding[1];
+			renderer.context->Unmap(constantsStaging.Get(), 0);
+			return true;
+		};
+
+		// 第一批保持细笔并把重复点置于屏外，跨真实上传边界而不放大 WARP 的绘制成本。
+		std::vector<InkPoint> crossBatch(InkRenderer::kMaxBufferCapacity + 1, { -10, 300, 4, 0 });
+		crossBatch[InkRenderer::kMaxBufferCapacity - 2] = { 300, 300, 4, 0 };
+		crossBatch[InkRenderer::kMaxBufferCapacity - 1] = { 310, 300, 23, 0 };
+		crossBatch.back() = { 320, 300, 30, 0 };
+		// 两批都是粗笔：第二批含两条线段，第一条不挖洞、第二条挖洞。重复点是零长线段，按原四边形画在屏外。
+		std::vector<InkPoint> crossBatchThick(InkRenderer::kMaxBufferCapacity + 2, { -1000, 300, 30, 0 });
+		crossBatchThick[InkRenderer::kMaxBufferCapacity - 2] = { 290, 300, 30, 0 };
+		crossBatchThick[InkRenderer::kMaxBufferCapacity - 1] = { 300, 300, 30, 0 };
+		crossBatchThick[InkRenderer::kMaxBufferCapacity] = { 310, 300, 30, 0 };
+		crossBatchThick[InkRenderer::kMaxBufferCapacity + 1] = { 320, 300, 30, 0 };
+		struct SweepCase
+		{
+			const char* name;
+			std::vector<InkPoint> points;
+			float expectedStrips;
+		};
+		const SweepCase cases[] = {
+			{ "radius-30", { { 330, 335, 30, 0 }, { 340, 335, 30, 0 }, { 350, 335, 30, 0 } }, 8 },
+			{ "radius-150", { { 330, 335, 150, 0 }, { 340, 335, 150, 0 }, { 350, 335, 150, 0 } }, 32 },
+			{ "radius-300", { { 330, 335, 300, 0 }, { 340, 335, 300, 0 }, { 350, 335, 300, 0 } }, 64 },
+			{ "growing", { { 200, 300, 40, 0 }, { 210, 300, 95, 0 }, { 310, 300, 120, 0 },
+				{ 320, 300, 180, 0 }, { 420, 300, 200, 0 } }, 64 },
+			{ "shrinking", { { 200, 300, 200, 0 }, { 210, 300, 180, 0 }, { 310, 300, 120, 0 },
+				{ 320, 300, 95, 0 }, { 420, 300, 40, 0 } }, 64 },
+			{ "turn-90", { { 300, 300, 150, 0 }, { 310, 300, 150, 0 }, { 310, 310, 150, 0 } }, 32 },
+			{ "turn-170", { { 300, 300, 150, 0 }, { 310, 300, 150, 0 }, { 300.15192f, 301.73648f, 150, 0 } }, 32 },
+			{ "zigzag", { { 300, 300, 30, 0 }, { 310, 310, 30, 0 }, { 300, 320, 30, 0 },
+				{ 310, 330, 30, 0 }, { 300, 340, 30, 0 } }, 8 },
+			{ "length-0.5", { { 330, 335, 150, 0 }, { 330.5f, 335, 150, 0 }, { 331, 335, 150, 0 } }, 32 },
+			{ "length-400", { { 120, 335, 30, 0 }, { 520, 335, 30, 0 }, { 120, 335, 30, 0 } }, 8 },
+			{ "two-points", { { 300, 300, 30, 0 }, { 310, 300, 30, 0 } }, 8 },
+			{ "zero-length", { { 300, 300, 150, 0 }, { 310, 300, 150, 0 }, { 310, 300, 150, 0 },
+				{ 320, 300, 150, 0 } }, 32 },
+			{ "clipped-40-to-200", { { 300, 300, 40, 0 }, { 310, 300, 200, 0 } }, 64 },
+			{ "angled-clip-edge", { { 300.5f, 300.5f, 40, 0 }, { 306.5f, 308.5f, 200, 0 } }, 64 },
+			{ "clipped-predecessor", { { 300, 300, 4, 0 }, { 300, 300, 4, 0 }, { 300, 300, 4, 0 },
+				{ 310, 300, 23, 0 }, { 320, 300, 30, 0 } }, 8 },
+			{ "cross-batch", std::move(crossBatch), 8 },
+			{ "cross-batch-thick", std::move(crossBatchThick), 8 },
+			// 同一批里有很粗的点时，细线段不得被切成几分之一像素高的横条（审阅复现过超出容差的差别）。
+			{ "thin-with-huge-point", { { 300.39642334f, 300.51046753f, 1.15000427f, 0 },
+				{ 310.36483765f, 291.69979858f, 1.22317386f, 0 }, { 700, 50, 256, 0 } }, 64 },
+			{ "mixed-tiers", { { 200, 300, 30, 0 }, { 210, 300, 30, 0 }, { 220, 300, 30, 0 },
+				{ 560, 300, 300, 0 }, { 570, 300, 300, 0 } }, 64 },
+			// 前一个点半径低于 1，后一条线段虽然很粗也不得挖洞。
+			{ "thin-predecessor", { { 300, 300, 0.6f, 0 }, { 345, 300, 40, 0 }, { 355, 300, 40, 0 } }, 8 },
+			// 笔锋收尾：半径低于 1 的线段走细线覆盖公式，其后一条不得挖洞。
+			{ "taper-out", { { 300, 300, 30, 0 }, { 310, 300, 30, 0 }, { 330, 300, 12, 0 },
+				{ 340, 300, 3, 0 }, { 343, 300, 0.6f, 0 } }, 8 },
+			{ "taper-in", { { 343, 300, 0.6f, 0 }, { 340, 300, 3, 0 }, { 330, 300, 12, 0 },
+				{ 310, 300, 30, 0 }, { 300, 300, 30, 0 } }, 8 },
+			{ "negative-radius-batch", { { -10, 300, -1, 0 }, { 300, 300, 30, 0 }, { 310, 300, 30, 0 } }, 0 },
+			{ "large-coordinate-batch", { { 300, 300, 30, 0 }, { 310, 300, 30, 0 }, { 1e8f, 300, 30, 0 } }, 0 },
+		};
+
+		using DirectX::PackedVector::XMConvertHalfToFloat;
+		constexpr uint16_t halfOne = 0x3c00;
+		constexpr uint16_t halfHalf = 0x3800;
+		constexpr float tolerance = 1.0f / 255.0f;
+		int failures = 0;
+		for (const SweepCase& test : cases)
+		{
+			for (InkOperatorKind kind : { InkOperatorKind::Erase, InkOperatorKind::Draw })
+			{
+				for (float opacity : { 1.0f, 0.5f })
+				{
+					const DirectX::XMFLOAT4 color(0.25f, 0.5f, 0.75f, opacity);
+					const auto draw = [&] {
+						renderer.ClearOperatorLayer(layer);
+						renderer.SetOperatorTarget(layer);
+						return renderer.DrawStroke(test.points, color, StrokeShape::RoundCapsule, kind);
+					};
+					renderer.SetSweepOnlyStrokeGeometryEnabled(false);
+					const int fullResult = draw();
+					renderer.SetSweepOnlyStrokeGeometryEnabled(true);
+					if (!check(fullResult == 0 && readSnapshot(full) && draw() == 0 &&
+						readSnapshot(sweep), test.name)) return failures + 1;
+					if (!check(full.stripCount == 0.0f && sweep.stripCount == test.expectedStrips, test.name))
+						++failures;
+
+					const uint16_t saturatedRetain = kind == InkOperatorKind::Draw && opacity == 0.5f ? halfHalf : 0;
+					size_t differingPixels = 0;
+					size_t differingEndpointPixels = 0;
+					float maxDifference = 0.0f;
+					bool hasCoverage = false;
+					for (size_t i = 0; i < pixelCount; ++i)
+					{
+						hasCoverage |= full.add[i] != 0 || full.retain[i] != halfOne;
+						if (full.add[i] == sweep.add[i] && full.retain[i] == sweep.retain[i]) continue;
+						++differingPixels;
+						// 擦除的 Add 始终为零，透明与饱和都通过 Retain 的端值判断。
+						if ((full.retain[i] == halfOne && full.add[i] == 0) || full.retain[i] == saturatedRetain)
+							++differingEndpointPixels;
+						const float retainDifference = std::abs(
+							XMConvertHalfToFloat(full.retain[i]) - XMConvertHalfToFloat(sweep.retain[i]));
+						maxDifference = (std::max)(maxDifference, std::isfinite(retainDifference)
+							? retainDifference : std::numeric_limits<float>::infinity());
+						for (unsigned shift = 0; shift < 32; shift += 8)
+						{
+							const int before = static_cast<int>((full.add[i] >> shift) & 255);
+							const int after = static_cast<int>((sweep.add[i] >> shift) & 255);
+							maxDifference = (std::max)(maxDifference, std::abs(before - after) / 255.0f);
+						}
+					}
+					std::fprintf(stderr,
+						"[Draw3Sweep] case=%s operator=%s opacity=%.1f K=%.0f differing_pixels=%zu max_diff=%.9g endpoint_differences=%zu\n",
+						test.name, kind == InkOperatorKind::Erase ? "erase" : "draw", opacity,
+						sweep.stripCount == 0.0f ? 1.0f : sweep.stripCount,
+						differingPixels, maxDifference, differingEndpointPixels);
+					if (!check(hasCoverage, "legacy draw has coverage")) ++failures;
+					if (!check(maxDifference <= tolerance, "Add/Retain difference within 1/255")) ++failures;
+					// 透明与饱和端值上的差别同样只来自不同三角形的插值噪声，已由上面的 1/255 上限约束；
+					// 这里只统计并输出，便于发现异常增多。
+				}
+			}
+		}
+
+		// 首批的半尺寸低于门槛；第二批共享首批末点，并在第二段真正挖洞。
+		std::vector<InkPoint> rectCrossBatch(InkRenderer::kMaxBufferCapacity + 2, { -1000, 300, 20, 0 });
+		rectCrossBatch[InkRenderer::kMaxBufferCapacity - 2] = { 285, 290, 20, 0 };
+		rectCrossBatch[InkRenderer::kMaxBufferCapacity - 1] = { 300, 300, 20, 0 };
+		rectCrossBatch[InkRenderer::kMaxBufferCapacity] = { 310, 310, 48, 0 };
+		rectCrossBatch.back() = { 355, 315, 48, 0 };
+		struct RectSweepCase
+		{
+			const char* name;
+			std::vector<InkPoint> points;
+			size_t holeModeSegments;
+			bool expectLessShading = false;
+		};
+		const RectSweepCase rectCases[] = {
+			{ "straight", { { 280, 300, 48, 0 }, { 300, 300, 48, 0 }, { 320, 300, 48, 0 } }, 2, true },
+			{ "diagonal", { { 280.25f, 280.5f, 48, 0 }, { 308, 301, 48, 0 }, { 337, 325, 48, 0 } }, 2 },
+			{ "sharp-turn", { { 280, 300, 48, 0 }, { 330, 300, 48, 0 }, { 315, 320, 48, 0 } }, 2 },
+			{ "reversal", { { 280, 300, 48, 0 }, { 330, 300, 48, 0 }, { 280, 300, 48, 0 } }, 2 },
+			{ "growing", { { 280, 300, 24, 0 }, { 285, 303, 48, 0 }, { 370, 335, 64, 0 } }, 2 },
+			{ "shrinking", { { 280, 300, 64, 0 }, { 285, 303, 48, 0 }, { 370, 335, 24, 0 } }, 2 },
+			{ "short-segments", { { 300.25f, 300, 48, 0 }, { 300.75f, 300.25f, 48, 0 }, { 301, 301, 48, 0 } }, 2 },
+			{ "long-segments", { { 120, 150, 36, 0 }, { 590, 330, 36, 0 }, { 120, 520, 36, 0 } }, 2 },
+			{ "zero-length", { { 280, 300, 48, 0 }, { 300, 300, 48, 0 }, { 300, 300, 60, 0 },
+				{ 320, 315, 48, 0 } }, 3 },
+			{ "two-points", { { 280, 300, 48, 0 }, { 300, 310, 48, 0 } }, 0 },
+			{ "below-threshold", { { 280, 300, 20, 0 }, { 300, 310, 20, 0 }, { 320, 300, 20, 0 } }, 0 },
+			{ "small-hole-fallback", { { 280, 300, 48, 0 }, { 300, 310, 4, 0 }, { 320, 300, 48, 0 } }, 2 },
+			{ "cross-batch", std::move(rectCrossBatch), 2 },
+		};
+		Microsoft::WRL::ComPtr<ID3D11Query> query;
+		const D3D11_QUERY_DESC queryDescription = { D3D11_QUERY_PIPELINE_STATISTICS, 0 };
+		if (!check(SUCCEEDED(renderer.device->CreateQuery(&queryDescription, query.GetAddressOf())),
+			"rectangular sweep statistics query")) return failures + 1;
+		for (const EraserShape shape : { EraserShape::Rectangle, EraserShape::Square })
+		{
+			for (const RectSweepCase& test : rectCases)
+			{
+				std::vector<InkPoint> upload;
+				upload.reserve(test.points.size());
+				for (const InkPoint& point : test.points)
+				{
+					const auto half = ResolveEraserHalfSize(shape, point.r);
+					upload.push_back({ point.x, point.y, half.x, half.y });
+				}
+				const auto draw = [&](bool enabled, Snapshot& snapshot, D3D11_QUERY_DATA_PIPELINE_STATISTICS& stats) {
+					renderer.SetSweepOnlyStrokeGeometryEnabled(enabled);
+					renderer.ClearOperatorLayer(layer);
+					renderer.SetOperatorTarget(layer);
+					renderer.context->Begin(query.Get());
+					const int result = renderer.DrawStroke(upload, { 0.0f, 0.0f, 0.0f, 0.0f },
+						StrokeShape::EraseRectSweep, InkOperatorKind::Erase);
+					renderer.context->End(query.Get());
+					if (result != 0 || !readSnapshot(snapshot)) return false;
+					HRESULT queryResult = S_FALSE;
+					for (int attempt = 0; attempt < 1000 && queryResult == S_FALSE; ++attempt)
+						queryResult = renderer.context->GetData(query.Get(), &stats, sizeof(stats), 0);
+					return queryResult == S_OK;
+				};
+				D3D11_QUERY_DATA_PIPELINE_STATISTICS fullStats = {}, sweepStats = {};
+				if (!check(draw(false, full, fullStats) && draw(true, sweep, sweepStats), test.name))
+					return failures + 1;
+
+				size_t differingPixels = 0;
+				size_t differingOffBandPixels = 0;
+				float maxDifference = 0.0f;
+				bool hasCoverage = false;
+				for (size_t i = 0; i < pixelCount; ++i)
+				{
+					hasCoverage |= full.retain[i] != halfOne;
+					if (full.add[i] == sweep.add[i] && full.retain[i] == sweep.retain[i]) continue;
+					++differingPixels;
+					const size_t x = i % target.Width, y = i / target.Width;
+					// 端值紧贴 AA 带时也可能有插值差异；用四邻域识别远离边缘的像素。
+					const uint16_t retain = full.retain[i];
+					if ((retain == 0 || retain == halfOne) && x > 0 && x + 1 < target.Width &&
+						y > 0 && y + 1 < target.Height && full.retain[i - 1] == retain && full.retain[i + 1] == retain &&
+						full.retain[i - target.Width] == retain && full.retain[i + target.Width] == retain)
+						++differingOffBandPixels;
+					const float difference = std::abs(
+						XMConvertHalfToFloat(full.retain[i]) - XMConvertHalfToFloat(sweep.retain[i]));
+					maxDifference = (std::max)(maxDifference, std::isfinite(difference)
+						? difference : std::numeric_limits<float>::infinity());
+				}
+				std::fprintf(stderr,
+					"[Draw3Sweep] shape=%s case=%s hole_mode=%.0f differing_pixels=%zu max_diff=%.9g off_band_differences=%zu\n",
+					shape == EraserShape::Rectangle ? "rectangle" : "square", test.name, sweep.stripCount,
+					differingPixels, maxDifference, differingOffBandPixels);
+
+				const size_t legacyVertices = 6 * (upload.size() - 1);
+				if (!check(fullStats.IAVertices == legacyVertices && full.stripCount == 0.0f &&
+					sweepStats.IAVertices == legacyVertices + 18 * test.holeModeSegments &&
+					sweep.stripCount == (test.holeModeSegments > 0 ? 1.0f : 0.0f),
+					"rectangular sweep used the expected batch geometry")) ++failures;
+				if (test.expectLessShading && !check(sweepStats.PSInvocations < fullStats.PSInvocations,
+					"rectangular holes reduce pixel shader invocations")) ++failures;
+				if (!check(hasCoverage && full.add == sweep.add && differingOffBandPixels == 0 &&
+					maxDifference <= tolerance && (test.holeModeSegments > 0 || differingPixels == 0),
+					"rectangular sweep preserves Add and Retain outside AA, with AA within 1/255")) ++failures;
+			}
+		}
+		return failures;
+	}
+
 	int RunRendererUploadValidation() noexcept
 	{
 		try
@@ -1759,6 +2162,17 @@ namespace Inkeys::Drawing::Draw3
 			const bool canAppend = SUCCEEDED(testDevice->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS,
 				&options, sizeof(options))) && options.MapNoOverwriteOnDynamicBufferSRV;
 			std::vector<unsigned char> referencePixels;
+			{
+				// 用独立的渲染器实例：这组用例会推进结构化缓冲的游标，不能影响后面按游标断言的上传用例。
+				InkRenderer sweepRenderer;
+				sweepRenderer.device = testDevice;
+				sweepRenderer.context = testContext;
+				OperatorLayerResources sweepLayer;
+				if (!check(sweepRenderer.CreateFixedResources(D3D_DRIVER_TYPE_WARP) &&
+					sweepRenderer.CreateOperatorLayerResources(768, 672, sweepLayer),
+					"sweep renderer resources")) return 1;
+				failures += RunSweepOnlyStrokeGeometryValidation(sweepRenderer, sweepLayer);
+			}
 			// 两种动态能力分支与 DEFAULT 都调用产品 Draw 方法，不通过测试替身模拟上传。
 			for (int mode = 0; mode < 3; ++mode)
 			{
@@ -2017,6 +2431,7 @@ namespace Inkeys::Drawing::Draw3
 					const std::array<InkPoint, 2> rightInk = { InkPoint{ 61, 51, 1.25f, 2 }, InkPoint{ 62, 51, 1.25f, 3 } };
 					const auto drawBoth = [&](const OperatorLayerResources& layer, const RECT& left, const RECT& right)
 					{
+						if (&layer == &renderer.layerL1) renderer.MarkStableLayerForeignWrite();
 						renderer.SetOperatorTarget(layer, left);
 						check(renderer.DrawStroke(leftInk, red) == 0, "declared left write");
 						renderer.SetOperatorTarget(layer, right);
@@ -2221,6 +2636,7 @@ namespace Inkeys::Drawing::Draw3
 							renderer.pixelShader = productionShader;
 							renderer.ClearOperatorLayer(l1);
 							renderer.ClearOperatorLayer(l0);
+							if (layer == &l1) renderer.MarkStableLayerForeignWrite();
 							renderer.SetOperatorTarget(*layer, resolveRect);
 							check(renderer.DrawStroke(resolveInk, kind == InkOperatorKind::Draw ?
 								penColor : kTransparentLayerClearColor, StrokeShape::RoundCapsule, kind) == 0,
@@ -2442,6 +2858,140 @@ namespace Inkeys::Drawing::Draw3
 				testContext->ClearState();
 				renderer.ReleaseResources();
 				std::fprintf(stderr, "[Draw3Upload] mode=%s completed\n", mode == 2 ? "DEFAULT" : mode == 1 ? "dynamic_append" : "dynamic_discard");
+			}
+			{
+				// 单独使用一个渲染器，并放在上传用例之后，避免修改其缓冲游标、计数和绑定。
+				InkRenderer renderer;
+				renderer.device = testDevice;
+				renderer.context = testContext;
+				constexpr LONG kSize = 64;
+				constexpr UINT kPitch = kSize * sizeof(uint32_t);
+				if (!check(renderer.CreateFixedResources(D3D_DRIVER_TYPE_WARP) &&
+					renderer.CreateOperatorLayerResources(kSize, kSize, renderer.layerL1) &&
+					renderer.CreateOperatorLayerResources(kSize, kSize, renderer.layerL0),
+					"multi-rect resolve renderer resources")) return 1;
+				renderer.SetScreenSize(kSize, kSize);
+
+				std::vector<uint32_t> below(kSize * kSize), boundingPixels(kSize * kSize), candidatePixels(kSize * kSize);
+				for (LONG y = 0; y < kSize; ++y)
+					for (LONG x = 0; x < kSize; ++x)
+						below[y * kSize + x] = 0xB0000020u | ((32u + x) << 16) | ((40u + y) << 8);
+
+				D3D11_TEXTURE2D_DESC description = {};
+				description.Width = description.Height = kSize;
+				description.MipLevels = description.ArraySize = description.SampleDesc.Count = 1;
+				description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+				description.Usage = D3D11_USAGE_DEFAULT;
+				description.BindFlags = D3D11_BIND_RENDER_TARGET;
+				struct ResolveTarget
+				{
+					Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+					Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
+				};
+				ResolveTarget reference, candidate;
+				for (auto* target : { &reference, &candidate })
+				{
+					if (!check(SUCCEEDED(testDevice->CreateTexture2D(&description, nullptr,
+						target->texture.GetAddressOf())) && SUCCEEDED(testDevice->CreateRenderTargetView(
+						target->texture.Get(), nullptr, target->rtv.GetAddressOf())),
+						"multi-rect resolve destination")) return 1;
+				}
+				description.Usage = D3D11_USAGE_STAGING;
+				description.BindFlags = 0;
+				description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+				if (!check(SUCCEEDED(testDevice->CreateTexture2D(&description, nullptr, staging.GetAddressOf())),
+					"multi-rect resolve staging texture")) return 1;
+				const auto readPixels = [&](const ResolveTarget& target, std::vector<uint32_t>& pixels) {
+					testContext->OMSetRenderTargets(0, nullptr, nullptr);
+					testContext->CopyResource(staging.Get(), target.texture.Get());
+					D3D11_MAPPED_SUBRESOURCE mapped = {};
+					if (!check(SUCCEEDED(testContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)),
+						"multi-rect resolve readback")) return false;
+					for (LONG y = 0; y < kSize; ++y)
+						std::memcpy(pixels.data() + y * kSize,
+							static_cast<const unsigned char*>(mapped.pData) + y * mapped.RowPitch, kPitch);
+					testContext->Unmap(staging.Get(), 0);
+					return true;
+				};
+				const auto drawLayerInk = [&](const OperatorLayerResources& layer, float drawY, float eraseY,
+					const DirectX::XMFLOAT4& color) {
+					const InkPoint ink[] = { { 1.25f, drawY, 2.5f, 0 }, { 63.25f, drawY, 2.5f, 1 } };
+					const InkPoint eraser[] = { { 1.25f, eraseY, 3.5f, 0 }, { 63.25f, eraseY, 3.5f, 1 } };
+					renderer.ClearOperatorLayer(layer);
+					if (&layer == &renderer.layerL1) renderer.MarkStableLayerForeignWrite();
+					renderer.SetOperatorTarget(layer, { 0, 0, kSize, kSize });
+					return renderer.DrawStroke(ink, color) == 0 &&
+						renderer.DrawStroke(eraser, kTransparentLayerClearColor, StrokeShape::RoundCapsule,
+							InkOperatorKind::Erase) == 0;
+				};
+				if (!check(drawLayerInk(renderer.layerL1, 12.25f, 18.25f, { 0.8f, 0.2f, 0.4f, 0.65f }) &&
+					drawLayerInk(renderer.layerL0, 13.25f, 20.25f, { 0.15f, 0.7f, 0.5f, 0.55f }),
+					"multi-rect resolve source strokes")) return 1;
+
+				constexpr RECT bounds = { 4, 8, kSize, 24 };
+				// 前两项不产生像素。其余三项覆盖共边、远隔和部分超出视口的情况。
+				constexpr RECT rects[] = {
+					{ 68, 8, 72, 24 }, { 32, 8, 32, 24 },
+					{ 4, 8, 15, 24 }, { 15, 8, 22, 24 }, { 52, 8, 71, 24 }
+				};
+				const std::span<const RECT> regions(rects);
+				struct ResolveMode
+				{
+					bool single;
+					OperatorLayerMergeMode merge;
+					const char* name;
+				};
+				constexpr ResolveMode modes[] = {
+					{ false, OperatorLayerMergeMode::CoverageUnion, "coverage union" },
+					{ false, OperatorLayerMergeMode::Ordered, "ordered" },
+					{ true, OperatorLayerMergeMode::CoverageUnion, "single" },
+				};
+				for (const auto& mode : modes)
+				{
+					const int failuresBefore = failures;
+					const auto resolve = [&](ID3D11RenderTargetView* target, const auto& region) {
+						return mode.single ? renderer.ApplyOperatorLayer(target, renderer.layerL0, region) :
+							renderer.ApplyOperatorLayers(target, renderer.layerL1, renderer.layerL0, region, mode.merge);
+					};
+					testContext->UpdateSubresource(reference.texture.Get(), 0, nullptr, below.data(), kPitch, 0);
+					testContext->UpdateSubresource(candidate.texture.Get(), 0, nullptr, below.data(), kPitch, 0);
+					if (!check(resolve(reference.rtv.Get(), bounds), "bounding rect resolve submission")) return 1;
+					const auto before = renderer.OperatorCounters();
+					check(resolve(candidate.rtv.Get(), regions.first(2)) &&
+						renderer.OperatorCounters().dualResolves == before.dualResolves &&
+						renderer.OperatorCounters().singleResolves == before.singleResolves,
+						"no-op resolve for clipped or empty rectangles");
+					if (!check(resolve(candidate.rtv.Get(), regions), "multi-rect resolve submission")) return 1;
+					const auto after = renderer.OperatorCounters();
+					check(after.dualResolves == before.dualResolves + (mode.single ? 0 : 1) &&
+						after.singleResolves == before.singleResolves + (mode.single ? 1 : 0),
+						"multi-rect resolve counts once");
+					if (!readPixels(reference, boundingPixels) || !readPixels(candidate, candidatePixels)) return 1;
+
+					bool insideMatches = true, outsideMatches = true;
+					for (LONG y = 0; y < kSize; ++y)
+						for (LONG x = 0; x < kSize; ++x)
+						{
+							const bool inside = std::any_of(regions.begin(), regions.end(), [&](const RECT& rect) {
+								return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+							});
+							const size_t pixel = y * kSize + x;
+							if (inside) insideMatches &= candidatePixels[pixel] == boundingPixels[pixel];
+							else outsideMatches &= candidatePixels[pixel] == below[pixel];
+						}
+					check(insideMatches, "multi-rect resolve pixels match the bounding rect");
+					check(outsideMatches, "multi-rect resolve preserves all outside pixels");
+					// 三个矩形以及外接矩形的空隙内都要有墨迹，否则漏画或整块误画可能不影响像素。
+					for (LONG x : { 8L, 18L, 58L, 32L })
+					{
+						const size_t pixel = 12 * kSize + x;
+						check(boundingPixels[pixel] != below[pixel], "bounding rect resolve changes each probe pixel");
+					}
+					if (failures != failuresBefore)
+						std::fprintf(stderr, "[Draw3Upload] multi-rect mode=%s\n", mode.name);
+				}
+				testContext->ClearState();
 			}
 			if (!canAppend) std::fputs("[Draw3Upload] NO_OVERWRITE unavailable on WARP; append case skipped\n", stderr);
 			std::fprintf(stderr, "[Draw3Upload] %s failures=%d no_hwnd=1 no_swapchain=1\n", failures ? "FAIL" : "PASS", failures);

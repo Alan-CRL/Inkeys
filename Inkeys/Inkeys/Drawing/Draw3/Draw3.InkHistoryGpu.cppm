@@ -15,6 +15,7 @@
 
 export module Inkeys.Drawing.Draw3.ink_history_gpu;
 
+import Inkeys.Drawing.Draw3.dirty_region;
 import Inkeys.Drawing.Draw3.ink_document;
 import Inkeys.Drawing.Draw3.ink_history;
 import Inkeys.Drawing.Draw3.renderer;
@@ -88,6 +89,7 @@ export namespace Inkeys::Drawing::Draw3
 		bool restored = false;
 		InkRasterStateToken restoredState = 0;
 		RECT dirty = {};
+		DirtyRegion region;
 	};
 
 	struct HotPreimageScreenRect
@@ -137,6 +139,7 @@ export namespace Inkeys::Drawing::Draw3
 		CompositionRestorePath path = CompositionRestorePath::Failed;
 		RECT dirty = {};
 		size_t tileCount = 0;
+		DirtyRegion region;
 	};
 
 	// 绘制线程独占的 GPU cache；全部方法只提交即时上下文命令，不做 readback/wait。

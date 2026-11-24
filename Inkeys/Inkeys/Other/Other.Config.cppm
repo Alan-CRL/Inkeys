@@ -638,6 +638,7 @@ GROUP(UI, \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableZhaoxinCompatibility, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableWaitableWait, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableUlwAsyncReadback, true) \
+				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, EnableUlwMultiStepCommit, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, UlwCompositionAlign, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Win7DwmCompositionAlign, true) \
 				X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DcompCompositionAlign, true) \

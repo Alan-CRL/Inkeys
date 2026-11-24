@@ -1,9 +1,15 @@
 ﻿module;
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#include "Draw3.HighlighterNib.h"
 #include "Draw3.SpeedEraser.h"
 
 #include <algorithm>
 #include <cmath>
+#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -11,23 +17,57 @@
 #include <span>
 #include <utility>
 #include <vector>
+#include <windows.h>
 #include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 
 module Inkeys.Drawing.Draw3.ink_history;
+
+import Inkeys.Drawing.Draw3.dirty_region;
 
 namespace Inkeys::Drawing::Draw3
 {
 	namespace
 	{
 		constexpr double kFootprintAaPadding = 2.0;
-		constexpr double kHighlighterHalfWidth = 1.25;
-		constexpr double kHighlighterHalfHeight = 25.0;
 
 		struct PointD
 		{
 			double x = 0.0;
 			double y = 0.0;
 		};
+
+		double RoundDotExtension(float radius) noexcept
+		{
+			// 与 DrawStrokeOrDot 的单点胶囊右伸量一致。
+			return (std::max)(0.25f, radius * 0.05f);
+		}
+
+		template<typename Visit>
+		bool VisitHighlighterFootprintSweeps(std::span<const StoredInkPoint> points, Visit&& visit)
+		{
+			const auto sweep = [&](const StoredInkPoint& first, const StoredInkPoint& second)
+			{
+				// 绘制取两端半尺寸的平均，足迹取最大值，覆盖整段扫掠。
+				const auto half = HighlighterNib::ResolveHalfSize((std::max)(first.width, second.width) * 0.5f);
+				return visit(PointD{ first.x, first.y }, PointD{ second.x, second.y },
+					PointD{ half.x + kFootprintAaPadding, half.y + kFootprintAaPadding });
+			};
+			if (points.size() == 1) return sweep(points.front(), points.front());
+
+			size_t retained = 0;
+			for (size_t index = 1; index < points.size(); ++index)
+			{
+				const auto& current = points[index];
+				if (!sweep(points[index - 1], current)) return false;
+				const auto& previous = points[retained];
+				if (HighlighterNib::IsDuplicate(current.x - previous.x, current.y - previous.y))
+					continue;
+				// 几何会跨过近重合点，补上它所使用的扫掠段。
+				if (retained != index - 1 && !sweep(previous, current)) return false;
+				retained = index;
+			}
+			return true;
+		}
 
 		struct RectD
 		{
@@ -235,14 +275,10 @@ namespace Inkeys::Drawing::Draw3
 			const double xRadiusValue = std::ceil(expandX / tileSize) + 1.0;
 			const double yRadiusValue = std::ceil(expandY / tileSize) + 1.0;
 			if (!std::isfinite(xRadiusValue) || !std::isfinite(yRadiusValue)) return false;
-			const int64_t visibleColumns =
-				static_cast<int64_t>(visibleTiles.lastX) - visibleTiles.firstX + 1;
-			const int64_t visibleRows =
-				static_cast<int64_t>(visibleTiles.lastY) - visibleTiles.firstY + 1;
-			const int64_t xRadius = static_cast<int64_t>((std::min)(
-				xRadiusValue, static_cast<double>(visibleColumns)));
-			const int64_t yRadius = static_cast<int64_t>((std::min)(
-				yRadiusValue, static_cast<double>(visibleRows)));
+			// 中心可能在可见区外，按瓦片坐标的最大间距截断，避免漏掉伸进可见区的宽笔迹。
+			constexpr double kMaxTileDistance = (std::numeric_limits<uint32_t>::max)();
+			const int64_t xRadius = static_cast<int64_t>((std::min)(xRadiusValue, kMaxTileDistance));
+			const int64_t yRadius = static_cast<int64_t>((std::min)(yRadiusValue, kMaxTileDistance));
 			const int64_t firstY = (std::max)(static_cast<int64_t>(visibleTiles.firstY),
 				static_cast<int64_t>(centerY) - yRadius);
 			const int64_t lastY = (std::min)(static_cast<int64_t>(visibleTiles.lastY),
@@ -332,14 +368,10 @@ namespace Inkeys::Drawing::Draw3
 			const double xRadiusValue = std::ceil(expandX / tileSize) + 1.0;
 			const double yRadiusValue = std::ceil(expandY / tileSize) + 1.0;
 			if (!std::isfinite(xRadiusValue) || !std::isfinite(yRadiusValue)) return false;
-			const int64_t visibleColumns =
-				static_cast<int64_t>(visibleTiles.lastX) - visibleTiles.firstX + 1;
-			const int64_t visibleRows =
-				static_cast<int64_t>(visibleTiles.lastY) - visibleTiles.firstY + 1;
-			const int64_t xRadius = static_cast<int64_t>((std::min)(
-				xRadiusValue, static_cast<double>(visibleColumns)));
-			const int64_t yRadius = static_cast<int64_t>((std::min)(
-				yRadiusValue, static_cast<double>(visibleRows)));
+			// 中心可能在可见区外，按瓦片坐标的最大间距截断，避免漏掉伸进可见区的宽笔迹。
+			constexpr double kMaxTileDistance = (std::numeric_limits<uint32_t>::max)();
+			const int64_t xRadius = static_cast<int64_t>((std::min)(xRadiusValue, kMaxTileDistance));
+			const int64_t yRadius = static_cast<int64_t>((std::min)(yRadiusValue, kMaxTileDistance));
 
 			for (uint64_t step = 0; step <= stepEstimate + 1; ++step)
 			{
@@ -497,13 +529,24 @@ namespace Inkeys::Drawing::Draw3
 				NormalizeTiles(result);
 				return result;
 			}
-			const bool highlighter = stroke.Style().inkType == StoredInkType::Highlighter;
+			if (inkType == StoredInkType::Highlighter)
+			{
+				if (!VisitHighlighterFootprintSweeps(points, [&](PointD first, PointD second, PointD expansion)
+				{
+					if (first.x == second.x && first.y == second.y)
+						return AddPointTiles(first, expansion.x, expansion.y,
+							tileSize, visible, visibleTiles, result);
+					return AddSegmentTiles(first, second, expansion.x, expansion.y,
+						tileSize, visible, visibleTiles, result);
+				})) return std::nullopt;
+				NormalizeTiles(result);
+				return result;
+			}
+			const bool rectangularEraser =
+				inkType == StoredInkType::Eraser && stroke.Style().eraserShape != EraserShape::Circle;
 			const auto expansionForPoint = [&](const StoredInkPoint& point)
 			{
-				if (highlighter)
-					return PointD{ kHighlighterHalfWidth + kFootprintAaPadding,
-						kHighlighterHalfHeight + kFootprintAaPadding };
-				if (inkType == StoredInkType::Eraser && stroke.Style().eraserShape != EraserShape::Circle)
+				if (rectangularEraser)
 				{
 					const auto half = ResolveEraserHalfSize(stroke.Style().eraserShape, point.width * 0.5f);
 					return PointD{ double(half.x) + kFootprintAaPadding, double(half.y) + kFootprintAaPadding };
@@ -514,7 +557,8 @@ namespace Inkeys::Drawing::Draw3
 
 			if (points.size() == 1)
 			{
-				const PointD expansion = expansionForPoint(points.front());
+				PointD expansion = expansionForPoint(points.front());
+				if (!rectangularEraser) expansion.x += RoundDotExtension(points.front().width * 0.5f);
 				if (!AddPointTiles({ points.front().x, points.front().y },
 					expansion.x, expansion.y, tileSize, visible, visibleTiles, result))
 					return std::nullopt;
@@ -593,24 +637,39 @@ namespace Inkeys::Drawing::Draw3
 			double top = (std::numeric_limits<double>::infinity)();
 			double right = -(std::numeric_limits<double>::infinity)();
 			double bottom = -(std::numeric_limits<double>::infinity)();
-			const bool highlighter = stroke.Style().inkType == StoredInkType::Highlighter;
-			for (const StoredInkPoint& point : points)
+			const auto includePoint = [&](PointD point, PointD expansion)
 			{
-				double expandX = highlighter
-					? kHighlighterHalfWidth + kFootprintAaPadding
-					: static_cast<double>(point.width) * 0.5 + kFootprintAaPadding;
-				double expandY = highlighter
-					? kHighlighterHalfHeight + kFootprintAaPadding : expandX;
-				if (stroke.Style().inkType == StoredInkType::Eraser && stroke.Style().eraserShape != EraserShape::Circle)
+				left = (std::min)(left, point.x - expansion.x);
+				top = (std::min)(top, point.y - expansion.y);
+				right = (std::max)(right, point.x + expansion.x);
+				bottom = (std::max)(bottom, point.y + expansion.y);
+			};
+			if (stroke.Style().inkType == StoredInkType::Highlighter)
+			{
+				VisitHighlighterFootprintSweeps(points, [&](PointD first, PointD second, PointD expansion)
 				{
-					const auto half = ResolveEraserHalfSize(stroke.Style().eraserShape, point.width * 0.5f);
-					expandX = double(half.x) + kFootprintAaPadding;
-					expandY = double(half.y) + kFootprintAaPadding;
+					includePoint(first, expansion);
+					includePoint(second, expansion);
+					return true;
+				});
+			}
+			else
+			{
+				const bool rectangularEraser = stroke.Style().inkType == StoredInkType::Eraser &&
+					stroke.Style().eraserShape != EraserShape::Circle;
+				for (const StoredInkPoint& point : points)
+				{
+					const double radius = static_cast<double>(point.width) * 0.5 + kFootprintAaPadding;
+					PointD expansion{ radius, radius };
+					if (rectangularEraser)
+					{
+						const auto half = ResolveEraserHalfSize(stroke.Style().eraserShape, point.width * 0.5f);
+						expansion = { half.x + kFootprintAaPadding, half.y + kFootprintAaPadding };
+					}
+					else if (points.size() == 1)
+						expansion.x += RoundDotExtension(point.width * 0.5f);
+					includePoint({ point.x, point.y }, expansion);
 				}
-				left = (std::min)(left, static_cast<double>(point.x) - expandX);
-				top = (std::min)(top, static_cast<double>(point.y) - expandY);
-				right = (std::max)(right, static_cast<double>(point.x) + expandX);
-				bottom = (std::max)(bottom, static_cast<double>(point.y) + expandY);
 			}
 			const double floatMaximum = (std::numeric_limits<float>::max)();
 			if (!std::isfinite(left) || !std::isfinite(top) ||
@@ -657,6 +716,70 @@ namespace Inkeys::Drawing::Draw3
 		result.undoTiles = std::move(*undoTiles);
 		result.compositionTiles = std::move(*compositionTiles);
 		return result;
+	}
+
+	DirtyRegion BuildStrokeScreenRegion(std::span<const SignedTileCoordinate> undoTiles,
+		float viewportX, float viewportY, int canvasWidth, int canvasHeight)
+	{
+		DirtyRegion region;
+		if (undoTiles.empty() || canvasWidth <= 0 || canvasHeight <= 0 ||
+			!std::isfinite(viewportX) || !std::isfinite(viewportY)) return region;
+
+		std::vector<SignedTileCoordinate> tiles(undoTiles.begin(), undoTiles.end());
+		std::sort(tiles.begin(), tiles.end(), [](SignedTileCoordinate a, SignedTileCoordinate b)
+		{
+			return a.y != b.y ? a.y < b.y : a.x < b.x;
+		});
+		tiles.erase(std::unique(tiles.begin(), tiles.end()), tiles.end());
+
+		struct RowRun
+		{
+			int64_t left;
+			int64_t right;
+			int64_t row;
+
+			auto operator<=>(const RowRun&) const = default;
+		};
+		std::vector<RowRun> runs;
+		for (const SignedTileCoordinate tile : tiles)
+		{
+			if (!runs.empty() && runs.back().row == tile.y && runs.back().right == tile.x)
+				++runs.back().right;
+			else
+				runs.push_back({ tile.x, int64_t{ tile.x } + 1, tile.y });
+		}
+		// 相同横向范围排在一起，才能逐段合并连续的行。
+		std::sort(runs.begin(), runs.end());
+
+		// 瓦片边界是整数。先取整原点等价于平移后向外取整，且不会在相减时丢失极小的小数偏移。
+		const double leftOrigin = std::ceil(static_cast<double>(viewportX));
+		const double topOrigin = std::ceil(static_cast<double>(viewportY));
+		const double rightOrigin = std::floor(static_cast<double>(viewportX));
+		const double bottomOrigin = std::floor(static_cast<double>(viewportY));
+		const auto screenEdge = [](int64_t edge, double origin, int limit)
+		{
+			const double mapped = static_cast<double>(edge * kUndoTileSize) - origin;
+			return static_cast<LONG>(std::clamp(mapped, 0.0, static_cast<double>(limit)));
+		};
+
+		for (size_t i = 0; i < runs.size();)
+		{
+			const RowRun first = runs[i++];
+			int64_t bottom = first.row + 1;
+			while (i < runs.size() && runs[i].left == first.left &&
+				runs[i].right == first.right && runs[i].row == bottom)
+			{
+				++i;
+				++bottom;
+			}
+			region.Add(RECT{
+				screenEdge(first.left, leftOrigin, canvasWidth),
+				screenEdge(first.row, topOrigin, canvasHeight),
+				screenEdge(first.right, rightOrigin, canvasWidth),
+				screenEdge(bottom, bottomOrigin, canvasHeight)
+			});
+		}
+		return region;
 	}
 
 	std::optional<size_t> CountTilesCoveringPixelBounds(

@@ -21,6 +21,7 @@
 #include <windows.h>
 #include "../../Log/Log.h"
 
+#include "Draw3.HighlighterNib.h"
 #include "Draw3.SpeedEraser.h"
 #include "../../../../inkStrokeModelerTest/draw3/shape_core.h"
 
@@ -257,9 +258,14 @@ namespace Inkeys::Drawing::Draw3
 		constexpr float kHardwarePressureTaperStrength = 0.50f;
 		// L0 笔锋只做公切线安全投影，允许比稳定笔宽更快收细，但仍严格小于 1。
 		constexpr float kCapsuleRadiusSlope = 0.95f;
-		constexpr float kHighlighterDuplicateDistancePx = 0.25f;
+		using HighlighterNib::kHighlighterDuplicateDistancePx;
 		constexpr float kHighlighterBoundsPaddingPx = 3.0f;
 		constexpr float kShapeBoundsPaddingPx = 3.0f;
+
+		constexpr float RoundDotExtension(float radius) noexcept
+		{
+			return (std::max)(0.25f, radius * 0.05f);
+		}
 		static_assert(kMaxRadiusChangePerPixel > 0.0f && kMaxRadiusChangePerPixel < 1.0f,
 			"半径空间变化率必须严格小于胶囊切线退化阈值");
 		static_assert(kCapsuleRadiusSlope > 0.0f && kCapsuleRadiusSlope < 1.0f,
@@ -602,40 +608,35 @@ namespace Inkeys::Drawing::Draw3
 		geometry.primitives.clear();
 		geometry.bounds = {};
 		if (inputPoints.empty()) return;
-		const auto ResolveHalfSize = [](const InkPoint& point) noexcept
-		{
-			const float halfHeight = std::max(0.5f, point.r);
-			return DirectX::XMFLOAT2{
-				halfHeight / kHighlighterNibAspectRatio, halfHeight };
-		};
 		geometry.primitives.reserve(inputPoints.size());
-		InkPoint previous = inputPoints.front();
+		size_t previousIndex = 0;
 		for (size_t index = 1; index < inputPoints.size(); ++index)
 		{
+			const InkPoint& previous = inputPoints[previousIndex];
 			const InkPoint& current = inputPoints[index];
-			const float deltaX = current.x - previous.x;
-			const float deltaY = current.y - previous.y;
-			if (deltaX * deltaX + deltaY * deltaY <=
-				kHighlighterDuplicateDistancePx * kHighlighterDuplicateDistancePx) continue;
+			// 去重一律按局部坐标：书写时画进 L1 的前缀与日后的整笔重放必须保留同一组点。
+			if (HighlighterNib::IsDuplicate(current.x - previous.x, current.y - previous.y)) continue;
 			HighlighterPrimitive primitive;
 			primitive.p1 = { previous.x, previous.y };
 			primitive.p2 = { current.x, current.y };
-			const DirectX::XMFLOAT2 previousHalfSize = ResolveHalfSize(previous);
-			const DirectX::XMFLOAT2 currentHalfSize = ResolveHalfSize(current);
+			const auto previousHalfSize = HighlighterNib::ResolveHalfSize(previous.r);
+			const auto currentHalfSize = HighlighterNib::ResolveHalfSize(current.r);
 			primitive.halfSize = {
 				(previousHalfSize.x + currentHalfSize.x) * 0.5f,
 				(previousHalfSize.y + currentHalfSize.y) * 0.5f };
 			geometry.primitives.push_back(primitive);
 			IncludeHighlighterSweepBounds(geometry.bounds, previous, current,
 				primitive.halfSize);
-			previous = current;
+			previousIndex = index;
 		}
 		if (geometry.primitives.empty())
 		{
+			const InkPoint& previous = inputPoints.front();
 			HighlighterPrimitive primitive;
 			primitive.p1 = { previous.x, previous.y };
 			primitive.p2 = primitive.p1;
-			primitive.halfSize = ResolveHalfSize(previous);
+			const auto half = HighlighterNib::ResolveHalfSize(previous.r);
+			primitive.halfSize = { half.x, half.y };
 			geometry.primitives.push_back(primitive);
 			IncludeHighlighterSweepBounds(geometry.bounds, previous, previous,
 				primitive.halfSize);
@@ -1022,29 +1023,31 @@ namespace Inkeys::Drawing::Draw3
 		const double targetRight = targetLeft + target.width;
 		const double targetBottom = targetTop + target.height;
 		const bool highlighter = stroke.Style().inkType == StoredInkType::Highlighter;
+		const bool rectangularEraser = stroke.Style().inkType == StoredInkType::Eraser &&
+			stroke.Style().eraserShape != EraserShape::Circle;
 		const auto pointPadding = [&](const StoredInkPoint& point) noexcept
 		{
-			if (stroke.Style().inkType == StoredInkType::Eraser &&
-				stroke.Style().eraserShape != EraserShape::Circle)
+			if (highlighter)
+			{
+				const auto half = HighlighterNib::ResolveHalfSize(point.width * 0.5f);
+				return std::pair<double, double>{
+					double(half.x) + kHighlighterBoundsPaddingPx, double(half.y) + kHighlighterBoundsPaddingPx };
+			}
+			if (rectangularEraser)
 			{
 				const auto half = ResolveEraserHalfSize(stroke.Style().eraserShape, point.width * 0.5f);
 				return std::pair<double, double>{ double(half.x) + 3.0, double(half.y) + 3.0 };
 			}
-			return highlighter
-				? std::pair<double, double>{
-					static_cast<double>(point.width) * 0.5 /
-						kHighlighterNibAspectRatio + kHighlighterBoundsPaddingPx,
-					static_cast<double>(point.width) * 0.5 +
-						kHighlighterBoundsPaddingPx }
-				: std::pair<double, double>{
-					static_cast<double>(point.width) * 0.5 + 3.0,
-					static_cast<double>(point.width) * 0.5 + 3.0 };
+			const double radiusWithPadding = static_cast<double>(point.width) * 0.5 + 3.0;
+			return std::pair<double, double>{ radiusWithPadding, radiusWithPadding };
 		};
 		const auto pointTouches = [&](const StoredInkPoint& point) noexcept
 		{
 			const auto [paddingX, paddingY] = pointPadding(point);
+			// 单点胶囊的右端可能单独进入重放瓦片。
+			const float extension = highlighter || rectangularEraser ? 0.0f : RoundDotExtension(point.width * 0.5f);
 			return static_cast<double>(point.x) - paddingX < targetRight &&
-				static_cast<double>(point.x) + paddingX > targetLeft &&
+				static_cast<double>(point.x) + paddingX + extension > targetLeft &&
 				static_cast<double>(point.y) - paddingY < targetBottom &&
 				static_cast<double>(point.y) + paddingY > targetTop;
 		};
@@ -1053,12 +1056,28 @@ namespace Inkeys::Drawing::Draw3
 			if (pointTouches(points.front())) ranges.push_back({ 0, 1 });
 			return ranges;
 		}
+		size_t highlighterPrevious = 0;
 		for (size_t index = 1; index < points.size(); ++index)
 		{
-			const StoredInkPoint& first = points[index - 1];
+			const size_t firstIndex = highlighter ? highlighterPrevious : index - 1;
+			const StoredInkPoint& first = points[firstIndex];
 			const StoredInkPoint& second = points[index];
-			const auto [firstPaddingX, firstPaddingY] = pointPadding(first);
-			const auto [secondPaddingX, secondPaddingY] = pointPadding(second);
+			if (highlighter)
+			{
+				// 与 DrawStoredStroke 重放时的去重一致：先换到目标的局部坐标再比较。
+				if (HighlighterNib::IsDuplicate(
+					(second.x - target.originX) - (first.x - target.originX),
+					(second.y - target.originY) - (first.y - target.originY))) continue;
+				highlighterPrevious = index;
+			}
+			auto [firstPaddingX, firstPaddingY] = pointPadding(first);
+			auto [secondPaddingX, secondPaddingY] = pointPadding(second);
+			if (highlighter)
+			{
+				// 整段绘制使用同一笔尖尺寸，窄端也须覆盖平均后的笔尖。
+				firstPaddingX = secondPaddingX = (std::max)(firstPaddingX, secondPaddingX);
+				firstPaddingY = secondPaddingY = (std::max)(firstPaddingY, secondPaddingY);
+			}
 			const double left = (std::min)(
 				static_cast<double>(first.x) - firstPaddingX,
 				static_cast<double>(second.x) - secondPaddingX);
@@ -1073,11 +1092,13 @@ namespace Inkeys::Drawing::Draw3
 				static_cast<double>(second.y) + secondPaddingY);
 			if (!(left < targetRight && right > targetLeft &&
 				top < targetBottom && bottom > targetTop)) continue;
-			const StoredStrokePointRange next{ index - 1, index + 1 };
+			const StoredStrokePointRange next{ firstIndex, index + 1 };
 			if (!ranges.empty() && ranges.back().end >= next.begin)
 				ranges.back().end = next.end;
 			else ranges.push_back(next);
 		}
+		if (highlighter && highlighterPrevious == 0 && pointTouches(points.front()))
+			ranges.push_back({ 0, 1 });
 		return ranges;
 	}
 
@@ -1175,8 +1196,8 @@ namespace Inkeys::Drawing::Draw3
 		{
 			pointScratch.clear();
 			pointScratch.reserve(range.end - range.begin);
-			for (const StoredInkPoint& point : stroke.Points().subspan(
-				range.begin, range.end - range.begin))
+			const auto storedPoints = stroke.Points().subspan(range.begin, range.end - range.begin);
+			for (const StoredInkPoint& point : storedPoints)
 			{
 				pointScratch.push_back({ point.x - target.originX,
 					point.y - target.originY, point.width * 0.5f, 0.0f });
@@ -1203,12 +1224,7 @@ namespace Inkeys::Drawing::Draw3
 			if (renderer.DrawStrokeOrDot(pointScratch,
 				TailDebugColor(color, debugStart && range.begin >= *debugStart),
 				StrokeShape::RoundCapsule, operatorKind) < 0) return {};
-			UnionRectInPlace(dirty, RectFromStrokePoints(
-				pointScratch, target.width, target.height));
-			// 单点实际画成右伸短胶囊，大半径时右伸量超过脏区的 3 像素余量。合成脏区保持原样（历史瓦片足迹
-			// 同样不含右伸量，放大合成范围会让撤销清不掉多出的部分）；写域单独按实际绘制端点给出，
-			// 保证工作区清除不留残余、不混入下一笔。
-			UnionRectInPlace(extraWriteBounds, RectFromStrokeOrDotPoints(
+			UnionRectInPlace(dirty, RectFromStrokeOrDotPoints(
 				pointScratch, target.width, target.height));
 		}
 		return { true, dirty };
@@ -2067,6 +2083,9 @@ namespace Inkeys::Drawing::Draw3
 		l1PrefixLast = {};
 		l1PrefixExact = false;
 		l1PrefixEpoch = 0;
+		l1WriteRegion.Clear();
+		l1WriteRegionKnown = true;
+		l1PrefixSharedStart = false;
 		inputStartPoint = {};
 		hasInputStartPoint = false;
 		lastRawPosition = {};
@@ -2148,7 +2167,7 @@ namespace Inkeys::Drawing::Draw3
 		// 不能先裁剪再补右伸量：画布左侧外的大半径单点裁剪后为空，右伸的胶囊却会进入画布。
 		std::array<InkPoint, 2> dotPoints = { points.front(), points.front() };
 		if (shape != StrokeShape::EraseRectSweep && std::isfinite(dotPoints[1].r))
-			dotPoints[1].x += (std::max)(0.25f, dotPoints[1].r * 0.05f);
+			dotPoints[1].x += RoundDotExtension(dotPoints[1].r);
 		return RectFromStrokePoints(dotPoints, width, height, shape);
 	}
 
@@ -2709,6 +2728,17 @@ namespace Inkeys::Drawing::Draw3
 		stroke.currentL0Rect = RectFromStrokeOrDotPoints(stroke.l0DrawPoints, width, height, shape); // 单点含右伸短胶囊
 	}
 
+	namespace
+	{
+		void RestartL1WriteRegion(ActiveStroke& stroke, bool layerWasEmpty) noexcept
+		{
+			// 首批上传失败也可能留下部分像素，重试时只有确定层已清空才能丢掉这次记录。
+			if (!layerWasEmpty && !stroke.l1WriteRegionKnown) return;
+			stroke.l1WriteRegion.Clear();
+			stroke.l1WriteRegionKnown = true;
+		}
+	}
+
 	LiveRasterSubmission CommitStablePrefixToL1(ActiveStroke& stroke, double liveTipDurationSeconds,
 		double predictionDurationSeconds, DirectX::XMFLOAT4 color, StrokeShape shape,
 		InkRenderer& renderer, int width, int height)
@@ -2725,16 +2755,21 @@ namespace Inkeys::Drawing::Draw3
 		// 绑定前先算出写域并声明，L1 的局部清除与“空层”判断才有依据；范围为空时不写任何画布内像素。
 		const uint64_t stableLayerEpoch = renderer.StableLayerEpoch();
 		const bool stableLayerWasEmpty = renderer.OperatorLayerEmpty(renderer.layerL1);
+		const bool stableLayerContactOwned = renderer.StableLayerContactOwned();
+		const bool restart = !stroke.hasCommittedGeometry;
+		if (restart) RestartL1WriteRegion(stroke, stableLayerWasEmpty);
 		RECT dirty = {};
 		if (stroke.highlighter)
 		{
 			RebuildHighlighterGeometry(stablePoints, stroke.l0HighlighterGeometry);
 			dirty = ClampRectToCanvas(stroke.l0HighlighterGeometry.bounds, width, height);
+			stroke.l1WriteRegion.Add(dirty);
 			renderer.SetOperatorTarget(renderer.layerL1, dirty);
 			if (renderer.DrawHighlighterPrimitives(
 				stroke.l0HighlighterGeometry.primitives, color) < 0)
 			{
 				stroke.l1PrefixExact = false; // L1 可能已写入一部分而缓存未追加，抬笔时不能沿用前缀。
+				stroke.l1WriteRegionKnown = false;
 				return { {}, false };
 			}
 			if (!stroke.l0HighlighterGeometry.primitives.empty())
@@ -2756,80 +2791,19 @@ namespace Inkeys::Drawing::Draw3
 		else
 		{
 			dirty = RectFromStrokePoints(stablePoints, width, height, shape);
+			stroke.l1WriteRegion.Add(dirty);
 			renderer.SetOperatorTarget(renderer.layerL1, dirty);
 			if (renderer.DrawStrokeOrDot(stablePoints, color, shape) < 0)
 			{
 				stroke.l1PrefixExact = false; // 可能已写入一部分，指纹不再可信。
+				stroke.l1WriteRegionKnown = false;
 				return { {}, false };
 			}
 		}
 		// 笔按点列指纹、荧光笔按图元缓存比对；两者都用 l1PrefixExact 表示“L1 里的前缀可沿用”。
-		NoteL1PrefixDrawn(stroke, stablePoints, !stroke.hasCommittedGeometry, true,
-			stableLayerEpoch, stableLayerWasEmpty);
+		NoteL1PrefixDrawn(stroke, stablePoints, restart, true,
+			stableLayerEpoch, stableLayerWasEmpty, stableLayerContactOwned);
 		stroke.committedIndex = protectedStartIndex; // 推进提交游标，后续帧不重复提交稳定前缀。
-		stroke.hasCommittedGeometry = true;
-		return { dirty, true };
-	}
-
-	LiveRasterSubmission CommitEraserRealPointsToL1(ActiveStroke& stroke, StrokeShape shape,
-		InkRenderer& renderer, int width, int height)
-	{
-		std::array<InkPoint, 1> fallbackPoint = {};
-		std::span<const InkPoint> newPoints;
-		size_t latestIndex = stroke.committedIndex;
-		if (stroke.realPoints.empty())
-		{
-			if (stroke.hasCommittedGeometry || !stroke.hasInputStartPoint) return {};
-			fallbackPoint[0] = stroke.inputStartPoint;
-			newPoints = fallbackPoint; // 建模器尚未给点时也要保证单击橡皮可见。
-			stroke.l1PrefixExact = false; // 落点兜底不属于真实点列。
-		}
-		else
-		{
-			latestIndex = stroke.realPoints.size() - 1;
-			if (stroke.hasCommittedGeometry && latestIndex <= stroke.committedIndex) return {};
-			const size_t startIndex = stroke.hasCommittedGeometry ? stroke.committedIndex : 0;
-			newPoints = std::span<const InkPoint>(stroke.realPoints).subspan(startIndex);
-		}
-
-		// 绑定前声明写域（同 CommitStablePrefixToL1）。
-		const uint64_t stableLayerEpoch = renderer.StableLayerEpoch();
-		const bool stableLayerWasEmpty = renderer.OperatorLayerEmpty(renderer.layerL1);
-		if (stroke.eraserShape != EraserShape::Circle)
-		{
-			const RECT dirty = RectFromEraserPoints(newPoints, stroke.eraserShape, width, height);
-			renderer.SetOperatorTarget(renderer.layerL1, dirty);
-			if (DrawEraserStrokeOrDot(renderer, newPoints, stroke.eraserShape, kTransparentLayerClearColor) < 0)
-			{
-				stroke.l1PrefixExact = false;
-				return { {}, false };
-			}
-			if (!stroke.realPoints.empty())
-			{
-				// 单点画的是落点印记，不是线段；两点以上才与整笔重放的线段集合一致。
-				NoteL1PrefixDrawn(stroke, newPoints, !stroke.hasCommittedGeometry, newPoints.size() >= 2,
-					stableLayerEpoch, stableLayerWasEmpty);
-				stroke.committedIndex = latestIndex;
-			}
-			stroke.hasCommittedGeometry = true;
-			return { dirty, true };
-		}
-		// 单点会画成向右延伸的短胶囊，写域与脏区都按实际绘制端点计算。
-		const RECT dirty = RectFromStrokeOrDotPoints(newPoints, width, height, shape);
-		renderer.SetOperatorTarget(renderer.layerL1, dirty);
-		if (renderer.DrawStrokeOrDot(newPoints, kTransparentLayerClearColor,
-			shape, InkOperatorKind::Erase) < 0)
-		{
-			stroke.l1PrefixExact = false;
-			return { {}, false };
-		}
-		if (!stroke.realPoints.empty())
-		{
-			// 单点画的是右伸短胶囊（落点印记），整笔重放两点以上时不会再画它。
-			NoteL1PrefixDrawn(stroke, newPoints, !stroke.hasCommittedGeometry, newPoints.size() >= 2,
-				stableLayerEpoch, stableLayerWasEmpty);
-			stroke.committedIndex = latestIndex;
-		}
 		stroke.hasCommittedGeometry = true;
 		return { dirty, true };
 	}
@@ -2841,6 +2815,132 @@ namespace Inkeys::Drawing::Draw3
 		{
 			return std::memcmp(&first, &second, sizeof(float) * 3) == 0;
 		}
+	}
+
+	LiveRasterSubmission DrawProvisionalRoundEraserCircleToL1(ActiveStroke& stroke, const InkPoint& point,
+		InkRenderer& renderer, int width, int height)
+	{
+		const std::array<InkPoint, 2> circle = { point, point };
+		const RECT dirty = RectFromStrokePoints(circle, width, height);
+		const uint64_t stableLayerEpoch = renderer.StableLayerEpoch();
+		const bool stableLayerWasEmpty = renderer.OperatorLayerEmpty(renderer.layerL1);
+		const bool stableLayerContactOwned = renderer.StableLayerContactOwned();
+		RestartL1WriteRegion(stroke, stableLayerWasEmpty);
+		stroke.l1WriteRegion.Add(dirty);
+		renderer.SetOperatorTarget(renderer.layerL1, dirty);
+		if (renderer.DrawStroke(circle, kTransparentLayerClearColor, StrokeShape::RoundCapsule, InkOperatorKind::Erase) < 0)
+		{
+			stroke.l1PrefixExact = false;
+			stroke.l1WriteRegionKnown = false;
+			return { {}, false };
+		}
+		// 零长段只对应一个真实点；单击仍交给路径 B 重放原有的右伸印记。
+		NoteL1PrefixDrawn(stroke, std::span(circle).first(1), true, true,
+			stableLayerEpoch, stableLayerWasEmpty, stableLayerContactOwned);
+		return { dirty, true };
+	}
+
+	LiveRasterSubmission CommitEraserRealPointsToL1(ActiveStroke& stroke, StrokeShape shape,
+		InkRenderer& renderer, int width, int height, bool ownsStableLayer)
+	{
+		std::array<InkPoint, 1> fallbackPoint = {};
+		std::span<const InkPoint> newPoints;
+		size_t latestIndex = stroke.committedIndex;
+		if (stroke.realPoints.empty())
+		{
+			if (stroke.hasCommittedGeometry || !stroke.hasInputStartPoint) return {};
+			fallbackPoint[0] = stroke.inputStartPoint;
+			newPoints = fallbackPoint; // 建模器尚未给点时也要保证单击橡皮可见。
+			(void)Inkeys::Log::TryWrite(Inkeys::Log::Level::Debug, Inkeys::Log::Module::Draw3, std::nullopt,
+				std::string_view("[Draw3Diag][l1-prefix] inexact reason=start-point-fallback"));
+			stroke.l1PrefixExact = false; // 落点兜底不属于真实点列。
+		}
+		else
+		{
+			latestIndex = stroke.realPoints.size() - 1;
+			if (stroke.hasCommittedGeometry && latestIndex <= stroke.committedIndex) return {};
+			const size_t startIndex = stroke.hasCommittedGeometry ? stroke.committedIndex : 0;
+			newPoints = std::span<const InkPoint>(stroke.realPoints).subspan(startIndex);
+		}
+
+		const bool round = stroke.eraserShape == EraserShape::Circle && shape == StrokeShape::RoundCapsule;
+		if (round && !stroke.realPoints.empty() && newPoints.size() == 1 && !stroke.hasCommittedGeometry)
+		{
+			const auto circle = DrawProvisionalRoundEraserCircleToL1(stroke, newPoints.front(), renderer, width, height);
+			if (circle.succeeded)
+			{
+				stroke.committedIndex = latestIndex;
+				stroke.hasCommittedGeometry = true;
+			}
+			return circle;
+		}
+
+		bool restart = !stroke.hasCommittedGeometry;
+		const bool followsProvisionalCircle = round && !restart && stroke.l1PrefixPointCount == 1 && newPoints.size() >= 2;
+		bool exactGeometry = newPoints.size() >= 2;
+		if (followsProvisionalCircle)
+		{
+			const InkPoint& first = newPoints.front();
+			const InkPoint& second = newPoints[1];
+			// 半径骤减时，原四边形的前沿可能截掉起点圆。其余情况也要清掉暂存圆，
+			// 因为圆与首段的 fwidth 不同，直接叠加可能在抗锯齿边缘多擦数级。
+			const double length = std::hypot(double(second.x) - first.x, double(second.y) - first.y);
+			const bool coversFirstCircle = std::isfinite(length) && std::isfinite(first.r) &&
+				std::isfinite(second.r) && first.r >= 0.0f && second.r >= 0.0f && length + second.r >= first.r;
+			exactGeometry = coversFirstCircle && ownsStableLayer && stroke.l1PrefixExact &&
+				renderer.StableLayerEpoch() == stroke.l1PrefixEpoch && SameRasterPoint(first, stroke.l1PrefixLast);
+			if (exactGeometry)
+			{
+				renderer.ClearOperatorLayerContent(renderer.layerL1);
+				restart = true;
+			}
+		}
+
+		// 绑定前声明写域（同 CommitStablePrefixToL1）。
+		const uint64_t stableLayerEpoch = renderer.StableLayerEpoch();
+		const bool stableLayerWasEmpty = renderer.OperatorLayerEmpty(renderer.layerL1);
+		const bool stableLayerContactOwned = renderer.StableLayerContactOwned();
+		if (restart) RestartL1WriteRegion(stroke, stableLayerWasEmpty);
+		if (stroke.eraserShape != EraserShape::Circle)
+		{
+			const RECT dirty = RectFromEraserPoints(newPoints, stroke.eraserShape, width, height);
+			stroke.l1WriteRegion.Add(dirty);
+			renderer.SetOperatorTarget(renderer.layerL1, dirty);
+			if (DrawEraserStrokeOrDot(renderer, newPoints, stroke.eraserShape, kTransparentLayerClearColor) < 0)
+			{
+				stroke.l1PrefixExact = false;
+				stroke.l1WriteRegionKnown = false;
+				return { {}, false };
+			}
+			if (!stroke.realPoints.empty())
+			{
+				// 单点画的是落点印记，不是线段；两点以上才与整笔重放的线段集合一致。
+				NoteL1PrefixDrawn(stroke, newPoints, restart, newPoints.size() >= 2,
+					stableLayerEpoch, stableLayerWasEmpty, stableLayerContactOwned);
+				stroke.committedIndex = latestIndex;
+			}
+			stroke.hasCommittedGeometry = true;
+			return { dirty, true };
+		}
+		// 单点会画成向右延伸的短胶囊，写域与脏区都按实际绘制端点计算。
+		const RECT dirty = RectFromStrokeOrDotPoints(newPoints, width, height, shape);
+		stroke.l1WriteRegion.Add(dirty);
+		renderer.SetOperatorTarget(renderer.layerL1, dirty);
+		if (renderer.DrawStrokeOrDot(newPoints, kTransparentLayerClearColor,
+			shape, InkOperatorKind::Erase) < 0)
+		{
+			stroke.l1PrefixExact = false;
+			stroke.l1WriteRegionKnown = false;
+			return { {}, false };
+		}
+		if (!stroke.realPoints.empty())
+		{
+			NoteL1PrefixDrawn(stroke, newPoints, restart, exactGeometry,
+				stableLayerEpoch, stableLayerWasEmpty, stableLayerContactOwned);
+			stroke.committedIndex = latestIndex;
+		}
+		stroke.hasCommittedGeometry = true;
+		return { dirty, true };
 	}
 
 	uint64_t HashL1PrefixPoints(std::span<const InkPoint> points) noexcept
@@ -2858,33 +2958,61 @@ namespace Inkeys::Drawing::Draw3
 		return hash;
 	}
 
+	namespace
+	{
+		// 诊断（阶段 C1）：记录 L1 前缀为什么不能在抬笔时沿用。Debug 级别，每笔至多几行。
+		void LogL1PrefixInexact(const char* reason, const ActiveStroke& stroke, size_t batchSize, bool restart) noexcept
+		{
+			char line[160];
+			const int length = std::snprintf(line, sizeof(line),
+				"[Draw3Diag][l1-prefix] inexact reason=%s restart=%d batch=%zu prefixCount=%zu realPoints=%zu",
+				reason, restart ? 1 : 0, batchSize, stroke.l1PrefixPointCount, stroke.realPoints.size());
+			if (length > 0)
+				(void)Inkeys::Log::TryWrite(Inkeys::Log::Level::Debug, Inkeys::Log::Module::Draw3,
+					std::nullopt, std::string_view(line, (std::min)(static_cast<size_t>(length), sizeof(line) - 1)));
+		}
+	}
+
 	void NoteL1PrefixDrawn(ActiveStroke& stroke, std::span<const InkPoint> batch,
-		bool restart, bool exactGeometry, uint64_t layerEpoch, bool layerWasEmpty) noexcept
+		bool restart, bool exactGeometry, uint64_t layerEpoch, bool layerWasEmpty, bool layerContactOwned) noexcept
 	{
 		if (batch.empty())
 		{
 			stroke.l1PrefixExact = false;
 			return;
 		}
+		const bool wasExact = !restart && stroke.l1PrefixExact;
 		size_t first = 0;
 		if (restart)
 		{
 			stroke.l1PrefixHash = 0;
 			stroke.l1PrefixPointCount = 0;
-			// 起笔或整段重画时 L1 必须是空的：否则里面有别的内容（历史直接回放的残留、其他触点的前缀）。
-			stroke.l1PrefixExact = layerWasEmpty;
+			stroke.l1PrefixSharedStart = !layerWasEmpty;
+			stroke.l1PrefixExact = stroke.l1WriteRegionKnown && (layerWasEmpty || layerContactOwned);
 			stroke.l1PrefixEpoch = layerEpoch;
+			if (!layerWasEmpty && !layerContactOwned) LogL1PrefixInexact("layer-not-empty", stroke, batch.size(), restart);
 		}
 		else
 		{
 			// 追加必须从上一批的末点接续；该点若在两次提交之间被回改，L1 里已有的线段就不再对应当前点列。
 			if (stroke.l1PrefixPointCount == 0 || !SameRasterPoint(batch.front(), stroke.l1PrefixLast))
+			{
+				if (wasExact) LogL1PrefixInexact("junction-changed", stroke, batch.size(), restart);
 				stroke.l1PrefixExact = false;
+			}
 			// 两次追加之间 L1 被清过或被别的内容写过：已记录的前缀不再代表 L1 的实际内容。
-			if (layerEpoch != stroke.l1PrefixEpoch) stroke.l1PrefixExact = false;
+			if (layerEpoch != stroke.l1PrefixEpoch)
+			{
+				if (wasExact) LogL1PrefixInexact("layer-epoch-changed", stroke, batch.size(), restart);
+				stroke.l1PrefixExact = false;
+			}
 			first = 1;
 		}
-		if (!exactGeometry) stroke.l1PrefixExact = false;
+		if (!exactGeometry)
+		{
+			if (restart ? layerWasEmpty : wasExact) LogL1PrefixInexact("single-point-mark", stroke, batch.size(), restart);
+			stroke.l1PrefixExact = false;
+		}
 		// 与 HashL1PrefixPoints 对整段点列的结果保持一致：逐点续接同一递推。
 		for (size_t index = first; index < batch.size(); ++index)
 		{
@@ -2900,12 +3028,14 @@ namespace Inkeys::Drawing::Draw3
 
 	CompletedTailRasterResult DrawCompletedStrokeTail(const ActiveStroke& stroke, const StoredInkStyle& style,
 		std::span<const InkPoint> finalPoints, InkRenderer& renderer, const OperatorLayerResources& liveLayer,
-		float originX, float originY, int width, int height, HighlighterGeometry& highlighterScratch)
+		float originX, float originY, int width, int height, HighlighterGeometry& highlighterScratch, bool regionalOk)
 	{
 		if (!stroke.hasCommittedGeometry || finalPoints.empty() || width <= 0 || height <= 0 ||
-			!liveLayer.addRTV || !liveLayer.retainRTV || !std::isfinite(originX) || !std::isfinite(originY)) return {};
-		// L1 自本笔起笔（或整段重画）以来没有被清过、也没有被别的内容写过。
-		if (!stroke.l1PrefixExact || renderer.StableLayerEpoch() != stroke.l1PrefixEpoch) return {};
+			&liveLayer == &renderer.layerL1 || !liveLayer.addRTV || !liveLayer.retainRTV ||
+			!std::isfinite(originX) || !std::isfinite(originY)) return {};
+		// L1 自起笔以来没有整层清除或非接触写入，共享起笔还需要调用方确认区域安全。
+		if (!stroke.l1PrefixExact || renderer.StableLayerEpoch() != stroke.l1PrefixEpoch ||
+			(stroke.l1PrefixSharedStart && !regionalOk)) return {};
 		// 入库坐标往返必须逐点还原：FinalizeStoredStroke 存 局部 + 偏移，DrawStoredStroke 重放 入库 − 偏移。
 		// 偏移为 0 时恒成立；偏移较大或带小数时往返会丢低位，L1 里按局部坐标画的前缀与日后的整笔重放
 		// 在抗锯齿边缘可差十几级，荧光笔的去重划分也可能不同，此时不沿用前缀。
@@ -2930,9 +3060,9 @@ namespace Inkeys::Drawing::Draw3
 				std::memcmp(committed.data(), all.data(), committed.size() * sizeof(HighlighterPrimitive)) != 0) return {};
 			const std::span<const HighlighterPrimitive> tail =
 				std::span<const HighlighterPrimitive>(all).subspan(committed.size());
+			RECT tailBounds = {};
 			if (!tail.empty())
 			{
-				RECT tailBounds = {};
 				for (const HighlighterPrimitive& primitive : tail)
 					IncludeHighlighterBounds(tailBounds,
 						(std::min)(primitive.p1.x, primitive.p2.x) - primitive.halfSize.x,
@@ -2940,23 +3070,27 @@ namespace Inkeys::Drawing::Draw3
 						(std::max)(primitive.p1.x, primitive.p2.x) + primitive.halfSize.x,
 						(std::max)(primitive.p1.y, primitive.p2.y) + primitive.halfSize.y);
 				renderer.SetScreenSize(static_cast<float>(width), static_cast<float>(height));
-				renderer.SetOperatorTarget(liveLayer, ClampRectToCanvas(tailBounds, width, height));
+				tailBounds = ClampRectToCanvas(tailBounds, width, height);
+				renderer.SetOperatorTarget(liveLayer, tailBounds);
 				if (renderer.DrawHighlighterPrimitives(tail, color) < 0) return { true, false, {} };
 			}
-			return { true, true, ClampRectToCanvas(highlighterScratch.bounds, width, height) };
+			return { true, true, ClampRectToCanvas(highlighterScratch.bounds, width, height), tailBounds };
 		}
 		if (style.inkType != StoredInkType::Pen && style.inkType != StoredInkType::Eraser) return {};
 		const size_t boundary = stroke.committedIndex;
 		if (!stroke.l1PrefixExact || stroke.l1PrefixPointCount != boundary + 1 || finalPoints.size() <= boundary ||
 			HashL1PrefixPoints(finalPoints.first(boundary + 1)) != stroke.l1PrefixHash) return {};
 		const bool eraser = style.inkType == StoredInkType::Eraser;
+		// 仅有一个已提交点时 L1 仍是暂存圆，单击及尚未补交真实线段的橡皮均走隔离重放。
+		if (eraser && stroke.eraserShape == EraserShape::Circle && boundary == 0) return {};
 		const std::span<const InkPoint> tail = finalPoints.subspan(boundary);
 		const RECT wholeDirty = eraser
 			? RectFromEraserPoints(finalPoints, stroke.eraserShape, width, height)
 			: RectFromStrokePoints(finalPoints, width, height);
+		RECT tailBounds = {};
 		if (tail.size() >= 2)
 		{
-			const RECT tailBounds = eraser
+			tailBounds = eraser
 				? RectFromEraserPoints(tail, stroke.eraserShape, width, height)
 				: RectFromStrokePoints(tail, width, height);
 			renderer.SetScreenSize(static_cast<float>(width), static_cast<float>(height));
@@ -2966,7 +3100,7 @@ namespace Inkeys::Drawing::Draw3
 				: renderer.DrawStrokeOrDot(tail, color, StrokeShape::RoundCapsule, InkOperatorKind::Draw);
 			if (drawn < 0) return { true, false, {} };
 		}
-		return { true, true, wholeDirty };
+		return { true, true, wholeDirty, tailBounds };
 	}
 
 	bool DrawL0LiveComposite(ActiveStroke& stroke, DirectX::XMFLOAT4 color,

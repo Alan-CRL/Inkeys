@@ -639,6 +639,9 @@
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.CursorSettings.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.HighlighterNib.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.SpeedEraser.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
@@ -2427,6 +2430,12 @@
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.CanvasDebug.cppm">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DirtyRegion.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.DirtyRegion.cppm">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.ContactInput.cpp">
