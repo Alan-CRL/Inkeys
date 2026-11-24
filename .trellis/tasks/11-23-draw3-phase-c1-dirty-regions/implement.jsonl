@@ -1,0 +1,11 @@
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 控制器、渲染器与呈现合同"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "性能页选项"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "自检与验证要求"}
+{"file": ".trellis/tasks/11-23-draw3-phase-c1-dirty-regions/research/dirty-current-state.md", "reason": "脏区现状调查"}
+{"file": ".trellis/tasks/11-23-draw3-phase-c1-dirty-regions/research/multi-touch-eraser.md", "reason": "多指大橡皮卡顿调查"}
+{"file": ".trellis/tasks/11-23-draw3-phase-c1-dirty-regions/research/dirty-stats.md", "reason": "脏区统计口径与取数方法"}
+{"file": ".trellis/spec/native-desktop/draw3-shaders.md", "reason": "C1 设计涉及的着色器与配置规范"}
+{"file": ".trellis/spec/shaders/build-and-encoding.md", "reason": "C1 设计涉及的着色器与配置规范"}
+{"file": ".trellis/spec/shaders/cpu-gpu-contracts.md", "reason": "C1 设计涉及的着色器与配置规范"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "C1 设计涉及的着色器与配置规范"}
+{"file": ".trellis/tasks/11-23-draw3-phase-c1-dirty-regions/research/highlighter-undo-footprint.md", "reason": "荧光笔足迹缺陷"}

@@ -26,7 +26,8 @@
     "11-20-draw3-gpu-stress-latency",
     "11-21-draw3-phase-a2-compat",
     "11-21-draw3-phase-b-rendering",
-    "11-22-draw3-phase-b2-laser"
+    "11-22-draw3-phase-b2-laser",
+    "11-23-draw3-phase-c1-dirty-regions"
   ],
   "parent": null,
   "relatedFiles": [],

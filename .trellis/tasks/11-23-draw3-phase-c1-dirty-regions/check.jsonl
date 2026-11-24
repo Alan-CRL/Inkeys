@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 控制器、渲染器与呈现合同"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "性能页选项"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "自检与验证要求"}
+{"file": ".trellis/spec/native-desktop/draw3-shaders.md", "reason": "C1 设计涉及的着色器与配置规范"}
+{"file": ".trellis/spec/shaders/build-and-encoding.md", "reason": "C1 设计涉及的着色器与配置规范"}
+{"file": ".trellis/spec/shaders/cpu-gpu-contracts.md", "reason": "C1 设计涉及的着色器与配置规范"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "C1 设计涉及的着色器与配置规范"}
