@@ -809,6 +809,11 @@
           "Direction": "飘散方向",
           "DirectionLeftUp": "向左上",
           "DirectionRightUp": "向右上",
+          "Limit": "粒子数量上限",
+          "LimitLow": "低",
+          "LimitMedium": "中",
+          "LimitHigh": "高",
+          "LimitExtreme": "极致",
           "Trail": "激光笔行进粒子",
           "Dissolve": "激光笔粒子飘散",
           "Clear": "清空粒子飘散"

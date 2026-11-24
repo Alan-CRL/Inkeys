@@ -809,6 +809,11 @@
           "Direction": "流れる向き",
           "DirectionLeftUp": "左上へ",
           "DirectionRightUp": "右上へ",
+          "Limit": "パーティクル数の上限",
+          "LimitLow": "低",
+          "LimitMedium": "中",
+          "LimitHigh": "高",
+          "LimitExtreme": "最大",
           "Trail": "レーザーポインターの軌跡パーティクル",
           "Dissolve": "レーザーポインターの消散",
           "Clear": "全消去時の消散"

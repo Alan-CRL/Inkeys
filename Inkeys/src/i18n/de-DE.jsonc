@@ -809,6 +809,11 @@
           "Direction": "Driftrichtung",
           "DirectionLeftUp": "Nach links oben",
           "DirectionRightUp": "Nach rechts oben",
+          "Limit": "Maximale Partikelanzahl",
+          "LimitLow": "Niedrig",
+          "LimitMedium": "Mittel",
+          "LimitHigh": "Hoch",
+          "LimitExtreme": "Extrem",
           "Trail": "Spurpartikel des Laserpointers",
           "Dissolve": "Auflösen des Laserpointers",
           "Clear": "Auflösen beim Leeren"

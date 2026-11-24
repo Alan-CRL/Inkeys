@@ -1780,6 +1780,19 @@ namespace Inkeys::Drawing::Draw3
 				viewport.y + static_cast<float>(std::max(height, 0)) };
 		}
 
+		RECT VisibleContentScreenBounds(const CanvasRuntimeHistory& history, InkViewport viewport,
+			int width, int height, bool l2MayBeOutOfSync) noexcept
+		{
+			if (l2MayBeOutOfSync) return GetFullCanvasRect(width, height);
+			const auto bounds = history.VisibleContentBounds(VisibleInkBounds(viewport, width, height));
+			if (!bounds) return {};
+			return ClampRectToCanvas({
+				SaturatingFloorToLong(static_cast<double>(bounds->left) - viewport.x - 2.0),
+				SaturatingFloorToLong(static_cast<double>(bounds->top) - viewport.y - 2.0),
+				SaturatingCeilToLong(static_cast<double>(bounds->right) - viewport.x + 2.0),
+				SaturatingCeilToLong(static_cast<double>(bounds->bottom) - viewport.y + 2.0) }, width, height);
+		}
+
 		const char* CompositionRestorePathName(CompositionRestorePath path) noexcept
 		{
 			switch (path)
@@ -6170,9 +6183,9 @@ namespace Inkeys::Drawing::Draw3
 			return value ^ (value >> 16);
 		}
 
-		uint32_t AppendLaserDissolveSeeds(std::vector<LaserParticleSeed>& seeds,
-			const std::vector<BakedLaserStroke>& strokes, const LaserDissolveFront& front,
-			float windAngleDegrees = kLaserDissolveParameters.leftUpWindAngleDegrees)
+		template <typename Particle, typename Emit>
+		uint32_t SampleLaserDissolve(std::vector<Particle>& particles, const std::vector<BakedLaserStroke>& strokes,
+			uint32_t maximumSeeds, LaserDriftParticleContext context, float& dipPerPixel, const Emit& emit)
 		{
 			const auto segmentLengthDip = [](const InkPoint& from, const InkPoint& to, float scale)
 			{
@@ -6206,13 +6219,13 @@ namespace Inkeys::Drawing::Draw3
 			}
 			const auto& config = kLaserDissolveParameters;
 			// 先给每个圆点保底，避免长笔迹触及上限时跳过圆点；保底本身超限时一并降密。
-			const uint32_t reservedPerDot = pointCount <= config.maximumSeeds / minimumDotSeeds ? minimumDotSeeds : 0;
+			const uint32_t reservedPerDot = pointCount <= maximumSeeds / minimumDotSeeds ? minimumDotSeeds : 0;
 			const uint32_t reserved = static_cast<uint32_t>(pointCount * reservedPerDot);
 			const double reservedDotLength = static_cast<double>(reservedPerDot) / config.seedsPerDip;
 			const double sampleLength = totalLength + pointLength - reservedDotLength * pointCount;
-			const uint32_t count = (std::min)(config.maximumSeeds - reserved, LaserDissolveSeedCount(sampleLength));
+			const uint32_t count = (std::min)(maximumSeeds - reserved, LaserDissolveSeedCount(sampleLength, maximumSeeds));
 			if (count == 0 && reserved == 0) return 0;
-			seeds.reserve(seeds.size() + reserved + count);
+			particles.reserve(particles.size() + reserved + count);
 			// 其余容量按整组的等效长度分层采样，超限时同比降低密度。
 			const double spacing = count != 0 ? sampleLength / count : 0.0;
 			double start = 0.0;
@@ -6234,6 +6247,8 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (stroke.points.empty()) continue;
 				const float scale = ProductTargetScale(stroke.visualStyle);
+				if (context.dpiScale != scale) context.SetDpiScale(scale);
+				const size_t first = particles.size();
 				const auto tint = ColorForTool(DrawingTool::Laser, stroke.visualStyle);
 				const float color[4] = { tint.x, tint.y, tint.z, 1.0f };
 				const float radius = LaserSolidRadius(scale);
@@ -6248,10 +6263,10 @@ namespace Inkeys::Drawing::Draw3
 					const double lengthPx = length * scale;
 					sampleSpan(length, [&](float t, uint32_t random)
 					{
-						AppendLaserDissolveParticleSeed(seeds, front, std::lerp(from.x, to.x, t),
+						emit(context, std::lerp(from.x, to.x, t),
 							std::lerp(from.y, to.y, t), static_cast<float>((to.x - from.x) / lengthPx),
 							static_cast<float>((to.y - from.y) / lengthPx), radius, LaserCoreRadius(radius),
-							scale, color, random ^ group, group, windAngleDegrees);
+							color, random ^ group, group, false);
 					});
 				}
 				if (start == strokeStart)
@@ -6259,16 +6274,32 @@ namespace Inkeys::Drawing::Draw3
 					const auto& point = stroke.points.front();
 					const auto emitPoint = [&](uint32_t random)
 					{
-						AppendLaserDissolveParticleSeed(seeds, front, point.x, point.y, 0.0f, 0.0f,
-							radius, LaserCoreRadius(radius), scale, color, random ^ group, group, windAngleDegrees, true);
+						emit(context, point.x, point.y, 0.0f, 0.0f,
+							radius, LaserCoreRadius(radius), color, random ^ group, group, true);
 					};
 					for (uint32_t i = 0; i < reservedPerDot; ++i)
 						emitPoint(MixLaserSeed(i * 0x9E3779B9u ^ 0x85EBCA6Bu));
 					sampleSpan(pointEquivalentLength(radius / scale) - reservedDotLength,
 						[&](float, uint32_t random) { emitPoint(random); });
 				}
+				// 旧池按最后一粒的 DPI 求值；空笔迹或没被采到的笔迹不能覆盖它。
+				if (particles.size() != first) dipPerPixel = context.dipPerPixel;
 			}
 			return reserved + next;
+		}
+
+		uint32_t AppendLaserDissolveSeeds(std::vector<LaserDriftParticle>& particles,
+			LaserParticleBatchEnvelope& envelope, float& dipPerPixel, const std::vector<BakedLaserStroke>& strokes,
+			const LaserDissolveFront& front, uint32_t maximumSeeds, float windAngleDegrees)
+		{
+			return SampleLaserDissolve(particles, strokes, maximumSeeds,
+				MakeDriftParticleContext(1.0f, windAngleDegrees), dipPerPixel,
+				[&](const LaserDriftParticleContext& context, float x, float y, float tangentX, float tangentY,
+					float radius, float coreRadius, const float (&color)[4], uint32_t random, uint32_t group, bool isDot)
+				{
+					AppendLaserDissolveParticle(particles, envelope, context, front, x, y, tangentX, tangentY,
+						radius, coreRadius, color, random, group, isDot);
+				});
 		}
 
 		uint32_t LaserSeedForHandle(const ContactHandle& handle) noexcept
@@ -6303,8 +6334,178 @@ namespace Inkeys::Drawing::Draw3
 			runtime.hasLaserParticleTangent = false;
 		}
 
+		struct PendingLaserParticles
+		{
+			std::vector<LaserParticleSeed> trail;
+			std::vector<LaserDriftParticle> clearDrift;
+			std::vector<LaserDriftParticle> dissolveDrift;
+			LaserParticleBatchEnvelope clearEnvelope;
+			std::optional<LaserClearSpawnRequest> clearSpawn;
+			float dipPerPixel = 1.0f;
+
+			bool empty() const noexcept { return trail.empty() && clearDrift.empty() && dissolveDrift.empty() && !clearSpawn; }
+			size_t size() const noexcept
+			{
+				return trail.size() + clearDrift.size() + dissolveDrift.size() +
+					(clearSpawn ? clearSpawn->reservedCount : 0u);
+			}
+			void clearDriftOnly() noexcept
+			{
+				clearDrift.clear();
+				dissolveDrift.clear();
+				// 大批上传或丢弃后归还超额容量，小批继续复用原来的存储。
+				if (clearDrift.capacity() > kLaserParticleStagingChunk)
+					std::vector<LaserDriftParticle>().swap(clearDrift);
+				if (dissolveDrift.capacity() > kLaserParticleStagingChunk)
+					std::vector<LaserDriftParticle>().swap(dissolveDrift);
+				clearEnvelope = {};
+				clearSpawn.reset();
+			}
+			void clear() noexcept
+			{
+				trail.clear();
+				clearDriftOnly();
+			}
+		};
+
+		struct PreparedCanvasClearParticles
+		{
+			size_t firstParticle = 0;
+			LaserParticleBatchEnvelope envelope;
+			std::optional<LaserClearSpawnRequest> spawn;
+			RECT crumbleBounds = {};
+			float dipPerPixel = 1.0f;
+			bool snapshotCaptured = false;
+		};
+
+		PreparedCanvasClearParticles PrepareCanvasClearParticles(InkRenderer& renderer,
+			std::vector<LaserDriftParticle>& particles, bool& crumbleActive, LaserClearSpawnRequest request)
+		{
+			PreparedCanvasClearParticles result;
+			result.firstParticle = particles.size();
+			// 视口内无墨迹时无需申请飘散池，也不应因申请失败锁存降档。
+			if (IsEmptyRect(request.pixelRect)) return result;
+			const uint32_t maximumSeeds = renderer.PrepareLaserDriftPool();
+			if (maximumSeeds == 0) return result;
+
+			const bool gpuAvailable = renderer.GpuClearSpawnAvailable();
+			const auto captureSnapshot = [&]
+			{
+				// 旧过渡停止，但同尺寸的快照纹理由捕获直接复用。
+				crumbleActive = false;
+				result.snapshotCaptured = renderer.CaptureCanvasClearSnapshot();
+			};
+			if (gpuAvailable)
+			{
+				captureSnapshot();
+				if (result.snapshotCaptured)
+				{
+					const double area = static_cast<double>(request.pixelRect.right - request.pixelRect.left) *
+						(request.pixelRect.bottom - request.pixelRect.top);
+					const double wanted = area / (static_cast<double>(request.dpiScale) * request.dpiScale) *
+						kCanvasClearParticleParameters.seedsPerSquareDip;
+					request.reservedCount = static_cast<uint32_t>((std::min)(
+						static_cast<double>(maximumSeeds), std::ceil(wanted * 1.05) + 64.0));
+					result.crumbleBounds = request.pixelRect;
+					result.spawn = request;
+					return result;
+				}
+			}
+
+			struct CpuRequest
+			{
+				std::vector<LaserDriftParticle>& particles;
+				PreparedCanvasClearParticles& result;
+				LaserDriftParticleContext drift;
+				uint32_t seedBase;
+				LaserDissolveFront front;
+				uint32_t maximumSeeds;
+			} cpu = { particles, result, MakeDriftParticleContext(request.dpiScale, request.windAngleDegrees),
+				request.seedBase, request.front, maximumSeeds };
+			result.dipPerPixel = cpu.drift.dipPerPixel;
+			try
+			{
+				// 直接追加到待上传数组；读回失败或分配失败时保留此前的清空批。
+				renderer.VisitCanvasPixels([](void* context, const uint32_t* pixels, size_t pitch,
+					uint32_t width, uint32_t height)
+					{
+						const auto& cpu = *static_cast<CpuRequest*>(context);
+						AppendCanvasClearParticleSeeds(cpu.particles, cpu.result.envelope, pixels, pitch,
+							width, height, cpu.drift, cpu.seedBase, cpu.front, cpu.maximumSeeds);
+					}, &cpu);
+			}
+			catch (const std::bad_alloc&)
+			{
+				particles.resize(result.firstParticle);
+				DiagnosticOutput::Text(DiagnosticOutput::ErrError,
+					"[Draw3.LaserParticles] action=clear_drift result=skipped reason=allocation\n");
+			}
+			if (particles.size() == result.firstParticle) return result;
+			// 2× 等缩放下读回抽样可能跳过细线，碎裂遮罩仍须覆盖历史范围。
+			result.crumbleBounds = request.pixelRect;
+			if (!gpuAvailable) captureSnapshot();
+			if (!result.snapshotCaptured)
+			{
+				// 快照捕获失败时全部立即释放；只重新取无延迟的最长寿命。
+				result.envelope.maximumLifetimeMilliseconds = 0;
+				for (auto& drift : std::span<LaserDriftParticle>(particles).subspan(result.firstParticle))
+				{
+					drift.particle.releaseMilliseconds = 0;
+					result.envelope.maximumLifetimeMilliseconds = (std::max)(
+						result.envelope.maximumLifetimeMilliseconds, drift.particle.lifetimeMilliseconds);
+				}
+			}
+			return result;
+		}
+
+		void CompleteCanvasClearParticles(InkRenderer& renderer, PendingLaserParticles& pending,
+			const PreparedCanvasClearParticles& prepared, bool cleared)
+		{
+			if (!cleared)
+			{
+				pending.clearDrift.resize(prepared.firstParticle);
+				if (prepared.snapshotCaptured) renderer.ReleaseCanvasClearSnapshot();
+				return;
+			}
+			// 清页已经提交，下一次粒子推进才允许 GPU 批次预留槽位。
+			if (prepared.spawn) pending.clearSpawn = prepared.spawn;
+			if (pending.clearDrift.size() == prepared.firstParticle) return;
+			UnionRectInPlace(pending.clearEnvelope.bounds, prepared.envelope.bounds);
+			pending.clearEnvelope.maximumLifetimeMilliseconds = (std::max)(
+				pending.clearEnvelope.maximumLifetimeMilliseconds, prepared.envelope.maximumLifetimeMilliseconds);
+			pending.dipPerPixel = prepared.dipPerPixel;
+		}
+
+		void TrackCanvasClearSpawn(const LaserClearSpawnRequest& request, LaserParticleDirtyTracker& tracker,
+			int64_t nowQpc, int64_t qpcFrequency, RECT& redraw) noexcept
+		{
+			const auto envelope = ConservativeCanvasClearParticleBounds(request.pixelRect, request.dpiScale);
+			tracker.TrackClearSpawn(envelope.bounds,
+				LaserParticleLifetimeDeadlineQpc(nowQpc, qpcFrequency, envelope.maximumLifetimeMilliseconds));
+			UnionRectInPlace(redraw, envelope.bounds);
+		}
+
+		std::optional<LaserClearSpawnReadback> PollCanvasClearSpawn(
+			InkRenderer& renderer, LaserParticleDirtyTracker& tracker, RECT& redraw) noexcept
+		{
+			const auto readback = renderer.PollClearSpawn();
+			if (readback && readback->batchRevoked)
+				UnionRectInPlace(redraw, tracker.RevokeClearSpawn());
+			return readback;
+		}
+
+		bool ApplyLaserParticleLimit(LaserParticleLimit limit, InkRenderer& renderer,
+			LaserParticleDirtyTracker& tracker, PendingLaserParticles& pending, RECT& redraw) noexcept
+		{
+			if (!renderer.SetLaserParticleLimit(limit)) return false;
+			// 旧档位的飘散已经离池，擦掉旧区域并丢弃按旧上限排队的记录。
+			UnionRectInPlace(redraw, tracker.ClearDrift());
+			pending.clearDriftOnly();
+			return true;
+		}
+
 		bool ApplyLaserParticleEffects(uint32_t& effectiveEffects, uint32_t nextEffects,
-			InkRenderer& renderer, LaserParticleDirtyTracker& tracker, std::vector<LaserParticleSeed>& seeds,
+			InkRenderer& renderer, LaserParticleDirtyTracker& tracker, PendingLaserParticles& pending,
 			const RECT& previousBounds, RECT& redraw) noexcept
 		{
 			if (effectiveEffects == nextEffects) return false;
@@ -6315,9 +6516,19 @@ namespace Inkeys::Drawing::Draw3
 				UnionRectInPlace(redraw, previousBounds);
 				renderer.ResetLaserParticles();
 				tracker.Clear();
-				seeds.clear();
+				pending.clear();
 			}
 			return true;
+		}
+
+		template <typename TrackBatch, typename Fallback>
+		void CompleteLaserDissolveSubmission(bool accepted, bool& hasBatch,
+			TrackBatch&& trackBatch, Fallback&& fallback)
+		{
+			// 只有已经写入池的批次才能随主体汇聚。
+			hasBatch = accepted;
+			if (hasBatch) trackBatch();
+			else fallback();
 		}
 
 		bool ShouldStepLaserParticles(bool hasActive, uint32_t effectiveEffects, bool hasSeeds) noexcept
@@ -7724,34 +7935,227 @@ namespace Inkeys::Drawing::Draw3
 			}
 			check(matched && current == blank, "WARP sweep matches CPU alpha and decreases monotonically to zero");
 
-			std::vector<LaserParticleSeed> seeds;
-			const auto count = AppendLaserDissolveSeeds(seeds, baked, sourceFront);
-			check(count > 0 && count == seeds.size() &&
-				std::all_of(seeds.begin(), seeds.end(), [&](const LaserParticleSeed& seed)
+			std::vector<LaserDriftParticle> particles;
+			LaserParticleBatchEnvelope envelope;
+			float dipPerPixel = 1.0f;
+			const float windAngle = kLaserDissolveParameters.leftUpWindAngleDegrees;
+			constexpr uint32_t maximumSeeds =
+				kLaserParticleLimitTiers[static_cast<size_t>(LaserParticleLimit::Low)].maximumSeeds;
+			const auto count = AppendLaserDissolveSeeds(particles, envelope, dipPerPixel,
+				baked, sourceFront, maximumSeeds, windAngle);
+			check(count > 0 && count == particles.size() &&
+				std::all_of(particles.begin(), particles.end(), [&](const LaserDriftParticle& drift)
 				{
 					auto releaseFront = sourceFront;
-					releaseFront.progress = static_cast<float>(seed.releaseDelayMilliseconds) /
+					releaseFront.progress = static_cast<float>(drift.particle.releaseMilliseconds) /
 						kLaserDissolveParameters.durationMilliseconds;
-					return LaserDissolveCoverage(releaseFront, seed.position[0], seed.position[1]) < 0.001f;
+					return LaserDissolveCoverage(releaseFront, drift.particle.position[0], drift.particle.position[1]) < 0.001f;
 				}), "baked records emit when the seed pixel is erased");
+			std::vector<LaserParticleSeed> reference;
+			float referenceDipPerPixel = 1.0f;
+			SampleLaserDissolve(reference, baked, maximumSeeds, MakeDriftParticleContext(1.0f, windAngle), referenceDipPerPixel,
+				[&](const LaserDriftParticleContext& context, float x, float y, float tangentX, float tangentY,
+					float radius, float coreRadius, const float (&color)[4], uint32_t random, uint32_t group, bool isDot)
+				{
+					AppendReferenceLaserDissolveParticleSeed(reference, sourceFront, x, y, tangentX, tangentY,
+						radius, coreRadius, context.dpiScale, color, random, group, windAngle, isDot);
+				});
+			check(MatchesReferenceDriftBatch(particles, reference, envelope) &&
+				!reference.empty() && dipPerPixel == reference.back().breathingFrequencyHz, "baked drift records match the old seeds field by field");
+
 			auto longStrokes = baked;
 			for (auto& stroke : longStrokes)
 				stroke.points = { { 0, 16, 1, 0 }, { 12000, 16, 1, 1 } };
-			std::vector<LaserParticleSeed> capped;
-			const auto cappedCount = AppendLaserDissolveSeeds(capped, longStrokes, sourceFront);
+			std::vector<LaserDriftParticle> capped;
+			LaserParticleBatchEnvelope cappedEnvelope;
+			float cappedDipPerPixel = 1.0f;
+			const auto cappedCount = AppendLaserDissolveSeeds(capped, cappedEnvelope, cappedDipPerPixel,
+				longStrokes, sourceFront, maximumSeeds, windAngle);
 			const auto secondCount = std::count_if(capped.begin(), capped.end(),
-				[](const LaserParticleSeed& seed) { return seed.group == 2; });
-			check(cappedCount == kLaserDissolveParameters.maximumSeeds && capped.size() == cappedCount &&
-				static_cast<size_t>(secondCount) == cappedCount / 2 && !capped.empty() && capped.back().position[0] > 11990.0f,
+				[](const LaserDriftParticle& drift) { return drift.group == 2; });
+			check(cappedCount == maximumSeeds && capped.size() == cappedCount &&
+				static_cast<size_t>(secondCount) == cappedCount / 2 && !capped.empty() && capped.back().particle.position[0] > 11990.0f,
 				"seed cap proportionally samples both complete strokes");
+
+			{
+				using DirtyKind = LaserParticleDirtyTracker::Kind;
+				constexpr RECT trailBounds{ 2, 2, 8, 8 }, clearBounds{ 20, 20, 28, 28 },
+					dissolveBounds{ 40, 40, 48, 48 }, driftBounds{ 20, 20, 48, 48 };
+				renderer.ResetLaserParticles();
+				renderer.SetLaserParticleLimit(LaserParticleLimit::Low);
+				LaserParticleSeed trail;
+				trail.radius = 1.0f;
+				trail.color[3] = 1.0f;
+				trail.lifetimeMilliseconds = 100;
+				LaserDriftParticle dissolve = {};
+				dissolve.particle.kindAndBatch = static_cast<uint32_t>(LaserParticleKind::Dissolve);
+				dissolve.particle.lifetimeMilliseconds = 380;
+				dissolve.group = 1;
+				auto clear = dissolve;
+				clear.group = kCanvasClearParticleGroup;
+				const auto accepted = renderer.StepLaserParticles(2000, 1000,
+					std::span<const LaserParticleSeed>(&trail, 1), std::span<const LaserDriftParticle>(&clear, 1),
+					std::span<const LaserDriftParticle>(&dissolve, 1));
+				check(accepted.trailAccepted && accepted.clearAccepted && accepted.dissolveAccepted &&
+					renderer.CaptureCanvasClearSnapshot(), "tier change fixture has live batches and a clear snapshot");
+				LaserParticleDirtyTracker tracker;
+				tracker.Add(trailBounds, 2100);
+				tracker.Add(clearBounds, 2380, DirtyKind::ClearDrift);
+				tracker.Add(dissolveBounds, 2380, DirtyKind::LaserDissolve);
+				PendingLaserParticles pending;
+				pending.trail.push_back(trail);
+				pending.clearDrift.push_back(clear);
+				pending.clearEnvelope = { clearBounds, 380 };
+				pending.dissolveDrift.push_back(dissolve);
+				pending.clearSpawn.emplace().reservedCount = 1;
+				RECT redraw = {};
+				check(!ApplyLaserParticleLimit(LaserParticleLimit::Low, renderer, tracker, pending, redraw) &&
+					IsEmptyRect(redraw) && pending.size() == 4 && renderer.HasActiveLaserParticles(),
+					"applying the same effective tier preserves queued and live particles");
+				check(ApplyLaserParticleLimit(LaserParticleLimit::Medium, renderer, tracker, pending, redraw) &&
+					EqualRect(&redraw, &driftBounds), "tier change dirties both old drift batches");
+				const auto remaining = tracker.Snapshot(2001);
+				check(remaining.hasActive && EqualRect(&remaining.activeBounds, &trailBounds) &&
+					renderer.HasActiveLaserParticles(), "tier change preserves the live trail and its dirty region");
+				check(pending.trail.size() == 1 && pending.size() == 1 && IsEmptyRect(pending.clearEnvelope.bounds) &&
+					!pending.clearSpawn && renderer.HasCanvasClearSnapshot(),
+					"tier change drops queued drift records and GPU requests while retaining the clear transition snapshot");
+				// 行进粒子比飘散先到期；此时环为空，说明旧飘散已被切档清掉。
+				renderer.StepLaserParticles(2101, 1000, {});
+				check(!renderer.HasActiveLaserParticles(), "no old drift remains after the surviving trail expires");
+
+				const auto advancePendingDrift = [&](int64_t nowQpc)
+				{
+					const auto uploaded = renderer.StepLaserParticles(nowQpc, 1000, pending.trail,
+						pending.clearDrift, pending.dissolveDrift, pending.dipPerPixel);
+					pending.clear();
+					return uploaded.clearAccepted && uploaded.dissolveAccepted;
+				};
+				pending.clear();
+				pending.clearDrift.assign(kLaserParticleStagingChunk + 1, clear);
+				pending.dissolveDrift.assign(kLaserParticleStagingChunk + 1, dissolve);
+				check(advancePendingDrift(3000) && pending.empty() &&
+					pending.clearDrift.capacity() <= kLaserParticleStagingChunk &&
+					pending.dissolveDrift.capacity() <= kLaserParticleStagingChunk,
+					"after upload both oversized pending drift buffers release excess capacity");
+
+				pending.clearDrift.push_back(clear);
+				pending.dissolveDrift.push_back(dissolve);
+				const auto clearCapacity = pending.clearDrift.capacity();
+				const auto dissolveCapacity = pending.dissolveDrift.capacity();
+				check(advancePendingDrift(3500) && pending.empty() &&
+					pending.clearDrift.capacity() == clearCapacity &&
+					pending.dissolveDrift.capacity() == dissolveCapacity,
+					"after upload both small pending drift buffers retain their capacity");
+
+				renderer.ResetLaserParticles();
+				renderer.ReleaseIdleLaserParticles();
+				renderer.SetLaserParticleLimit(LaserParticleLimit::Low);
+				renderer.ReleaseCanvasClearSnapshot();
+			}
+
+			{
+				// 256×256 离屏画布提供足够的墨迹面积，专用 WARP 上下文隔离视口和资源绑定。
+				constexpr LONG canvasEdge = 256;
+				Microsoft::WRL::ComPtr<ID3D11Device> clearDevice;
+				Microsoft::WRL::ComPtr<ID3D11DeviceContext> clearContext;
+				const D3D_FEATURE_LEVEL level = D3D_FEATURE_LEVEL_11_0;
+				const HRESULT createResult = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr,
+					D3D11_CREATE_DEVICE_BGRA_SUPPORT, &level, 1, D3D11_SDK_VERSION,
+					clearDevice.GetAddressOf(), nullptr, clearContext.GetAddressOf());
+				InkRenderer clearRenderer;
+				const bool initialized = SUCCEEDED(createResult) && clearRenderer.Init(clearDevice.Get(), clearContext.Get(),
+					nullptr, canvasEdge, canvasEdge, D3D_DRIVER_TYPE_WARP, true);
+				check(initialized, "mid-frame tier change initializes an offscreen clear canvas");
+				if (initialized)
+				{
+					PendingLaserParticles pending;
+					LaserParticleDirtyTracker tracker;
+					RECT redraw = {};
+					bool crumbleActive = false;
+					uint32_t options = LaserParticleOptions::Enabled | LaserParticleOptions::ClearDissolve |
+						LaserParticleOptions::PackLimit(static_cast<uint32_t>(LaserParticleLimit::Low));
+					const auto synchronizeLimit = [&]
+					{
+						return ApplyLaserParticleLimit(LaserParticleLimitFromOptions(options), clearRenderer,
+							tracker, pending, redraw);
+					};
+					(void)synchronizeLimit();
+					check(clearRenderer.LaserParticleMaximumSeeds() == maximumSeeds, "frame start applies the low tier");
+
+					options = (options & ~LaserParticleOptions::LimitMask) |
+						LaserParticleOptions::PackLimit(static_cast<uint32_t>(LaserParticleLimit::Medium));
+					constexpr uint32_t mediumMaximum =
+						kLaserParticleLimitTiers[static_cast<size_t>(LaserParticleLimit::Medium)].maximumSeeds;
+					// 半倍缩放的全不透明画布正好填满中档的 GPU 清空批。
+					clearRenderer.ClearRTV(clearRenderer.layerL2RTV.Get(), { 1.0f, 1.0f, 1.0f, 1.0f });
+					check(synchronizeLimit(), "clear preparation applies the new mid-frame tier");
+					const auto prepared = PrepareCanvasClearParticles(clearRenderer, pending.clearDrift,
+						crumbleActive, { { 0, 0, canvasEdge, canvasEdge }, MakeLaserDissolveFront(), 0.5f });
+					check(prepared.spawn && prepared.spawn->reservedCount == mediumMaximum,
+						"clear preparation reserves the medium tier budget");
+					clearRenderer.ClearRTV(clearRenderer.layerL2RTV.Get(), kTransparentLayerClearColor);
+					CompleteCanvasClearParticles(clearRenderer, pending, prepared, true);
+
+					check(!synchronizeLimit() && pending.clearSpawn && pending.clearSpawn->reservedCount == mediumMaximum,
+						"the next frame sync preserves the queued clear batch");
+					const bool submitted = pending.clearSpawn && clearRenderer.StepLaserParticles(2000, 1000,
+						{}, {}, {}, 1.0f, {}, &*pending.clearSpawn).clearSpawnAccepted;
+					check(submitted, "the next frame submits the preserved clear batch");
+					if (submitted)
+					{
+						// 等待本帧的 GPU 计数复制完成，再按生产路径读取粒子数。
+						check(clearRenderer.VisitCanvasPixels([](void*, const uint32_t*, size_t, uint32_t, uint32_t) {}, nullptr),
+							"wait for the mid-frame tier clear dispatch");
+						const auto readback = PollCanvasClearSpawn(clearRenderer, tracker, redraw);
+						check(readback && readback->written > maximumSeeds && readback->written == mediumMaximum,
+							"the preserved clear batch writes more particles than the low tier allows");
+					}
+				}
+				clearRenderer.ReleaseResources();
+			}
+
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+			{
+				renderer.ResetLaserParticles();
+				renderer.ReleaseIdleLaserDriftPool();
+				renderer.SetMaximumLaserDriftTierForTest(static_cast<int>(LaserParticleLimit::Low));
+				renderer.SetLaserParticleLimit(LaserParticleLimit::Medium);
+				const uint32_t maximum = renderer.PrepareLaserDriftPool();
+				check(maximum == maximumSeeds, "drift allocation downgrades before production generators run");
+				if (maximum == maximumSeeds)
+				{
+					// 半倍缩放时不透明像素必定命中，用恰好满额的样本确定性地生成清空批。
+					constexpr uint32_t canvasWidth = 128;
+					const uint32_t canvasHeight = maximum / canvasWidth;
+					const std::vector<uint32_t> canvas(canvasWidth * canvasHeight, 0xFFFFFFFFu);
+					const auto clearContext = MakeDriftParticleContext(0.5f, windAngle);
+					std::vector<LaserDriftParticle> clearBatch, dissolveBatch;
+					LaserParticleBatchEnvelope clearBatchEnvelope, dissolveBatchEnvelope;
+					float dissolveDipPerPixel = clearContext.dipPerPixel;
+					const auto clearCount = AppendCanvasClearParticleSeeds(clearBatch, clearBatchEnvelope, canvas.data(),
+						canvasWidth * sizeof(uint32_t), canvasWidth, canvasHeight, clearContext, 1, sourceFront, maximum);
+					const auto dissolveCount = AppendLaserDissolveSeeds(dissolveBatch, dissolveBatchEnvelope,
+						dissolveDipPerPixel, longStrokes, sourceFront, maximum, windAngle);
+					const auto accepted = renderer.StepLaserParticles(2000, 1000, {}, clearBatch, dissolveBatch, dissolveDipPerPixel);
+					check(clearCount == maximum && dissolveCount == maximum && accepted.clearAccepted &&
+						accepted.dissolveAccepted, "both production generators fill and submit a full downgraded batch");
+				}
+				renderer.ResetLaserParticles();
+				renderer.ReleaseIdleLaserDriftPool();
+			}
+#endif
 
 			auto dots = baked;
 			dots.resize(2);
 			dots[0].points = { { 16, 16, 1, 0 } };
 			dots[1].points = { { 40, 40, 1, 0 }, { 40, 40, 1, 1 } };
-			std::vector<LaserParticleSeed> dotSeeds;
-			const auto dotCount = AppendLaserDissolveSeeds(dotSeeds, dots, sourceFront);
-			check(dotCount == dotSeeds.size(), "dot seed count matches appended seeds");
+			std::vector<LaserDriftParticle> dotDrift;
+			LaserParticleBatchEnvelope dotEnvelope;
+			float dotDipPerPixel = 1.0f;
+			const auto dotCount = AppendLaserDissolveSeeds(dotDrift, dotEnvelope, dotDipPerPixel,
+				dots, sourceFront, maximumSeeds, windAngle);
+			check(dotCount == dotDrift.size(), "dot seed count matches appended seeds");
 			for (const auto& dot : dots)
 			{
 				const float radius = LaserSolidRadius(ProductTargetScale(dot.visualStyle));
@@ -7759,17 +8163,21 @@ namespace Inkeys::Drawing::Draw3
 				const auto tint = ColorForTool(DrawingTool::Laser, dot.visualStyle);
 				unsigned groupCount = 0;
 				bool matchesDot = true;
-				for (const auto& seed : dotSeeds)
+				const uint32_t expectedColor = static_cast<uint32_t>(std::lround(tint.x * 255.0f)) |
+					(static_cast<uint32_t>(std::lround(tint.y * 255.0f)) << 8) |
+					(static_cast<uint32_t>(std::lround(tint.z * 255.0f)) << 16) | 0xFF000000u;
+				for (const auto& drift : dotDrift)
 				{
-					if (seed.group != dot.layerId) continue;
+					if (drift.group != dot.layerId) continue;
+					const auto& particle = drift.particle;
 					++groupCount;
-					const float distance = std::hypot(seed.position[0] - dot.points.front().x,
-						seed.position[1] - dot.points.front().y);
+					const float distance = std::hypot(particle.position[0] - dot.points.front().x,
+						particle.position[1] - dot.points.front().y);
 					const float white = 1.0f - std::clamp((distance - core) / (radius - core), 0.0f, 1.0f);
-					// 种子只带激光色，白芯比例放在亮度字段里，由着色器在出生后很快褪掉。
-					matchesDot &= distance <= radius + 0.0001f && seed.kind == LaserParticleKind::Dissolve &&
-						seed.color[0] == tint.x && seed.color[1] == tint.y && seed.color[2] == tint.z &&
-						std::abs(seed.brightness - white) < 0.0001f;
+					// 白芯比例独立于 RGBA8 颜色，由着色器在出生后很快褪掉。
+					matchesDot &= distance <= radius + 0.0001f &&
+						particle.kindAndBatch == static_cast<uint32_t>(LaserParticleKind::Dissolve) &&
+						particle.color == expectedColor && std::abs(particle.shapeParameters[1] - white) < 0.0001f;
 				}
 				check(groupCount >= 3 && matchesDot, "single-point and zero-length strokes emit within the dot with radial whiteness");
 			}
@@ -7777,43 +8185,47 @@ namespace Inkeys::Drawing::Draw3
 			auto mixed = longStrokes;
 			mixed.resize(2);
 			mixed.back().points = dots.back().points;
-			dotSeeds.clear();
-			check(AppendLaserDissolveSeeds(dotSeeds, mixed, sourceFront) == kLaserDissolveParameters.maximumSeeds &&
-				std::count_if(dotSeeds.begin(), dotSeeds.end(),
-					[](const LaserParticleSeed& seed) { return seed.group == 2; }) >= 3,
+			dotDrift.clear();
+			dotEnvelope = {};
+			check(AppendLaserDissolveSeeds(dotDrift, dotEnvelope, dotDipPerPixel, mixed, sourceFront, maximumSeeds, windAngle) == maximumSeeds &&
+				std::count_if(dotDrift.begin(), dotDrift.end(),
+					[](const LaserDriftParticle& drift) { return drift.group == 2; }) >= 3,
 				"a dot keeps its minimum seeds within a capped mixed batch");
 
 			check(renderer.LaserParticlesAvailable(), "WARP particle pool is available");
 			{
 				LaserParticleDirtyTracker tracker;
 				constexpr RECT bounds{ 8, 8, 32, 32 };
-				LaserParticleSeed shortDissolve;
-				shortDissolve.kind = LaserParticleKind::Dissolve;
-				shortDissolve.lifetimeMilliseconds = 380;
-				const std::span<const LaserParticleSeed> batch(&shortDissolve, 1);
+				LaserDriftParticle shortDissolve = {};
+				shortDissolve.particle.kindAndBatch = static_cast<uint32_t>(LaserParticleKind::Dissolve);
+				shortDissolve.particle.lifetimeMilliseconds = 380;
+				const std::span<const LaserDriftParticle> batch(&shortDissolve, 1);
 				renderer.ResetLaserParticles();
-				renderer.StepLaserParticles(2000, 1000, batch, 1);
+				renderer.StepLaserParticles(2000, 1000, {}, {}, batch);
 				renderer.StepLaserParticles(2350, 1000, {});
-				tracker.Add(bounds, 2380, true);
+				tracker.Add(bounds, 2380, LaserParticleDirtyTracker::Kind::LaserDissolve);
 				check(tracker.Snapshot(2400, 2350).hasActive,
 					"frame-start pruning preserves the batch at its last GPU age");
 				const auto gatherEnd = LaserParticleLifetimeDeadlineQpc(2400, 1000,
 					kLaserDissolveParameters.gatherMilliseconds);
 				tracker.ExtendLatestDissolve(gatherEnd);
-				renderer.StepLaserParticles(2400, 1000, {}, 0, { 2350, 0.0f, false, gatherEnd });
-				renderer.StepLaserParticles(gatherEnd - 1, 1000, {}, 0, { 2350, 0.99f, false, gatherEnd });
+				renderer.StepLaserParticles(2400, 1000, {}, {}, {}, 1.0f, { 2350, 0.0f, false, gatherEnd });
+				renderer.StepLaserParticles(gatherEnd - 1, 1000, {}, {}, {}, 1.0f, { 2350, 0.99f, false, gatherEnd });
 				const auto gathering = tracker.Snapshot(gatherEnd - 1);
 				check(renderer.HasActiveLaserParticles() && gathering.hasActive && !gathering.expiredAny &&
 					gathering.activeBounds.left == bounds.left && gathering.activeBounds.right == bounds.right,
 					"short dissolve batch keeps its active range and dirty region past its original expiry");
 				check(tracker.Snapshot(gatherEnd).expiredAny, "gather deadline bounds the extended dirty lifetime");
-				renderer.StepLaserParticles(gatherEnd, 1000, {}, 0, { 2350, 1.0f, true, gatherEnd });
+				renderer.StepLaserParticles(gatherEnd, 1000, {}, {}, {}, 1.0f, { 2350, 1.0f, true, gatherEnd });
 				check(!renderer.HasActiveLaserParticles(), "short dissolve batch retires at gather end");
 
-				renderer.StepLaserParticles(3000, 1000, batch, 1);
-				tracker.Add(bounds, 3380, true);
+				renderer.StepLaserParticles(3000, 1000, {}, {}, batch);
+				tracker.Add(bounds, 3380, LaserParticleDirtyTracker::Kind::LaserDissolve);
 				uint32_t effects = LaserParticleOptions::Effects;
-				std::vector<LaserParticleSeed> pending{ shortDissolve };
+				PendingLaserParticles pending;
+				pending.dissolveDrift.push_back(shortDissolve);
+				pending.clearDrift.push_back(shortDissolve);
+				pending.trail.emplace_back();
 				RECT redraw = {};
 				check(ShouldStepLaserParticles(renderer.HasActiveLaserParticles(), 0, false),
 					"an active ring still advances when effects are disabled");
@@ -7830,7 +8242,7 @@ namespace Inkeys::Drawing::Draw3
 					"applying the same disabled preference adds no redraw and leaves the ring idle");
 			}
 			renderer.ResetLaserParticles();
-			renderer.StepLaserParticles(2000, 1000, seeds, count);
+			renderer.StepLaserParticles(2000, 1000, {}, {}, particles, dipPerPixel);
 			renderer.StepLaserParticles(2200, 1000, {});
 			renderer.StepLaserParticles(2450, 1000, {});
 			front.progress = 0.2f;
@@ -7840,14 +8252,14 @@ namespace Inkeys::Drawing::Draw3
 			{
 				const float gather = LaserDissolveGatherProgress(2450, now, 1000);
 				front.progress = 0.2f * (1.0f - gather);
-				renderer.StepLaserParticles(now, 1000, {}, 0, { 2450, gather, gather == 1.0f });
+				renderer.StepLaserParticles(now, 1000, {}, {}, {}, 1.0f, { 2450, gather, gather == 1.0f });
 				check(readFront(current, front, 1.0f, true), "draw a gather frame with particles");
 			}
 			check(current == baseline && !renderer.HasActiveLaserParticles(),
 				"gather end restores baked bytes and retires particles");
 
 			renderer.ResetLaserParticles();
-			renderer.StepLaserParticles(2000, 1000, seeds, count);
+			renderer.StepLaserParticles(2000, 1000, {}, {}, particles, dipPerPixel);
 			renderer.StepLaserParticles(2450, 1000, {});
 			front.progress = 0.2f;
 			float opacity = 1.0f;
@@ -7897,7 +8309,7 @@ namespace Inkeys::Drawing::Draw3
 			std::vector<uint8_t> legacyPixels;
 			check(readFront(legacyPixels, {}, legacyOpacity), "read ordinary fade reference");
 			LaserParticleSystem unavailable;
-			check(!unavailable.Initialize(renderer.device.Get(), renderer.context.Get(), {}, {}),
+			check(!unavailable.Initialize(renderer.device.Get(), renderer.context.Get(), {}, {}, {}),
 				"missing shader bytecode rejects particle initialization");
 			for (const bool available : { false, true })
 			{
@@ -8149,6 +8561,348 @@ namespace Inkeys::Drawing::Draw3
 		renderer.ClearOperatorLayer(l0);
 		renderer.ClearOperatorLayer(l1);
 		renderer.ClearRTV(dst, kTransparentLayerClearColor);
+		{
+			const auto front = MakeLaserDissolveFront();
+			const uint32_t maximumDelay = static_cast<uint32_t>(
+				std::ceil(LaserDissolveCrumbleEndProgress() * kLaserDissolveParameters.durationMilliseconds));
+			const float color[] = { 0.2f, 0.4f, 0.8f, 1.0f };
+			bool withinBound = true;
+			for (uint32_t i = 0; i < 8192; ++i)
+			{
+				const uint32_t random = MixLaserSeed(i);
+				const LONG x = static_cast<LONG>(random & 0x3FFFu) - 8192;
+				const LONG y = static_cast<LONG>((random >> 14) & 0x3FFFu) - 8192;
+				const float scale = 0.5f + static_cast<float>((random >> 24) & 0xFFu) / 64.0f;
+				const auto drift = MakeDriftParticleContext(scale, i % 2 == 0
+					? kLaserDissolveParameters.leftUpWindAngleDegrees : kLaserDissolveParameters.rightUpWindAngleDegrees);
+				const auto limit = ConservativeCanvasClearParticleBounds({ x, y, x + 1, y + 1 }, scale);
+				LaserParticleBatchEnvelope actual;
+				const auto record = MakeDriftParticle(drift, actual, static_cast<float>(x), static_cast<float>(y),
+					0.0f, color, random, kCanvasClearParticleGroup, maximumDelay);
+				withinBound &= !IsEmptyRect(actual.bounds) && actual.bounds.left >= limit.bounds.left &&
+					actual.bounds.top >= limit.bounds.top && actual.bounds.right < limit.bounds.right &&
+					actual.bounds.bottom < limit.bounds.bottom &&
+					record.particle.lifetimeMilliseconds <= kLaserDissolveParameters.maximumLifetimeMilliseconds &&
+					actual.maximumLifetimeMilliseconds <= limit.maximumLifetimeMilliseconds;
+			}
+			check(withinBound, "8192 drift records fit the GPU clear travel envelope and deadline");
+
+			std::array<uint8_t, 16> pageId{};
+			pageId[0] = 9;
+			InkPage page{ InkGuid(pageId) };
+			auto* canvas = page.GetOrCreateCanvas(kDefaultDeviceKey);
+			CanvasRuntimeHistory history;
+			std::vector<InkPoint> replayPoints;
+			HighlighterGeometry replayMarker;
+			draw3::shapes::ShapeObject circle;
+			circle.id[0] = 1;
+			circle.kind = draw3::shapes::Kind::Circle;
+			circle.geometry.start = { 44, 21 };
+			circle.geometry.radius = 7;
+			circle.style.fill = true;
+			circle.style.fillRgb = 0x3377BB;
+			circle.style.fillOpacity = 1.0f;
+			const std::array<InkStroke, 5> strokes = {
+				InkStroke({ StoredInkType::Pen, 0x3377BB, 1.0f }, { { 12, 18, 6 }, { 31, 18, 6 } }),
+				InkStroke({ StoredInkType::Highlighter, 0x3377BB, 0.6f }, { { 9, 29, 7 }, { 31, 35, 7 } }),
+				InkStroke({ StoredInkType::Shape, 0x3377BB, 1.0f }, {}, std::nullopt, circle),
+				InkStroke({ StoredInkType::Pen, 0x3377BB, 1.0f }, { { 51, 51, 6 } }),
+				InkStroke({ StoredInkType::Eraser, 0, 1.0f }, { { 20, 18, 8 }, { 22, 18, 8 } })
+			};
+			const auto raster = [&](const InkStroke& stroke)
+			{
+				renderer.ClearOperatorLayer(l1);
+				const auto viewport = canvas->Viewport();
+				const auto result = DrawStoredStroke(stroke, renderer,
+					{ &l1, viewport.x, viewport.y, 64, 64 }, replayPoints, replayMarker);
+				return result.succeeded && renderer.ApplyOperatorLayers(
+					renderer.layerL2RTV.Get(), l1, l0, fullRect);
+			};
+			struct ReadbackBounds
+			{
+				RECT bounds = {};
+				uint32_t penCenterAlpha = 0;
+			};
+			const auto checkBounds = [&](const CanvasRuntimeHistory& sourceHistory, const char* name)
+			{
+				ReadbackBounds gpu;
+				const bool read = renderer.VisitCanvasPixels([](void* user, const uint32_t* pixels, size_t pitch,
+					uint32_t width, uint32_t height)
+					{
+						auto& gpu = *static_cast<ReadbackBounds*>(user);
+						for (LONG y = 0; y < static_cast<LONG>(height); ++y)
+						{
+							const auto* row = reinterpret_cast<const uint32_t*>(
+								reinterpret_cast<const uint8_t*>(pixels) + static_cast<size_t>(y) * pitch);
+							for (LONG x = 0; x < static_cast<LONG>(width); ++x)
+								if ((row[x] >> 24) >= kCanvasClearParticleParameters.minimumAlpha)
+									UnionRectInPlace(gpu.bounds, { x, y, x + 1, y + 1 });
+							if (y == 18 && width > 21) gpu.penCenterAlpha = row[21] >> 24;
+						}
+					}, &gpu);
+				const RECT screen = VisibleContentScreenBounds(sourceHistory, canvas->Viewport(), 64, 64, false);
+				constexpr LONG maximumPadding = 12;
+				check(read && !IsEmptyRect(gpu.bounds) &&
+					screen.left <= gpu.bounds.left && gpu.bounds.left - screen.left <= maximumPadding &&
+					screen.top <= gpu.bounds.top && gpu.bounds.top - screen.top <= maximumPadding &&
+					screen.right >= gpu.bounds.right && screen.right - gpu.bounds.right <= maximumPadding &&
+					screen.bottom >= gpu.bounds.bottom && screen.bottom - gpu.bounds.bottom <= maximumPadding, name);
+				return gpu.penCenterAlpha;
+			};
+			renderer.ClearRTV(renderer.layerL2RTV.Get(), kTransparentLayerClearColor);
+			const char* labels[] = { "pen bounds cover L2", "highlighter bounds cover L2", "parametric shape bounds cover L2",
+				"dot bounds cover L2", "partially erased ink bounds cover L2" };
+			bool haveHistory = canvas != nullptr;
+			uint32_t penAlpha = 0;
+			for (size_t i = 0; haveHistory && i < strokes.size(); ++i)
+			{
+				auto footprint = BuildStrokeTileFootprint(strokes[i], VisibleInkBounds(canvas->Viewport(), 64, 64));
+				const auto added = canvas->AppendStroke(strokes[i]);
+				haveHistory = footprint && added && history.AppendStroke(*added, std::move(*footprint)) && raster(strokes[i]);
+				check(haveHistory, "append and rasterize real history item");
+				if (!haveHistory) break;
+				const uint32_t alpha = checkBounds(history, labels[i]);
+				if (i == 0) penAlpha = alpha;
+				if (i == 4) check(penAlpha >= kCanvasClearParticleParameters.minimumAlpha &&
+					alpha < kCanvasClearParticleParameters.minimumAlpha, "eraser removes part of the pen on L2");
+			}
+			if (haveHistory)
+			{
+				check(canvas->SetViewport({ 3.25f, -2.5f, 1.0f }), "pan to a fractional viewport");
+				const RECT fallback = VisibleContentScreenBounds(history, canvas->Viewport(), 64, 64, true);
+				check(EqualRect(&fallback, &fullRect), "out-of-sync L2 requests the full canvas");
+				const auto restoreL2 = [&]
+				{
+					renderer.ClearRTV(renderer.layerL2RTV.Get(), kTransparentLayerClearColor);
+					for (const auto& item : history.Items())
+						if (item.visible && !raster(canvas->Strokes()[item.strokeIndex])) return false;
+					return true;
+				};
+				check(restoreL2(), "replay panned whiteboard history");
+				checkBounds(history, "panned history bounds cover L2");
+				renderer.ResetLaserParticles();
+				renderer.ReleaseIdleLaserDriftPool();
+				renderer.ReleaseCanvasClearSnapshot();
+				const auto request = LaserClearSpawnRequest{
+					VisibleContentScreenBounds(history, canvas->Viewport(), 64, 64, false), front };
+				PendingLaserParticles pending;
+				bool crumble = false;
+				CanvasRuntimeHistory emptyHistory;
+				auto emptyRequest = request;
+				emptyRequest.pixelRect = VisibleContentScreenBounds(emptyHistory, canvas->Viewport(), 64, 64, false);
+				const auto empty = PrepareCanvasClearParticles(renderer, pending.clearDrift, crumble, emptyRequest);
+				CompleteCanvasClearParticles(renderer, pending, empty, true);
+				const auto pageRegion = VisibleInkBounds(canvas->Viewport(), 64, 64);
+				check(!emptyHistory.VisibleContentBounds(pageRegion) && pending.empty() &&
+					!renderer.HasCanvasClearSnapshot(), "empty page captures no snapshot and queues no particles");
+
+				auto offscreenViewport = canvas->Viewport();
+				offscreenViewport.x += 128.0f;
+				auto offscreenRequest = request;
+				offscreenRequest.pixelRect = VisibleContentScreenBounds(history, offscreenViewport, 64, 64, false);
+				const auto offscreen = PrepareCanvasClearParticles(renderer, pending.clearDrift, crumble, offscreenRequest);
+				CompleteCanvasClearParticles(renderer, pending, offscreen, true);
+				check(IsEmptyRect(offscreenRequest.pixelRect) && pending.empty() && !renderer.HasCanvasClearSnapshot(),
+					"offscreen ink queues no clear particles and captures no snapshot");
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+				check(!renderer.LaserDriftPoolResourcesCreatedForTest(), "offscreen ink does not create the drift pool");
+#endif
+
+				const InkStroke leftStroke({ StoredInkType::Pen, 0x3377BB, 1.0f }, { { -48, 18, 6 }, { -32, 18, 6 } });
+				const InkStroke rightStroke({ StoredInkType::Pen, 0x3377BB, 1.0f }, { { 96, 18, 6 }, { 112, 18, 6 } });
+				CanvasRuntimeHistory clippedHistory;
+				const auto appendClippedFixture = [&](const InkStroke& stroke, size_t index)
+				{
+					auto footprint = BuildStrokeTileFootprint(stroke, pageRegion);
+					return footprint && clippedHistory.AppendStroke(index, std::move(*footprint));
+				};
+				const bool haveFlankingStrokes = appendClippedFixture(leftStroke, 0) &&
+					appendClippedFixture(rightStroke, 1);
+				check(haveFlankingStrokes, "build history with strokes beyond both sides of the viewport");
+				if (haveFlankingStrokes)
+				{
+					renderer.ClearRTV(renderer.layerL2RTV.Get(), kTransparentLayerClearColor);
+					check(raster(leftStroke) && raster(rightStroke), "replay both offscreen strokes");
+					auto flankingRequest = request;
+					flankingRequest.pixelRect = VisibleContentScreenBounds(clippedHistory, canvas->Viewport(), 64, 64, false);
+					const auto flanking = PrepareCanvasClearParticles(renderer, pending.clearDrift, crumble, flankingRequest);
+					CompleteCanvasClearParticles(renderer, pending, flanking, true);
+					check(!clippedHistory.VisibleContentBounds(pageRegion) && IsEmptyRect(flankingRequest.pixelRect) &&
+						pending.empty() && !renderer.HasCanvasClearSnapshot(),
+						"strokes beyond both sides queue no clear particles and capture no snapshot");
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+					check(!renderer.LaserDriftPoolResourcesCreatedForTest(), "strokes beyond both sides do not create the drift pool");
+#endif
+
+					// 撤回右侧离屏笔画，改用原夹具的视口内笔画，单独重放到 L2。
+					const bool haveMixedStrokes = clippedHistory.UndoLastVisible() && appendClippedFixture(strokes[0], 2);
+					check(haveMixedStrokes, "build history with one onscreen and one offscreen stroke");
+					if (haveMixedStrokes)
+					{
+						const auto& inside = history.Items().front().pixelBounds;
+						const auto mixedBounds = clippedHistory.VisibleContentBounds(pageRegion);
+						check(mixedBounds && mixedBounds->left == inside.left && mixedBounds->top == inside.top &&
+							mixedBounds->right == inside.right && mixedBounds->bottom == inside.bottom,
+							"mixed history bounds cover only the onscreen stroke");
+						auto partialRegion = pageRegion;
+						partialRegion.left = inside.left + 1.0f;
+						const auto partialBounds = clippedHistory.VisibleContentBounds(partialRegion);
+						check(partialBounds && partialBounds->left == partialRegion.left && partialBounds->right == inside.right,
+							"the history query clips a stroke that crosses the query edge");
+
+						renderer.ClearRTV(renderer.layerL2RTV.Get(), kTransparentLayerClearColor);
+						check(raster(leftStroke) && raster(strokes[0]), "replay mixed onscreen and offscreen history");
+						checkBounds(clippedHistory, "mixed history bounds cover the onscreen L2 pixels");
+					}
+					check(restoreL2(), "restore the panned clear fixture");
+				}
+
+				const auto rejected = PrepareCanvasClearParticles(renderer, pending.clearDrift, crumble, request);
+				check(rejected.spawn && renderer.HasCanvasClearSnapshot() && pending.empty(),
+					"GPU preparation captures the snapshot before the clear transaction");
+				CompleteCanvasClearParticles(renderer, pending, rejected, false);
+				check(pending.empty() && !renderer.HasCanvasClearSnapshot() && !renderer.HasActiveLaserParticles(),
+					"failed clear releases the snapshot without submitting particles");
+
+				constexpr int64_t frequency = 1000, firstClearQpc = 1000, secondClearQpc = 1250;
+				LaserParticleDirtyTracker tracker;
+				const auto submitClear = [&](int64_t nowQpc, RECT& dirty)
+				{
+					if (!pending.clearSpawn || !renderer.StepLaserParticles(nowQpc, frequency, {}, {}, {}, 1.0f, {},
+						&*pending.clearSpawn).clearSpawnAccepted) return false;
+					TrackCanvasClearSpawn(*pending.clearSpawn, tracker, nowQpc, frequency, dirty);
+					pending.clearSpawn.reset();
+					return true;
+				};
+				const auto waitForReadback = [&]
+				{
+					// 阻塞式 L2 读回只用于无窗自检，确保此前的计数 Copy 已执行。
+					check(renderer.VisitCanvasPixels([](void*, const uint32_t*, size_t, uint32_t, uint32_t) {}, nullptr),
+						"wait for WARP clear dispatch with L2 readback");
+				};
+				const auto gpu = PrepareCanvasClearParticles(renderer, pending.clearDrift, crumble, request);
+				renderer.ClearRTV(renderer.layerL2RTV.Get(), kTransparentLayerClearColor);
+				CompleteCanvasClearParticles(renderer, pending, gpu, true);
+				RECT gpuDirty = {};
+				check(submitClear(firstClearQpc, gpuDirty) && renderer.HasActiveLaserParticles(),
+					"committed clear sends the snapshot to the GPU pool on Step");
+				waitForReadback();
+				RECT revokedDirty = {};
+				const auto gpuCount = PollCanvasClearSpawn(renderer, tracker, revokedDirty);
+				check(gpuCount && gpuCount->written > 0 && gpu.spawn && gpuCount->written < gpu.spawn->reservedCount,
+					"clear generates a smaller actual count for ring trimming");
+				const auto positive = tracker.Snapshot(firstClearQpc);
+				check(positive.hasActive && !IsEmptyRect(gpuDirty) && EqualRect(&positive.activeBounds, &gpuDirty) &&
+					IsEmptyRect(revokedDirty), "nonzero GPU clear keeps its conservative dirty region");
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+				const uint32_t maximumSeeds = renderer.LaserParticleMaximumSeeds();
+#endif
+
+				// 有颜色但 alpha 远低于生成阈值，确保是非空范围上的零粒回读。
+				renderer.ClearRTV(renderer.layerL2RTV.Get(), { 0.0625f, 0.0f, 0.0f, 0.125f });
+				auto lowAlphaRequest = request;
+				lowAlphaRequest.pixelRect = { 8, 8, 24, 24 };
+				const auto lowAlpha = PrepareCanvasClearParticles(renderer, pending.clearDrift, crumble, lowAlphaRequest);
+				renderer.ClearRTV(renderer.layerL2RTV.Get(), kTransparentLayerClearColor);
+				CompleteCanvasClearParticles(renderer, pending, lowAlpha, true);
+				RECT lowAlphaDirty = {};
+				check(submitClear(secondClearQpc, lowAlphaDirty) && !IsEmptyRect(lowAlphaDirty),
+					"low-alpha GPU clear reserves and tracks its own region");
+				waitForReadback();
+				revokedDirty = {};
+				const auto zero = PollCanvasClearSpawn(renderer, tracker, revokedDirty);
+				const auto remaining = tracker.Snapshot(secondClearQpc);
+				check(zero && zero->written == 0 && zero->batchRevoked && EqualRect(&revokedDirty, &lowAlphaDirty) &&
+					remaining.hasActive && EqualRect(&remaining.activeBounds, &gpuDirty),
+					"zero GPU clear revokes only its own dirty region and repaints it");
+				const auto until = LaserParticleLifetimeDeadlineQpc(firstClearQpc, frequency,
+					ConservativeCanvasClearParticleBounds(request.pixelRect, request.dpiScale).maximumLifetimeMilliseconds);
+				renderer.StepLaserParticles(until, frequency, {});
+				const bool stillVisible = tracker.Snapshot(until).hasActive || renderer.HasActiveLaserParticles();
+				check(!LaserTrailVisible(LaserTrailPhase::Inactive, stillVisible),
+					"revoked zero-particle batch cannot keep particles visible past the preceding batch");
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+				const auto cpuReference = [](void* user, const uint32_t* pixels, size_t pitch, uint32_t width, uint32_t height)
+				{
+					const auto& source = *static_cast<std::pair<const LaserClearSpawnRequest*, std::vector<LaserDriftParticle>*>*>(user);
+					LaserParticleBatchEnvelope envelope;
+					const auto drift = MakeDriftParticleContext(source.first->dpiScale, source.first->windAngleDegrees);
+					AppendCanvasClearParticleSeeds(*source.second, envelope, pixels, pitch, width, height,
+						drift, source.first->seedBase, source.first->front,
+						kLaserParticleLimitTiers[static_cast<size_t>(LaserParticleLimit::Low)].maximumSeeds);
+				};
+				std::vector<LaserDriftParticle> reference;
+				std::pair referenceSource{ &request, &reference };
+				check(restoreL2() && renderer.VisitCanvasPixels(cpuReference, &referenceSource),
+					"read the same L2 pixels for the original CPU sampler");
+				renderer.ResetLaserParticles();
+				renderer.ReleaseIdleLaserDriftPool();
+				renderer.ReleaseCanvasClearSnapshot();
+				pending.clear();
+				renderer.SetClearSpawnCreationFailureForTest(true);
+				const auto cpu = PrepareCanvasClearParticles(renderer, pending.clearDrift, crumble, request);
+				CompleteCanvasClearParticles(renderer, pending, cpu, true);
+				check(!pending.clearSpawn && cpu.snapshotCaptured && gpuCount && gpuCount->written == reference.size() &&
+					pending.clearDrift.size() == reference.size() && reference.size() < maximumSeeds &&
+					renderer.StepLaserParticles(1000, 1000, {}, pending.clearDrift).clearAccepted,
+					"GPU resource failure uses the original CPU count on the same 1x L2");
+
+				// 2× 的代表像素看得到左侧墨块，漏掉位于奇数列的右侧细线。
+				std::array<uint32_t, 64 * 64> sparseCanvas = {};
+				for (size_t y = 16; y < 32; ++y)
+				{
+					std::fill_n(sparseCanvas.data() + y * 64 + 16, 16, 0xFF3377BBu);
+					sparseCanvas[y * 64 + 51] = 0xFF3377BBu;
+				}
+				renderer.context->OMSetRenderTargets(0, nullptr, nullptr);
+				renderer.context->UpdateSubresource(renderer.layerL2Texture.Get(), 0, nullptr, sparseCanvas.data(), 64 * 4, 0);
+				pending.clear();
+				auto scaledRequest = request;
+				scaledRequest.dpiScale = 2.0f;
+				const auto scaledCpu = PrepareCanvasClearParticles(renderer, pending.clearDrift, crumble, scaledRequest);
+				CompleteCanvasClearParticles(renderer, pending, scaledCpu, true);
+				check(!pending.clearSpawn && !pending.clearDrift.empty() && scaledCpu.snapshotCaptured &&
+					scaledRequest.pixelRect.right > 51 && EqualRect(&scaledCpu.crumbleBounds, &scaledRequest.pixelRect),
+					"2x CPU fallback uses history bounds for crumble even when sampling misses an edge");
+				renderer.SetClearSpawnCreationFailureForTest(false);
+#endif
+				renderer.ResetLaserParticles();
+				renderer.ReleaseIdleLaserDriftPool();
+				renderer.ReleaseCanvasClearSnapshot();
+			}
+			renderer.ClearRTV(renderer.layerL2RTV.Get(), kTransparentLayerClearColor);
+			renderer.ClearOperatorLayer(l1);
+		}
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		{
+			// 让本探针的最后一个用例独占故障锁存，前面的真实绘制仍走正常路径。
+			renderer.ResetLaserParticles();
+			renderer.ReleaseIdleLaserDriftPool();
+			renderer.SetMaximumLaserDriftTierForTest(-1);
+			check(renderer.PrepareLaserDriftPool() == 0 && renderer.LaserParticlesAvailable(),
+				"unavailable drift pool reports no generation budget while the particle system stays available");
+
+			LaserTrailLifecycle lifecycle;
+			BeginLaserContact(lifecycle);
+			EndLaserContact(lifecycle, 1000);
+			(void)EvaluateLaserTrailOpacity(lifecycle, 2000, 1000, 1.0, true);
+			LaserDriftParticle record = {};
+			record.particle.kindAndBatch = static_cast<uint32_t>(LaserParticleKind::Dissolve);
+			record.particle.lifetimeMilliseconds = 380;
+			const auto accepted = renderer.StepLaserParticles(2000, 1000, {}, {},
+				std::span<const LaserDriftParticle>(&record, 1));
+			LaserParticleDirtyTracker tracker;
+			bool hasBatch = false;
+			CompleteLaserDissolveSubmission(accepted.dissolveAccepted, hasBatch,
+				[&] { tracker.Add(resolveRect, 2380, LaserParticleDirtyTracker::Kind::LaserDissolve); },
+				[&] { StartLaserDissolveFallback(lifecycle, 2000, 1.0f); });
+			tracker.ExtendLatestDissolve(2700);
+			check(!hasBatch && !tracker.Snapshot(2100).hasActive &&
+				lifecycle.phase == LaserTrailPhase::Fade &&
+				EvaluateLaserTrailOpacity(lifecycle, 2400, 1000, 1.0, true) == 0.5f,
+				"drift rejection fades the laser body without tracking a gatherable batch");
+		}
+#endif
 		return failures;
 	}
 
@@ -13929,7 +14683,7 @@ namespace Inkeys::Drawing::Draw3
 
 	int RunGeneralDrawingOptionsProductionTest() noexcept
 	{
-		int failures = 0;
+		int failures = RunLaserParticleOptionsProductionTest();
 		const auto check = [&](bool ok, const char* label)
 		{
 			if (!ok) { ++failures; std::fprintf(stderr, "[Draw3GeneralOptions] FAIL: %s\n", label); }
@@ -18028,8 +18782,8 @@ namespace Inkeys::Drawing::Draw3
 		laserTerminalOperations.reserve(kLaserReservedContactCount);
 		laserTipVisuals.reserve(kPreheatedStrokeCount + 1);
 		shapePrimitiveScratch.reserve(kLaserReservedContactCount * 2);
-		std::vector<LaserParticleSeed> laserParticleSeeds;
-		laserParticleSeeds.reserve(kLaserReservedContactCount);
+		PendingLaserParticles pendingLaserParticles;
+		pendingLaserParticles.trail.reserve(kLaserReservedContactCount);
 		// 点击光波是独立图元：状态只在这里，每帧按曲线求出形态后直接绘制，不进粒子池。
 		std::vector<LaserClickWave> laserClickWaves;
 		std::vector<LaserClickWaveVisual> laserClickWaveVisuals;
@@ -18043,6 +18797,7 @@ namespace Inkeys::Drawing::Draw3
 		RECT canvasClearCrumbleBounds = {};
 		auto cancelCanvasClearCrumble = [&]
 		{
+			pendingLaserParticles.clearSpawn.reset();
 			if (!canvasClearCrumbleActive) return;
 			canvasClearCrumbleActive = false;
 			renderer_.ReleaseCanvasClearSnapshot();
@@ -18088,7 +18843,7 @@ namespace Inkeys::Drawing::Draw3
 			const uint32_t nextEffects =
 				EffectiveLaserParticleEffects(latchedLaserParticleOptions, renderer_.LaserParticlesAvailable());
 			if (!ApplyLaserParticleEffects(effectiveLaserParticleEffects, nextEffects, renderer_,
-				laserParticleDirtyTracker, laserParticleSeeds, previousLaserParticleBounds, redraw)) return;
+				laserParticleDirtyTracker, pendingLaserParticles, previousLaserParticleBounds, redraw)) return;
 			for (RuntimeStroke* runtime : active)
 			{
 				if (runtime && runtime->tool == DrawingTool::Laser)
@@ -18160,6 +18915,31 @@ namespace Inkeys::Drawing::Draw3
 				laserGatherFallbackOpacity = opacity;
 			}
 			finishLaserDissolve();
+		};
+		const auto synchronizeLaserParticleLimit = [&]
+		{
+			// 档位直接读原始选项，设备重建后和帧中生成飘散前都使用同一入口。
+			RECT redraw = {};
+			// 本帧已按当前档位排队了飘散记录或 GPU 清空请求时，换档推迟到下一帧帧首（那时队列已上传），
+			// 否则同帧后续的同步会丢掉刚入队、尚未上传的批次。
+			if (!pendingLaserParticles.clearDrift.empty() || !pendingLaserParticles.dissolveDrift.empty() ||
+				pendingLaserParticles.clearSpawn) return redraw;
+			const bool hadLaserDissolve = laserDissolveHasBatch || !pendingLaserParticles.dissolveDrift.empty();
+			if (ApplyLaserParticleLimit(LaserParticleLimitFromOptions(GetLaserParticleOptions()), renderer_,
+				laserParticleDirtyTracker, pendingLaserParticles, redraw))
+			{
+				laserDissolveHasBatch = false;
+				stopLaserDissolveBatch = false;
+				if (hadLaserDissolve)
+				{
+					// 旧批次无法再汇聚，沿用粒子不可用时的主体淡出。
+					LARGE_INTEGER now = {};
+					QueryPerformanceCounter(&now);
+					fallbackLaserDissolve(now.QuadPart);
+					UnionRectInPlace(redraw, laserStableBounds);
+				}
+			}
+			return redraw;
 		};
 		auto animateLaserTrail = [&](int64_t nowQpc, double hold)
 		{
@@ -18235,7 +19015,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				renderer_.ResetLaserParticles();
 				laserParticleDirtyTracker.Clear();
-				laserParticleSeeds.clear();
+				pendingLaserParticles.clear();
 				laserClickWaves.clear();
 				hasLiveLaserParticles = false;
 			}
@@ -20360,8 +21140,8 @@ namespace Inkeys::Drawing::Draw3
 
 		auto releaseUnusedLaserResources = [&]
 		{
-			// 粒子池闲时归还：没有存活粒子和待发射种子，且不是“选中激光笔并开着激光粒子”（那时保持预热）。
-			if (!renderer_.HasActiveLaserParticles() && laserParticleSeeds.empty() &&
+			// 粒子池闲时归还：没有存活粒子和待发射记录，且不是“选中激光笔并开着激光粒子”（那时保持预热）。
+			if (!renderer_.HasActiveLaserParticles() && pendingLaserParticles.empty() &&
 				!(laserResourceSelection && (effectiveLaserParticleEffects &
 					(LaserParticleOptions::Trail | LaserParticleOptions::Dissolve))))
 				renderer_.ReleaseIdleLaserParticles();
@@ -21443,7 +22223,7 @@ namespace Inkeys::Drawing::Draw3
 			viewportVisibleClear = true;
 			pendingLaserBakeDirty = {};
 			laserTipVisuals.clear();
-			laserParticleSeeds.clear();
+			pendingLaserParticles.clear();
 			previousCursorVisuals.clear();
 			currentCursorVisuals.clear();
 			laserIncrementalEnsureAttempted = false;
@@ -22471,7 +23251,7 @@ namespace Inkeys::Drawing::Draw3
 		bool performanceHeavyFrame = false;
 		auto processCanvasCommands = [&](DirtyRegion& frameDirty,
 			LaserParticleDirtySnapshot& particleSnapshot,
-			bool& forceFullPresent, int width, int height)
+			bool& forceFullPresent, int width, int height, bool rasterNeedsRecovery)
 		{
 			const auto addShapeActionDirty = [&](const ShapeUiAction& action)
 			{
@@ -23223,49 +24003,36 @@ namespace Inkeys::Drawing::Draw3
 						activeWorkspace == Bridge::Workspace::Desktop)
 						desktopDiskRequested = captureDesktopAutoSave(
 							DesktopAutoSaveTrigger::Clear, &desktopFileGuid);
-					// 清空前读回画布，把墨迹像素变成随风飘散的粒子。读回失败只是没有粒子，不影响清空；
-					// 重做出来的清空不播放。
-					std::vector<LaserParticleSeed> clearSeeds;
 					const LaserDissolveFront clearCrumbleFront = MakeLaserDissolveFront();
+					// 重做清空不播放；先查当前视口，再由准备阶段按需建池。
+					const bool playClearParticles = command.type == CanvasCommandType::Clear &&
+						(effectiveLaserParticleEffects & LaserParticleOptions::ClearDissolve);
+					const double clearStart = playClearParticles ? GetQpcTimeMilliseconds() : 0.0;
 					RECT clearInkBounds = {};
-					bool crumbleCaptured = false;
-					if (command.type == CanvasCommandType::Clear &&
-						(effectiveLaserParticleEffects & LaserParticleOptions::ClearDissolve))
+					bool l2MayBeOutOfSync = false;
+					if (playClearParticles && document_ && currentPageHasContent())
 					{
-						struct ClearSeedRequest
+						const InkPage* page = document_->PageAt(currentPageIndex_);
+						const InkCanvas* canvas = page ? page->FindCanvas(kDefaultDeviceKey) : nullptr;
+						if (canvas)
 						{
-							std::vector<LaserParticleSeed>* seeds;
-							float dpiScale;
-							float windAngleDegrees;
-							uint32_t seedBase;
-							LaserDissolveFront front;
-							RECT* inkBounds;
-						} request = { &clearSeeds, configuration_.dpiScale,
-							LaserDissolveWindAngleDegrees(latchedLaserParticleOptions),
-							MixLaserSeed(static_cast<uint32_t>(rasterPipelineGeneration)),
-							clearCrumbleFront, &clearInkBounds };
-						// 直接在映射出来的读回内存上取样，不再另存一份整屏像素。
-						renderer_.VisitCanvasPixels([](void* context, const uint32_t* canvasPixels, size_t rowPitchBytes,
-							uint32_t canvasWidth, uint32_t canvasHeight)
-							{
-								const auto& request = *static_cast<ClearSeedRequest*>(context);
-								AppendCanvasClearParticleSeeds(*request.seeds, canvasPixels, rowPitchBytes,
-									canvasWidth, canvasHeight, request.dpiScale, request.windAngleDegrees, request.seedBase,
-									request.front, request.inkBounds);
-							}, &request);
-						if (!clearSeeds.empty())
-						{
-							// 上一次清空的过渡若还在，先只撤掉状态：快照纹理由下面的捕获直接复用。
-							canvasClearCrumbleActive = false;
-							crumbleCaptured = renderer_.CaptureCanvasClearSnapshot();
-							// 留不下快照（显存不足等）就没有东西可碎：粒子改为当帧全部出现。
-							if (!crumbleCaptured)
-								for (LaserParticleSeed& seed : clearSeeds) seed.releaseDelayMilliseconds = 0;
+							// 漫游、待恢复的栅格或焦点编辑都可能尚未把历史范围完整写入 L2。
+							l2MayBeOutOfSync = rasterNeedsRecovery || !viewportVisibleClear ||
+								viewportRefreshPending || viewportRecoveryPending || shapeUi.focus.Active();
+							clearInkBounds = VisibleContentScreenBounds(pageRuntimeStates[currentPageIndex_].history,
+								canvas->Viewport(), width, height, l2MayBeOutOfSync);
 						}
 					}
-					if (!clearSeeds.empty())
+					// 输入出队可能已下发新档位，有墨迹时先同步再建池。
+					if (!IsEmptyRect(clearInkBounds)) frameDirty.Add(synchronizeLaserParticleLimit());
+					const auto prepared = PrepareCanvasClearParticles(renderer_, pendingLaserParticles.clearDrift,
+						canvasClearCrumbleActive, { clearInkBounds, clearCrumbleFront, configuration_.dpiScale,
+							LaserDissolveWindAngleDegrees(latchedLaserParticleOptions),
+							MixLaserSeed(static_cast<uint32_t>(rasterPipelineGeneration)) });
+					const bool preparedCpuDrift = pendingLaserParticles.clearDrift.size() != prepared.firstParticle;
+					if (prepared.spawn || preparedCpuDrift)
 					{
-						// 先让界面知道画布上还有东西，再发布“当前页已空”：否则选择态下辅助窗可能在粒子出现前被隐藏。
+						// 先发布“画布仍可见”，再发布“当前页已空”，让辅助窗连续呈现碎裂。
 						hasLiveLaserParticles = true;
 						publishLaserState();
 					}
@@ -23273,17 +24040,22 @@ namespace Inkeys::Drawing::Draw3
 					const bool cleared = clearCurrentPage(clearDirty, particleSnapshot,
 						forceFullPresent, width, height, std::move(continuation));
 					if (cleared) setFullCommandDirty(clearDirty); else frameDirty.Add(clearDirty);
-					// 种子交给本帧稍后的粒子推进；没清成时本帧末尾会按粒子池的真实状态改回可见性。
-					if (cleared && !clearSeeds.empty())
-						laserParticleSeeds.insert(laserParticleSeeds.end(), clearSeeds.begin(), clearSeeds.end());
-					if (cleared && crumbleCaptured)
+					CompleteCanvasClearParticles(renderer_, pendingLaserParticles, prepared, cleared);
+					if (cleared && prepared.snapshotCaptured)
 					{
 						canvasClearCrumbleActive = true;
 						canvasClearCrumbleStartQpc = 0;
 						canvasClearCrumbleFront = clearCrumbleFront;
-						canvasClearCrumbleBounds = ClampRectToCanvas(clearInkBounds, width, height);
+						canvasClearCrumbleBounds = ClampRectToCanvas(prepared.crumbleBounds, width, height);
 					}
-					else if (crumbleCaptured) renderer_.ReleaseCanvasClearSnapshot();
+					if (playClearParticles)
+						DiagnosticOutput::Printf(DiagnosticOutput::Stream::Output,
+							"[Draw3.LaserParticles] clear path=%s size=%ldx%ld l2_fallback=%u reserved=%u cpu_ms=%.3f\n",
+							prepared.spawn ? "gpu" : (preparedCpuDrift ? "cpu" : "none"),
+							clearInkBounds.right - clearInkBounds.left,
+							clearInkBounds.bottom - clearInkBounds.top, l2MayBeOutOfSync ? 1u : 0u,
+							prepared.spawn && cleared ? prepared.spawn->reservedCount : 0u,
+							GetQpcTimeMilliseconds() - clearStart);
 					if (cleared && activeWorkspace == Bridge::Workspace::Desktop)
 					{
 						// 第二次有效 Clear 会替换更老的恢复点。
@@ -24002,6 +24774,7 @@ namespace Inkeys::Drawing::Draw3
 				DiagnosticOutput::Line(DiagnosticOutput::OutInfo) << "Recovered Draw3 graphics with mode " <<
 					TransparentPresentModeName(presentation_.ActiveMode()) << "." << std::endl;
 			}
+			UnionRectInPlace(pendingLaserBakeDirty, synchronizeLaserParticleLimit());
 			synchronizeLaserResources();
 			if (active.empty()) window_.ClearActiveDrawingCursorTool();
 			const bool rejectedTouchCursorsChanged = refreshRejectedTouchCursors();
@@ -24512,6 +25285,13 @@ namespace Inkeys::Drawing::Draw3
 				addFrameDirty(calleeDirty);
 			}
 			const WindowSize animationCanvasSize = window_.Size();
+			{
+				// 在计算帧首可见性前撤销零粒批次，并擦掉它原来覆盖的范围。
+				RECT revokedDirty = {};
+				(void)PollCanvasClearSpawn(renderer_, laserParticleDirtyTracker, revokedDirty);
+				if (!IsEmptyRect(revokedDirty))
+					addFrameDirty(ClampRectToCanvas(revokedDirty, animationCanvasSize.width, animationCanvasSize.height));
+			}
 			// Down 可能在本帧稍后触发汇聚，当前飘散批先按可冻结的 GPU 年龄回收。
 			laserParticleSnapshot = laserParticleDirtyTracker.Snapshot(animationQpc.QuadPart,
 				laserLifecycle.phase == LaserTrailPhase::Dissolve && laserDissolveHasBatch ? lastDissolveParticleQpc : 0);
@@ -24543,7 +25323,7 @@ namespace Inkeys::Drawing::Draw3
 				const WindowSize size = window_.Size();
 				DirtyRegion commandRegion;
 				processCanvasCommands(commandRegion, laserParticleSnapshot, forceFullPresent,
-					size.width, size.height);
+					size.width, size.height, rasterSubmissionFailed || activeLayerRebuildPending);
 				for (const RECT& rect : commandRegion.Rects()) addFrameDirty(rect);
 				if (commandBoundaryPending && !window_.HasPendingCanvasCommand())
 					commandBoundaryPending = false;
@@ -24598,7 +25378,7 @@ namespace Inkeys::Drawing::Draw3
 			}
 			if (active.empty() && !navigationActive && !forceFullPresent && !drawingCursorRequested &&
 				!speedEraserHoverAnimating &&
-				!laserAnimationActive && !particleAnimationActive && laserParticleSeeds.empty() && frameRegion.Empty() &&
+				!laserAnimationActive && !particleAnimationActive && pendingLaserParticles.empty() && frameRegion.Empty() &&
 				!compositionMaintenance.empty())
 			{
 				// 后台预建前先让 ULW 最后一帧上屏，不让它排在大量 tile 之后。
@@ -24632,7 +25412,7 @@ namespace Inkeys::Drawing::Draw3
 			// 槽内仍有留到下一帧的预览时不能进入 idle，否则其唤醒已被消费，需等下一次输入才执行。
 			if (active.empty() && !navigationActive && !forceFullPresent && !drawingCursorRequested &&
 				!speedEraserHoverAnimating && !shapePreviewSlot.held &&
-				!laserAnimationActive && !particleAnimationActive && laserParticleSeeds.empty() && frameRegion.Empty())
+				!laserAnimationActive && !particleAnimationActive && pendingLaserParticles.empty() && frameRegion.Empty())
 			{
 				if (!completeUlwBeforeIdle()) continue; // idle/Hold 等待前 ULW 最后一帧必须上屏。
 				// 抬笔进入空闲：把本段设备性能累加移交账本（短锁合并，不做 I/O）。
@@ -25217,7 +25997,7 @@ namespace Inkeys::Drawing::Draw3
 							{
 								const auto tint = ColorForTool(DrawingTool::Laser, runtime->visualStyle);
 								const float color[4] = { tint.x, tint.y, tint.z, 1.0f };
-								AppendLaserTrailParticleSeeds(laserParticleSeeds, source.positionX, source.positionY,
+								AppendLaserTrailParticleSeeds(pendingLaserParticles.trail, source.positionX, source.positionY,
 									source.tangentX, source.tangentY, source.entityRadius,
 									dpiScale, color, schedule.count,
 									MixLaserSeed(runtime->laserParticleSeed ^ runtime->laserParticleSeedCursor * 0x9E3779B9u),
@@ -25367,17 +26147,40 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 
-			uint32_t dissolveSeedCount = 0;
+			const auto fallbackFrameLaserDissolve = [&]
+			{
+				fallbackLaserDissolve(frameQpc.QuadPart);
+				addFrameDirty(laserStableBounds);
+			};
+			LaserParticleBatchEnvelope dissolveEnvelope;
 			if (laserLifecycle.phase == LaserTrailPhase::Dissolve && !laserDissolvePrepared &&
 				laserStrokeLayers.empty())
 			{
 				// 从实际上传帧起算；刚抬起的最后一批此时也已进入逐笔记录。
 				laserLifecycle.dissolveStartQpc = frameQpc.QuadPart;
 				laserDissolveFront = MakeLaserDissolveFront();
-				dissolveSeedCount = AppendLaserDissolveSeeds(laserParticleSeeds, bakedLaserStrokes, laserDissolveFront,
-					LaserDissolveWindAngleDegrees(latchedLaserParticleOptions));
-				laserDissolvePrepared = true;
-				laserDissolveHasBatch = dissolveSeedCount != 0;
+				addFrameDirty(synchronizeLaserParticleLimit());
+				const uint32_t maximumSeeds = renderer_.PrepareLaserDriftPool();
+				if (maximumSeeds == 0)
+					fallbackFrameLaserDissolve();
+				else
+				{
+					try
+					{
+						float dipPerPixel = pendingLaserParticles.dipPerPixel;
+						AppendLaserDissolveSeeds(pendingLaserParticles.dissolveDrift, dissolveEnvelope, dipPerPixel,
+							bakedLaserStrokes, laserDissolveFront, maximumSeeds,
+							LaserDissolveWindAngleDegrees(latchedLaserParticleOptions));
+						pendingLaserParticles.dipPerPixel = dipPerPixel;
+					}
+					catch (const std::bad_alloc&)
+					{
+						pendingLaserParticles.dissolveDrift.clear();
+						DiagnosticOutput::Text(DiagnosticOutput::ErrError,
+							"[Draw3.LaserParticles] action=laser_drift result=skipped reason=allocation\n");
+					}
+					laserDissolvePrepared = true;
+				}
 			}
 
 			if (metricsState_)
@@ -25390,15 +26193,15 @@ namespace Inkeys::Drawing::Draw3
 				if (laserLifecycle.metricLastAllUpQpc > 0) sample.lastAllUpQpc = laserLifecycle.metricLastAllUpQpc;
 				sample.opacity = laserOpacity;
 				sample.layerCount = static_cast<uint32_t>(laserStrokeLayers.size());
-				sample.particleRequestedCount = static_cast<uint32_t>(laserParticleSeeds.size());
+				sample.particleRequestedCount = static_cast<uint32_t>(pendingLaserParticles.size());
 				sample.particlesEnabled = effectiveLaserParticleEffects != 0;
 				sample.particlesAvailable = renderer_.LaserParticlesAvailable();
 				sample.particlesActive = laserParticleSnapshot.hasActive;
 				metricsState_->laserQuiet = laserLifecycle.phase == LaserTrailPhase::Inactive &&
-					laserStrokeLayers.empty() && !laserParticleSnapshot.hasActive && laserParticleSeeds.empty();
+					laserStrokeLayers.empty() && !laserParticleSnapshot.hasActive && pendingLaserParticles.empty();
 			}
 			const bool shouldStepLaserParticles = ShouldStepLaserParticles(
-				renderer_.HasActiveLaserParticles(), effectiveLaserParticleEffects, !laserParticleSeeds.empty());
+				renderer_.HasActiveLaserParticles(), effectiveLaserParticleEffects, !pendingLaserParticles.empty());
 			const LaserDissolveParticleControl particleControl = {
 				laserGatherStartQpc != 0 && laserDissolveHasBatch ? laserGatherFreezeQpc : 0,
 				laserGatherStartQpc != 0 ? laserGatherProgress(frameQpc.QuadPart) : 0.0f,
@@ -25406,30 +26209,43 @@ namespace Inkeys::Drawing::Draw3
 				laserDissolveHasBatch ? laserGatherEndQpc : 0 };
 			if (shouldStepLaserParticles)
 			{
+				LaserParticleStepResult accepted;
 				MetricsLaserCall(metricsState_ ? metricsState_->LaserCosts() : nullptr, 2,
-					metricsState_ ? metricsState_->metricFrequency : 0, [&] { return renderer_.StepLaserParticles(
-						frameQpc.QuadPart, qpcFrequency, laserParticleSeeds, dissolveSeedCount, particleControl); });
+					metricsState_ ? metricsState_->metricFrequency : 0, [&]
+					{
+						accepted = renderer_.StepLaserParticles(frameQpc.QuadPart, qpcFrequency, pendingLaserParticles.trail,
+							pendingLaserParticles.clearDrift, pendingLaserParticles.dissolveDrift,
+							pendingLaserParticles.dipPerPixel, particleControl,
+							pendingLaserParticles.clearSpawn ? &*pendingLaserParticles.clearSpawn : nullptr);
+					});
 				if (!renderer_.LaserParticlesAvailable())
 				{
-					// Compute 失效当帧撤销粒子，保留已经计入帧脏区的旧包络。
+					// 粒子系统失效当帧撤销粒子，保留已经计入帧脏区的旧包络。
 					RECT calleeDirty = {};
 					applyLaserParticleSettings(calleeDirty);
 					addFrameDirty(calleeDirty);
-					fallbackLaserDissolve(frameQpc.QuadPart);
-					addFrameDirty(laserStableBounds);
+					fallbackFrameLaserDissolve();
 				}
-				else if (!laserParticleSeeds.empty())
+				else if (!pendingLaserParticles.empty())
 				{
-					const std::span<const LaserParticleSeed> seeds = laserParticleSeeds;
-					const auto trackBatch = [&](std::span<const LaserParticleSeed> batch, bool dissolve)
+					using DirtyKind = LaserParticleDirtyTracker::Kind;
+					const auto trackBatch = [&](const LaserParticleBatchEnvelope& envelope, DirtyKind kind)
 					{
-						const auto envelope = ConservativeLaserParticleBatchBounds(batch);
 						UnionRectInPlace(currentFrameLaserParticleBatchBounds, envelope.bounds);
 						laserParticleDirtyTracker.Add(envelope.bounds, LaserParticleLifetimeDeadlineQpc(
-							frameQpc.QuadPart, qpcFrequency, envelope.maximumLifetimeMilliseconds), dissolve);
+							frameQpc.QuadPart, qpcFrequency, envelope.maximumLifetimeMilliseconds), kind);
 					};
-					trackBatch(seeds.first(seeds.size() - dissolveSeedCount), false);
-					if (dissolveSeedCount != 0) trackBatch(seeds.last(dissolveSeedCount), true);
+					// 只登记已接纳的来源，行进和飘散分别保存脏区与到期时刻。
+					if (accepted.trailAccepted)
+						trackBatch(ConservativeLaserParticleBatchBounds(pendingLaserParticles.trail), DirtyKind::Other);
+					if (accepted.clearAccepted)
+						trackBatch(pendingLaserParticles.clearEnvelope, DirtyKind::ClearDrift);
+					if (accepted.clearSpawnAccepted)
+						TrackCanvasClearSpawn(*pendingLaserParticles.clearSpawn, laserParticleDirtyTracker,
+							frameQpc.QuadPart, qpcFrequency, currentFrameLaserParticleBatchBounds);
+					if (!pendingLaserParticles.dissolveDrift.empty())
+						CompleteLaserDissolveSubmission(accepted.dissolveAccepted, laserDissolveHasBatch,
+							[&] { trackBatch(dissolveEnvelope, DirtyKind::LaserDissolve); }, fallbackFrameLaserDissolve);
 					if (spawnedTrailParticleCount > 0)
 						RequireLaserMinimumHold(laserLifecycle,
 							std::ceil(1000.0 * laserParticleConfiguration.maximumLifetimeSeconds) / 1000.0);
@@ -25441,7 +26257,9 @@ namespace Inkeys::Drawing::Draw3
 				laserDissolveFront.progress = LaserDissolveProgress(
 					laserLifecycle.dissolveStartQpc, frameQpc.QuadPart, qpcFrequency);
 			}
-			laserParticleSeeds.clear();
+			pendingLaserParticles.clear();
+			// 本帧待上传记录已处理，飘散池空时可单独归还，行进池继续使用。
+			renderer_.ReleaseIdleLaserDriftPool();
 			if (canvasClearCrumbleActive)
 			{
 				// 与清空粒子同一帧起算，粒子的释放时刻才能和各像素的消失时刻对上。
@@ -25469,7 +26287,7 @@ namespace Inkeys::Drawing::Draw3
 				return false;
 			});
 			const bool shouldDrawLaserParticles = renderer_.HasActiveLaserParticles();
-			hasLiveLaserParticles = shouldDrawLaserParticles || !laserClickWaves.empty();
+			hasLiveLaserParticles = shouldDrawLaserParticles || !laserClickWaves.empty() || canvasClearCrumbleActive;
 
 			{
 				RECT calleeDirty = {};
@@ -25988,7 +26806,7 @@ namespace Inkeys::Drawing::Draw3
 			{
 				DirtyRegion commandRegion;
 				processCanvasCommands(commandRegion, laserParticleSnapshot,
-					forceFullPresent, size.width, size.height);
+					forceFullPresent, size.width, size.height, rasterSubmissionFailed || activeLayerRebuildPending);
 				for (const RECT& rect : commandRegion.Rects()) addFrameDirty(rect);
 				if (commandBoundaryPending && !window_.HasPendingCanvasCommand())
 					commandBoundaryPending = false;

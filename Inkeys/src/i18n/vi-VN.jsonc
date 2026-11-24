@@ -809,6 +809,11 @@
           "Direction": "Hướng bay",
           "DirectionLeftUp": "Lên trên bên trái",
           "DirectionRightUp": "Lên trên bên phải",
+          "Limit": "Giới hạn số lượng hạt",
+          "LimitLow": "Thấp",
+          "LimitMedium": "Trung bình",
+          "LimitHigh": "Cao",
+          "LimitExtreme": "Tối đa",
           "Trail": "Hạt vệt của bút laser",
           "Dissolve": "Tan biến của bút laser",
           "Clear": "Tan biến khi xóa hết"

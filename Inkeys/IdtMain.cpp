@@ -878,6 +878,7 @@ namespace
 				!drawingDefaults.Drawing.MultiTouchEnabled || !drawingDefaults.Drawing.PenTailCorrectionEnabled ||
 				drawingDefaults.Drawing.InkPredictionMode != 2 || drawingDefaults.Drawing.Laser.MultiTouchEnabled ||
 				drawingDefaults.Drawing.Particles.Enabled || drawingDefaults.Drawing.Particles.Direction != 0 ||
+				drawingDefaults.Drawing.Particles.Limit != 1 ||
 				!drawingDefaults.Drawing.Particles.LaserTrail || !drawingDefaults.Drawing.Particles.LaserDissolve ||
 				!drawingDefaults.Drawing.Particles.ClearDissolve || !drawingDefaults.Drawing.Laser.ClickWaveEnabled ||
 				!drawingDefaults.Drawing.MultiTouchTools.Pen ||
@@ -893,7 +894,10 @@ namespace
 					drawingDefaults.Drawing.PenTailCorrectionEnabled = prediction != 0;
 					drawingDefaults.Drawing.Laser.MultiTouchEnabled = true;
 					drawingDefaults.Drawing.Particles.Enabled = prediction == 1;
+					// 预测只有三档，在 240 FPS 轮次偏移一档以覆盖极致档。
+					const int limit = prediction + (frameRate == 240 ? 1 : 0);
 					drawingDefaults.Drawing.Particles.Direction = prediction == 2 ? 1 : 0;
+					drawingDefaults.Drawing.Particles.Limit = limit;
 					drawingDefaults.Drawing.Particles.LaserTrail = prediction == 0;
 					drawingDefaults.Drawing.Particles.LaserDissolve = prediction == 2;
 					drawingDefaults.Drawing.Particles.ClearDissolve = prediction != 2;
@@ -906,6 +910,7 @@ namespace
 						restoredDrawing.Drawing.PenTailCorrectionEnabled.load() != (prediction != 0) ||
 						restoredDrawing.Drawing.Particles.Enabled.load() != (prediction == 1) ||
 						restoredDrawing.Drawing.Particles.Direction.load() != (prediction == 2 ? 1 : 0) ||
+						restoredDrawing.Drawing.Particles.Limit.load() != limit ||
 						restoredDrawing.Drawing.Particles.LaserTrail.load() != (prediction == 0) ||
 						restoredDrawing.Drawing.Particles.LaserDissolve.load() != (prediction == 2) ||
 						restoredDrawing.Drawing.Particles.ClearDissolve.load() != (prediction != 2) ||
@@ -925,6 +930,14 @@ namespace
 				Inkeys::Config invalidPrediction;
 				if (!writeBytes(mainConfig, std::string("{\"Drawing\":{\"InkPredictionMode\":") + invalid + "}}") ||
 					!invalidPrediction.ReadAll() || invalidPrediction.Drawing.InkPredictionMode != 2) return 1;
+			}
+			stage = "canvas particle limit validation";
+			for (const char* invalid : { "true", "false", "\"1\"", "\"0\"", "1.5", "0.0", "-1", "4",
+				"4294967296", "4294967298", "18446744073709551615", "null", "{}", "[]" })
+			{
+				Inkeys::Config invalidLimit;
+				if (!writeBytes(mainConfig, std::string("{\"Drawing\":{\"Particles\":{\"Limit\":") + invalid + "}}}") ||
+					!invalidLimit.ReadAll() || invalidLimit.Drawing.Particles.Limit != 1) return 1;
 			}
 			stage = "whiteboard theme preference";
 			Inkeys::Config themeConfig;
@@ -3271,7 +3284,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			const auto& particles = config.Drawing.Particles;
 			Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(laser.MultiTouchEnabled.load(), {
 				particles.Enabled.load(), particles.Direction.load() == 1, particles.LaserTrail.load(),
-				particles.LaserDissolve.load(), particles.ClearDissolve.load(), laser.ClickWaveEnabled.load() });
+				particles.LaserDissolve.load(), particles.ClearDissolve.load(), laser.ClickWaveEnabled.load(),
+				static_cast<uint32_t>(particles.Limit.load()) });
 			Inkeys::Drawing::Draw3::ProductHost().SetDevicePerformanceRecording(
 				config.Drawing.DevicePerformanceRecording);
 			InitializeEraserInputPreferences();

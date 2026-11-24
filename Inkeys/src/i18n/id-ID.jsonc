@@ -809,6 +809,11 @@
           "Direction": "Arah hanyut",
           "DirectionLeftUp": "Ke kiri atas",
           "DirectionRightUp": "Ke kanan atas",
+          "Limit": "Batas jumlah partikel",
+          "LimitLow": "Rendah",
+          "LimitMedium": "Sedang",
+          "LimitHigh": "Tinggi",
+          "LimitExtreme": "Ekstrem",
           "Trail": "Partikel jejak penunjuk laser",
           "Dissolve": "Peluruhan penunjuk laser",
           "Clear": "Peluruhan saat mengosongkan"

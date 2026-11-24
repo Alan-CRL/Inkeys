@@ -1215,10 +1215,13 @@ namespace Inkeys::Drawing::Draw3
 			LoadShaderFromResource(IDR_DRAW3_LASER_PARTICLE_VS);
 		const ShaderBlob particlePixelBlob =
 			LoadShaderFromResource(IDR_DRAW3_LASER_PARTICLE_PS);
+		const ShaderBlob particleSpawnBlob =
+			LoadShaderFromResource(IDR_DRAW3_LASER_PARTICLE_SPAWN_CS);
 		const bool particlesReady = particleVertexBlob.data && particlePixelBlob.data &&
 			laserParticleSystem_.Initialize(device.Get(), context.Get(),
 				{ particleVertexBlob.data, particleVertexBlob.size },
-				{ particlePixelBlob.data, particlePixelBlob.size });
+				{ particlePixelBlob.data, particlePixelBlob.size },
+				{ particleSpawnBlob.data, particleSpawnBlob.size });
 		if (!particlesReady)
 			ReportLaserParticleUnavailableOnce();
 		return true;
@@ -1232,10 +1235,46 @@ namespace Inkeys::Drawing::Draw3
 		try
 		{
 			int failures = 0;
+			constexpr auto lowTier = kLaserParticleLimitTiers[static_cast<size_t>(LaserParticleLimit::Low)];
+			constexpr auto mediumCapacity = kLaserParticleLimitTiers[static_cast<size_t>(LaserParticleLimit::Medium)].poolCapacity;
+			constexpr auto trailPass = LaserParticlePass::OverBody;
+			constexpr auto driftPass = LaserParticlePass::UnderBody;
 			const auto check = [&](bool condition, const char* name)
 			{
 				if (!condition) { ++failures; std::fprintf(stderr, "[LaserResources] FAIL %s\n", name); }
 				return condition;
+			};
+			// 逐批覆盖两种风向和三种缩放，核对所有字段及整数像素包络。
+			{
+				std::vector<LaserDriftParticle> records;
+				std::vector<LaserParticleSeed> reference;
+				for (float dpiScale : { 1.0f, 1.25f, 2.0f })
+				{
+					for (float windAngle : { kLaserDissolveParameters.leftUpWindAngleDegrees,
+						kLaserDissolveParameters.rightUpWindAngleDegrees })
+					{
+						const auto drift = MakeDriftParticleContext(dpiScale, windAngle);
+						LaserParticleBatchEnvelope envelope;
+						records.clear();
+						reference.clear();
+						for (uint32_t i = 0; i < 2048; ++i)
+						{
+							const float x = 0.25f * static_cast<float>(i * 919 % 15433) - 256.0f;
+							const float y = 0.125f * static_cast<float>(i * 677 % 11311) - 128.0f;
+							const float white = static_cast<float>(i % 129) / 128.0f;
+							const float color[4] = { static_cast<float>(i % 101) / 100.0f, white, 1.0f - white,
+								static_cast<float>(i % 256) / 255.0f };
+							const uint32_t group = i % 7, delay = i % 421, random = i * 0x9E3779B9u;
+							records.push_back(MakeDriftParticle(drift, envelope, x, y, white, color, random, group, delay));
+							AppendReferenceDriftParticleSeed(reference, x, y, white, dpiScale, color, random, group, windAngle, delay);
+						}
+						check(MatchesReferenceDriftBatch(records, reference, envelope), "drift fields and batch envelope match the seed path");
+					}
+				}
+			}
+			const auto referenceDriftRecord = [](const LaserParticleSeed& seed)
+			{
+				return LaserDriftParticle{ PackLaserParticle(seed, 0, 0), seed.group };
 			};
 			Microsoft::WRL::ComPtr<ID3D11Device> testDevice;
 			Microsoft::WRL::ComPtr<ID3D11DeviceContext> testContext;
@@ -1319,31 +1358,84 @@ namespace Inkeys::Drawing::Draw3
 			renderer.failLaserPreparationAfterColor_ = false;
 			{
 				LaserParticleActiveRing ring;
-				if (!check(ring.Initialize(), "particle ring metadata allocation")) return 1;
-				ring.Append(kLaserParticleCapacity - 2, 10);
+				if (!check(ring.Initialize(lowTier.poolCapacity), "particle ring metadata allocation")) return 1;
+				ring.Append(lowTier.poolCapacity - 2, 10);
 				ring.Expire(10);
 				ring.Append(4, 20);
-				check(ring.Range().start == kLaserParticleCapacity - 2 && ring.Range().count == 4 &&
+				check(ring.Range().start == lowTier.poolCapacity - 2 && ring.Range().count == 4 &&
 					ring.Cursor() == 2, "particle range crosses the ring end");
-				ring.Append(kLaserParticleCapacity - 2, 30);
-				check(ring.Range().start == 0 && ring.Range().count == kLaserParticleCapacity,
+				ring.Append(lowTier.poolCapacity - 2, 30);
+				check(ring.Range().start == 0 && ring.Range().count == lowTier.poolCapacity,
 					"particle ring caps an overwrite and keeps the surviving old slots");
 				ring.Expire(20);
-				check(ring.Range().start == 2 && ring.Range().count == kLaserParticleCapacity - 2,
+				check(ring.Range().start == 2 && ring.Range().count == lowTier.poolCapacity - 2,
 					"expired front batch contracts the ring");
 				ring.Append(2, 25);
 				ring.Expire(25);
-				check(ring.Range().start == 2 && ring.Range().count == kLaserParticleCapacity - 2,
+				check(ring.Range().start == 2 && ring.Range().count == lowTier.poolCapacity - 2,
 					"expired tail batch contracts the ring");
 				ring.Expire(30);
 				check(ring.Range().count == 0, "expired particle ring is empty");
+
+				check(!ring.Initialize(0) && !ring.Initialize(63) &&
+					!ring.Initialize(kLaserParticleMaximumCapacity * 2u), "ring rejects invalid capacities");
+				for (const uint32_t capacity : { 64u, mediumCapacity })
+				{
+					if (!check(ring.Initialize(capacity), "non-default ring capacity")) return 1;
+					ring.Append(capacity - 3, 10);
+					ring.Expire(10);
+					ring.Append(1, 100);
+					const auto dissolveId = ring.Append(4, 100, true);
+					auto latest = ring.LatestDissolveRange();
+					check(ring.Range().start == capacity - 3 && ring.Range().count == 5 && ring.Cursor() == 2 &&
+						latest.start == capacity - 2 && latest.count == 4, "dissolve wraps in a non-default ring");
+
+					ring.Append(3, 20);
+					const bool trimmedBehindTail = ring.TrimTail(dissolveId, 2);
+					latest = ring.LatestDissolveRange();
+					check(!trimmedBehindTail && ring.Cursor() == 5 && ring.Range().count == 8 &&
+						latest.start == capacity - 2 && latest.count == 4,
+						"trim leaves a dissolve batch behind the ring tail untouched");
+					ring.Expire(20);
+					check(!ring.TrimTail(dissolveId, 5) && ring.Cursor() == 2 && ring.LatestDissolveRange().count == 4,
+						"trim cannot grow the tail batch");
+					const bool trimmed = ring.TrimTail(dissolveId, 3);
+					latest = ring.LatestDissolveRange();
+					check(trimmed && ring.Cursor() == 1 && ring.Range().start == capacity - 3 &&
+						ring.Range().count == 4 && latest.start == capacity - 2 && latest.count == 3,
+						"trim shortens the tail batch and backs up the cursor");
+					check(ring.TrimTail(dissolveId, 0) && ring.Cursor() == capacity - 2 && ring.Range().count == 1 &&
+						ring.LatestDissolveRange().count == 0 && !ring.TrimTail(dissolveId, 0),
+						"zero trim removes the dissolve batch and leaves the preceding batch");
+
+					ring.Append(4, 100, true);
+					ring.Append(capacity, 100);
+					check(ring.Range().start == 2 && ring.Range().count == capacity && ring.Cursor() == 2 &&
+						ring.LatestDissolveRange().count == 0, "full overwrite evicts the old dissolve batch");
+				}
+
+				ring.Clear();
+				const auto evicted = ring.Append(3, 40, true);
+				for (uint32_t i = 1; i < kLaserParticleMaximumBatches; ++i) ring.Append(1, 40);
+				check(ring.Range().start == 0 && ring.Range().count == kLaserParticleMaximumBatches + 2 &&
+					ring.LatestDissolveRange().count == 3, "all batch entries may be occupied");
+				const auto reused = ring.Append(2, 50);
+				check(evicted.index == reused.index && evicted.generation != reused.generation &&
+					!ring.TrimTail(evicted, 0), "a stale batch id cannot trim a reused table entry");
+				check(ring.Range().start == 3 && ring.Range().count == kLaserParticleMaximumBatches + 1 &&
+					ring.LatestDissolveRange().count == 0, "full batch table evicts the entire oldest batch");
+				ring.Expire(40);
+				check(ring.Range().start == kLaserParticleMaximumBatches + 2 && ring.Range().count == 2,
+					"wrapped batch table retains the newest batch after expiry");
+				check(ring.TrimTail(reused, 0) && ring.Range().count == 0, "zero trim removes an ordinary tail batch");
 			}
 			{
-				// 粒子池没有计算着色器：CPU 在出生时写一次记录，状态由顶点着色器求值。
+				// CPU 上传路径只在出生时写一次记录，状态由顶点着色器求值。
 				// 这里先用 CPU 镜像核对运动模型，再用真实绘制核对着色器与镜像一致。
 				auto& system = renderer.laserParticleSystem_;
 				if (!check(renderer.LaserParticlesAvailable() && !renderer.HasActiveLaserParticles() &&
-					!system.ResourcesCreated(), "particle pool allocates nothing before the first particle")) return 1;
+					!system.ResourcesCreated(trailPass) && !system.ResourcesCreated(driftPass),
+					"particle pools allocate nothing before the first particle")) return 1;
 				const LaserParticleConfig config;
 				const float trailColor[] = { 0.15f, 0.5f, 1.0f, 1.0f };
 				std::vector<LaserParticleSeed> seeds;
@@ -1392,12 +1484,13 @@ namespace Inkeys::Drawing::Draw3
 					const auto wavePixels = pixels(renderer.backBufferTexture.Get());
 					const size_t onRing = (32 * 64 + 44) * 4, atCenter = (32 * 64 + 32) * 4;
 					check(wavePixels.size() == 64 * 64 * 4 && wavePixels[onRing + 2] > 200 && wavePixels[onRing + 3] > 200 &&
-						wavePixels[atCenter + 3] == 0 && !system.ResourcesCreated(),
+						wavePixels[atCenter + 3] == 0 && !system.ResourcesCreated(trailPass) && !system.ResourcesCreated(driftPass),
 						"the wave renders as a ring through the ink pipeline without touching the particle pool");
 				}
 
 				renderer.StepLaserParticles(1000, 1000, seeds);
-				if (!check(system.ActiveRange().count == seeds.size() && system.ResourcesCreated(),
+				if (!check(system.ActiveRange(trailPass).count == seeds.size() && system.ResourcesCreated(trailPass) &&
+					!system.ResourcesCreated(driftPass),
 					"first upload creates the pool and activates only its own slots")) return 1;
 				renderer.StepLaserParticles(2000, 1000, {});
 				check(!renderer.HasActiveLaserParticles(), "expiry empties the CPU range");
@@ -1493,34 +1586,39 @@ namespace Inkeys::Drawing::Draw3
 					renderer.ResetLaserParticles();
 				}
 				{
-					std::vector<LaserParticleSeed> drifting;
-					AppendLaserDissolveParticleSeed(drifting, MakeLaserDissolveFront(), 48, 48, 1, 0, 3, 1,
-						1.0f, white, 91, 14, kLaserDissolveParameters.leftUpWindAngleDegrees);
-					drifting.back().releaseDelayMilliseconds = 0;
-					drifting.back().lifetimeMilliseconds = 2000;
-					drifting.back().radius = 2.0f;
-					renderer.StepLaserParticles(6000, 1000, drifting);
+					std::vector<LaserDriftParticle> drifting;
+					LaserParticleBatchEnvelope envelope;
+					const auto drift = MakeDriftParticleContext(1.0f, kLaserDissolveParameters.leftUpWindAngleDegrees);
+					AppendLaserDissolveParticle(drifting, envelope, drift, MakeLaserDissolveFront(), 48, 48, 1, 0, 3, 1,
+						white, 91, 14);
+					auto& particle = drifting.back().particle;
+					particle.releaseMilliseconds = 0;
+					particle.lifetimeMilliseconds = 2000;
+					particle.shapeParameters[0] = 2.0f;
+					renderer.StepLaserParticles(6000, 1000, {}, drifting, {}, drift.dipPerPixel);
 					renderer.StepLaserParticles(6600, 1000, {});
 					renderer.ClearRTV(renderer.backBufferRTV.Get(), { 0.0f, 0.0f, 0.0f, 0.0f });
 					renderer.DrawLaserParticles();
-					const auto expected = EvaluateLaserParticle(PackLaserParticle(drifting.back(), 0, 0), system.Clock(),
+					const auto expected = EvaluateLaserParticle(particle, system.Clock(),
 						system.DipPerPixel(), config);
 					float x = 0.0f, y = 0.0f;
-					check(expected.visible && expected.x < drifting.back().position[0] - 4.0f && centroid(x, y) &&
+					check(expected.visible && expected.x < particle.position[0] - 4.0f && centroid(x, y) &&
 						std::abs(x - expected.x) < 0.2f && std::abs(y - expected.y) < 0.2f,
 						"the vertex shader drifts a particle along the wind exactly where the CPU model says");
 					renderer.ResetLaserParticles();
 				}
 
 				// 撤回、汇聚与停止都由 CPU 改写槽或下发时钟完成：读回粒子池核对被改写的正是该改的槽。
-				std::vector<LaserParticleSeed> dust;
+				std::vector<LaserDriftParticle> dust;
 				const auto front = MakeLaserDissolveFront();
+				const auto dustContext = MakeDriftParticleContext(1.25f, kLaserDissolveParameters.leftUpWindAngleDegrees);
+				LaserParticleBatchEnvelope dustEnvelope;
 				for (uint32_t i = 0; i < 4; ++i)
 				{
-					AppendLaserDissolveParticleSeed(dust, front, 32, 32, 1, 0, 3, 1,
-						1.0f, trailColor, 76 + i, i < 2 ? 14 : 15, kLaserDissolveParameters.leftUpWindAngleDegrees);
-					dust.back().releaseDelayMilliseconds = i % 2 == 0 ? 30 : 300;
-					dust.back().lifetimeMilliseconds = 600;
+					AppendLaserDissolveParticle(dust, dustEnvelope, dustContext, front, 32, 32, 1, 0, 3, 1,
+						trailColor, 76 + i, i < 2 ? 14 : 15);
+					dust.back().particle.releaseMilliseconds = i % 2 == 0 ? 30 : 300;
+					dust.back().particle.lifetimeMilliseconds = 600;
 				}
 				const auto bytes = static_cast<UINT>(dust.size() * sizeof(LaserGpuParticle));
 				D3D11_BUFFER_DESC stagingDescription = {};
@@ -1534,7 +1632,7 @@ namespace Inkeys::Drawing::Draw3
 				const auto readParticles = [&]
 				{
 					const D3D11_BOX range = { 0, 0, 0, bytes, 1, 1 };
-					testContext->CopySubresourceRegion(staging.Get(), 0, 0, 0, 0, system.ParticleBuffer(), 0, &range);
+					testContext->CopySubresourceRegion(staging.Get(), 0, 0, 0, 0, system.ParticleBuffer(driftPass), 0, &range);
 					D3D11_MAPPED_SUBRESOURCE mapped = {};
 					if (!check(SUCCEEDED(testContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)),
 						"particle state readback")) return false;
@@ -1546,7 +1644,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					return EvaluateLaserParticle(particle, system.Clock(), system.DipPerPixel(), config);
 				};
-				renderer.StepLaserParticles(3000, 1000, dust, static_cast<uint32_t>(dust.size()));
+				renderer.StepLaserParticles(3000, 1000, {}, {}, dust, dustContext.dipPerPixel);
 				renderer.StepLaserParticles(3150, 1000, {});
 				if (!readParticles()) return 1;
 				check(evaluate(states[0]).visible && states[1].lifetimeMilliseconds != 0 && !evaluate(states[1]).visible &&
@@ -1559,22 +1657,46 @@ namespace Inkeys::Drawing::Draw3
 				check(states[0].lifetimeMilliseconds == 0 && states[1].lifetimeMilliseconds == 0 &&
 					states[3].lifetimeMilliseconds != 0 && std::memcmp(&untouched, &states[2], sizeof(untouched)) == 0,
 					"undo empties both states of its own group and leaves the other unchanged");
-				renderer.StepLaserParticles(3325, 1000, {}, 0, { 3150, 0.5f, false });
+				renderer.StepLaserParticles(3325, 1000, {}, {}, {}, 1.0f, { 3150, 0.5f, false });
 				const auto gathered = evaluate(states[2]);
 				check(system.Clock().gatherBatch == (states[2].kindAndBatch >> 2) && system.Clock().gatherMilliseconds == 150 &&
 					gathered.visible && !evaluate(states[3]).visible &&
-					std::abs(gathered.x - std::lerp(moving.x, dust[2].position[0], 0.5f)) < 0.001f &&
-					std::abs(gathered.y - std::lerp(moving.y, dust[2].position[1], 0.5f)) < 0.001f,
+					std::abs(gathered.x - std::lerp(moving.x, dust[2].particle.position[0], 0.5f)) < 0.001f &&
+					std::abs(gathered.y - std::lerp(moving.y, dust[2].particle.position[1], 0.5f)) < 0.001f,
 					"gather uses frozen analytic positions and cancels pending release");
-				renderer.StepLaserParticles(3500, 1000, {}, 0, { 3150, 1.0f, true });
+				renderer.StepLaserParticles(3500, 1000, {}, {}, {}, 1.0f, { 3150, 1.0f, true });
 				if (!readParticles()) return 1;
 				check(states[2].lifetimeMilliseconds == 0 && states[3].lifetimeMilliseconds == 0 &&
 					!renderer.HasActiveLaserParticles(), "completed gather empties the remaining slots and the range");
 				renderer.ResetLaserParticles();
 
+				// 非零出生时刻和两类同帧批次：普通批保持 0，激光飘散批分配批号。
+				const std::span<const LaserDriftParticle> records = dust;
+				renderer.StepLaserParticles(4000, 1000, {});
+				renderer.StepLaserParticles(4050, 1000, {}, records.first(2), records.last(2), dustContext.dipPerPixel);
+				if (!readParticles()) return 1;
+				bool uploadMatches = system.DipPerPixel() == dustContext.dipPerPixel;
+				const auto uploadedBatch = states[2].kindAndBatch >> 2;
+				for (size_t i = 0; i < dust.size(); ++i)
+				{
+					auto expected = dust[i].particle;
+					expected.releaseMilliseconds += 50;
+					if (i >= 2) expected.kindAndBatch |= uploadedBatch << 2;
+					uploadMatches &= std::memcmp(&states[i], &expected, sizeof(expected)) == 0;
+				}
+				check(uploadedBatch != 0 && uploadMatches,
+					"direct upload sets birth time, batch id and DPI without changing other fields");
+				const std::array otherGroup = { states[2], states[3] };
+				renderer.RemoveLaserParticleGroup(14);
+				if (!readParticles()) return 1;
+				check(states[0].lifetimeMilliseconds == 0 && states[1].lifetimeMilliseconds == 0 &&
+					std::memcmp(otherGroup.data(), states.data() + 2, sizeof(LaserGpuParticle) * otherGroup.size()) == 0,
+					"removing the plain group keeps the other direct upload group");
+				renderer.ResetLaserParticles();
+
 				// 粒子池与激光纹理互不牵连：创建或释放激光纹理不会清掉正在飘的粒子（清空画布的飘散靠这一点）。
 				renderer.ReleaseLaserResources();
-				renderer.StepLaserParticles(7000, 1000, dust);
+				renderer.StepLaserParticles(7000, 1000, {}, dust, {}, dustContext.dipPerPixel);
 				check(renderer.EnsureLaserResources(64, 64) && renderer.HasActiveLaserParticles(),
 					"creating laser textures keeps live particles");
 				renderer.ReleaseLaserResources();
@@ -1586,50 +1708,66 @@ namespace Inkeys::Drawing::Draw3
 				std::vector<uint32_t> canvas(64u * 64u, 0u);
 				for (uint32_t y = 20; y < 30; ++y)
 					for (uint32_t x = 10; x < 50; ++x) canvas[y * 64u + x] = 0x80800000u; // 预乘 BGRA：半透明红
-				std::vector<LaserParticleSeed> cleared;
+				std::vector<LaserDriftParticle> cleared;
+				LaserParticleBatchEnvelope clearEnvelope;
+				const auto clearContext = MakeDriftParticleContext(1.0f, kLaserDissolveParameters.rightUpWindAngleDegrees);
 				const auto clearFront = MakeLaserDissolveFront();
 				RECT inkBounds = {};
-				const auto clearedCount = AppendCanvasClearParticleSeeds(cleared, canvas.data(), 64u * 4u, 64, 64, 1.0f,
-					kLaserDissolveParameters.rightUpWindAngleDegrees, 7, clearFront, &inkBounds);
+				const auto clearedCount = AppendCanvasClearParticleSeeds(cleared, clearEnvelope, canvas.data(), 64u * 4u, 64, 64,
+					clearContext, 7, clearFront, lowTier.maximumSeeds, &inkBounds);
 				// 粒子的释放时刻与碎裂遮罩对齐：每粒都在遮罩碎完之前、自己那个像素消失的时刻出现，而且先后不一。
 				const auto crumbleEndMilliseconds = static_cast<uint32_t>(std::ceil(LaserDissolveCrumbleEndProgress() *
 					kLaserDissolveParameters.durationMilliseconds));
 				check(inkBounds.left <= 10 && inkBounds.top <= 20 && inkBounds.right >= 50 && inkBounds.bottom >= 30 &&
 					inkBounds.left >= 8 && inkBounds.bottom <= 32 && !cleared.empty() &&
-					std::all_of(cleared.begin(), cleared.end(), [&](const LaserParticleSeed& seed)
+					std::all_of(cleared.begin(), cleared.end(), [&](const LaserDriftParticle& drift)
 					{
 						auto vanished = clearFront;
-						vanished.progress = (seed.releaseDelayMilliseconds + 1) /
+						vanished.progress = (drift.particle.releaseMilliseconds + 1) /
 							static_cast<float>(kLaserDissolveParameters.durationMilliseconds);
-						return seed.releaseDelayMilliseconds <= crumbleEndMilliseconds + 1 &&
-							LaserDissolveCoverage(vanished, seed.position[0], seed.position[1]) == 0.0f;
+						return drift.particle.releaseMilliseconds <= crumbleEndMilliseconds + 1 &&
+							LaserDissolveCoverage(vanished, drift.particle.position[0], drift.particle.position[1]) == 0.0f;
 					}) &&
-					std::any_of(cleared.begin(), cleared.end(), [&](const LaserParticleSeed& seed)
-						{ return seed.releaseDelayMilliseconds != cleared.front().releaseDelayMilliseconds; }),
+					std::any_of(cleared.begin(), cleared.end(), [&](const LaserDriftParticle& drift)
+						{ return drift.particle.releaseMilliseconds != cleared.front().particle.releaseMilliseconds; }),
 					"clear particles appear as their own pixel crumbles, inside the reported ink bounds");
 				check(clearedCount == cleared.size() && clearedCount > 100 && clearedCount <= 400 &&
-					std::all_of(cleared.begin(), cleared.end(), [](const LaserParticleSeed& seed)
+					std::all_of(cleared.begin(), cleared.end(), [](const LaserDriftParticle& drift)
 					{
-						return seed.position[0] >= 10.0f && seed.position[0] <= 50.0f &&
-							seed.position[1] >= 20.0f && seed.position[1] <= 30.0f &&
-							seed.kind == LaserParticleKind::Dissolve && seed.group == kCanvasClearParticleGroup &&
-							std::abs(seed.color[0] - 1.0f) < 0.01f && seed.color[1] == 0.0f && seed.color[2] == 0.0f &&
-							std::abs(seed.color[3] - 128.0f / 255.0f) < 0.001f && seed.brightness == 0.0f &&
-							seed.velocity[0] > 0.0f && seed.velocity[1] < 0.0f;
+						return drift.particle.position[0] >= 10.0f && drift.particle.position[0] <= 50.0f &&
+							drift.particle.position[1] >= 20.0f && drift.particle.position[1] <= 30.0f &&
+							drift.particle.kindAndBatch == static_cast<uint32_t>(LaserParticleKind::Dissolve) &&
+							drift.group == kCanvasClearParticleGroup && drift.particle.color == 0x800000FFu &&
+							drift.particle.shapeParameters[1] == 0.0f &&
+							drift.particle.motion[0] > 0.0f && drift.particle.motion[1] < 0.0f;
 					}), "clear dissolve seeds are born on inked pixels with their straight color and the chosen wind");
+				std::vector<LaserParticleSeed> reference;
+				RECT referenceBounds = {};
+				const auto count1x = AppendReferenceCanvasClearParticleSeeds(reference, canvas.data(), 64u * 4u, 64, 64, 1.0f,
+					kLaserDissolveParameters.rightUpWindAngleDegrees, 7, clearFront, lowTier.maximumSeeds, &referenceBounds);
+				check(count1x == clearedCount && EqualRect(&referenceBounds, &inkBounds) &&
+					MatchesReferenceDriftBatch(cleared, reference, clearEnvelope), "1x clear matches the old seeds and ink bounds");
 				const std::vector<uint32_t> emptyCanvas(64u * 64u, 0u);
-				check(AppendCanvasClearParticleSeeds(cleared, emptyCanvas.data(), 64u * 4u, 64, 64, 1.0f,
-					kLaserDissolveParameters.leftUpWindAngleDegrees, 7, clearFront) == 0, "an empty canvas emits no clear particles");
+				check(AppendCanvasClearParticleSeeds(cleared, clearEnvelope, emptyCanvas.data(), 64u * 4u, 64, 64,
+					MakeDriftParticleContext(1.0f, kLaserDissolveParameters.leftUpWindAngleDegrees), 7, clearFront, lowTier.maximumSeeds) == 0,
+					"an empty canvas emits no clear particles");
 				// 两倍缩放：按 2×2 抽样，同样的墨迹面积（DIP）得到同量级的粒子，出生位置仍落在墨迹上。
-				std::vector<LaserParticleSeed> sampled;
-				const auto sampledCount = AppendCanvasClearParticleSeeds(sampled, canvas.data(), 64u * 4u, 64, 64, 2.0f,
-					kLaserDissolveParameters.leftUpWindAngleDegrees, 7, clearFront);
+				std::vector<LaserDriftParticle> sampled;
+				LaserParticleBatchEnvelope sampledEnvelope;
+				const auto sampledContext = MakeDriftParticleContext(2.0f, kLaserDissolveParameters.leftUpWindAngleDegrees);
+				const auto sampledCount = AppendCanvasClearParticleSeeds(sampled, sampledEnvelope, canvas.data(), 64u * 4u, 64, 64,
+					sampledContext, 7, clearFront, lowTier.maximumSeeds, &inkBounds);
 				check(sampledCount > 20 && sampledCount <= 100 &&
-					std::all_of(sampled.begin(), sampled.end(), [](const LaserParticleSeed& seed)
+					std::all_of(sampled.begin(), sampled.end(), [](const LaserDriftParticle& drift)
 					{
-						return seed.position[0] >= 10.0f && seed.position[0] <= 52.0f &&
-							seed.position[1] >= 20.0f && seed.position[1] <= 32.0f && seed.velocity[0] < 0.0f;
+						return drift.particle.position[0] >= 10.0f && drift.particle.position[0] <= 52.0f &&
+							drift.particle.position[1] >= 20.0f && drift.particle.position[1] <= 32.0f && drift.particle.motion[0] < 0.0f;
 					}), "high-DPI clear samples a coarser grid at the same density per DIP");
+				reference.clear();
+				const auto count2x = AppendReferenceCanvasClearParticleSeeds(reference, canvas.data(), 64u * 4u, 64, 64, 2.0f,
+					kLaserDissolveParameters.leftUpWindAngleDegrees, 7, clearFront, lowTier.maximumSeeds, &referenceBounds);
+				check(count2x == sampledCount && EqualRect(&referenceBounds, &inkBounds) &&
+					MatchesReferenceDriftBatch(sampled, reference, sampledEnvelope), "2x clear matches the old seeds and ink bounds");
 				struct Readback { size_t pitch = 0; uint32_t width = 0, height = 0; bool hasPixels = false; } readback;
 				check(renderer.VisitCanvasPixels([](void* context, const uint32_t* canvasPixels, size_t rowPitchBytes,
 					uint32_t canvasWidth, uint32_t canvasHeight)
@@ -1672,14 +1810,747 @@ namespace Inkeys::Drawing::Draw3
 
 				// 粒子池闲时归还：没有存活粒子时释放，系统仍可用，下次有粒子时重建。
 				auto& system = renderer.laserParticleSystem_;
-				renderer.StepLaserParticles(8000, 1000, cleared);
+				renderer.StepLaserParticles(8000, 1000, {}, cleared, {}, clearContext.dipPerPixel);
 				renderer.ReleaseIdleLaserParticles();
-				check(system.ResourcesCreated() && renderer.HasActiveLaserParticles(), "a pool with live particles is kept");
+				check(system.ResourcesCreated(driftPass) && renderer.HasActiveLaserParticles(), "a pool with live particles is kept");
 				renderer.ResetLaserParticles();
 				renderer.ReleaseIdleLaserParticles();
-				check(!system.ResourcesCreated() && renderer.LaserParticlesAvailable(), "an idle pool is returned but stays available");
-				renderer.StepLaserParticles(9000, 1000, cleared);
-				check(system.ResourcesCreated() && renderer.HasActiveLaserParticles(), "the pool is rebuilt on the next particle");
+				check(!system.ResourcesCreated(driftPass) && renderer.LaserParticlesAvailable(), "an idle pool is returned but stays available");
+				renderer.StepLaserParticles(9000, 1000, {}, cleared, {}, clearContext.dipPerPixel);
+				check(system.ResourcesCreated(driftPass) && renderer.HasActiveLaserParticles(), "the pool is rebuilt on the next particle");
+				renderer.ResetLaserParticles();
+				renderer.ReleaseIdleLaserParticles();
+			}
+			{
+				// 用中档容量验证 VS 确实读取掩码；写到末尾附近，再跨过环尾和暂存块边界。
+				auto& system = renderer.laserParticleSystem_;
+				const auto vertex = LoadShaderFromResource(IDR_DRAW3_LASER_PARTICLE_VS);
+				const auto pixel = LoadShaderFromResource(IDR_DRAW3_LASER_PARTICLE_PS);
+				const auto spawn = LoadShaderFromResource(IDR_DRAW3_LASER_PARTICLE_SPAWN_CS);
+				if (!check(system.Initialize(testDevice.Get(), testContext.Get(),
+					{ vertex.data, vertex.size }, { pixel.data, pixel.size }, { spawn.data, spawn.size }),
+					"initialize the production particle shaders")) return 1;
+				renderer.SetLaserParticleLimit(LaserParticleLimit::Medium);
+				constexpr uint32_t start = mediumCapacity - 2;
+				LaserParticleSeed inactive;
+				inactive.kind = LaserParticleKind::Dissolve;
+				renderer.StepLaserParticles(1000, 1000, {}, std::vector<LaserDriftParticle>(start, referenceDriftRecord(inactive)));
+				constexpr uint32_t killedCount = 20000;
+				constexpr uint32_t count = killedCount + 1;
+				std::vector<LaserParticleSeed> batch(count, inactive);
+				for (uint32_t i = 0; i < count; ++i)
+				{
+					auto& seed = batch[i];
+					seed.position[0] = -1000.0f - static_cast<float>(i);
+					seed.dragPerSecond = 1.0f;
+					seed.brightness = 0.0f;
+					seed.position[1] = 16.5f;
+					seed.radius = 2.0f;
+					seed.color[3] = 1.0f;
+					seed.lifetimeMilliseconds = 500 + i;
+					seed.group = 14;
+				}
+				batch[0].position[0] = 12.5f;
+				batch[0].color[0] = 1.0f;
+				batch[2].position[0] = 50.5f;
+				batch[2].color[2] = 1.0f;
+				batch.back().group = 15;
+				std::vector<LaserDriftParticle> batchRecords;
+				batchRecords.reserve(batch.size());
+				for (const auto& seed : batch) batchRecords.push_back(referenceDriftRecord(seed));
+				renderer.StepLaserParticles(1010, 1000, {}, batchRecords);
+				if (!check(system.ParticleBuffer(driftPass) && system.ActiveRange(driftPass).start == start &&
+					system.ActiveRange(driftPass).count == count, "one upload batch spans the ring end and multiple staging chunks"))
+					return 1;
+
+				constexpr auto stride = static_cast<UINT>(sizeof(LaserGpuParticle));
+				D3D11_BUFFER_DESC stagingDescription = {};
+				stagingDescription.ByteWidth = count * stride;
+				stagingDescription.Usage = D3D11_USAGE_STAGING;
+				stagingDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+				Microsoft::WRL::ComPtr<ID3D11Buffer> staging;
+				if (!check(SUCCEEDED(testDevice->CreateBuffer(&stagingDescription, nullptr, staging.GetAddressOf())),
+					"wrapped particle readback staging buffer")) return 1;
+				const auto checkRecords = [&](bool removed)
+				{
+					constexpr uint32_t firstCount = mediumCapacity - start;
+					const D3D11_BOX tailBox = { start * stride, 0, 0, mediumCapacity * stride, 1, 1 };
+					const D3D11_BOX headBox = { 0, 0, 0, (count - firstCount) * stride, 1, 1 };
+					testContext->CopySubresourceRegion(staging.Get(), 0, 0, 0, 0, system.ParticleBuffer(driftPass), 0, &tailBox);
+					testContext->CopySubresourceRegion(staging.Get(), 0, firstCount * stride, 0, 0,
+						system.ParticleBuffer(driftPass), 0, &headBox);
+					D3D11_MAPPED_SUBRESOURCE mapped = {};
+					if (!check(SUCCEEDED(testContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)),
+						"wrapped particle readback maps")) return false;
+					const auto* records = static_cast<const unsigned char*>(mapped.pData);
+					bool matches = true;
+					for (uint32_t i = 0; i < count && matches; ++i)
+					{
+						const auto expected = removed && i < killedCount ? LaserGpuParticle{} :
+							PackLaserParticle(batch[i], 10, 0);
+						matches = std::memcmp(records + i * stride, &expected, stride) == 0;
+					}
+					testContext->Unmap(staging.Get(), 0);
+					return matches;
+				};
+				check(checkRecords(false), "every wrapped and chunked upload record matches its seed");
+
+				// 环尾的红点和绕回第 0 槽的蓝点都必须由实际的粒子 VS 画出。
+				renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
+				renderer.DrawLaserParticles(driftPass);
+				const auto wrappedPixels = pixels(renderer.backBufferTexture.Get());
+				const size_t red = (16 * 64 + 12) * 4, blue = (16 * 64 + 50) * 4;
+				check(wrappedPixels.size() == 64 * 64 * 4 &&
+					wrappedPixels[red + 2] > 200 && wrappedPixels[red] < 8 &&
+					wrappedPixels[blue] > 200 && wrappedPixels[blue + 2] < 8,
+					"the particle vertex shader uses the non-default pool mask");
+
+				renderer.RemoveLaserParticleGroup(14);
+				check(checkRecords(true), "chunked removal clears the wrapped group and keeps its neighbor");
+				renderer.ResetLaserParticles();
+				renderer.ReleaseIdleLaserParticles();
+			}
+			{
+				auto& system = renderer.laserParticleSystem_;
+				constexpr auto stride = static_cast<UINT>(sizeof(LaserGpuParticle));
+				D3D11_BUFFER_DESC stagingDescription = {};
+				stagingDescription.ByteWidth = stride;
+				stagingDescription.Usage = D3D11_USAGE_STAGING;
+				stagingDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+				Microsoft::WRL::ComPtr<ID3D11Buffer> staging;
+				if (!check(SUCCEEDED(testDevice->CreateBuffer(&stagingDescription, nullptr, staging.GetAddressOf())),
+					"single particle readback staging buffer")) return 1;
+				const auto readSlot = [&](LaserParticlePass pass, uint32_t slot, LaserGpuParticle& result)
+				{
+					auto* buffer = system.ParticleBuffer(pass);
+					if (!buffer) return false;
+					D3D11_BUFFER_DESC desc = {};
+					buffer->GetDesc(&desc);
+					if (slot >= desc.ByteWidth / stride) return false;
+					const D3D11_BOX box = { slot * stride, 0, 0, (slot + 1) * stride, 1, 1 };
+					testContext->CopySubresourceRegion(staging.Get(), 0, 0, 0, 0, buffer, 0, &box);
+					D3D11_MAPPED_SUBRESOURCE mapped = {};
+					if (FAILED(testContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
+					std::memcpy(&result, mapped.pData, stride);
+					testContext->Unmap(staging.Get(), 0);
+					return true;
+				};
+				const auto matchesSlot = [&](LaserParticlePass pass, uint32_t slot, const LaserGpuParticle& expected)
+				{
+					LaserGpuParticle actual = {};
+					return readSlot(pass, slot, actual) && std::memcmp(&actual, &expected, stride) == 0;
+				};
+				const auto capacity = [&](LaserParticlePass pass)
+				{
+					D3D11_BUFFER_DESC desc = {};
+					if (auto* buffer = system.ParticleBuffer(pass)) buffer->GetDesc(&desc);
+					return desc.ByteWidth / stride;
+				};
+				const auto releasePools = [&]
+				{
+					renderer.ResetLaserParticles();
+					renderer.ReleaseIdleLaserParticles();
+				};
+				LaserParticleSeed trail;
+				trail.position[0] = 12.5f;
+				trail.position[1] = 16.5f;
+				trail.radius = 2.0f;
+				trail.lifetimeMilliseconds = 500;
+				trail.color[0] = trail.color[3] = 1.0f;
+				trail.group = 14;
+				LaserParticleSeed clear = trail;
+				clear.kind = LaserParticleKind::Dissolve;
+				clear.position[0] = 32.5f;
+				clear.velocity[0] = clear.dragPerSecond = clear.breathingFrequencyHz = 1.0f;
+				clear.brightness = 0.0f;
+				clear.color[0] = 0.0f;
+				clear.color[1] = 1.0f;
+				LaserParticleSeed dissolve = clear;
+				dissolve.position[0] = 50.5f;
+				dissolve.color[1] = 0.0f;
+				dissolve.color[2] = 1.0f;
+				dissolve.group = 16;
+
+				// 每档把游标推到最后一槽，再写两粒跨到第 0 槽；极致档实际创建 64 MB。
+				LaserParticleSeed expired = clear;
+				expired.lifetimeMilliseconds = 0;
+				const auto clearDrift = referenceDriftRecord(clear);
+				const auto dissolveDrift = referenceDriftRecord(dissolve);
+				const std::vector<LaserDriftParticle> cursorRecords(kLaserParticleStagingChunk, referenceDriftRecord(expired));
+				const std::array wrapRecords = { clearDrift, dissolveDrift };
+				const std::span<const LaserDriftParticle> clearSpan(&clearDrift, 1);
+				const std::span<const LaserDriftParticle> dissolveSpan(&dissolveDrift, 1);
+				for (size_t i = 0; i < kLaserParticleLimitTiers.size(); ++i)
+				{
+					const auto limit = static_cast<LaserParticleLimit>(i);
+					const auto tier = kLaserParticleLimitTiers[i];
+					renderer.SetLaserParticleLimit(limit);
+					for (uint32_t remaining = tier.poolCapacity - 1; remaining != 0;)
+					{
+						const auto count = (std::min)(remaining, kLaserParticleStagingChunk);
+						renderer.StepLaserParticles(1000, 1000, {}, std::span<const LaserDriftParticle>(cursorRecords).first(count));
+						remaining -= count;
+					}
+					renderer.StepLaserParticles(1001, 1000, {}, wrapRecords);
+					const auto range = system.ActiveRange(driftPass);
+					check(system.EffectiveLimit() == limit && renderer.LaserParticleMaximumSeeds() == tier.maximumSeeds &&
+						capacity(driftPass) == tier.poolCapacity && !system.ResourcesCreated(trailPass) &&
+						range.start == tier.poolCapacity - 1 && range.count == wrapRecords.size() &&
+						matchesSlot(driftPass, range.start, PackLaserParticle(clear, 1, 0)) &&
+						matchesSlot(driftPass, 0, PackLaserParticle(dissolve, 1, 0)),
+						"each tier creates its real capacity and writes both ends of the ring");
+					releasePools();
+				}
+
+				renderer.SetLaserParticleLimit(LaserParticleLimit::Low);
+				renderer.PrepareLaserParticles();
+				check(capacity(trailPass) == kLaserTrailPoolCapacity && !system.ResourcesCreated(driftPass) &&
+					!renderer.HasActiveLaserParticles(), "preparation only creates and warms the trail pool");
+				auto neighborTrail = trail, neighborClear = clear;
+				neighborTrail.group = neighborClear.group = 15;
+				neighborTrail.position[0] = 16.5f;
+				neighborClear.position[0] = 36.5f;
+				const std::array mixedTrail = { trail, neighborTrail };
+				const std::array mixedClear = { clearDrift, referenceDriftRecord(neighborClear) };
+				renderer.StepLaserParticles(1000, 1000, mixedTrail, mixedClear, dissolveSpan);
+				LaserGpuParticle laserRecord = {};
+				const bool gotLaser = readSlot(driftPass, 2, laserRecord);
+				const auto batch = laserRecord.kindAndBatch >> 2;
+				check(system.ActiveRange(trailPass).start == 0 && system.ActiveRange(trailPass).count == 2 &&
+					system.ActiveRange(driftPass).start == 0 && system.ActiveRange(driftPass).count == 3 &&
+					matchesSlot(trailPass, 0, PackLaserParticle(trail, 0, 0)) &&
+					matchesSlot(trailPass, 1, PackLaserParticle(neighborTrail, 0, 0)) &&
+					matchesSlot(driftPass, 0, PackLaserParticle(clear, 0, 0)) &&
+					matchesSlot(driftPass, 1, PackLaserParticle(neighborClear, 0, 0)) && gotLaser && batch != 0 &&
+					matchesSlot(driftPass, 2, PackLaserParticle(dissolve, 0, batch)),
+					"one step keeps the order and batch identity of all three particle sources");
+				const auto drawPass = [&](LaserParticlePass pass)
+				{
+					renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
+					renderer.DrawLaserParticles(pass);
+					return pixels(renderer.backBufferTexture.Get());
+				};
+				const size_t red = (16 * 64 + 12) * 4, green = (16 * 64 + 32) * 4, blue = (16 * 64 + 50) * 4;
+				const auto trailPixels = drawPass(trailPass);
+				const auto driftPixels = drawPass(driftPass);
+				check(trailPixels.size() == 64 * 64 * 4 && trailPixels[red + 2] > 200 &&
+					trailPixels[green + 3] == 0 && trailPixels[blue + 3] == 0,
+					"over-body pixels contain only trail particles");
+				check(driftPixels.size() == 64 * 64 * 4 && driftPixels[red + 3] == 0 &&
+					driftPixels[green + 1] > 200 && driftPixels[blue] > 200,
+					"under-body pixels contain only clear and laser dissolve particles");
+
+				renderer.StepLaserParticles(1100, 1000, {}, {}, {}, 1.0f, { 1050, 0.5f, false, 1300 });
+				check(system.Clock().gatherBatch == batch && batch != 0 && system.Clock().gatherRemaining == 0.5f,
+					"gather selects the laser dissolve batch in the mixed step");
+				renderer.StepLaserParticles(1200, 1000, {}, {}, {}, 1.0f, { 1050, 1.0f, true });
+				check(system.ActiveRange(driftPass).count == 2 && system.ActiveRange(trailPass).count == 2 &&
+					matchesSlot(driftPass, 2, LaserGpuParticle{}) &&
+					matchesSlot(driftPass, 0, PackLaserParticle(clear, 0, 0)) &&
+					matchesSlot(trailPass, 0, PackLaserParticle(trail, 0, 0)),
+					"gather completion kills only the laser dissolve batch");
+				renderer.RemoveLaserParticleGroup(14);
+				check(matchesSlot(trailPass, 0, LaserGpuParticle{}) && matchesSlot(driftPass, 0, LaserGpuParticle{}) &&
+					matchesSlot(trailPass, 1, PackLaserParticle(neighborTrail, 0, 0)) &&
+					matchesSlot(driftPass, 1, PackLaserParticle(neighborClear, 0, 0)),
+					"removing one group clears both pools and keeps both neighbors");
+				releasePools();
+
+				const std::span<const LaserParticleSeed> trailSpan(&trail, 1);
+				renderer.StepLaserParticles(1000, 1000, trailSpan, clearSpan);
+				std::vector<LaserParticleSeed> overflow(kLaserTrailPoolCapacity + 1, trail);
+				overflow[0].position[0] = -1.0f;
+				overflow[1].position[0] = 8.5f;
+				overflow.back().position[0] = 10.5f;
+				renderer.StepLaserParticles(1001, 1000, overflow);
+				check(system.ActiveRange(trailPass).start == 1 &&
+					system.ActiveRange(trailPass).count == kLaserTrailPoolCapacity &&
+					matchesSlot(trailPass, 1, PackLaserParticle(overflow[1], 1, 0)) &&
+					matchesSlot(trailPass, 0, PackLaserParticle(overflow.back(), 1, 0)) &&
+					system.ActiveRange(driftPass).count == 1 &&
+					matchesSlot(driftPass, 0, PackLaserParticle(clear, 0, 0)),
+					"trail overflow keeps its last slots and leaves the drift pool intact");
+				const auto lastTrail = PackLaserParticle(overflow.back(), 1, 0);
+				std::vector<LaserDriftParticle> driftOverflow(lowTier.poolCapacity, clearDrift);
+				driftOverflow[0].particle.position[0] = -1.0f;
+				auto firstKeptClear = clear;
+				firstKeptClear.position[0] = 24.5f;
+				driftOverflow[1] = referenceDriftRecord(firstKeptClear);
+				renderer.StepLaserParticles(1002, 1000, {}, driftOverflow, dissolveSpan);
+				LaserGpuParticle lastDrift = {};
+				const bool gotLastDrift = readSlot(driftPass, 0, lastDrift);
+				const auto lastBatch = lastDrift.kindAndBatch >> 2;
+				check(system.ActiveRange(driftPass).start == 1 &&
+					system.ActiveRange(driftPass).count == lowTier.poolCapacity &&
+					matchesSlot(driftPass, 1, PackLaserParticle(firstKeptClear, 2, 0)) &&
+					gotLastDrift && lastBatch != 0 && matchesSlot(driftPass, 0, PackLaserParticle(dissolve, 2, lastBatch)) &&
+					system.ActiveRange(trailPass).count == kLaserTrailPoolCapacity &&
+					matchesSlot(trailPass, 0, lastTrail),
+					"drift overflow keeps its last slots and leaves the trail pool intact");
+
+				auto* const trailBuffer = system.ParticleBuffer(trailPass);
+				auto* const driftBuffer = system.ParticleBuffer(driftPass);
+				renderer.SetLaserParticleLimit(LaserParticleLimit::Low);
+				check(system.ParticleBuffer(driftPass) == driftBuffer &&
+					system.ActiveRange(driftPass).count == lowTier.poolCapacity &&
+					matchesSlot(driftPass, 0, lastDrift), "setting the same tier preserves live drift records");
+				renderer.SetLaserParticleLimit(LaserParticleLimit::Medium);
+				check(!system.ResourcesCreated(driftPass) && system.ActiveRange(driftPass).count == 0 &&
+					system.ParticleBuffer(trailPass) == trailBuffer &&
+					system.ActiveRange(trailPass).count == kLaserTrailPoolCapacity &&
+					matchesSlot(trailPass, 0, lastTrail), "changing tier drops only the drift pool");
+				releasePools();
+
+				for (const auto limit : { LaserParticleLimit::Low, LaserParticleLimit::Medium })
+				{
+					renderer.SetLaserParticleLimit(limit);
+					const auto maximum = renderer.LaserParticleMaximumSeeds();
+					const auto tier = kLaserParticleLimitTiers[static_cast<size_t>(limit)];
+					std::vector<LaserDriftParticle> clearBatch(maximum, clearDrift), laserBatch(maximum, dissolveDrift);
+					auto lastClearSeed = clear, lastLaserSeed = dissolve;
+					lastClearSeed.position[0] = 34.5f;
+					lastLaserSeed.position[0] = 52.5f;
+					clearBatch.back() = referenceDriftRecord(lastClearSeed);
+					laserBatch.back() = referenceDriftRecord(lastLaserSeed);
+					renderer.StepLaserParticles(1000, 1000, {}, clearBatch);
+					renderer.StepLaserParticles(1001, 1000, {}, {}, laserBatch);
+					LaserGpuParticle firstLaser = {};
+					const bool gotFirstLaser = readSlot(driftPass, maximum, firstLaser);
+					const auto fullBatch = firstLaser.kindAndBatch >> 2;
+					check(maximum == tier.maximumSeeds && system.ActiveRange(driftPass).start == 0 &&
+						system.ActiveRange(driftPass).count == tier.poolCapacity &&
+						matchesSlot(driftPass, 0, PackLaserParticle(clear, 0, 0)) &&
+						matchesSlot(driftPass, maximum - 1, PackLaserParticle(lastClearSeed, 0, 0)) &&
+						gotFirstLaser && fullBatch != 0 &&
+						matchesSlot(driftPass, maximum, PackLaserParticle(dissolve, 1, fullBatch)) &&
+						matchesSlot(driftPass, tier.poolCapacity - 1, PackLaserParticle(lastLaserSeed, 1, fullBatch)),
+						"full clear and laser batches coexist at the low and medium tiers");
+					releasePools();
+				}
+
+				// 分别让行进池和飘散池先变空，共享资源应等到最后一个池空了才归还。
+				auto longClear = clear;
+				longClear.lifetimeMilliseconds = 1000;
+				const std::array longClearBatch = { referenceDriftRecord(longClear) };
+				renderer.StepLaserParticles(1000, 1000, trailSpan, longClearBatch);
+				renderer.StepLaserParticles(1600, 1000, {});
+				renderer.ReleaseIdleLaserParticles();
+				check(!system.ResourcesCreated(trailPass) && system.ResourcesCreated(driftPass) &&
+					system.ActiveRange(driftPass).count == 1 && LaserParticleSystemTestAccess::DrawResourcesMatch(system, true),
+					"empty trail pool is released while drift and shared resources stay live");
+				releasePools();
+				auto longTrail = trail;
+				longTrail.lifetimeMilliseconds = 1000;
+				renderer.StepLaserParticles(1000, 1000, std::span<const LaserParticleSeed>(&longTrail, 1), clearSpan);
+				renderer.StepLaserParticles(1600, 1000, {});
+				renderer.ReleaseIdleLaserParticles();
+				check(system.ResourcesCreated(trailPass) && !system.ResourcesCreated(driftPass) &&
+					system.ActiveRange(trailPass).count == 1 && LaserParticleSystemTestAccess::DrawResourcesMatch(system, true),
+					"empty drift pool is released while trail and shared resources stay live");
+				renderer.StepLaserParticles(2100, 1000, {});
+				renderer.ReleaseIdleLaserParticles();
+				check(!system.ResourcesCreated(trailPass) && !system.ResourcesCreated(driftPass) &&
+					LaserParticleSystemTestAccess::DrawResourcesMatch(system, false) && renderer.LaserParticlesAvailable(),
+					"both empty pools release shaders, constants and staging while keeping the device session");
+
+				renderer.StepLaserParticles(1000, 1000, std::span<const LaserParticleSeed>(&longTrail, 1), clearSpan);
+				auto* const liveTrailBuffer = system.ParticleBuffer(trailPass);
+				auto* const liveDriftBuffer = system.ParticleBuffer(driftPass);
+				renderer.ReleaseIdleLaserDriftPool();
+				check(liveDriftBuffer && system.ParticleBuffer(driftPass) == liveDriftBuffer &&
+					system.ActiveRange(driftPass).count == 1,
+					"drift-only release keeps a live drift pool");
+				renderer.StepLaserParticles(1600, 1000, {});
+				renderer.ReleaseIdleLaserDriftPool();
+				check(!system.ResourcesCreated(driftPass) && liveTrailBuffer &&
+					system.ParticleBuffer(trailPass) == liveTrailBuffer &&
+					system.ActiveRange(trailPass).count == 1 && LaserParticleSystemTestAccess::DrawResourcesMatch(system, true),
+					"drift-only release returns an expired pool and keeps trail and shared resources");
+				releasePools();
+
+				const auto vertex = LoadShaderFromResource(IDR_DRAW3_LASER_PARTICLE_VS);
+				const auto pixel = LoadShaderFromResource(IDR_DRAW3_LASER_PARTICLE_PS);
+				const auto spawn = LoadShaderFromResource(IDR_DRAW3_LASER_PARTICLE_SPAWN_CS);
+				const auto reinitialize = [&]
+				{
+					system.Release();
+					return system.Initialize(testDevice.Get(), testContext.Get(),
+						{ vertex.data, vertex.size }, { pixel.data, pixel.size }, { spawn.data, spawn.size });
+				};
+				LaserParticleSystemTestAccess::SetMaximumDriftTier(system, static_cast<int>(LaserParticleLimit::Medium));
+				renderer.SetLaserParticleLimit(LaserParticleLimit::Extreme);
+				renderer.StepLaserParticles(1000, 1000, trailSpan, clearSpan);
+				check(system.EffectiveLimit() == LaserParticleLimit::Medium && capacity(driftPass) == mediumCapacity,
+					"success at an intermediate tier stops the downgrade there");
+				if (!check(reinitialize(), "reset the particle device session")) return 1;
+				LaserParticleSystemTestAccess::SetMaximumDriftTier(system, static_cast<int>(LaserParticleLimit::Low));
+				renderer.SetLaserParticleLimit(LaserParticleLimit::Extreme);
+				renderer.StepLaserParticles(1000, 1000, trailSpan, clearSpan);
+				check(system.EffectiveLimit() == LaserParticleLimit::Low && capacity(driftPass) == lowTier.poolCapacity &&
+					renderer.LaserParticleMaximumSeeds() == lowTier.maximumSeeds &&
+					system.ActiveRange(driftPass).count == 1 && system.ActiveRange(trailPass).count == 1,
+					"failed higher allocations fall back to low without interrupting trail");
+				renderer.SetLaserParticleLimit(LaserParticleLimit::High);
+				check(system.EffectiveLimit() == LaserParticleLimit::Low && system.ActiveRange(driftPass).count == 1,
+					"requests above the session ceiling keep the current pool");
+				if (!check(reinitialize() && system.EffectiveLimit() == LaserParticleLimit::Low,
+					"reinitialization restores the default effective tier")) return 1;
+				{
+					// 建池降档必须先于满额记录生成；两批在同一次推进中各占实际容量的一半。
+					renderer.SetLaserParticleLimit(LaserParticleLimit::Medium);
+					const uint32_t maximum = renderer.PrepareLaserDriftPool();
+					if (check(maximum == lowTier.maximumSeeds && system.EffectiveLimit() == LaserParticleLimit::Low &&
+						capacity(driftPass) == lowTier.poolCapacity, "preparation returns the downgraded spawn limit"))
+					{
+						const std::vector<LaserDriftParticle> clearBatch(maximum, clearDrift), laserBatch(maximum, dissolveDrift);
+						const auto accepted = renderer.StepLaserParticles(1000, 1000, {}, clearBatch, laserBatch);
+						LaserGpuParticle firstLaser = {};
+						const bool gotFirstLaser = readSlot(driftPass, maximum, firstLaser);
+						const auto batch = firstLaser.kindAndBatch >> 2;
+						check(!accepted.trailAccepted && accepted.clearAccepted && accepted.dissolveAccepted &&
+							system.ActiveRange(driftPass).start == 0 && system.ActiveRange(driftPass).count == lowTier.poolCapacity &&
+							matchesSlot(driftPass, 0, PackLaserParticle(clear, 0, 0)) &&
+							matchesSlot(driftPass, maximum - 1, PackLaserParticle(clear, 0, 0)) &&
+							gotFirstLaser && batch != 0 &&
+							matchesSlot(driftPass, maximum, PackLaserParticle(dissolve, 0, batch)) &&
+							matchesSlot(driftPass, lowTier.poolCapacity - 1, PackLaserParticle(dissolve, 0, batch)),
+							"one downgraded step keeps both full batches in their entirety");
+					}
+				}
+				if (!check(reinitialize(), "reset the particle device session after testing the spawn limit")) return 1;
+				renderer.SetLaserParticleLimit(LaserParticleLimit::Extreme);
+				check(system.EffectiveLimit() == LaserParticleLimit::Extreme, "device recreation resets the ceiling");
+
+				LaserParticleSystemTestAccess::SetMaximumDriftTier(system, -1);
+				check(renderer.PrepareLaserDriftPool() == 0, "preparation returns zero when no drift tier can be created");
+				const auto accepted = renderer.StepLaserParticles(1000, 1000, trailSpan, clearSpan, dissolveSpan);
+				check(accepted.trailAccepted && !accepted.clearAccepted && !accepted.dissolveAccepted,
+					"rejected drift batches leave trail acceptance intact");
+				const auto failurePixels = drawPass(trailPass);
+				check(renderer.LaserParticlesAvailable() && !system.ResourcesCreated(driftPass) &&
+					system.ActiveRange(driftPass).count == 0 && system.ActiveRange(trailPass).count == 1 &&
+					failurePixels.size() == 64 * 64 * 4 && failurePixels[red + 2] > 200 && failurePixels[green + 3] == 0,
+					"all drift tiers failing still permits trail pixels to draw");
+				LaserParticleSystemTestAccess::SetMaximumDriftTier(system, static_cast<int>(LaserParticleLimit::Extreme));
+				renderer.StepLaserParticles(1001, 1000, {}, clearSpan);
+				check(!system.ResourcesCreated(driftPass) && system.ActiveRange(driftPass).count == 0,
+					"all drift failures disable that pool until device recreation");
+				if (!check(reinitialize(), "restore default particle resources after failure injection")) return 1;
+
+				LaserParticleSystemTestAccess::SetTrailCreationFailure(system, true);
+				const auto reverseAccepted = renderer.StepLaserParticles(1000, 1000, trailSpan, clearSpan, dissolveSpan);
+				const auto reversePixels = drawPass(driftPass);
+				check(system.IsAvailable() && !reverseAccepted.trailAccepted &&
+					reverseAccepted.clearAccepted && reverseAccepted.dissolveAccepted &&
+					!system.ResourcesCreated(trailPass) && system.ActiveRange(trailPass).count == 0 &&
+					system.ActiveRange(driftPass).count == 2 &&
+					reversePixels.size() == 64 * 64 * 4 && reversePixels[red + 3] == 0 &&
+					reversePixels[green + 1] > 200 && reversePixels[blue] > 200,
+					"trail creation failure drops trail and still uploads and draws both drift batches");
+				LaserParticleSystemTestAccess::SetTrailCreationFailure(system, false);
+				if (!check(reinitialize(), "restore default particle resources after trail failure injection")) return 1;
+			}
+			{
+				auto& system = renderer.laserParticleSystem_;
+				constexpr uint32_t side = 64, reserved = side * side;
+				constexpr int64_t frequency = 1000, origin = 1000, birth = 1075;
+				constexpr uint32_t seedBase = 16;
+				const auto front = MakeLaserDissolveFront();
+				constexpr float wind = kLaserDissolveParameters.rightUpWindAngleDegrees;
+				// 2×2 格内使用同一颜色，避免有意引入代表像素漏采；边缘仍覆盖 alpha 47 和 48。
+				constexpr uint32_t colors[] = { 0u, 0x2F1C1408u, 0x30171109u, 0x60421824u,
+					0x80804020u, 0xFF8877DDu, 0xFFACE123u, 0xC04B5295u };
+				std::vector<uint32_t> canvas(reserved);
+				for (uint32_t y = 8; y < 56; ++y)
+					for (uint32_t x = 8; x < 56; ++x)
+						canvas[y * side + x] = colors[(x / 2 + 3 * (y / 2)) % ARRAYSIZE(colors)];
+				testContext->OMSetRenderTargets(0, nullptr, nullptr);
+				testContext->UpdateSubresource(renderer.layerL2Texture.Get(), 0, nullptr, canvas.data(), side * 4u, 0);
+				if (!check(renderer.GpuClearSpawnAvailable() && renderer.CaptureCanvasClearSnapshot(),
+					"GPU clear is available with a production canvas snapshot")) return 1;
+				const LaserClearSpawnRequest request = { { 8, 8, 56, 56 }, front, 1.0f, wind, seedBase, reserved };
+
+				const auto readSlots = [&](uint32_t start, uint32_t count)
+				{
+					std::vector<LaserGpuParticle> records;
+					ID3D11Buffer* buffer = system.ParticleBuffer(driftPass);
+					if (!check(buffer != nullptr, "GPU clear owns a drift buffer")) return records;
+					constexpr auto stride = static_cast<UINT>(sizeof(LaserGpuParticle));
+					D3D11_BUFFER_DESC description = {};
+					buffer->GetDesc(&description);
+					const uint32_t first = (std::min)(count, description.ByteWidth / stride - start);
+					description = {};
+					description.ByteWidth = count * stride;
+					description.Usage = D3D11_USAGE_STAGING;
+					description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+					Microsoft::WRL::ComPtr<ID3D11Buffer> staging;
+					if (!check(SUCCEEDED(testDevice->CreateBuffer(&description, nullptr, staging.GetAddressOf())),
+						"GPU clear particle staging")) return records;
+					const D3D11_BOX tail = { start * stride, 0, 0, (start + first) * stride, 1, 1 };
+					testContext->CopySubresourceRegion(staging.Get(), 0, 0, 0, 0, buffer, 0, &tail);
+					if (first < count)
+					{
+						const D3D11_BOX head = { 0, 0, 0, (count - first) * stride, 1, 1 };
+						testContext->CopySubresourceRegion(staging.Get(), 0, first * stride, 0, 0, buffer, 0, &head);
+					}
+					records.resize(count);
+					D3D11_MAPPED_SUBRESOURCE mapped = {};
+					// 仅自检阻塞读记录：这个 Copy 在 counters Copy 之后，完成时可立即轮询。
+					if (!check(SUCCEEDED(testContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)),
+						"GPU clear particle readback")) { records.clear(); return records; }
+					std::memcpy(records.data(), mapped.pData, description.ByteWidth);
+					testContext->Unmap(staging.Get(), 0);
+					return records;
+				};
+				const auto submit = [&](const LaserClearSpawnRequest& spawn, int64_t qpc)
+				{
+					return renderer.StepLaserParticles(qpc, frequency, {}, {}, {}, 1.0f, {}, &spawn).clearSpawnAccepted;
+				};
+				const auto cpuClear = [&](float dpiScale)
+				{
+					std::vector<LaserDriftParticle> expected;
+					LaserParticleBatchEnvelope envelope;
+					const auto drift = MakeDriftParticleContext(dpiScale, wind);
+					AppendCanvasClearParticleSeeds(expected, envelope, canvas.data(), side * 4u, side, side,
+						drift, seedBase, front, lowTier.maximumSeeds);
+					return expected;
+				};
+
+				// 带非零出生时刻提交，并故意留下 VS 绑定，验证派发前后两个方向的资源解绑。
+				if (!check(renderer.PrepareLaserDriftPool() == lowTier.maximumSeeds, "prepare drift pool for GPU clear")) return 1;
+				ID3D11ShaderResourceView* previousSrv = LaserParticleSystemTestAccess::DriftSrv(system);
+				testContext->VSSetShaderResources(0, 1, &previousSrv);
+				renderer.StepLaserParticles(origin, frequency, {});
+				if (!check(submit(request, birth) && system.ActiveRange(driftPass).count == reserved,
+					"GPU clear reserves an ordinary batch in Step")) return 1;
+				renderer.StepLaserParticles(birth + 550, frequency, {});
+				renderer.ClearRTV(renderer.backBufferRTV.Get(), kTransparentLayerClearColor);
+				renderer.DrawLaserParticles(driftPass);
+				const auto rendered = pixels(renderer.backBufferTexture.Get());
+				bool visible = false;
+				for (size_t i = 3; i < rendered.size(); i += 4) visible |= rendered[i] != 0;
+				check(visible, "the VS draws GPU-born particles after the UAV is unbound");
+
+				auto actual = readSlots(0, reserved);
+				const auto count = renderer.PollClearSpawn();
+				auto expected = cpuClear(1.0f);
+				if (!check(count && count->written > 0 && count->written == expected.size() && count->written <= actual.size() &&
+					system.ActiveRange(driftPass).count == count->written, "1x GPU count and trimmed range match CPU")) return 1;
+				actual.resize(count->written);
+				const auto byBirth = [](const LaserGpuParticle& a, const LaserGpuParticle& b)
+				{
+					if (a.position[0] != b.position[0]) return a.position[0] < b.position[0];
+					if (a.position[1] != b.position[1]) return a.position[1] < b.position[1];
+					return a.releaseMilliseconds < b.releaseMilliseconds;
+				};
+				std::sort(actual.begin(), actual.end(), byBirth);
+				std::sort(expected.begin(), expected.end(),
+					[&](const LaserDriftParticle& a, const LaserDriftParticle& b) { return byBirth(a.particle, b.particle); });
+				bool integerFields = true;
+				struct FloatComparison
+				{
+					const char* name;
+					float relativeLimit = 1e-4f;
+					float absoluteLimit = (std::numeric_limits<float>::infinity)();
+					float maximumRelative = 0.0f;
+					float maximumAbsolute = 0.0f;
+				};
+				// WARP 旧样本的最大相对误差为 8.087e-4。出生风场或散开分量接近零时，
+				// sin/cos 与点积舍入会放大相对误差；只给这些分量约两倍余量。
+				// 再约束绝对误差：1× 散开偏差每轴至多 0.00004 px，风场偏差乘 22 px 仍小于 0.001 px。
+				std::array<FloatComparison, 12> fields = {{
+					{ "position.x" }, { "position.y" },
+					{ "motion.x" }, { "motion.y" },
+					{ "drag" }, { "meander" },
+					{ "burst.x", 1.7e-3f, 4e-5f }, { "burst.y", 1.7e-3f, 4e-5f },
+					{ "radius" }, { "white", 0.0f },
+					{ "birthWind.x", 1.7e-3f, 4e-5f }, { "birthWind.y", 1.7e-3f, 4e-5f }
+				}};
+				const auto compareFloat = [&](size_t index, float gpu, float cpu)
+				{
+					auto& field = fields[index];
+					const float scale = (std::max)(std::abs(gpu), std::abs(cpu));
+					const bool finite = std::isfinite(gpu) && std::isfinite(cpu);
+					const float absolute = finite ? std::abs(gpu - cpu) : (std::numeric_limits<float>::infinity)();
+					const float relative = !finite ? absolute : (scale != 0.0f ? absolute / scale : 0.0f);
+					field.maximumAbsolute = (std::max)(field.maximumAbsolute, absolute);
+					field.maximumRelative = (std::max)(field.maximumRelative, relative);
+				};
+				for (size_t i = 0; i < actual.size(); ++i)
+				{
+					const auto& gpu = actual[i];
+					const auto& cpu = expected[i].particle;
+					integerFields &= gpu.color == cpu.color && gpu.lifetimeMilliseconds == cpu.lifetimeMilliseconds &&
+						gpu.releaseMilliseconds == cpu.releaseMilliseconds + static_cast<uint32_t>(birth - origin) &&
+						gpu.kindAndBatch == cpu.kindAndBatch;
+					for (size_t field = 0; field < 2; ++field)
+					{
+						compareFloat(field, gpu.position[field], cpu.position[field]);
+						compareFloat(2 + field, gpu.motion[field], cpu.motion[field]);
+					}
+					for (size_t field = 0; field < 4; ++field)
+					{
+						compareFloat(4 + field, gpu.motionParameters[field], cpu.motionParameters[field]);
+						compareFloat(8 + field, gpu.shapeParameters[field], cpu.shapeParameters[field]);
+					}
+				}
+				check(integerFields, "1x clear color, lifetime, release and kind match exactly");
+				const bool floatFields = check(std::all_of(fields.begin(), fields.end(), [](const FloatComparison& field)
+				{
+					return field.maximumRelative <= field.relativeLimit && field.maximumAbsolute <= field.absoluteLimit;
+				}), "1x clear float fields match within field-specific tolerances");
+				for (const auto& field : fields)
+					if (!integerFields || !floatFields || field.maximumRelative > 1e-4f)
+						std::fprintf(stderr, "[LaserResources] clear spawn %s max_relative=%.9g max_absolute=%.9g\n",
+							field.name, field.maximumRelative, field.maximumAbsolute);
+
+				renderer.ResetLaserParticles();
+				auto scaled = request;
+				scaled.dpiScale = 2.0f;
+				if (!check(submit(scaled, birth), "2x GPU clear accepted")) return 1;
+				actual = readSlots(0, reserved);
+				const auto scaledCount = renderer.PollClearSpawn();
+				if (!check(scaledCount && scaledCount->written > 0 && scaledCount->written <= actual.size(), "2x GPU clear counters")) return 1;
+				const auto expectedScaled = cpuClear(2.0f);
+				constexpr uint32_t blockSide = 16, blocksPerSide = side / blockSide;
+				const auto blockIndex = [](uint32_t x, uint32_t y) { return (y / blockSide) * blocksPerSide + x / blockSide; };
+				std::array<uint32_t, blocksPerSide * blocksPerSide> gpuBlocks{}, cpuBlocks{}, inkedBlocks{};
+				for (uint32_t y = 0; y < side; ++y)
+					for (uint32_t x = 0; x < side; ++x)
+						inkedBlocks[blockIndex(x, y)] += (canvas[y * side + x] >> 24) >= kCanvasClearParticleParameters.minimumAlpha;
+				bool withinCanvas = true;
+				for (const auto& particle : std::span(actual).first(scaledCount->written))
+				{
+					const float x = particle.position[0], y = particle.position[1];
+					if (x >= 0.0f && x < side && y >= 0.0f && y < side)
+						++gpuBlocks[blockIndex(static_cast<uint32_t>(x), static_cast<uint32_t>(y))];
+					else withinCanvas = false;
+				}
+				for (const auto& record : expectedScaled)
+					++cpuBlocks[blockIndex(static_cast<uint32_t>(record.particle.position[0]),
+						static_cast<uint32_t>(record.particle.position[1]))];
+				// 两条路径共用像素哈希，正相关会减小差值的方差；忽略协方差得到保守的 4σ。
+				const auto withinFourSigma = [](size_t gpu, size_t cpu, uint32_t inked)
+				{
+					const double variance = inked * (0.125 * 0.875 + 0.25 * 0.5 * 0.5);
+					return std::abs(static_cast<double>(gpu) - static_cast<double>(cpu)) <= 4.0 * std::sqrt(variance);
+				};
+				uint32_t totalInked = 0;
+				for (size_t i = 0; i < inkedBlocks.size(); ++i)
+				{
+					totalInked += inkedBlocks[i];
+					withinCanvas &= withinFourSigma(gpuBlocks[i], cpuBlocks[i], inkedBlocks[i]);
+				}
+				check(withinFourSigma(scaledCount->written, expectedScaled.size(), totalInked) && withinCanvas,
+					"2x clear count and every 16x16 block agree within four sigma");
+
+				// 触顶样本用固定哈希和较大的纹理，命中数超过低档上限且左侧留透明带。
+				renderer.ResetLaserParticles();
+				constexpr uint32_t largeSide = 256, transparentWidth = 8;
+				std::vector<uint32_t> large(largeSide * largeSide, 0u);
+				for (uint32_t y = 0; y < largeSide; ++y)
+					std::fill_n(large.data() + y * largeSide + transparentWidth, largeSide - transparentWidth, 0xFF5577DDu);
+				D3D11_TEXTURE2D_DESC textureDescription = {};
+				textureDescription.Width = textureDescription.Height = largeSide;
+				textureDescription.MipLevels = textureDescription.ArraySize = 1;
+				textureDescription.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+				textureDescription.SampleDesc.Count = 1;
+				textureDescription.Usage = D3D11_USAGE_IMMUTABLE;
+				textureDescription.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+				const D3D11_SUBRESOURCE_DATA source = { large.data(), largeSide * 4u, 0 };
+				Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+				Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> largeSnapshot;
+				if (!check(SUCCEEDED(testDevice->CreateTexture2D(&textureDescription, &source, texture.GetAddressOf())) &&
+					SUCCEEDED(testDevice->CreateShaderResourceView(texture.Get(), nullptr, largeSnapshot.GetAddressOf())),
+					"large WARP snapshot for the cap")) return 1;
+				auto capped = request;
+				capped.pixelRect = { 0, 0, largeSide, largeSide };
+				capped.reservedCount = lowTier.maximumSeeds;
+				capped.snapshot = largeSnapshot.Get();
+				if (!check(system.Step(birth, frequency, {}, {}, {}, 1.0f, {}, &capped).clearSpawnAccepted,
+					"capped GPU clear accepted")) return 1;
+				actual = readSlots(0, lowTier.maximumSeeds);
+				const auto cappedCount = renderer.PollClearSpawn();
+				check(cappedCount && cappedCount->written == lowTier.maximumSeeds && actual.size() == cappedCount->written &&
+					std::all_of(actual.begin(), actual.end(), [](const LaserGpuParticle& p)
+					{
+						return p.lifetimeMilliseconds != 0 && p.position[0] >= transparentWidth && p.position[0] < largeSide &&
+							p.position[1] >= 0.0f && p.position[1] < largeSide;
+					}), "capped clear fills the entire limit only from ink pixels");
+
+				// 保留池内旧记录，再从同一段预留：空查询必须真正清槽，不能只把环缩回去。
+				renderer.ResetLaserParticles();
+				auto empty = request;
+				empty.pixelRect = { 12, 12, 12, 30 };
+				if (!check(submit(empty, birth), "empty rectangle reserves a batch")) return 1;
+				actual = readSlots(0, reserved);
+				const auto emptyCount = renderer.PollClearSpawn();
+				check(emptyCount && emptyCount->written == 0 && system.ActiveRange(driftPass).count == 0 &&
+					LaserParticleSystemTestAccess::DriftEndMilliseconds(system) == 0 && actual.size() == reserved &&
+					std::all_of(actual.begin(), actual.end(), [](const LaserGpuParticle& p) { return p.lifetimeMilliseconds == 0; }),
+					"empty rectangle clears old slots, removes the batch and resets its deadline");
+
+				auto noInk = request;
+				noInk.pixelRect = { 0, 0, 8, 8 };
+				const auto previousClear = std::span<const LaserDriftParticle>(expected).first(1);
+				renderer.StepLaserParticles(birth, frequency, {}, previousClear);
+				const auto previousDeadline = LaserParticleSystemTestAccess::DriftEndMilliseconds(system);
+				if (!check(submit(noInk, birth), "transparent rectangle accepted")) return 1;
+				if (readSlots(1, 1).empty()) return 1;
+				const auto noInkCount = renderer.PollClearSpawn();
+				check(noInkCount && noInkCount->written == 0 && system.ActiveRange(driftPass).count == 1 &&
+					LaserParticleSystemTestAccess::DriftEndMilliseconds(system) == previousDeadline,
+					"zero-particle clear leaves the preceding batch and its deadline intact");
+
+				renderer.ResetLaserParticles();
+				if (!check(submit(request, birth), "GPU clear before a newer laser batch")) return 1;
+				renderer.StepLaserParticles(birth + 1, frequency, {}, {}, previousClear);
+				if (readSlots(reserved, 1).empty()) return 1;
+				const auto behindTail = renderer.PollClearSpawn();
+				check(behindTail && behindTail->written == expected.size() && system.ActiveRange(driftPass).count == reserved + 1,
+					"readback cannot trim a clear batch behind a newer laser batch");
+
+				renderer.ResetLaserParticles();
+				if (!check(submit(request, birth) && submit(noInk, birth + 1), "consecutive GPU clears share the staging buffer")) return 1;
+				if (readSlots(reserved, 1).empty()) return 1;
+				const auto newest = renderer.PollClearSpawn();
+				check(newest && newest->written == 0 && !renderer.PollClearSpawn() && system.ActiveRange(driftPass).count == reserved,
+					"only the latest pending counters can trim a batch");
+
+				renderer.ResetLaserParticles();
+				if (!check(submit(request, birth), "GPU clear before tier change")) return 1;
+				renderer.SetLaserParticleLimit(LaserParticleLimit::Medium);
+				renderer.StepLaserParticles(birth, frequency, {}, previousClear);
+				check(!renderer.PollClearSpawn() && system.ActiveRange(driftPass).count == 1,
+					"tier change drops pending readback without touching the new pool");
+
+				renderer.ResetLaserParticles();
+				if (!check(submit(request, birth), "GPU clear before resetting the device generation")) return 1;
+				const auto vertex = LoadShaderFromResource(IDR_DRAW3_LASER_PARTICLE_VS);
+				const auto pixel = LoadShaderFromResource(IDR_DRAW3_LASER_PARTICLE_PS);
+				const auto spawn = LoadShaderFromResource(IDR_DRAW3_LASER_PARTICLE_SPAWN_CS);
+				system.Release();
+				if (!check(system.Initialize(testDevice.Get(), testContext.Get(), { vertex.data, vertex.size },
+					{ pixel.data, pixel.size }, { spawn.data, spawn.size }), "restore particle device session")) return 1;
+				renderer.StepLaserParticles(birth, frequency, {}, previousClear);
+				check(!renderer.PollClearSpawn() && system.ActiveRange(driftPass).count == 1,
+					"device recreation drops pending readback without touching the new session");
+				renderer.ResetLaserParticles();
+				LaserParticleSystemTestAccess::SetClearSpawnCreationFailure(system, true);
+				check(!submit(request, birth) && !renderer.GpuClearSpawnAvailable() && renderer.LaserParticlesAvailable() &&
+					system.ActiveRange(driftPass).count == 0 && !renderer.PollClearSpawn(),
+					"GPU resource failure disables only clear spawn and leaves no pending batch");
+				LaserParticleSystemTestAccess::SetClearSpawnCreationFailure(system, false);
+				const float trailColor[] = { 0.15f, 0.5f, 1.0f, 1.0f };
+				std::vector<LaserParticleSeed> trail;
+				AppendLaserTrailParticleSeeds(trail, 30, 30, 1, 0, 2, 1.0f, trailColor, 1, seedBase, 14, {});
+				const auto fallback = renderer.StepLaserParticles(birth, frequency, trail, previousClear, previousClear);
+				check(fallback.trailAccepted && fallback.clearAccepted && fallback.dissolveAccepted &&
+					!renderer.GpuClearSpawnAvailable() && !renderer.PollClearSpawn() &&
+					system.ActiveRange(driftPass).count == 2 && system.ActiveRange(trailPass).count == 1,
+					"unavailable GPU clear stays disabled while CPU clear, laser drift and trail still work");
+				renderer.ReleaseCanvasClearSnapshot();
+				renderer.ClearRTV(renderer.layerL2RTV.Get(), kTransparentLayerClearColor);
 				renderer.ResetLaserParticles();
 				renderer.ReleaseIdleLaserParticles();
 			}

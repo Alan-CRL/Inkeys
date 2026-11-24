@@ -11,6 +11,7 @@
 #include <cstring>
 #include <d3d11.h>
 #include <DirectXMath.h>
+#include <optional>
 #include <span>
 #include <utility>
 #include <windows.h>
@@ -114,6 +115,11 @@ namespace Inkeys::Drawing::Draw3
 		laserParticleSystem_.ReleaseIdleResources();
 	}
 
+	void InkRenderer::ReleaseIdleLaserDriftPool() noexcept
+	{
+		laserParticleSystem_.ReleaseIdleDriftPool();
+	}
+
 	bool InkRenderer::CaptureCanvasClearSnapshot()
 	{
 		if (!device || !context || !layerL2Texture) return false;
@@ -183,14 +189,50 @@ namespace Inkeys::Drawing::Draw3
 
 	bool InkRenderer::HasActiveLaserParticles() const noexcept
 	{
-		return laserParticleSystem_.ActiveRange().count != 0;
+		return laserParticleSystem_.ActiveRange(LaserParticlePass::OverBody).count != 0 ||
+			laserParticleSystem_.ActiveRange(LaserParticlePass::UnderBody).count != 0;
 	}
 
-	void InkRenderer::StepLaserParticles(int64_t nowQpc, int64_t qpcFrequency,
-		std::span<const LaserParticleSeed> seeds, uint32_t dissolveSeedCount,
-		LaserDissolveParticleControl dissolve) noexcept
+	bool InkRenderer::SetLaserParticleLimit(LaserParticleLimit limit) noexcept
 	{
-		laserParticleSystem_.Step(nowQpc, qpcFrequency, seeds, dissolveSeedCount, dissolve);
+		const auto previous = laserParticleSystem_.EffectiveLimit();
+		laserParticleSystem_.SetLimit(limit);
+		return laserParticleSystem_.EffectiveLimit() != previous;
+	}
+
+	uint32_t InkRenderer::LaserParticleMaximumSeeds() const noexcept
+	{
+		return laserParticleSystem_.MaximumSeeds();
+	}
+
+	uint32_t InkRenderer::PrepareLaserDriftPool() noexcept
+	{
+		return laserParticleSystem_.PrepareDriftPool();
+	}
+
+	LaserParticleStepResult InkRenderer::StepLaserParticles(int64_t nowQpc, int64_t qpcFrequency,
+		std::span<const LaserParticleSeed> trailSeeds, std::span<const LaserDriftParticle> plainDrift,
+		std::span<const LaserDriftParticle> dissolveDrift, float dipPerPixel,
+		LaserDissolveParticleControl dissolve, const LaserClearSpawnRequest* clearSpawn) noexcept
+	{
+		if (!clearSpawn)
+			return laserParticleSystem_.Step(nowQpc, qpcFrequency, trailSeeds, plainDrift, dissolveDrift, dipPerPixel, dissolve);
+
+		auto request = *clearSpawn;
+		request.snapshot = canvasClearSnapshotSRV_.Get();
+		if (request.snapshot) UnbindLaserCoverageShaderResources(); // 快照由碎裂绘制使用 PS t6。
+		return laserParticleSystem_.Step(nowQpc, qpcFrequency, trailSeeds, plainDrift, dissolveDrift,
+			dipPerPixel, dissolve, &request);
+	}
+
+	bool InkRenderer::GpuClearSpawnAvailable() noexcept
+	{
+		return laserParticleSystem_.GpuClearSpawnAvailable();
+	}
+
+	std::optional<LaserClearSpawnReadback> InkRenderer::PollClearSpawn() noexcept
+	{
+		return laserParticleSystem_.PollClearSpawn();
 	}
 
 	void InkRenderer::RemoveLaserParticleGroup(uint32_t group, bool endDissolve) noexcept
@@ -598,7 +640,7 @@ namespace Inkeys::Drawing::Draw3
 
 	void InkRenderer::DrawLaserParticles(LaserParticlePass pass)
 	{
-		if (laserParticleSystem_.ActiveRange().count == 0 || !backBufferRTV) return;
+		if (laserParticleSystem_.ActiveRange(pass).count == 0 || !backBufferRTV) return;
 		SetOMTarget(backBufferRTV.Get());
 		context->OMSetBlendState(operatorResolveBlendState.Get(), nullptr, 0xFFFFFFFF);
 		context->RSSetState(rasterState.Get());

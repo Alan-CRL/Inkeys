@@ -809,6 +809,11 @@
           "Direction": "Direction de la dérive",
           "DirectionLeftUp": "Vers le haut à gauche",
           "DirectionRightUp": "Vers le haut à droite",
+          "Limit": "Nombre maximal de particules",
+          "LimitLow": "Faible",
+          "LimitMedium": "Moyen",
+          "LimitHigh": "Élevé",
+          "LimitExtreme": "Extrême",
           "Trail": "Particules de traînée du pointeur laser",
           "Dissolve": "Dissolution du pointeur laser",
           "Clear": "Dissolution lors de l'effacement"

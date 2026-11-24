@@ -693,6 +693,7 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (!stroke.IsValid()) return std::nullopt;
 		std::optional<InkPixelBounds> pixelBounds = ComputeStrokeBounds(stroke);
+		const bool boundsLimitedToViewport = !pixelBounds;
 		if (!pixelBounds)
 		{
 			if (!visibleBounds || !IsValidBounds(*visibleBounds)) return std::nullopt;
@@ -712,6 +713,7 @@ namespace Inkeys::Drawing::Draw3
 			compositionTiles = BuildAllVisibleTiles(kCompositionTileSize, clippedBounds);
 		if (!undoTiles || !compositionTiles) return std::nullopt;
 		StrokeTileFootprint result;
+		result.boundsLimitedToViewport = boundsLimitedToViewport;
 		result.pixelBounds = *pixelBounds;
 		result.undoTiles = std::move(*undoTiles);
 		result.compositionTiles = std::move(*compositionTiles);
@@ -1084,6 +1086,7 @@ namespace Inkeys::Drawing::Draw3
 		state.strokeIndex = strokeIndex;
 		state.visible = true;
 		state.compositionBarrier = !affineOperator;
+		state.boundsLimitedToViewport = footprint.boundsLimitedToViewport;
 		state.pixelBounds = footprint.pixelBounds;
 		state.undoTiles = std::move(footprint.undoTiles);
 		state.compositionTiles = std::move(footprint.compositionTiles);
@@ -1227,6 +1230,7 @@ namespace Inkeys::Drawing::Draw3
 			RemoveVisibleCompositionTiles(previousTiles);
 			AddVisibleCompositionTiles(footprint.compositionTiles);
 		}
+		item->boundsLimitedToViewport = footprint.boundsLimitedToViewport;
 		item->pixelBounds = footprint.pixelBounds;
 		item->undoTiles = std::move(footprint.undoTiles);
 		item->compositionTiles = std::move(footprint.compositionTiles);
@@ -1258,6 +1262,34 @@ namespace Inkeys::Drawing::Draw3
 	{
 		if (id.index >= items_.size() || items_[id.index].id != id) return nullptr;
 		return &items_[id.index];
+	}
+
+	std::optional<InkPixelBounds> CanvasRuntimeHistory::VisibleContentBounds(InkPixelBounds region) const noexcept
+	{
+		if (!IsValidBounds(region)) return std::nullopt;
+		std::optional<InkPixelBounds> bounds;
+		for (const auto& item : items_)
+		{
+			if (!item.visible) continue;
+			// 极端坐标只留下旧视口的范围，平移后保守覆盖整个查询区域。
+			if (item.boundsLimitedToViewport) return region;
+			// 逐项裁剪，避免视口两侧均不可见的笔迹合并后横跨视口。
+			const InkPixelBounds itemBounds{
+				(std::max)(region.left, item.pixelBounds.left),
+				(std::max)(region.top, item.pixelBounds.top),
+				(std::min)(region.right, item.pixelBounds.right),
+				(std::min)(region.bottom, item.pixelBounds.bottom) };
+			if (itemBounds.left >= itemBounds.right || itemBounds.top >= itemBounds.bottom) continue;
+			if (!bounds) bounds = itemBounds;
+			else
+			{
+				bounds->left = (std::min)(bounds->left, itemBounds.left);
+				bounds->top = (std::min)(bounds->top, itemBounds.top);
+				bounds->right = (std::max)(bounds->right, itemBounds.right);
+				bounds->bottom = (std::max)(bounds->bottom, itemBounds.bottom);
+			}
+		}
+		return bounds;
 	}
 
 	std::span<const RenderItemState> CanvasRuntimeHistory::Items() const noexcept

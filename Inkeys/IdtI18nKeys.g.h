@@ -812,6 +812,11 @@ inline constexpr struct I18nKeyRoot
                     const char* Direction = "SettingsUI/Draw/Laser/Particles/Direction";
                     const char* DirectionLeftUp = "SettingsUI/Draw/Laser/Particles/DirectionLeftUp";
                     const char* DirectionRightUp = "SettingsUI/Draw/Laser/Particles/DirectionRightUp";
+                    const char* Limit = "SettingsUI/Draw/Laser/Particles/Limit";
+                    const char* LimitLow = "SettingsUI/Draw/Laser/Particles/LimitLow";
+                    const char* LimitMedium = "SettingsUI/Draw/Laser/Particles/LimitMedium";
+                    const char* LimitHigh = "SettingsUI/Draw/Laser/Particles/LimitHigh";
+                    const char* LimitExtreme = "SettingsUI/Draw/Laser/Particles/LimitExtreme";
                     const char* Trail = "SettingsUI/Draw/Laser/Particles/Trail";
                     const char* Dissolve = "SettingsUI/Draw/Laser/Particles/Dissolve";
                     const char* Clear = "SettingsUI/Draw/Laser/Particles/Clear";

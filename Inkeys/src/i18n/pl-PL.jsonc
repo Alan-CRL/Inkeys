@@ -809,6 +809,11 @@
           "Direction": "Kierunek unoszenia",
           "DirectionLeftUp": "W lewo do góry",
           "DirectionRightUp": "W prawo do góry",
+          "Limit": "Limit liczby cząsteczek",
+          "LimitLow": "Niski",
+          "LimitMedium": "Średni",
+          "LimitHigh": "Wysoki",
+          "LimitExtreme": "Ekstremalny",
           "Trail": "Cząsteczki śladu wskaźnika laserowego",
           "Dissolve": "Rozpraszanie wskaźnika laserowego",
           "Clear": "Rozpraszanie przy czyszczeniu"

@@ -447,6 +447,7 @@ namespace Inkeys::Drawing::Draw3
 
 	// 无窗口生产接缝：真实 Host 准入与 contact 生命周期，不启动设备或附着 HWND。
 	int RunHostWorkspaceTransitionInputProductionProbe() noexcept;
+	int RunLaserParticleOptionsProductionTest() noexcept;
 
 	// 产品生命周期外壳：只附着 Window Service HWND，独立持有 Draw3 设备和 RTS。
 	// 设置页与启动时发布的粒子相关偏好；总开关只管三项飘散/行进效果，点击光波独立。
@@ -458,6 +459,7 @@ namespace Inkeys::Drawing::Draw3
 		bool laserDissolve = true;
 		bool clearDissolve = true;
 		bool laserClickWave = true;
+		uint32_t limit = 1;
 	};
 
 	class Host
@@ -556,6 +558,7 @@ namespace Inkeys::Drawing::Draw3
 
 	private:
 		friend int RunHostWorkspaceTransitionInputProductionProbe() noexcept;
+		friend int RunLaserParticleOptionsProductionTest() noexcept;
 		bool PublishHiddenTestContact(WPARAM phase, LPARAM position) noexcept;
 
 		struct Impl;

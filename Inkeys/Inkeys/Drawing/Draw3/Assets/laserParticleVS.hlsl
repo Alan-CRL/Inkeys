@@ -2,7 +2,7 @@
 #include "laserParticleCommon.hlsli"
 
 // 画布粒子专用顶点着色器：每粒 4 个顶点（三角带），直接由出生参数和时钟求出当前状态。
-// 没有计算着色器，也没有逐帧写回；过期、未释放和空槽输出退化图元。
+// 过期、未释放和空槽输出退化图元，绘制不写回粒子记录。
 StructuredBuffer<LaserGpuParticle> LaserParticles : register(t0);
 
 cbuffer LaserParticleDrawBuffer : register(b0)
@@ -19,7 +19,8 @@ cbuffer LaserParticleDrawBuffer : register(b0)
     float driftEndRadiusScale;
     float inverseWhiteFadeSeconds;
     float dipPerPixel;
-    float3 padding;
+    uint capacityMask;
+    float2 padding;
 };
 
 struct ParticleVertex
@@ -30,15 +31,6 @@ struct ParticleVertex
     nointerpolation float radius : TEXCOORD1;
 };
 
-// 风场只是位置的函数：相邻粒子读到相近的值，才会成缕飘走而不是各自乱晃。
-// 坐标取“风向, 法向”基下的 DIP。CPU 侧在出生时用同一公式算好出生位置的值。
-float2 DriftWindField(float2 p)
-{
-    return float2(
-        sin(dot(p, float2(-0.01376, 0.03007))) + 0.6 * sin(dot(p, float2(0.04706, 0.05930)) + 1.7),
-        sin(dot(p, float2(0.01200, 0.04325)) + 0.6));
-}
-
 ParticleVertex main(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID)
 {
     ParticleVertex output;
@@ -47,7 +39,7 @@ ParticleVertex main(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID
     output.color = 0.0;
     output.radius = 0.0;
 
-    LaserGpuParticle particle = LaserParticles[(activeStart + instanceId) & (LASER_PARTICLE_CAPACITY - 1u)];
+    LaserGpuParticle particle = LaserParticles[(activeStart + instanceId) & capacityMask];
     uint kind = particle.kindAndBatch & 3u;
     bool gathering = gatherBatch != 0u && (particle.kindAndBatch >> 2) == gatherBatch;
     // 无符号减法：尚未释放时结果极大，与过期、空槽（寿命为 0）一起被同一个比较剔除。

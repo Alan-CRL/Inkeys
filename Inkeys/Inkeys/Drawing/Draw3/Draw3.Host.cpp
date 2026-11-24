@@ -1813,6 +1813,18 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		void ApplyLaserOptions(DrawingController& controller, uint32_t general) noexcept
+		{
+			const uint32_t savedLaser = laserOptions.load(std::memory_order_acquire);
+			const uint32_t effectiveLaser = (savedLaser & ~1u) | ((general & 1u) ? savedLaser & 1u : 0u);
+			if (effectiveLaser != appliedLaserOptions)
+			{
+				controller.SetLaserMultiTouchDrawingEnabled((effectiveLaser & 1u) != 0);
+				controller.SetLaserParticleOptions(effectiveLaser >> 1);
+				appliedLaserOptions = effectiveLaser;
+			}
+		}
+
 		void PumpBridgeState()
 		{
 			// 仅绘制 owner 访问 Controller；独立配置不受 bridge revision 去重影响。
@@ -1882,14 +1894,7 @@ namespace Inkeys::Drawing::Draw3
 					drawing->SetMultiTouchToolOptions(tools);
 					appliedMultiTouchTools = tools;
 				}
-				const uint32_t savedLaser = laserOptions.load(std::memory_order_acquire);
-				const uint32_t effectiveLaser = (savedLaser & ~1u) | ((general & 1u) ? savedLaser & 1u : 0u);
-				if (effectiveLaser != appliedLaserOptions)
-				{
-					drawing->SetLaserMultiTouchDrawingEnabled((effectiveLaser & 1u) != 0);
-					drawing->SetLaserParticleOptions(effectiveLaser >> 1);
-					appliedLaserOptions = effectiveLaser;
-				}
+				ApplyLaserOptions(*drawing, general);
 				drawing->SetDrawingHapticsEnabled(drawingHapticsEnabled.load(std::memory_order_acquire));
 			}
 			PumpDisplayScale();
@@ -3289,7 +3294,8 @@ namespace Inkeys::Drawing::Draw3
 		const uint32_t requested = LaserParticleOptions::Pack(particles.enabled, particles.laserTrail,
 			particles.laserClickWave, particles.laserDissolve) |
 			(particles.clearDissolve ? LaserParticleOptions::ClearDissolve : 0u) |
-			(particles.windRightUp ? LaserParticleOptions::WindRightUp : 0u);
+			(particles.windRightUp ? LaserParticleOptions::WindRightUp : 0u) |
+			LaserParticleOptions::PackLimit(particles.limit);
 		const uint32_t next = (multiTouchEnabled ? 1u : 0u) | (requested << 1);
 		if (impl_->laserOptions.exchange(next, std::memory_order_acq_rel) != next)
 			(void)impl_->input.PublishControlWake();
@@ -3477,6 +3483,53 @@ namespace Inkeys::Drawing::Draw3
 		(void)impl_->input.PublishControlWake();
 		impl_->PublishRuntimeRevision();
 		return true;
+	}
+
+	int RunLaserParticleOptionsProductionTest() noexcept
+	{
+		int failures = 0;
+		const auto check = [&](bool condition, const char* name)
+		{
+			if (condition) return;
+			++failures;
+			std::fprintf(stderr, "[Draw3GeneralOptions] FAIL: %s\n", name);
+		};
+		try
+		{
+			Host host;
+			auto& state = *host.impl_;
+			auto configuration = CreateStrokeModelConfiguration(96);
+			configuration.laserParticleOptions = 0u;
+			DrawingController controller(state.input, state.window, state.renderer, state.presentation, configuration);
+			state.ApplyLaserOptions(controller, 0u);
+			check(controller.GetLaserParticleOptions() == LaserParticleOptions::Defaults &&
+				LaserParticleLimitFromOptions(controller.GetLaserParticleOptions()) == LaserParticleLimit::Medium,
+				"unpublished Host particle options default to the medium tier");
+			const uint32_t effects = LaserParticleOptions::Enabled | LaserParticleOptions::Effects |
+				LaserParticleOptions::WindRightUp;
+			CanvasParticleOptions particles;
+			particles.enabled = true;
+			particles.windRightUp = true;
+			for (const auto limit : { LaserParticleLimit::Low, LaserParticleLimit::Medium,
+				LaserParticleLimit::High, LaserParticleLimit::Extreme })
+			{
+				particles.limit = static_cast<uint32_t>(limit);
+				host.SetLaserOptions(true, particles);
+				state.ApplyLaserOptions(controller, 0u); // 总多指关闭时仍下发粒子档位。
+				const auto options = controller.GetLaserParticleOptions();
+				check(LaserParticleLimitFromOptions(options) == limit &&
+					(options & ~LaserParticleOptions::LimitMask) == effects,
+					"all four tiers reach the drawing owner without changing the other option bits");
+				check(EffectiveLaserParticleEffects(options, true) == LaserParticleOptions::Effects &&
+					EffectiveLaserParticleEffects(options, false) == LaserParticleOptions::ClickWave,
+					"limit bits do not affect effective particle effects");
+			}
+		}
+		catch (...)
+		{
+			check(false, "Host particle options fixture could not be created");
+		}
+		return failures;
 	}
 
 	int RunHostWorkspaceTransitionInputProductionProbe() noexcept

@@ -802,6 +802,13 @@ bool TryReadBarButtonSizeKind(const Json::Value& jsonValue, Inkeys::BarButtonSiz
 					value = candidate >= minimum && candidate <= maximum ? candidate : defaultValue.load();
 					return;
 				}
+				if (path == "Drawing.Particles.Limit")
+				{
+					// 先校验原始整数类型和宽度，避免超宽数值窄化成合法档位。
+					const int candidate = ReadNarrowInt(*jsonValue);
+					value = candidate >= 0 && candidate <= 3 ? candidate : defaultValue.load();
+					return;
+				}
 				if (path == "Drawing.Cursor.DotHideOnContact")
 				{
 					// 四态设备选择只接受窄整数，拒绝布尔、浮点和超宽数值。

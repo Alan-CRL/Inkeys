@@ -809,6 +809,11 @@
           "Direction": "Savrulma yönü",
           "DirectionLeftUp": "Sol yukarı",
           "DirectionRightUp": "Sağ yukarı",
+          "Limit": "Parçacık sayısı sınırı",
+          "LimitLow": "Düşük",
+          "LimitMedium": "Orta",
+          "LimitHigh": "Yüksek",
+          "LimitExtreme": "En yüksek",
           "Trail": "Lazer işaretçi iz parçacıkları",
           "Dissolve": "Lazer işaretçi dağılması",
           "Clear": "Temizlerken dağılma"

@@ -545,10 +545,11 @@ GROUP(UI, \
 		GROUP(AutoSave, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
 		) \
-		/* 画布粒子效果：总开关默认关闭；Direction 0 向左上、1 向右上；子项保留各自选择。 */ \
+		/* 画布粒子效果：总开关默认关闭；Direction 0 向左上、1 向右上；Limit 0 低、1 中、2 高、3 极致，默认中；子项保留各自选择。 */ \
 		GROUP(Particles, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enabled, false) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Direction, 0) \
+			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Limit, 1) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, LaserTrail, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, LaserDissolve, true) \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, ClearDissolve, true) \

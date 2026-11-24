@@ -15,6 +15,7 @@
 #include <DirectXMath.h>
 #include <dxgi1_2.h>
 #include <dxgi1_4.h>
+#include <optional>
 #include <span>
 #include <vector>
 #include <wrl/client.h>
@@ -384,6 +385,7 @@ export namespace Inkeys::Drawing::Draw3
 		void PrepareLaserParticles() noexcept;
 		// 没有存活粒子时归还粒子池（约 2 MB 显存与 2 MB 内存），下次有粒子时自动重建。
 		void ReleaseIdleLaserParticles() noexcept;
+		void ReleaseIdleLaserDriftPool() noexcept;
 		// 清空飘散的过渡：清空前把画布层（L2）留一份，之后每帧用激光飘散同一张碎裂遮罩（类型 11）
 		// 把它画在粒子下面，直到碎完后释放。只在过渡的约半秒里占一张整屏纹理。
 		bool CaptureCanvasClearSnapshot();
@@ -396,11 +398,32 @@ export namespace Inkeys::Drawing::Draw3
 		using CanvasPixelVisitor = void (*)(void* context, const uint32_t* pixels, size_t rowPitchBytes,
 			uint32_t width, uint32_t height);
 		bool VisitCanvasPixels(CanvasPixelVisitor visitor, void* context);
-		// 推进粒子池时钟并写入本帧出生的粒子；没有计算着色器派发。
+		// 推进粒子时钟并写入本帧出生的粒子；只有 GPU 清空请求会派发生成着色器。
 		bool HasActiveLaserParticles() const noexcept;
-		void StepLaserParticles(int64_t nowQpc, int64_t qpcFrequency,
-			std::span<const LaserParticleSeed> seeds, uint32_t dissolveSeedCount = 0,
-			LaserDissolveParticleControl dissolve = {}) noexcept;
+		// 返回生效档位是否变化（降档上限可能使请求无效）。
+		bool SetLaserParticleLimit(LaserParticleLimit limit) noexcept;
+		uint32_t LaserParticleMaximumSeeds() const noexcept;
+		uint32_t PrepareLaserDriftPool() noexcept;
+#if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
+		bool LaserDriftPoolResourcesCreatedForTest() const noexcept
+		{
+			return laserParticleSystem_.ResourcesCreated(LaserParticlePass::UnderBody);
+		}
+		void SetClearSpawnCreationFailureForTest(bool fail) noexcept
+		{
+			LaserParticleSystemTestAccess::SetClearSpawnCreationFailure(laserParticleSystem_, fail);
+		}
+		void SetMaximumLaserDriftTierForTest(int tier) noexcept
+		{
+			LaserParticleSystemTestAccess::SetMaximumDriftTier(laserParticleSystem_, tier);
+		}
+#endif
+		LaserParticleStepResult StepLaserParticles(int64_t nowQpc, int64_t qpcFrequency,
+			std::span<const LaserParticleSeed> trailSeeds, std::span<const LaserDriftParticle> plainDrift = {},
+			std::span<const LaserDriftParticle> dissolveDrift = {}, float dipPerPixel = 1.0f,
+			LaserDissolveParticleControl dissolve = {}, const LaserClearSpawnRequest* clearSpawn = nullptr) noexcept;
+		bool GpuClearSpawnAvailable() noexcept;
+		std::optional<LaserClearSpawnReadback> PollClearSpawn() noexcept;
 		void RemoveLaserParticleGroup(uint32_t group, bool endDissolve = false) noexcept;
 		void ResetLaserParticles() noexcept;
 		// 返回本进程当前 local/non-local GPU 显存占用；旧 DXGI 不支持时返回负值。

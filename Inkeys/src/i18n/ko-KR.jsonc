@@ -809,6 +809,11 @@
           "Direction": "흩날리는 방향",
           "DirectionLeftUp": "왼쪽 위로",
           "DirectionRightUp": "오른쪽 위로",
+          "Limit": "파티클 수 제한",
+          "LimitLow": "낮음",
+          "LimitMedium": "중간",
+          "LimitHigh": "높음",
+          "LimitExtreme": "최대",
           "Trail": "레이저 포인터 이동 파티클",
           "Dissolve": "레이저 포인터 흩날림",
           "Clear": "모두 지울 때 흩날림"

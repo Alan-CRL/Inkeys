@@ -61,6 +61,7 @@ export namespace Inkeys::Drawing::Draw3
 		InkPixelBounds pixelBounds = {};
 		std::vector<SignedTileCoordinate> undoTiles;
 		std::vector<SignedTileCoordinate> compositionTiles;
+		bool boundsLimitedToViewport = false;
 	};
 
 	// 只枚举与当前可见区域相交的稀疏 Tile；无法安全量化坐标时返回空。
@@ -93,6 +94,7 @@ export namespace Inkeys::Drawing::Draw3
 		std::vector<SignedTileCoordinate> compositionTiles;
 		uint64_t contentGeneration = 1;
 		std::optional<uint32_t> previousVisibleIndex;
+		bool boundsLimitedToViewport = false;
 	};
 
 	struct CompositionNodeId
@@ -211,6 +213,8 @@ export namespace Inkeys::Drawing::Draw3
 
 		const RenderItemState* Find(RenderItemId id) const noexcept;
 		std::span<const RenderItemState> Items() const noexcept;
+		// 查询给定页面像素区域内的可见内容范围，C2 的页面级空间索引可接管此查询。
+		std::optional<InkPixelBounds> VisibleContentBounds(InkPixelBounds region) const noexcept;
 		// 由可见项引用计数维护稀疏索引，只枚举与查询范围相交的 Canvas Tile。
 		std::vector<SignedTileCoordinate> VisibleCompositionTiles(
 			InkPixelBounds bounds) const;

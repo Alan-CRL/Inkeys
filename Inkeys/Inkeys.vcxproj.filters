@@ -2720,7 +2720,13 @@
     <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleVS.hlsl">
       <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleSpawnCS.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
     <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleVS.cso">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </None>
+    <None Include="Inkeys\Drawing\Draw3\Assets\laserParticleSpawnCS.cso">
       <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </None>
     <None Include="additional\ink_stroke_modeler\README.md">
@@ -3225,6 +3231,9 @@
       <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </FxCompile>
     <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleVS.hlsl">
+      <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
+    </FxCompile>
+    <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticleSpawnCS.hlsl">
       <Filter>Modules\Inkeys\Drawing\Draw3\Assets</Filter>
     </FxCompile>
     <FxCompile Include="$(IntDir)fxc_utf8\draw3\laserParticlePS.hlsl">

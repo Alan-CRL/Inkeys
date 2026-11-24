@@ -3960,7 +3960,8 @@ SettingSessionCoroutine RunSettingSession()
 						const auto& particles = drawingOptions.Particles;
 						Inkeys::Drawing::Draw3::ProductHost().SetLaserOptions(laser.MultiTouchEnabled.load(), {
 							particles.Enabled.load(), particles.Direction.load() == 1, particles.LaserTrail.load(),
-							particles.LaserDissolve.load(), particles.ClearDissolve.load(), laser.ClickWaveEnabled.load() });
+							particles.LaserDissolve.load(), particles.ClearDissolve.load(), laser.ClickWaveEnabled.load(),
+							static_cast<uint32_t>(particles.Limit.load()) });
 					};
 					bool multiTouchEnabled = drawingOptions.MultiTouchEnabled;
 					bool penTailCorrectionEnabled = drawingOptions.PenTailCorrectionEnabled;
@@ -4026,13 +4027,21 @@ SettingSessionCoroutine RunSettingSession()
 						bool particles = particleOptions.Enabled.load(), trail = particleOptions.LaserTrail.load();
 						bool dissolve = particleOptions.LaserDissolve.load(), clearDissolve = particleOptions.ClearDissolve.load();
 						int direction = particleOptions.Direction.load() == 1 ? 1 : 0;
-						bool directionChanged = false, trailChanged = false, dissolveChanged = false, clearDissolveChanged = false;
+						int limit = particleOptions.Limit.load();
+						bool directionChanged = false, limitChanged = false;
+						bool trailChanged = false, dissolveChanged = false, clearDissolveChanged = false;
 						const auto& keys = I18nKey.SettingsUI.Draw.Laser.Particles;
-						// 总开关下方依次是飘散方向、分割线、三个子项；总开关关闭时整块带动画收起，子项各自的选择保留。
+						// 两个下拉共用一个内联块，分割线放在复选框之前；总开关关闭时整块收起。
 						const std::string directionLabel = IA(keys.Direction);
 						const std::vector<std::string> directions{ IA(keys.DirectionLeftUp), IA(keys.DirectionRightUp) };
+						const std::string limitLabel = IA(keys.Limit);
+						const std::vector<std::string> limits{ IA(keys.LimitLow),
+							IA(keys.LimitMedium) + IA(I18nKey.SettingsUI.Design.RecommendedSuffix),
+							IA(keys.LimitHigh), IA(keys.LimitExtreme) };
 						const auto details = Design::InlineStack(
-							Design::InlineCombo("##draw-particle-direction", directionLabel.c_str(), direction, directions, directionChanged),
+							Design::InlineCombos(
+								Design::InlineCombo("##draw-particle-direction", directionLabel.c_str(), direction, directions, directionChanged),
+								Design::InlineCombo("##draw-particle-limit", limitLabel.c_str(), limit, limits, limitChanged)),
 							Design::InlineCheckboxes("##draw-particle-effects", {
 								{ IA(keys.Trail), &trail, &trailChanged },
 								{ IA(keys.Dissolve), &dissolve, &dissolveChanged },
@@ -4045,11 +4054,12 @@ SettingSessionCoroutine RunSettingSession()
 						bool clickWave = laser.ClickWaveEnabled.load();
 						const bool clickWaveChanged = Design::ToggleRow("##draw-laser-click-wave",
 							IA(clickKeys.N).c_str(), IA(clickKeys.E).c_str(), "\ue7c9", clickWave);
-						if (particlesChanged || directionChanged || trailChanged || dissolveChanged || clearDissolveChanged ||
-							clickWaveChanged)
+						if (particlesChanged || directionChanged || limitChanged || trailChanged || dissolveChanged ||
+							clearDissolveChanged || clickWaveChanged)
 						{
 							particleOptions.Enabled = particles;
 							particleOptions.Direction = direction;
+							particleOptions.Limit = limit;
 							particleOptions.LaserTrail = trail;
 							particleOptions.LaserDissolve = dissolve;
 							particleOptions.ClearDissolve = clearDissolve;

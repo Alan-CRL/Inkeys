@@ -2,11 +2,10 @@
 #ifndef LASER_PARTICLE_COMMON_HLSLI
 #define LASER_PARTICLE_COMMON_HLSLI
 
-#define LASER_PARTICLE_CAPACITY 32768u
 #define LASER_PARTICLE_DRIFT 2u
 
 // Match C++ LaserGpuParticle (64 bytes).
-// 粒子不保存逐帧状态：CPU 只在出生时写一次，之后的位置、大小、透明度都由顶点着色器按“出生参数 + 已过时间”求值。
+// 出生参数只写一次；顶点着色器按“出生参数 + 已过时间”求值。
 struct LaserGpuParticle
 {
     float2 position;          // 出生位置（像素）
@@ -23,5 +22,42 @@ struct LaserGpuParticle
     uint releaseMilliseconds;  // 粒子池时钟下的出生时刻（已含释放延时）
     uint kindAndBatch;         // 低 2 位种类，高位为激光飘散批次号（0 表示不参与汇聚）
 };
+
+uint HashParticleSeed(uint value)
+{
+    value ^= value >> 16;
+    value *= 0x7FEB352Du;
+    value ^= value >> 15;
+    value *= 0x846CA68Bu;
+    return value ^ (value >> 16);
+}
+
+float SampleParticleSeed(uint value)
+{
+    return float(HashParticleSeed(value) & 0x00FFFFFFu) * (1.0 / 16777216.0);
+}
+
+uint ParticlePixelSeed(uint2 pixel)
+{
+    return pixel.x ^ (pixel.y * 0x9E3779B9u);
+}
+
+float ParticleCrumbleNoise(uint2 pixel)
+{
+    // 与 inkPixelShader.hlsl 的逐像素碎裂遮罩同步：两个哈希的平均。
+    uint hash = HashParticleSeed(ParticlePixelSeed(pixel));
+    uint second = (hash ^ 0x68E31DA4u) * 0x9E3779B9u;
+    second ^= second >> 16;
+    return (float(hash & 0x00FFFFFFu) + float(second >> 8)) * (1.0 / 33554432.0);
+}
+
+// 风场只是位置的函数：相邻粒子读到相近的值，才会成缕飘走而不是各自乱晃。
+// 坐标取“风向, 法向”基下的 DIP。CPU 侧在出生时用同一公式算好出生位置的值。
+float2 DriftWindField(float2 p)
+{
+    return float2(
+        sin(dot(p, float2(-0.01376, 0.03007))) + 0.6 * sin(dot(p, float2(0.04706, 0.05930)) + 1.7),
+        sin(dot(p, float2(0.01200, 0.04325)) + 0.6));
+}
 
 #endif

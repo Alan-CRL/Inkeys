@@ -809,6 +809,11 @@
           "Direction": "Direzione della deriva",
           "DirectionLeftUp": "In alto a sinistra",
           "DirectionRightUp": "In alto a destra",
+          "Limit": "Limite di particelle",
+          "LimitLow": "Basso",
+          "LimitMedium": "Medio",
+          "LimitHigh": "Alto",
+          "LimitExtreme": "Estremo",
           "Trail": "Particelle di scia del puntatore laser",
           "Dissolve": "Dissolvenza del puntatore laser",
           "Clear": "Dissolvenza durante la cancellazione"

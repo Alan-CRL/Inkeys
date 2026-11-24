@@ -2222,6 +2222,22 @@ namespace Inkeys::UI::Setting::Design
 		return content;
 	}
 
+	InlineRowContent InlineCombos(InlineRowContent upper, InlineRowContent lower)
+	{
+		InlineRowContent content;
+		content.height = [upper, lower](float width)
+		{
+			return upper.height(width) + Pixels(ControlSpacing) + lower.height(width);
+		};
+		content.render = [upper, lower](const LayoutRect& bounds)
+		{
+			const float upperBottom = bounds.top + upper.height(bounds.Width());
+			upper.render({ bounds.left, bounds.top, bounds.right, upperBottom });
+			lower.render({ bounds.left, upperBottom + Pixels(ControlSpacing), bounds.right, bounds.bottom });
+		};
+		return content;
+	}
+
 	InlineRowContent InlineCheckboxes(const char* id, std::vector<CheckboxSpec> items,
 		const char* visibilityId, bool visible)
 	{

@@ -521,6 +521,7 @@ IDR_DRAW3_INK_PIXEL_SHADER SHADER                "Inkeys\\Drawing\\Draw3\\Assets
 IDR_DRAW3_INK_VERTEX_SHADER SHADER               "Inkeys\\Drawing\\Draw3\\Assets\\inkVertexShader.cso"
 
 IDR_DRAW3_LASER_PARTICLE_VS SHADER               "Inkeys\\Drawing\\Draw3\\Assets\\laserParticleVS.cso"
+IDR_DRAW3_LASER_PARTICLE_SPAWN_CS SHADER               "Inkeys\\Drawing\\Draw3\\Assets\\laserParticleSpawnCS.cso"
 
 IDR_DRAW3_LASER_PARTICLE_PS SHADER               "Inkeys\\Drawing\\Draw3\\Assets\\laserParticlePS.cso"
 

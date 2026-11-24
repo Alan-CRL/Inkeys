@@ -809,6 +809,11 @@
           "Direction": "Drift direction",
           "DirectionLeftUp": "Up and to the left",
           "DirectionRightUp": "Up and to the right",
+          "Limit": "Particle count limit",
+          "LimitLow": "Low",
+          "LimitMedium": "Medium",
+          "LimitHigh": "High",
+          "LimitExtreme": "Extreme",
           "Trail": "Laser pointer trail particles",
           "Dissolve": "Laser pointer dissolve",
           "Clear": "Dissolve when clearing"

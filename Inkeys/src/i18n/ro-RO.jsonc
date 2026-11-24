@@ -809,6 +809,11 @@
           "Direction": "Direcția de plutire",
           "DirectionLeftUp": "Spre stânga sus",
           "DirectionRightUp": "Spre dreapta sus",
+          "Limit": "Limită pentru numărul de particule",
+          "LimitLow": "Scăzută",
+          "LimitMedium": "Medie",
+          "LimitHigh": "Ridicată",
+          "LimitExtreme": "Extremă",
           "Trail": "Particule de urmă ale indicatorului laser",
           "Dissolve": "Risipirea indicatorului laser",
           "Clear": "Risipire la golire"
