@@ -1,4 +1,4 @@
-#include "Setting.Controls.h"
+﻿#include "Setting.Controls.h"
 #include "imfluent/imfluent_internal.h"
 #include "Setting.Theme.h"
 #include "imgui/imgui_internal.h"
@@ -2525,17 +2525,37 @@ namespace Inkeys::UI::Setting::Design
 		return changed;
 	}
 
-	bool DragSourceOverlay(const char* id, const ImVec2& min, const ImVec2& max, bool skip)
+	bool DragSourceOverlay(const char* id, const ImVec2& min, const ImVec2& max, bool skip, bool holdForTouch, bool* holding)
 	{
 		const ImVec2 cursor = ImGui::GetCursorScreenPos();
 		bool started = false;
+		if (holding) *holding = false;
 		if (!skip && max.x > min.x && max.y > min.y)
 		{
 			ImGui::SetCursorScreenPos(min);
 			ImGui::InvisibleButton(id, { max.x - min.x, max.y - min.y });
 			const auto& io = ImGui::GetIO();
-			const float threshold = Pixels(io.MouseSource == ImGuiMouseSource_Mouse ? 4.0F : 10.0F);
-			started = ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, threshold);
+			if (holdForTouch && io.MouseSource != ImGuiMouseSource_Mouse)
+			{
+				// 触摸/笔：登记为内容型按钮，抓起前越过原生拖动阈值时由帧首的页面拖动滚动夺取活动项；
+				// 静止容差与该阈值相同，因此不存在“既不抓起也不滚动”的区间。
+				AllowContentDrag();
+				const bool active = ImGui::IsItemActive();
+				const float tolerance = io.MouseDragThreshold;
+				const bool still = io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] < tolerance * tolerance;
+				started = active && still && io.MouseDownDuration[ImGuiMouseButton_Left] >= DragSourceTouchHoldSeconds;
+				if (holding) *holding = active && still && !started;
+			}
+			else
+			{
+				// 鼠标或未启用长按：清除同一按钮此前触摸按住时留下的内容型登记，避免页面拖动滚动抢先接管。
+				auto* window = ImGui::GetCurrentWindow();
+				const ImGuiID key = ImHashStr("##content-drag-button", 0, window->ID);
+				if (ImGui::IsItemActive() && static_cast<ImGuiID>(window->StateStorage.GetInt(key)) == ImGui::GetItemID())
+					window->StateStorage.SetInt(key, 0);
+				const float threshold = Pixels(io.MouseSource == ImGuiMouseSource_Mouse ? 4.0F : 10.0F);
+				started = ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, threshold);
+			}
 		}
 		ImGui::SetCursorScreenPos(cursor);
 		return started;
@@ -2547,7 +2567,8 @@ namespace Inkeys::UI::Setting::Design
 		return (std::max)(1.0F, cardWidth - Pixels(12.0F) * 3.0F - Pixels(32.0F) - Pixels(28.0F + 4.0F));
 	}
 
-	bool ComponentCard(const char* id, const ComponentCardSpec& spec, const ImVec2& size, bool* dragStarted)
+	bool ComponentCard(const char* id, const ComponentCardSpec& spec, const ImVec2& size, bool* dragStarted,
+		bool holdForTouch, bool* holding)
 	{
 		const ImVec2 origin = ImGui::GetCursorScreenPos();
 		const ImVec2 bottom{ origin.x + size.x, origin.y + size.y };
@@ -2592,7 +2613,8 @@ namespace Inkeys::UI::Setting::Design
 				ImFluent::SetItemTooltip("%s", spec.actionTooltip);
 		}
 		ImGui::SetCursorScreenPos(origin);
-		const bool drag = dragStarted && DragSourceOverlay("##drag", origin, bottom, actionHovered);
+		if (holding) *holding = false;
+		const bool drag = dragStarted && DragSourceOverlay("##drag", origin, bottom, actionHovered, holdForTouch, holding);
 		if (dragStarted) *dragStarted = drag;
 		ImGui::PopID();
 		ImGui::SetCursorScreenPos(origin);

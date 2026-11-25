@@ -4282,6 +4282,16 @@ SettingSessionCoroutine RunSettingSession()
 					Design::PageHeader(IA(component.N).c_str());
 					Inkeys::UI::Setting::ComponentEditor::Draw(contentWindow, QueueConfigWrite,
 						pageTransition.Opacity(), blockContentInput || holdingPage);
+					// 标题与主栏预览固定在页面上方，其余内容放进内层滚动视口：外层内容恰好填满正文视口而不再滚动，
+					// 拖动滚动与滚轮自然落到内层。预览随 More 多行变高时内层同帧变矮。
+					{
+						// 按外层未滚动时的位置计算：旧滚动值（如外层测高滞后的一帧）不会让高度多算，外层下一帧即回到 0。
+						const float libraryHeight = std::floor(contentWindow->InnerRect.Max.y - contentWindow->WindowPadding.y
+							- ImGui::GetCursorScreenPos().y - contentWindow->Scroll.y) - 1.0F;
+						Design::BeginScrollChild("##component-library", { ImGui::GetContentRegionAvail().x,
+							(std::max)(Design::Pixels(1.0F), libraryHeight) }, ImGuiChildFlags_None, ImGuiWindowFlags_None, false, false, false,
+							Design::PageScrollbarAlpha(pageMotion) * pageTransition.Opacity());
+					}
 					using namespace Inkeys::UI::Bar;
 					auto& buttons = barUISet.barButtonSet;
 					auto layout = buttons.ReadBarLayout();
@@ -4320,7 +4330,7 @@ SettingSessionCoroutine RunSettingSession()
 						}
 					}
 
-					// 组件库目录：分类 0 为内置（只出现在“全部”首小节），1–5 与 Tab 1–5 一一对应。
+					// 组件库目录：分类 1–6 与 Tab 1–6（内置组件、桌面操控……ClassIsland）一一对应；“全部”按此顺序连续排列。
 					struct ComponentEntry
 					{
 						const char* id;
@@ -4333,23 +4343,23 @@ SettingSessionCoroutine RunSettingSession()
 					};
 					const ComponentEntry entries[]
 					{
-						{ Inkeys::BarButtonId::UserDivider, 0, "\ue738", component.DividerTitle, component.DividerShort, component.DividerDescription, nullptr },
-						{ Inkeys::BarComponentId::Explorer, 1, "\ue838", component.ExplorerTitle, component.ExplorerShort, component.ExplorerDescription, nullptr },
-						{ Inkeys::BarComponentId::Taskmgr, 1, "\ue9d9", component.TaskManagerTitle, component.TaskManagerShort, component.TaskManagerDescription, nullptr },
-						{ Inkeys::BarComponentId::Control, 1, "\ue713", component.ControlPanelTitle, component.ControlPanelShort, component.ControlPanelDescription, nullptr },
-						{ Inkeys::BarComponentId::Desktop, 1, "\ue7f4", component.ShowDesktopTitle, component.ShowDesktopShort, component.ShowDesktopDescription, nullptr },
-						{ Inkeys::BarComponentId::LockWorkStation, 1, "\ue72e", component.LockScreenTitle, component.LockScreenShort, component.LockScreenDescription, nullptr },
-						{ Inkeys::BarComponentId::Keyboardesc, 1, "\ue765", component.EscapeTitle, component.EscapeShort, component.EscapeDescription, nullptr },
-						{ Inkeys::BarComponentId::KeyboardAltF4, 1, "\ue765", component.AltF4Title, component.AltF4Short, component.AltF4Description, nullptr },
-						{ Inkeys::BarComponentId::IslandCaller1, 2, "\ue716", component.IslandCaller1Title, component.IslandCaller1Short, component.IslandCaller1Description, component.IslandCallerRequirement },
-						{ Inkeys::BarComponentId::IslandCaller2, 2, "\ue716", component.IslandCaller2Title, component.IslandCaller2Short, component.IslandCaller2Description, component.IslandCallerRequirement },
-						{ Inkeys::BarComponentId::SecRandom1, 3, "\ue716", component.SecRandom1Title, component.SecRandom1Short, component.SecRandom1Description, component.SecRandomUrlRequirement },
-						{ Inkeys::BarComponentId::SecRandom2, 3, "\ue716", component.SecRandom2Title, component.SecRandom2Short, component.SecRandom2Description, component.SecRandomIpcRequirement },
-						{ Inkeys::BarComponentId::SecRandom2Compat, 3, "\ue716", component.SecRandom2CompatTitle, component.SecRandom2CompatShort, component.SecRandom2CompatDescription, component.SecRandomUrlRequirement },
-						{ Inkeys::BarComponentId::NamePicker, 4, "\ue716", component.NamePickerTitle, component.NamePickerShort, component.NamePickerDescription, component.NamePickerRequirement },
-						{ Inkeys::BarComponentId::ClassislandSettings, 5, "\ue713", component.ClassIslandSettingsTitle, component.ClassIslandSettingsShort, component.ClassIslandSettingsDescription, nullptr },
-						{ Inkeys::BarComponentId::ClassislandProfile, 5, "\ue70f", component.ClassIslandProfileTitle, component.ClassIslandProfileShort, component.ClassIslandProfileDescription, nullptr },
-						{ Inkeys::BarComponentId::ClassislandClassswap, 5, "\ue70f", component.ClassIslandSwapTitle, component.ClassIslandSwapShort, component.ClassIslandSwapDescription, component.ClassIslandSwapNote },
+						{ Inkeys::BarButtonId::UserDivider, 1, "\ue738", component.DividerTitle, component.DividerShort, component.DividerDescription, nullptr },
+						{ Inkeys::BarComponentId::Explorer, 2, "\ue838", component.ExplorerTitle, component.ExplorerShort, component.ExplorerDescription, nullptr },
+						{ Inkeys::BarComponentId::Taskmgr, 2, "\ue9d9", component.TaskManagerTitle, component.TaskManagerShort, component.TaskManagerDescription, nullptr },
+						{ Inkeys::BarComponentId::Control, 2, "\ue713", component.ControlPanelTitle, component.ControlPanelShort, component.ControlPanelDescription, nullptr },
+						{ Inkeys::BarComponentId::Desktop, 2, "\ue7f4", component.ShowDesktopTitle, component.ShowDesktopShort, component.ShowDesktopDescription, nullptr },
+						{ Inkeys::BarComponentId::LockWorkStation, 2, "\ue72e", component.LockScreenTitle, component.LockScreenShort, component.LockScreenDescription, nullptr },
+						{ Inkeys::BarComponentId::Keyboardesc, 2, "\ue765", component.EscapeTitle, component.EscapeShort, component.EscapeDescription, nullptr },
+						{ Inkeys::BarComponentId::KeyboardAltF4, 2, "\ue765", component.AltF4Title, component.AltF4Short, component.AltF4Description, nullptr },
+						{ Inkeys::BarComponentId::IslandCaller1, 3, "\ue716", component.IslandCaller1Title, component.IslandCaller1Short, component.IslandCaller1Description, component.IslandCallerRequirement },
+						{ Inkeys::BarComponentId::IslandCaller2, 3, "\ue716", component.IslandCaller2Title, component.IslandCaller2Short, component.IslandCaller2Description, component.IslandCallerRequirement },
+						{ Inkeys::BarComponentId::SecRandom1, 4, "\ue716", component.SecRandom1Title, component.SecRandom1Short, component.SecRandom1Description, component.SecRandomUrlRequirement },
+						{ Inkeys::BarComponentId::SecRandom2, 4, "\ue716", component.SecRandom2Title, component.SecRandom2Short, component.SecRandom2Description, component.SecRandomIpcRequirement },
+						{ Inkeys::BarComponentId::SecRandom2Compat, 4, "\ue716", component.SecRandom2CompatTitle, component.SecRandom2CompatShort, component.SecRandom2CompatDescription, component.SecRandomUrlRequirement },
+						{ Inkeys::BarComponentId::NamePicker, 5, "\ue716", component.NamePickerTitle, component.NamePickerShort, component.NamePickerDescription, component.NamePickerRequirement },
+						{ Inkeys::BarComponentId::ClassislandSettings, 6, "\ue713", component.ClassIslandSettingsTitle, component.ClassIslandSettingsShort, component.ClassIslandSettingsDescription, nullptr },
+						{ Inkeys::BarComponentId::ClassislandProfile, 6, "\ue70f", component.ClassIslandProfileTitle, component.ClassIslandProfileShort, component.ClassIslandProfileDescription, nullptr },
+						{ Inkeys::BarComponentId::ClassislandClassswap, 6, "\ue70f", component.ClassIslandSwapTitle, component.ClassIslandSwapShort, component.ClassIslandSwapDescription, component.ClassIslandSwapNote },
 					};
 					auto isDivider = [](const char* id) { return std::string_view(id) == Inkeys::BarButtonId::UserDivider; };
 					// 组件看 B1/More（含隐藏）；用户分割线看 A1/B1/A2。
@@ -4384,20 +4394,19 @@ SettingSessionCoroutine RunSettingSession()
 							ImGui::GetIO().MouseSource == ImGuiMouseSource_TouchScreen);
 					};
 
+					// 卡片与条目：鼠标越阈值即拖动；触摸/笔需按住静止才抓起，否则交给页面滚动。
+					bool libraryHolding = false;
 					Design::SectionHeader(IA(component.AddSection).c_str());
-					const std::vector<std::string> tabs{ IA(component.TabAll), IA(component.TabDesktop),
+					const std::vector<std::string> tabs{ IA(component.TabAll), IA(component.BuiltinSection), IA(component.TabDesktop),
 						"IslandCaller", "SecRandom", "NamePicker", "ClassIsland" };
 					componentLibraryTab = std::clamp(componentLibraryTab, 0, static_cast<int>(tabs.size()) - 1);
 					Design::TabStrip("component-library-tabs", tabs, componentLibraryTab);
 					if (componentLibraryTab == 0)
 					{
-						// “全部”：按分类小节排列的矩形卡片网格，说明使用精简文案。
-						const std::string groupTitles[]{ IA(component.BuiltinSection), tabs[1], tabs[2], tabs[3], tabs[4], tabs[5] };
+						// “全部”：不分小节，所有卡片按 Tab 顺序连续排成一个矩形卡片网格，说明使用精简文案。
 						const float gap = Design::Pixels(Design::ComponentCardGap), minimumWidth = Design::Pixels(Design::ComponentCardMinimumWidth),
 							cardHeight = Design::Pixels(Design::ComponentCardHeight);
-						for (int group = 0; group < 6; ++group)
 						{
-							Design::Text(groupTitles[group].c_str(), ImFluentTextStyle_BodyStrong);
 							const float available = ImGui::GetContentRegionAvail().x;
 							const int columns = (std::max)(1, static_cast<int>((available + gap) / (minimumWidth + gap)));
 							const float cardWidth = std::floor((available - gap * static_cast<float>(columns - 1)) / static_cast<float>(columns));
@@ -4405,7 +4414,6 @@ SettingSessionCoroutine RunSettingSession()
 							int column = 0;
 							for (const auto& entry : entries)
 							{
-								if (entry.group != group) continue;
 								const std::string title = IA(entry.title), shortText = IA(entry.shortText);
 								const char* glyph = actionGlyph(entry);
 								Design::ComponentCardSpec spec;
@@ -4416,9 +4424,11 @@ SettingSessionCoroutine RunSettingSession()
 								spec.actionTooltip = present(entry.id) ? removeTooltip.c_str() : addTooltip.c_str();
 								spec.actionEnabled = layout.has_value();
 								ImGui::SetCursorScreenPos({ rowOrigin.x + static_cast<float>(column) * (cardWidth + gap), rowOrigin.y });
-								bool dragStarted = false;
-								if (Design::ComponentCard(entry.id, spec, { cardWidth, cardHeight }, layout ? &dragStarted : nullptr)) runAction(entry);
-								// 越过阈值后交给预览宿主：浮起的是按当前尺寸样式绘制的按钮图标。
+								bool dragStarted = false, holding = false;
+								if (Design::ComponentCard(entry.id, spec, { cardWidth, cardHeight }, layout ? &dragStarted : nullptr, true, &holding))
+									runAction(entry);
+								libraryHolding |= holding;
+								// 开始拖动后交给预览宿主：浮起的是按当前尺寸样式绘制的按钮图标。
 								if (dragStarted) beginDrag(entry);
 								if (++column == columns)
 								{
@@ -4435,7 +4445,7 @@ SettingSessionCoroutine RunSettingSession()
 					else
 					{
 						// 专属 Tab：整行条目，说明使用完整段落，前置条件放在补充说明。
-						if (componentLibraryTab == 5)
+						if (componentLibraryTab == 6)
 							Design::Notice("##classisland-protocol-notice", "ClassIsland",
 								IA(component.ClassIslandProtocolNote).c_str(), ImFluentInfoSeverity_Informational);
 						for (const auto& entry : entries)
@@ -4462,12 +4472,17 @@ SettingSessionCoroutine RunSettingSession()
 							// 整行（操作键之外）作为拖动源；行尾间隙不计入。
 							const float rowBottom = ImGui::GetCursorScreenPos().y - Design::Pixels(Design::RowGap);
 							ImGui::PushID(entry.id);
+							bool holding = false;
 							const bool rowDrag = layout && Design::DragSourceOverlay("##row-drag", rowTop,
-								{ rowTop.x + rowWidth, rowBottom }, actionHovered);
+								{ rowTop.x + rowWidth, rowBottom }, actionHovered, true, &holding);
+							libraryHolding |= holding;
 							ImGui::PopID();
 							if (rowDrag) beginDrag(entry);
 						}
 					}
+					// 触摸/笔按住卡片等待抓起时手指静止不产生输入，逐帧请求渲染以推进按住计时。
+					if (libraryHolding) Inkeys::UI::RenderPipeline::Request(Inkeys::UI::RenderPipeline::Client::Settings);
+					ImGui::EndChild();
 					break;
 				}
 				// 联动

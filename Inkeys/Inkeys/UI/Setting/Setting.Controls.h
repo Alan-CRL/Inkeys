@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Setting.Design.h"
 #include "Setting.Motion.h"
@@ -207,11 +207,18 @@ namespace Inkeys::UI::Setting::Design
 	// 给定卡片物理宽度时，标题与说明可用的文字宽度（物理像素）；页面与多语言排版测试共用。
 	float ComponentCardTextWidth(float cardWidth);
 	// 组件库“全部”页的矩形卡片；size 为物理像素。返回右上角操作键是否被点击；
-	// dragStarted 非空时，按住卡片其他区域越过拖动阈值的那一帧置为 true。
-	bool ComponentCard(const char* id, const ComponentCardSpec& spec, const ImVec2& size, bool* dragStarted = nullptr);
-	// 在已绘制的卡片/行区域上覆盖一个无形按钮作为拖动源，越过阈值（鼠标 4、触摸/笔 10 DIP）时返回 true。
-	// skip 为 true（操作键正被悬停）时不提交覆盖层，保证操作键可点击；成为活动项后页面拖动滚动不会接管。
-	bool DragSourceOverlay(const char* id, const ImVec2& min, const ImVec2& max, bool skip);
+	// dragStarted 非空时，按住卡片其他区域开始拖动的那一帧置为 true；holdForTouch / holding 含义同 DragSourceOverlay。
+	bool ComponentCard(const char* id, const ComponentCardSpec& spec, const ImVec2& size, bool* dragStarted = nullptr,
+		bool holdForTouch = false, bool* holding = nullptr);
+	// 触摸/笔按住拖动源等待抓起的时长（秒）。
+	inline constexpr float DragSourceTouchHoldSeconds = 0.45F;
+	// 在已绘制的卡片/行区域上覆盖一个无形按钮作为拖动源，开始拖动的那一帧返回 true。
+	// 默认越过阈值（鼠标 4、触摸/笔 10 DIP）即开始，成为活动项后页面拖动滚动不会接管。
+	// holdForTouch：触摸/笔改为按住静止满 DragSourceTouchHoldSeconds 才开始；此前位移越过原生拖动阈值则交给页面拖动滚动。
+	// 鼠标不受影响。holding 非空时，等待抓起期间置为 true（手指静止不产生输入，调用方需请求下一帧推进计时）。
+	// skip 为 true（操作键正被悬停）时不提交覆盖层，保证操作键可点击。
+	bool DragSourceOverlay(const char* id, const ImVec2& min, const ImVec2& max, bool skip,
+		bool holdForTouch = false, bool* holding = nullptr);
 	bool Notice(const char* id, const char* title, const char* description,
 		ImFluentInfoSeverity severity = ImFluentInfoSeverity_Informational,
 		const char* actionLabel = nullptr);

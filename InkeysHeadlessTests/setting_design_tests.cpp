@@ -6152,6 +6152,95 @@ namespace
 		std::cout << "[DragScrollDrawData] scale=" << scale << " frames=" << frames << " rootMovingFrames=" << movingFrames << '\n';
 	}
 
+	// 组件库拖动源的触摸/笔长按：按住静止满时长才起拖，此前越过原生阈值交给页面拖动滚动；鼠标仍越阈值即起拖。
+	void CheckDragSourceTouchHold(Checks& checks, ImFont* regular, ImFont* strong, float scale)
+	{
+		auto& io = ImGui::GetIO(); io.ConfigInputTrickleEventQueue = false;
+		Design::BindTextFonts(regular, strong); Design::ApplyPalette(false);
+		Design::NavigationState state;
+		bool holdMode = true, resetScroll = false;
+		struct Frame { bool started = false, holding = false; float scroll = 0; ImRect source; };
+		auto draw = [&](ImGuiMouseSource source, ImVec2 mouse, bool down) {
+			io.DisplaySize = { 800 * scale, 560 * scale }; io.DeltaTime = 1.0F / 60;
+			io.AddMouseSourceEvent(source); io.AddMousePosEvent(mouse.x, mouse.y); io.AddMouseButtonEvent(0, down);
+			ImGui::NewFrame(); Design::BeginDragScrolling(state); Design::ConfigureRowAnimations(io.DeltaTime, false, 1);
+			ImGui::SetNextWindowPos({ 0, 0 }); ImGui::SetNextWindowSize(io.DisplaySize);
+			ImGui::Begin("##drag-hold-root", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize
+				| ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);
+			ImGui::SetCursorPos({ 40 * scale, 50 * scale });
+			Design::BeginScrollChild("##drag-hold-page", { 430 * scale, 240 * scale });
+			Frame frame; auto* page = ImGui::GetCurrentWindow(); if (resetScroll) ImGui::SetScrollY(0);
+			const ImVec2 origin = ImGui::GetCursorScreenPos();
+			frame.source = { origin, { origin.x + 300 * scale, origin.y + 96 * scale } };
+			frame.started = Design::DragSourceOverlay("##hold-source", frame.source.Min, frame.source.Max, false, holdMode, &frame.holding);
+			ImGui::Dummy({ 0, 1100 * scale });
+			ImGui::EndChild(); ImGui::End();
+			Design::ApplyDragScrolling(state);
+			frame.scroll = page->Scroll.y;
+			ImGui::Render();
+			return frame;
+		};
+		const ImVec2 outside{ 700 * scale, 520 * scale };
+		// 每个场景从页面顶部开始，前一场景的拖动滚动不影响按下位置。
+		auto reset = [&] { resetScroll = true; for (int index = 0; index < 3; ++index) draw(ImGuiMouseSource_Mouse, outside, false); resetScroll = false; };
+		for (const auto source : { ImGuiMouseSource_TouchScreen, ImGuiMouseSource_Pen })
+		{
+			reset();
+			auto frame = draw(source, outside, false);
+			const ImVec2 press = frame.source.GetCenter();
+			// 静止按住：时长未到前只报告等待，达到时长那一帧起拖，页面不滚动。
+			int startedAt = -1; bool waited = false;
+			for (int index = 0; index < 40 && startedAt < 0; ++index)
+			{
+				frame = draw(source, press, true);
+				if (frame.started) startedAt = index;
+				else waited |= frame.holding;
+			}
+			const int expected = static_cast<int>(std::ceil(Design::DragSourceTouchHoldSeconds * 60.0F - 0.001F));
+			checks.Expect(waited && startedAt >= expected - 1 && startedAt <= expected + 1 && Near(frame.scroll, 0),
+				"touch/pen drag source starts only after holding still for the hold duration and does not scroll the page");
+			draw(source, press, false); reset();
+			// 未到时长即松开：不起拖。
+			frame = draw(source, press, true); bool started = frame.started;
+			for (int index = 0; index < 10; ++index) started |= draw(source, press, true).started;
+			started |= draw(source, press, false).started;
+			checks.Expect(!started, "touch/pen release before the hold duration does not start a drag");
+			reset();
+			// 抓起前移出原生阈值：交给页面拖动滚动，后续静止也不再起拖。
+			frame = draw(source, press, true); started = frame.started;
+			float y = press.y;
+			for (int index = 0; index < 6; ++index) { y -= 8 * scale; frame = draw(source, { press.x, y }, true); started |= frame.started; }
+			for (int index = 0; index < 40; ++index) { frame = draw(source, { press.x, y }, true); started |= frame.started; }
+			checks.Expect(!started && frame.scroll > 20 * scale && !frame.holding,
+				"touch/pen movement past the native drag threshold before the hold scrolls the page instead of starting a drag");
+			draw(source, { press.x, y }, false); reset();
+		}
+		// 鼠标不受长按影响：越过 4 DIP 即起拖；同一拖动源此前被触摸按过，残留的内容型登记也不能让页面滚动抢先。
+		{
+			reset();
+			auto frame = draw(ImGuiMouseSource_Mouse, outside, false);
+			const ImVec2 press = frame.source.GetCenter();
+			frame = draw(ImGuiMouseSource_Mouse, press, true);
+			bool started = frame.started;
+			frame = draw(ImGuiMouseSource_Mouse, { press.x, press.y - 6 * scale }, true); started |= frame.started;
+			checks.Expect(started && Near(frame.scroll, 0), "mouse drag source still starts once past 4 DIP without holding");
+			draw(ImGuiMouseSource_Mouse, { press.x, press.y - 6 * scale }, false); reset();
+		}
+		// 未启用长按时触摸沿用 10 DIP 阈值立即起拖。
+		{
+			holdMode = false; reset();
+			auto frame = draw(ImGuiMouseSource_TouchScreen, outside, false);
+			const ImVec2 press = frame.source.GetCenter();
+			frame = draw(ImGuiMouseSource_TouchScreen, press, true);
+			bool started = frame.started;
+			frame = draw(ImGuiMouseSource_TouchScreen, { press.x, press.y - 12 * scale }, true); started |= frame.started;
+			checks.Expect(started, "touch drag source without hold mode keeps the immediate 10 DIP threshold");
+			draw(ImGuiMouseSource_TouchScreen, { press.x, press.y - 12 * scale }, false); reset();
+			holdMode = true;
+		}
+		io.AddMouseSourceEvent(ImGuiMouseSource_Mouse);
+	}
+
 	// b8beea0b 的实际旧部署，仅用于同一真实主页输入/CPU对照，不作为新算法测试替身。
 	void LegacyScrollWhenDraggingOnVoid(const ImVec2& delta, ImGuiMouseButton mouse_button)
 	{
@@ -8590,6 +8679,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 			for (auto backdrop : { BackdropMode::Solid, BackdropMode::Acrylic })
 				CheckComboBoxInteraction(checks, fonts[0], scale, backdrop);
 			CheckDragScrolling(checks, fonts[0], fonts[1], scale);
+			CheckDragSourceTouchHold(checks, fonts[0], fonts[1], scale);
 			CheckCursorPageControls(checks, fonts[0], fonts[1], fonts.back(), scale);
 			continue;
 		}
@@ -8742,6 +8832,7 @@ int RunSettingDesignTests(bool copyOnly, bool eraserOnly, bool attentionOnly, bo
 			CheckNavigationTree(checks);
 			CheckHierarchicalNavigation(checks, fonts[0], fonts[1], fonts.back(), scale);
 			CheckDragScrolling(checks, fonts[0], fonts[1], scale);
+			CheckDragSourceTouchHold(checks, fonts[0], fonts[1], scale);
 			CheckHomeScrollFollowup(checks, fonts[0], fonts[1], scale);
 		}
 		if (scale == 1.0F || scale == 1.875F) { CheckAnimatedColors(checks, fonts[0], scale); CheckAnimatedColorEndpoints(checks, fonts[0], scale); }

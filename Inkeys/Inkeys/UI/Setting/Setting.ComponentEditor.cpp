@@ -96,7 +96,6 @@ namespace Inkeys::UI::Setting::ComponentEditor
 			float trashAmount = 0;
 			bool trashEnabled = false, trashHot = false;
 			bool discardPending = false, previewReady = false;
-			float scrollPosition = -1;
 			int releasedFrames = 0;
 			struct Style
 			{
@@ -128,7 +127,6 @@ namespace Inkeys::UI::Setting::ComponentEditor
 				cursorStart.reset();
 				cursorEnd.reset();
 				releasedFrames = 0;
-				scrollPosition = -1;
 				dirty = true;
 			}
 			bool Device(const Pipeline::DeviceEpoch &epoch)
@@ -269,7 +267,8 @@ namespace Inkeys::UI::Setting::ComponentEditor
 		PreviewInputs in;
 		in.time = std::chrono::steady_clock::now();
 		in.width = width;
-		in.height = (std::max)(Design::Pixels(80), scroll->InnerClipRect.GetHeight());
+		// 预览固定在页面上方，下方组件库独立滚动；预览（含 More 多行扩展）最多占正文视口一半。
+		in.height = (std::max)(Design::Pixels(80), scroll->InnerClipRect.GetHeight() * 0.5f);
 		in.targetHeight = Design::Pixels(64);
 		in.sizeMode = NormalizeBarSizeMode(cfg.SizeMode.load());
 		in.iconOrder = config.UI.Bar.IconOrder.load();
@@ -413,22 +412,6 @@ namespace Inkeys::UI::Setting::ComponentEditor
 		const bool release = pointer == e.input.drag.PointerId() && ImGui::IsMouseReleased(0);
 		const auto &palette = Design::GetPalette();
 		const auto &keys = I18nKey.SettingsUI.Component;
-		if (dragging)
-		{
-			// 正文内层 child 自动增高，滚动与垃圾桶均以外层可视区域为准。
-			const ImRect viewport = scroll->InnerClipRect;
-			const float edge = Design::Pixels(48);
-			const float speed = std::clamp((mouse.y - viewport.Max.y + edge) / edge, 0.f, 1.f) -
-								std::clamp((viewport.Min.y + edge - mouse.y) / edge, 0.f, 1.f);
-			// 浮点累计目标位置：ImGui 每帧把 Scroll 取整，直接在取整值上积分会吞掉亚像素增量；
-			// 滚轮等外部滚动使实际位置偏离超过 1 像素时，以实际位置重新基准。
-			if (e.scrollPosition < 0 || std::abs(e.scrollPosition - scroll->Scroll.y) >= 1.f) e.scrollPosition = scroll->Scroll.y;
-			if (speed != 0 && mouse.x >= viewport.Min.x && mouse.x <= viewport.Max.x)
-			{
-				e.scrollPosition = std::clamp(e.scrollPosition + speed * Design::Pixels(1200) * io.DeltaTime, 0.f, scroll->ScrollMax.y);
-				ImGui::SetScrollY(scroll, e.scrollPosition);
-			}
-		}
 		const bool clipped = window->ClipRect.Contains(mouse);
 		const auto *from = std::get_if<Position>(&e.source);
 		const float step =
