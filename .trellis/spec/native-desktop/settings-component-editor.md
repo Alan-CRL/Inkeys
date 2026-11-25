@@ -14,7 +14,7 @@
 - `Inkeys::UI::UI3::DragSession`：`Press / BeginDragging / Move / Release / Cancel`，`Phase / Payload / Point / Origin / PointerId / Kind`；`ReleaseResult { None, Click, Drop }`。
 - `Inkeys::UI::Setting::ComponentEditor`：`Draw(ImGuiWindow* scrollWindow, void(*queueWrite)(), float pageOpacity, bool inputBlocked)`、`BeginLibraryDrag(componentId, screenPoint, touch)`、`DragActive()`、`PreviewPressInput<Instance, Hit>`、纯函数 `ResolveDrop(model, source, catalog, trash, outsidePreview, more, gaps) -> DropTarget`；拖动帧入口 `ResolveDragFrameDrop` 同时处理落点与 More 停留，`TrashBounds(preview, bodyBottom, width, height)` 求胶囊几何。
 - ImGui DX11：`ImGui_ImplDX11_PremultipliedBegin / End` 特殊回调值（-18 / -19）。`FinishPreviewBlock(block, list, first, end, pageOpacity)` 结束入场块，并调整 `[first, end)` 的预乘图片顶点色。
-- 设置控件：`Design::TabStrip`、`Design::ComponentCard(id, spec, size, bool* dragStarted)`、`Design::DragSourceOverlay(id, min, max, skip)`。
+- 设置控件：`Design::TabStrip`、`Design::ComponentCard(id, spec, size, bool* dragStarted, bool holdForTouch, bool* holding)`、`Design::DragSourceOverlay(id, min, max, skip, bool holdForTouch, bool* holding)`、`Design::DragSourceTouchHoldSeconds`（0.45 s）。
 
 ## 3. Contracts
 
@@ -49,16 +49,20 @@
 | 组件库项（含分割线） | 合法缝隙 / 可收纳的 More 入口 | 插入 / 收纳 | `Insert` / `Store`，添加 |
 | 组件库项 | 其他位置（含垃圾桶和预览区外） | 松手取消添加 | `CancelAdd`，放弃 |
 
-- `Move` / `Insert` / `Remove` 生成模型后，由 `ApplyBarLayout(expected, next)` 发布。仅 `Applied` 入队 `QueueConfigWrite`，插入或移动时还调用 `Place`；松手后 `Cancel(true)` 再读取已发布布局并 `SetLayout`。拒绝或过期时回位且不入队。边缘自动滚动沿用上下 48 DIP、最高约 1200 DIP/s 的线性速率和浮点累计，实际滚动偏离 ≥1 像素时重新基准。
+- `Move` / `Insert` / `Remove` 生成模型后，由 `ApplyBarLayout(expected, next)` 发布。仅 `Applied` 入队 `QueueConfigWrite`，插入或移动时还调用 `Place`；松手后 `Cancel(true)` 再读取已发布布局并 `SetLayout`。拒绝或过期时回位且不入队。拖动中不做边缘自动滚动：预览固定在页面上方（§3.3），拖动目标始终可见，下方滚动视口在拖动期间保持不动。
 - 垃圾桶胶囊由 `TrashBounds` 放在主栏下方预留区的中央。默认高 36 DIP、左右各 16 DIP 内边距、16 DIP 图标与 8 DIP 图文间距；可用宽高不足时收进预览块。开始拖动时淡入，正常松手后保留最后配色淡出；只在拖动中命中。危险态沿用设置标题栏危险按钮的 `SystemFillCritical` 底色与 `TextOnAccentPrimary` 前景；固定项呈禁用前景，放下仍回位。
 - 幽灵使用当前的大/小尺寸按钮，先绘制主栏同材质圆角底板（含边框、阴影，四周各加 `ButtonGapDip`），再绘按钮；已选中的预览按钮保留选中态。可删除项在删除落点，或库项命中启用的垃圾桶时，用 `LayerParameters1` 合成底板和按钮后将整体降至 0.45 不透明度，危险描边与跟随提示保持清晰。跟随提示按落点显示，大、小尺寸拖动均可用。
 
 ### 3.3 组件页（C4、C5）
 
-- 结构：`PageHeader` → 预览块 → 快捷方式行（`NavigationRow`，跳 `PageId::Window / Section::WindowLayout`）→ 恢复默认布局（两段式：首次点击变“确认重置”，3 秒内再点执行 `Reset()` 并清旧开关，离开页面或超时复位）→ “添加组件”分区 → `TabStrip`（全部 / 桌面操控 / IslandCaller / SecRandom / NamePicker / ClassIsland）。
-- “全部”：按分类小节的矩形卡片网格（`ComponentCardMinimumWidth` 260 DIP、`ComponentCardHeight` 96 DIP、`ComponentCardGap` 8 DIP）；标题最多两行，精简说明按剩余高度显示一到两行，越界部分裁剪在卡片内（多语言测试直接断言“标题 ≤ 两行且至少留一行说明”，不依赖墨迹检查）；分割线卡片在“内置组件”首小节且没有“+”。专属 Tab：整行条目，完整说明 + 前置条件；ClassIsland Tab 顶部保留 URL 协议提示框。
+- 结构：固定区（`PageHeader` → 预览块）→ 内层滚动视口 `##component-library`（快捷方式行（`NavigationRow`，跳 `PageId::Window / Section::WindowLayout`）→ 恢复默认布局（两段式：首次点击变“确认重置”，3 秒内再点执行 `Reset()` 并清旧开关，离开页面或超时复位）→ “添加组件”分区 → `TabStrip`（全部 / 内置组件 / 桌面操控 / IslandCaller / SecRandom / NamePicker / ClassIsland））。
+- 固定区：标题与预览块直接提交在 `##setting-page-content` 中，其后的内层滚动 child 高度 = 外层 `InnerRect.Max.y` − 外层底部 `WindowPadding.y` − 当前光标 y − 外层 `Scroll.y` − 1，向下取整。按未滚动位置计算，外层内容恰好不超过正文视口，`ScrollMax.y` 为 0，即使测高滞后一帧留下旧滚动值，下一帧也回到 0。拖动滚动与滚轮由 `DragEligible` 自然落到内层；固定区内拖动或滚轮不滚动。预览高度上限 `in.height = max(80 DIP, 0.5 × 外层 InnerClipRect 高度)`，More 多行时固定区随相机过渡增高、内层同帧变矮。内层 child 的块仍由 `PageBlockScope` 参与入场，退场淡出由 `ApplyContentAlpha` 覆盖整棵子窗口；内层滚动条透明度与外层相同（`PageScrollbarAlpha × pageTransition`）。
+- “全部”：不分小节，所有条目按 Tab 顺序（内置组件 → 桌面操控 → … → ClassIsland）连续排成一个矩形卡片网格（`ComponentCardMinimumWidth` 260 DIP、`ComponentCardHeight` 96 DIP、`ComponentCardGap` 8 DIP）；标题最多两行，精简说明按剩余高度显示一到两行，越界部分裁剪在卡片内（多语言测试直接断言“标题 ≤ 两行且至少留一行说明”，不依赖墨迹检查）；分割线卡片位于网格首位且没有“+”。目录 `group` 与 Tab 下标一致（1 内置组件 … 6 ClassIsland），“内置组件”Tab 名复用 `BuiltinSection` 文案。专属 Tab（含“内置组件”）：整行条目，完整说明 + 前置条件；ClassIsland Tab 顶部保留 URL 协议提示框。
 - 操作键：主栏（含 More）无该组件 → “+”执行 `AutoAdd`（B1 已有 ≥2 个组件进 More）；有 → 垃圾桶执行 `RemoveAllOf`（分割线为 `RemoveUserDividers`，不影响固定交界线）。`Applied` 后 `QueueConfigWrite()`。
-- 拖动源：卡片/条目非操作键区域由 `DragSourceOverlay` 覆盖；操作键悬停时不提交覆盖层；越过阈值即 `BeginLibraryDrag`，之后由宿主接管。覆盖层成为活动项，因此触摸在卡片上拖动只拖组件、不滚动页面（滚动可在间隙或靠边缘自动滚动）。
+- 拖动源：卡片/条目非操作键区域由 `DragSourceOverlay(holdForTouch = true)` 覆盖；操作键悬停时不提交覆盖层；开始拖动即 `BeginLibraryDrag`，之后由宿主接管。
+  - 鼠标：越过 4 DIP 即开始。覆盖层同一按钮此前被触摸按住时留下的 `##content-drag-button` 登记，在鼠标激活时清除，页面拖动滚动不会抢先。
+  - 触摸/笔：激活即 `AllowContentDrag()` 登记为内容型按钮；`MouseDownDuration ≥ DragSourceTouchHoldSeconds` 且 `MouseDragMaxDistanceSqr < MouseDragThreshold²` 时开始。抓起前位移越过 ImGui 原生拖动阈值，帧首 `BeginDragScrolling` 把活动项夺给内层滚动宿主，即按页面滚动处理；静止容差与该阈值相同，不存在既不抓起也不滚动的区间。内层没有滚动范围时越阈值后既不滚动也不抓起。
+  - 等待期间 `holding` 为真，页面逐帧 `RenderPipeline::Request(Settings)` 推进计时（手指静止不产生输入）；抓起反馈为幽灵按钮出现在指针处。
 - `PageBlockScope` 包住预览纹理和块内编辑反馈，入场透明度及上浮位置随页面块。预乘纹理由 `PremultipliedBegin/End` 成对包住 `AddImage`，以 `ONE, INV_SRC_ALPHA` 合成并恢复默认混合。`FinishPreviewBlock` 在块结束后用已乘入场透明度的 alpha 补齐纹理顶点 RGB，使入场系数同乘 RGBA。退场通常经 DX11 离屏组先合成块、再对结果四通道同乘页面透明度；逐顶点退路由 `FinishPreviewBlock` 把退场系数补到图片 RGB，正文随后统一乘顶点 alpha。每个系数对对应通道只乘一次。退场首帧以 `inputBlocked` 阻断输入并取消拖动，前景幽灵与跟随提示不参加淡出。
 
 ## 4. Validation & Error Matrix
@@ -82,7 +86,8 @@
 - 同一离屏用例族还覆盖 `press-*`、`lift-releases-press`、`host-close-*`（移出、移回、裁剪、过期与已呈现命中）、`activate-*`、`select-collapse-intermediate`、`select-gaps-exclude-hidden`、`pen-restores`（收拢、隐藏项不占缝、再切绘制恢复）、`place-last-more-closes` / `rebuild-empty-more-clears-expanded`、`trash-in-presented-reserve`、`divider-drop-*` 和 `*-hover-more-half-second`。其余预览用例继续验证像素/主题、实例隔离、失败帧不发布几何、原位保序、小尺寸提示的 500 ms 定点与大尺寸禁用、空 More 停留不标脏。
 - `drag_session_tests.cpp`：接触 ID、鼠标/触摸/笔阈值、点击/放下与取消；R5 验证垃圾桶优先、区外删除与区内非法回位、固定项区内重排与区外回位、Setting 不可删除、拒绝 A 区落点且可从 More 移入 B1、库项插入/收纳/放弃、空 B1 的 More 边缘例外（库分割线和已有分割线、拒绝 A2 回退）及胶囊居中和窄区限幅。
 - `setting_home_warp_tests.cpp::CheckPreviewBlend`：预乘图片与直接绘制像素一致并恢复混合；入场块与旧页退场叠加时，离屏组和逐顶点退路的图片位移一致，分别以红色通道检查 RGB 淡出、以青色底的 G/B 衰减检查 alpha。`setting_design_tests` 继续覆盖卡片/条目多语言排版。
-- 实机：鼠标/触摸拖动、跨 child 捕获、边缘滚动手感、卡片起拖至放下及 Win7 SP1 + KB2670838 的预览绘制与页面退场。
+- `setting_design_tests.cpp::CheckDragSourceTouchHold`（popup-only 与全量 1.0/1.5/1.875 倍）：触摸/笔按住满时长才起拖且不滚动、提前松开不起拖、抓起前越阈值转为页面滚动且不再起拖、触摸按过后鼠标越 4 DIP 仍立即起拖、未启用长按的触摸保持 10 DIP 阈值。
+- 实机：鼠标/触摸拖动、跨 child 捕获、触摸长按时长与容差手感、卡片上直接滑动滚动、固定区在 More 多行时的挤压、卡片起拖至放下及 Win7 SP1 + KB2670838 的预览绘制与页面退场。
 
 ## 6. Wrong vs Correct
 
