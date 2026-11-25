@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/native-desktop/settings-component-editor.md", "reason": "组件页现行合同（固定区、Tab、起拖、边缘滚动要改的条款）"}
+{"file": ".trellis/spec/native-desktop/setting-motion.md", "reason": "页面块动效与滚动宿主，固定区/内层滚动 child 需兼容"}
+{"file": ".trellis/spec/native-desktop/settings-navigation.md", "reason": "设置导航、拖动滚动宿主"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "i18n 规则（如新增 Tab 键）"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 编码约定、BOM+CRLF"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "构建与 Win7 兼容约束"}
