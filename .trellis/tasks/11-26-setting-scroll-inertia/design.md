@@ -136,3 +136,28 @@ namespace Inkeys::UI::Setting::Scroll
 ## 8. 回滚
 
 - 提交拆分：①搬移封装（行为不变）；②鼠标屏蔽 + 惯性 + 测试；③边界窗口位移。③可单独回滚为仅硬停；②回滚恢复无惯性但保留封装。
+
+## 9. 实施修订（2026-11-26）
+
+- **研究结论**：未引入外部库（见 `research/imgui-inertia-libraries.md`）；`setting_design_tests` 的 `CheckDragScrolling` 原先大量用鼠标来源测拖动，改为触摸来源，鼠标改为断言“不滚动、不抓取覆盖层”；panning feedback 的消息副作用未做实机探测，按“可能产生 `WM_MOVE`”防御（见下）。
+- **4.4 写回**：惯性不走拖动的 `##drag-scroll-frame` 协议（该协议只在覆盖层仍为 ActiveId 时消费），改为帧首 `ImGui::SetScrollY(window, position)`；他人已设置 `ScrollTarget` 即停止。
+- **4.6 帧调度**：设置窗口可见期间每帧结束返回 `FrameResult::Continue`，本身持续出帧，无需额外 `Request`；`Animating()` 只用于解除贴底意图（`BeginScrollChild`/`BeginPageMotion` 的 userScroll）。
+- **时间基准**：惯性曲线与帧采样使用 `ImGui::GetTime()`（无窗口测试可确定性推进）；轨迹样本使用输入时间戳，仅用于相对速度。
+- **轨迹发布顺序**：`PointerInput` 改为先发布轨迹、再写 ImGui 事件、最后发布覆盖位置，保证渲染线程处理到按下/抬起时能读到对应样本。
+- **点按停住**：抓取发生在帧首，这一帧标记为已采样，按下前后的指针跳变不作为拖动位移套用。
+- **越界累计上限**：`OverpanLimit = MaxOverpanDip / OverpanResistance`（120 DIP），反向时最多先回收这么多再滚动内容；原测试“底部快速反向回到顶部”的反向距离由 1000 调为 1200。
+- **5.3 位置隔离**：反馈开始前记录窗口原位；反馈期间与 `EndPanningFeedback(TRUE)` 回位动画期间，`WM_MOVE` 一律记录原位，窗口回到原位或用户 `WM_ENTERSIZEMOVE` 时退出；隐藏/销毁/取消/DPI 变化 `EndPanningFeedback(FALSE)` 直接回位。外置缩放边框随 `WM_WINDOWPOSCHANGED` 自然跟随位移。uxtheme 按系统目录完整路径加载，缺失则只硬停。
+- **参数初值**：衰减率 0.95/s、最小甩动 60 DIP/s、上限 8000 DIP/s、停止 10 DIP/s、抓住阈值 120 DIP/s、速度窗口 100 ms、静止判定 80 ms、越界阻尼 0.5、最大位移 30 物理像素（`UpdatePanningFeedback` 文档上限）、回弹 0.015 s×速度；均为 `Setting.Scroll.h` 常量，待实机调整。
+
+## 10. 审查修订（2026-11-26，Claude 自审 + Codex `gpt-6.2-sol` 三轮只读审查）
+
+- **P1（pointer-route 回归）**：系统取消的触摸/笔接触被写成“移出后松开”，组件编辑器会按预览区外放下而误删组件。`Setting.ComponentEditor.cpp` 在触摸/笔拖动中遇到无效指针位置即 `Cancel()`；鼠标不适用（backend 的 `WM_MOUSELEAVE` 也会写无效坐标）。
+- **轨迹绑定**：按 `io.MouseClickedPos` ±1 px 与设备类型匹配 Down，取尚未绑定过的最早一项，避免 ImGui 分帧消费时绑定到后一次接触；Win7 笔无轨迹不绑定。
+- **停放后的首条真实鼠标**：窗口过程在交给 backend 前补 `GetMessagePos` 位置，来源按消息签名区分笔/鼠标。
+- **惯性写回**：位置与回弹都存到窗口状态，由 `ConsumePendingScroll` 在宿主本帧 Begin 时投递，被省略的宿主不留过期目标、不触发回弹；会话输入重置调用 `Scroll::Cancel()`。
+- **点按停住**：同普通抓取要求 `IsWindowContentHoverable`；鼠标也会被接住（不激活控件、不拖动滚动、松开不起惯性）。
+- **越界**：上限 30 物理像素；API 缺失或 `BeginPanningFeedback` 失败时上限为 0，不累计越界量、不回弹；窗口线程再夹到 ±30。
+- **回位状态**：`EndPanningFeedback` 失败立即退出；回位记录原位最长 1 秒。
+- **第三/四轮**：轨迹绑定改为“未绑定过的最新匹配项”；降级（Begin/Update/回弹 Update 失败）在帧首生效并清空已累计越界量；接住时 `SetKeyOwner(MouseLeft, overlay, LockUntilRelease)`，直接轮询按键的控件（下拉框）读不到被接住的按下。
+- **已知残留（接受）**：渲染卡顿造成输入积压、且前后两次接触落在同一像素（±1 px）时，惯性可能绑到后一次接触而不起惯性（单接触路由只在前一次抬起后接受新接触，正常帧率下不可达）；接住后若永远收不到抬起，左键锁依赖会话输入重置解除；组件编辑器仍用原始点击收起已展开的 More。
+- **未处理（P3，已记录）**：测试关闭了 trickle 队列，未覆盖生产输入的分帧顺序；掌擦预览横向 child 不经 `ScrollbarStyleScope`，理论上出现纵向范围时只能拖动、无惯性。
