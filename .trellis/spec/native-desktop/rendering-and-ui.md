@@ -2805,6 +2805,7 @@ UI3主栏、属性面板及共用Bar renderer的PPT/白板分页文字适用；�
 - 只有真实目标变化才重定向，c从当前动画值继续，同目标不重启。首次/禁动画/forceReplace可直达目标；共享dt=0保持当前值，同一word/固定样式每帧至多推进一次。原raw字号/中点/曲线/幂等保持，不用新的独立时钟或无界map。
 - T=0的退出几何已自然归零，保留当前有效c避免除0及再打开额外放大；0<T<1的静止目标Q=0则修正到0。动画中间字号允许小于1px，不强行钳到1px。
 - 开合式弹出面板（2026-11-26 修订）：主栏绘制/橡皮/撤回/几何属性窗、颜色选择器、More（真实主栏与组件页预览共用 `PositionContentMore`）及 Scene 菜单面板，名义目标一律取**展开态**倍率（几何进度=1，父子组合 `BarAttributePanelFrame::expandedPose`），与开合方向、进度及 `.tar` 无关；收起到非零紧凑倍率（约0.16）的目标不参与取整，否则约2px的收起目标Q/T误差达30%–50%，c再以EaseInOutCubic插值，与面板Back曲线叠加成“展开到位后放大、收起前偏小”。如此一次开合内T恒定、c恒定，字号全程与面板等比，静止展开仍为整数像素，收起后c停在展开值、重开无尾段。收起到0的弹窗仍走T=0保持分支。
+- 形状编辑浮条（`ShapeEditorSurface::Impl`，2026-11-26）持有独立 renderer：`Draw` 开头必须 `BeginFontFrame(now,{0,1,false,true},scale)` 重置目标变换（保持立即落定、无修正动画），每层内容前 `SetFontTargetScale(fontTargetScales[layer])`；工具栏/参数/色板/取色器的展开态倍率在布局阶段按几何进度1求出并经 `FitEditorPose` 约束（取色器用 `ResolveEditorPickerPose(1.0,…)`）。宿主 DC 原始变换为单位矩阵，故目标Y向量 {0,展开态倍率} 即静止实际变换。未设置目标的独立 renderer 会退回当前DC缩放并逐帧floor，属错误用法。
 - 后续“属性窗/More 用户展开倍率”必须乘在展开态 pose 上（几何与字号同源），不得作为额外DC变换叠加。落点：`ResolveBarAttributePanelFrame` 的 `expandedPose`、`PositionContentMore` 的 `scale` 展开端与 `fontTargetScale`、RenderLoop 的 `drawAttributeFontTargetScale`/`fontPanelTargetScale`、`ColorPicker::Layout` 的 `fontPickerTargetScale`。
 - 当前DC仅描述实际连续轨迹；动画终点显式组合绝对目标Y向量。禁止用当前FLOAT矩阵与double目标/当前比值反推终点：13×float(0.95)/0.95可能得到12.999999836…并误截断12。不得加epsilon或round掩盖，静态默认入口可用实际DC。
 - DIP目标向量的物理长度为hypot(targetY.x*dpiX/96,targetY.y*dpiY/96)，PIXELS模式DPI因子为1；frameZoom已含屏幕/UI基准，不重复乘显示器DPI。
