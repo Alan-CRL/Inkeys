@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/11-26-setting-pointer-input/prd.md", "reason": "父任务来源需求与跨子任务验收"}
+{"file": ".trellis/spec/native-desktop/ui-pointer-session.md", "reason": "主栏 HandlePointer 消费接触、不派生长按右键的现行合同"}
+{"file": ".trellis/spec/native-desktop/settings-navigation.md", "reason": "设置窗口过程、标题栏与缩放边框命中合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 编码约定、UTF-8 BOM + CRLF"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64 解决方案构建与 Win7 兼容约束"}

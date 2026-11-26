@@ -1,0 +1,10 @@
+{"file": ".trellis/tasks/11-26-setting-pointer-input/prd.md", "reason": "父任务来源需求、用户决定（边界硬停 + 资源管理器式窗口位移）"}
+{"file": ".trellis/tasks/11-26-setting-pointer-route/design.md", "reason": "io.MouseSource 导入与样本轨迹接口（本任务的输入依赖）"}
+{"file": ".trellis/spec/native-desktop/settings-navigation.md", "reason": "拖动滚动宿主、导航滚动与屏蔽规则"}
+{"file": ".trellis/spec/native-desktop/setting-motion.md", "reason": "滚动宿主、贴底意图与页面块动效，惯性写回须兼容"}
+{"file": ".trellis/spec/native-desktop/settings-component-editor.md", "reason": "组件页内层滚动视口与内容型按钮转滚动规则"}
+{"file": ".trellis/spec/native-desktop/settings-performance-and-drawing.md", "reason": "设置按需渲染与帧请求，惯性期间持续帧"}
+{"file": ".trellis/spec/native-desktop/canvas-pan.md", "reason": "白板惯性的速度估计与停住判定经验（仅参考，不复用产品内核）"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 编码约定、UTF-8 BOM + CRLF"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64 解决方案构建与 Win7 兼容约束"}
+{"file": ".trellis/tasks/11-26-setting-scroll-inertia/research/imgui-inertia-libraries.md", "reason": "现成库调研结论：不引入 imgui_touch，可借鉴的衰减/估速/点按停住做法"}

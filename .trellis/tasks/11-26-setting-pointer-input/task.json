@@ -1,0 +1,30 @@
+{
+  "id": "setting-pointer-input",
+  "name": "setting-pointer-input",
+  "title": "设置窗口触摸与笔输入框架",
+  "description": "设置窗口按主栏框架接入触摸/笔：禁用触摸右键与点击反馈、Pointer/HiMsg 路由后导入 ImGui 并区分设备、页面滑动封装与触摸/笔惯性",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-26",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-26-setting-touch-feedback",
+    "11-26-setting-pointer-route",
+    "11-26-setting-scroll-inertia"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

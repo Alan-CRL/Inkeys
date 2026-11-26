@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/11-26-setting-pointer-input/prd.md", "reason": "父任务来源需求、用户决定（保留笔悬停）与跨子任务验收"}
+{"file": ".trellis/spec/native-desktop/ui-pointer-session.md", "reason": "Pointer/WM_TOUCH 来源选择、五窗路由、派生鼠标过滤与取消规则，设置路由须对齐"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "输入来源与设备分类约定"}
+{"file": ".trellis/spec/native-desktop/settings-component-editor.md", "reason": "组件页按设备的起拖阈值、触摸长按抓起与来源变化取消合同"}
+{"file": ".trellis/spec/native-desktop/settings-navigation.md", "reason": "设置窗口过程、ImGui 输入锁与标题栏命中"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "诊断日志与资源约定"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 编码约定、UTF-8 BOM + CRLF"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64 解决方案构建与 Win7 兼容约束"}

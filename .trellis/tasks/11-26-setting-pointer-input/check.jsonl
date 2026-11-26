@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/ui-pointer-session.md", "reason": "主栏输入框架合同，集成审查依据"}
+{"file": ".trellis/spec/native-desktop/settings-navigation.md", "reason": "设置窗口与拖动滚动合同"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 编码约定、UTF-8 BOM + CRLF"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64 解决方案构建与 Win7 兼容约束"}
