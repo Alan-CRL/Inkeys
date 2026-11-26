@@ -1,0 +1,11 @@
+{"file": ".trellis/tasks/11-24-uink-1-1-adaptation/handoff.md", "reason": "交接：现行决定摘要、Codex/构建/自检方法、工作区现状、易踩的代码事实"}
+{"file": ".trellis/tasks/11-24-uink-1-1-adaptation/research/uink-v11-spec.md", "reason": "UInk 1.1 规范副本；写入契约与读取容错的依据（规则编号）"}
+{"file": ".trellis/tasks/11-24-uink-1-1-adaptation/research/codex-investigation-20261125.md", "reason": "现状调查：字段差距、严格拒绝与崩溃面、场景存储、测试清单（file:line）"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Desktop/PPT UInk 自动保存、可撤回 Clear 的旧合同：只取行为目标（撤回、退出屏障、slot 生命周期），存储格式以本任务 design.md 为准"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板存储、冷页读取失败补呈现、每页视角的旧合同：只取行为目标"}
+{"file": ".trellis/spec/native/runtime-and-rendering.md", "reason": "Ink Document Persistence 与 Runtime Undo/Redo Cache And Page Restore：撤回与页恢复语义"}
+{"file": ".trellis/spec/native-desktop/shapes.md", "reason": "图形对象、预设与编辑历史；UInk 元数据部分将被官方 object 层替换"}
+{"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "橡皮形状与尺寸语义（等面积圆直径），读写时换算为笔尖高度"}
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "日志与退出阶段约定；UInk 读取接入 Inkeys::Log、失败出口"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 代码约定（BOM/CRLF、模块写法等）"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "测试与验证门禁约定"}

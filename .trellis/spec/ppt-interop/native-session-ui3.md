@@ -36,7 +36,7 @@
 - 文档切换和成功 Present 是不同阶段。只有 replay + Present 成功才发布 identity-ready；页码随后带同一 target 发布。可见 PageControl surface 全部成功提交（没有可见控件则直接回执）后，匹配当前 target 才开放新输入。
 - Unknown 暂停后清除旧 UI-ready；恢复同一页也须取得新回执。完整、可信的 EndScreen 则走独立 target→页槽切换→成功 Present→`-1/N` UI 提交→输入开放，版本与普通页同等严格。旧 UI ack、load/save 完成和 Host 重启前结果不能重新激活旧目标。
 - 真正退出放映时，PptInfo 的可靠 Inactive/已销毁或复用 HWND 边沿发布 Desktop，并以退出检测时的工具模式 revision 有条件地调和 Selection（即使工具枚举本来是 Selection）；后来的用户 Pen/Shape/Eraser 修改不能被旧退出覆盖。等待 Desktop Selection 输出帧期间保留旧可见表面并重试；最新工作区/模式/输出与内容帧就绪后成对交接，有墨迹走辅助穿透 ULW，空 clean 页允许隐藏画布而主栏保持。条件 Selection 成功后再次更新 Bar 样式/渲染；退出的 Desktop 就绪交接立即刷新根，较新工具不被旧退出覆盖，也不跳过该层级恢复。不能靠非 layered 主 HWND 的 `WS_EX_TRANSPARENT`、AdmissionBlocked 或 MA_NOACTIVATE 推断 USER32 穿透。白板、Unknown、结束黑页和同次 rebind 不触发此收尾。
-- EndScreen 的 UInk 是同一文稿文件中 N 个正常页之后的独立第 N+1 个 active canvas：`pageIndex=N/pageNumber=N+1`、单个 `inkeysPageKind=end-screen` marker、无 SlideID、独立 pageGuid/history。真实 `slideIds`/COM 总数/索引 ID 列表仍只有 N 项。codec 仅对这个标记例外，严格应用导入拒绝重复/歧义；旧 N-canvas 文件冷读补空结束页。重排/增删页按 SlideID 投影正常页，结束页 pageGuid 随文稿保留并移至新的内部 N。
+- EndScreen 的 UInk 是同一文稿文件中 N 个正常页之后的独立第 N+1 个 active canvas：`pageIndex=N/pageNumber=N+1`、2026-11-26 起写官方 `pageKind = 1`（EndScreen）、无 SlideID、独立 pageGuid/history（私有 `inkeysPageKind` 已删除，见 [uink-storage.md](../native-desktop/uink-storage.md)）。真实 `slideIds`/COM 总数仍只有 N 项；文件中没有结束页时冷读补空结束页。重排/增删页按 SlideID 投影正常页，结束页 pageGuid 随文稿保留并移至新的内部 N。
 - parked/warm slot 先恢复旧 target，再比较有序 SlideIDs；普通 pageIndex/当前 SlideID/targetRevision 变化不是拓扑变化。
 
 ### 位置、保存和有效缩放

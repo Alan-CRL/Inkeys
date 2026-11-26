@@ -1,0 +1,7 @@
+{"file": ".trellis/tasks/11-24-uink-1-1-adaptation/research/uink-v11-spec.md", "reason": "逐条核对写入契约（TYPE-1、HDR-1、INK-2/3、CLEAR-4、HEXT-5、SAVE-1/19、NIB-3/5）与读取容错（FILE-16/17、TYPE-7/8/9、CANVAS-22、SHAPE-14）"}
+{"file": ".trellis/tasks/11-24-uink-1-1-adaptation/research/codex-plan-review-20261125.md", "reason": "规划审查提出的风险点，验收时逐项确认已覆盖"}
+{"file": ".trellis/tasks/11-24-uink-1-1-adaptation/research/codex-plan-rereview-20261125.md", "reason": "复核提出的风险点（S3 旧路径依赖、Compound、单页上限、Compact 提交点）"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "撤回、退出屏障、slot 生命周期的行为目标不得回归"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板冷页、视角、主题的行为目标不得回归"}
+{"file": ".trellis/spec/native/quality-and-validation.md", "reason": "测试门禁：不得删测试凑通过、变异验证"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "BOM/CRLF 与代码约定"}

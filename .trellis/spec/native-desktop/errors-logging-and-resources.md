@@ -34,13 +34,14 @@ enum class Level : std::uint8_t { Debug, Info, Warn, Error, Critical };
 enum class Threshold : std::uint8_t { Debug, Info, Warn, Error, Off };
 enum class Module : std::uint8_t { Main, Launch, Config, I18n, Window, UI3, Bar, Setting, Whiteboard,
     PageControl, SelectionOverlay, Freeze, Magnifier, Ppt, PptCOM, Draw3, Input, Haptics, Update,
-    Plugin, State, Shutdown, Logging, Count };
+    Plugin, State, Shutdown, Logging, UInk, Count };   // UInk：2026-11-26 墨迹存储读写（见 uink-storage.md）
 enum class Channel : std::uint8_t { TouchArea, PptCOM, Draw3, Haptics, Cursor, CanvasPan, Count };
 
 template <class... A> void Debug/Info/Warn/Error/Critical(Module, fmt::format_string<A...>, A&&...); // 取锁只等内存拷贝
 template <class... A> void TryFormat(Level, Module, fmt::format_string<A...>, A&&...);              // 热路径非阻塞
 template <class... A> void Trace(Channel, Module, Level, fmt::format_string<A...>, A&&...);         // 通道，非阻塞，绕过阈值
 bool TryWrite(Level, Module, std::optional<Channel>, std::string_view) noexcept;
+void RecordDropped(Level) noexcept;                // 调用方在自身格式化失败时计入丢弃统计
 bool Start(const SessionInfo&) noexcept;          // 建目录、预留文件、写会话头、起写线程；不清理
 void ApplyConfig(Threshold, int retentionDays, int maxSizeMb, std::uint32_t channelMask) noexcept; // 读配置后调用一次
 void SetThreshold(Threshold) noexcept;            // 设置页热更新
@@ -57,6 +58,7 @@ std::wstring Directory();
 - 行格式：`[YYYY-MM-DD HH:MM:SS.mmm][LEVEL][Module][T线程ID][通道] 正文`；多行正文逐行补完整标头；截断（单条 > 16 KiB，退回 UTF-8 字符边界）末行追加 ` ...[truncated]`。正文中的结构化标签（`[PptPerf]`、`[PptGate]`、`[UI3Diag]` 等 key=value）由脚本解析，不得删改；手写模块前缀（如 `[主线程][IdtMain]`）不得再出现，模块由 `Module` 表达。
 - 会话头（纯文本，文件最前）：时间与时区、edition/version、`build=Release|Dev`（按 `IDT_RELEASE`，项目 Debug 配置不定义 `_DEBUG`）、架构、系统版本、pid、userId、路径、启动状态；`ApplyConfig` 再写一行不受阈值影响的 `session.config threshold=… channels=… retention.days=… retention.maxMB=…`。
 - 同步：两块 2 MiB 静态缓冲，SRWLock 只保护容量检查与 memcpy；唯一写线程交换缓冲后在锁外经 `spdlog::sinks::basic_file_sink_st` 写文件。Debug/Info 只用前 75%，Warn+ 可用全部。Warn+ 立即落盘，其余距上次落盘 1 s 内落盘。
+- `Module::UInk`（2026-11-26）：墨迹存储由 L4 worker 在服务锁外输出，每次实际读盘一行 `[UInkRead]`、写入失败/降级 `[UInkWrite]`、读盘前失败 `[UInkQueue]`、整理 `[UInkCompact]`；先查 `Enabled`、只记文件名、计数取 L1 汇总；格式化异常调用 `RecordDropped`。判级与字段见 [uink-storage.md](uink-storage.md)。新增模块须同步 `Log.h` 枚举与 `Log.cpp` 名称表（`static_assert` 校验）；模型器测试工程中引用 `Log.h` 的源文件需单文件 `/utf-8`。
 - 热路径（Draw3 绘制/输入线程、RTS 回调、WndProc、窗口 owner、UI3 渲染回调）只能用 `TryWrite`/`TryFormat`/`Trace`/`DiagnosticOutput`：拿不到锁或空间不足即丢弃计数，下一批开头写 `dropped debug=… info=…` 行。
 - 阈值：Critical 永远写入；`Off` 只关闭普通分级日志，会话头、`session.config`、Critical 与已开启通道仍写入。6 个调试开关（`Experimental.Inkeys3.ConsoleOutput.*`，需重启）与非 Release 的 `INKEYS_DRAW3_WIN7_DIAGNOSTICS` 合成通道掩码，通道记录不受阈值过滤。
 - 启动顺序：`Start` 早于读配置（之前的日志进入缓冲不丢）；清理必须等 `ApplyConfig` 取得真实 `Application.Logging` 参数后由写线程执行，否则用户的“永不清理”会被默认 7 天误删。

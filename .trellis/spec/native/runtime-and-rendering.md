@@ -996,7 +996,7 @@ Correct：文档保存Canvas-local真值，viewport只影响呈现，可信快�
 
 ### 1. Scope / Trigger
 
-修改完成态 Stroke、Canvas/Page/Collection、首次 L2 提交、新建页、未来保存/导出/同步/回放时，必须应用本契约。
+修改完成态 Stroke、Canvas/Page/Collection、首次 L2 提交、新建页、保存/导出/同步/回放时，必须应用本契约。运行时模型到 UInk 1.1 的映射（笔尖换算、页元数据、图形对象层）、文件布局与读取容错见 [uink-storage.md](../native-desktop/uink-storage.md)。
 
 ### 2. Signatures
 
@@ -1066,7 +1066,7 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 
 - `CanvasRuntimeHistory::AppendStroke / LastVisibleItem / UndoLastVisible / LastRedoItem / RedoLastUndone / DiscardRedoBranch / RedoDepth`
 - `CanvasPageRuntimeState { history, rasterState, beforeStates, afterStates, undoFloor, intervalOrdinal, intervalLoadPending, previousClearUndoAvailable, clearRedoAvailable, boundaryFallback, clearRedoContinuation }`
-- `UInkClear { type=6, contentId, undoId, extra? }`
+- `UInkClear { type=6, contentId, undoId }`（UInk 1.1；读取时 `extra` 只跳过、不进入模型）
 - `UndoCachePolicy { byteBudget=64 MiB, maxEntries=20 }`
 - `CompositionCachePolicy { byteBudget=192 MiB }`
 - `InkHistoryGpuCache::CapturePreimage / RestorePreimage / RestoreComposition`
@@ -1076,7 +1076,7 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 ### 3. Contracts
 
 - Stored Stroke 不保存 visibility 或缓存；每个 Page/Device Canvas 使用绘制线程独占的 `CanvasRuntimeHistory` sidecar。runtime history 只表示当前 Clear 区间内的 Stroke，成功撤回把隐藏项压入该 Canvas 的 LIFO redo 栈；成功重做恢复 visibility、previous-visible 链、可见 Tile 引用和 composition generation。
-- Clear 不是 RenderItem/GPU operator。有效 Clear 先把当前可见 tail 封存为 UInk Type 6 边界，再执行 `InkCanvas::ClearStrokes + fresh CanvasRuntimeHistory + 全量透明 GPU/瞬态重置`；空内容不创建边界。这样 durable 后 controller 不再保留 Clear 前 Stroke/history。
+- Clear 不是 RenderItem/GPU operator。有效 Clear 先把当前可见 tail 截取为 `boundaryFallback`，再执行 `InkCanvas::ClearStrokes + fresh CanvasRuntimeHistory + 全量透明 GPU/瞬态重置`；空内容不创建边界。白板/PPT 随后追加该页“上一区间 + Type 6 Clear”，Desktop 写被清空区间的快照；写入确认落盘后 controller 才释放 `boundaryFallback`，之后跨 Clear 撤回从文件读回（每页文件最多一个 Clear）。
 - `LastVisibleItem()` 表示当前区间最后一条可见 Stroke。`undoFloor` 只密封普通持久化导入根；Clear Undo 恢复的最近画布以 `undoFloor=0、intervalOrdinal=0` 物化，全部 Stroke 可逐笔 Undo，后续持久化将它写成 canonical 新根并截断更早 Clear。`previousClearUndoAvailable` 独立限制跨 Clear：当前区间到 floor 时最多恢复一次最近画布，成功后消费，恢复画布撤空后不得继续进入更早区间。Eraser Stroke 即使视觉为空仍算内容。
 - 新 Stored Stroke 一旦成功追加到 `InkCanvas`，必须在 footprint、RenderItem 和 GPU 提交前调用 `DiscardRedoBranch()`；之后任一步失败也不能复活旧分支。同时清 `clearRedoAvailable/clearRedoContinuation` 并取消本页旧 interval load；Desktop迟到恢复还须验请求history revision，新增后再撤空也不能复活旧请求。Laser、Cancelled、翻页、Resize 和 viewport 移动不清空 redo。
 - 热前像使用 `128x128 BGRA8` screen-local block。Canvas `128x128` undo tile 只确定受影响屏幕范围；小数 viewport 下一个 Canvas tile 可覆盖 129 个屏幕像素，必须拆成相邻 screen block，不能直接写入单个 slice。默认 `64 MiB / 20 entries` 对应 1024 槽；顺序固定为 `Raster L1 -> Capture unchanged L2 -> Resolve L2 -> Commit ticket`。Capture/restore 要求 page、item、raster state、viewport float 值和窗口尺寸完全一致；viewport 只需有限，不要求整数。Copy 只在绘制线程提交，不 Map/readback/wait。
@@ -1101,7 +1101,7 @@ Correct：`只用确认真实点生成最终 Stroke；先 Append，再从该对�
 | Redo expected 或 raster state 不匹配 | 不改变 visibility/redo 栈；请求权威刷新处理不可信 L2 |
 | Redo raster/resolve/visibility 失败 | 取消未提交热前像，恢复当前隐藏 history；候选仍可重试 |
 | Undo 后成功追加新 Stored Stroke | 立即清空该页 redo；后续 RenderItem/GPU 失败也不恢复旧分支 |
-| 当前区间 Undo 到 `undoFloor` | 有跨 Clear 资格时，Desktop 消费最近恢复点，PPT 最多请求一次 `intervalOrdinal-1`；恢复画布以 floor 0 逐笔撤空 |
+| 当前区间 Undo 到 `undoFloor` | 有跨 Clear 资格时，Desktop 消费最近恢复点（内存或快照文件），白板/PPT 依次用 `clearUndoHistory`、`boundaryFallback`、单页 `LoadPreviousInterval`（读该页最后版本中 Clear 之前的部分）最多恢复一次；恢复画布以 floor 0 逐笔撤空 |
 | `A -> Clear -> B -> Clear -> C` | 当前只合成 C；撤空 C 后最多加载 B，B 可继续逐笔撤空，但不得加载 A |
 | 空内容 Clear | no-op，不写 UInk Clear、不替换 runtime、不改变 raster state 或 revision |
 | 翻页、Resize、viewport 移动 | 保留各 Canvas redo 栈；只失效不兼容的显示缓存或热前像 |

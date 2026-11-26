@@ -18,12 +18,19 @@
 - 每材质MAX/MIN覆盖并集后有序叠加Add+Retain*Below，不对不同颜色直接MAX。临时材质层和对象聚合层在设备/尺寸变化时释放重建；同步失败前不改调用方目标。
 - renderer按id/revision/displayScale缓存派生RenderData，最多128项。几何或样式变化必须增加revision；临时绑定退出时解除。NO_OVERWRITE能力不足逐批DISCARD且偏移归零。
 
-## UInk与冷历史
-- 【当前私有版本，2026-11-15 更正】inkeysShape 只解 v7（`kInkeysShapeVersion=7`）。本文各轮中 v1–v6 的写入、读取、兼容与旧对象规范化条款（含 v2 旧箭头、v3/v4 aux、v5 旧立体规范化、`NormalizeLegacyPolygonSolid`、旧 partCount 公式）已随 e8eb2f1b 删除；退役版本与未知版本同样返回 UnsupportedVersion、按标准几何降级、不恢复构造。仍须保留的兼容只有三项：已发布 20261109a 的无元数据四形导入（`ImportLegacyShape`、DPI 档位圆角识别）、旧直线/矩形工具仍在使用的 `LegacyKind`、未知版本标准几何降级。白板冷历史的 v1/v2/v3 是独立格式，不受此更正影响。
-- 继续UInk10标准Shape(type5)，线/折线/矩形/圆/椭圆/多边形优先标准表示，旋转使用弧度；非正交变换可标准多边形降级。
-- extra.inkeysShape version1保存精确身份、revision、kind、mode、geometry、transform、style及parts。复合首部件持完整根，后续只允许严格六字段version/id/revision/reference/partIndex/partCount；wire contentId连续、共同undoId，恢复为单逻辑项。
-- 支持版损坏、重复ID、引用不一致、缺部件拒绝恢复；未知版本恢复标准几何并返回诊断。旧无元数据文件首次导入生成UUID，后续保存稳定。
-- 桌面/PPT/白板快照均复制Shape；白板历史写v2读v1/v2，隐藏redo、Clear fallback/continuation保留精确身份。只在候选完整验证后安装。
+## UInk 1.1 图形对象层
+
+2026-11-26 起（C1.4+C1.5）图形按 UInk 1.1 写读，格式总合同见 [uink-storage.md](uink-storage.md)。私有 `extra.inkeysShape`（v1–v7）与白板历史 JSON 已删除，读取时不再识别；本文后续各轮中“写 inkeysShape vN”的条款只保留其字段语义（aux、约束、立体参数等），载体改为下面的官方 `object`。
+
+- **可显示层**：继续写标准 Shape 部件（type 5），线/折线/矩形/圆/椭圆/多边形优先标准表示，旋转用弧度；箭头为 Line + Polyline、闭合虚线 8 段、立体按可见性拆段（与规范 PRESET-9/14/21–23 一致，不改算法）；描边补写 `lineCap = 0`，`lineJoin` 缺省 Round 不写。任意 Shape 读取器可直接画出外观。
+- **可编辑层**：首部件的官方 `object` 承载 `id`、`revision`、`transform`、`aux`、`partCount`、`preset`、展平的 `construction` 与 `style`；后续部件只写 `{ref, partIndex}`；全部部件 `contentId` 连续、共同 `undoId`，恢复为单个逻辑项。
+  - `preset`：21 个官方名（`line`、`arrow`、`rectangle`、`rounded-rectangle`、`circle`、`ellipse`、`triangle`、`parallelogram`、`rhombus`、`trapezoid`、`regular-polygon`、`polyline`、`polygon`、`arc`、`sector`、`cuboid`、`cube`、`cylinder`、`cone`、`prism`、`pyramid`）与 4 个 `legacy-*`（`solid-line`、`dashed-line`、`outline-rectangle`、`filled-rectangle`）。
+  - `construction` 展平为 `start`、`end`、`vertices`、`mode`、`sides`、`cornerRadius`、`constraint`、`constraintVertex`、`sweep`、`height`、`baseSize`、`radius`、`baseRotation`、`mirrored`、`offset`、`right`（点写 `{x, y}`），各预设的必填键按规范附录。
+  - `style`：`stroke`、`fill`、`strokeColor`/`fillColor`（只写 `fallback`）、`strokeOpacity`、`fillOpacity`、`width`（局部单位，部件描边宽 = `width × √|det T|`）、`linePattern`、`dashOffset`。根里的派生 `geometry`/`parts`/`kind` 不写。
+- **读取**：`preset` 认识、`construction` 有效、重建部件数与 `partCount` 一致 → 重建为可编辑图形（不再逐值比对几何）；外来预设对象以重建结果显示（有意偏离 SHAPE-15）。对象层完整但无 `preset`、预设不认识、构造无效或部件数不符 → 读成 `Kind::Compound`，部件原样保留、整体一个撤回项，写 warning。对象层不完整（部件缺失、顺序不连续、`ref` 找不到、`id` 重复）→ 相关部件作为独立普通图形显示，写 warning，不拒绝整页。`shape.object` 内部重复键只丢对象层、保留可绘制部件。
+- `legacy-*` 旧矩形：文件圆角与当前缩放下 `min(4×显示比例, 半短边)` 一致时恢复为旧矩形，否则读成 `Kind::Compound` 按文件部件精确显示，不按当前 DPI 重算。
+- 导出时单个图形超出冷读几何预算（每页 2^26 工作量）：只跳过该项，页标记降级并保留驻留副本，写 Warn；不让整页失败。保存侧冷读预检发现会被足迹预算跳过的项时，文件照常写入，回执同样标记降级、页不驱逐。
+- 桌面/PPT/白板快照均复制 Shape 对象（含身份与构造），冷读页丢弃图形修改前版本；热页保留完整运行时编辑历史直到真正驱逐。
 
 ## 验证边界
 内部--draw3-shape-core-test验证共享核心及生产文档/白板历史；--draw3-shape-renderer-test使用正式renderer、嵌入资源及离屏纹理，不创建HWND。共享测试--shape-core-only、--uink-file-only覆盖模型、协议与文件事务。完整构建和真机验证状态见本轮任务validation.md，Win11离屏测试不替代Win7/Win10实机。
@@ -36,7 +43,7 @@
 - 箭头是一个Compound，杆按所选线型，头为实线Polyline。头部segment携带GpuPrimitive.flags bit16(kPrimitiveForceSolid)，同色覆盖在同一批次求并集，不能拆成source-over造成半透明接缝加深。64字节GPU布局和旧shader协议不变。
 - Bridge::Tool/DrawingTool仅追加Shape，完整发布ToolSpec/ShapeStyle；DIP只在Down转一次。活动contact捕获不可变完整快照与稳定ID，预测仅替换预览端点，raw Up重新生成最终对象，一次Create进入一个逻辑历史项。新退化图形或Cancel不留项。
 - 仅shape-family→shape-family允许后续Down采用当前工具，已有接触不变；普通Pen/Eraser原批次锁政策保持。不得让旧primitive枚举与新模板描述跨代组合。
-- 带construction的inkeysShape写v2，原对象仍可v1，读v1/v2（已退役：现仅解 v7，见“当前私有版本”更正）。复合reference版本必须匹配根。UInk维持10与标准几何降级，白板嵌套元数据复用同codec；变换应用于对象transform，不能只移动派生geometry而遗漏construction。
+- 构造随对象持久化（2026-11-26 起为 UInk 1.1 `object.construction`，见“UInk 1.1 图形对象层”）；复合后续部件以 `{ref, partIndex}` 引用根。变换应用于对象transform，不能只移动派生geometry而遗漏construction。
 - 回归必须覆盖生产Coordinator/modeler/raw-Up/history/cold-redo、全部预设与样式、活动RenderData对比最终带viewport变换重放、标准文件恢复和旧四图形像素基线。仅CPU的工厂测试不能替代生产接线验证。
 - 产品接线必须包括`Draw3.Product::PublishProductState`绘制属性白名单的shapeTool/shapeStyle，不能只加Bridge字段和Host消费。通用PS覆盖率使用`SV_Position.xy + shapeOrigin`像素中心，禁止以投影插值坐标代替；全画布与tile需保持逐字节一致。
 
@@ -59,7 +66,7 @@
 - `InkCanvas::ReplaceStroke/ReplaceShape`在同索引替换，稳定对象ID、层序不变。页面统一operation journal/cursor管理Append与Replace，替换项保存语义before/after，不另建Shape专用撤销栈。普通笔追加不因编辑机制增加全页扫描。
 - Preview在排除原项的相同层位重放候选；提交需候选GPU有序恢复成功，再安装CPU/journal。失败恢复原画面并保留权威恢复请求，不发布候选UI真值。旧、新及上次预览tile共同失效，淘汰创建hot preimage及不适用的composition缓存。
 - revision使用页持有的不可复用运行期分配器，覆盖预览、Undo/Redo重物化及新分支；不能直接把语义快照旧revision交缓存。页面/文档权威安装必须清Shape renderer cache，关闭旧会话并推进身份；异步PPT/冷页恢复也不能绕过。
-- UInk外层保持10；新增typed construction写`inkeysShape v3`并兼容v1/v2（已退役：现仅解 v7，见“当前私有版本”更正），Compound根/引用wire版本严格一致，标准几何承担可显示降级。白板历史v3保存journal/cursor/floor、隐藏redo、最近Clear前完整区间与后继continuation，兼容旧v1/v2。Clear前历史快照截断递归；恢复前候选全分支校验，损坏不改原状态。冷页items须一一引用不同strokes；未被引用的strokes是「画布已追加、历史追加失败」的孤儿，读取时丢弃并压紧索引，不得整页失败；items多于strokes、越界、重复引用仍拒绝。
+- 持久化以 UInk 1.1 标准部件 + 官方 `object` 承载（见“UInk 1.1 图形对象层”），标准几何承担可显示降级。白板历史 JSON（journal/cursor/floor、隐藏 redo、continuation）已随 C1.4 删除：热页的完整编辑历史只在内存中保留到驱逐，冷读页按 `undoId` 分组重建撤回，不恢复编辑 journal 与图形修改前版本。
 - 编辑、编辑Undo/Redo即使hasContent不变也发mutation/内容修订，触发既有保存请求；PPT有编辑历史的warm页不能仅用visible导出替代CPU历史。桌面/PPT跨进程只恢复既有文件撤销边界，不额外恢复编辑框或完整编辑栈。
 - 验证必须覆盖生产Controller的raw/predicted/Cancel/Fatal/多接触与同层编辑路径、真实UI3离屏及GPU，而非仅纯工厂。无HWND测试不能替代Win7/Win10/实体笔触屏与真实DWM层叠人工验收。
 
@@ -105,10 +112,10 @@
 - 圆支持Center且默认开；椭圆支持Foci且默认开；正多边形/圆弧/扇形支持Center且默认关；矩形/圆角矩形/平行四边形/菱形/梯形支持Diagonals且默认关。工厂屏蔽不支持的位。工具用 `auxiliaryChoices` 区分未选过与显式关闭，选择按位记忆；对象读取不应用工具默认值。
 - 辅助几何只派生给渲染/导出，`BuildGeometry.parts` 仍只含本体，bounds包含辅助范围。点为填充Circle，半径=max(画布描边宽度,2画布像素)（下限与显示比例无关，预览、重放、导出几何确定一致），焦点位置共用 `CanonicalEllipse`；对角线沿用Dashed的4w/6w。纯填充时不派生辅助几何，但保留 auxiliary 位；切回描边恢复。辅助批次可与相邻同色同透明度的本体批次求覆盖并集，不能跨其他材质。开启矩形辅助时必须绕过旧图元路径。
 - F1/F2只读取对象Foci位，不再使用临时BuildOptions开关。对象属性经 `BuildShapePropertyCandidate` 的SetStyle路径进入原Replace journal，工具默认值不受对象编辑影响。
-- `inkeysShape` 非零aux写v4，根增加顶层无符号字段 `aux`（0..7），construction仍可选；零aux严格沿用原v1（无construction）/v3编码，不增加字段。读v1/v2/v3时aux恒为0（已退役：现仅解 v7，见“当前私有版本”更正）。白板嵌套元数据共用此codec，外层冷历史版本不变。
+- `inkeysShape` 非零aux写v4，根增加顶层无符号字段 `aux`（0..7），construction仍可选；零aux严格沿用原v1（无construction）/v3编码，不增加字段。读v1/v2/v3时aux恒为0（已退役：现仅解 v7，见“当前私有版本”更正）。2026-11-26 起 `aux` 改由 UInk 1.1 `object.aux` 承载，私有 codec 已删除。
 - 历史BuildTiles必须同时消费本体与BuildAuxiliaryGeometry：虚线可按实线保守枚举，点按填充bounds枚举，覆盖undo与composition两种tile；不能把辅助部件加回本体HitTest。渲染dirty和焦点落定使用已含辅助范围的GeometryResult.bounds；回归以大空心矩形内部tile、跨tile圆心点及撤销/重做/冷重放逐字节像素对比验证。
 - 旧四部件Cone（含0<|height|<=ry）仍按旧根的parts计数读取；标准导出先从construction生成规范对象，元数据和标准部件均取该对象，禁止用旧四部件根搭配新两部件几何。回归覆盖±ry及其内部高度的真实文件保存/重载与可见几何相等。
-- UInk10按“本体部件 + BuildAuxiliaryGeometry部件”顺序写出，共同undoId、连续contentId、根/严格六字段reference版本一致。读支持版本时使用同一派生器校验总partCount，校验id/revision/index/count/version后只恢复根对象。未知版本逐标准部件恢复；无metadata的第三方标准部件也各自恢复，允许相邻共同undoId，不猜测辅助关系。
+- 按“本体部件 + BuildAuxiliaryGeometry部件”顺序写出，共同undoId、连续contentId；2026-11-26 起为 UInk 1.1，首部件 `object` 带 `partCount`，后续部件 `{ref, partIndex}`。读取时用同一派生器重建并校验部件数后只恢复根对象（不再逐值比对几何，见“UInk 1.1 图形对象层”）。未知版本逐标准部件恢复；无metadata的第三方标准部件也各自恢复，允许相邻共同undoId，不猜测辅助关系。
 
 ### 4. Validation & Error Matrix
 
@@ -207,7 +214,7 @@ Correct：读`constructionContactActive`禁用全部动作；可见性取多笔�
 - 底面投影采用未投影正多边形的局部 y 比例；Axis 位于外接椭圆前端，半径为 hypot(end.x-start.x,2×(end.y-start.y))，不能使用首顶点的纵分量，否则水平首顶点失效。改投影不改变外接圆，首顶点编辑反解投影坐标。
 - 棱柱/棱锥一条边只有全部相邻面背向观察方向才用隐藏虚线；共面阈值内按可见。高度符号、大小、底面投影均进入朝向计算；不改变圆柱/圆锥约定。
 - 弧/扇形首步圆周强制临时 Dashed，最终样式保留。累计角跨另一端时交换起止表示并保留原绕向；跨回可逆，Commit 消费同一累计角，零扫角/超整圆不提交。
-- 非 Free 约束、13/14 边或 Prism/Pyramid 写 inkeysShape v5：tool 增 constraint，Solid 参数增 baseProjection，根仍含 aux。旧 v1–v4 默认 Free/.5；旧 v3/v4 棱柱/棱锥先按旧算法核验 parts 再规范化（已退役：现仅解 v7，见“当前私有版本”更正）。未知版本仍标准几何降级；持久化枚举不重排。
+- 非 Free 约束、13/14 边或 Prism/Pyramid 写 inkeysShape v5：tool 增 constraint，Solid 参数增 baseProjection，根仍含 aux。旧 v1–v4 默认 Free/.5；旧 v3/v4 棱柱/棱锥先按旧算法核验 parts 再规范化（已退役：现仅解 v7，见“当前私有版本”更正）。未知版本仍标准几何降级；持久化枚举不重排。2026-11-26 起 `constraint`/`baseProjection` 等改由 1.1 `object.construction` 承载。
 
 ### 4. Validation & Error Matrix
 | 条件 | 结果 |
@@ -265,7 +272,7 @@ Wrong：以屏幕深度向量冒充立方体真实边长；每个圆底细分段
 `SolidConstruction { height, baseSize, baseRotation, mirrored, offset }`；`ConstructionSession::BeginPointEditAt(size_t, Vec2)`；`ShapeUiActionKind::ConstructionBeginPointEdit/ConstructionPreviewPointEdit/ConstructionCommitPointEdit/ConstructionCancelPointEdit`。
 
 ### Contracts
-- v7为唯一支持的inkeysShape私有版本；solid参数数组依次height、baseSize、baseRotation、mirrored、offset。构造map四字段tool/start/end/parameters，不再写legacyArrow。未知/退役版本返回UnsupportedVersion，走标准几何，不恢复构造。
+- （历史，2026-11-26 已删除）v7曾为唯一支持的inkeysShape私有版本；solid参数数组依次height、baseSize、baseRotation、mirrored、offset。现由 UInk 1.1 `object.construction` 的 `height`、`baseSize`、`baseRotation`、`mirrored`、`offset` 等展平键承载，私有字段读取时不再识别。
 - 投影先模型Z旋转，再应用x'=x±y/(2√2)、y'=-y/(2√2)+height，height负值向上。mirrored选择横向符号；不保留俯仰和屏幕二维旋转。
 - 方体首笔按外接矩形宽高分解对应短对角线：宽=|dx|+|dy|、深=2√2|dy|；镜像取dx*dy<0，四象限交换端点保持同一几何。Cube投影拟合模型正方形、高度绝对值=边长。
 - 底面柄在逆投影空间同时径向等比缩放与Z旋转，长方体保持比例；圆底仅改半径。模型offset随旋转一起投影，正形锁定offset=0。

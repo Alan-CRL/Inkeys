@@ -34,6 +34,8 @@ BaseDiameterDip旧16→24、64→40，32/24/40幂等；缺失/非法新键分别
 
 2026-09-25 Touch/ScreenPenHybrid 标准以上增长时间调整不改变 24/32/40、0.5B/B/5B 或 0.85/1/1.15 的含义；灵敏度仍只改变 `SweepActionSpeed` 的清扫动作余量，不能缩放证据时钟或作为场景替代。
 
+- 墨迹文件中的橡皮形状与尺寸（2026-11-26 起，UInk 1.1）：圆形橡皮写直径、不写 `nib`；矩形/方形橡皮写 `nib {shape:1, aspect:0.6666667 | 1}`，点宽写等面积换算后的笔尖高度 `H = (s/2)·√(π/aspect)`，读回 `s = 2H·√(aspect/π)`。换算只在 L3 读写边界进行，软件内部“等面积圆直径”语义与本节尺寸规则不变；私有 `inkeysEraserShape` 已删除。详见 [uink-storage.md](uink-storage.md)。
+
 ### UI与资源
 使用同一Bar HWND、D2D context、共享RenderPipeline线程。标准大按钮/主题/边缘光/分割线复用Bar现有实现。`Assets/EraserGripVisual.h`是C++预览/HLSL的无副作用比例来源，FXC临时ASCII副本必须同步。
 

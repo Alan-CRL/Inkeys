@@ -52,16 +52,16 @@ Wrong：RTS 入队，绘制线程 Flush 时同步写控制台；Stop 第一次�
 
 ### 1. Scope / Trigger
 
-修改当前进程 PPT 冷 slot 加载、严格导入、worker completion 或重试闸门时适用；与 [PPT slot 存储合同](draw3-integration.md#scenario-ppt-三态-slotuink-自动保存与当前进程恢复) 一起使用。
+修改当前进程 PPT 冷 lane 加载、页导入、worker completion 或重试闸门时适用；与 [PPT slot 存储合同](draw3-integration.md#scenario-ppt-三态-slotuink-按页保存与当前进程恢复) 和 [uink-storage.md](uink-storage.md) 一起使用。2026-11-26 起底层改为 `PagedInkStore` 按页读取，下文原则不变。
 
 ### 2. Signatures
 
-`PresentationAutoSaveService` 的真实 Load worker 调用 `ReadUInkFile`；产品复用既有 current-load retry helpers 和 CLI `--draw3-ppt-current-load-retry-test`、`--draw3-pending-topology-load-test`，不新增无限重试入口或用户配置。
+`PagedInkStore` 的 `LoadLane` worker 按确认目录对每页调用 `ReadUInkPage`（L2 `ReadRange`）；产品复用既有 current-load retry helpers 和 CLI `--draw3-ppt-current-load-retry-test`、`--draw3-pending-topology-load-test`，不新增无限重试入口或用户配置。（旧 `PresentationAutoSaveService`/`ReadUInkFile` 已删除。）
 
 ### 3. Contracts
 
-- `ReadUInkFile` 返回 `IoError` 时，completion 保留 `IoError`；不能因没有 snapshot 将它先变成 `SourceChanged`，也不能当作不存在文件并安装空白画布。
-- 只有该分类修正先于原有严格校验。源/key、workspace、文稿/页身份、revision、格式和导入检查继续按各自原语义处理；foreign session 仍按既有独立 storage track 策略隔离，不能简化成所有 foreign 一律拒绝。
+- 读盘 I/O 失败（打开、共享冲突、定位、读取）时，回执保留读取失败及系统错误码，不能当作不存在文件并安装空白画布；“从未写过的 lane”只由内存中的确认登记判定，不由磁盘结果推断。
+- 页身份（GUID/绑定/`pageIndex`/稳定页 `slideId`）、确认边界与结构检查继续按各自语义整页失败；页段部分损坏只降级不失败（见 uink-storage.md）。本进程不读其他进程的文件，旧 foreign session/track 策略随旧服务删除。
 - 当前目标自动重试沿用四次预算及 250/500/1000/2000ms 退避。目标/代次变化、退出与迟到 completion 的原门控保持；Loaded 且已有恢复点的路径在真实 materialize/install 成功前不提前开放准入；已严格确认 NotFound 的独立空槽仍按原语义初始化，无需虚构一次 materialize。
 
 ### 4. Validation & Error Matrix
@@ -79,11 +79,11 @@ Good：短暂独占读取冲突解除后恢复已保存笔迹。Base：未修改
 
 ### 6. Tests Required
 
-生产 CLI 必须用真实 worker 保存非空 UInk、真实不共享文件句柄制造失败、真实 completion 驱动既有重试并 materialize/install，核对原笔迹；保留预算、目标/代次/退出用例，覆盖 source/key、workspace、revision、坏 header 和截断 tail。既有 `--presentation-autosave-only` 另验证 foreign track/旧文件保护；文件回归不代替真实 Office/WPS 联动。
+生产 CLI 必须用真实 worker 保存非空 UInk、真实不共享文件句柄制造失败、真实 completion 驱动既有重试并 materialize/install，核对原笔迹；保留预算、目标/代次/退出用例，覆盖页身份不符、坏 header 和截断 tail。`--paged-ink-store-only` 另验证页读取失败与降级分类；文件回归不代替真实 Office/WPS 联动。
 
 ### 7. Wrong vs Correct
 
-Wrong：`IoError -> snapshot == null -> SourceChanged -> manualOnly`。Correct：先保留 IoError，其余结果继续原严格检查，成功后才安装对应目标数据。
+Wrong：`读盘失败 -> 无快照 -> 当作空 lane -> 安装空白`。Correct：保留读取失败进入有限重试，其余结果继续身份与结构检查，成功后才安装对应目标数据。
 
 ## F3：橡皮 idle 交接必须保留下一次有效 Move
 
@@ -176,7 +176,7 @@ Wrong：owner 持 ImGui 锁清 IO，或 Show 直接清失效而复用旧 session
 - `Business::PptTargetCache::Update(descriptorChanged, descriptor, trustedPage, trustedEndScreen, session)` 与 `Current()`：已观察状态与成功应用目标分别记账。
 - `Business::MatchesPptPageUi(target, session, revision, page, total)`：同一生产回执匹配逻辑供 PptInfo 与 headless 调用。
 - `StateBridge::RequirePresentationTargetRefresh(expected)`：仅标记当前完整 ready identity；下一次有效 `PublishPresentationTarget` 分配新 revision。
-- `PresentationAutoSave` 的 `NamedMutexGuard::Acquire` 单次等待上限 1000ms；Save/Load 继续使用既有 `IoError` completion。
+- （历史，2026-11-26 已随旧服务删除）`PresentationAutoSave` 的 `NamedMutexGuard::Acquire` 单次等待上限 1000ms。现行存储每进程只写自己的文件，无命名锁、无索引。
 
 ### 3. Contracts
 
@@ -184,8 +184,7 @@ Wrong：owner 持 ImGui 锁清 IO，或 Show 直接清失效而复用旧 session
 - 页码 UI 必须使用已接受 target 的 pageIndex/totalPages，不能拼接另一次 raw 读数。Slide 和 EndScreen 身份仍严格区分。
 - 暂停清 UI-ready 并标记当前 target 待刷新；重复暂停幂等。恢复后的同页发布取得新 targetRevision，经过现有 Controller、成功 Present、PageControl 提交再开门。旧暂停/旧 ack 不可命中新代；不得直接设 ready 或绕过未初始化槽保护。
 - 锁序保持 productCallMutex → presentationTargetMutex → bridge mutex，无 bridge 持锁向 Host 回调。暂时闭门本身不重启 Host/RTS。
-- PPT 存储未取得命名锁时不读取或写入索引，不返回 NotFound；按 IoError 返回原请求身份，让既有有界重试推进。WAIT_ABANDONED 是成功取得锁，照常释放；只有真正取得锁才 ReleaseMutex。
-- 1000ms 是一次锁获取上限，不是整个磁盘 I/O、队列 drain 或进程退出期限。重试耗尽仍保留未读墨迹保护，不以空白覆盖旧内容。
+- （历史）PPT 命名锁与索引条款已随旧服务删除。仍有效的原则：读盘失败不返回“不存在”，按原请求身份失败并由既有有界重试推进；重试耗尽仍保留未读墨迹保护，不以空白覆盖旧内容。
 
 ### 4. Validation & Error Matrix
 
@@ -195,7 +194,7 @@ Wrong：owner 持 ImGui 锁清 IO，或 Show 直接清失效而复用旧 session
 | 解析失败、未知页、快速跳页/结束页 | 保留 pending，后续可信最新状态可收敛，旧身份不能可写 |
 | 同页暂停占位被 UI 合并 | 恢复目标版本变化，真实新回执可以发送；旧 ack 拒绝 |
 | refresh 后无效目标发布 | 失败不消耗待刷新状态；后续有效发布仍换 revision |
-| 活着的外部 owner 长期持有 PPT root 锁 | Save/Load 有限返回 IoError；后续请求可恢复，不写空白 |
+| 外部进程长期独占 PPT 文件 | Load 有限失败进入重试；Save 失败页保持 dirty；后续可恢复，不写空白 |
 | 重试预算耗尽/身份冲突/损坏文件 | 继续安全停写；不能把数据保护解除冒充修复 |
 
 ### 5. Good / Base / Bad Cases
@@ -204,7 +203,7 @@ Good：同 descriptor revision 下 raw 追上后应用目标；同页恢复用�
 
 ### 6. Tests Required
 
-`InkeysHeadlessTests --no-window` 直接执行生产 cache/resolver/Bridge/回执谓词，覆盖到达顺序、重复观察、快速变化、失败后重算、拓扑、EndScreen、场次及 refresh 生命周期。`inkStrokeModelerTestTests --presentation-autosave-only` 通过真实 worker 和隔离 root 的命名锁覆盖 Save→Load 队头阻塞、超时无快照、释放后旧墨迹可读；原始无限等待必须令该测试失败且能安全清理。完整 Debug|ARM64 solution 编译。真实 Office/WPS、Host/GPU/PageControl 时序另验；禁止窗口期间不得执行默认 HWND suite。
+`InkeysHeadlessTests --no-window` 直接执行生产 cache/resolver/Bridge/回执谓词，覆盖到达顺序、重复观察、快速变化、失败后重算、拓扑、EndScreen、场次及 refresh 生命周期。（历史：旧 `--presentation-autosave-only` 的命名锁用例已随旧服务删除。）现行 `inkStrokeModelerTestTests --paged-ink-store-only` 覆盖加载不越过同页未落盘写入、读盘失败不当作空 lane、释放占用后旧墨迹可读。完整 Debug|ARM64 solution 编译。真实 Office/WPS、Host/GPU/PageControl 时序另验；禁止窗口期间不得执行默认 HWND suite。
 
 ### 7. Wrong vs Correct
 
@@ -216,15 +215,15 @@ Correct：目标应用有独立 pending 状态；暂停后的可信发布产生�
 
 `PrepareSettingZOrder` 在根刷新后，通过 Setting owner 的 `RaiseOwnedSetting` 命令补齐带内顺序，不显示或激活窗口，不单独赋予 TOPMOST。实际 band 失配时从当前有效根继承并读回核验，随后执行 `HWND_TOP | SWP_NOOWNERZORDER | SWP_NOACTIVATE`。仍核验 owner、band、Setting 在两块画布之上以及 shutdown 拒绝；失败保留原附加回滚。Setting 线程不得同步等待 Overlay 根刷新。仅附加时正确不够：设置显示后再次 RootRefresh 也必须保持可点击，详见下节。2026-10-17 的“仅编译、根三项未解决”是历史验证状态，当前结果以父任务 final-validation-20261018.md 为准。
 
-## PPT 已接受请求的终态交接与 Desktop 索引锁（2026-10-18）
+## PPT 已接受请求的终态交接（2026-10-18；2026-11-26 存储层更新）
 
 ### 1. Scope / Trigger
 
-修改 PPT Save/Load 接受、worker 完成发布、Host 转交 CanvasCommand 或 Desktop 索引锁时使用。PPT 终态所有权保证不扩展到全部产品分配/GPU/Office 异常。
+修改 PPT（及同模式的 Desktop）Save/Load 接受、worker 完成发布、Host 转交 CanvasCommand 时使用。终态所有权保证不扩展到全部产品分配/GPU/Office 异常。2026-11-26 起存储层为 `PagedInkStore`/`DesktopInkSnapshots`，Desktop 日索引与命名锁已删除。
 
 ### 2. Signatures
 
-`PresentationAutoSaveService::SubmitSave/SubmitLoad/TryTakeCompletion`；`WindowController::TryEnqueuePresentationCompletion` 与现有命令消费；`Host::Impl::DrainPresentationCompletions`；生产 CLI `--draw3-ppt-completion-delivery-test` 仅在既有 presentation harness 开关中编译并在正常 GUI 初始化前分派。
+`PagedInkStore::{Save, Load, Take}`（PPT 每文稿一个，Host 注册表持有）与 `DesktopInkSnapshots::{Save, Load, Take}`；`WindowController::TryEnqueuePresentationCompletion` 等预留槽与现有命令消费；`Host::Impl::DrainPresentationCompletions`；生产 CLI `--draw3-ppt-completion-delivery-test` 仅在既有 presentation harness 开关中编译并在正常 GUI 初始化前分派。
 
 ### 3. Contracts
 
@@ -232,7 +231,7 @@ Correct：目标应用有独立 pending 状态；暂停后的可信发布产生�
 - worker 的工作链表也是 service 成员；MSVC 空 std::list 的 sentinel 可能分配，不能出队后再临时创建链表。处理失败把预留终态改为同身份 IoError，不能丢失 loadKind/pageGuid/intervalOrdinal/slotGeneration。
 - 完成发布用同一节点 splice；共享取出不分配。Host 保留尚未交付的 shared completion，只有 WindowController 成功接受才释放。
 - 专用单槽终态与普通命令按接受时位置合并为同一 FIFO；后续目标不能跨终态合并，终态消费后发 wake 推进下一项，不依赖新输入。Detach/重启清槽与计数；Host 待交付状态仅在绘制 owner join 后重置。
-- Desktop root+date 命名锁和 PPT root 锁单次获取均为 1000ms；失败返回既有错误终态，未取得锁不得触碰索引。WAIT_ABANDONED 表示成功取得并须释放。此上限不等于整个磁盘 I/O、队列 drain 或退出期限。
+- （历史）Desktop root+date 命名锁与 PPT root 锁已随旧服务删除；现行服务的终态合同见 [uink-storage.md](uink-storage.md)：准入时预留、成功/失败/合并/关闭取消各恰好一次、投递不分配。
 
 ### 4. Validation & Error Matrix
 
@@ -243,7 +242,6 @@ Correct：目标应用有独立 pending 状态；暂停后的可信发布产生�
 | 完成发布和共享取出时实际 operator new 故障已 armed | 不发生分配、不丢终态 |
 | 专用终态槽已满 | Host 保留下一项，消费前项后的 wake 可继续推进 |
 | 普通命令/目标命令跨终态 | 原 FIFO 保持，目标不跨终态合并 |
-| Desktop 索引锁由活线程长期占用 | worker 有限失败；释放后重试成功，索引与文件一致 |
 
 ### 5. Good / Base / Bad Cases
 
@@ -251,7 +249,7 @@ Good：已接受 Load 在处理异常后仍收到同身份失败，释放占用�
 
 ### 6. Tests Required
 
-既有 `--presentation-autosave-only` 覆盖实际 operator new 注入和旧文件保护；`--desktop-autosave-only` 覆盖真实 worker 索引锁超时和释放后成功；生产 completion CLI 执行真实 Host drain、WindowController FIFO、wake 与重启，额外参数返回2且不得启动GUI。完整 Debug|ARM64 solution 验证非 DRAW3_TESTING 产品路径。真实 PowerPoint 翻页/暂停/结束页/重入另验；组件通过不能代替设备现场证明。
+`--paged-ink-store-only` 与 `--desktop-ink-snapshots-only` 覆盖准入预留、worker 异常、关闭取消与恰好一个终态；生产 completion CLI 执行真实 Host drain、WindowController FIFO、wake 与重启，额外参数返回2且不得启动GUI。完整 Debug|ARM64 solution 验证非 DRAW3_TESTING 产品路径。真实 PowerPoint 翻页/暂停/结束页/重入另验；组件通过不能代替设备现场证明。
 
 ### 7. Wrong vs Correct
 
@@ -371,7 +369,7 @@ Wrong：以 SetWindowPos 返回值或 root 单一 bit 推定全树正确；只�
 
 `InkeysHeadlessTests --no-window` 覆盖 fatal 门、恢复身份/ACK、有限命令回执、混合 band 快照，以及真实 pipe 读写、取消和固定容量隔离；实际 HWND band/owner 传播仍属于明确授权后的窗口合同测试。现有生产 CLI `--draw3-fallback-stable-lane-test`、`--draw3-ppt-current-load-retry-test`、`--draw3-pending-topology-load-test`、`--draw3-control-fence-test`、`--state-mode-production-test`、`--ui3-input-worker-test` 与严格早退的 `--setting-business-cancellation-test` 验证产品路径。
 
-不得把上述检查宣称为所有 Win32/COM/GPU/磁盘调用永不挂起的证明。Host Start/Stop 的最终保存、WhiteboardStore drain、GPU Map 和真实 join 仍保留资源所有权；不通过超时析构、借用 Host 的 detached thread 或提前启动第二实例逃离。最终退出沿用既有进程监督，真实 Office/WPS、桌面 z-order 与设备现场另行验收。
+不得把上述检查宣称为所有 Win32/COM/GPU/磁盘调用永不挂起的证明。Host Start/Stop 的最终保存、`PagedInkStore`/`DesktopInkSnapshots` 排空、GPU Map 和真实 join 仍保留资源所有权；不通过超时析构、借用 Host 的 detached thread 或提前启动第二实例逃离。最终退出沿用既有进程监督，真实 Office/WPS、桌面 z-order 与设备现场另行验收。
 
 ## 场景窗口政策与恢复写集（2026-10-27）
 

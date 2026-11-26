@@ -14,7 +14,7 @@
 - [ppt-idle-fade.md](ppt-idle-fade.md)：PPT 闲置淡化三范围、背景/内容独立上限、主栏交互与附属面板保护。
 - [bar-icons.md](bar-icons.md)：Bar SVG 图标设计语言、占位色着色、专属资源映射与 lint/预览流程。
 - [setting-motion.md](setting-motion.md)：Setting页面入场、条件块、稳定正文轨道、开屏标题栏及resize/材质连续性。
-- [whiteboard.md](whiteboard.md)：白板初版菜单、每页主题、UInk分页存储与底栏恢复合同。
+- [whiteboard.md](whiteboard.md)：白板初版菜单、每页主题、按页存储与冷读撤回语义、底栏恢复合同。
 - [canvas-pan.md](canvas-pan.md)：白板导航事件顺序、可靠释放、向量惯性与独立诊断开关。
 - [canvas-pan-release-quality.md](canvas-pan-release-quality.md)：释放支持、Touch空间进展/停止年龄、boost与呈现速度分工。
 - [ui3-render-diagnostics.md](ui3-render-diagnostics.md)：UI3 当前回调采样、限频聚合、非阻塞日志与无窗口验证边界。
@@ -34,7 +34,8 @@
 - [pen-width.md](pen-width.md)：画笔DIP、设备预设身份、显示上下文、连续输出与配置迁移合同。
 - [draw3-integration.md](draw3-integration.md)：Draw3 外部 HWND、独立设备、输入所有权、生命周期和产品功能边界。
 - [eraser-attributes.md](eraser-attributes.md)：UI3橡皮属性、全局尺寸/灵敏度、五入口事务及Clear回撤/重做合同。
-- [shapes.md](shapes.md)：参数化图形、64字节图元、独立着色器、UInk及冷历史合同。
+- [shapes.md](shapes.md)：参数化图形、64字节图元、独立着色器、UInk 1.1 图形对象层合同。
+- [uink-storage.md](uink-storage.md)：UInk 1.1 墨迹存储唯一权威合同：五层结构、写入格式与笔尖换算、按页追加、读取容错、足迹预算、`Module::UInk` 日志、白板/PPT/桌面服务与空闲整理。
 - [palm-eraser.md](palm-eraser.md)：面积识别、10000系统DIP²回退、临时工具转换、并行/邻域、断触接续及设置实尺合同。
 - [draw3-shaders.md](draw3-shaders.md)：Draw3 shader、资源 ID、FXC 预处理和透明像素约束。
 - [draw3-cursors.md](draw3-cursors.md)：鼠标/笔类型选择、荧光笔独立预览与设备固定高亮、始终隐藏 Touch 与 Win7 生命周期边界。
