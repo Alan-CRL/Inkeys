@@ -271,6 +271,7 @@ Wrong：RegisterTouchWindow后输出GetLastError但不看BOOL；GetPointerInfo�
 - backend 光标补位：`ImGui_ImplWin32_NewFrame` 在有焦点且未跟踪鼠标时用 `GetCursorPos` 补位置，触摸不移动系统光标。渲染线程在其后 `ApplySettingPointerOverride()`：接触中追加接触位置，触摸结束后停放在窗口外，笔结束后清除。窗口线程先写 IO 再发布覆盖状态。
 - HiMsg：设置 `bindMessages=true`、`messageOptions.filter=Filter::None`（不入队），回调 `FilterChannelMouse` 拦截的返回 Handled，其余 Discard 继续原窗口过程。PointerMode 拦截全部 Pointer 签名鼠标，唯独无按键、无活动接触的笔悬停 `WM_MOUSEMOVE` 放行（用户决定保留笔悬停 hover）；Legacy 只拦截触摸签名。放行任意鼠标消息即结束触摸停放。
 - 样本轨迹：每次 Begin/Update/End/Cancel 追加 `TrackSample`（客户区坐标、`PerformanceCount/QPF` 优先、回退 dwTime 的秒数、代次），固定 64 容量，渲染线程按游标增量读取，落后超容量置 overflowed。
+- 发布顺序（2026-11-26 修订）：轨迹先于 ImGui 事件发布，覆盖位置在 ImGui 事件之后发布。触摸停放被真实鼠标或笔悬停结束时，`TakeParkRelease()` 一次性要求窗口过程在把该鼠标消息交给 backend 前，按消息签名（笔→Pen，否则 Mouse）补 `GetMessagePos` 的客户区位置，避免 backend 仍在跟踪鼠标时滚轮/按键落在停放位置。
 
 ### 4. Validation & Error Matrix
 
