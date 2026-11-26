@@ -499,6 +499,7 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.Controls.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.ComponentEditor.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.PointerInput.h" />
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Scroll.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.Motion.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.PageTransition.h" />
     <ClInclude Include="Inkeys\UI\Setting\Setting.HomeBrand.h" />
@@ -1123,6 +1124,7 @@
     <ClCompile Include="Inkeys\UI\Setting\Setting.Controls.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.ComponentEditor.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.PointerInput.cpp" />
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Scroll.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.EraserDemoGpu.cpp" />
     <ClCompile Include="Inkeys\UI\Setting\Setting.Shell.cpp" />

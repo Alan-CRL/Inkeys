@@ -37,6 +37,7 @@
 #include "../../../resource.h"
 #include "Setting.FrameSubmission.h"
 #include "Setting.PointerInput.h"
+#include "Setting.Scroll.h"
 #include "../../../SuperTop/IdtSuperTop.h"
 
 #include <shlobj.h>
@@ -323,6 +324,26 @@ namespace
 #endif
 
 	constexpr UINT SettingFrameThemeMessage = WM_APP + 0x531;
+	// 页面拖动/惯性越界的窗口位移：渲染线程写最新状态并唤醒，设置窗口线程调用 uxtheme panning feedback。
+	constexpr UINT SettingPanningFeedbackMessage = WM_APP + 0x533;
+	struct SettingPanningMailbox
+	{
+		bool active = false;
+		int offsetY = 0;
+		bool bounce = false;
+		int bounceY = 0;
+	};
+	mutex settingPanningMutex;
+	SettingPanningMailbox settingPanningMailbox;
+	// 以下仅设置窗口线程访问：反馈期间与系统回位动画期间，WM_MOVE 一律记录反馈开始前的原位。
+	bool settingPanningFeedbackActive = false;
+	bool settingPanningRestoring = false;
+	// 窗口线程 Begin/UpdatePanningFeedback 失败时通知渲染线程改为只硬停，避免累计没有视觉反馈的越界量。
+	atomic<bool> settingPanningBeginFailed = false;
+	ULONGLONG settingPanningRestoreDeadline = 0;
+	POINT settingPanningOrigin{};
+	// UpdatePanningFeedback 文档规定最大位移 30 像素。
+	constexpr LONG SettingPanningMaxOffset = 30;
 	constexpr wchar_t SettingClientDpiProperty[] = L"Inkeys.Setting.ClientDpi";
 
 	using Inkeys::UI::Setting::SettingAccentState;
@@ -1632,6 +1653,116 @@ namespace
 		}
 	}
 
+	struct SettingPanningApi
+	{
+		BOOL(WINAPI* begin)(HWND) = nullptr;
+		BOOL(WINAPI* update)(HWND, LONG, LONG, BOOL) = nullptr;
+		BOOL(WINAPI* end)(HWND, BOOL) = nullptr;
+	};
+
+	// 文件资源管理器同款越界反馈（Win7 起由 uxtheme 提供）；按系统目录完整路径加载，缺失则只在边界硬停。
+	const SettingPanningApi& QuerySettingPanningApi() noexcept
+	{
+		static const SettingPanningApi api = []() noexcept
+		{
+			SettingPanningApi result;
+			HMODULE module = GetModuleHandleW(L"uxtheme.dll");
+			if (!module)
+			{
+				wchar_t path[MAX_PATH]{};
+				const UINT length = GetSystemDirectoryW(path, MAX_PATH);
+				if (length > 0 && length < MAX_PATH - 13 && wcscat_s(path, L"\\uxtheme.dll") == 0) module = LoadLibraryW(path);
+			}
+			if (!module) return result;
+			result.begin = reinterpret_cast<decltype(result.begin)>(GetProcAddress(module, "BeginPanningFeedback"));
+			result.update = reinterpret_cast<decltype(result.update)>(GetProcAddress(module, "UpdatePanningFeedback"));
+			result.end = reinterpret_cast<decltype(result.end)>(GetProcAddress(module, "EndPanningFeedback"));
+			if (!result.begin || !result.update || !result.end) result = {};
+			return result;
+		}();
+		return api;
+	}
+
+	// 渲染线程：只保留最新拖动越界状态，回弹事件单独保留一次，避免被后续状态合并掉。
+	void PublishSettingPanningFeedback(const Inkeys::UI::Setting::Scroll::PanningFeedback& feedback)
+	{
+		{
+			lock_guard lock(settingPanningMutex);
+			settingPanningMailbox.active = feedback.active;
+			settingPanningMailbox.offsetY = feedback.offsetY;
+			if (feedback.bounce) { settingPanningMailbox.bounce = true; settingPanningMailbox.bounceY = feedback.bounceY; }
+		}
+		if (setting_window) (void)PostMessageW(setting_window, SettingPanningFeedbackMessage, 0, 0);
+	}
+
+	// 进入反馈前记录原位；回位动画尚未结束时再次进入，沿用同一原位。
+	bool BeginSettingPanning(HWND hwnd, const SettingPanningApi& api)
+	{
+		if (settingPanningFeedbackActive) return true;
+		if (!settingPanningRestoring)
+		{
+			RECT rect{};
+			if (!GetWindowRect(hwnd, &rect)) return false;
+			settingPanningOrigin = { rect.left, rect.top };
+		}
+		settingPanningFeedbackActive = api.begin(hwnd) != FALSE;
+		if (!settingPanningFeedbackActive) settingPanningBeginFailed.store(true, memory_order_release);
+		return settingPanningFeedbackActive;
+	}
+
+	void EndSettingPanning(HWND hwnd, const SettingPanningApi& api, bool animateBack)
+	{
+		if (!settingPanningFeedbackActive) return;
+		// 动画回位期间仍记录原位；直接回位或调用失败时同步结束。回位动画最长按 1 秒兜底，
+		// 避免没收到精确回到原位的 WM_MOVE 时，之后的程序化移动仍被记成旧原位。
+		settingPanningRestoring = animateBack;
+		settingPanningRestoreDeadline = GetTickCount64() + 1000;
+		if (!api.end(hwnd, animateBack ? TRUE : FALSE)) settingPanningRestoring = false;
+		settingPanningFeedbackActive = false;
+	}
+
+	// 设置窗口线程：panning feedback 会移动 HWND，只能在所属线程调用。
+	void ApplySettingPanningFeedback(HWND hwnd)
+	{
+		SettingPanningMailbox request;
+		{
+			lock_guard lock(settingPanningMutex);
+			request = settingPanningMailbox;
+			settingPanningMailbox.bounce = false;
+			settingPanningMailbox.bounceY = 0;
+		}
+		const auto& api = QuerySettingPanningApi();
+		if (!api.begin || !Inkeys::UI::Setting::IsVisible() || IsIconic(hwnd)) return;
+		if (request.bounce && BeginSettingPanning(hwnd, api))
+		{
+			// 惯性撞边界：一次位移后由系统动画回位。
+			const bool updated = api.update(hwnd, 0, std::clamp<LONG>(request.bounceY, -SettingPanningMaxOffset, SettingPanningMaxOffset), TRUE) != FALSE;
+			EndSettingPanning(hwnd, api, updated);
+			if (!updated) settingPanningBeginFailed.store(true, memory_order_release);
+		}
+		if (request.active)
+		{
+			if (BeginSettingPanning(hwnd, api)
+				&& !api.update(hwnd, 0, std::clamp<LONG>(request.offsetY, -SettingPanningMaxOffset, SettingPanningMaxOffset), FALSE))
+			{
+				EndSettingPanning(hwnd, api, false);
+				settingPanningBeginFailed.store(true, memory_order_release);
+			}
+		}
+		else EndSettingPanning(hwnd, api, true);
+	}
+
+	// 隐藏、销毁、取消模式、DPI 变化：立即回到原位，不播放回弹。
+	void StopSettingPanningFeedback(HWND hwnd)
+	{
+		{
+			lock_guard lock(settingPanningMutex);
+			settingPanningMailbox = {};
+		}
+		if (const auto& api = QuerySettingPanningApi(); api.end) EndSettingPanning(hwnd, api, false);
+		settingPanningRestoring = false;
+	}
+
 	// 渲染线程、ImGui 锁内，紧跟 ImGui_ImplWin32_NewFrame：覆盖 backend 用系统光标补的位置。
 	void ApplySettingPointerOverride()
 	{
@@ -1652,7 +1783,10 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	// 隐藏、销毁、取消模式与 DPI 变化先结束活动的触摸/笔接触（不产生点击），原有处理照常进行。
 	if (msg == WM_CANCELMODE || msg == WM_DPICHANGED || msg == WM_NCDESTROY || (msg == WM_SHOWWINDOW && !wParam))
+	{
 		Inkeys::UI::Setting::PointerInput::CancelContact(ApplySettingPointerEvent);
+		StopSettingPanningFeedback(hWnd);
+	}
 	// 与主栏同一框架：接触阶段 Pointer（Win7 为 WM_TOUCH）由设置本地路由消费并导入 ImGui；
 	// 返回 0 使系统不再为该接触派生兼容鼠标与长按右键。
 	if (Inkeys::UI::Setting::PointerInput::HandleWindowMessage(hWnd, msg, wParam, lParam, ApplySettingPointerEvent))
@@ -1680,6 +1814,9 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			return ImGuiWndProc(hWnd, WM_CANCELMODE, 0, 0);
 		return 0;
 	}
+	case SettingPanningFeedbackMessage:
+		ApplySettingPanningFeedback(hWnd);
+		return 0;
 	case SettingFrameThemeMessage:
 		if (!settingSessionShouldStop.load(memory_order_acquire))
 			ApplySettingFrameTheme(hWnd, wParam != FALSE, static_cast<COLORREF>(lParam));
@@ -1899,6 +2036,22 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	{
 		// 原生 move/size/cursor 消息绕过 IO 锁，不等待整帧绘制或 Present。
 		lock_guard lock(settingImguiMutex);
+		// 触摸停放后的第一条真实鼠标/笔悬停消息：backend 仍在跟踪鼠标时不会补位置，先补真实光标位置，
+		// 保证这条消息带来的滚轮或按键命中光标下的控件，而不是窗口外的停放位置。
+		if (ImGui::GetCurrentContext() && msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST
+			&& Inkeys::UI::Setting::PointerInput::TakeParkRelease())
+		{
+			const DWORD position = GetMessagePos();
+			POINT cursor{ GET_X_LPARAM(position), GET_Y_LPARAM(position) };
+			if (ScreenToClient(hWnd, &cursor))
+			{
+				ImGuiIO& io = ImGui::GetIO();
+				// 与 backend 一致按消息签名区分笔悬停与真实鼠标，避免同坐标去重后来源停留在错误设备上。
+				io.AddMouseSourceEvent(Inkeys::Message::IsPenGeneratedMouseMessage(msg, static_cast<ULONG_PTR>(GetMessageExtraInfo()))
+					? ImGuiMouseSource_Pen : ImGuiMouseSource_Mouse);
+				io.AddMousePosEvent(static_cast<float>(cursor.x), static_cast<float>(cursor.y));
+			}
+		}
 		if (ImGui::GetCurrentContext()
 			&& ImGui_ImplWin32_WndProcHandlerEx(
 				hWnd, msg, wParam, lParam, ImGui::GetIO())
@@ -1929,6 +2082,8 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	}
 
 	case WM_ENTERSIZEMOVE:
+		// 用户开始移动/缩放窗口：之后的位置都是真实位置，不再沿用越界反馈前的原位。
+		settingPanningRestoring = false;
 		// 未知入口默认按 Size 处理，优先保证 live resize 不停帧。
 		if (settingInteractiveOperation.load(memory_order_acquire)
 			== Inkeys::UI::Setting::InteractiveWindowOperation::None)
@@ -2024,6 +2179,17 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_MOVE:
 		RECT rect;
 		GetWindowRect(hWnd, &rect);
+		// 越界反馈只是临时位移，记录反馈前的原位；回位动画到达原位后恢复正常记录。
+		if (settingPanningRestoring && !settingPanningFeedbackActive && GetTickCount64() > settingPanningRestoreDeadline)
+			settingPanningRestoring = false;
+		if (settingPanningFeedbackActive || settingPanningRestoring)
+		{
+			if (!settingPanningFeedbackActive && rect.left == settingPanningOrigin.x && rect.top == settingPanningOrigin.y)
+				settingPanningRestoring = false;
+			SettingWindowX = settingPanningOrigin.x;
+			SettingWindowY = settingPanningOrigin.y;
+			break;
+		}
 
 		SettingWindowX = rect.left;
 		SettingWindowY = rect.top;
@@ -2387,6 +2553,8 @@ SettingSessionCoroutine RunSettingSession()
 		ImGui::StyleColorsLight();
 
 		const bool win32BackendInitialized = ImGui_ImplWin32_Init(setting_window);
+		// 窗口位移 API 缺失（理论上 Win7 起都有）时滚动只在边界硬停，不累计越界量。
+		Inkeys::UI::Setting::Scroll::SetPanningFeedbackAvailable(QuerySettingPanningApi().begin != nullptr);
 		long backendInitResult = E_FAIL;
 		const bool dx11BackendInitialized = win32BackendInitialized
 			&& ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext, &backendInitResult);
@@ -2652,6 +2820,9 @@ SettingSessionCoroutine RunSettingSession()
 				navigateTo({ Design::PageId::Version });
 				settingFrameSubmission.Reset();
 			}
+			// 窗口位移调用失败的降级在帧首生效，本帧拖动不再抵扣已没有视觉反馈的越界量。
+			if (settingPanningBeginFailed.exchange(false, memory_order_acq_rel))
+				Inkeys::UI::Setting::Scroll::SetPanningFeedbackAvailable(false);
 			Design::BeginDragScrolling(navigationState);
 			// 所有页面默认使用 ImFluent Body 字体，局部字号只通过 scoped PushFont 切换。
 			ImFluent::PushFluentStyle();
@@ -5307,6 +5478,8 @@ SettingSessionCoroutine RunSettingSession()
 
 			// 复用旧设置拖动算法，正文、导航和弹层的位移每帧只交给一个宿主。
 			Design::ApplyDragScrolling(navigationState);
+			if (Inkeys::UI::Setting::Scroll::PanningFeedback panning; Inkeys::UI::Setting::Scroll::TakePanningFeedback(panning))
+				PublishSettingPanningFeedback(panning);
 
 			// 离开子页也显式暂停；重新进入只消费当前帧增量，不追赶离页时间。
 			if (!eraserDemoVisited)
@@ -5638,6 +5811,8 @@ namespace
 		if (decision.resetInput && !settingSession.Done())
 		{
 			lock_guard imguiLock(settingImguiMutex);
+			// 隐藏后快速重开不能延续旧惯性或越界反馈。
+			Inkeys::UI::Setting::Scroll::Cancel();
 			auto& io = ImGui::GetIO();
 			io.ClearEventsQueue();
 			io.ClearInputKeys();

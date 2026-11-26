@@ -98,6 +98,9 @@ namespace Inkeys::UI::Setting::PointerInput
 	void CancelContact(EventSink sink) noexcept;
 	// HiMsg 回调：读取 GetMessageExtraInfo 判定；放行的鼠标消息同时结束触摸后的指针停放。
 	[[nodiscard]] bool FilterChannelMouse(UINT message, WPARAM wParam) noexcept;
+	// 停放刚被真实鼠标结束时返回 true（一次性）：窗口过程须在把该鼠标消息交给 backend 前先补真实光标位置，
+	// 否则 backend 仍在跟踪鼠标时不会补位，滚轮/点击会落在窗口外的停放位置上。
+	[[nodiscard]] bool TakeParkRelease() noexcept;
 
 	// ---- 设置渲染线程 ----
 	// backend 在窗口有焦点却未跟踪鼠标时会用系统光标补位置；触摸不移动系统光标，

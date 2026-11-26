@@ -221,6 +221,7 @@
     <ClCompile Include="keyboard_shortcut_input_tests.cpp" />
     <ClCompile Include="..\Inkeys\Inkeys\Input\UiPointerInput.cpp" />
     <ClCompile Include="..\Inkeys\Inkeys\UI\Setting\Setting.PointerInput.cpp" />
+    <ClCompile Include="..\Inkeys\Inkeys\UI\Setting\Setting.Scroll.cpp" />
 	<ClCompile Include="dirty_region_tests.cpp" />
 	<ClCompile Include="visual_dirty_tests.cpp" />
 	<ClCompile Include="window_geometry_tests.cpp" />

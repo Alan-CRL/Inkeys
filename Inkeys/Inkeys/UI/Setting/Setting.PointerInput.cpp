@@ -23,6 +23,7 @@ namespace Inkeys::UI::Setting::PointerInput
 		TrackRing track;
 		OverrideMode overrideMode = OverrideMode::None;
 		PointerOverride overrideValue{};
+		bool parkReleased = false; // 仅设置窗口线程访问。
 
 		double InputSeconds(std::uint64_t performanceCount, DWORD milliseconds) noexcept
 		{
@@ -41,13 +42,17 @@ namespace Inkeys::UI::Setting::PointerInput
 			POINT client = sample.screen;
 			if (hwnd) (void)ScreenToClient(hwnd, &client);
 			const PointerEvent event{ type, sample.source, static_cast<float>(client.x), static_cast<float>(client.y) };
-			// 先写 ImGui，再发布覆盖位置：渲染线程不会在按下/抬起事件入队前读到更新的停放状态。
-			if (sink) sink(event);
-			std::lock_guard lock(sharedMutex);
 			const Kind kind = type == PointerEvent::Type::Begin ? Kind::Down
 				: type == PointerEvent::Type::End ? Kind::Up
 				: type == PointerEvent::Type::Cancel ? Kind::Cancel : Kind::Move;
-			track.Push({ kind, sample.source, event.x, event.y, seconds, sample.generation });
+			// 轨迹先于 ImGui 事件发布：渲染线程处理到这次按下/抬起时，已能读到对应样本。
+			{
+				std::lock_guard lock(sharedMutex);
+				track.Push({ kind, sample.source, event.x, event.y, seconds, sample.generation });
+			}
+			// 先写 ImGui，再发布覆盖位置：渲染线程不会在按下/抬起事件入队前读到更新的停放状态。
+			if (sink) sink(event);
+			std::lock_guard lock(sharedMutex);
 			if (type == PointerEvent::Type::Begin || type == PointerEvent::Type::Update)
 			{
 				overrideMode = OverrideMode::Contact;
@@ -258,9 +263,16 @@ namespace Inkeys::UI::Setting::PointerInput
 		{
 			// 真实鼠标或笔悬停接管指针位置，结束触摸抬起后的停放。
 			std::lock_guard lock(sharedMutex);
-			if (overrideMode == OverrideMode::Parked) overrideMode = OverrideMode::None;
+			if (overrideMode == OverrideMode::Parked) { overrideMode = OverrideMode::None; parkReleased = true; }
 		}
 		return block;
+	}
+
+	bool TakeParkRelease() noexcept
+	{
+		const bool released = parkReleased;
+		parkReleased = false;
+		return released;
 	}
 
 	bool ReadPointerOverride(PointerOverride& out) noexcept
@@ -285,6 +297,7 @@ namespace Inkeys::UI::Setting::PointerInput
 		track.Reset();
 		overrideMode = OverrideMode::None;
 		overrideValue = {};
+		parkReleased = false;
 	}
 #endif
 }

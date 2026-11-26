@@ -561,6 +561,9 @@
     <ClInclude Include="Inkeys\UI\Setting\Setting.PointerInput.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\UI\Setting\Setting.Scroll.h">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\UI\Setting\Setting.Motion.h">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClInclude>
@@ -2415,6 +2418,9 @@
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.PointerInput.cpp">
+      <Filter>Modules\Inkeys\UI\Setting</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\UI\Setting\Setting.Scroll.cpp">
       <Filter>Modules\Inkeys\UI\Setting</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\UI\Setting\Setting.Pages.cpp">

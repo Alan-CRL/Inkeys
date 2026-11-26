@@ -14,6 +14,7 @@
 #include "../Inkeys/Inkeys/UI/Setting/Setting.SessionState.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.FrameSubmission.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.HomeBrand.h"
+#include "../Inkeys/Inkeys/UI/Setting/Setting.Scroll.h"
 #include "../Inkeys/IdtI18n.h"
 #include "../Inkeys/IdtI18nKeys.g.h"
 #include "setting_home_warp_tests.h"
@@ -5842,12 +5843,21 @@ namespace
 				io.AddMouseSourceEvent(source); draw(gap, false); draw(gap, true);
 				const float initial = frame.list->Scroll.y;
 				frame = draw({ gap.x, gap.y - 20 * scale }, true); frame = draw({ gap.x, gap.y - 20 * scale }, true);
+				if (source == ImGuiMouseSource_Mouse)
+				{
+					// 鼠标只用滚轮与滚动条：空白处按住拖动不滚动，也不触发导航或业务。
+					checks.Expect(Near(frame.scroll, initial, 1) && navigations == before && businessActions == beforeTrackBusiness && selected == destination,
+						"mouse holding navigation gap no longer drag-scrolls and triggers no route or business action");
+					draw({ gap.x, gap.y - 20 * scale }, false);
+					continue;
+				}
 				checks.Expect(frame.scroll > initial && navigations == before && businessActions == beforeTrackBusiness && selected == destination,
-					"mouse and touch-source holding navigation gap scrolls the real list without route or business actions");
+					"touch-source holding navigation gap scrolls the real list without route or business actions");
 				frame = draw({ gap.x, gap.y - 5 * scale }, true); frame = draw({ gap.x, gap.y - 5 * scale }, false);
 				checks.Expect(Near(frame.fixedOrigins[0].y, origins[0].y) && Near(frame.fixedOrigins[1].y, origins[1].y), "dragging middle content keeps top and footer fixed");
 			}
-			io.AddMouseSourceEvent(ImGuiMouseSource_Mouse); general.expanded = false; size.y = 900; frame = idle(4);
+			// 以下导航拖动场景使用触摸来源（鼠标已不再拖动滚动）。
+			io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen); general.expanded = false; size.y = 900; frame = idle(4);
 			checks.Expect(!frame.list->ScrollbarY && Near(frame.scroll, 0), "fold and resize remove the actual bar and clamp the old scroll position");
 		}
 		// 子列表固定 child 的 padding 仍由 nav-list 消费，选中蓝条跟随下一 Begin 的真实位置。
@@ -5926,6 +5936,8 @@ namespace
 		auto& io = ImGui::GetIO(); io.ConfigInputTrickleEventQueue = false;
 		Design::BindTextFonts(regular, strong); Design::ApplyPalette(false);
 		Design::NavigationState state;
+		// 滚动模块的惯性/越界状态跨帧保存，每个倍率从干净状态开始。
+		Inkeys::UI::Setting::Scroll::Testing::Reset();
 		struct Frame { ImGuiWindow* page = nullptr; ImGuiWindow* inner = nullptr; ImGuiWindow* popup = nullptr;
 			ImGuiID active = 0; ImRect button, slider, text, combo; float pageScroll = 0, innerScroll = 0; };
 		int mode = 0, frames = 0, buttons = 0, selected = 0, movingFrames = 0; bool closePopup = false, omitPopup = false;
@@ -6012,15 +6024,26 @@ namespace
 			frame = draw({ point.x, point.y - 30 * scale }, true);
 			// 已抓取位移在当前 Begin 生效；零位移续帧不能给父子再次应用。
 			frame = draw({ point.x, point.y - 30 * scale }, true);
+			if (source == ImGuiMouseSource_Mouse)
+			{
+				// 鼠标只用滚轮与滚动条：按住内容拖动既不滚动页面也不抓取滚动覆盖层。
+				checks.Expect(Near(frame.pageScroll, originalPage, 1) && (!frame.inner || Near(frame.innerScroll, originalInner, 1))
+					&& frame.active != frame.page->GetID("##scrolldraggingoverlay"), "mouse drag on content no longer scrolls the page");
+				draw({ point.x, point.y - 30 * scale }, false); frame = idle();
+				continue;
+			}
 			checks.Expect(mode == 2 ? Near(frame.pageScroll, originalPage, 1) && Near(frame.innerScroll - originalInner, 30 * scale, 1)
 				: Near(frame.pageScroll - originalPage, 30 * scale, 1) && (!frame.inner || Near(frame.innerScroll, originalInner, 1)),
-				"mouse and touch source drag once at the nearest real scroll owner, including auto-height and fixed children");
+				"touch drag once at the nearest real scroll owner, including auto-height and fixed children");
 			frame = draw({ point.x, point.y - 10 * scale }, true); frame = draw({ point.x, point.y - 10 * scale }, true);
 			checks.Expect(mode == 2 ? Near(frame.innerScroll - originalInner, 10 * scale, 1) : Near(frame.pageScroll - originalPage, 10 * scale, 1),
 				"reversing a held drag uses physical MouseDelta once without multiplying DPI again");
+			// 停住超过抬起静止时长再松手：不产生惯性，松手即停。
+			for (int index = 0; index < 6; ++index) frame = draw({ point.x, point.y - 10 * scale }, true);
 			frame = draw({ point.x, point.y - 10 * scale }, false); const float released = mode == 2 ? frame.innerScroll : frame.pageScroll;
 			frame = draw({ point.x, point.y - 40 * scale }, false); frame = draw(outside, false);
-			checks.Expect(Near(mode == 2 ? frame.innerScroll : frame.pageScroll, released, 1), "release stops content scrolling immediately");
+			checks.Expect(Near(mode == 2 ? frame.innerScroll : frame.pageScroll, released, 1) && !Inkeys::UI::Setting::Scroll::Animating(),
+				"release after holding still stops content scrolling immediately");
 			if (mode == 0)
 			{
 				reset = 100 * scale; frame = idle(); reset = -1; draw(point, false); frame = draw(point, true);
@@ -6031,7 +6054,8 @@ namespace
 				draw(outside, false); frame = idle();
 			}
 		}
-		io.AddMouseSourceEvent(ImGuiMouseSource_Mouse); mode = 0; reset = 0; frame = idle(); reset = -1;
+		// 以下拖动场景改用触摸来源（鼠标已不再拖动滚动）；越界只累计窗口位移，内容仍在边界硬停。
+		io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen); mode = 0; reset = 0; frame = idle(); reset = -1;
 		const ImVec2 edgePoint(frame.page->InnerClipRect.Max.x - 30 * scale, frame.page->InnerClipRect.GetCenter().y);
 		draw(edgePoint, false); draw(edgePoint, true); draw({ edgePoint.x, edgePoint.y + 100 * scale }, true);
 		frame = draw({ edgePoint.x, edgePoint.y + 100 * scale }, true);
@@ -6040,8 +6064,9 @@ namespace
 		draw(edgePoint, false); draw(edgePoint, true); draw({ edgePoint.x, edgePoint.y - 2000 * scale }, true);
 		frame = draw({ edgePoint.x, edgePoint.y - 2000 * scale }, true);
 		checks.Expect(Near(frame.pageScroll, frame.page->ScrollMax.y, 1), "captured historical drag clamps at bottom without an internal alternate gesture");
+		// 反向先回收封顶的越界量（MaxOverpanPixels / OverpanResistance），之后才滚动内容。
 		draw({ edgePoint.x, edgePoint.y + 1000 * scale }, true); frame = draw({ edgePoint.x, edgePoint.y + 1000 * scale }, true);
-		checks.Expect(Near(frame.pageScroll, 0), "rapid captured reversal from bottom clamps back to top without accumulated delta");
+		checks.Expect(Near(frame.pageScroll, 0), "rapid captured reversal from bottom clamps back to top after recovering the capped overpan");
 		draw(outside, false); reset = 100 * scale; frame = idle(); reset = -1;
 		const float beforeExternalDown = frame.pageScroll;
 		draw({ edgePoint.x, edgePoint.y + 20 * scale }, false); draw(outside, true);
@@ -6149,6 +6174,87 @@ namespace
 		draw(blank, false); draw(blank, true); draw({ blank.x, blank.y - 30 * scale }, true); frame = draw({ blank.x, blank.y - 30 * scale }, true);
 		checks.Expect(Near(frame.pageScroll, 100 * scale, 1), "ended disabled scopes cannot bypass the navigation release input barrier at frame end");
 		draw(outside, false); state.mouseReleaseBarrier = false; idle();
+
+		// 触摸惯性、点按停住、滚轮停止、越界窗口位移与惯性撞边界回弹。
+		namespace Scroll = Inkeys::UI::Setting::Scroll;
+		Scroll::PanningFeedback panning;
+		(void)Scroll::TakePanningFeedback(panning);
+		const auto fling = [&](float startScroll, float distance) {
+			reset = startScroll; frame = idle(); reset = -1;
+			const ImVec2 start(frame.page->InnerClipRect.Max.x - 30 * scale, frame.page->InnerClipRect.GetCenter().y);
+			draw(start, false); draw(start, true);
+			for (int step = 1; step <= 4; ++step) draw({ start.x, start.y - distance * step / 4 }, true);
+			return draw({ start.x, start.y - distance }, false);
+		};
+		frame = fling(100 * scale, 80 * scale);
+		const float flingRelease = frame.pageScroll;
+		checks.Expect(Scroll::Animating(), "a quick touch fling starts inertia");
+		frame = draw(outside, false); const float firstStep = frame.pageScroll - flingRelease;
+		frame = draw(outside, false); const float secondStep = frame.pageScroll - flingRelease - firstStep;
+		checks.Expect(firstStep > 0 && secondStep > 0 && secondStep <= firstStep, "inertia keeps scrolling in the fling direction and decelerates");
+		for (int index = 0; index < 600 && Scroll::Animating(); ++index) frame = draw(outside, false);
+		checks.Expect(!Scroll::Animating() && frame.pageScroll > flingRelease, "inertia decays to a stop on its own");
+
+		frame = fling(100 * scale, 80 * scale);
+		const int clicksBeforeCatch = buttons;
+		frame = draw(outside, false);
+		// 惯性已把顶部按钮滚出视口，在页面中央点按；按下被滚动覆盖层抓取，下方内容拿不到这次按下。
+		const ImVec2 catchPoint = frame.page->InnerClipRect.GetCenter();
+		const float beforeCatch = frame.pageScroll;
+		frame = draw(catchPoint, true);
+		checks.Expect(!Scroll::Animating() && frame.active == frame.page->GetID("##scrolldraggingoverlay"), "tapping during fast inertia catches the page");
+		frame = draw(catchPoint, false); frame = draw(outside, false); frame = draw(outside, false);
+		checks.Expect(buttons == clicksBeforeCatch && Near(frame.pageScroll, beforeCatch, 2) && !Scroll::Animating(),
+			"the catching tap stops inertia and is consumed by the scroll capture");
+
+		// 鼠标点按同样接住：锁定左键直到松开，直接轮询按键的控件读不到；鼠标拖动不滚动，松开不起惯性。
+		frame = fling(100 * scale, 80 * scale);
+		frame = draw(outside, false);
+		io.AddMouseSourceEvent(ImGuiMouseSource_Mouse);
+		const float beforeMouseCatch = frame.pageScroll;
+		frame = draw(catchPoint, true);
+		checks.Expect(!Scroll::Animating() && frame.active == frame.page->GetID("##scrolldraggingoverlay")
+			&& !ImGui::TestKeyOwner(ImGuiKey_MouseLeft, ImGuiKeyOwner_Any), "a mouse press during fast inertia is caught and locked from other controls");
+		frame = draw({ catchPoint.x, catchPoint.y - 40 * scale }, true);
+		frame = draw({ catchPoint.x, catchPoint.y - 40 * scale }, false); frame = draw(outside, false);
+		checks.Expect(Near(frame.pageScroll, beforeMouseCatch, 2) && !Scroll::Animating(), "a caught mouse press neither drag-scrolls nor starts inertia");
+		io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
+
+		frame = fling(100 * scale, 80 * scale);
+		io.AddMouseWheelEvent(0, -1); frame = draw(outside, false); frame = draw(outside, false);
+		const float afterWheel = frame.pageScroll; frame = draw(outside, false);
+		checks.Expect(!Scroll::Animating() && Near(frame.pageScroll, afterWheel, 1), "a wheel tick stops touch inertia");
+
+		reset = 0; frame = idle(); reset = -1; (void)Scroll::TakePanningFeedback(panning);
+		draw(edgePoint, false); draw(edgePoint, true); draw({ edgePoint.x, edgePoint.y + 40 * scale }, true);
+		checks.Expect(Scroll::TakePanningFeedback(panning) && panning.active && panning.offsetY > 0,
+			"pulling down past the top moves the window down instead of the content");
+		frame = draw({ edgePoint.x, edgePoint.y + 400 * scale }, true);
+		(void)Scroll::TakePanningFeedback(panning);
+		checks.Expect(Near(frame.pageScroll, 0) && panning.active && Near(static_cast<float>(panning.offsetY), Scroll::MaxOverpanPixels, 1),
+			"overpan window displacement is capped at the documented 30 physical pixels while the content stays at the boundary");
+		for (int index = 0; index < 6; ++index) draw({ edgePoint.x, edgePoint.y + 400 * scale }, true);
+		frame = draw({ edgePoint.x, edgePoint.y + 400 * scale }, false);
+		checks.Expect(Scroll::TakePanningFeedback(panning) && !panning.active && !Scroll::Animating(),
+			"releasing an overpan ends the window displacement without starting inertia");
+
+		frame = fling(frame.page->ScrollMax.y - 200 * scale, 80 * scale);
+		for (int index = 0; index < 120 && Scroll::Animating(); ++index) frame = draw(outside, false);
+		checks.Expect(Near(frame.pageScroll, frame.page->ScrollMax.y, 1) && Scroll::TakePanningFeedback(panning) && panning.bounce && panning.bounceY < 0,
+			"inertia hitting the bottom stops at the boundary and bounces the window upward");
+
+		// 窗口位移 API 不可用：边界只硬停，不累计越界量，反向立即滚动内容。
+		Scroll::SetPanningFeedbackAvailable(false);
+		reset = 0; frame = idle(); reset = -1; (void)Scroll::TakePanningFeedback(panning);
+		draw(edgePoint, false); draw(edgePoint, true); draw({ edgePoint.x, edgePoint.y + 40 * scale }, true);
+		frame = draw({ edgePoint.x, edgePoint.y + 40 * scale }, true);
+		checks.Expect(Near(frame.pageScroll, 0) && !Scroll::TakePanningFeedback(panning), "without the panning API the top boundary hard-stops with no window feedback");
+		draw({ edgePoint.x, edgePoint.y + 10 * scale }, true); frame = draw({ edgePoint.x, edgePoint.y + 10 * scale }, true);
+		checks.Expect(Near(frame.pageScroll, 30 * scale, 1), "without the panning API a reversal scrolls immediately instead of recovering hidden overpan");
+		for (int index = 0; index < 6; ++index) draw({ edgePoint.x, edgePoint.y + 10 * scale }, true);
+		draw({ edgePoint.x, edgePoint.y + 10 * scale }, false);
+		Scroll::SetPanningFeedbackAvailable(true);
+		reset = 0; frame = idle(); reset = -1;
 		std::cout << "[DragScrollDrawData] scale=" << scale << " frames=" << frames << " rootMovingFrames=" << movingFrames << '\n';
 	}
 
@@ -6833,6 +6939,12 @@ namespace
 			const ImVec2 hero(frame.text.x + 400 * scale, frame.text.y + 140 * scale);
 			draw(hero, false); frame = draw(hero, true); const float before = frame.scroll, textBefore = frame.text.y, glyphBefore = frame.glyphY;
 			frame = draw({ hero.x, hero.y - 20 * scale }, true);
+			if (source == ImGuiMouseSource_Mouse)
+			{
+				checks.Expect(Near(frame.scroll, before, 1), "mouse drag on Home content no longer scrolls it");
+				draw(outside, false);
+				continue;
+			}
 			checks.Expect(Near(frame.scroll - before, 20 * scale, 1) && Near(textBefore - frame.text.y, 20 * scale, 1) && Near(glyphBefore - frame.glyphY, 20 * scale, 1),
 				"Home hero drag updates actual Scroll and production content position in the movement frame without an extra frame");
 			const auto capture = frame.active;
@@ -6868,7 +6980,8 @@ namespace
 			}
 
 		}
-		io.AddMouseSourceEvent(ImGuiMouseSource_Mouse); requested = 0; frame = idle(); requested = -1;
+		// 以下首页拖动与基准场景使用触摸来源（鼠标已不再拖动滚动）。
+		io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen); requested = 0; frame = idle(); requested = -1;
 		legacyMode = true; requested = 0; frame = idle(); requested = -1;
 		const ImVec2 baselinePoint(frame.outer->InnerRect.Min.x + 2 * scale, frame.outer->InnerRect.GetCenter().y);
 		draw(baselinePoint, false); frame = draw(baselinePoint, true); const float legacyBefore = frame.scroll, legacyGlyph = frame.glyphY;
@@ -7134,11 +7247,14 @@ namespace
 						gitcodeFound |= expected==HomeAction::GitCode; supportFound |= expected==HomeAction::Support;
 						wrappedLicenseRows += expected==HomeAction::License; licenseTaps += expected==HomeAction::License;
 						viewport=shell.content.Height(); requested=(std::max)(0.0F,point.y-frame.outer->InnerRect.Min.y-viewport*.5F); frame=idle(); requested=-1;
+						// 拖动转滚动只对触摸/笔生效，仅在这次拖动期间切换来源。
+						io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
 						const ImVec2 visible(point.x,point.y-frame.outer->Scroll.y); frame=draw(visible,false); frame=draw(visible,true);
 						const float scrollBefore=frame.outer->Scroll.y; const int beforeDrag=actionCount;
 						frame=draw({visible.x,visible.y-25*scale},true);
 						checks.Expect(frame.active!=id && Near(frame.outer->Scroll.y-scrollBefore,25*scale,1),"new text links and open-source buttons transfer capture to real scrolling after the native threshold");
 						frame=draw({visible.x,visible.y-25*scale},false); checks.Expect(actionCount==beforeDrag,"dragging a new home link/button cancels the click action");
+						io.AddMouseSourceEvent(ImGuiMouseSource_Mouse);
 						viewport=2400; requested=0; frame=idle(); requested=-1; frame=idle();
 					}
 					checks.Expect(licenseFound && githubFound && gitcodeFound && supportFound,"actual drawn copyright/repository/star/sponsor controls expose all four business actions");

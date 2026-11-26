@@ -1,6 +1,8 @@
 ﻿#include "../Inkeys/Inkeys/Input/UiPointerInput.h"
 #include "../Inkeys/Inkeys/Input/UiTouchRouting.h"
 #include "../Inkeys/Inkeys/UI/Setting/Setting.PointerInput.h"
+#include "../Inkeys/Inkeys/UI/Setting/Setting.Scroll.h"
+#include <cmath>
 #include <array>
 #include <cfloat>
 #include <iostream>
@@ -152,6 +154,8 @@ namespace
 		Check(Send(WM_POINTERUP, 5) && Last(EventType::End, Source::Touch), "touch up ends the contact");
 		Check(PI::ReadPointerOverride(pointer) && pointer.x == -FLT_MAX, "touch up parks the pointer outside the window");
 		Check(!PI::FilterChannelMouse(WM_MOUSEMOVE, 0) && !PI::ReadPointerOverride(pointer), "a passing native mouse message ends the park");
+		Check(PI::TakeParkRelease() && !PI::TakeParkRelease(), "ending the park asks once for the real cursor position to be restored");
+		Check(!PI::FilterChannelMouse(WM_MOUSEMOVE, 0) && !PI::TakeParkRelease(), "later mouse messages do not re-request the cursor position");
 
 		info.pointerType = PT_PEN; info.sourceDevice = reinterpret_cast<HANDLE>(0x20);
 		info.pointerFlags = contactFlags | POINTER_FLAG_SECONDBUTTON | POINTER_FLAG_DOWN;
@@ -190,6 +194,41 @@ namespace
 		PI::Testing::Reset();
 		events.clear();
 	}
+
+	// 设置页面滚动的纯逻辑：释放速度估计、指数衰减惯性与越界换算。
+	void TestScrollKernel()
+	{
+		namespace Scroll = Inkeys::UI::Setting::Scroll;
+		Scroll::VelocityEstimator velocity;
+		for (int index = 0; index <= 6; ++index) velocity.Add(index / 60.0, -20.0F * index);
+		Check(std::abs(velocity.Estimate(6 / 60.0) + 1200.0F) < 1.0F, "steady motion estimates its velocity");
+		velocity.Reset();
+		for (int index = 0; index <= 3; ++index) velocity.Add(index / 60.0, -20.0F * index);
+		for (int index = 4; index <= 12; ++index) velocity.Add(index / 60.0, -60.0F);
+		Check(velocity.Estimate(12 / 60.0) == 0.0F, "holding still before release yields no velocity");
+		velocity.Reset(); velocity.Add(0.0, 5.0F);
+		Check(velocity.Estimate(0.0) == 0.0F, "a single sample yields no velocity");
+		velocity.Reset();
+		for (int index = 0; index < 40; ++index) velocity.Add(index / 60.0, index < 30 ? 10.0F * index : 300.0F - 15.0F * (index - 30));
+		Check(velocity.Estimate(39 / 60.0) < 0.0F, "only the recent window decides the release direction");
+
+		Scroll::InertiaCurve curve;
+		curve.Start(100.0F, 1200.0F, 1.0);
+		const double lambda = -std::log(1.0 - Scroll::InertiaDecayRate);
+		Check(curve.Active() && std::abs(curve.Velocity(2.0) - 1200.0F * static_cast<float>(1.0 - Scroll::InertiaDecayRate)) < 0.5F,
+			"velocity keeps 5 percent after one second");
+		Check(std::abs(curve.Position(1000.0) - (100.0F + static_cast<float>(1200.0 / lambda))) < 0.5F, "total glide distance is v0 / ln(20)");
+		Check(curve.Position(0.5) == 100.0F && curve.Velocity(0.5) == 1200.0F, "time before the start stays at the origin");
+		float stepped = 0.0F;
+		for (int frame = 0; frame <= 144; ++frame) stepped = curve.Position(1.0 + frame / 144.0);
+		Check(std::abs(stepped - curve.Position(2.0)) < 0.001F, "position depends only on elapsed time, not frame rate");
+		curve.Start(0.0F, 0.0F, 0.0);
+		Check(!curve.Active(), "zero velocity does not start inertia");
+
+		Check(Scroll::OverpanOffset(-40.0F, 60.0F) == -20.0F && Scroll::OverpanOffset(400.0F, 60.0F) == 60.0F,
+			"overpan maps through the resistance and caps at the maximum offset");
+		Check(Scroll::OverpanLimit(60.0F) == 120.0F, "overpan accumulation stops where the offset is capped");
+	}
 }
 
 int RunSettingPointerInputTests()
@@ -199,6 +238,7 @@ int RunSettingPointerInputTests()
 	TestChannelFilter();
 	TestTrackRing();
 	TestWindowMessages();
+	TestScrollKernel();
 	if (failures == 0) std::cout << "setting pointer input tests passed\n";
 	return failures;
 }

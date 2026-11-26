@@ -1,4 +1,5 @@
 ﻿#include "Setting.Controls.h"
+#include "Setting.Scroll.h"
 #include "imfluent/imfluent_internal.h"
 #include "Setting.Theme.h"
 #include "imgui/imgui_internal.h"
@@ -484,32 +485,8 @@ namespace Inkeys::UI::Setting::Design
 
 	namespace
 	{
-		bool DragEligible(ImGuiWindow* window, const NavigationState& state, bool submitted)
-		{
-			if (!window || (submitted ? !window->Active : !window->WasActive) || window->Hidden
-				|| window->ScrollMax.y <= 0.0F
-				|| (window->Flags & (ImGuiWindowFlags_NoMouseInputs | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_Tooltip))) return false;
-			for (auto* ancestor = window; ancestor; ancestor = ancestor->ParentWindow)
-				if ((ancestor->Flags & ImGuiWindowFlags_Popup)
-					&& !ImGui::IsPopupOpen(ancestor->PopupId, ImGuiPopupFlags_AnyPopupLevel)) return false;
-			if (window->ID == state.flyoutWindowId) return state.flyoutOpen && !state.mouseReleaseBarrier;
-			return !state.BlockContentInput() || (window->ID == state.navigationScrollWindowId && !state.mouseReleaseBarrier);
-		}
-
-		ImGuiID WindowStateId(ImGuiWindow* window, const char* label)
-		{
-			// 未提交页面经 ImGui 内存回收后 IDStack 为空；窗口状态始终以稳定窗口 ID 为种子。
-			return ImHashStr(label, 0, window->ID);
-		}
-
-		void CaptureDrag(ImGuiWindow* owner)
-		{
-			ImGuiContext& g = *GImGui;
-			ImGui::SetActiveID(WindowStateId(owner, "##scrolldraggingoverlay"), owner);
-			g.ActiveIdMouseButton = ImGuiMouseButton_Left;
-			g.MovingWindow = nullptr;
-			owner->StateStorage.SetFloat(WindowStateId(owner, "##drag-scroll-position"), owner->Scroll.y);
-		}
+		// 拖动滚动的键协议与宿主仲裁已移到 Setting.Scroll；滚动条样式仍按同一窗口状态键保存。
+		using Scroll::WindowStateId;
 
 		ImGuiWindow* ChildWindow(const char* id)
 		{
@@ -534,14 +511,7 @@ namespace Inkeys::UI::Setting::Design
 				previousPadding = ImGui::GetStyle().ScrollbarPadding;
 				for (int index = 0; index < 3; ++index) previousColors[index] = ImGui::GetStyle().Colors[ImGuiCol_ScrollbarGrab + index];
 				// 只在本帧真正提交此宿主时消费；未提交/关闭的旧 Popup 不留下 target。
-				if (input && window && GImGui->ActiveIdWindow == window && GImGui->ActiveId == WindowStateId(window, "##scrolldraggingoverlay")
-					&& window->StateStorage.GetInt(WindowStateId(window, "##drag-scroll-frame"), -2) == GImGui->FrameCount)
-				{
-					if (window->ScrollTarget.y == FLT_MAX)
-						ImGui::SetScrollY(window, window->StateStorage.GetFloat(WindowStateId(window, "##drag-scroll-position")));
-					else window->StateStorage.SetInt(WindowStateId(window, "##drag-scroll-rebase"), 1);
-					window->StateStorage.SetInt(WindowStateId(window, "##drag-scroll-frame"), -2);
-				}
+				if (input) Scroll::ConsumePendingScroll(window);
 				if (window)
 				{
 					auto& storage = window->StateStorage;
@@ -652,86 +622,10 @@ namespace Inkeys::UI::Setting::Design
 		};
 	}
 
-	void AllowContentDrag()
-	{
-		// 仅登记内容型点击项；越过原生阈值才转抓，滑块/输入等保持原操作。
-		auto* window = ImGui::GetCurrentWindow();
-		if (GImGui->ActiveId == GImGui->LastItemData.ID)
-			window->StateStorage.SetInt(ImHashStr("##content-drag-button", 0, window->ID), static_cast<int>(GImGui->ActiveId));
-	}
-
-	void BeginDragScrolling(const NavigationState& state)
-	{
-		ImGuiContext& g = *GImGui;
-		auto* owner = g.ActiveIdWindow;
-		if (!g.IO.MouseDown[0] || !g.IO.MouseDownOwned[0]) return;
-		if (owner && g.ActiveId && g.ActiveId == static_cast<ImGuiID>(owner->StateStorage.GetInt(ImHashStr("##content-drag-button", 0, owner->ID)))
-			&& ImGui::IsMouseDragging(ImGuiMouseButton_Left))
-		{
-			while (owner && !DragEligible(owner, state, false))
-			{
-				if (owner->Flags & ImGuiWindowFlags_Popup) { owner = nullptr; break; }
-				owner = owner->ParentWindow;
-			}
-			if (owner) CaptureDrag(owner);
-		}
-		if (!DragEligible(owner, state, false) || g.ActiveId != WindowStateId(owner, "##scrolldraggingoverlay")) return;
-		ImGui::KeepAliveID(g.ActiveId);
-		if (g.IO.MouseDelta.y == 0.0F) return;
-		const ImGuiID sampledId = WindowStateId(owner, "##drag-scroll-sampled-frame");
-		if (owner->StateStorage.GetInt(sampledId, -2) == g.FrameCount) return;
-		owner->StateStorage.SetInt(sampledId, g.FrameCount);
-		// 原生滚轮/键盘已有目标时先让它消费，本帧不覆盖它，下一帧从真实 Scroll 重基准。
-		const ImGuiID rebaseId = WindowStateId(owner, "##drag-scroll-rebase");
-		if (owner->ScrollTarget.y < FLT_MAX) { owner->StateStorage.SetInt(rebaseId, 1); return; }
-		const ImGuiID positionId = WindowStateId(owner, "##drag-scroll-position");
-		float position = owner->StateStorage.GetFloat(positionId, owner->Scroll.y);
-		if (owner->StateStorage.GetInt(rebaseId) || std::abs((std::min)(ImRound64(position), owner->ScrollMax.y) - owner->Scroll.y) > 0.01F) position = owner->Scroll.y;
-		owner->StateStorage.SetInt(rebaseId, 0);
-		position = std::clamp(position - g.IO.MouseDelta.y, 0.0F, owner->ScrollMax.y);
-		owner->StateStorage.SetFloat(positionId, position);
-		// 暂存单宿主意图；实际首次 Begin 前投递原生目标，不后移光标或顶点。
-		owner->StateStorage.SetInt(WindowStateId(owner, "##drag-scroll-frame"), g.FrameCount);
-	}
-
-	void ApplyDragScrolling(const NavigationState& state)
-	{
-		ImGuiContext& g = *GImGui;
-		auto* captured = g.ActiveIdWindow;
-		if (captured && g.ActiveId == WindowStateId(captured, "##scrolldraggingoverlay"))
-		{
-			if (!g.IO.MouseDown[0] || !DragEligible(captured, state, true)) ImGui::ClearActiveID();
-			else ImGui::KeepAliveID(g.ActiveId);
-			return;
-		}
-		if (!g.IO.MouseClicked[0] || !g.IO.MouseDownOwned[0] || !g.HoveredWindow) return;
-		// 弹层外的按下留给 ImGui 原生关闭流程，不能先取得滚动捕获而阻断 EndFrame 的焦点处理。
-		if (!ImGui::IsWindowContentHoverable(g.HoveredWindow, ImGuiHoveredFlags_None)) return;
-		// 真正业务控件的 ActiveId 保留；child/root 的 MoveId 属于可抓取内容空白。
-		if (g.ActiveId && g.ActiveId != g.HoveredWindow->MoveId
-			&& g.ActiveId != g.HoveredWindow->RootWindow->MoveId) return;
-		auto* owner = g.HoveredWindow;
-		while (owner && !DragEligible(owner, state, true))
-		{
-			// 无滚动范围的浮层不向其背景页面传播拖动。
-			if (owner->Flags & ImGuiWindowFlags_Popup) { owner = nullptr; break; }
-			owner = owner->ParentWindow;
-		}
-		if (owner) CaptureDrag(owner);
-	}
-
 	bool BeginScrollChild(const char* id, const ImVec2& size, ImGuiChildFlags childFlags, ImGuiWindowFlags flags, bool resetToTop, bool settleScrollbarLayout, bool stableBodyLayout, float visualAlpha, PageMotionState* motion)
 	{
 		auto* existing=ChildWindow(id);
-		if (resetToTop && existing)
-		{
-			// 必须在 Begin 消费旧惯性目标之前归零，第一帧布局直接使用顶部坐标。
-			existing->Scroll.y=0; existing->ScrollTarget.y=FLT_MAX;
-			existing->StateStorage.SetFloat(WindowStateId(existing, "##drag-scroll-position"),0);
-			existing->StateStorage.SetInt(WindowStateId(existing, "##drag-scroll-frame"),-2);
-			existing->StateStorage.SetInt(WindowStateId(existing, "##drag-scroll-sampled-frame"),-2);
-			existing->StateStorage.SetInt(WindowStateId(existing, "##drag-scroll-rebase"),1);
-		}
+		if (resetToTop && existing) Scroll::ResetWindow(existing);
 		if (resetToTop) ImGui::SetNextWindowScroll({0,0});
 		// 正文宽度是当前布局预算，不继承AutoResize子页上一帧的旧宽度。
 		const float bodyContentWidth = (std::max)(0.0F, ImTrunc(size.x) - ImGui::GetStyle().WindowPadding.x * 2.0F);
@@ -740,7 +634,7 @@ namespace Inkeys::UI::Setting::Design
 		{
 			auto& state = *motion;
 			const bool userScroll = MotionInput(state.bounds, true) || ImGui::IsAnyMouseDown()
-				|| ImGui::GetIO().MouseWheel != 0 || ImGui::GetIO().MouseWheelH != 0;
+				|| ImGui::GetIO().MouseWheel != 0 || ImGui::GetIO().MouseWheelH != 0 || Scroll::Animating();
 			if (userScroll || resetToTop) state.pinnedBottom = false;
 			const bool resized = state.owner == existing->ID && (state.viewport.x != ImTrunc(size.x) || state.viewport.y != ImTrunc(size.y));
 			if (resized)
@@ -960,7 +854,7 @@ namespace Inkeys::UI::Setting::Design
 		state.bounds = { bounds.Min.x, bounds.Min.y, bounds.Max.x, bounds.Max.y };
 		if (!state.navigationFrame && !state.exiting && MotionInput(state.bounds, true)) state.elapsed = PageMotionTiming::Total;
 		pageMotionUserScroll = ImGui::GetIO().MouseWheel != 0.0F || ImGui::IsAnyMouseDown()
-			|| MotionInput(state.bounds, false);
+			|| MotionInput(state.bounds, false) || Scroll::Animating();
 		const bool atBottom = pageMotionOwner->ScrollMax.y > 0.0F
 			&& std::abs(pageMotionOwner->Scroll.y - pageMotionOwner->ScrollMax.y) <= Pixels(1.0F);
 		if (pageMotionUserScroll) state.pinnedBottom = false;

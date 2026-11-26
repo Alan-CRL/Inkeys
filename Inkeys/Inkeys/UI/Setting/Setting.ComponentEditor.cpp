@@ -320,8 +320,13 @@ namespace Inkeys::UI::Setting::ComponentEditor
 		if (e.lastMouse.x != mouse.x || e.lastMouse.y != mouse.y) ++e.pointerSerial;
 		in.pointerSerial = e.pointerSerial;
 		e.lastMouse = mouse;
+		// 设置 Pointer 路由把系统取消的触摸/笔接触写成“移出窗口后松开”；拖动中指针位置无效时按取消处理，
+		// 不能当作在预览区外放下（否则可删除项会被误删）。
+		// 只用于触摸/笔：鼠标拖出客户区时 backend 的 WM_MOUSELEAVE 也会写无效坐标，松开仍按原放下规则处理。
+		const bool pointerCancelled = e.input.drag.Phase() != DragPhase::Idle && e.input.drag.Kind() != DragPointerKind::Mouse
+			&& !ImGui::IsMousePosValid(&mouse);
 		const bool cancelled = inputBlocked || (ImGui::GetCurrentContext()->CurrentItemFlags & ImGuiItemFlags_Disabled) || io.AppFocusLost || ImGui::IsKeyPressed(ImGuiKey_Escape) ||
-							   (e.input.drag.Phase() != DragPhase::Idle && ImGui::GetActiveID() != e.capture) || sourceChanged || captureLost;
+							   (e.input.drag.Phase() != DragPhase::Idle && ImGui::GetActiveID() != e.capture) || sourceChanged || captureLost || pointerCancelled;
 		if (cancelled)
 		{
 			e.Cancel();
