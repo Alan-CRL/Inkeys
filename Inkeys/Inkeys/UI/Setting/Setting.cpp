@@ -41,6 +41,7 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <dwmapi.h>
+#include <tpcshrd.h>
 #include <d2dbasetypes.h>
 #include <algorithm>
 #include <array>
@@ -1572,6 +1573,28 @@ struct
 } settingCICD;
 // signal1
 
+namespace
+{
+	// 关闭系统触摸/笔的点击、长按等视觉反馈；SetWindowFeedbackSetting 为 Win8+ API，动态获取以兼容 Win7。
+	void ConfigureNativeTouchFeedback(HWND hwnd) noexcept
+	{
+		using SetWindowFeedbackSettingFn = BOOL(WINAPI*)(HWND, FEEDBACK_TYPE, DWORD, UINT32, const void*);
+		const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+		const auto setFeedback = user32
+			? reinterpret_cast<SetWindowFeedbackSettingFn>(GetProcAddress(user32, "SetWindowFeedbackSetting"))
+			: nullptr;
+		if (!setFeedback) return;
+		constexpr FEEDBACK_TYPE types[] = {
+			FEEDBACK_TOUCH_CONTACTVISUALIZATION, FEEDBACK_TOUCH_TAP, FEEDBACK_TOUCH_DOUBLETAP,
+			FEEDBACK_TOUCH_PRESSANDHOLD, FEEDBACK_TOUCH_RIGHTTAP, FEEDBACK_PEN_BARRELVISUALIZATION,
+			FEEDBACK_PEN_TAP, FEEDBACK_PEN_DOUBLETAP, FEEDBACK_PEN_PRESSANDHOLD, FEEDBACK_PEN_RIGHTTAP,
+			FEEDBACK_GESTURE_PRESSANDTAP };
+		const BOOL disabled = FALSE;
+		// 单项失败只影响该反馈，不影响窗口创建。
+		for (const auto type : types) (void)setFeedback(hwnd, type, 0, sizeof(disabled), &disabled);
+	}
+}
+
 // Win32 消息处理器
 // 您可以阅读 io.WantCaptureMouse、io.WantCaptureKeyboard 标志，以了解 dear imgui 是否想使用您的输入。
 // - 当 io.WantCaptureMouse 为 true 时，请勿将鼠标输入数据发送到主应用程序，或者清除/覆盖鼠标数据的副本。
@@ -1582,6 +1605,13 @@ LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	// 创建、客户区、最大化及命中使用同一 frame 合同，保留系统 move/size loop。
 	switch (msg)
 	{
+	case WM_CREATE:
+		ConfigureNativeTouchFeedback(hWnd);
+		break;
+	case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
+		// 与主栏观感一致：触摸长按不再转为右键，并关闭笔点击/笔桶键反馈与 flick。
+		return TABLET_DISABLE_PRESSANDHOLD | TABLET_DISABLE_PENTAPFEEDBACK
+			| TABLET_DISABLE_PENBARRELFEEDBACK | TABLET_DISABLE_FLICKS;
 	case Inkeys::Window::MessageDispatch::SettingCancelModalMessage:
 	{
 		if (lParam != 0 || !Inkeys::Window::IsSettingModalWakeCurrent(hWnd, static_cast<std::uintptr_t>(wParam)))
