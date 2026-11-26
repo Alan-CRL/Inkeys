@@ -406,7 +406,8 @@ void ColorPicker::Layout(UIRendering& renderer, const ColorPickerPlacement& plac
  const double pickerScale = placement.scale, pickerWidth = placement.width, pickerHeight = placement.height;
  const double pickerLeft = placement.left, pickerTop = placement.top;
  const double pickerOpacity = placement.hostOpacity ? 1. : Opacity();
- const double fontPickerTargetScale = placement.hostOpacity ? 1. : (std::max)(.01, 60./370.+(1.-60./370.)*static_cast<double>(progress.tar));
+ // 字号取整只取展开态：收起端紧凑倍率不参与取整，开合全程文字与面板等比；后续用户展开倍率落在此处。
+ const double fontPickerTargetScale = 1.;
  const auto colorPickerHoldTextSize = renderer.MeasureText(holdWord_.TargetContent(), 12, DWRITE_FONT_WEIGHT_NORMAL);
  const auto colorPickerFooterTextSize = renderer.MeasureText(L"Ag", 13, DWRITE_FONT_WEIGHT_NORMAL);
  const auto colorPickerFooterRgbValueSize = renderer.MeasureText(L"255", 13, DWRITE_FONT_WEIGHT_NORMAL);

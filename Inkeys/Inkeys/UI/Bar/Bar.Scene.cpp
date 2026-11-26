@@ -226,7 +226,7 @@ namespace Inkeys::UI::Bar
 					const auto& frame=child?themeFrame:menuFrame;const double alpha=panels[child?2:1].Opacity();
 					out.visible=frame.visible&&alpha>0.0001;if(!out.visible)return;
 					const auto pose=child?themePose:menuPose;auto& w=out.state;
-					w.Real(pose.x);w.Real(pose.y);w.Real(pose.scale);w.Real(alpha);w.Real(frame.targetPose.scale);
+					w.Real(pose.x);w.Real(pose.y);w.Real(pose.scale);w.Real(alpha);w.Real(frame.expandedPose.scale);
 				},top);};
 			const auto menuGroup=popup(false),themeGroup=popup(true);
 			auto shapeEntry=[this](VisualGroupId group,UiShapeClass* shape,int poseGroup,std::function<bool()> gate,const char* name){
@@ -950,7 +950,7 @@ namespace Inkeys::UI::Bar
 			const auto pose=child?themePose:menuPose;
 			const double alpha=panels[child?2:1].Opacity();
 			if(alpha<=0.0001)return;
-			PanelPoseScope poseScope(renderer,dc,DrawingPose(pose,child?themeFrame.targetPose:menuFrame.targetPose));
+			PanelPoseScope poseScope(renderer,dc,DrawingPose(pose,child?themeFrame.expandedPose:menuFrame.expandedPose));
 			const auto bounds=child?ThemeBounds:MenuBounds;
 			const auto pixels=Pixels(bounds,scale*pose.scale);
 			const bool layer=alpha<0.9999;

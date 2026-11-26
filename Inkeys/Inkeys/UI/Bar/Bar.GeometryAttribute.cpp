@@ -538,7 +538,7 @@ bool BarGeometryAttributePanel::Advance(BarUISetClass& owner, const StateModeCla
 	if (previousBelow_) sideWork.top = (std::clamp)(main->inhY + main->h.val + gap, work.top, work.bottom);
 	else sideWork.bottom = (std::clamp)(main->inhY - gap, work.top, work.bottom);
 	if (sideWork.Height() <= 0) sideWork = work;
-	const double fontTargetScale = pf.targetPose.scale;
+	const double fontTargetScale = pf.expandedPose.scale;
 	const double viewport = (std::clamp)(static_cast<double>(viewportHeight_.val), 1.0, (std::max)(1.0,height - fixedHeight));
 	const double baseHeight = viewport + fixedHeight;
 	const double scrollMaximum = (std::max)(0.0, categoryLayout_.height - viewport);

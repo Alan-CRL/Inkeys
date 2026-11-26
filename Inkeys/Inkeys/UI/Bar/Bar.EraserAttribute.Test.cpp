@@ -820,12 +820,16 @@ namespace Inkeys::UI::Bar
 					UiValueClass scale{0.01};
 					const UiCurveSpecClass opening{UiCurveEnum::EaseOutBack,UiCurveEnum::EaseOutBack,0,false};
 					const UiCurveSpecClass closing{UiCurveEnum::EaseInBack,UiCurveEnum::EaseInBack,0,false};
+					// 与生产 PositionContentMore 一致：字号取整目标只取展开态倍率 1，收起端紧凑倍率不参与取整。
 					const auto moreFrame=[&](double elapsed){
-						ConfigureButtonVisualTargets(button,kind,duration,scale.val,true,std::nullopt,scale.tar);
+						ConfigureButtonVisualTargets(button,kind,duration,scale.val,true,std::nullopt,1.0);
 						return drawFrame(elapsed);
 					};
+					const auto proportional=[&](double size){
+						return std::abs(size-expected*static_cast<double>(scale.val))<0.00001;
+					};
 					// 隐藏布局不消费字体修正；覆盖首次可见尺寸尚不足 1px 的边界。
-					ConfigureButtonVisualTargets(button,kind,duration,0.01,true,std::nullopt,0.01);
+					ConfigureButtonVisualTargets(button,kind,duration,0.01,true,std::nullopt,1.0);
 					scale.SetTar(1,duration,std::nullopt,false,opening);
 					expect(std::abs(moreFrame(0)-expected*0.01)<0.00001,"first visible More label projects the final size even below one pixel");
 					bool overshoot=false;
@@ -840,16 +844,33 @@ namespace Inkeys::UI::Bar
 						&&std::abs(settled-expected)<0.00001&&moreFrame(0)==settled,
 						"More opening and overshoot settle at the final font size with no idle-frame growth");
 					scale.SetTar(0.16,duration,std::nullopt,false,closing);
-					for(int tick=0;tick<8;++tick){(void)UiAdvanceAnimation(scale,{dt,1,true,false});(void)moreFrame(dt);}
+					for(int tick=0;tick<8;++tick){(void)UiAdvanceAnimation(scale,{dt,1,true,false});
+						expect(proportional(moreFrame(dt)),"More closing keeps labels proportional to the panel scale");}
 					const double interrupted=moreFrame(0);
 					scale.SetTar(1,duration,std::nullopt,false,opening);
 					expect(std::abs(moreFrame(0)-interrupted)<0.00001,"reopening More at zero dt preserves the current label size");
 					for(int tick=0;tick<36;++tick){
 						if(!scale.IsSame())(void)UiAdvanceAnimation(scale,{dt,1,true,false});
 						settled=moreFrame(dt);
+						expect(proportional(settled),"reversed More opening keeps labels proportional to the panel scale");
 					}
 					expect(!fonts.FontAnimationsActive()&&std::abs(settled-expected)<0.00001&&moreFrame(0)==settled,
 						"reversed More opening has no font growth after the panel settles");
+					// 完整收起到紧凑态再重开：修正系数不追赶收起端，开合全程等比、落定后无字号尾段。
+					scale.SetTar(0.16,duration,std::nullopt,false,closing);
+					for(int tick=0;tick<36;++tick){
+						if(!scale.IsSame())(void)UiAdvanceAnimation(scale,{dt,1,true,false});
+						expect(proportional(moreFrame(dt)),"full More closing keeps labels proportional to the panel scale");
+					}
+					expect(scale.IsSame()&&!fonts.FontAnimationsActive(),"closed More leaves no font correction tail");
+					scale.SetTar(1,duration,std::nullopt,false,opening);
+					for(int tick=0;tick<36;++tick){
+						if(!scale.IsSame())(void)UiAdvanceAnimation(scale,{dt,1,true,false});
+						settled=moreFrame(dt);
+						expect(proportional(settled),"More reopening from compact keeps labels proportional to the panel scale");
+					}
+					expect(!fonts.FontAnimationsActive()&&std::abs(settled-expected)<0.00001&&moreFrame(0)==settled,
+						"More reopening from compact settles without a second font growth");
 					// 同一溢出按钮回到主栏时，不得沿用紧凑面板的静止字号覆盖。
 					scale.SetDirect(0.16);(void)moreFrame(duration);
 					ConfigureButtonVisualTargets(button,kind,duration,1,false);

@@ -94,9 +94,10 @@ namespace Inkeys::UI::Bar
 		// 根面板从 More 按钮中心的紧凑态展开，和绘制属性/几何面板共享锚点语义。
 		double scale = max(0.01, BarMorePanelCompactScale
 			+ (1.0 - BarMorePanelCompactScale) * rawProgress);
-		// 字号取整只看面板最终姿态，不能追逐每帧 SetDirect 的当前展开尺寸。
-		const double fontTargetScale = max(0.01, BarMorePanelCompactScale
-			+ (1.0 - BarMorePanelCompactScale) * progress.tar);
+		// 字号取整只看面板展开态，不追逐每帧 SetDirect 的当前尺寸，也不取收起端紧凑倍率：
+		// 否则约 2px 的收起目标取整误差会以另一条曲线插值，造成展开到位后放大、收起时偏小。
+		// 后续用户展开倍率落地时，scale 公式的展开端与此处同取该倍率。
+		const double fontTargetScale = 1.0;
 		double logicalWindowWidth = frameZoom > 0.0
 			? static_cast<double>(windowWidth) / frameZoom : panelWidth;
 		double logicalWindowHeight = frameZoom > 0.0

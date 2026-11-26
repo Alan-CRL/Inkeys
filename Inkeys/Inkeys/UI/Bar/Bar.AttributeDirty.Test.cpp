@@ -602,8 +602,43 @@ namespace Inkeys::UI::Bar
 				nat = nat && setup([&] { owner.barState.drawAttribute = true; });
 				for (const auto preset : { BarButtonPresetEnum::Draw, BarButtonPresetEnum::Eraser, BarButtonPresetEnum::Geometry, BarButtonPresetEnum::More })
 					nat = nat && pressMain(preset, "n.main.panel" + std::to_string(static_cast<int>(preset)));
-				nat = nat && setup([&] { owner.barState.drawAttribute = false; });
+				// 绘制属性窗字号取整目标只取展开态：收起后笔型、粗细显示与档位数字仍以展开字号为名义目标，
+				// 不能落到紧凑倍率（否则修正系数会在两端之间追赶，文字与面板不等比）。
+				{
+					const auto expandedFontTargets = [&](const char* phase) -> bool
+						{
+							const std::pair<BarUISetWordEnum, double> words[] = {
+								{ BarUISetWordEnum::DrawAttributeBar_Brush1, 12.0 },
+								{ BarUISetWordEnum::DrawAttributeBar_ThicknessDisplay, 13.0 },
+								{ BarUISetWordEnum::DrawAttributeBar_ThicknessFineNumber, 10.0 } };
+							bool ok = true;
+							for (const auto& [id, expected] : words)
+							{
+								const auto word = owner.wordMap[id];
+								const double actual = word ? static_cast<double>(word->fontTargetSize) : -2.0;
+								if (actual != expected)
+								{
+									report << "FONT-TARGET-COMPACT " << phase << " word=" << static_cast<int>(id) << " target=" << actual << " expected=" << expected << '\n';
+									ok = false;
+								}
+							}
+							return ok;
+						};
+					nat = nat && expandedFontTargets("open");
+					nat = nat && setup([&] { owner.barState.drawAttribute = false; });
+					nat = nat && expandedFontTargets("closed");
+				}
 				nat = nat && natural("n.more.expand", [&] { owner.barState.moreExpanded = true; });
+				// 生产 PositionContentMore：More 字号取整目标只取展开态，收起请求后各按钮名义目标必须保持展开值，
+				// 不能跟随进度目标落到紧凑倍率（真实主栏与组件页预览共用该函数）。
+				std::vector<std::pair<BarButtonClass*, double>> moreFontTargets;
+				{
+					const auto more = owner.barButtonSet.GetMoreButtonSnapshot();
+					for (const auto* list : { &more.explicitMore, &more.forcedOverflow })
+						for (const auto& button : *list)
+							if (button && button->name.fontTargetSize >= 0.0)
+								moreFontTargets.emplace_back(button.get(), static_cast<double>(button->name.fontTargetSize));
+				}
 				{
 					const auto more = owner.barButtonSet.GetMoreButtonSnapshot();
 					BarButtonClass* item = !more.explicitMore.empty() ? more.explicitMore.front().get()
@@ -619,6 +654,13 @@ namespace Inkeys::UI::Bar
 				nat = nat && natural("n.more.close.press", [&] { owner.barState.moreClosePress = true; });
 				nat = nat && natural("n.more.close.release", [&] { owner.barState.moreClosePress = false; });
 				nat = nat && natural("n.more.collapse", [&] { owner.barState.moreExpanded = false; });
+				if (moreFontTargets.empty()) { report << "FONT-TARGET-MORE no expanded More labels sampled\n"; nat = false; }
+				for (const auto& [button, expected] : moreFontTargets)
+					if (static_cast<double>(button->name.fontTargetSize) != expected)
+					{
+						report << "FONT-TARGET-MORE collapsed target=" << static_cast<double>(button->name.fontTargetSize) << " expected=" << expected << '\n';
+						nat = false;
+					}
 				// 开动画按压（V10 实机：按下瞬间整窗）：按钮标签的字号修正随按压目标播放，
 				// 修正值已入登记表采样，只唤醒不整窗；跑到稳定后仍与整幅参考逐字节比较。
 				UiAnimationEnabled = true;

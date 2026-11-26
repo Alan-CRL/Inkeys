@@ -3778,6 +3778,9 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					};
 				double drawAttributeLayoutScale =
 					state.barState.drawAttribute ? 1.0 : BarDrawAttributeCompactScale;
+				// 字号取整目标只取展开态倍率：收起端紧凑倍率不参与取整，开合全程文字与面板等比。
+				// 后续用户展开倍率落地时与展开态几何同取该倍率。
+				constexpr double drawAttributeFontTargetScale = 1.0;
 				auto drawAttributeBar =
 					state.shapeMap[BarUISetShapeEnum::DrawAttributeBar];
 				if (!state.barState.drawAttribute)
@@ -4285,6 +4288,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 							* layoutScale);
 						word->h.SetTar(BarDrawAttributePenTypeButtonHeight * layoutScale);
 						word->size.SetTar(12.0 * layoutScale);
+						word->fontTargetSize = 12.0 * drawAttributeFontTargetScale;
 						// 浅色禁用态从正文向表面混合，深色保留原中性灰。
 						const COLORREF contentColor=button.enabled
 							?GetThemeColor(button.selected?ThemeColorEnum::Accent:ThemeColorEnum::TextPrimary)
@@ -4406,6 +4410,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 					thicknessDisplay->w.SetTar(90.0 * layoutScale);
 					thicknessDisplay->h.SetTar(30.0 * layoutScale);
 					thicknessDisplay->size.SetTar(13.0 * layoutScale);
+					thicknessDisplay->fontTargetSize = 13.0 * drawAttributeFontTargetScale;
 					thicknessDisplay->pct.SetTar(state.barState.drawAttribute ? 1.0 : 0.0);
 					thicknessDisplay->color.SetTar(
 						GetThemeColor(ThemeColorEnum::TextPrimary));
@@ -4467,6 +4472,7 @@ if (stateMode.StateModeSelect == StateModeSelectEnum::IdtPen)
 								numberWord->h.SetTar(
 									BarDrawAttributeThicknessControlHeight * layoutScale);
 								numberWord->size.SetTar(10.0 * layoutScale);
+								numberWord->fontTargetSize = 10.0 * drawAttributeFontTargetScale;
 							}
 
 						};
@@ -5796,7 +5802,8 @@ bool BarRenderLoopCoordinator::AdvanceAnimationsAndDeriveLayout(
 		auto previewGeometry = CalculateBarThicknessPreviewGeometry(
 			*panel, *region, regionInherit, *adjust, adjustInherit);
 		double panelScale = previewGeometry.panelScale;
-		const double fontPanelTargetScale=static_cast<double>(panel->w.tar)/BarDrawAttributeExpandedWidth;
+		// 字号取整只看展开态（与布局段 drawAttributeFontTargetScale 一致），收起时不取紧凑宽度。
+		const double fontPanelTargetScale=1.0;
 		double panelExpandedProgress = clamp(
 			(panelScale - BarDrawAttributeCompactScale)
 			/ (1.0 - BarDrawAttributeCompactScale), 0.0, 1.0);

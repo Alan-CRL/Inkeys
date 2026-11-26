@@ -100,7 +100,9 @@ export namespace Inkeys::UI::Bar
 	using EraserSurfaceMotion = BarAttributePanelMotion;
 	struct BarAttributePanelFrame
 	{
-		EraserSurfacePose pose, targetPose;
+		// expandedPose 为展开态姿态（几何进度 1，含父级），只供字号取整目标使用；
+		// 收起端紧凑倍率不参与取整，开合全程修正系数恒定，文字与面板等比。后续用户展开倍率须乘在此姿态上。
+		EraserSurfacePose pose, expandedPose;
 		double opacity = 0.0;
 		bool visible = false;
 	};
@@ -112,13 +114,13 @@ export namespace Inkeys::UI::Bar
 	{
 		BarAttributePanelFrame frame;
 		frame.pose = ResolveEraserSurfacePose(panel, anchor, motion.Geometry(), compactWidth);
-		frame.targetPose = ResolveEraserSurfacePose(panel, anchor, motion.TargetGeometry(), compactWidth);
+		frame.expandedPose = ResolveEraserSurfacePose(panel, anchor, 1.0, compactWidth);
 		frame.opacity = motion.Opacity();
 		frame.visible = motion.Visible() && frame.opacity > 0.000001;
 		if (parent)
 		{
 			frame.pose = ComposeEraserPose(parent->pose, frame.pose);
-			frame.targetPose = ComposeEraserPose(parent->targetPose, frame.targetPose);
+			frame.expandedPose = ComposeEraserPose(parent->expandedPose, frame.expandedPose);
 			frame.opacity *= parent->opacity;
 			frame.visible = frame.visible && parent->visible && frame.opacity > 0.000001;
 		}

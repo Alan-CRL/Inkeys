@@ -309,6 +309,26 @@ int RunEraserAttributeTests()
 			expect(std::abs(EraserRectCenterX(c.Apply(menu))-EraserRectCenterX(p.Apply(automatic)))<0.001 && std::abs(EraserRectCenterY(c.Apply(menu))-EraserRectCenterY(p.Apply(automatic)))<0.001,"closed child follows actual moving parent anchor");
 			if(g>1)expect(p.Apply(panel).Width()>panel.Width(),"bounds must include actual overshoot, not final shell");
 		}
+		// 字号取整目标只取展开态：开合任意阶段 expandedPose 都等于几何进度 1 的姿态（父子同样组合），
+		// 收起端紧凑倍率不参与取整，避免修正系数在两端之间追赶造成文字与面板不等比。
+		{
+			EraserSurfaceMotion parentMotion,childMotion;
+			const auto expectedParent=ResolveEraserSurfacePose(panel,anchor,1.0,60);
+			const auto expectedChild=ComposeEraserPose(expectedParent,ResolveEraserSurfacePose(menu,automatic,1.0,60));
+			const auto same=[](EraserSurfacePose a,EraserSurfacePose b){
+				return std::abs(a.scale-b.scale)<1e-12 && std::abs(a.x-b.x)<1e-9 && std::abs(a.y-b.y)<1e-9;};
+			const auto check=[&](const char* message){
+				const auto parentFrame=ResolveBarAttributePanelFrame(parentMotion,panel,anchor,60);
+				const auto childFrame=ResolveBarAttributePanelFrame(childMotion,menu,automatic,60,&parentFrame);
+				expect(same(parentFrame.expandedPose,expectedParent) && same(childFrame.expandedPose,expectedChild) && parentFrame.expandedPose.scale==1,message);
+			};
+			check("never-opened panel already uses the expanded font target pose");
+			parentMotion.Retarget(true,0.4);childMotion.Retarget(true,0.4);
+			for(int f=0;f<30;++f){parentMotion.Advance(context);childMotion.Advance(context);check("opening keeps the expanded font target pose");}
+			parentMotion.Retarget(false,0.4);childMotion.Retarget(false,0.4);
+			for(int f=0;f<30;++f){parentMotion.Advance(context);childMotion.Advance(context);check("closing never retargets fonts to the compact pose");}
+			expect(!parentMotion.Visible() && parentMotion.TargetGeometry()==0,"closed fixture really targets the compact pose");
+		}
 		std::cout<<"[EraserMotion] openingPeak="<<openingPeak<<" closingPeak="<<closingPeak<<'\n';
 	}
 	std::cout<<"[EraserAttribute] layouts="<<layouts<<" failures="<<failures<<'\n';
