@@ -90,6 +90,7 @@ int RunEraserAttributeTests();
 int RunRecallAttributeTests();
 int RunPresentationDescriptorTests();
 int RunUiPointerTests();
+int RunSettingPointerInputTests();
 int RunAutoCollapseTests();
 int RunKeyboardShortcutConfigTests();
 int RunDesktopShortcutConfigTests();
@@ -1723,6 +1724,9 @@ int RunSettingFontBenchmarkTests();
 
 int main(int argc, char** argv)
 {
+	// 主栏/分页与设置窗口的 Pointer 路由均为无窗口测试，可单独复跑。
+	if (argc == 2 && std::string_view(argv[1]) == "--ui-pointer-only")
+		return RunUiPointerTests() + RunSettingPointerInputTests();
 	if (argc == 2 && std::string_view(argv[1]) == "--page-control-only")
 		return RunPageControlTests();
 	// 视觉脏区登记表是纯数据测试，迭代时单独运行。
@@ -1912,6 +1916,7 @@ int main(int argc, char** argv)
 	failureCount += RunRecallAttributeTests();
 	failureCount += RunPresentationDescriptorTests();
 	failureCount += RunUiPointerTests();
+	failureCount += RunSettingPointerInputTests();
 	failureCount += RunAutoCollapseTests();
 	failureCount += RunKeyboardShortcutConfigTests();
 	failureCount += RunDesktopShortcutConfigTests();

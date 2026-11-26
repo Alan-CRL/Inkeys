@@ -208,6 +208,7 @@
     </ClCompile>
     <ClCompile Include="animation_tests.cpp" />
     <ClCompile Include="ui_pointer_tests.cpp" />
+    <ClCompile Include="setting_pointer_input_tests.cpp" />
     <ClCompile Include="auto_collapse_tests.cpp">
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
@@ -219,6 +220,7 @@
     <ClCompile Include="mouse_hook_transport_tests.cpp" />
     <ClCompile Include="keyboard_shortcut_input_tests.cpp" />
     <ClCompile Include="..\Inkeys\Inkeys\Input\UiPointerInput.cpp" />
+    <ClCompile Include="..\Inkeys\Inkeys\UI\Setting\Setting.PointerInput.cpp" />
 	<ClCompile Include="dirty_region_tests.cpp" />
 	<ClCompile Include="visual_dirty_tests.cpp" />
 	<ClCompile Include="window_geometry_tests.cpp" />

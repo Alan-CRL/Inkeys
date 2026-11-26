@@ -63,6 +63,7 @@ using namespace Inkeys::UI::UI3;
 #include <cmath>
 #include <optional>
 #include "Inkeys/UI/StartupPreview.Effect.h"
+#include "Inkeys/UI/Setting/Setting.PointerInput.h"
 #include "PptSettingsPersistence.h"
 #include "ShutdownProgressTrace.h"
 #include "PptWaitingDiagnostics.h"
@@ -3893,7 +3894,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		settingSpec.largeIcon = applicationIcon;
 		settingSpec.smallIcon = applicationIcon;
 		settingSpec.cursor = LoadCursorW(nullptr, IDC_ARROW);
-		settingSpec.bindMessages = false;
+		// 与主栏一样经 HiMsg 子类过滤：触摸/笔派生的兼容鼠标不进入 ImGui（笔悬停除外）。
+		// 设置没有队列消费者，Filter::None 不入队，其余消息 Discard 继续原窗口过程。
+		settingSpec.bindMessages = true;
+		settingSpec.messageOptions.filter = Inkeys::Message::Filter::None;
+		settingSpec.messageCallback = [](HWND, UINT message, WPARAM wParam, LPARAM)
+			{
+				return Inkeys::UI::Setting::PointerInput::FilterChannelMouse(message, wParam)
+					? Inkeys::Message::Reply{ Inkeys::Message::Action::Handled, 0 }
+					: Inkeys::Message::Reply{ Inkeys::Message::Action::Discard, 0 };
+			};
 		windowSpecs.push_back(std::move(settingSpec));
 
 		Inkeys::Window::WindowSpec displayObserver;

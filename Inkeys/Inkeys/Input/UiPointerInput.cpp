@@ -1,4 +1,4 @@
-#include "UiPointerInput.h"
+﻿#include "UiPointerInput.h"
 #include "UiPointerDiagnostics.h"
 #include "UiTouchRouting.h"
 #include "../Window/Window.MessageDispatch.h"
@@ -1041,72 +1041,92 @@ namespace Inkeys::Input::UiPointer::Touch
         }
     }
     bool PointerMode() noexcept { return PointerInfoQuery()!=nullptr&&!LegacyForced(); }
+    PointerDecode DecodePointer(UINT message,WPARAM wParam,DecodedPointer& out) noexcept
+    {
+        out={};
+        if(message!=WM_POINTERDOWN&&message!=WM_POINTERUPDATE&&message!=WM_POINTERUP&&message!=WM_POINTERCAPTURECHANGED)return PointerDecode::NotHandled;
+        // 查询不得污染调用方正在检查的错误状态。
+        struct ErrorGuard{DWORD value=GetLastError();~ErrorGuard(){SetLastError(value);}} preserve;
+        out.id=GET_POINTERID_WPARAM(wParam);
+        if(message==WM_POINTERCAPTURECHANGED)return PointerDecode::CaptureChanged;
+        const auto query=PointerInfoQuery();
+        POINTER_INFO info{};
+        if(!query||!query(out.id,&info))return PointerDecode::QueryFailed;
+        if(info.pointerType!=PT_TOUCH&&info.pointerType!=PT_PEN)return PointerDecode::NotHandled;
+        // 悬停（未接触）保持原路径，由 DefWindowProc 处理。
+        if(message==WM_POINTERUPDATE&&!(info.pointerFlags&POINTER_FLAG_INCONTACT))return PointerDecode::NotHandled;
+        // 以值型 TOUCHINPUT 承载 Pointer 接触：device=sourceDevice、id=pointerId、时间/坐标与触觉观察同源。
+        auto& input=out.input;
+        input.hSource=info.sourceDevice;input.dwID=out.id;input.dwTime=info.dwTime;
+        input.x=info.ptPixelLocationRaw.x*100;input.y=info.ptPixelLocationRaw.y*100;
+        input.dwFlags=message==WM_POINTERDOWN?TOUCHEVENTF_DOWN:message==WM_POINTERUP?TOUCHEVENTF_UP:TOUCHEVENTF_MOVE;
+        if(info.pointerFlags&POINTER_FLAG_PRIMARY)input.dwFlags|=TOUCHEVENTF_PRIMARY;
+        if(info.pointerType==PT_PEN)input.dwFlags|=TOUCHEVENTF_PEN;
+        auto& sample=out.sample;
+        sample.source=info.pointerType==PT_PEN?Source::Pen:Source::Touch;
+        sample.kind=message==WM_POINTERDOWN?Kind::Down:message==WM_POINTERUP?Kind::Up:Kind::Move;
+        sample.screen=info.ptPixelLocationRaw;sample.messageTime=info.dwTime;sample.device=reinterpret_cast<std::uintptr_t>(info.sourceDevice);sample.contact=out.id;
+        out.pointerFlags=info.pointerFlags;out.performanceCount=info.PerformanceCount;
+        // 异常终止：撤销该接触，不生成成功 Up。
+        if(info.pointerFlags&POINTER_FLAG_CANCELED)return PointerDecode::Canceled;
+        if(message==WM_POINTERDOWN){
+            constexpr UINT32 otherButtons=POINTER_FLAG_SECONDBUTTON|POINTER_FLAG_THIRDBUTTON|POINTER_FLAG_FOURTHBUTTON|POINTER_FLAG_FIFTHBUTTON;
+            // 第二键/笔桶键等价于右键类输入：吞掉但不进业务。
+            if(!(info.pointerFlags&POINTER_FLAG_FIRSTBUTTON)||(info.pointerFlags&otherButtons))return PointerDecode::Swallow;
+        }
+        return PointerDecode::Contact;
+    }
     bool HandlePointer(HWND origin,UINT message,WPARAM wParam) noexcept
     {
         if(message!=WM_POINTERDOWN&&message!=WM_POINTERUPDATE&&message!=WM_POINTERUP&&message!=WM_POINTERCAPTURECHANGED)return false;
         if(!PointerMode())return false;
         // 查询和日志不得污染调用方正在检查的错误状态。
         struct ErrorGuard{DWORD value=GetLastError();~ErrorGuard(){SetLastError(value);}} preserve;
-        const UINT32 id=GET_POINTERID_WPARAM(wParam);
+        DecodedPointer decoded;
+        const auto result=DecodePointer(message,wParam,decoded);
+        const UINT32 id=decoded.id;
         const auto cancelId=[id]()noexcept{
             const auto snapshot=targets;
             for(const auto& target:snapshot)
                 if(target.local&&target.local->active&&target.local->latest.input.dwID==id)CancelTarget(target,target.local->identity);
         };
-        // 系统手势或其他窗口接管捕获后不会再有该 id 的 Up：撤销其路由并释放业务状态；仍交给旁观者与 DefWindowProc。
-        if(message==WM_POINTERCAPTURECHANGED)
+        auto input=decoded.input;auto sample=decoded.sample;
+        switch(result)
         {
+        case PointerDecode::NotHandled:return false;
+        case PointerDecode::CaptureChanged:
+            // 系统手势或其他窗口接管捕获后不会再有该 id 的 Up：撤销其路由并释放业务状态；仍交给旁观者与 DefWindowProc。
             Diagnostics::Log("pointer_route",origin,"pointer_capture_changed","cancel_contact",message,nullptr,"pointer=%u",id);
             cancelId();
             return false;
-        }
-        const auto query=PointerInfoQuery();
-        POINTER_INFO info{};
-        if(!query(id,&info))
-        {
+        case PointerDecode::QueryFailed:
             // 抬起/移动的查询失败时无法确认接触状态：撤销按该 id 持有的路由，避免残留活动接触挡住后续 Down。
             if(message!=WM_POINTERDOWN)cancelId();
             return false;
-        }
-        if(info.pointerType!=PT_TOUCH&&info.pointerType!=PT_PEN)return false;
-        // 悬停（未接触）保持原路径，由 DefWindowProc 处理。
-        if(message==WM_POINTERUPDATE&&!(info.pointerFlags&POINTER_FLAG_INCONTACT))return false;
-        // 以值型 TOUCHINPUT 承载 Pointer 接触：device=sourceDevice、id=pointerId、时间/坐标与触觉观察同源。
-        TOUCHINPUT input{};
-        input.hSource=info.sourceDevice;input.dwID=id;input.dwTime=info.dwTime;
-        input.x=info.ptPixelLocationRaw.x*100;input.y=info.ptPixelLocationRaw.y*100;
-        input.dwFlags=message==WM_POINTERDOWN?TOUCHEVENTF_DOWN:message==WM_POINTERUP?TOUCHEVENTF_UP:TOUCHEVENTF_MOVE;
-        if(info.pointerFlags&POINTER_FLAG_PRIMARY)input.dwFlags|=TOUCHEVENTF_PRIMARY;
-        if(info.pointerType==PT_PEN)input.dwFlags|=TOUCHEVENTF_PEN;
-        Sample sample;sample.source=info.pointerType==PT_PEN?Source::Pen:Source::Touch;
-        sample.kind=message==WM_POINTERDOWN?Kind::Down:message==WM_POINTERUP?Kind::Up:Kind::Move;
-        sample.screen=info.ptPixelLocationRaw;sample.messageTime=info.dwTime;sample.device=reinterpret_cast<std::uintptr_t>(info.sourceDevice);sample.contact=id;
-        if(info.pointerFlags&POINTER_FLAG_CANCELED){
-            // 异常终止：撤销该接触，不生成成功 Up。
+        case PointerDecode::Canceled:
             if(auto* owner=Owner(input))CancelTarget(*owner,owner->local->identity);
-            Diagnostics::Log("pointer_route",origin,"pointer_cancel","canceled_flag",message,&sample,"pointer_flags=0x%x",info.pointerFlags);
+            Diagnostics::Log("pointer_route",origin,"pointer_cancel","canceled_flag",message,&sample,"pointer_flags=0x%x",decoded.pointerFlags);
             return true;
+        default:break;
         }
         if(message==WM_POINTERDOWN){
             // 同一 pointerId 在范围内持续；若上次 Up 丢失，先撤销旧路由（即使本次 Down 随后被拒绝）。
             if(auto* stale=Owner(input)){
-                Diagnostics::Log("pointer_route",origin,"pointer_down","stale_owner_cancelled",message,&sample,"pointer_flags=0x%x",info.pointerFlags);
+                Diagnostics::Log("pointer_route",origin,"pointer_down","stale_owner_cancelled",message,&sample,"pointer_flags=0x%x",decoded.pointerFlags);
                 CancelTarget(*stale,stale->local->identity);
             }
-            constexpr UINT32 otherButtons=POINTER_FLAG_SECONDBUTTON|POINTER_FLAG_THIRDBUTTON|POINTER_FLAG_FOURTHBUTTON|POINTER_FLAG_FIFTHBUTTON;
-            // 第二键/笔桶键等价于右键类输入：吞掉但不进业务。
-            if(!(info.pointerFlags&POINTER_FLAG_FIRSTBUTTON)||(info.pointerFlags&otherButtons)){
-                Diagnostics::Log("pointer_route",origin,"pointer_down","non_primary_button",message,&sample,"pointer_flags=0x%x",info.pointerFlags);
+            if(result==PointerDecode::Swallow){
+                Diagnostics::Log("pointer_route",origin,"pointer_down","non_primary_button",message,&sample,"pointer_flags=0x%x",decoded.pointerFlags);
                 return true;
             }
             // 手指每次接触的 pointerId 都不同：同一设备出现新的主接触，说明旧主接触已丢失终态（系统手势/捕获丢失），
             // 否则它会一直占用 Active() 并拒绝之后所有主 Down。正在准备（捕获重入）的接触不撤销。
-            if(info.pointerFlags&POINTER_FLAG_PRIMARY){
+            if(decoded.pointerFlags&POINTER_FLAG_PRIMARY){
                 const auto snapshot=targets;
                 for(const auto& target:snapshot)
                     if(target.local&&target.local->active&&!target.local->preparing&&target.local->primary
                         &&target.local->latest.input.hSource==input.hSource&&target.local->latest.input.dwID!=id){
-                        Diagnostics::Log("pointer_route",origin,"pointer_down","lost_primary_cancelled",message,&sample,"pointer_flags=0x%x",info.pointerFlags);
+                        Diagnostics::Log("pointer_route",origin,"pointer_down","lost_primary_cancelled",message,&sample,"pointer_flags=0x%x",decoded.pointerFlags);
                         CancelTarget(target,target.local->identity);
                     }
             }

@@ -36,6 +36,7 @@
 #include "Setting.EraserDemoGpu.h"
 #include "../../../resource.h"
 #include "Setting.FrameSubmission.h"
+#include "Setting.PointerInput.h"
 #include "../../../SuperTop/IdtSuperTop.h"
 
 #include <shlobj.h>
@@ -1593,6 +1594,53 @@ namespace
 		// 单项失败只影响该反馈，不影响窗口创建。
 		for (const auto type : types) (void)setFeedback(hwnd, type, 0, sizeof(disabled), &disabled);
 	}
+
+	ImGuiMouseSource ToImGuiMouseSource(Inkeys::UI::Setting::PointerInput::Source source) noexcept
+	{
+		return source == Inkeys::UI::Setting::PointerInput::Source::Pen ? ImGuiMouseSource_Pen : ImGuiMouseSource_TouchScreen;
+	}
+
+	// 设置本地 Pointer 路由的消费者：在设置窗口线程、ImGui 锁内把触摸/笔接触写入 IO，并标明设备类型。
+	void ApplySettingPointerEvent(const Inkeys::UI::Setting::PointerInput::PointerEvent& event)
+	{
+		using Type = Inkeys::UI::Setting::PointerInput::PointerEvent::Type;
+		if (!Inkeys::UI::Setting::IsVisible()) return;
+		lock_guard lock(settingImguiMutex);
+		if (!ImGui::GetCurrentContext()) return;
+		ImGuiIO& io = ImGui::GetIO();
+		io.AddMouseSourceEvent(ToImGuiMouseSource(event.source));
+		switch (event.type)
+		{
+		case Type::Begin:
+			io.AddMousePosEvent(event.x, event.y);
+			io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+			break;
+		case Type::Update:
+			io.AddMousePosEvent(event.x, event.y);
+			break;
+		case Type::End:
+			io.AddMousePosEvent(event.x, event.y);
+			io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+			// 触摸没有悬停，抬起后移出窗口；笔的悬停由兼容鼠标继续提供。
+			if (event.source == Inkeys::UI::Setting::PointerInput::Source::Touch) io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+			break;
+		case Type::Cancel:
+			// 先移出再松开：ImGui 不会把被取消的接触判为点击。
+			io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+			io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+			break;
+		}
+	}
+
+	// 渲染线程、ImGui 锁内，紧跟 ImGui_ImplWin32_NewFrame：覆盖 backend 用系统光标补的位置。
+	void ApplySettingPointerOverride()
+	{
+		Inkeys::UI::Setting::PointerInput::PointerOverride pointer;
+		if (!Inkeys::UI::Setting::PointerInput::ReadPointerOverride(pointer)) return;
+		ImGuiIO& io = ImGui::GetIO();
+		io.AddMouseSourceEvent(ToImGuiMouseSource(pointer.source));
+		io.AddMousePosEvent(pointer.x, pointer.y);
+	}
 }
 
 // Win32 消息处理器
@@ -1602,11 +1650,19 @@ namespace
 // 通常，您可以始终将所有输入传递给 dear imgui，并根据这两个标志在应用程序中隐藏它们。
 LRESULT WINAPI ImGuiWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	// 隐藏、销毁、取消模式与 DPI 变化先结束活动的触摸/笔接触（不产生点击），原有处理照常进行。
+	if (msg == WM_CANCELMODE || msg == WM_DPICHANGED || msg == WM_NCDESTROY || (msg == WM_SHOWWINDOW && !wParam))
+		Inkeys::UI::Setting::PointerInput::CancelContact(ApplySettingPointerEvent);
+	// 与主栏同一框架：接触阶段 Pointer（Win7 为 WM_TOUCH）由设置本地路由消费并导入 ImGui；
+	// 返回 0 使系统不再为该接触派生兼容鼠标与长按右键。
+	if (Inkeys::UI::Setting::PointerInput::HandleWindowMessage(hWnd, msg, wParam, lParam, ApplySettingPointerEvent))
+		return 0;
 	// 创建、客户区、最大化及命中使用同一 frame 合同，保留系统 move/size loop。
 	switch (msg)
 	{
 	case WM_CREATE:
 		ConfigureNativeTouchFeedback(hWnd);
+		Inkeys::UI::Setting::PointerInput::ConfigureWindow(hWnd);
 		break;
 	case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
 		// 与主栏观感一致：触摸长按不再转为右键，并关闭笔点击/笔桶键反馈与 flick。
@@ -2527,6 +2583,7 @@ SettingSessionCoroutine RunSettingSession()
 			// Start the Dear ImGui frame
 			ImGui_ImplDX11_NewFrame();
 			ImGui_ImplWin32_NewFrame();
+			ApplySettingPointerOverride();
 			ImGui::NewFrame();
 			ImDrawList* entryRootDraw=nullptr; ImDrawList* entryTitleDraw=nullptr;
 			std::pair<int,int> captionMaskVertices{ 0, 0 }; // 半透明 caption 占位在 entryTitleDraw 中的顶点区间。

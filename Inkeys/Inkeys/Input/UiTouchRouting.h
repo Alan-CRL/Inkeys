@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "UiPointerInput.h"
 #include <array>
@@ -79,6 +79,19 @@ namespace Inkeys::Input::UiPointer::Touch
     // 返回 true 表示该 Pointer 消息已作为接触处理（调用方直接 return 0，不交 DefWindowProc，
     // 系统也就不再派生 WM_TOUCH/兼容 Mouse/长按右键）；悬停、PT_MOUSE 与查询失败返回 false。
     bool HandlePointer(HWND origin, UINT message, WPARAM wParam) noexcept;
+    // HandlePointer 与设置窗口共用的 Pointer 查询/分类；不访问五窗登记表，可在任意窗口线程调用。
+    // 调用方须先确认 PointerMode()。NotHandled 交 DefWindowProc；CaptureChanged/QueryFailed 由调用方撤销该 id；
+    // Canceled 撤销接触且不生成 Up；Swallow 为第二键/笔桶键等非主按钮 Down，吞掉但不进业务。
+    enum class PointerDecode { NotHandled, CaptureChanged, QueryFailed, Canceled, Swallow, Contact };
+    struct DecodedPointer
+    {
+        UINT32 id = 0;
+        UINT32 pointerFlags = 0;
+        std::uint64_t performanceCount = 0;
+        TOUCHINPUT input{};
+        Sample sample{};
+    };
+    PointerDecode DecodePointer(UINT message, WPARAM wParam, DecodedPointer& out) noexcept;
 #ifdef DRAW3_CONTACT_TESTING
     namespace Testing
     {
