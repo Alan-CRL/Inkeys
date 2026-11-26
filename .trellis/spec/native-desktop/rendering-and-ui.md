@@ -2804,9 +2804,11 @@ UI3主栏、属性面板及共用Bar renderer的PPT/白板分页文字适用；�
 - T为原始最终静止物理字号：名义字号目标×目标frameZoom×目标Y向量的设备像素长度。关闭时Q=floor(T)、cTarget=Q/T；开启时cTarget=1。原始当前字号/内容/几何轨迹乘连续cCurrent，不对当前帧floor。
 - 只有真实目标变化才重定向，c从当前动画值继续，同目标不重启。首次/禁动画/forceReplace可直达目标；共享dt=0保持当前值，同一word/固定样式每帧至多推进一次。原raw字号/中点/曲线/幂等保持，不用新的独立时钟或无界map。
 - T=0的退出几何已自然归零，保留当前有效c避免除0及再打开额外放大；0<T<1的静止目标Q=0则修正到0。动画中间字号允许小于1px，不强行钳到1px。
+- 开合式弹出面板（2026-11-26 修订）：主栏绘制/橡皮/撤回/几何属性窗、颜色选择器、More（真实主栏与组件页预览共用 `PositionContentMore`）及 Scene 菜单面板，名义目标一律取**展开态**倍率（几何进度=1，父子组合 `BarAttributePanelFrame::expandedPose`），与开合方向、进度及 `.tar` 无关；收起到非零紧凑倍率（约0.16）的目标不参与取整，否则约2px的收起目标Q/T误差达30%–50%，c再以EaseInOutCubic插值，与面板Back曲线叠加成“展开到位后放大、收起前偏小”。如此一次开合内T恒定、c恒定，字号全程与面板等比，静止展开仍为整数像素，收起后c停在展开值、重开无尾段。收起到0的弹窗仍走T=0保持分支。
+- 后续“属性窗/More 用户展开倍率”必须乘在展开态 pose 上（几何与字号同源），不得作为额外DC变换叠加。落点：`ResolveBarAttributePanelFrame` 的 `expandedPose`、`PositionContentMore` 的 `scale` 展开端与 `fontTargetScale`、RenderLoop 的 `drawAttributeFontTargetScale`/`fontPanelTargetScale`、`ColorPicker::Layout` 的 `fontPickerTargetScale`。
 - 当前DC仅描述实际连续轨迹；动画终点显式组合绝对目标Y向量。禁止用当前FLOAT矩阵与double目标/当前比值反推终点：13×float(0.95)/0.95可能得到12.999999836…并误截断12。不得加epsilon或round掩盖，静态默认入口可用实际DC。
 - DIP目标向量的物理长度为hypot(targetY.x*dpiX/96,targetY.y*dpiY/96)，PIXELS模式DPI因子为1；frameZoom已含屏幕/UI基准，不重复乘显示器DPI。
-- 公共/固定/手工按钮传press.tar，按住的静止端点也取整；contentScale只乘连续当前值，其换字终点为1，不用中点反复生成目标。父/子panel用目标pose组合，Eraser/Recall等SetDirect(nominal*currentPose)另供nominal*targetPose。
+- 公共/固定/手工按钮传press.tar，按住的静止端点也取整；contentScale只乘连续当前值，其换字终点为1，不用中点反复生成目标。父/子panel用展开态pose组合，Eraser/Recall等SetDirect(nominal*currentPose)另供nominal*expandedPose。
 - 主栏显示倍率用displayUiBaseScale.tar×configZoom；分页由AnimatedBounds.targetScale交给Scene。Advance→SetBounds→同now Render顺序也须同步最新目标，不冻结旧scale。tooltip/dock用源progress.tar，不能从派生SetDirect的radius.tar猜终点。
 - body恢复目标Y为1，直接拖住通过ResolveBarBottomDockFontTargetScale消费已解析mapping中的rigidOverlayTranslationYDip（即真实抓手偏移），不能再读未经重基准的frame输入；捕获下端点弹簧目标保持0。纯X变形不影响字号高度。dock使用自身word修正状态，FPS和细刻度分别用固定有界样式状态；细刻度字体未乘面板动画scale，不重复添加。
 - 修正活动必须进入绘制前的demand/damage及Continue判断，源几何结束后仍推进c尾段，落定后回idle。隐藏/不可绘制内容不无限唤醒；同frame重复draw、失败重试、资源重建不能重复推进或重置c到新目标。
@@ -2825,6 +2827,7 @@ UI3主栏、属性面板及共用Bar renderer的PPT/白板分页文字适用；�
 | 动画结束至首idle帧 | 同一最终整数值，不再floor |
 | 禁动画/强制替换 | 直接到相同静止目标 |
 | 13px释放目标、FLOAT当前0.95 | 目标保持13，不误截断12 |
+| 开合式面板收起到紧凑倍率/反向重开 | T取展开态不变，c恒定，字号全程与面板等比，落定无尾段 |
 
 ### 5. Good / Base / Bad Cases
 
@@ -2832,7 +2835,7 @@ Good：原始轨迹×连续目标修正，静止末态自动落到Q。Base：开
 
 ### 6. Tests Required
 
-真实生产修正动画覆盖中间小数/两端整数、dt=0重定向、重复目标/同帧、末帧至idle、禁动画与0目标退出再打开。真实D2D覆盖按压按住/释放、内容缩放、panel当前/目标pose、显示/分页目标倍率、DPI/PIXELS/非均匀变换及13px整数边界。生产调度验证c尾段Continue/damage，不能只测试helper返回值。复用完整Debug|ARM64 solution、Headless --no-window、既有无HWND字体离屏入口、三语及编码/diff检查；实机观感另行观察。
+真实生产修正动画覆盖中间小数/两端整数、dt=0重定向、重复目标/同帧、末帧至idle、禁动画与0目标退出再打开。真实D2D覆盖按压按住/释放、内容缩放、panel当前/目标pose、显示/分页目标倍率、DPI/PIXELS/非均匀变换及13px整数边界。生产调度验证c尾段Continue/damage，不能只测试helper返回值。开合式面板覆盖：More 开合/完整收起/反向重开逐帧等比（`--bar-eraser-offscreen-test`），`ResolveBarAttributePanelFrame` 开合全程 expandedPose 恒等展开态（headless eraser_attribute_tests），绘制属性窗收起后笔型/粗细显示/档位数字 fontTargetSize 仍为展开字号（`--ui3-attribute-dirty-test`）。复用完整Debug|ARM64 solution、Headless --no-window、既有无HWND字体离屏入口、三语及编码/diff检查；实机观感另行观察。
 
 ### 7. Wrong vs Correct
 
@@ -3140,7 +3143,7 @@ ShapeUiSnapshot::completedConstructionSession 保留成功构造的 session；Sh
 - 主栏与浮条只有 Outline/Fill 入口；旧混合对象可同时选中两项，点击后才转换。纯填充隐藏线型、粗细和辅助控件；构造方式、约束和边数仍可见。
 - 专属辅助符号、三角形三种模式、梯形等腰均用实际字体测宽的常驻图标+文字。目录顺序 RegularPolygon、Polygon、Polyline；数字层覆盖 3–14，三行布局/背景/边界/命中一致。
 - 追加数字按钮后，后续控件 ID 从 Sides+GeometrySidesCount 派生，避免 13/14 与色板冲突。分组分隔线按 ToolbarItems 顺序判断可见，不能按 ID 数值区间判断。测宽缓存 0–2 用于辅助、3–5 用于分段、6–9 用于约束，不交叉覆盖。
-- Shape/More 文本的 fontTargetSize 使用最终 pose，不使用当前回弹倍率；实际字号仍跟随动画；窄屏还须把最终工作区 fit 乘入目标字号。
+- Shape/More 文本的 fontTargetSize 使用展开态 pose（收起时也不取紧凑倍率），不使用当前回弹倍率；实际字号仍跟随动画；窄屏还须把最终工作区 fit 乘入目标字号。
 - 进行中固定两步用 (step-1)/N。正常完成时按原构造 session 消费完成沿并锁存到退场结束，进度从 .5→1 与收缩并行；新构造重新取 active 状态，取消/工具切换/旧会话完成不得走满。随后编辑器可使用不同 session，不能覆盖完成沿身份。
 
 共享 FitEraserSurfacePose 只平移：实际尺寸在工作区尺寸 + 1e-6 内仍须钳制，并用 max(lower,upper) 保证 clamp 区间有序。缩放贴边的浮点尾差不能跳过整轴钳制，真正过大的对象仍由调用方缩放。
