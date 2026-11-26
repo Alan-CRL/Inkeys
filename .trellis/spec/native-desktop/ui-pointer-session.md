@@ -44,7 +44,7 @@
 - **来源仲裁（R3，PointerMode）**：Pointer 是一次接触的根，WM_TOUCH 与带 `0xFF5157xx` 签名的兼容 Mouse 都是系统处理 Pointer 时派生的兄弟副本，无法在不借助时间的前提下判断“另一个还会不会来”。因此来源取根并按类型排除，不使用任何时间窗：
   - `Touch::PointerMode()`：可选 `GetPointerInfo`（GetProcAddress，无硬导入）可用且未设置 `INKEYS_UI_TOUCH_LEGACY=1`。模式为进程级，运行期不切换；Win7/无 API 为 LegacyTouchMode，行为与 R2 完全相同。
   - PointerMode 下业务来源只有：PT_TOUCH/PT_PEN 的接触阶段 Pointer（DOWN、`INCONTACT` 的 UPDATE、UP）和无签名的真实 Mouse（含 Raw 补充）。`WM_TOUCH` 读取并关闭句柄后丢弃（含画布接触派发到 UI 窗的那部分）；签名兼容 Mouse 沿用 Bar/Page 既有过滤。
-  - `Touch::HandlePointer(origin,msg,wParam)` 由 Bar/Page 窗口过程调用，返回 true 时窗口过程直接 `return 0`，使系统不再为该接触派生 WM_TOUCH/兼容 Mouse/长按右键；悬停、PT_MOUSE、查询失败返回 false 保持默认处理。
+  - `Touch::HandlePointer(origin,msg,wParam)` 由 Bar/Page 窗口过程调用，返回 true 时窗口过程直接 `return 0`，使系统不再为该接触派生 WM_TOUCH/兼容 Mouse/长按右键（查询与分类经共享的 `Touch::DecodePointer`，见文末设置窗口场景）；悬停、PT_MOUSE、查询失败返回 false 保持默认处理。
   - 接触以值型 `TOUCHINPUT` 进入 `DispatchDecoded(origin,…,originIsTarget=true)`：`hSource=sourceDevice`、`dwID=pointerId`、`dwTime=info.dwTime`、`x/y=ptPixelLocationRaw*100`、PRIMARY/PEN 位取自 Pointer。与 Bar 触觉 `ObserveBarHapticPointer` 采集的是同一条消息，`BindDown/Touch` 的 device/time/point 精确相等。目标 = 接收窗，不调用 `WindowFromPoint`、不做跨窗转交；Move/Up 仍按接触身份全局找 owner，因此抬起落到别的窗口也能结束 Down 的路由。
   - 每次 DOWN 新建 route generation（笔的 pointerId 在一次感应范围内持续，不能当单次按下身份）。第二键/笔桶键 DOWN 只吞不入业务；`POINTER_FLAG_CANCELED` 撤销路由不产生成功 Up；同设备新的主接触、同 id 新 Down、Up/Update 查询失败都会先撤销疑似丢失终态的旧路由。`WM_POINTERCAPTURECHANGED`/`LEAVE` 暂不作为终态（SetCapture 重入可能同步触发，且窗口外拖动需继续），属已知待观察项。
   - PageControl 的真实 `WM_MOUSELEAVE` 若发生在活动 Touch/Pen 接触期间，仍排入队列（边缘光效需要离开通知），但 worker 不得据此清除该接触的按压/长按状态；它是迟到的悬停追踪通知，无签名，签名过滤拦不住。
@@ -174,7 +174,7 @@ Correct：批次到达/一次读取/逐点选择和lease结果分层观测；纯
 ### 3. Contracts
 
 - 固定五槽登记指向Bar及四Page本地Context，不另存global currentTouch/active gesture业务FSM；同device/id先找已拥有的本地Context。原非Mouse资源lease仍保护Mouse/Touch互斥，不是第二份Touch业务状态。
-- 原WndProc单次GetTouchInputInfo/CloseTouchInputHandle，route只传值型Packet。合格Down在所有内部锁外WindowFromPoint(Touch屏幕点)，唯一候选必须是五窗精确HWND；再以已呈现Probe复核，Miss/Blocked/外部/设置/画布不接纳、不后层搜索、不抢lease/capture。
+- 原WndProc单次GetTouchInputInfo/CloseTouchInputHandle，route只传值型Packet。合格Down在所有内部锁外WindowFromPoint(Touch屏幕点)，唯一候选必须是五窗精确HWND；再以已呈现Probe复核，Miss/Blocked/外部/设置/画布不接纳（设置窗口另有本地单窗口路由，不进五窗表，见文末场景）、不后层搜索、不抢lease/capture。
 - 【2026-11-15 第十一轮替代】Bar 不再维护手写触摸区域表（`PresentedTouchRegions`/`ProbeTouchScreen` 已删除）：分层窗口按像素 alpha 把触摸投到 Bar 后，`ProbeBarTouch` 在窗口可见可用、已有成功呈现帧时直接 Accept（关闭信号或消息框显示时 Blocked），具体命中与禁用/退场判断交给 worker 的同一套鼠标逻辑，与鼠标准入一致。新增 Bar 面板无需再登记触摸。Page复用同锁InputPresentation与scene.SamplePointer。Touch查询Scope内可见locked背景是阻挡，常规Mouse NCHITTEST策略不变。
 - WindowFromPoint和SetCapture可同线程重入，回调前不持registry/provider/scene锁；之后核注册代次、本地mutation/identity和语义。Preparing已在目标本地保留，旧取消不得抹掉重入新代。
 - Move/Up锁定Down owner，不因悬浮或当前候选改变而改目标；Down在UI外，后续Move不启动按钮。primary/fallback、不同hSource身份和单UI接触互斥保留。
@@ -249,3 +249,54 @@ Good：启动注册true、Down仍is_touch=true但只有PT_PEN，可把注册与�
 ### 7. Wrong vs Correct
 
 Wrong：RegisterTouchWindow后输出GetLastError但不看BOOL；GetPointerInfo失败时按extra低位猜Pen；给启动快照标Down。Correct：实际结果/失败码/注册读回分层，Pointer查询单独标有效性，沿现有开关和ErrorScope只观察。
+
+## 场景：设置窗口本地 Pointer 路由（2026-11-26）
+
+### 1. Scope / Trigger
+
+设置窗口（ImGui，setting owner 线程）的触摸/笔接触按主栏同一分层处理后导入 ImGui，并区分设备类型。任务依据：`.trellis/tasks/11-26-setting-pointer-route/`（父任务 `11-26-setting-pointer-input`）。修改 `Setting.PointerInput.*`、`Touch::DecodePointer`、设置 `WindowSpec` 的 HiMsg 绑定或 `ImGuiWndProc` 接触入口时适用。
+
+### 2. Signatures
+
+- `Touch::DecodePointer(message, wParam, DecodedPointer&) -> PointerDecode{NotHandled, CaptureChanged, QueryFailed, Canceled, Swallow, Contact}`：`HandlePointer` 与设置共用的 Pointer 查询/分类，不访问五窗登记表；调用方须先确认 `PointerMode()`。
+- `Inkeys::UI::Setting::PointerInput`：`ContactArbiter::Accept(sample, primary, slopPixels)`、`ShouldBlockChannelMouse(message, wParam, extraInfo, pointerMode, contactActive)`、`TrackRing`；窗口线程 `ConfigureWindow`、`HandleWindowMessage(..., EventSink)`、`CancelContact(EventSink)`、`FilterChannelMouse`；渲染线程 `ReadPointerOverride`、`ReadTrack`。`ContactSlopPixels = 20`。
+
+### 3. Contracts
+
+- 线程：五窗登记表属 overlay 线程且无锁，设置不得登记进去或跨线程访问；设置使用本地单窗口、单接触路由，无跨窗转交。
+- 来源：PointerMode 下接触阶段 `WM_POINTER*` 由 `ImGuiWndProc` 头部 `HandleWindowMessage` 消费并 `return 0`；悬停/PT_MOUSE/查询失败交默认处理。Win7（Legacy）在 `WM_CREATE` `RegisterTouchWindow(hwnd,0)`，只处理 `WM_TOUCH` 中非笔的 PRIMARY 触点；笔仍走兼容鼠标。PointerMode 不注册 WM_TOUCH，收到即关闭句柄丢弃。
+- 裁决：同一时刻一个主接触；其他手指/笔吞掉；Move/Up 只认同 device+contact；同 id 再 Down、同设备新主接触先撤销旧接触；第二键/笔桶键吞掉；`POINTER_FLAG_CANCELED`、`WM_POINTERCAPTURECHANGED`、Move/Up 查询失败、`WM_CANCELMODE`、`WM_SHOWWINDOW(FALSE)`、`WM_DPICHANGED`、`WM_NCDESTROY` 结束接触且不产生点击。
+- 起始容差：Down 后相对按下点直线距离不超过 20 物理像素（不随 DPI，与主栏 `ShouldAllowBarBottomDockClick` 的 20 px 分界一致）时 Move 不进入 ImGui，Up 回到按下点；越过后如实跟随。ImGui 看到的位移只有 0 或 ≥ 容差，组件页“静止容差 = 拖动阈值”合同不变。
+- ImGui 写入：窗口线程、`settingImguiMutex` 内，`AddMouseSourceEvent(TouchScreen|Pen)` 后写位置/左键；触摸抬起后 `AddMousePosEvent(-FLT_MAX)` 不留悬停；取消先移出再松开。仅 `IsVisible()` 且有 context 时写入。
+- backend 光标补位：`ImGui_ImplWin32_NewFrame` 在有焦点且未跟踪鼠标时用 `GetCursorPos` 补位置，触摸不移动系统光标。渲染线程在其后 `ApplySettingPointerOverride()`：接触中追加接触位置，触摸结束后停放在窗口外，笔结束后清除。窗口线程先写 IO 再发布覆盖状态。
+- HiMsg：设置 `bindMessages=true`、`messageOptions.filter=Filter::None`（不入队），回调 `FilterChannelMouse` 拦截的返回 Handled，其余 Discard 继续原窗口过程。PointerMode 拦截全部 Pointer 签名鼠标，唯独无按键、无活动接触的笔悬停 `WM_MOUSEMOVE` 放行（用户决定保留笔悬停 hover）；Legacy 只拦截触摸签名。放行任意鼠标消息即结束触摸停放。
+- 样本轨迹：每次 Begin/Update/End/Cancel 追加 `TrackSample`（客户区坐标、`PerformanceCount/QPF` 优先、回退 dwTime 的秒数、代次），固定 64 容量，渲染线程按游标增量读取，落后超容量置 overflowed。
+
+### 4. Validation & Error Matrix
+
+| 输入 | 期望 |
+| --- | --- |
+| 触摸按下/移动/抬起 | Begin/Update/End，`io.MouseSource=TouchScreen`，抬起后无悬停 |
+| 第二指或活动触摸期间的笔 | 消费但不写 ImGui |
+| 按住抖动 ≤ 20 px | 不产生移动，长按抓起成立 |
+| 笔桶键 Down | 吞掉，无右键 |
+| 系统取消/捕获丢失/查询失败 | Cancel：移出后松开，无点击 |
+| 笔悬停兼容鼠标 | 放行，ImGui 标为 Pen |
+| 触摸派生兼容鼠标 | HiMsg Handled，不进 ImGui |
+| Legacy 模式的 WM_POINTER | 不处理，走默认路径 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：组件卡片触摸长按（含轻微抖动）抓起；滑动越过容差后页面滚动；笔悬停 hover。
+- Base：鼠标路径与改动前一致；标题栏/缩放边框走非客户区消息不受影响。
+- Bad：把设置登记进五窗表；用 Pointer 原始坐标直接驱动 ImGui 而不加容差；不覆盖 backend 光标补位导致触摸位置跳到旧光标处。
+
+### 6. Tests Required
+
+- `InkeysHeadlessTests --ui-pointer-only`：原 `ui_pointer_tests`（`DecodePointer` 抽取零行为变化）+ `setting_pointer_input_tests`（裁决、容差、通道过滤、轨迹环、借 `Touch::Testing::SetPointerQuery` 的窗口消息端到端与 Legacy）。
+- 实机：Windows 11 ARM64 触屏/笔已通过（2026-11-26）；Win7 WM_TOUCH 回退待集成验证。
+
+### 7. Wrong vs Correct
+
+Wrong：为让设置支持触摸把 `TargetCount` 改成 6 并登记设置 HWND。Correct：共享 `DecodePointer` 规则，设置在自己的线程用本地路由，消费者为 ImGui IO。
+
