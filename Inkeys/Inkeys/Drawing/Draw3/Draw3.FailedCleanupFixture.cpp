@@ -5,7 +5,6 @@
 #include "Draw3.Product.h"
 #include "Draw3.Presentation.h"
 #include <bcrypt.h>
-#include <json/json.h>
 #include "../../Helper/FailedCleanupDeadline.h"
 #include "../../Helper/FailedCleanupRealCases.h"
 
@@ -21,6 +20,7 @@
 #include <limits>
 #include <span>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <variant>
 #include <memory>
@@ -32,9 +32,9 @@
 #pragma comment(lib, "bcrypt.lib")
 
 import Inkeys.Window;
-import Inkeys.Drawing.Draw3.auto_save;
-import Inkeys.Drawing.Draw3.presentation_auto_save;
-import draw3.uink_file;
+import Inkeys.Drawing.Draw3.paged_ink_store;
+import draw3.uink_draw3_v11;
+import draw3.uink_store;
 
 namespace Inkeys::Shutdown
 {
@@ -54,7 +54,7 @@ namespace Inkeys::Shutdown
 		// 仅授权fixture诊断；数字阶段不改POD/算法/等待预算，不等于worker内部阶段。
 		std::atomic<DWORD> fixtureFailurePhase = 0;
 		std::atomic_bool fixtureHostStarted = false;
-		std::array<HANDLE, 3> fixtureIndexProbeEvents{};
+		std::atomic_bool fixtureDesktopWriteGateEntered = false;
 		void FixturePhase(DWORD phase) noexcept { fixtureFailurePhase.store(phase, std::memory_order_release); }
 
 		void RecordFixtureFailure(const VerifiedCleanupRealLaunch& launch) noexcept
@@ -68,7 +68,7 @@ namespace Inkeys::Shutdown
 				const auto ready = value.presentationReady.value_or(Draw3::Bridge::PresentationReadyIdentity{});
 				char record[2200]{};
 				const int size = sprintf_s(record,
-					"case=%lu phase=%lu started=%u running=%u workspace=%u selection=%u page=%zu has_content=%u content=%llu presented=%llu success=%llu partial=%llu present=%llu clear=%llu stroke=%llu sequence=%llu active=%u terminal=%u ingress=%llu/%llu/%llu recycled=%llu output=%u/%llu ready_output=%u/%llu target_pending=%u ready_exists=%u ready_match=%u ui_ready_exists=%u ui_match=%u input_ready=%u wanted=%u/%llu/%llu/%llu/%u ready=%u/%llu/%llu/%llu/%u persistence=%llu/%llu/%llu/%llu ppt=%llu/%llu/%llu/%llu not_found=%llu\n",
+					"case=%lu phase=%lu started=%u running=%u workspace=%u selection=%u page=%zu has_content=%u content=%llu presented=%llu success=%llu partial=%llu present=%llu clear=%llu stroke=%llu sequence=%llu active=%u terminal=%u ingress=%llu/%llu/%llu recycled=%llu output=%u/%llu ready_output=%u/%llu target_pending=%u ready_exists=%u ready_match=%u ui_ready_exists=%u ui_match=%u input_ready=%u wanted=%u/%llu/%llu/%llu/%u ready=%u/%llu/%llu/%llu/%u persistence=%llu/%llu/%llu/%llu ppt=%llu/%llu/%llu/%llu empty_lane=%llu\n",
 					static_cast<DWORD>(launch.scenario), fixtureFailurePhase.load(std::memory_order_acquire), fixtureHostStarted.load() ? 1u : 0u,
 					value.running ? 1u : 0u, static_cast<unsigned>(value.workspace), value.selectionMode ? 1u : 0u, value.currentPageIndex,
 					value.currentPageHasContent ? 1u : 0u, value.contentRevision, value.presentedContentRevision, value.successfulPresentCount,
@@ -82,7 +82,7 @@ namespace Inkeys::Shutdown
 					ready.pageIndex, ready.bindingRevision, ready.targetRevision, ready.sessionRevision, static_cast<unsigned>(ready.pageKind),
 					counts ? counts->desktopAccepted : 0, counts ? counts->desktopCommitted : 0, counts ? counts->desktopFailed : 0,
 					counts ? counts->desktopPending : 0, counts ? counts->presentationAccepted : 0, counts ? counts->presentationCommitted : 0,
-					counts ? counts->presentationLoaded : 0, counts ? counts->presentationFailed : 0, counts ? counts->presentationNotFound : 0);
+					counts ? counts->presentationLoaded : 0, counts ? counts->presentationFailed : 0, counts ? counts->presentationEmptyLane : 0);
 				if (size <= 0) return;
 				// 固定owned新文件仅保存诊断，不修改旧运行数据；failure已先发布，I/O不能产生PASS。
 				const auto path = launch.directory + L"\\fixture-failure-diagnostics.txt";
@@ -93,24 +93,8 @@ namespace Inkeys::Shutdown
 					DWORD written = 0; (void)WriteFile(file, record, static_cast<DWORD>(size), &written, nullptr);
 					(void)FlushFileBuffers(file); CloseHandle(file);
 				}
-				char markers[120]{};
-				const auto marker = [](HANDLE event) noexcept -> unsigned
-				{
-					if (!event) return 0;
-					const auto result = WaitForSingleObject(event, 0);
-					return result == WAIT_OBJECT_0 ? 1u : result == WAIT_TIMEOUT ? 0u : 2u;
-				};
-				const int markerSize = sprintf_s(markers, "index_probe=%u/%u/%u\n", marker(fixtureIndexProbeEvents[0]),
-					marker(fixtureIndexProbeEvents[1]), marker(fixtureIndexProbeEvents[2]));
-				const auto markerPath = launch.directory + L"\\fixture-index-probes.txt";
-				const HANDLE markerFile = CreateFileW(markerPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
-					FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_WRITE_THROUGH, nullptr);
-				if (markerFile != INVALID_HANDLE_VALUE)
-				{
-					DWORD written = 0; if (markerSize > 0) (void)WriteFile(markerFile, markers, static_cast<DWORD>(markerSize), &written, nullptr);
-					(void)FlushFileBuffers(markerFile); CloseHandle(markerFile);
-				}
-				std::fprintf(stderr, "cleanup-real-failure %s%s", record, markerSize > 0 ? markers : "");
+				std::fprintf(stderr, "cleanup-real-failure %sdesktop_write_gate=%u\n", record,
+					fixtureDesktopWriteGateEntered.load(std::memory_order_acquire) ? 1u : 0u);
 			}
 			catch (...) {} // 诊断失败保持原90退场，不回到任何业务对象析构。
 		}
@@ -192,6 +176,18 @@ namespace Inkeys::Shutdown
 			return result;
 		}
 
+		// C09/C10 仅为夹具的独立读回收据保存这些身份与页内容。
+		struct FixtureInkSnapshot
+		{
+			UInk::UInkGuid fileGuid;
+			UInk::UInkGuid workspaceGuid;
+			int32_t workspaceType = 0;
+			std::optional<std::string> hostId;
+			std::vector<UInk::Draw3UInkCanvasSnapshot> canvases;
+			std::vector<UInk::Draw3UInkCanvasSnapshot> activeCanvases;
+			std::vector<UInk::Draw3UInkCanvasSnapshot> retainedCanvases;
+		};
+
 		class FixtureValueEncoder
 		{
 		public:
@@ -211,7 +207,6 @@ namespace Inkeys::Shutdown
 				for (std::size_t i = 0; i < sizeof(T); ++i) Byte(static_cast<BYTE>(bits >> (i * 8)));
 			}
 			void Float(float value) { if (!std::isfinite(value)) BadFixtureValue(); Integer(std::bit_cast<std::uint32_t>(value)); }
-			void Double(double value) { if (!std::isfinite(value)) BadFixtureValue(); Integer(std::bit_cast<std::uint64_t>(value)); }
 			void Length(std::size_t size) { if (size > MAXDWORD) BadFixtureValue(); Integer(static_cast<DWORD>(size)); }
 			void Text(const std::string& value) { Length(value.size()); Raw(value.data(), value.size()); }
 			void Guid(const UInk::UInkGuid& value) { Raw(value.Bytes().data(), 16); }
@@ -219,34 +214,6 @@ namespace Inkeys::Shutdown
 			{
 				Byte(value.has_value() ? 1 : 0); if (value) writer(*value);
 			}
-			void Map(const UInk::UInkMessagePackValue::Map& value, unsigned depth)
-			{
-				if (depth > 32) BadFixtureValue();
-				Length(value.size());
-				for (const auto& pair : value) { Message(pair.first, depth + 1); Message(pair.second, depth + 1); }
-			}
-			void Message(const UInk::UInkMessagePackValue& value, unsigned depth)
-			{
-				if (depth > 32) BadFixtureValue();
-				Byte(static_cast<BYTE>(value.value.index())); // 11种真实variant，Map/Array顺序原样，不JSON化。
-				std::visit([&](const auto& item)
-				{
-					using T = std::decay_t<decltype(item)>;
-					if constexpr (std::is_same_v<T, std::monostate>) {}
-					else if constexpr (std::is_same_v<T, bool>) Byte(item ? 1 : 0);
-					else if constexpr (std::is_same_v<T, std::int64_t> || std::is_same_v<T, std::uint64_t>) Integer(item);
-					else if constexpr (std::is_same_v<T, float>) Float(item);
-					else if constexpr (std::is_same_v<T, double>) Double(item);
-					else if constexpr (std::is_same_v<T, std::string>) Text(item);
-					else if constexpr (std::is_same_v<T, std::vector<std::byte>>) { Length(item.size()); Raw(item.data(), item.size()); }
-					else if constexpr (std::is_same_v<T, UInk::UInkMessagePackValue::Array>)
-						{ Length(item.size()); for (const auto& child : item) Message(child, depth + 1); }
-					else if constexpr (std::is_same_v<T, UInk::UInkMessagePackValue::Map>) Map(item, depth);
-					else if constexpr (std::is_same_v<T, UInk::UInkMessagePackExtension>)
-						{ Integer(item.type); Length(item.data.size()); Raw(item.data.data(), item.data.size()); }
-				}, value.value);
-			}
-			void Extra(const std::optional<UInk::UInkExtra>& value) { Optional(value, [&](const auto& map) { Map(map, 0); }); }
 			void Viewport(const UInk::UInkViewport& value) { Float(value.x); Float(value.y); Float(value.scale); }
 			void Stroke(const UInk::Draw3UInkStrokeSnapshot& value)
 			{
@@ -259,7 +226,7 @@ namespace Inkeys::Shutdown
 			{
 				Optional(value.deviceGuid, [&](const auto& guid) { Guid(guid); }); Guid(value.pageGuid);
 				Integer(value.pageIndex); Integer(value.pageNumber); Optional(value.slideId, [&](auto id) { Integer(id); });
-				Integer(value.intervalOrdinal); Byte(value.retained ? 1 : 0); Viewport(value.viewport); Extra(value.extra);
+				Integer(value.intervalOrdinal); Byte(value.retained ? 1 : 0); Viewport(value.viewport);
 				Length(value.strokes.size()); for (const auto& stroke : value.strokes) Stroke(stroke);
 				Length(value.operations.size());
 				for (const auto& operation : value.operations)
@@ -268,38 +235,23 @@ namespace Inkeys::Shutdown
 					std::visit([&](const auto& item)
 					{
 						if constexpr (std::is_same_v<std::decay_t<decltype(item)>, UInk::Draw3UInkStrokeSnapshot>) Stroke(item);
-						else { Integer(item.undoId); Extra(item.extra); }
+						else Integer(item.undoId);
 					}, operation);
 				}
 			}
-			void Snapshot(const UInk::Draw3UInkExportSnapshot& value)
+			void Snapshot(const FixtureInkSnapshot& value)
 			{
-				Guid(value.workspaceGuid); Guid(value.fileGuid); Integer(value.workspaceType); Integer(value.currentPageIndex);
-				Float(value.dpiScale); Byte(value.assignedIndependentUndoGroups ? 1 : 0);
-				Optional(value.workspaceName, [&](const auto& text) { Text(text); }); Optional(value.hostId, [&](const auto& text) { Text(text); }); Extra(value.workspaceExtra);
-				Length(value.devices.size());
-				for (const auto& device : value.devices)
-				{
-					Guid(device.guid); Integer(device.deviceType); Byte(device.parentResolved ? 1 : 0); Byte(device.usable ? 1 : 0);
-					Optional(device.name, [&](const auto& text) { Text(text); }); Extra(device.extra);
-					Optional(device.hardware, [&](const auto& hardware)
-					{
-						Optional(hardware.name, [&](const auto& text) { Text(text); }); Optional(hardware.id, [&](const auto& text) { Text(text); });
-						Length(hardware.identifiers.size()); for (const auto& pair : hardware.identifiers) { Text(pair.first); Text(pair.second); }
-						Optional(hardware.physicalWidth, [&](auto width) { Integer(width); }); Optional(hardware.physicalHeight, [&](auto height) { Integer(height); });
-						Optional(hardware.scaleFactor, [&](float scale) { Float(scale); });
-					});
-					Byte(static_cast<BYTE>(device.geometry.index()));
-					std::visit([&](const auto& geometry)
-					{
-						using T = std::decay_t<decltype(geometry)>;
-						if constexpr (std::is_same_v<T, UInk::UInkDisplayDevice>) { Integer(geometry.x); Integer(geometry.y); Integer(geometry.width); Integer(geometry.height); }
-						else if constexpr (std::is_same_v<T, UInk::UInkWindowDevice>) { Guid(geometry.parentDeviceGuid); Float(geometry.x); Float(geometry.y); Float(geometry.width); Float(geometry.height); Integer(geometry.zIndex); }
-					}, device.geometry);
-				}
+				Guid(value.workspaceGuid); Guid(value.fileGuid); Integer(value.workspaceType);
+				Optional(value.hostId, [&](const auto& text) { Text(text); });
 				for (const auto* canvases : { &value.canvases, &value.activeCanvases, &value.retainedCanvases })
 					{ Length(canvases->size()); for (const auto& canvas : *canvases) Canvas(canvas); }
 			}
+		};
+
+		class MissingFixturePath : public std::runtime_error
+		{
+		public:
+			MissingFixturePath() : std::runtime_error("missing owned fixture path") {}
 		};
 
 		class OwnedFixturePaths
@@ -309,12 +261,17 @@ namespace Inkeys::Shutdown
 			OwnedFixturePaths(const OwnedFixturePaths&) = delete;
 			OwnedFixturePaths& operator=(const OwnedFixturePaths&) = delete;
 			~OwnedFixturePaths() { for (HANDLE handle : handles_) CloseHandle(handle); }
-			HANDLE Lease(const std::wstring& path, bool directory)
+			HANDLE Lease(const std::wstring& path, bool directory, DWORD share = FILE_SHARE_READ)
 			{
 				const HANDLE handle = CreateFileW(path.c_str(), directory ? FILE_READ_ATTRIBUTES : GENERIC_READ,
-					FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+					share, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 				BY_HANDLE_FILE_INFORMATION info{};
-				if (handle == INVALID_HANDLE_VALUE) BadFixtureValue();
+				if (handle == INVALID_HANDLE_VALUE)
+				{
+					const DWORD error = GetLastError();
+					if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) throw MissingFixturePath();
+					BadFixtureValue();
+				}
 				if (GetFileType(handle) != FILE_TYPE_DISK || !GetFileInformationByHandle(handle, &info) ||
 					(info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
 					(((info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) != directory))
@@ -335,9 +292,9 @@ namespace Inkeys::Shutdown
 					Lease(full.substr(0, end), true); begin = end + 1;
 				}
 			}
-			std::string Read(const std::wstring& path)
+			std::string Read(const std::wstring& path, DWORD share = FILE_SHARE_READ)
 			{
-				const HANDLE handle = Lease(path, false); LARGE_INTEGER length{};
+				const HANDLE handle = Lease(path, false, share); LARGE_INTEGER length{};
 				if (!GetFileSizeEx(handle, &length) || length.QuadPart < 0 || length.QuadPart > kFixtureBytesLimit) BadFixtureValue();
 				std::string bytes(static_cast<std::size_t>(length.QuadPart), '\0'); DWORD received = 0;
 				if (!ReadFile(handle, bytes.data(), static_cast<DWORD>(bytes.size()), &received, nullptr) || received != bytes.size()) BadFixtureValue();
@@ -347,18 +304,13 @@ namespace Inkeys::Shutdown
 			std::vector<HANDLE> handles_;
 		};
 
-		template <std::size_t N> void CopyAscii(char (&destination)[N], const std::string& value)
-		{
-			if (value.size() >= N || value.empty() || std::any_of(value.begin(), value.end(), [](unsigned char c) { return c < 0x20 || c > 0x7e; })) BadFixtureValue();
-			std::memcpy(destination, value.data(), value.size());
-		}
-
-		CleanupRealReceipt SnapshotReceipt(const UInk::Draw3UInkExportSnapshot& value)
+		CleanupRealReceipt SnapshotReceipt(const FixtureInkSnapshot& value, bool implicitWorkspace = false)
 		{
 			CleanupRealReceipt result{};
 			std::memcpy(result.fileGuid, value.fileGuid.Bytes().data(), 16); std::memcpy(result.workspaceGuid, value.workspaceGuid.Bytes().data(), 16);
-			if (value.fileGuid.IsZero() || value.workspaceGuid.IsZero() || value.workspaceType < 0 || value.devices.size() > 4) BadFixtureValue();
-			result.workspaceType = static_cast<DWORD>(value.workspaceType); result.deviceCount = static_cast<DWORD>(value.devices.size());
+			if (value.fileGuid.IsZero() || value.workspaceGuid.IsZero() != implicitWorkspace ||
+				value.workspaceType < 0) BadFixtureValue();
+			result.workspaceType = static_cast<DWORD>(value.workspaceType);
 			const auto& active = value.activeCanvases.empty() ? value.canvases : value.activeCanvases;
 			if (active.empty() || active.size() > 8 || value.retainedCanvases.size() > 16) BadFixtureValue();
 			result.activeCanvasCount = static_cast<DWORD>(active.size()); result.retainedCanvasCount = static_cast<DWORD>(value.retainedCanvases.size());
@@ -379,31 +331,6 @@ namespace Inkeys::Shutdown
 			return result;
 		}
 
-		CleanupRealReceipt DesktopReceipt(const Draw3::DesktopAutoSaveFixtureReadReceipt& read)
-		{
-			if (read.status != Draw3::DesktopPersistenceStatus::Loaded || !read.loadedSnapshot || !read.sourceRevision ||
-				read.fileGuid != read.loadedSnapshot->fileGuid || read.loadedSnapshot->workspaceType != 0 ||
-				read.loadedSnapshot->canvases.size() != 1 || read.loadedSnapshot->currentPageIndex != 0) BadFixtureValue();
-			auto result = SnapshotReceipt(*read.loadedSnapshot); const auto& page = read.loadedSnapshot->canvases.front();
-			if (page.pageGuid.IsZero() || page.pageIndex != 0 || page.slideId || !read.dailySequence || !read.sequenceInSession) BadFixtureValue();
-			std::memcpy(result.pageGuid, page.pageGuid.Bytes().data(), 16); result.pageIndex = page.pageIndex; result.totalPages = 1;
-			result.intervalOrdinal = page.intervalOrdinal; result.dailySequence = read.dailySequence; result.sequenceInSession = read.sequenceInSession;
-			result.desktopTrigger = static_cast<DWORD>(read.trigger); CopyAscii(result.localDate, read.localDate); CopyAscii(result.storageSession, read.storageSession);
-			result.uinkLength = read.sourceRevision->length; std::memcpy(result.uinkSha256, read.sourceRevision->sha256.data(), 32);
-			const auto index = HashFixtureBytes({ reinterpret_cast<const BYTE*>(read.indexBytes.data()), read.indexBytes.size() });
-			std::memcpy(result.indexSha256, index.data(), 32); return result;
-		}
-
-		struct PptDiskView
-		{
-			OwnedFixturePaths leases;
-			std::string indexBytes, storageSession;
-			UInk::UInkGuid fileGuid, workspaceGuid;
-			std::wstring uinkPath;
-			UInk::UInkSourceRevision revision;
-			std::uint64_t mutationRevision = 0;
-		};
-
 		std::string Utf8Path(const std::wstring& path)
 		{
 			if (path.size() > INT_MAX) BadFixtureValue();
@@ -414,46 +341,28 @@ namespace Inkeys::Shutdown
 			return result;
 		}
 
-		std::string AuthorizedStorageSession(const VerifiedCleanupRealLaunch& launch, bool foreign = false)
+		std::wstring FindOwnedPptFile(OwnedFixturePaths& leases, const std::wstring& root,
+			const Draw3::Bridge::PresentationTarget& target)
 		{
-			std::array<std::uint8_t, 16> bytes{}; std::memcpy(bytes.data(), launch.packet->header.nonce, 16);
-			if (foreign) bytes[15] ^= 0x80;
-			const UInk::UInkGuid guid(bytes); if (guid.IsZero()) BadFixtureValue(); return UInk::FormatUInkGuid(guid);
+			// 文稿名由 ResolveOwnedPptTarget 固定。只读本次夹具文稿目录下唯一的 UInk 文件。
+			const Draw3::PagedInkFileNaming naming{ Draw3::PagedInkFileKind::Presentation,
+				L"fixture-source.pptx", UInk::UInkGuid(target.key.bytes) };
+			const auto example = Draw3::MakePagedInkPath(root, naming, {}, naming.presentationKey);
+			const auto directory = example.substr(0, example.find_last_of(L'\\'));
+			leases.DirectoryChain(directory);
+			WIN32_FIND_DATAW entry{};
+			const HANDLE search = FindFirstFileW((directory + L"\\*.uink").c_str(), &entry);
+			if (search == INVALID_HANDLE_VALUE) BadFixtureValue();
+			struct FindGuard { HANDLE value; ~FindGuard() { FindClose(value); } } guard{ search };
+			if (entry.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) BadFixtureValue();
+			const auto path = directory + L"\\" + entry.cFileName;
+			if (FindNextFileW(search, &entry) || GetLastError() != ERROR_NO_MORE_FILES) BadFixtureValue();
+			return path;
 		}
 
-		void PopulatePptDisk(PptDiskView& disk, const std::wstring& root, const Draw3::Bridge::PresentationTarget& target)
+		std::array<BYTE, 32> PptFixtureDigest(std::string_view bytes)
 		{
-			const auto directory = root + L"\\presentation";
-			disk.leases.DirectoryChain(directory);
-			disk.indexBytes = disk.leases.Read(directory + L"\\index.json");
-			Json::CharReaderBuilder builder; builder["collectComments"] = false; builder["failIfExtra"] = true; builder["stackLimit"] = 64;
-			std::unique_ptr<Json::CharReader> parser(builder.newCharReader()); Json::Value index; std::string errors;
-			if (!parser || !parser->parse(disk.indexBytes.data(), disk.indexBytes.data() + disk.indexBytes.size(), &index, &errors) ||
-				!index.isObject() || index["scenario"].asString() != "presentation" || !index["entries"].isArray() || index["entries"].size() != 1) BadFixtureValue();
-			// 只提取本夹具唯一entry；完整合法性仍由后续production Load复核，不复制选路算法。
-			const auto& entry = index["entries"][0];
-			if (entry["sourceIdentity"].asString() != target.sourceIdentity || entry["presentationKey"].asString() != Draw3::FormatPresentationKey(target.key) ||
-				entry["bindingMode"].asString() != "slide-id" || !entry["bindingRevision"].isUInt64() || entry["bindingRevision"].asUInt64() != target.bindingRevision ||
-				entry["processLocal"].asBool() != target.processLocalIdentity || !entry["mutationRevision"].isUInt64() || !entry["mutationRevision"].asUInt64() ||
-				!entry["slideIds"].isArray() || entry["slideIds"].size() != 2 || entry["slideIds"][0].asInt() != 601 || entry["slideIds"][1].asInt() != 602) BadFixtureValue();
-			const auto file = UInk::ParseUInkGuid(entry["fileGuid"].asString()), workspace = UInk::ParseUInkGuid(entry["workspaceGuid"].asString());
-			if (!file || !workspace || file->IsZero() || workspace->IsZero()) BadFixtureValue();
-			disk.fileGuid = *file; disk.workspaceGuid = *workspace; disk.storageSession = entry["sessionId"].asString(); disk.mutationRevision = entry["mutationRevision"].asUInt64();
-			const auto relative = entry["relativePath"].asString(); const auto guid = UInk::FormatUInkGuid(*file);
-			const auto prefix = "files/" + guid + "_";
-			if (relative != "files/" + guid + ".uink")
-			{
-				if (!relative.starts_with(prefix) || relative.size() != prefix.size() + 36 + 5 || !relative.ends_with(".uink")) BadFixtureValue();
-				const auto transaction = UInk::ParseUInkGuid(relative.substr(prefix.size(), 36));
-				if (!transaction || UInk::FormatUInkGuid(*transaction) != relative.substr(prefix.size(), 36)) BadFixtureValue();
-			}
-			disk.leases.DirectoryChain(directory + L"\\files");
-			disk.uinkPath = directory + L"\\" + std::wstring(relative.begin(), relative.end());
-			disk.leases.Lease(disk.uinkPath, false); // 在任何production Load/ReadUInk之前保住真实文件。
-			const auto read = UInk::ReadUInkFile(disk.uinkPath);
-			if (read.status != UInk::UInkReadStatus::Complete || !read.document || !read.sourceRevision ||
-				read.provenance.contentSequenceRecovered || read.provenance.containsInvalidCompleteBlocks) BadFixtureValue();
-			disk.revision = *read.sourceRevision;
+			return HashFixtureBytes({ reinterpret_cast<const BYTE*>(bytes.data()), bytes.size() });
 		}
 
 		struct FixtureChildState
@@ -468,24 +377,22 @@ namespace Inkeys::Shutdown
 			std::atomic_bool startSucceeded = false, closeSucceeded = false;
 			HANDLE reached = nullptr, proceed = nullptr;
 			HANDLE starter = nullptr, closer = nullptr;
-			std::array<HANDLE, 3> indexProbeEvents{};
+			std::array<std::array<char, 64>, 2> desktopPublishedPaths{};
+			std::atomic_size_t desktopPublishedCount = 0;
 			FailedCleanupSignal signal;
 			Draw3::HostStartOptions options;
 			Draw3::HostRuntimeSnapshot beforeStroke;
 			OwnedFixturePaths artifactDirectories;
 			CleanupRealReceipt baseline{};
 			bool observedSealed = false;
-			std::unique_ptr<Draw3::PresentationAutoSaveService> freshReader;
-			std::unique_ptr<PptDiskView> disk;
 			Draw3::Bridge::PresentationTarget target;
-			std::uint64_t initialPptFailed = 0, initialPptNotFound = 0;
+			std::atomic_uint32_t pptWrites = 0;
 
 			~FixtureChildState()
 			{
 				// 仅完整 Stop/Window join/所有辅助线程真 join 后，runner 才允许走到析构。
 				if (reached) CloseHandle(reached);
 				if (proceed) CloseHandle(proceed);
-				for (HANDLE event : indexProbeEvents) if (event) CloseHandle(event);
 			}
 		};
 
@@ -904,7 +811,7 @@ namespace Inkeys::Shutdown
 		{
 			std::wstring path = state->launch.directory;
 			state->artifactDirectories.DirectoryChain(path);
-			for (const wchar_t* component : { L"artifacts", ppt ? L"C10" : L"C09", L"AutoSave" })
+			for (const wchar_t* component : { L"artifacts", ppt ? L"C10" : L"C09", L"Save", L"Ink" })
 			{
 				path += L"\\"; path += component;
 				if (create && !CreateDirectoryW(path.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) FailFixture(state->launch);
@@ -937,55 +844,126 @@ namespace Inkeys::Shutdown
 			return *target;
 		}
 
-		CleanupRealReceipt ReadPptReceipt(const std::shared_ptr<FixtureChildState>& state, const Draw3::Bridge::PresentationTarget& target, bool foreign = false)
+		void CheckFreshPptStore(const std::shared_ptr<FixtureChildState>& state,
+			const Draw3::Bridge::PresentationTarget& target, UInk::Draw3UInkCanvasSnapshot page,
+			const std::wstring& originalPath, const std::string& originalBytes,
+			const UInk::UInkGuid& originalFileGuid, const UInk::UInkGuid& originalWorkspaceGuid)
 		{
-			state->disk = std::make_unique<PptDiskView>(); PopulatePptDisk(*state->disk, state->options.autoSaveRoot, target);
-			const auto storedSession = AuthorizedStorageSession(state->launch);
-			if (state->disk->storageSession != storedSession) BadFixtureValue();
-			Draw3::PresentationAutoSaveTestFaultInjection faults;
-			faults.sessionIdOverride = AuthorizedStorageSession(state->launch, foreign);
-			Draw3::SetPresentationAutoSaveTestFaultInjection(faults);
-			state->freshReader = std::make_unique<Draw3::PresentationAutoSaveService>();
-			if (!state->freshReader->Start(state->options.autoSaveRoot)) FailFixture(state->launch);
-			const auto actualSession = state->freshReader->SessionId();
-			Draw3::PresentationLoadRequest request; request.target = target; request.kind = Draw3::PresentationLoadKind::Current;
-			if (state->freshReader->SubmitLoad(std::move(request)) != Draw3::PresentationPersistenceSubmitStatus::Accepted) FailFixture(state->launch);
-			state->freshReader->CloseAndDrain();
-			Draw3::PresentationPersistenceCompletion completion;
-			if (!state->freshReader->TryTakeCompletion(completion) || completion.operation != Draw3::PresentationPersistenceOperation::Load ||
-				completion.target != target || completion.storageTrack != Draw3::PresentationStorageTrack::Base) FailFixture(state->launch);
-			state->freshReader.reset();
-			if (foreign)
-			{
-				if (actualSession == storedSession || completion.status != Draw3::PresentationPersistenceStatus::CrossProcessConflictDeferred || completion.loadedSnapshot || completion.fileGuid)
+			Draw3::PagedInkStoreOptions options;
+			options.root = state->options.autoSaveRoot;
+			options.naming = { Draw3::PagedInkFileKind::Presentation, L"fixture-source.pptx",
+				UInk::UInkGuid(target.key.bytes) };
+			const auto workspaceGuid = UInk::CreateUInkGuid();
+			if (!workspaceGuid || *workspaceGuid == originalWorkspaceGuid) FailFixture(state->launch);
+			options.pageContext.workspaceGuid = workspaceGuid;
+			options.pageContext.workspaceType = 2;
+			options.hostId = Draw3::FormatPresentationKey(target.key);
+			Draw3::PagedInkStore store(std::move(options));
+			if (store.LoadLane({ 0, 1, 1 }) != Draw3::PagedInkAdmission::Accepted) FailFixture(state->launch);
+			store.Drain();
+			const auto unloaded = store.Take();
+			if (!unloaded || unloaded->identity.kind != Draw3::PagedInkRequestKind::LoadLane ||
+				unloaded->identity.laneBinding != 0 || unloaded->result != Draw3::PagedInkResult::Succeeded ||
+				!unloaded->lanePages.empty() || !store.FilePath().empty()) FailFixture(state->launch);
+			// 新进程没有旧目录。相同 key 的首笔建立独立文件，旧页版本须逐字节保持原样。
+			const auto pageGuid = UInk::CreateUInkGuid();
+			if (!pageGuid || *pageGuid == page.pageGuid) FailFixture(state->launch);
+			page.pageGuid = *pageGuid;
+			Draw3::PagedInkSaveRequest request;
+			request.identity.pageGuid = *pageGuid;
+			request.identity.revision = 1;
+			request.identity.slotGeneration = 1;
+			request.snapshot = std::move(page);
+			if (store.Save(std::move(request)) != Draw3::PagedInkAdmission::Accepted) FailFixture(state->launch);
+			store.Close();
+			const auto saved = store.Take();
+			const auto path = store.FilePath();
+			if (!saved || saved->result != Draw3::PagedInkResult::Succeeded || saved->confirmedRevision != 1 ||
+				path.empty() || path == originalPath) FailFixture(state->launch);
+			const auto fresh = UInk::ReadUInkStoreFile(path);
+			if (fresh.status != UInk::UInkReadStatus::Complete || !fresh.document || !fresh.document->headerExtension ||
+				fresh.document->header.guid == originalFileGuid ||
+				fresh.document->headerExtension->workspaces.size() != 1 ||
+				fresh.document->headerExtension->workspaces.front().guid != *workspaceGuid ||
+				fresh.document->headerExtension->workspaces.front().hostId != Draw3::FormatPresentationKey(target.key) ||
+				fresh.document->canvases.size() != 1 || fresh.document->canvases.front().pageGuid != *pageGuid ||
+				fresh.document->canvases.front().workspaceGuid != workspaceGuid) FailFixture(state->launch);
+			OwnedFixturePaths original;
+			if (original.Read(originalPath, FILE_SHARE_READ | FILE_SHARE_WRITE) != originalBytes)
+				FailFixture(state->launch);
+			if (!DeleteFileW(path.c_str())) FailFixture(state->launch);
+		}
+
+		CleanupRealReceipt ReadPptReceipt(const std::shared_ptr<FixtureChildState>& state,
+			const Draw3::Bridge::PresentationTarget& target, const CleanupRealReceipt* appendBase = nullptr,
+			bool freshStore = false)
+		{
+			OwnedFixturePaths leases;
+			const auto path = FindOwnedPptFile(leases, state->options.autoSaveRoot, target);
+			const auto bytes = leases.Read(path, FILE_SHARE_READ | FILE_SHARE_WRITE);
+			const auto read = UInk::ReadUInkStoreFile(path);
+			if (read.status != UInk::UInkReadStatus::Complete || !read.document || !read.document->headerExtension ||
+				read.summary.version != UInk::kUInkVersion || read.validPrefixLength != bytes.size() ||
+				read.provenance.contentSequenceRecovered || read.provenance.containsInvalidCompleteBlocks)
+				FailFixture(state->launch);
+			const auto& document = *read.document;
+			const auto& workspaces = document.headerExtension->workspaces;
+			if (workspaces.size() != 1 || workspaces.front().workspaceType != 2 ||
+				workspaces.front().hostId != Draw3::FormatPresentationKey(target.key) ||
+				workspaces.front().currentPageIndex != 0 || document.usesImplicitWorkspace ||
+				!document.usesImplicitDevice || document.canvases.size() != 1) FailFixture(state->launch);
+			const auto& canvas = document.canvases.front();
+			// 空幻灯片和结束页无盘上记录。保留原测试的 SlideID、页序、绑定和页内容校验。
+			if (target.pageIndex != 0 || canvas.slideId != 601 || canvas.pageIndex != 0 || canvas.pageNumber != 1 ||
+				UInk::EffectiveUInkBinding(canvas) != 0 || UInk::EffectiveUInkPageState(canvas) != 0 ||
+				UInk::EffectiveUInkPageKind(canvas) != 0 || canvas.pageGuid.IsZero() ||
+				canvas.workspaceGuid != workspaces.front().guid) FailFixture(state->launch);
+			auto imported = UInk::ImportUInkV11Page(canvas);
+			if (imported.status != UInk::Draw3UInkV11ImportStatus::Success || !imported.page ||
+				imported.workspaceGuid != canvas.workspaceGuid) FailFixture(state->launch);
+			const auto& page = *imported.page;
+			if (page.intervalOrdinal != 0 || page.strokes.empty() || page.strokes.size() > 2)
+				FailFixture(state->launch);
+			for (std::size_t i = 0; i < page.strokes.size(); ++i)
+				if (page.strokes[i].style.kind != UInk::Draw3UInkStrokeKind::Pen || page.strokes[i].points.empty() ||
+					page.strokes[i].style.fallbackRgb != ((i == 0 ? kColorA : kColorB) >> 8))
 					FailFixture(state->launch);
-				state->disk.reset(); return {};
+			FixtureInkSnapshot snapshot;
+			snapshot.fileGuid = document.header.guid;
+			snapshot.workspaceGuid = workspaces.front().guid;
+			snapshot.workspaceType = workspaces.front().workspaceType;
+			snapshot.hostId = workspaces.front().hostId;
+			snapshot.activeCanvases.push_back(page);
+			auto receipt = SnapshotReceipt(snapshot);
+			if (receipt.strokeCount != page.strokes.size()) FailFixture(state->launch);
+			std::memcpy(receipt.pageGuid, page.pageGuid.Bytes().data(), 16);
+			std::memcpy(receipt.presentationKey, target.key.bytes.data(), 16);
+			receipt.bindingRevision = target.bindingRevision;
+			receipt.targetRevision = target.targetRevision; receipt.sessionRevision = target.sessionRevision;
+			receipt.pageIndex = target.pageIndex; receipt.totalPages = target.totalPages;
+			receipt.bindingMode = static_cast<DWORD>(target.bindingMode); receipt.pageKind = static_cast<DWORD>(target.pageKind);
+			receipt.processLocalIdentity = target.processLocalIdentity ? 1 : 0; receipt.intervalOrdinal = page.intervalOrdinal;
+			for (std::size_t i = 0; i < target.slideIds.size(); ++i) receipt.slideIds[i] = target.slideIds[i];
+			receipt.uinkLength = bytes.size();
+			const auto digest = PptFixtureDigest(bytes);
+			std::memcpy(receipt.uinkSha256, digest.data(), digest.size()); // 夹具独立比对，不参与产品读取。
+			if (appendBase)
+			{
+				if (!appendBase->uinkLength || appendBase->uinkLength >= bytes.size() ||
+					std::memcmp(receipt.fileGuid, appendBase->fileGuid, 16) != 0 ||
+					std::memcmp(receipt.workspaceGuid, appendBase->workspaceGuid, 16) != 0 ||
+					std::memcmp(receipt.pageGuid, appendBase->pageGuid, 16) != 0 ||
+					std::memcmp(receipt.uinkSha256, appendBase->uinkSha256, 32) == 0)
+					FailFixture(state->launch);
+				const auto oldPrefix = PptFixtureDigest(std::string_view(bytes).substr(0,
+					static_cast<std::size_t>(appendBase->uinkLength)));
+				if (std::memcmp(oldPrefix.data(), appendBase->uinkSha256, oldPrefix.size()) != 0)
+					FailFixture(state->launch);
 			}
-			if (actualSession != storedSession || completion.status != Draw3::PresentationPersistenceStatus::Loaded || !completion.loadedSnapshot || !completion.fileGuid ||
-				*completion.fileGuid != state->disk->fileGuid || completion.loadedSnapshot->fileGuid != state->disk->fileGuid ||
-				completion.loadedSnapshot->workspaceGuid != state->disk->workspaceGuid || completion.mutationRevision != state->disk->mutationRevision) FailFixture(state->launch);
-			auto receipt = SnapshotReceipt(*completion.loadedSnapshot);
-			if (receipt.workspaceType != 2 || receipt.activeCanvasCount != 3 || receipt.retainedCanvasCount) FailFixture(state->launch);
-			const auto& pages = completion.loadedSnapshot->activeCanvases.empty() ? completion.loadedSnapshot->canvases : completion.loadedSnapshot->activeCanvases;
-			if (pages[0].slideId != 601 || pages[1].slideId != 602 || pages[2].slideId || pages[2].pageIndex != 2 ||
-				UInk::InkeysPageKind(pages[2].extra) != UInk::UInkInkeysPageKind::EndScreen ||
-				pages[0].pageGuid == pages[1].pageGuid || pages[0].pageGuid == pages[2].pageGuid || pages[1].pageGuid == pages[2].pageGuid) FailFixture(state->launch);
-			if (pages[0].strokes.size() != receipt.strokeCount || receipt.strokeCount > 2) FailFixture(state->launch);
-			for (std::size_t i = 0; i < pages[0].strokes.size(); ++i)
-				if (pages[0].strokes[i].style.kind != UInk::Draw3UInkStrokeKind::Pen ||
-					pages[0].strokes[i].style.fallbackRgb != ((i == 0 ? kColorA : kColorB) >> 8)) FailFixture(state->launch);
-			const auto& page = pages.at(completion.target.pageIndex);
-			std::memcpy(receipt.pageGuid, page.pageGuid.Bytes().data(), 16); std::memcpy(receipt.presentationKey, completion.target.key.bytes.data(), 16);
-			receipt.mutationRevision = completion.mutationRevision; receipt.bindingRevision = completion.target.bindingRevision;
-			receipt.targetRevision = completion.target.targetRevision; receipt.sessionRevision = completion.target.sessionRevision;
-			receipt.pageIndex = completion.target.pageIndex; receipt.totalPages = completion.target.totalPages;
-			receipt.bindingMode = static_cast<DWORD>(completion.target.bindingMode); receipt.pageKind = static_cast<DWORD>(completion.target.pageKind);
-			receipt.processLocalIdentity = completion.target.processLocalIdentity ? 1 : 0; receipt.intervalOrdinal = page.intervalOrdinal;
-			for (std::size_t i = 0; i < completion.target.slideIds.size(); ++i) receipt.slideIds[i] = completion.target.slideIds[i];
-			CopyAscii(receipt.storageSession, state->disk->storageSession); receipt.uinkLength = state->disk->revision.length;
-			std::memcpy(receipt.uinkSha256, state->disk->revision.sha256.data(), 32);
-			const auto digest = HashFixtureBytes({ reinterpret_cast<const BYTE*>(state->disk->indexBytes.data()), state->disk->indexBytes.size() });
-			std::memcpy(receipt.indexSha256, digest.data(), 32); state->disk.reset(); return receipt;
+			if (freshStore)
+				CheckFreshPptStore(state, target, std::move(*imported.page), path, bytes,
+					document.header.guid, workspaces.front().guid);
+			return receipt;
 		}
 
 		Draw3::HostHiddenPersistenceSnapshot Persistence(const std::shared_ptr<FixtureChildState>& state)
@@ -1010,17 +988,6 @@ namespace Inkeys::Shutdown
 			pen.widthDip = 6.0f; pen.colorRgba = rgba; pen.autoSaveEnabled = true; Draw3::PublishProductState(pen);
 		}
 
-		bool CheckStrokeColors(const UInk::Draw3UInkExportSnapshot& value, bool ppt, bool second)
-		{
-			const auto& pages = value.activeCanvases.empty() ? value.canvases : value.activeCanvases;
-			const auto& strokes = pages.at(0).strokes;
-			if (strokes.size() != (ppt && second ? 2u : 1u)) return false;
-			for (std::size_t i = 0; i < strokes.size(); ++i)
-				if (strokes[i].style.kind != UInk::Draw3UInkStrokeKind::Pen || strokes[i].points.empty() ||
-					strokes[i].style.fallbackRgb != ((second && (!ppt || i == 1)) ? kColorB : kColorA) >> 8) return false;
-			return true;
-		}
-
 		void ActualCloseAndStop(const std::shared_ptr<FixtureChildState>& state, bool hold, bool ppt)
 		{
 			state->closer = StartFixtureThread(state, ThreadOperation::Close); JoinFixtureThread(state, state->closer);
@@ -1035,25 +1002,70 @@ namespace Inkeys::Shutdown
 			PublishCleanupRealStage(*state->launch.packet, CleanupRealStage::StopReturned);
 		}
 
-		Draw3::DesktopAutoSaveFixtureReadReceipt ReadDesktopCommitted(const std::shared_ptr<FixtureChildState>& state, const std::string& date)
+		struct DesktopFixtureRead
 		{
-			auto read = Draw3::ReadLastCommittedDesktopAutoSaveFixture(state->options.autoSaveRoot, date);
-			if (read.status == Draw3::DesktopPersistenceStatus::NotFound)
-			{
-				const auto now = Draw3::CaptureDesktopAutoSaveTimestamp().localDate;
-				if (now != date) read = Draw3::ReadLastCommittedDesktopAutoSaveFixture(state->options.autoSaveRoot, now);
-			}
-			if (read.status != Draw3::DesktopPersistenceStatus::Loaded) FailFixture(state->launch); return read;
+			CleanupRealReceipt receipt{};
+			std::string bytes;
+		};
+
+		DesktopFixtureRead ReadDesktopReceipt(const std::wstring& root, std::string_view relativePath)
+		{
+			if (!ValidCleanupDesktopPath(relativePath)) BadFixtureValue();
+			const auto path = root + L"\\" + std::wstring(relativePath.begin(), relativePath.end());
+			OwnedFixturePaths leases;
+			// 按已验证的相对路径逐层持有租约，阻止读回期间替换目录或文件。
+			leases.DirectoryChain(path.substr(0, path.rfind(L'\\')));
+			DesktopFixtureRead result;
+			result.bytes = leases.Read(path);
+			std::uint64_t rawCanvasCount = 0;
+			const auto read = UInk::ReadUInkStoreFile(path, {}, &rawCanvasCount);
+			if (read.status != UInk::UInkReadStatus::Complete || !read.document ||
+				read.summary.version != UInk::kUInkVersion || read.validPrefixLength != result.bytes.size() ||
+				read.provenance.contentSequenceRecovered || read.provenance.containsInvalidCompleteBlocks ||
+				read.provenance.usedTemporaryIdentity) BadFixtureValue();
+			const auto& document = *read.document;
+			if (!document.usesImplicitDevice || !document.usesImplicitWorkspace || document.headerExtension ||
+				document.header.deviceNum != 1 || document.header.workspaceNum != 1 || document.header.pageNum != 1 ||
+				rawCanvasCount != 1 || document.canvases.size() != 1 ||
+				!UInk::FormatUInkGuid(document.header.guid).starts_with(relativePath.substr(29, 8))) BadFixtureValue();
+			const auto& canvas = document.canvases.front();
+			// A 或 B 只能包含一支笔。恰好一个 Ink 同时排除历史区间、Clear 和其他层内容。
+			if (canvas.pageGuid.IsZero() || canvas.pageIndex != 0 || canvas.pageNumber != 1 || canvas.layerIndex != 0 ||
+				canvas.workspaceGuid || canvas.deviceGuid || canvas.slideId || canvas.binding || canvas.pageState ||
+				canvas.pageKind || canvas.content.size() != 1 || !std::holds_alternative<UInk::UInkInk>(canvas.content.front()))
+				BadFixtureValue();
+			auto imported = UInk::ImportUInkV11Page(canvas);
+			if (imported.status != UInk::Draw3UInkV11ImportStatus::Success || !imported.page || imported.workspaceGuid)
+				BadFixtureValue();
+			const auto& page = *imported.page;
+			if (page.pageGuid != canvas.pageGuid || page.intervalOrdinal || page.strokes.size() != 1) BadFixtureValue();
+			const auto& stroke = page.strokes.front();
+			if (stroke.style.kind != UInk::Draw3UInkStrokeKind::Pen || stroke.points.empty()) BadFixtureValue();
+			const auto color = stroke.style.fallbackRgb;
+			if (color != (kColorA >> 8) && color != (kColorB >> 8)) BadFixtureValue();
+			FixtureInkSnapshot snapshot;
+			snapshot.fileGuid = document.header.guid;
+			snapshot.canvases.push_back(std::move(*imported.page));
+			auto& receipt = result.receipt;
+			receipt = SnapshotReceipt(snapshot, true);
+			std::memcpy(receipt.pageGuid, canvas.pageGuid.Bytes().data(), 16);
+			receipt.pageIndex = canvas.pageIndex;
+			receipt.totalPages = document.header.pageNum;
+			receipt.desktopTopology = kCleanupDesktopImplicitDevice | kCleanupDesktopImplicitWorkspace;
+			receipt.desktopInkSample = color == (kColorA >> 8) ? CleanupDesktopInkSample::A : CleanupDesktopInkSample::B;
+			std::memcpy(receipt.desktopRelativePath, relativePath.data(), relativePath.size());
+			receipt.uinkLength = result.bytes.size();
+			const auto digest = HashFixtureBytes({ reinterpret_cast<const BYTE*>(result.bytes.data()), result.bytes.size() });
+			std::memcpy(receipt.uinkSha256, digest.data(), digest.size());
+			return result;
 		}
 
-		std::string ClearDesktop(const std::shared_ptr<FixtureChildState>& state)
+		void ClearDesktop(const std::shared_ptr<FixtureChildState>& state)
 		{
 			const auto before = Draw3::ProductRuntimeSnapshot().clearCommandCount;
-			const auto date = Draw3::CaptureDesktopAutoSaveTimestamp().localDate;
 			if (Draw3::PublishProductCommand(Draw3::Bridge::CommandType::Clear) != Draw3::Bridge::CommandResult::Accepted ||
 				!WaitUntil([&] { const auto current = Draw3::ProductRuntimeSnapshot(); return current.clearCommandCount == before + 1 && !current.currentPageHasContent; }))
 				FailFixture(state->launch);
-			return date;
 		}
 
 		int RunDesktopStorage(const std::shared_ptr<FixtureChildState>& state)
@@ -1061,47 +1073,75 @@ namespace Inkeys::Shutdown
 			const bool hold = state->launch.scenario == CleanupRealCase::DesktopHold;
 			const bool natural = state->launch.scenario == CleanupRealCase::NaturalClose;
 			FixturePhase(201); state->options.autoSaveRoot = StorageRoot(state, false, true);
-			Draw3::DesktopAutoSaveTestFaultInjection faults; faults.logIndexCommitDiagnostics = true;
-			Draw3::SetDesktopAutoSaveTestFaultInjection(faults); // 只在这三个 auth Desktop producer 开诊断。
+			auto& hook = state->options.desktopInkSnapshotsTestHook;
+			hook.context = state.get();
+			hook.beforeSave = [](void* context)
+			{
+				auto& fixture = *static_cast<FixtureChildState*>(context);
+				if (fixture.desktopPublishedCount.load(std::memory_order_acquire) != 1 ||
+					fixture.launch.scenario == CleanupRealCase::NaturalClose) return;
+				// A 已提交，B 在真正的桌面 worker 内进入写入闸门。
+				fixtureDesktopWriteGateEntered.store(true, std::memory_order_release);
+				if (!SetEvent(fixture.reached)) BadFixtureValue();
+				Sleep(fixture.launch.scenario == CleanupRealCase::DesktopHold ? 60000 : 400);
+			};
+			hook.afterSave = [](void* context, const std::wstring& path) noexcept
+			{
+				auto& fixture = *static_cast<FixtureChildState*>(context);
+				const auto slot = fixture.desktopPublishedCount.load(std::memory_order_relaxed);
+				const auto& root = fixture.options.autoSaveRoot;
+				if (slot < fixture.desktopPublishedPaths.size() && path.starts_with(root) &&
+					path.size() > root.size() && path[root.size()] == L'\\')
+				{
+					const auto relative = std::wstring_view(path).substr(root.size() + 1);
+					auto& target = fixture.desktopPublishedPaths[slot];
+					if (relative.size() < target.size() && std::all_of(relative.begin(), relative.end(),
+						[](wchar_t c) { return c >= 0x20 && c <= 0x7e; }))
+						std::transform(relative.begin(), relative.end(), target.begin(),
+							[](wchar_t c) { return static_cast<char>(c); });
+				}
+				// 先记录发布路径，再让夹具线程观察完成个数；worker 不分配新对象。
+				fixture.desktopPublishedCount.store(slot + 1, std::memory_order_release);
+			};
 			StartHiddenProduct(state, false);
 			if (!WriteStoredStroke(state, false)) FailFixture(state->launch);
-			FixturePhase(202); const auto dateA = ClearDesktop(state);
+			FixturePhase(202); ClearDesktop(state);
 			FixturePhase(203);
-			if (!WaitUntil([&] { const auto d = Persistence(state); return d.desktopAccepted == 1 && d.desktopCommitted == 1 && !d.desktopFailed && !d.desktopPending; })) FailFixture(state->launch);
-			FixturePhase(204); const auto readA = ReadDesktopCommitted(state, dateA);
-			if (!CheckStrokeColors(*readA.loadedSnapshot, false, false)) FailFixture(state->launch);
-			state->baseline = DesktopReceipt(readA); TracePersistence(state, false);
+			if (!WaitUntil([&] { const auto d = Persistence(state); return d.desktopAccepted == 1 && d.desktopCommitted == 1 && !d.desktopFailed && !d.desktopPending; }) ||
+				state->desktopPublishedCount.load(std::memory_order_acquire) != 1) FailFixture(state->launch);
+			FixturePhase(204);
+			const auto readA = ReadDesktopReceipt(state->options.autoSaveRoot, state->desktopPublishedPaths[0].data());
+			if (readA.receipt.desktopInkSample != CleanupDesktopInkSample::A) FailFixture(state->launch);
+			state->baseline = readA.receipt; TracePersistence(state, false);
 			if (hold) PublishReceipt(state, state->baseline, CleanupRealStage::BaselineReady);
 			else PublishCleanupRealStage(*state->launch.packet, CleanupRealStage::BaselineReady);
-			for (auto& event : state->indexProbeEvents)
-			{
-				event = CreateEventW(nullptr, TRUE, FALSE, nullptr); if (!event) FailFixture(state->launch);
-			}
-			fixtureIndexProbeEvents = state->indexProbeEvents; // 借用alias，State持有到worker真join/死亡。
-			faults.enteringIndexMutexEvent = state->indexProbeEvents[0];
-			faults.indexMutexAcquiredEvent = state->indexProbeEvents[1];
-			faults.indexReadCompletedEvent = state->indexProbeEvents[2];
-			if (!natural) { faults.writeDelayMilliseconds = hold ? 60000 : 400; faults.enteringWriteDelayEvent = state->reached; }
-			FixturePhase(205); Draw3::SetDesktopAutoSaveTestFaultInjection(faults); SetPenColor(kColorB);
+			FixturePhase(205); SetPenColor(kColorB);
 			if (!WriteStoredStroke(state, false)) FailFixture(state->launch);
-			FixturePhase(206); const auto dateB = ClearDesktop(state);
+			FixturePhase(206); ClearDesktop(state);
 			if (!natural)
 			{
 				FixturePhase(207); if (WaitForSingleObject(state->reached, 5000) != WAIT_OBJECT_0) FailFixture(state->launch);
 				state->launch.packet->trace.gateTick = GetTickCount64();
 				state->launch.packet->trace.gateSuccessPresents = Draw3::ProductRuntimeSnapshot().successfulPresentCount;
 				const auto d = Persistence(state);
-				if (d.desktopAccepted != 2 || d.desktopFailed || (hold && (d.desktopCommitted != 1 || !d.desktopPending))) FailFixture(state->launch);
+				if (d.desktopAccepted != 2 || d.desktopFailed || (hold && (d.desktopCommitted != 1 || !d.desktopPending ||
+					state->desktopPublishedCount.load(std::memory_order_acquire) != 1))) FailFixture(state->launch);
 				InterlockedExchange(&state->launch.packet->trace.faultReached, 1); PublishCleanupRealStage(*state->launch.packet, CleanupRealStage::FaultReached);
 			}
 			TracePersistence(state, false);
 			if (hold) ActualCloseAndStop(state, true, false);
 			FixturePhase(208); if (!WaitUntil([&] { const auto d = Persistence(state); return d.desktopAccepted == 2 && d.desktopCommitted == 2 && !d.desktopFailed && !d.desktopPending; })) FailFixture(state->launch);
-			FixturePhase(209); ActualCloseAndStop(state, false, false); Draw3::ResetDesktopAutoSaveTestFaultInjection();
-			FixturePhase(210); const auto readB = ReadDesktopCommitted(state, dateB);
-			if (!CheckStrokeColors(*readB.loadedSnapshot, false, true)) FailFixture(state->launch);
-			const auto receipt = DesktopReceipt(readB);
-			if (std::memcmp(receipt.fileGuid, state->baseline.fileGuid, 16) == 0 || receipt.sequenceInSession <= state->baseline.sequenceInSession) FailFixture(state->launch);
+			FixturePhase(209); ActualCloseAndStop(state, false, false);
+			FixturePhase(210);
+			if (state->desktopPublishedCount.load(std::memory_order_acquire) != 2) FailFixture(state->launch);
+			const auto readB = ReadDesktopReceipt(state->options.autoSaveRoot, state->desktopPublishedPaths[1].data());
+			const auto& receipt = readB.receipt;
+			if (receipt.desktopInkSample != CleanupDesktopInkSample::B ||
+				std::memcmp(receipt.fileGuid, state->baseline.fileGuid, 16) == 0 ||
+				std::memcmp(receipt.pageGuid, state->baseline.pageGuid, 16) != 0 ||
+				std::strcmp(receipt.desktopRelativePath, state->baseline.desktopRelativePath) == 0 ||
+				ReadDesktopReceipt(state->options.autoSaveRoot, state->baseline.desktopRelativePath).bytes != readA.bytes)
+				FailFixture(state->launch);
 			PublishReceipt(state, receipt, CleanupRealStage::Finished); return Finish(state);
 		}
 
@@ -1127,42 +1167,55 @@ namespace Inkeys::Shutdown
 		{
 			const bool hold = state->launch.scenario == CleanupRealCase::PptHold;
 			FixturePhase(301); state->options.autoSaveRoot = StorageRoot(state, true, true);
-			Draw3::PresentationAutoSaveTestFaultInjection faults; faults.logSaveIoDiagnostics = true;
-			faults.sessionIdOverride = AuthorizedStorageSession(state->launch); // 仅这两个 auth PPT producer。
-			Draw3::SetPresentationAutoSaveTestFaultInjection(faults); FixturePhase(302); StartHiddenProduct(state, false); SelectPptPage(state, 0, false);
+			state->options.presentationStoreTestContext = state.get();
+			state->options.beforePresentationStoreWriteForTest = [](void* context)
+			{
+				auto& fixture = *static_cast<FixtureChildState*>(context);
+				if (++fixture.pptWrites != 2) return;
+				// 第二次追加已被真实 worker 接收，在写页前等监督器放行。
+				if (!SetEvent(fixture.reached) || WaitForSingleObject(fixture.proceed, INFINITE) != WAIT_OBJECT_0)
+					throw std::runtime_error("presentation page append gate");
+			};
+			FixturePhase(302); StartHiddenProduct(state, false); SelectPptPage(state, 0, false);
 			FixturePhase(303); const auto empty = Persistence(state);
-			// 当前真实service把NotFound累入failed；明确actual终态见证，不假成Save失败或重置计数。
-			if (!empty.presentationNotFound || empty.presentationNotFound != empty.presentationFailed || empty.presentationCommitted) FailFixture(state->launch);
-			state->initialPptFailed = empty.presentationFailed; state->initialPptNotFound = empty.presentationNotFound;
-			std::printf("cleanup-real-ppt-empty not_found=%llu failed_baseline=%llu\n", static_cast<unsigned long long>(empty.presentationNotFound), static_cast<unsigned long long>(empty.presentationFailed));
-			if (!WriteStoredStroke(state, false)) FailFixture(state->launch); SelectPptPage(state, 1, false);
-			if (!WaitUntil([&] { const auto d = Persistence(state); return d.presentationCommitted == 1 && d.presentationFailed == state->initialPptFailed; })) FailFixture(state->launch);
-			FixturePhase(305); state->baseline = ReadPptReceipt(state, state->target);
-			if (state->baseline.strokeCount != 1) FailFixture(state->launch); TracePersistence(state, true);
-			if (hold) PublishReceipt(state, state->baseline, CleanupRealStage::BaselineReady); else PublishCleanupRealStage(*state->launch.packet, CleanupRealStage::BaselineReady);
+			if (empty.presentationEmptyLane != 1 || empty.presentationLoaded != 1 ||
+				empty.presentationAccepted != 1 || empty.presentationFailed || empty.presentationCommitted)
+				FailFixture(state->launch);
+			if (!WriteStoredStroke(state, false)) FailFixture(state->launch);
+			const auto baselineTarget = state->target;
+			SelectPptPage(state, 1, false);
+			if (!WaitUntil([&] { const auto d = Persistence(state); return d.presentationCommitted == 1 && !d.presentationFailed; }))
+				FailFixture(state->launch);
+			FixturePhase(305); state->baseline = ReadPptReceipt(state, baselineTarget);
+			if (state->baseline.strokeCount != 1) FailFixture(state->launch);
+			TracePersistence(state, true);
+			if (hold) PublishReceipt(state, state->baseline, CleanupRealStage::BaselineReady);
+			else PublishCleanupRealStage(*state->launch.packet, CleanupRealStage::BaselineReady);
 			SelectPptPage(state, 0, true); SetPenColor(kColorB);
 			if (!WriteStoredStroke(state, false)) FailFixture(state->launch);
-			faults.afterUInkCommittedEvent = state->reached; faults.continueIndexCommitEvent = state->proceed;
-			Draw3::SetPresentationAutoSaveTestFaultInjection(faults); SelectPptPage(state, 1, false);
+			const auto appendedTarget = state->target;
+			SelectPptPage(state, 1, false);
 			if (WaitForSingleObject(state->reached, 5000) != WAIT_OBJECT_0) FailFixture(state->launch);
-			auto& trace = state->launch.packet->trace; trace.gateTick = GetTickCount64(); trace.gateSuccessPresents = Draw3::ProductRuntimeSnapshot().successfulPresentCount;
+			auto& trace = state->launch.packet->trace;
+			trace.gateTick = GetTickCount64(); trace.gateSuccessPresents = Draw3::ProductRuntimeSnapshot().successfulPresentCount;
 			const auto pending = Persistence(state);
-			if (pending.presentationCommitted != 1 || pending.presentationFailed != state->initialPptFailed || pending.presentationNotFound != state->initialPptNotFound) FailFixture(state->launch);
-			{
-				OwnedFixturePaths indexLease; indexLease.DirectoryChain(state->options.autoSaveRoot + L"\\presentation");
-				const auto indexBytes = indexLease.Read(state->options.autoSaveRoot + L"\\presentation\\index.json");
-				const auto indexHash = HashFixtureBytes({ reinterpret_cast<const BYTE*>(indexBytes.data()), indexBytes.size() });
-				if (std::memcmp(indexHash.data(), state->baseline.indexSha256, 32) != 0) FailFixture(state->launch);
-			} // 放行worker前先解除只读file lease，否则会自己阻止其正常index commit。
-			TracePersistence(state, true); InterlockedExchange(&trace.faultReached, 1); PublishCleanupRealStage(*state->launch.packet, CleanupRealStage::FaultReached);
+			if (pending.presentationCommitted != 1 || pending.presentationFailed ||
+				pending.presentationEmptyLane != empty.presentationEmptyLane ||
+				state->pptWrites.load(std::memory_order_acquire) != 2) FailFixture(state->launch);
+			const auto held = ReadPptReceipt(state, baselineTarget);
+			if (std::memcmp(&held, &state->baseline, sizeof(held)) != 0) FailFixture(state->launch);
+			TracePersistence(state, true); InterlockedExchange(&trace.faultReached, 1);
+			PublishCleanupRealStage(*state->launch.packet, CleanupRealStage::FaultReached);
 			if (hold) ActualCloseAndStop(state, true, true);
 			Sleep(250); if (!SetEvent(state->proceed)) FailFixture(state->launch);
-			if (!WaitUntil([&] { const auto d = Persistence(state); return d.presentationCommitted == 2 && d.presentationFailed == state->initialPptFailed; })) FailFixture(state->launch);
-			ActualCloseAndStop(state, false, true); faults.afterUInkCommittedEvent = nullptr; faults.continueIndexCommitEvent = nullptr;
-			Draw3::SetPresentationAutoSaveTestFaultInjection(faults);
-			const auto receipt = ReadPptReceipt(state, state->target);
-			if (receipt.strokeCount != 2 || receipt.mutationRevision <= state->baseline.mutationRevision || std::memcmp(receipt.indexSha256, state->baseline.indexSha256, 32) == 0) FailFixture(state->launch);
-			PublishReceipt(state, receipt, CleanupRealStage::Finished); Draw3::ResetPresentationAutoSaveTestFaultInjection(); return Finish(state);
+			if (!WaitUntil([&] { const auto d = Persistence(state); return d.presentationCommitted == 2 && !d.presentationFailed; }))
+				FailFixture(state->launch);
+			ActualCloseAndStop(state, false, true);
+			const auto receipt = ReadPptReceipt(state, appendedTarget, &state->baseline);
+			if (receipt.strokeCount != 2 || state->pptWrites.load(std::memory_order_acquire) != 2)
+				FailFixture(state->launch);
+			PublishReceipt(state, receipt, CleanupRealStage::Finished);
+			return Finish(state);
 		}
 
 		void WriteOwnedFixtureFile(const std::wstring& path, const std::string& bytes)
@@ -1176,60 +1229,54 @@ namespace Inkeys::Shutdown
 				written != bytes.size() || !FlushFileBuffers(file)) BadFixtureValue();
 		}
 
-		void CheckDesktopReaderBoundaries(const std::shared_ptr<FixtureChildState>& state, const Draw3::DesktopAutoSaveFixtureReadReceipt& original)
+		void CheckDesktopReaderBoundaries(const std::shared_ptr<FixtureChildState>& state, const DesktopFixtureRead& original)
 		{
-			// 只从本run真实committed数据克隆到固定子根；这些不是新的Saved请求/业务恢复点。
+			// 从独立读回得到的真实文件字节生成负例，路径始终限定于本次测试子根。
 			const auto base = state->options.autoSaveRoot + L"\\_fixture-reader-boundaries";
 			if (!CreateDirectoryW(base.c_str(), nullptr)) FailFixture(state->launch);
 			state->artifactDirectories.Lease(base, true);
-			Json::CharReaderBuilder builder; builder["stackLimit"] = 64; builder["failIfExtra"] = true;
-			std::unique_ptr<Json::CharReader> parser(builder.newCharReader()); Json::Value index; std::string errors;
-			if (!parser || !parser->parse(original.indexBytes.data(), original.indexBytes.data() + original.indexBytes.size(), &index, &errors) ||
-				!index["entries"].isArray() || index["entries"].size() > 2) FailFixture(state->launch);
-			const std::wstring date(original.localDate.begin(), original.localDate.end());
-			const auto sourceDirectory = state->options.autoSaveRoot + L"\\desktop\\" + date;
-			OwnedFixturePaths sourceLease; sourceLease.DirectoryChain(sourceDirectory);
-			auto create = [&](const wchar_t* label, bool copyFiles)
+			const std::string relative = original.receipt.desktopRelativePath;
+			const std::wstring relativeWide(relative.begin(), relative.end());
+			const auto directory = relativeWide.substr(0, relativeWide.rfind(L'\\'));
+			const auto sourcePath = state->options.autoSaveRoot + L"\\" + relativeWide;
+			std::string other = relative;
+			other[29] = relative[29] == '0' ? '1' : '0'; // 同目录的合法文件名，GUID 前缀与实际文件不符。
+			const std::wstring otherWide(other.begin(), other.end());
+			const auto create = [&](const wchar_t* label)
 			{
 				const auto root = base + L"\\" + label;
 				if (!CreateDirectoryW(root.c_str(), nullptr) || !CreateDirectoryW((root + L"\\desktop").c_str(), nullptr) ||
-					!CreateDirectoryW((root + L"\\desktop\\" + date).c_str(), nullptr)) FailFixture(state->launch);
-				state->artifactDirectories.DirectoryChain(root + L"\\desktop\\" + date);
-				if (copyFiles)
-					for (const auto& entry : index["entries"])
-					{
-						const auto name = entry["relativePath"].asString();
-						if (name.empty() || name.find_first_of("/\\:") != std::string::npos || name.find("..") != std::string::npos) FailFixture(state->launch);
-						const std::wstring leaf(name.begin(), name.end()); sourceLease.Lease(sourceDirectory + L"\\" + leaf, false);
-						if (!CopyFileW((sourceDirectory + L"\\" + leaf).c_str(), (root + L"\\desktop\\" + date + L"\\" + leaf).c_str(), TRUE)) FailFixture(state->launch);
-					}
+					!CreateDirectoryW((root + L"\\" + directory).c_str(), nullptr)) FailFixture(state->launch);
+				state->artifactDirectories.DirectoryChain(root + L"\\" + directory);
 				return root;
 			};
-			auto loaded = [&](const std::wstring& root)
+			const auto reject = [&](const std::wstring& root, std::string_view path, bool missing)
 			{
-				const auto read = Draw3::ReadLastCommittedDesktopAutoSaveFixture(root, original.localDate);
-				return read.status == Draw3::DesktopPersistenceStatus::Loaded && read.loadedSnapshot && read.fileGuid == original.fileGuid &&
-					std::memcmp(DesktopReceipt(read).geometrySha256, DesktopReceipt(original).geometrySha256, 32) == 0;
+				try { (void)ReadDesktopReceipt(root, path); }
+				catch (const MissingFixturePath&) { if (missing) return; FailFixture(state->launch); }
+				catch (const std::runtime_error&) { if (!missing) return; FailFixture(state->launch); }
+				FailFixture(state->launch);
 			};
-			const auto valid = create(L"valid-primary", true);
-			WriteOwnedFixtureFile(valid + L"\\desktop\\" + date + L"\\index.json", original.indexBytes);
-			if (!loaded(valid)) FailFixture(state->launch);
-			const auto backup = create(L"valid-backup", true);
-			WriteOwnedFixtureFile(backup + L"\\desktop\\" + date + L"\\index.json.bak", original.indexBytes);
-			if (!loaded(backup)) FailFixture(state->launch);
-			const auto recovered = create(L"corrupt-primary-backup", true);
-			WriteOwnedFixtureFile(recovered + L"\\desktop\\" + date + L"\\index.json", "invalid");
-			WriteOwnedFixtureFile(recovered + L"\\desktop\\" + date + L"\\index.json.bak", original.indexBytes);
-			if (!loaded(recovered)) FailFixture(state->launch);
-			const auto missing = create(L"missing-index", false);
-			if (Draw3::ReadLastCommittedDesktopAutoSaveFixture(missing, original.localDate).status != Draw3::DesktopPersistenceStatus::NotFound) FailFixture(state->launch);
-			const auto corrupt = create(L"corrupt-only", true);
-			WriteOwnedFixtureFile(corrupt + L"\\desktop\\" + date + L"\\index.json", "invalid");
-			const auto corruptRead = Draw3::ReadLastCommittedDesktopAutoSaveFixture(corrupt, original.localDate);
-			if ((corruptRead.status != Draw3::DesktopPersistenceStatus::Invalid && corruptRead.status != Draw3::DesktopPersistenceStatus::IoError) ||
-				corruptRead.loadedSnapshot) FailFixture(state->launch);
-			std::string status = "valid-primary/backup/corrupt-primary-backup/missing/corrupt-only verified\n";
-			auto symlink = [&](const std::wstring& link, const std::wstring& target, DWORD flags, const std::wstring& testRoot, const char* name)
+			const auto valid = create(L"valid-direct");
+			// 旁边有第二个可解码文件，仍须读到收据指定的原文件。
+			WriteOwnedFixtureFile(valid + L"\\" + relativeWide, original.bytes);
+			WriteOwnedFixtureFile(valid + L"\\" + otherWide, original.bytes);
+			const auto verified = ReadDesktopReceipt(valid, relative);
+			if (verified.bytes != original.bytes ||
+				std::memcmp(&verified.receipt, &original.receipt, sizeof(verified.receipt)) != 0) FailFixture(state->launch);
+			reject(valid, other, false);
+			const auto missing = create(L"missing-target");
+			WriteOwnedFixtureFile(missing + L"\\" + otherWide, original.bytes);
+			reject(missing, relative, true);
+			const auto corrupt = create(L"corrupt-target");
+			WriteOwnedFixtureFile(corrupt + L"\\" + relativeWide, "invalid");
+			reject(corrupt, relative, false);
+			reject(valid, Utf8Path(sourcePath), false);
+			reject(valid, "..\\" + relative, false);
+			const std::string hiddenSuffix = relative + '\0' + ".hidden";
+			reject(valid, hiddenSuffix, false);
+			std::string status = "valid-direct/missing-target/corrupt-target/wrong-identity/invalid-path verified\n";
+			const auto symlink = [&](const std::wstring& link, const std::wstring& target, DWORD flags, const std::wstring& testRoot, const char* name)
 			{
 				if (!CreateSymbolicLinkW(link.c_str(), target.c_str(), flags))
 				{
@@ -1237,29 +1284,16 @@ namespace Inkeys::Shutdown
 					if (error != ERROR_PRIVILEGE_NOT_HELD && error != ERROR_ACCESS_DENIED && error != ERROR_NOT_SUPPORTED) FailFixture(state->launch);
 					status += std::string(name) + " NOT VERIFIED symlink_error=" + std::to_string(error) + "\n"; return;
 				}
-				const auto read = Draw3::ReadLastCommittedDesktopAutoSaveFixture(testRoot, original.localDate);
-				if ((read.status != Draw3::DesktopPersistenceStatus::Invalid && read.status != Draw3::DesktopPersistenceStatus::IoError) ||
-					read.loadedSnapshot) FailFixture(state->launch);
+				reject(testRoot, relative, false);
 				status += std::string(name) + " reparse-rejected\n";
 			};
-			const auto indexLink = create(L"index-link", true);
-			symlink(indexLink + L"\\desktop\\" + date + L"\\index.json", sourceDirectory + L"\\index.json", 0, indexLink, "index-link");
-			const auto fileLink = create(L"uink-link", false);
-			WriteOwnedFixtureFile(fileLink + L"\\desktop\\" + date + L"\\index.json", original.indexBytes);
-			for (const auto& entry : index["entries"])
-			{
-				const auto name = entry["relativePath"].asString();
-				if (name.empty() || name.find_first_of("/\\:") != std::string::npos || name.find("..") != std::string::npos) FailFixture(state->launch);
-				const std::wstring leaf(name.begin(), name.end());
-				if (name != std::string(original.relativePath.begin(), original.relativePath.end()))
-					if (!CopyFileW((sourceDirectory + L"\\" + leaf).c_str(), (fileLink + L"\\desktop\\" + date + L"\\" + leaf).c_str(), TRUE)) FailFixture(state->launch);
-			}
-			symlink(fileLink + L"\\desktop\\" + date + L"\\" + original.relativePath, sourceDirectory + L"\\" + original.relativePath, 0, fileLink, "uink-link");
+			const auto fileLink = create(L"uink-link");
+			symlink(fileLink + L"\\" + relativeWide, sourcePath, 0, fileLink, "uink-link");
 			const auto directoryLink = base + L"\\directory-link";
 			if (!CreateDirectoryW(directoryLink.c_str(), nullptr)) FailFixture(state->launch);
 			state->artifactDirectories.Lease(directoryLink, true);
 			symlink(directoryLink + L"\\desktop", state->options.autoSaveRoot + L"\\desktop", SYMBOLIC_LINK_FLAG_DIRECTORY, directoryLink, "directory-link");
-			WriteOwnedFixtureFile(base + L"\\status.txt", status); // 固定owned证据，权限缺口独立NOT VERIFIED，不计为reparse通过。
+			WriteOwnedFixtureFile(base + L"\\status.txt", status); // 缺少符号链接权限时单列 NOT VERIFIED。
 			std::printf("cleanup-real-reader-boundaries %s", status.c_str());
 		}
 
@@ -1270,8 +1304,8 @@ namespace Inkeys::Shutdown
 			CleanupRealReceipt receipt{};
 			if (desktop)
 			{
-				const auto read = Draw3::ReadLastCommittedDesktopAutoSaveFixture(state->options.autoSaveRoot, state->launch.packet->expected.localDate);
-				receipt = DesktopReceipt(read);
+				const auto read = ReadDesktopReceipt(state->options.autoSaveRoot, state->launch.packet->expected.desktopRelativePath);
+				receipt = read.receipt;
 				CheckDesktopReaderBoundaries(state, read);
 			}
 			else
@@ -1281,10 +1315,10 @@ namespace Inkeys::Shutdown
 					expected.pageIndex, expected.targetRevision, expected.sessionRevision);
 				if (std::memcmp(target.key.bytes.data(), expected.presentationKey, 16) != 0 || target.bindingRevision != expected.bindingRevision ||
 					static_cast<DWORD>(target.bindingMode) != expected.bindingMode || static_cast<DWORD>(target.pageKind) != expected.pageKind) FailFixture(state->launch);
-				receipt = ReadPptReceipt(state, target, state->launch.scenario == CleanupRealCase::ReadPptForeignSession);
-				Draw3::ResetPresentationAutoSaveTestFaultInjection();
+				receipt = ReadPptReceipt(state, target, nullptr,
+					state->launch.scenario == CleanupRealCase::ReadPptFreshStore);
 			}
-			if (state->launch.scenario != CleanupRealCase::ReadPptForeignSession && std::memcmp(&receipt, &state->launch.packet->expected, sizeof(receipt)) != 0) FailFixture(state->launch);
+			if (std::memcmp(&receipt, &state->launch.packet->expected, sizeof(receipt)) != 0) FailFixture(state->launch);
 			InterlockedExchange(&state->launch.packet->trace.readerSucceeded, 1); PublishReceipt(state, receipt, CleanupRealStage::ReaderDone);
 			return Finish(state);
 		}
@@ -1343,7 +1377,7 @@ namespace Inkeys::Shutdown
 				return RunDesktopStorage(state);
 			case CleanupRealCase::PptHold: case CleanupRealCase::PptRelease:
 				return RunPptStorage(state);
-			case CleanupRealCase::ReadDesktopCommitted: case CleanupRealCase::ReadPptCommitted: case CleanupRealCase::ReadPptForeignSession:
+			case CleanupRealCase::ReadDesktopCommitted: case CleanupRealCase::ReadPptCommitted: case CleanupRealCase::ReadPptFreshStore:
 				return RunCommittedReader(state);
 			default:
 				FailFixture(launch);

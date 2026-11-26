@@ -5,15 +5,12 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-#if defined(DRAW3_TESTING)
-#include <aclapi.h>
-#pragma comment(lib, "advapi32.lib")
-#endif
+#include <bcrypt.h>
 
 #include "../inkStrokeModelerTest/draw3/shape_core.h"
-#include "../inkStrokeModelerTest/draw3/shape_interaction.h"
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -21,21 +18,20 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
-#include <map>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
-#include <thread>
-#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#pragma comment(lib, "bcrypt.lib")
+
 import draw3.uink_codec;
-import draw3.uink_draw3_capture;
-import draw3.uink_draw3_import;
-import draw3.uink_file;
+import draw3.uink_draw3_v11;
+import draw3.uink_store;
+import draw3.ink_document;
 import draw3.ink_history;
 
 namespace
@@ -68,11 +64,6 @@ namespace
 		return guid ? *guid : UInkGuid{};
 	}
 
-	InkGuid Draw3Guid(const char* text)
-	{
-		return InkGuid(Guid(text).Bytes());
-	}
-
 	UInkMessagePackValue Value(std::string value)
 	{
 		UInkMessagePackValue result;
@@ -86,18 +77,6 @@ namespace
 		UInkMessagePackValue result;
 		result.value = std::move(value);
 		return result;
-	}
-
-	UInkExtra MakeExtra(size_t binaryBytes = 4)
-	{
-		UInkMessagePackValue::Array array;
-		array.push_back(Value(uint64_t{ 0xffffffffffffffffull }));
-		array.push_back(Value(std::vector<std::byte>(binaryBytes, std::byte{ 0x5a })));
-		UInkMessagePackExtension extension;
-		extension.type = -7;
-		extension.data = { std::byte{ 0x11 }, std::byte{ 0x22 } };
-		array.push_back(Value(std::move(extension)));
-		return { { Value(std::string("vendor.private")), Value(std::move(array)) } };
 	}
 
 	UInkInk MakeInk(uint32_t contentId, uint32_t undoId, int32_t inkType = 1)
@@ -228,7 +207,6 @@ namespace
 		hardware.physicalHeight = 300;
 		hardware.scaleFactor = 1.5f;
 		display.hardware = std::move(hardware);
-		display.extra = MakeExtra();
 		extension.devices.push_back(std::move(display));
 
 		UInkDevice window;
@@ -254,7 +232,6 @@ namespace
 		presentation.parentWorkspaceGuid = Guid("30000000-0000-4000-8000-00000000c001");
 		presentation.currentPageIndex = 0;
 		extension.workspaces.push_back(std::move(presentation));
-		extension.extra = MakeExtra();
 		document.headerExtension = std::move(extension);
 
 		UInkCanvas primary;
@@ -266,7 +243,6 @@ namespace
 		primary.layerIndex = 0;
 		primary.layerNumber = 10;
 		primary.viewport = UInkViewport{ -120.0f, 45.0f, 1.5f };
-		primary.extra = MakeExtra();
 
 		UInkInk advanced = MakeInk(0, 0, 3);
 		advanced.color.fallbackRgb = 0xffff00;
@@ -281,7 +257,6 @@ namespace
 			{ 122.0f, 107.0f, 26.0f,
 				UInkPointStyle{ UInkColor{ 0x00ffff, std::nullopt }, 0.6f } } };
 		advanced.renderOnlyWhenLatest = true;
-		advanced.extra = MakeExtra();
 		primary.content.push_back(std::move(advanced));
 
 		UInkInk eraser = MakeInk(1, 1, 0);
@@ -323,7 +298,6 @@ namespace
 		media.startTime = 1.25;
 		media.playbackRate = 1.5f;
 		media.pathIsSafe = true;
-		media.extra = MakeExtra();
 		primary.content.push_back(std::move(media));
 		document.canvases.push_back(std::move(primary));
 
@@ -428,19 +402,6 @@ namespace
 		return flushed;
 	}
 
-	std::string HexDigest(const std::array<uint8_t, 32>& digest)
-	{
-		static constexpr char kHex[] = "0123456789abcdef";
-		std::string result;
-		result.reserve(64);
-		for (const uint8_t value : digest)
-		{
-			result.push_back(kHex[value >> 4]);
-			result.push_back(kHex[value & 0x0f]);
-		}
-		return result;
-	}
-
 	std::vector<std::byte> ToBytes(const msgpack::sbuffer& buffer)
 	{
 		std::vector<std::byte> bytes(buffer.size());
@@ -505,127 +466,6 @@ namespace
 		packer.pack_map(1);
 		PackKey(packer, "fallback");
 		packer.pack_uint32(fallback);
-	}
-
-
-	std::vector<std::byte> PackPrivateEraser(uint8_t shape, bool withShape = true)
-	{
-		msgpack::sbuffer buffer;
-		msgpack::packer<msgpack::sbuffer> packer(buffer);
-		packer.pack_map(withShape ? 9 : 8);
-		PackKey(packer, "type"); packer.pack_fix_uint16(kInkType);
-		PackKey(packer, "contentId"); packer.pack_fix_uint32(0);
-		PackKey(packer, "undoId"); packer.pack_fix_uint32(0);
-		PackKey(packer, "inkType"); packer.pack_fix_int32(0);
-		PackKey(packer, "color"); PackColor(packer);
-		PackKey(packer, "opacity"); packer.pack_float(1.0f);
-		PackKey(packer, "texture"); packer.pack_fix_int32(0);
-		PackKey(packer, "points"); packer.pack_array(1);
-		packer.pack_map(3);
-		PackKey(packer, "x"); packer.pack_float(12.0f);
-		PackKey(packer, "y"); packer.pack_float(20.0f);
-		PackKey(packer, "width"); packer.pack_float(5.0f);
-		if (withShape)
-		{
-			PackKey(packer, "inkeysEraserShape"); packer.pack_uint8(shape);
-		}
-		return ToBytes(buffer);
-	}
-
-	void TestLegacyEraserPrivateField(TestState& state)
-	{
-		UInkDocument document = MakeBasicDocument(false);
-		UInkWorkspace workspace;
-		workspace.guid = Guid("30000000-0000-4000-8000-00000000b001");
-		document.headerExtension = UInkHeaderExtension{};
-		document.headerExtension->workspaces.push_back(workspace);
-		document.usesImplicitWorkspace = false;
-		document.canvases[0].workspaceGuid = workspace.guid;
-		const auto prefix = EncodeUInkDocument(document);
-		UINK_CHECK(state, prefix.status == UInkEncodeStatus::Success);
-		for (uint8_t shape : { uint8_t{ 1 }, uint8_t{ 2 } })
-		{
-			auto bytes = prefix.bytes;
-			AppendBytes(bytes, PackPrivateEraser(shape));
-			// 关闭新扩展解释，执行原 DecodeInk 路径：未知键不进入 ink.extra。
-			const auto legacy = DecodeUInk(bytes, {}, false);
-			UINK_CHECK(state, legacy.status == UInkReadStatus::Complete);
-			UINK_CHECK(state, legacy.document.has_value());
-			if (!legacy.document || legacy.document->canvases.empty() ||
-				legacy.document->canvases[0].content.empty()) continue;
-			const auto& ink = std::get<UInkInk>(legacy.document->canvases[0].content[0]);
-			UINK_CHECK(state, ink.declaredInkType == 0);
-			UINK_CHECK(state, ink.effectiveKind == UInkInkKind::Erase);
-			UINK_CHECK(state, !ink.extra && ink.eraserShape == 0);
-			UINK_CHECK(state, ink.points.size() == 1 && ink.points[0].width == 5.0f);
-			const auto imported = ImportDraw3UInkDocument(*legacy.document);
-			UINK_CHECK(state, imported.status == Draw3UInkImportStatus::Success);
-			if (!imported.snapshot || imported.snapshot->canvases.empty() ||
-				imported.snapshot->canvases[0].strokes.empty()) continue;
-			const auto& stroke = imported.snapshot->canvases[0].strokes[0];
-			UINK_CHECK(state, stroke.style.kind == Draw3UInkStrokeKind::Eraser);
-			UINK_CHECK(state, stroke.style.eraserShape == 0);
-		}
-		for (uint8_t shape : { uint8_t{ 0 }, uint8_t{ 1 }, uint8_t{ 2 } })
-		{
-			auto bytes = prefix.bytes;
-			AppendBytes(bytes, PackPrivateEraser(shape, shape != 0));
-			const auto decoded = DecodeUInk(bytes);
-			UINK_CHECK(state, decoded.status == UInkReadStatus::Complete && decoded.document);
-			if (!decoded.document || decoded.document->canvases.empty() ||
-				decoded.document->canvases[0].content.empty()) continue;
-			const auto& ink = std::get<UInkInk>(decoded.document->canvases[0].content[0]);
-			UINK_CHECK(state, ink.effectiveKind == UInkInkKind::Erase && ink.eraserShape == shape);
-			const auto imported = ImportDraw3UInkDocument(*decoded.document);
-			UINK_CHECK(state, imported.status == Draw3UInkImportStatus::Success && imported.snapshot);
-			if (!imported.snapshot || imported.snapshot->canvases.empty() ||
-				imported.snapshot->canvases[0].strokes.empty()) continue;
-			const auto& stroke = imported.snapshot->canvases[0].strokes[0];
-			UINK_CHECK(state, stroke.style.kind == Draw3UInkStrokeKind::Eraser &&
-				stroke.style.eraserShape == shape && stroke.points[0].width == 5.0f);
-			const auto exported = ExportDraw3SnapshotToUInk(*imported.snapshot);
-			UINK_CHECK(state, exported.status == Draw3UInkExportStatus::Success && exported.document);
-			if (!exported.document) continue;
-			const auto encoded = EncodeUInkDocument(*exported.document);
-			UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
-			const auto legacyWritten = DecodeUInk(encoded.bytes, {}, false);
-			UINK_CHECK(state, legacyWritten.status == UInkReadStatus::Complete && legacyWritten.document);
-			if (legacyWritten.document && !legacyWritten.document->canvases.empty() &&
-				!legacyWritten.document->canvases[0].content.empty())
-			{
-				const auto* legacyInk = std::get_if<UInkInk>(&legacyWritten.document->canvases[0].content[0]);
-				UINK_CHECK(state, legacyInk && legacyInk->effectiveKind == UInkInkKind::Erase &&
-					legacyInk->eraserShape == 0);
-			}
-			else UINK_CHECK(state, false);
-			const auto reopened = DecodeUInk(encoded.bytes);
-			UINK_CHECK(state, reopened.status == UInkReadStatus::Complete && reopened.document);
-			if (reopened.document && !reopened.document->canvases.empty() &&
-				!reopened.document->canvases[0].content.empty())
-			{
-				const auto* reopenedInk = std::get_if<UInkInk>(&reopened.document->canvases[0].content[0]);
-				UINK_CHECK(state, reopenedInk && reopenedInk->eraserShape == shape);
-			}
-			else UINK_CHECK(state, false);
-
-			const std::array<UInkAppendObject, 1> objects = { ink };
-			const auto append = EncodeUInkAppendObjects(objects);
-			UINK_CHECK(state, append.status == UInkEncodeStatus::Success);
-			if (append.bytes.empty()) continue;
-			const auto packed = msgpack::unpack(reinterpret_cast<const char*>(append.bytes.data()), append.bytes.size());
-			UINK_CHECK(state, packed.get().type == msgpack::type::MAP &&
-				packed.get().via.map.size == (shape == 0 ? 8u : 9u));
-			if (shape == 0)
-			{
-				// 固定使用旧八键布局及数值宽度，逐字节比较 Circle 输出。
-				UINK_CHECK(state, append.bytes == PackPrivateEraser(0, false));
-			}
-		}
-		auto invalidBytes = prefix.bytes;
-		AppendBytes(invalidBytes, PackPrivateEraser(255));
-		const auto invalid = DecodeUInk(invalidBytes);
-		UINK_CHECK(state, invalid.document && !invalid.document->canvases.empty() &&
-			invalid.document->canvases[0].content.empty());
 	}
 
 	std::vector<std::byte> PackUnknown(uint16_t type, uint32_t nestedArrays = 0)
@@ -857,6 +697,33 @@ namespace
 		return sizes;
 	}
 
+	std::string FixtureSha256(std::span<const std::byte> bytes)
+	{
+		BCRYPT_ALG_HANDLE algorithm = nullptr;
+		if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) < 0)
+			return {};
+		BCRYPT_HASH_HANDLE hash = nullptr;
+		std::array<UCHAR, 32> digest{};
+		// 校验官方夹具原始字节，独立于产品读写路径。
+		const bool success = BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0) >= 0 &&
+			BCryptHashData(hash, reinterpret_cast<PUCHAR>(const_cast<std::byte*>(bytes.data())),
+				static_cast<ULONG>(bytes.size()), 0) >= 0 &&
+			BCryptFinishHash(hash, digest.data(), static_cast<ULONG>(digest.size()), 0) >= 0;
+		if (hash) BCryptDestroyHash(hash);
+		BCryptCloseAlgorithmProvider(algorithm, 0);
+		if (!success) return {};
+
+		constexpr char digits[] = "0123456789abcdef";
+		std::string hex;
+		hex.reserve(2 * digest.size());
+		for (const auto byte : digest)
+		{
+			hex.push_back(digits[byte >> 4]);
+			hex.push_back(digits[byte & 0x0f]);
+		}
+		return hex;
+	}
+
 	void TestOfficialFixtures(TestState& state)
 	{
 		struct Fixture
@@ -894,22 +761,22 @@ namespace
 				UInkReadStatus::Complete }
 		};
 		const std::wstring directory = FixtureDirectory();
+		const auto readFixture = [&](const wchar_t* name)
+		{
+			return DecodeUInk(ReadBytes(directory + L"\\" + name));
+		};
 		for (const Fixture& fixture : fixtures)
 		{
-			const UInkReadResult result = ReadUInkFile(directory + L"\\" + fixture.name);
+			const auto bytes = ReadBytes(directory + L"\\" + fixture.name);
+			UINK_CHECK(state, bytes.size() == fixture.bytes);
+			UINK_CHECK(state, FixtureSha256(bytes) == fixture.sha256);
+			const UInkReadResult result = DecodeUInk(bytes);
 			UINK_CHECK(state, result.status == fixture.status);
-			UINK_CHECK(state, result.document.has_value());
-			UINK_CHECK(state, result.sourceRevision.has_value());
+			UINK_CHECK(state, result.document && result.summary.version == 10);
 			UINK_CHECK(state, result.decodedObjectCount == fixture.objects);
-			if (result.sourceRevision)
-			{
-				UINK_CHECK(state, result.sourceRevision->length == fixture.bytes);
-				UINK_CHECK(state, HexDigest(result.sourceRevision->sha256) == fixture.sha256);
-			}
 		}
 
-		const UInkReadResult explicitResult = ReadUInkFile(
-			directory + L"\\explicit-multilayer.uink");
+		const UInkReadResult explicitResult = readFixture(L"explicit-multilayer.uink");
 		UINK_CHECK(state, explicitResult.document && explicitResult.document->headerExtension);
 		if (explicitResult.document && explicitResult.document->headerExtension)
 		{
@@ -919,20 +786,20 @@ namespace
 			UINK_CHECK(state, explicitResult.document->canvases[1].layerIndex == 1);
 		}
 
-		const UInkReadResult incremental = ReadUInkFile(directory + L"\\incremental-tail.uink");
+		const UInkReadResult incremental = readFixture(L"incremental-tail.uink");
 		UINK_CHECK(state, incremental.document && incremental.document->canvases.size() == 2);
 		UINK_CHECK(state, HasDiagnostic(incremental, UInkDiagnosticCode::HeaderSnapshotMismatch));
-		const UInkReadResult numeric = ReadUInkFile(directory + L"\\numeric-compat.uink");
+		const UInkReadResult numeric = readFixture(L"numeric-compat.uink");
 		UINK_CHECK(state, HasDiagnostic(numeric, UInkDiagnosticCode::NumericCompatibility));
-		const UInkReadResult truncated = ReadUInkFile(directory + L"\\truncated-tail.uink");
+		const UInkReadResult truncated = readFixture(L"truncated-tail.uink");
 		UINK_CHECK(state, truncated.validPrefixLength == 380);
 		UINK_CHECK(state, truncated.safeAppendOffset && *truncated.safeAppendOffset == 380);
-		const UInkReadResult unknown = ReadUInkFile(directory + L"\\unknown-block.uink");
+		const UInkReadResult unknown = readFixture(L"unknown-block.uink");
 		UINK_CHECK(state, unknown.provenance.containsUnknownTopLevel);
 		UINK_CHECK(state, unknown.provenance.requiresSaveAs);
 		UINK_CHECK(state, unknown.document && unknown.document->canvases[0].content.size() == 1);
 
-		const UInkReadResult media = ReadUInkFile(directory + L"\\media-safe.uink");
+		const UInkReadResult media = readFixture(L"media-safe.uink");
 		UINK_CHECK(state, media.document && HasMedia(*media.document));
 		UINK_CHECK(state, HasDiagnostic(media, UInkDiagnosticCode::MediaResourceUnavailable));
 		if (media.document)
@@ -942,7 +809,7 @@ namespace
 			UINK_CHECK(state, first && first->path == "images/pixel.png" && first->pathIsSafe);
 		}
 
-		const UInkReadResult mixed = ReadUInkFile(directory + L"\\mixed-latest.uink");
+		const UInkReadResult mixed = readFixture(L"mixed-latest.uink");
 		UINK_CHECK(state, mixed.document && mixed.document->canvases[0].content.size() == 4);
 		if (mixed.document)
 		{
@@ -952,13 +819,72 @@ namespace
 			UINK_CHECK(state, !visible[0] && visible[1] && !visible[2] && visible[3]);
 		}
 
-		const std::vector<std::byte> sums = ReadBytes(directory + L"\\SHA256SUMS.txt");
-		const std::string sumsText(reinterpret_cast<const char*>(sums.data()), sums.size());
+		const auto sums = ReadBytes(directory + L"\\SHA256SUMS.txt");
+		const auto* text = reinterpret_cast<const char*>(sums.data());
+		const std::string_view sumsText = sums.empty() ? std::string_view{} : std::string_view(text, sums.size());
 		UINK_CHECK(state, sumsText.find(
 			"90ff3db09c512a0a0538ed8072fee45289c92db43f4bec2be65aa31375a40f82  media-safe.uink.extra") !=
-			std::string::npos);
+			std::string_view::npos);
 		UINK_CHECK(state, GetFileAttributesW((directory + L"\\media-safe.uink.extra").c_str()) ==
 			INVALID_FILE_ATTRIBUTES);
+	}
+
+	const msgpack::object* FindWireField(const msgpack::object& map, std::string_view key)
+	{
+		for (uint32_t i = 0; i < map.via.map.size; ++i)
+		{
+			const auto& field = map.via.map.ptr[i];
+			if (field.key.type == msgpack::type::STR &&
+				std::string_view(field.key.via.str.ptr, field.key.via.str.size) == key)
+				return &field.val;
+		}
+		return nullptr;
+	}
+
+	void CheckNoWireExtra(TestState& state, std::span<const std::byte> bytes,
+		size_t expectedObjects, bool headerPrefix = false)
+	{
+		// 解码器会丢掉 extra，直接检查编码字节才能捕获写出回归。
+		size_t offset = 0;
+		try
+		{
+			for (size_t index = 0; index < expectedObjects; ++index)
+			{
+				const auto handle = msgpack::unpack(reinterpret_cast<const char*>(bytes.data()),
+					bytes.size(), offset);
+				const auto& root = handle.get();
+				if (headerPrefix && index == 0)
+				{
+					UINK_CHECK(state, root.type == msgpack::type::ARRAY && root.via.array.size == 7);
+					continue;
+				}
+				UINK_CHECK(state, root.type == msgpack::type::MAP);
+				if (root.type != msgpack::type::MAP) return;
+				UINK_CHECK(state, !FindWireField(root, "extra"));
+				if (!headerPrefix) continue;
+				for (const auto key : { "devices", "workspaces" })
+				{
+					const auto* entries = FindWireField(root, key);
+					UINK_CHECK(state, entries && entries->type == msgpack::type::ARRAY &&
+						entries->via.array.size > 0);
+					if (!entries || entries->type != msgpack::type::ARRAY || !entries->via.array.size)
+						return;
+					for (uint32_t i = 0; i < entries->via.array.size; ++i)
+					{
+						const auto& entry = entries->via.array.ptr[i];
+						UINK_CHECK(state, entry.type == msgpack::type::MAP);
+						if (entry.type != msgpack::type::MAP) return;
+						UINK_CHECK(state, !FindWireField(entry, "extra"));
+					}
+				}
+			}
+		}
+		catch (...)
+		{
+			UINK_CHECK(state, false && "unpack produced UInk bytes");
+			return;
+		}
+		UINK_CHECK(state, offset == bytes.size());
 	}
 
 	void TestExactEncodingAndRichRoundTrip(TestState& state)
@@ -971,13 +897,18 @@ namespace
 			const auto byte = [&](size_t index) { return std::to_integer<uint8_t>(basic.bytes[index]); };
 			UINK_CHECK(state, byte(0) == 0x97);
 			UINK_CHECK(state, byte(1) == 0xcd && byte(2) == 0x00 && byte(3) == 0x00);
-			UINK_CHECK(state, byte(4) == 0xcd && byte(5) == 0x00 && byte(6) == 0x0a);
+			UINK_CHECK(state, byte(4) == 0xcd && byte(5) == 0x00 && byte(6) == 0x0b);
 			UINK_CHECK(state, byte(7) == 0xd9 && byte(8) == 36);
 			UINK_CHECK(state, (byte(69) & 0xf0) == 0x80);
 		}
 		UINK_CHECK(state, ObjectSizes(basic.bytes).size() == 2);
 
-		const UInkEncodeResult encoded = EncodeUInkDocument(MakeRichDocument());
+		const auto rich = MakeRichDocument();
+		const auto prefix = EncodeUInkHeaderPrefix(rich.header, rich.headerExtension);
+		UINK_CHECK(state, prefix.status == UInkEncodeStatus::Success && !prefix.bytes.empty());
+		if (prefix.status == UInkEncodeStatus::Success && !prefix.bytes.empty())
+			CheckNoWireExtra(state, prefix.bytes, 2, true);
+		const UInkEncodeResult encoded = EncodeUInkDocument(rich);
 		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
 		if (encoded.status != UInkEncodeStatus::Success) return;
 		const UInkReadResult decoded = DecodeUInk(encoded.bytes);
@@ -1015,19 +946,6 @@ namespace
 			UINK_CHECK(state, advanced->points[0].style.has_value());
 			UINK_CHECK(state, !advanced->points[1].style.has_value());
 			UINK_CHECK(state, advanced->points[2].style.has_value());
-			UINK_CHECK(state, advanced->extra && advanced->extra->size() == 1);
-			if (advanced->extra)
-			{
-				const auto* values = std::get_if<UInkMessagePackValue::Array>(
-					&advanced->extra->front().second.value);
-				UINK_CHECK(state, values && values->size() == 3);
-				if (values)
-				{
-					UINK_CHECK(state, std::holds_alternative<uint64_t>((*values)[0].value));
-					UINK_CHECK(state, std::holds_alternative<UInkMessagePackExtension>(
-						(*values)[2].value));
-				}
-			}
 		}
 		const UInkInk* eraser = std::get_if<UInkInk>(&primary.content[1]);
 		UINK_CHECK(state, eraser && eraser->effectiveKind == UInkInkKind::Erase);
@@ -1102,6 +1020,29 @@ namespace
 	std::vector<std::byte> CanvasPrefix()
 	{
 		return EncodeUInkDocument(MakeBasicDocument(false)).bytes;
+	}
+
+	// 用现行页编码器生成标准内容块，负例再在测试本地改写线格式。
+	std::vector<std::byte> EncodeTestContent(TestState& state, UInkContent content)
+	{
+		UInkCanvas page = MakeBasicDocument(false).canvases.front();
+		page.content.push_back(std::move(content));
+		auto encoded = EncodeUInkPage(page, true, true);
+		const auto sizes = ObjectSizes(encoded.bytes);
+		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success && sizes.size() == 2);
+		if (sizes.size() != 2) return {};
+		return { encoded.bytes.begin() + sizes.front(), encoded.bytes.end() };
+	}
+
+	// 测试夹具的顶层 Map 采用 fixmap；只增计数并附加一个线格式字段。
+	void AppendTestMapField(TestState& state, std::vector<std::byte>& block,
+		const msgpack::sbuffer& field)
+	{
+		UINK_CHECK(state, !block.empty() && (block.front() & std::byte{ 0xf0 }) == std::byte{ 0x80 } &&
+			block.front() < std::byte{ 0x8f });
+		if (block.empty() || block.front() < std::byte{ 0x80 } || block.front() >= std::byte{ 0x8f }) return;
+		block.front() = static_cast<std::byte>(std::to_integer<uint8_t>(block.front()) + 1);
+		AppendBytes(block, ToBytes(field));
 	}
 
 	std::vector<std::byte> PackUnknownShape()
@@ -1195,25 +1136,21 @@ namespace
 		return ToBytes(buffer);
 	}
 
-	UInkDocument MakeNestedExtraDocument(uint32_t nestedArrays,
-		size_t arrayEntries, size_t binaryBytes)
+	msgpack::sbuffer PackExtraBinary(uint32_t nestedArrays, uint32_t arrayEntries,
+		uint32_t binaryBytes)
 	{
-		UInkDocument document = MakeBasicDocument(false);
-		UInkMessagePackValue::Array leaf;
-		leaf.reserve(arrayEntries + 1);
-		for (size_t index = 0; index < arrayEntries; ++index)
-			leaf.push_back(Value(static_cast<uint64_t>(index)));
-		leaf.push_back(Value(std::vector<std::byte>(binaryBytes, std::byte{ 0x33 })));
-		UInkMessagePackValue nested = Value(std::move(leaf));
-		for (uint32_t index = 0; index < nestedArrays; ++index)
-		{
-			UInkMessagePackValue::Array parent;
-			parent.push_back(std::move(nested));
-			nested = Value(std::move(parent));
-		}
-		document.canvases[0].extra = UInkExtra{
-			{ Value(std::string("nested")), std::move(nested) } };
-		return document;
+		msgpack::sbuffer buffer;
+		msgpack::packer<msgpack::sbuffer> packer(buffer);
+		PackKey(packer, "extra");
+		packer.pack_map(1);
+		PackKey(packer, "vendor");
+		for (uint32_t index = 0; index < nestedArrays; ++index) packer.pack_array(1);
+		packer.pack_array(arrayEntries + 1);
+		for (uint32_t index = 0; index < arrayEntries; ++index) packer.pack_uint32(index);
+		const std::string payload(binaryBytes, 'Z');
+		packer.pack_bin(binaryBytes);
+		packer.pack_bin_body(payload.data(), binaryBytes);
+		return buffer;
 	}
 
 	UInkDocument MakeCycleDocument()
@@ -1280,11 +1217,6 @@ namespace
 		const UInkReadResult invalidExtraResult = DecodeUInk(invalidExtra);
 		UINK_CHECK(state, invalidExtraResult.status == UInkReadStatus::RecoveredInvalidTail);
 		UINK_CHECK(state, HasDiagnostic(invalidExtraResult, UInkDiagnosticCode::InvalidFieldType));
-		UInkDocument invalidExtraDocument = MakeBasicDocument(false);
-		invalidExtraDocument.canvases[0].extra = UInkExtra{
-			{ Value(uint64_t{ 7 }), Value(std::string("value")) } };
-		UINK_CHECK(state, EncodeUInkDocument(invalidExtraDocument).status ==
-			UInkEncodeStatus::InvalidModel);
 
 		std::vector<std::byte> duplicateHardware = HeaderPrefix();
 		AppendBytes(duplicateHardware, PackHeaderExtensionWithDuplicateHardwareIdentifiers());
@@ -1301,11 +1233,9 @@ namespace
 				UInkEncodeStatus::Success);
 		}
 
-		UInkAppendObject validInk = MakeInk(0, 0);
-		const UInkEncodeResult validInkBytes = EncodeUInkAppendObjects(
-			std::span<const UInkAppendObject>(&validInk, 1));
+		const auto validInkBytes = EncodeTestContent(state, MakeInk(0, 0));
 		std::vector<std::byte> invalidMiddle = duplicateTail;
-		AppendBytes(invalidMiddle, validInkBytes.bytes);
+		AppendBytes(invalidMiddle, validInkBytes);
 		const UInkReadResult middleResult = DecodeUInk(invalidMiddle);
 		UINK_CHECK(state, middleResult.status == UInkReadStatus::Complete);
 		UINK_CHECK(state, middleResult.document &&
@@ -1316,7 +1246,7 @@ namespace
 
 		std::vector<std::byte> invalidCanvasScope = prefix;
 		AppendBytes(invalidCanvasScope, PackInvalidCanvas());
-		AppendBytes(invalidCanvasScope, validInkBytes.bytes);
+		AppendBytes(invalidCanvasScope, validInkBytes);
 		const UInkReadResult invalidCanvasScopeResult = DecodeUInk(invalidCanvasScope);
 		UINK_CHECK(state, invalidCanvasScopeResult.status == UInkReadStatus::RecoveredInvalidTail);
 		UINK_CHECK(state, invalidCanvasScopeResult.document &&
@@ -1324,12 +1254,10 @@ namespace
 		UINK_CHECK(state, invalidCanvasScopeResult.safeAppendOffset &&
 			*invalidCanvasScopeResult.safeAppendOffset == prefix.size());
 
-		UInkAppendObject closedShape = MakeShape(0, 2);
-		UInkEncodeResult invalidStrokeBytes = EncodeUInkAppendObjects(
-			std::span<const UInkAppendObject>(&closedShape, 1));
-		UINK_CHECK(state, ReplaceFirstAscii(invalidStrokeBytes.bytes, "opacity", "opacXXy"));
+		auto invalidStrokeBytes = EncodeTestContent(state, MakeShape(0, 2));
+		UINK_CHECK(state, ReplaceFirstAscii(invalidStrokeBytes, "opacity", "opacXXy"));
 		std::vector<std::byte> invalidStroke = prefix;
-		AppendBytes(invalidStroke, invalidStrokeBytes.bytes);
+		AppendBytes(invalidStroke, invalidStrokeBytes);
 		const UInkReadResult invalidStrokeResult = DecodeUInk(invalidStroke);
 		UINK_CHECK(state, invalidStrokeResult.status == UInkReadStatus::Complete);
 		UINK_CHECK(state, invalidStrokeResult.provenance.usedFieldFallback);
@@ -1344,7 +1272,7 @@ namespace
 
 		std::vector<std::byte> corrupt = prefix;
 		corrupt.push_back(std::byte{ 0xc1 });
-		AppendBytes(corrupt, validInkBytes.bytes);
+		AppendBytes(corrupt, validInkBytes);
 		const UInkReadResult corruptResult = DecodeUInk(corrupt);
 		UINK_CHECK(state, corruptResult.status == UInkReadStatus::StoppedAtCorruptTail);
 		UINK_CHECK(state, corruptResult.failedObjectOffset &&
@@ -1353,8 +1281,8 @@ namespace
 			*corruptResult.safeAppendOffset == prefix.size());
 
 		std::vector<std::byte> truncated = prefix;
-		AppendBytes(truncated, std::span<const std::byte>(validInkBytes.bytes).first(
-			validInkBytes.bytes.size() / 2));
+		AppendBytes(truncated, std::span<const std::byte>(validInkBytes).first(
+			validInkBytes.size() / 2));
 		const UInkReadResult truncatedResult = DecodeUInk(truncated);
 		UINK_CHECK(state, truncatedResult.status == UInkReadStatus::RecoveredTruncatedTail);
 		UINK_CHECK(state, truncatedResult.safeAppendOffset &&
@@ -1426,10 +1354,9 @@ namespace
 		else UINK_CHECK(state, false);
 
 		std::vector<std::byte> invalidOrder = HeaderPrefix();
-		AppendBytes(invalidOrder, validInkBytes.bytes);
-		UInkAppendObject canvasObject = MakeBasicDocument(false).canvases[0];
-		const UInkEncodeResult canvasBytes = EncodeUInkAppendObjects(
-			std::span<const UInkAppendObject>(&canvasObject, 1));
+		AppendBytes(invalidOrder, validInkBytes);
+		const auto canvasBytes = EncodeUInkPage(MakeBasicDocument(false).canvases.front(), true, true);
+		UINK_CHECK(state, canvasBytes.status == UInkEncodeStatus::Success);
 		AppendBytes(invalidOrder, canvasBytes.bytes);
 		const UInkReadResult orderResult = DecodeUInk(invalidOrder);
 		UINK_CHECK(state, orderResult.provenance.invalidBlockBeforeValidBlock);
@@ -1459,6 +1386,7 @@ namespace
 		UINK_CHECK(state, invalidViewportResult.status == UInkReadStatus::Complete);
 		UINK_CHECK(state, invalidViewportResult.provenance.usedFieldFallback);
 		UINK_CHECK(state, invalidViewportResult.document &&
+			!invalidViewportResult.document->canvases.empty() &&
 			invalidViewportResult.document->canvases[0].viewport &&
 			NearlyEqual(invalidViewportResult.document->canvases[0].viewport->scale, 1.0f));
 
@@ -1475,7 +1403,7 @@ namespace
 		badHeader[0] = std::byte{ 0x96 };
 		UINK_CHECK(state, DecodeUInk(badHeader).status == UInkReadStatus::RejectedHeader);
 		badHeader = HeaderPrefix();
-		badHeader[6] = std::byte{ 0x0b };
+		badHeader[6] = std::byte{ 0x14 };
 		const UInkReadResult unsupportedVersion = DecodeUInk(badHeader);
 		UINK_CHECK(state, unsupportedVersion.status == UInkReadStatus::RejectedHeader);
 		UINK_CHECK(state, HasDiagnostic(unsupportedVersion,
@@ -1515,9 +1443,8 @@ namespace
 		mismatchedPpt.deviceGuid = Guid("40000000-0000-4000-8000-00000000c001");
 		mismatchedPpt.slideId = 43;
 		mismatchedPpt.content.clear();
-		const UInkAppendObject mismatchedPptObject = mismatchedPpt;
-		const UInkEncodeResult mismatchedPptBytes = EncodeUInkAppendObjects(
-			std::span<const UInkAppendObject>(&mismatchedPptObject, 1));
+		const auto mismatchedPptBytes = EncodeUInkPage(mismatchedPpt, false, false);
+		UINK_CHECK(state, mismatchedPptBytes.status == UInkEncodeStatus::Success);
 		std::vector<std::byte> mismatchedPptStream =
 			EncodeUInkDocument(MakeRichDocument()).bytes;
 		AppendBytes(mismatchedPptStream, mismatchedPptBytes.bytes);
@@ -1592,9 +1519,1356 @@ namespace
 	void CheckLimitFailure(TestState& state, const UInkReadResult& result)
 	{
 		UINK_CHECK(state, result.status == UInkReadStatus::LimitExceeded);
-		UINK_CHECK(state, !result.document.has_value());
-		UINK_CHECK(state, !result.safeAppendOffset.has_value());
+		UINK_CHECK(state, result.summary.outcome == UInkReadOutcome::Failed && !result.document);
+		UINK_CHECK(state, result.provenance.requiresSaveAs && !result.safeAppendOffset);
 		UINK_CHECK(state, HasDiagnostic(result, UInkDiagnosticCode::LimitExceeded));
+	}
+
+	const UInkDiagnosticCount& DiagnosticCount(const UInkReadResult& result, UInkDiagnosticCode code)
+	{
+		return result.summary.diagnosticCounts[static_cast<size_t>(code)];
+	}
+
+	const UInkCanvas* ExpectV11Canvas(TestState& state, const UInkReadResult& result,
+		size_t canvasCount, size_t contentCount, UInkReadOutcome outcome, size_t canvasIndex = 0)
+	{
+		UINK_CHECK(state, result.summary.outcome == outcome);
+		UINK_CHECK(state, result.document && result.document->canvases.size() == canvasCount);
+		if (!result.document || result.document->canvases.size() != canvasCount) return nullptr;
+		const auto& canvas = result.document->canvases[canvasIndex];
+		UINK_CHECK(state, canvas.content.size() == contentCount);
+		return canvas.content.size() == contentCount ? &canvas : nullptr;
+	}
+
+	void CheckLimitPrefix(TestState& state, const UInkReadResult& result,
+		size_t canvasCount, size_t contentCount)
+	{
+		UINK_CHECK(state, result.status == UInkReadStatus::LimitExceeded);
+		UINK_CHECK(state, result.provenance.requiresSaveAs && !result.safeAppendOffset);
+		UINK_CHECK(state, HasDiagnostic(result, UInkDiagnosticCode::LimitExceeded));
+		ExpectV11Canvas(state, result, canvasCount, contentCount, UInkReadOutcome::Partial);
+	}
+
+	bool HasWireBytes(std::span<const std::byte> bytes, std::string_view expected)
+	{
+		return std::search(bytes.begin(), bytes.end(), expected.begin(), expected.end(),
+			[](std::byte byte, char value) { return byte == static_cast<std::byte>(value); })
+			!= bytes.end();
+	}
+
+	UInkDocument MakeV11Document()
+	{
+		UInkDocument document = MakeBasicDocument(false);
+		document.header.time = 0x0102030405060708ull;
+		UInkCanvas& canvas = document.canvases[0];
+		canvas.background = UInkBackground{ UInkColor{ 0x112233, std::nullopt }, 2 };
+		canvas.pageState = 1;
+		canvas.pageKind = 1;
+		canvas.binding = 0; // 显式缺省值也必须编码。
+		canvas.viewport = UInkViewport{ -2.5f, 1.25f, 0.5f };
+
+		UInkInk highlighter = MakeInk(0, 0, 2);
+		highlighter.nib = UInkNib{ 1, 0.125f, 0 };
+		canvas.content.emplace_back(std::move(highlighter));
+		UInkInk eraser = MakeInk(1, 1, 0);
+		eraser.nib = UInkNib{ 1, 0.6666667f, 1 };
+		canvas.content.emplace_back(std::move(eraser));
+		UInkInk pen = MakeInk(2, 2);
+		pen.cap = 2;
+		canvas.content.emplace_back(std::move(pen));
+
+		const UInkMessagePackValue::Map point = {
+			{ Value(std::string("x")), Value(1.25f) },
+			{ Value(std::string("y")), Value(-2.5f) }
+		};
+		UInkShapeObject object;
+		object.id = Guid("60000000-0000-4000-8000-00000000b001");
+		object.revision = 0x1122334455667788ull;
+		object.preset = "arrow";
+		object.partCount = 2;
+		object.transform = std::array<float, 6>{ 1, 0, 0, 1, 1.25f, -2.5f };
+		object.construction = UInkMessagePackValue::Map{ { Value(std::string("start")), Value(point) } };
+		object.style = UInkMessagePackValue::Map{
+			{ Value(std::string("point")), Value(point) },
+			{ Value(std::string("values")),
+				Value(UInkMessagePackValue::Array{ Value(true), Value(std::string("tag")), Value(1.25) }) }
+		};
+		object.aux = 0;
+		UInkShape first = MakeShape(3, 0);
+		first.stroke->lineCap = 0;
+		first.stroke->lineJoin = 2;
+		UInkShape part = MakeShape(4, 0);
+		part.undoId = first.undoId;
+		part.object = UInkShapeObjectRef{ object.id, 1 };
+		first.object = std::move(object);
+		canvas.content.emplace_back(std::move(first));
+		canvas.content.emplace_back(std::move(part));
+		return document;
+	}
+
+	void TestV11WireAndRoundTrip(TestState& state)
+	{
+		using namespace std::string_view_literals;
+		const UInkDocument source = MakeV11Document();
+		const UInkEncodeResult encoded = EncodeUInkDocument(source);
+		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
+		if (encoded.status != UInkEncodeStatus::Success) return;
+		const auto sizes = ObjectSizes(encoded.bytes);
+		UINK_CHECK(state, sizes.size() == 7);
+		if (sizes.size() != 7) return;
+
+		std::array<std::span<const std::byte>, 7> blocks;
+		size_t offset = 0;
+		for (size_t index = 0; index < blocks.size(); ++index)
+		{
+			blocks[index] = std::span<const std::byte>(encoded.bytes).subspan(offset, sizes[index]);
+			offset += sizes[index];
+		}
+		const auto header = "\x97\xcd\x00\x00\xcd\x00\x0b\xd9\x24"
+			"10000000-0000-4000-8000-00000000b001"
+			"\xce\x00\x00\x00\x01\xce\x00\x00\x00\x01\xce\x00\x00\x00\x01"
+			"\xcf\x01\x02\x03\x04\x05\x06\x07\x08"sv;
+		UINK_CHECK(state, blocks[0].size() == header.size() && HasWireBytes(blocks[0], header));
+		UINK_CHECK(state, HasWireBytes(blocks[1], "\x8b\xa4type\xcd\x00\x02"sv));
+		UINK_CHECK(state, HasWireBytes(blocks[1], "\xa8viewport\x83"
+			"\xa1x\xca\xc0\x20\x00\x00\xa1y\xca\x3f\xa0\x00\x00"
+			"\xa5scale\xca\x3f\x00\x00\x00"sv));
+		UINK_CHECK(state, HasWireBytes(blocks[1], "\xaa" "background\x82"
+			"\xa5" "color\x81\xa8" "fallback\xce\x00\x11\x22\x33\xa7pattern\xd2\x00\x00\x00\x02"
+			"\xa9pageState\xd2\x00\x00\x00\x01\xa8pageKind\xd2\x00\x00\x00\x01"
+			"\xa7" "binding\xd2\x00\x00\x00\x00"sv));
+		UINK_CHECK(state, HasWireBytes(blocks[2], "\x89\xa4type\xcd\x00\x03"
+			"\xa9" "contentId\xce\x00\x00\x00\x00\xa6undoId\xce\x00\x00\x00\x00"sv));
+		UINK_CHECK(state, HasWireBytes(blocks[2], "\xa3nib\x82\xa5shape\xd2\x00\x00\x00\x01"
+			"\xa6" "aspect\xca\x3e\x00\x00\x00"sv));
+		UINK_CHECK(state, !HasWireBytes(blocks[2], "\xaborientation"sv));
+		UINK_CHECK(state, HasWireBytes(blocks[3], "\xa3nib\x83\xa5shape\xd2\x00\x00\x00\x01"
+			"\xa6" "aspect\xca\x3f\x2a\xaa\xab\xaborientation\xd2\x00\x00\x00\x01"sv));
+		UINK_CHECK(state, HasWireBytes(blocks[4], "\xa3" "cap\xd2\x00\x00\x00\x02"sv));
+		UINK_CHECK(state, HasWireBytes(blocks[5], "\x87\xa4type\xcd\x00\x05"
+			"\xa9" "contentId\xce\x00\x00\x00\x03\xa6undoId\xce\x00\x00\x00\x03"sv));
+		UINK_CHECK(state, HasWireBytes(blocks[5],
+			"\xa7lineCap\xd2\x00\x00\x00\x00\xa8lineJoin\xd2\x00\x00\x00\x02"sv));
+		UINK_CHECK(state, HasWireBytes(blocks[5],
+			"\xa6object\x88\xa2id\xd9\x24" "60000000-0000-4000-8000-00000000b001"
+			"\xa8revision\xcf\x11\x22\x33\x44\x55\x66\x77\x88"
+			"\xa9partCount\xce\x00\x00\x00\x02\xa6preset\xa5" "arrow"
+			"\xa9transform\x96\xca\x3f\x80\x00\x00\xca\x00\x00\x00\x00"
+			"\xca\x00\x00\x00\x00\xca\x3f\x80\x00\x00\xca\x3f\xa0\x00\x00\xca\xc0\x20\x00\x00"
+			"\xac" "construction\x81\xa5start\x82\xa1x\xca\x3f\xa0\x00\x00\xa1y\xca\xc0\x20\x00\x00"
+			"\xa5style\x82\xa5point\x82\xa1x\xca\x3f\xa0\x00\x00\xa1y\xca\xc0\x20\x00\x00"
+			"\xa6values\x93\xc3\xa3tag\xcb\x3f\xf4\x00\x00\x00\x00\x00\x00"
+			"\xa3" "aux\xce\x00\x00\x00\x00"sv));
+		UINK_CHECK(state, HasWireBytes(blocks[6], "\xa6object\x82\xa3ref\xd9\x24"
+			"60000000-0000-4000-8000-00000000b001\xa9partIndex\xce\x00\x00\x00\x01"sv));
+
+		const auto read = DecodeUInk(encoded.bytes);
+		const UInkCanvas* canvas = ExpectV11Canvas(state, read, 1, 5, UInkReadOutcome::Complete);
+		if (!canvas) return;
+		UINK_CHECK(state, read.summary.version == 11 && read.diagnostics.empty());
+		UINK_CHECK(state, canvas->background && canvas->background->color.fallbackRgb == 0x112233 &&
+			canvas->background->pattern == 2 && EffectiveUInkBackgroundPattern(*canvas->background) == 2);
+		UINK_CHECK(state, canvas->pageState == 1 && canvas->pageKind == 1 && canvas->binding == 0);
+		UINK_CHECK(state, EffectiveUInkPageState(*canvas) == 1 && EffectiveUInkPageKind(*canvas) == 1 &&
+			EffectiveUInkBinding(*canvas) == 0);
+		UINK_CHECK(state, canvas->viewport && canvas->viewport->x == -2.5f &&
+			canvas->viewport->y == 1.25f && canvas->viewport->scale == 0.5f);
+		const auto* highlighter = std::get_if<UInkInk>(&canvas->content[0]);
+		const auto* eraser = std::get_if<UInkInk>(&canvas->content[1]);
+		const auto* pen = std::get_if<UInkInk>(&canvas->content[2]);
+		UINK_CHECK(state, highlighter && highlighter->nib && highlighter->nib->shape == 1 &&
+			highlighter->nib->aspect == 0.125f && highlighter->nib->orientation == 0 && !highlighter->cap);
+		UINK_CHECK(state, eraser && eraser->nib && eraser->nib->shape == 1 &&
+			eraser->nib->aspect == 0.6666667f && eraser->nib->orientation == 1 && !eraser->cap);
+		UINK_CHECK(state, pen && !pen->nib && pen->cap == 2 && EffectiveUInkCap(*pen) == 2);
+		const auto* first = std::get_if<UInkShape>(&canvas->content[3]);
+		const auto* part = std::get_if<UInkShape>(&canvas->content[4]);
+		UINK_CHECK(state, first && first->stroke && first->stroke->lineCap == 0 &&
+			first->stroke->lineJoin == 2 && EffectiveUInkLineJoin(*first->stroke) == 2 && first->object);
+		UINK_CHECK(state, part && part->object && part->undoId == 3);
+		const auto* object = first && first->object ? std::get_if<UInkShapeObject>(&*first->object) : nullptr;
+		const auto* ref = part && part->object ? std::get_if<UInkShapeObjectRef>(&*part->object) : nullptr;
+		UINK_CHECK(state, object && object->preset == "arrow" && object->partCount == 2 &&
+			object->revision == 0x1122334455667788ull && object->transform &&
+			object->construction && object->style && object->aux == 0);
+		UINK_CHECK(state, object && ref && ref->ref == object->id && ref->partIndex == 1);
+		const auto reencoded = EncodeUInkDocument(*read.document);
+		UINK_CHECK(state, reencoded.status == UInkEncodeStatus::Success);
+		// 比较整份字节，包含两个通用 Map 的类型、值和条目顺序。
+		UINK_CHECK(state, reencoded.bytes == encoded.bytes);
+	}
+
+	// 同宽度替换一个字段值，避免破坏夹具的 MessagePack 对象边界。
+	bool ReplaceV11Value(std::vector<std::byte>& bytes, std::string_view key, std::string_view value)
+	{
+		const auto field = std::search(bytes.begin(), bytes.end(), key.begin(), key.end(),
+			[](std::byte byte, char text) { return byte == static_cast<std::byte>(text); });
+		if (field == bytes.end() || static_cast<size_t>(bytes.end() - field) < key.size() + value.size())
+			return false;
+		std::transform(value.begin(), value.end(), field + key.size(),
+			[](char byte) { return static_cast<std::byte>(byte); });
+		return true;
+	}
+
+	void TestV11FieldFallbacks(TestState& state)
+	{
+		using namespace std::string_view_literals;
+		UInkDocument source = MakeV11Document();
+		auto& sourceCanvas = source.canvases[0];
+		sourceCanvas.background->pattern = 128;
+		sourceCanvas.pageState = 128;
+		sourceCanvas.pageKind = 128;
+		sourceCanvas.binding = 128;
+		auto& sourceInk = std::get<UInkInk>(sourceCanvas.content[0]);
+		sourceInk.nib->shape = 128;
+		sourceInk.nib->orientation = 128;
+		sourceInk.cap = 128;
+		auto& sourceStroke = *std::get<UInkShape>(sourceCanvas.content[3]).stroke;
+		sourceStroke.lineCap = 128;
+		sourceStroke.lineJoin = 128;
+		const auto unknown = EncodeUInkDocument(source);
+		UINK_CHECK(state, unknown.status == UInkEncodeStatus::Success);
+		if (unknown.status != UInkEncodeStatus::Success) return;
+		UInkReadLimits limits;
+		limits.maxDiagnostics = 2;
+		const auto read = DecodeUInk(unknown.bytes, limits);
+		const UInkCanvas* canvas = ExpectV11Canvas(state, read, 1, 5, UInkReadOutcome::Partial);
+		if (!canvas) return;
+		UINK_CHECK(state, canvas->background && canvas->background->pattern == 128 &&
+			EffectiveUInkBackgroundPattern(*canvas->background) == 0);
+		UINK_CHECK(state, canvas->pageState == 128 && canvas->pageKind == 128 && canvas->binding == 128);
+		UINK_CHECK(state, EffectiveUInkPageState(*canvas) == 0 && EffectiveUInkPageKind(*canvas) == 0 &&
+			EffectiveUInkBinding(*canvas) == 0);
+		const auto* ink = std::get_if<UInkInk>(&canvas->content[0]);
+		const auto* shape = std::get_if<UInkShape>(&canvas->content[3]);
+		UINK_CHECK(state, ink && ink->nib && ink->nib->shape == 128 && ink->nib->orientation == 128 &&
+			ink->cap == 128 && EffectiveUInkNib(ink->nib).shape == 0 && EffectiveUInkCap(*ink) == 0);
+		UINK_CHECK(state, shape && shape->stroke && shape->stroke->lineCap == 128 &&
+			shape->stroke->lineJoin == 128 && EffectiveUInkLineCap(*shape->stroke) == 0 &&
+			EffectiveUInkLineJoin(*shape->stroke) == 0);
+		const auto& count = DiagnosticCount(read, UInkDiagnosticCode::FieldFallback);
+		UINK_CHECK(state, count.code == UInkDiagnosticCode::FieldFallback && count.count == 9 &&
+			count.firstByteOffset == 69 && count.firstCanvasOrdinal == 1);
+		UINK_CHECK(state, read.diagnostics.size() == 2 &&
+			read.diagnostics.back().code == UInkDiagnosticCode::DiagnosticsTruncated &&
+			read.diagnostics.front().canvasOrdinal == 1);
+		limits.maxDiagnostics = 0;
+		const auto noDetails = DecodeUInk(unknown.bytes, limits);
+		UINK_CHECK(state, noDetails.document && noDetails.document->canvases.size() == 1 &&
+			noDetails.summary.outcome == UInkReadOutcome::Partial && noDetails.diagnostics.empty());
+		UINK_CHECK(state, DiagnosticCount(noDetails, UInkDiagnosticCode::FieldFallback).count == 9);
+
+		const auto valid = EncodeUInkDocument(MakeV11Document());
+		UINK_CHECK(state, valid.status == UInkEncodeStatus::Success);
+		if (valid.status != UInkEncodeStatus::Success) return;
+		for (const auto aspect : { ""sv, "\xca\xbf\x00\x00\x00"sv, "\xca\x7f\x80\x00\x00"sv })
+		{
+			auto bytes = valid.bytes;
+			const bool modified = aspect.empty() ? ReplaceFirstAscii(bytes, "aspect", "unused") :
+				ReplaceV11Value(bytes, "aspect", aspect);
+			UINK_CHECK(state, modified);
+			const auto bad = DecodeUInk(bytes);
+			const UInkCanvas* page = ExpectV11Canvas(state, bad, 1, 5, UInkReadOutcome::Partial);
+			if (!page) continue;
+			const auto* stroke = std::get_if<UInkInk>(&page->content.front());
+			UINK_CHECK(state, stroke && stroke->nib && stroke->nib->shape == 1 &&
+				HasInvalidUInkNibAspect(*stroke->nib) && EffectiveUInkNib(stroke->nib).shape == 0);
+			UINK_CHECK(state, DiagnosticCount(bad, UInkDiagnosticCode::FieldFallback).count == 1);
+		}
+
+		// CANVAS-22：分别缺字段、x 非有限、scale 非正，保留 Canvas 和后续内容。
+		for (int fault = 0; fault < 3; ++fault)
+		{
+			auto bytes = valid.bytes;
+			bool modified = false;
+			if (fault == 0) modified = ReplaceFirstAscii(bytes, "scale", "spare");
+			else if (fault == 1) modified = ReplaceV11Value(bytes, "\xa1x"sv, "\xca\x7f\xc0\x00\x00"sv);
+			else modified = ReplaceV11Value(bytes, "scale", "\xca\x00\x00\x00\x00"sv);
+			UINK_CHECK(state, modified);
+			const auto bad = DecodeUInk(bytes);
+			const UInkCanvas* page = ExpectV11Canvas(state, bad, 1, 5, UInkReadOutcome::Partial);
+			if (!page) continue;
+			UINK_CHECK(state, page->viewport && page->viewport->x == 0 && page->viewport->y == 0 &&
+				page->viewport->scale == 1);
+			UINK_CHECK(state, DiagnosticCount(bad, UInkDiagnosticCode::FieldFallback).count == 1);
+		}
+
+		for (bool wrongType : { false, true })
+		{
+			auto bytes = valid.bytes;
+			const bool modified = wrongType ?
+				ReplaceV11Value(bytes, "pattern", "\xca\x3f\x00\x00\x00"sv) :
+				ReplaceFirstAscii(bytes, "color", "other");
+			UINK_CHECK(state, modified);
+			const auto bad = DecodeUInk(bytes);
+			const UInkCanvas* page = ExpectV11Canvas(state, bad, 1, 5, UInkReadOutcome::Partial);
+			if (!page) continue;
+			UINK_CHECK(state, !page->background && page->pageState == 1);
+			UINK_CHECK(state, DiagnosticCount(bad, UInkDiagnosticCode::FieldFallback).count == 1);
+		}
+
+		auto topLayer = CanvasPrefix();
+		const size_t secondCanvas = topLayer.size();
+		const auto sizes = ObjectSizes(valid.bytes);
+		UINK_CHECK(state, sizes.size() == 7);
+		if (sizes.size() != 7) return;
+		// 只改第二个 Canvas；二者仍共享页身份。
+		std::vector<std::byte> layerBytes(valid.bytes.begin() + sizes[0],
+			valid.bytes.begin() + sizes[0] + sizes[1]);
+		UINK_CHECK(state, ReplaceV11Value(layerBytes, "layerIndex", "\xce\x00\x00\x00\x01"sv));
+		AppendBytes(topLayer, layerBytes);
+		const auto layered = DecodeUInk(topLayer);
+		const UInkCanvas* layer = ExpectV11Canvas(state, layered, 2, 0, UInkReadOutcome::Partial, 1);
+		if (!layer) return;
+		UINK_CHECK(state, layer->layerIndex == 1 && !layer->viewport && !layer->background &&
+			!layer->pageState && !layer->pageKind && !layer->binding);
+		const auto& layerCount = DiagnosticCount(layered, UInkDiagnosticCode::FieldFallback);
+		UINK_CHECK(state, layerCount.count == 5 && layerCount.firstCanvasOrdinal == 2 &&
+			layerCount.firstByteOffset == secondCanvas);
+	}
+
+	void TestV11ShapeObjectRecovery(TestState& state)
+	{
+		using namespace std::string_view_literals;
+		const auto valid = EncodeUInkDocument(MakeV11Document());
+		UINK_CHECK(state, valid.status == UInkEncodeStatus::Success);
+		if (valid.status != UInkEncodeStatus::Success) return;
+		const std::pair<std::string_view, std::string_view> faults[] = {
+			{ "\xa2id"sv, "\xd9\x24" "00000000-0000-0000-0000-000000000000"sv },
+			{ "partCount"sv, "\xce\x00\x00\x00\x00"sv },
+			{ "revision"sv, "\xcf\x00\x00\x00\x00\x00\x00\x00\x00"sv },
+			{ "partIndex"sv, "\xce\x00\x00\x00\x00"sv },
+			// float32 值不是整数，不能转换为 partCount（TYPE-5）。
+			{ "partCount"sv, "\xca\x3f\x00\x00\x00"sv },
+		};
+		for (const auto& [key, payload] : faults)
+		{
+			auto bytes = valid.bytes;
+			UINK_CHECK(state, ReplaceV11Value(bytes, key, payload));
+			const auto read = DecodeUInk(bytes);
+			const UInkCanvas* canvas = ExpectV11Canvas(state, read, 1, 5, UInkReadOutcome::Partial);
+			if (!canvas) continue;
+			const size_t badPart = key == "partIndex" ? 4 : 3;
+			const auto* part = std::get_if<UInkShape>(&canvas->content[badPart]);
+			UINK_CHECK(state, part && part->stroke && !part->object);
+			const auto* sibling = std::get_if<UInkShape>(&canvas->content[badPart == 3 ? 4 : 3]);
+			UINK_CHECK(state, sibling && sibling->object);
+			UINK_CHECK(state, DiagnosticCount(read, UInkDiagnosticCode::FieldFallback).count == 1);
+			UINK_CHECK(state, DiagnosticCount(read, UInkDiagnosticCode::KnownBlockSkipped).count == 0);
+		}
+
+		auto block = EncodeTestContent(state, MakeShape(0, 0));
+		if (block.empty()) return;
+		UINK_CHECK(state, block.front() == std::byte{ 0x86 });
+		msgpack::sbuffer extra;
+		msgpack::packer<msgpack::sbuffer> packer(extra);
+		PackKey(packer, "object");
+		packer.pack_map(3);
+		PackKey(packer, "ref"); PackGuid(packer, "60000000-0000-4000-8000-00000000b001");
+		PackKey(packer, "partIndex"); packer.pack_fix_uint32(1);
+		PackKey(packer, "partIndex"); packer.pack_fix_uint32(2);
+		AppendTestMapField(state, block, extra);
+		auto bytes = CanvasPrefix();
+		const size_t shapeOffset = bytes.size();
+		AppendBytes(bytes, block);
+		const auto read = DecodeUInk(bytes);
+		const UInkCanvas* canvas = ExpectV11Canvas(state, read, 1, 1, UInkReadOutcome::Partial);
+		if (!canvas) return;
+		const auto* part = std::get_if<UInkShape>(&canvas->content.front());
+		UINK_CHECK(state, part && part->stroke && !part->object);
+		const auto& duplicate = DiagnosticCount(read, UInkDiagnosticCode::DuplicateKnownKey);
+		UINK_CHECK(state, duplicate.count == 1 && duplicate.firstByteOffset == shapeOffset &&
+			duplicate.firstCanvasOrdinal == 1);
+		UINK_CHECK(state, DiagnosticCount(read, UInkDiagnosticCode::FieldFallback).count == 1);
+		UINK_CHECK(state, DiagnosticCount(read, UInkDiagnosticCode::KnownBlockSkipped).count == 0);
+	}
+
+	std::vector<std::byte> PackV11InkDeltas(std::span<const float> input)
+	{
+		msgpack::sbuffer buffer;
+		msgpack::packer<msgpack::sbuffer> packer(buffer);
+		packer.pack_map(8);
+		PackKey(packer, "type"); packer.pack_fix_uint16(kInkType);
+		PackKey(packer, "contentId"); packer.pack_fix_uint32(0);
+		PackKey(packer, "undoId"); packer.pack_fix_uint32(0);
+		PackKey(packer, "inkType"); packer.pack_fix_int32(1);
+		PackKey(packer, "color"); PackColor(packer);
+		PackKey(packer, "opacity"); packer.pack_float(1.0f);
+		PackKey(packer, "texture"); packer.pack_fix_int32(0);
+		PackKey(packer, "points"); packer.pack_array(static_cast<uint32_t>(input.size()));
+		for (float x : input)
+		{
+			packer.pack_map(3);
+			PackKey(packer, "x"); packer.pack_float(x);
+			PackKey(packer, "y"); packer.pack_float(0.0f);
+			PackKey(packer, "width"); packer.pack_float(1.0f);
+		}
+		return ToBytes(buffer);
+	}
+
+	void TestV11GeometryRecovery(TestState& state)
+	{
+		auto bytes = CanvasPrefix();
+		const size_t firstInvalidOffset = bytes.size();
+		AppendBytes(bytes, PackV11InkDeltas(std::array{ 10000000.0f, 0.25f }));
+		const float maxFloat = std::numeric_limits<float>::max();
+		AppendBytes(bytes, PackV11InkDeltas(std::array{ maxFloat, maxFloat }));
+		// 从线格式构造坏块，写入器现在也会拒绝这些坐标。
+		for (bool circle : { false, true })
+		{
+			msgpack::sbuffer buffer;
+			msgpack::packer<msgpack::sbuffer> packer(buffer);
+			packer.pack_map(6);
+			PackKey(packer, "type"); packer.pack_fix_uint16(kShapeType);
+			PackKey(packer, "contentId"); packer.pack_fix_uint32(0);
+			PackKey(packer, "undoId"); packer.pack_fix_uint32(0);
+			PackKey(packer, "shapeType"); packer.pack_fix_int32(circle ? 5 : 0);
+			PackKey(packer, "geometry");
+			if (circle)
+			{
+				packer.pack_map(3);
+				PackKey(packer, "centerX"); packer.pack_float(100.0f);
+				PackKey(packer, "centerY"); packer.pack_float(-10000001.0f);
+				PackKey(packer, "radius"); packer.pack_float(30.0f);
+			}
+			else
+			{
+				packer.pack_map(1);
+				PackKey(packer, "points"); packer.pack_array(2);
+				packer.pack_map(2);
+				PackKey(packer, "x"); packer.pack_float(10000001.0f);
+				PackKey(packer, "y"); packer.pack_float(10.0f);
+				packer.pack_map(2);
+				PackKey(packer, "x"); packer.pack_float(60.0f);
+				PackKey(packer, "y"); packer.pack_float(30.0f);
+			}
+			PackKey(packer, "stroke"); packer.pack_map(3);
+			PackKey(packer, "color"); PackColor(packer);
+			PackKey(packer, "opacity"); packer.pack_float(1.0f);
+			PackKey(packer, "width"); packer.pack_float(1.0f);
+			AppendBytes(bytes, ToBytes(buffer));
+		}
+		// 在纯 float 下这三个 0.25 都被舍掉，最终 x 会少 1。
+		AppendBytes(bytes, PackV11InkDeltas(std::array{ 8388608.0f, 0.25f, 0.25f, 0.25f }));
+		const auto read = DecodeUInk(bytes);
+		const UInkCanvas* canvas = ExpectV11Canvas(state, read, 1, 1, UInkReadOutcome::Partial);
+		if (!canvas) return;
+		UINK_CHECK(state, read.validPrefixLength == firstInvalidOffset && !read.failedObjectOffset);
+		const auto& coordinates = DiagnosticCount(read, UInkDiagnosticCode::CoordinateOutOfRange);
+		UINK_CHECK(state, coordinates.count == 4 && coordinates.firstByteOffset == firstInvalidOffset &&
+			coordinates.firstCanvasOrdinal == 1);
+		UINK_CHECK(state, DiagnosticCount(read, UInkDiagnosticCode::InvalidFieldValue).count == 1);
+		UINK_CHECK(state, DiagnosticCount(read, UInkDiagnosticCode::KnownBlockSkipped).count == 4);
+		const auto* ink = std::get_if<UInkInk>(&canvas->content.front());
+		UINK_CHECK(state, ink && ink->points.size() == 4 && ink->points.back().x == 8388609.0f);
+	}
+
+	void TestV11GeometryEncoding(TestState& state)
+	{
+		UInkCanvas source = MakeBasicDocument(false).canvases.front();
+		source.content.emplace_back(MakeShape(0, 0));
+		auto encode = [&] { return EncodeUInkPage(source, true, true); };
+		auto& shape = std::get<UInkShape>(source.content.front());
+		auto& line = std::get<UInkLineGeometry>(shape.geometry);
+		line.points.front().x = 10000000.0f;
+		UINK_CHECK(state, encode().status == UInkEncodeStatus::Success);
+		line.points.front().x = 10000001.0f;
+		UINK_CHECK(state, encode().status == UInkEncodeStatus::InvalidModel);
+		shape = MakeShape(0, 5);
+		std::get<UInkCircleGeometry>(shape.geometry).centerY = -10000001.0f;
+		UINK_CHECK(state, encode().status == UInkEncodeStatus::InvalidModel);
+
+		UInkDocument document = MakeBasicDocument();
+		auto& points = std::get<UInkInk>(document.canvases[0].content[0]).points;
+		points[0].x = 0.0f;
+		points[1].x = 10000000.0f;
+		const auto boundary = EncodeUInkDocument(document);
+		UINK_CHECK(state, boundary.status == UInkEncodeStatus::Success);
+		if (boundary.status != UInkEncodeStatus::Success) return;
+		const auto decoded = DecodeUInk(boundary.bytes);
+		if (!ExpectV11Canvas(state, decoded, 1, 1, UInkReadOutcome::Complete)) return;
+
+		// 两个绝对坐标都合法，但真正写出的 float32 位移反解会超界。
+		points[0].x = 0.25f;
+		const auto drift = EncodeUInkDocument(document);
+		UINK_CHECK(state, drift.status == UInkEncodeStatus::InvalidModel && drift.bytes.empty());
+		points[1].x = 10000001.0f;
+		UINK_CHECK(state, EncodeUInkDocument(document).status == UInkEncodeStatus::InvalidModel);
+	}
+
+	void TestV11PresetIntegerWidths(TestState& state)
+	{
+		using namespace std::string_view_literals;
+		auto document = MakeV11Document();
+		auto& object = std::get<UInkShapeObject>(*std::get<UInkShape>(
+			document.canvases[0].content[3]).object);
+		object.construction = UInkMessagePackValue::Map{
+			{ Value(std::string("mode")), Value(uint64_t{ 1 }) },
+			{ Value(std::string("constraint")), Value(int64_t{ -1 }) },
+			{ Value(std::string("sides")), Value(int64_t{ 6 }) },
+			{ Value(std::string("constraintVertex")), Value(uint64_t{ 2 }) }
+		};
+		object.style = UInkMessagePackValue::Map{
+			{ Value(std::string("linePattern")), Value(uint64_t{ 3 }) },
+			{ Value(std::string("custom")), Value(uint64_t{ 4 }) }
+		};
+		const auto encoded = EncodeUInkDocument(document);
+		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
+		if (encoded.status != UInkEncodeStatus::Success) return;
+		UINK_CHECK(state, HasWireBytes(encoded.bytes, "\xa4mode\xd2\x00\x00\x00\x01"sv));
+		UINK_CHECK(state, HasWireBytes(encoded.bytes, "\xaa" "constraint\xd2\xff\xff\xff\xff"sv));
+		UINK_CHECK(state, HasWireBytes(encoded.bytes, "\xa5sides\xce\x00\x00\x00\x06"sv));
+		UINK_CHECK(state, HasWireBytes(encoded.bytes,
+			"\xb0" "constraintVertex\xce\x00\x00\x00\x02"sv));
+		UINK_CHECK(state, HasWireBytes(encoded.bytes, "\xablinePattern\xd2\x00\x00\x00\x03"sv));
+		UINK_CHECK(state, HasWireBytes(encoded.bytes,
+			"\xa6" "custom\xcf\x00\x00\x00\x00\x00\x00\x00\x04"sv));
+		const auto decoded = DecodeUInk(encoded.bytes);
+		if (!ExpectV11Canvas(state, decoded, 1, 5, UInkReadOutcome::Complete)) return;
+		UINK_CHECK(state, EncodeUInkDocument(*decoded.document).bytes == encoded.bytes);
+
+		// TYPE-5 允许无损转换。读入 fixint 后，写回恢复 mode 的规定宽度。
+		const auto mode = "\xa4mode\xd2\x00\x00\x00\x01"sv;
+		auto compact = encoded.bytes;
+		const auto field = std::search(compact.begin(), compact.end(), mode.begin(), mode.end(),
+			[](std::byte byte, char value) { return byte == static_cast<std::byte>(value); });
+		UINK_CHECK(state, field != compact.end());
+		if (field == compact.end()) return;
+		compact.erase(field + 5, field + 9);
+		const auto compatible = DecodeUInk(compact);
+		if (!ExpectV11Canvas(state, compatible, 1, 5, UInkReadOutcome::Complete)) return;
+		UINK_CHECK(state, EncodeUInkDocument(*compatible.document).bytes == encoded.bytes);
+
+		for (auto* map : { &*object.construction, &*object.style })
+		{
+			const size_t known = map == &*object.construction ? map->size() : 1;
+			for (size_t index = 0; index < known; ++index)
+			{
+				auto& value = (*map)[index].second;
+				const auto original = value;
+				const bool unsignedField = map == &*object.construction && index >= 2;
+				value = unsignedField ? Value(uint64_t{ uint64_t{ 1 } << 32 }) :
+					Value(static_cast<uint64_t>(INT32_MAX) + 1);
+				UINK_CHECK(state, EncodeUInkDocument(document).status == UInkEncodeStatus::InvalidModel);
+				value = unsignedField ? Value(int64_t{ -1 }) : Value(static_cast<int64_t>(INT32_MIN) - 1);
+				UINK_CHECK(state, EncodeUInkDocument(document).status == UInkEncodeStatus::InvalidModel);
+				value = original;
+			}
+		}
+	}
+
+	void TestV11ShapeStyleColorWire(TestState& state)
+	{
+		using namespace std::string_view_literals;
+		auto document = MakeV11Document();
+		auto& object = std::get<UInkShapeObject>(*std::get<UInkShape>(
+			document.canvases[0].content[3]).object);
+		object.style = UInkMessagePackValue::Map{
+			{ Value(std::string("strokeColor")), Value(UInkMessagePackValue::Map{
+				{ Value(std::string("fallback")), Value(uint64_t{ 0x123456 }) }
+			}) },
+			{ Value(std::string("fillColor")), Value(UInkMessagePackValue::Map{
+				{ Value(std::string("fallback")), Value(int64_t{ 7 }) },
+				{ Value(std::string("space")), Value(std::string("scrgb")) },
+				{ Value(std::string("components")), Value(UInkMessagePackValue::Array{
+					Value(1.5f), Value(0.5), Value(uint64_t{ 0 })
+				}) }
+			}) }
+		};
+
+		const auto encoded = EncodeUInkDocument(document);
+		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
+		UINK_CHECK(state, HasWireBytes(encoded.bytes,
+			"\xa5style\x82\xabstrokeColor\x81\xa8" "fallback\xce\x00\x12\x34\x56"
+			"\xa9" "fillColor\x83\xa8" "fallback\xce\x00\x00\x00\x07"
+			"\xa5space\xa5scrgb\xaa" "components\x93"
+			"\xca\x3f\xc0\x00\x00\xca\x3f\x00\x00\x00\xca\x00\x00\x00\x00"sv));
+	}
+
+	void TestV11PresentationBinding(TestState& state)
+	{
+		for (const bool endScreen : { false, true })
+		{
+			auto document = MakeRichDocument();
+			document.canvases[0].content.clear();
+			auto& base = document.canvases[2];
+			base.slideId.reset();
+			if (endScreen) base.pageKind = 1;
+			else base.binding = 1;
+			UInkCanvas overlay = base;
+			overlay.layerIndex = overlay.layerNumber = 1;
+			overlay.binding.reset();
+			overlay.pageKind.reset();
+			overlay.viewport.reset();
+			overlay.content.clear();
+			document.canvases.push_back(std::move(overlay));
+
+			const auto encoded = EncodeUInkDocument(document);
+			UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
+			if (encoded.status != UInkEncodeStatus::Success) continue;
+			const auto decoded = DecodeUInk(encoded.bytes);
+			const auto* page = ExpectV11Canvas(state, decoded, 4, 1, UInkReadOutcome::Complete, 2);
+			const auto* layer = ExpectV11Canvas(state, decoded, 4, 0, UInkReadOutcome::Complete, 3);
+			if (!page || !layer) continue;
+			UINK_CHECK(state, !page->slideId && !page->presentationUnbound &&
+				!layer->slideId && !layer->presentationUnbound);
+
+			if (endScreen)
+			{
+				document.canvases[2].pageKind = 0;
+				UINK_CHECK(state, EncodeUInkDocument(document).status == UInkEncodeStatus::InvalidModel);
+			}
+		}
+	}
+
+	void TestV11VersionAndStreamRecovery(TestState& state)
+	{
+		const auto valid = EncodeUInkDocument(MakeV11Document());
+		UINK_CHECK(state, valid.status == UInkEncodeStatus::Success && valid.bytes.size() > 69);
+		if (valid.status != UInkEncodeStatus::Success || valid.bytes.size() <= 69) return;
+		for (uint8_t version : { 10, 19 })
+		{
+			auto bytes = valid.bytes;
+			bytes[6] = static_cast<std::byte>(version);
+			const auto read = DecodeUInk(bytes);
+			const UInkCanvas* canvas = ExpectV11Canvas(state, read, 1, 5, UInkReadOutcome::Complete);
+			if (!canvas) continue;
+			const auto* ink = std::get_if<UInkInk>(&canvas->content[0]);
+			UINK_CHECK(state, read.summary.version == version && ink && ink->nib &&
+				ink->nib->aspect == 0.125f);
+		}
+		for (uint8_t version : { 9, 20 })
+		{
+			auto bytes = valid.bytes;
+			bytes[6] = static_cast<std::byte>(version);
+			const auto read = DecodeUInk(bytes);
+			UINK_CHECK(state, read.status == UInkReadStatus::RejectedHeader && !read.document);
+			UINK_CHECK(state, read.summary.outcome == UInkReadOutcome::Failed &&
+				read.summary.version == version && read.failedObjectOffset == 0 &&
+				read.validPrefixLength == 0);
+			const auto& unsupported = DiagnosticCount(read, UInkDiagnosticCode::UnsupportedVersion);
+			UINK_CHECK(state, unsupported.count == 1 && unsupported.firstCanvasOrdinal == 0);
+		}
+
+		const auto sizes = ObjectSizes(valid.bytes);
+		UINK_CHECK(state, sizes.size() == 7);
+		if (sizes.size() != 7) return;
+		const size_t lastBlock = valid.bytes.size() - sizes.back();
+		auto truncated = valid.bytes;
+		truncated.pop_back();
+		const auto tail = DecodeUInk(truncated);
+		const UInkCanvas* tailCanvas = ExpectV11Canvas(state, tail, 1, 4, UInkReadOutcome::Partial);
+		if (!tailCanvas) return;
+		UINK_CHECK(state, tail.status == UInkReadStatus::RecoveredTruncatedTail &&
+			tail.validPrefixLength == lastBlock && tail.failedObjectOffset == lastBlock);
+		const auto& truncation = DiagnosticCount(tail, UInkDiagnosticCode::TruncatedTail);
+		UINK_CHECK(state, truncation.count == 1 && truncation.firstByteOffset == lastBlock &&
+			truncation.firstCanvasOrdinal == 1);
+
+		auto malformed = valid.bytes;
+		malformed.insert(malformed.begin() + lastBlock, std::byte{ 0xc1 });
+		const auto middle = DecodeUInk(malformed);
+		const UInkCanvas* prefix = ExpectV11Canvas(state, middle, 1, 4, UInkReadOutcome::Partial);
+		if (!prefix) return;
+		UINK_CHECK(state, middle.status == UInkReadStatus::StoppedAtCorruptTail &&
+			middle.validPrefixLength == lastBlock && middle.failedObjectOffset == lastBlock);
+		const auto& stop = DiagnosticCount(middle, UInkDiagnosticCode::MalformedMessagePack);
+		UINK_CHECK(state, stop.count == 1 && stop.firstByteOffset == lastBlock &&
+			stop.firstCanvasOrdinal == 1);
+
+		auto noCanvas = HeaderPrefix();
+		noCanvas.push_back(std::byte{ 0xc1 });
+		const auto failed = DecodeUInk(noCanvas);
+		UINK_CHECK(state, failed.summary.outcome == UInkReadOutcome::Failed &&
+			failed.failedObjectOffset == 69 && failed.validPrefixLength == 69);
+	}
+
+	void TestV11CanvasOrdinals(TestState& state)
+	{
+		auto numeric = CanvasPrefix();
+		constexpr size_t kCanvasOffset = 69;
+		constexpr size_t kTypeOffset = kCanvasOffset + 6;
+		UINK_CHECK(state, numeric.size() > kTypeOffset + 3);
+		if (numeric.size() <= kTypeOffset + 3) return;
+		UINK_CHECK(state, numeric[kTypeOffset] == std::byte{ 0xcd });
+		numeric.erase(numeric.begin() + kTypeOffset, numeric.begin() + kTypeOffset + 3);
+		numeric.insert(numeric.begin() + kTypeOffset, { std::byte{ 0xca }, std::byte{ 0x40 },
+			std::byte{ 0 }, std::byte{ 0 }, std::byte{ 0 } });
+		const auto compatible = DecodeUInk(numeric);
+		if (!ExpectV11Canvas(state, compatible, 1, 0, UInkReadOutcome::Complete)) return;
+		const auto& compatibility = DiagnosticCount(compatible, UInkDiagnosticCode::NumericCompatibility);
+		UINK_CHECK(state, compatibility.count == 1 && compatibility.firstByteOffset == kCanvasOffset &&
+			compatibility.firstCanvasOrdinal == 1);
+		for (const auto& diagnostic : compatible.diagnostics)
+			UINK_CHECK(state, diagnostic.canvasOrdinal == 1);
+
+		auto bytes = CanvasPrefix();
+		const size_t invalidCanvasOffset = bytes.size();
+		msgpack::sbuffer invalid;
+		msgpack::packer<msgpack::sbuffer> packer(invalid);
+		packer.pack_map(2);
+		PackKey(packer, "type"); packer.pack_fix_uint16(kCanvasType);
+		PackKey(packer, "type"); packer.pack_fix_uint16(kCanvasType);
+		AppendBytes(bytes, ToBytes(invalid));
+		const auto ink = PackV11InkDeltas(std::array{ 0.0f });
+		AppendBytes(bytes, ink);
+		const size_t thirdCanvasOffset = bytes.size();
+		AppendBytes(bytes, PackCanvasWithViewport(1, 2.0f));
+		AppendBytes(bytes, ink);
+		const auto read = DecodeUInk(bytes);
+		if (!ExpectV11Canvas(state, read, 2, 0, UInkReadOutcome::Partial) ||
+			!ExpectV11Canvas(state, read, 2, 1, UInkReadOutcome::Partial, 1)) return;
+		const auto& duplicate = DiagnosticCount(read, UInkDiagnosticCode::DuplicateKnownKey);
+		UINK_CHECK(state, duplicate.count == 1 && duplicate.firstCanvasOrdinal == 2 &&
+			duplicate.firstByteOffset == invalidCanvasOffset);
+		UINK_CHECK(state, DiagnosticCount(read, UInkDiagnosticCode::KnownBlockSkipped).count == 2);
+		const auto& fallback = DiagnosticCount(read, UInkDiagnosticCode::FieldFallback);
+		UINK_CHECK(state, fallback.count == 1 && fallback.firstCanvasOrdinal == 3 &&
+			fallback.firstByteOffset == thirdCanvasOffset);
+
+		for (const auto& types : { std::array{ 2, 3 }, std::array{ 3, 2 }, std::array{ 2, -1 } })
+		{
+			auto conflict = CanvasPrefix();
+			const size_t conflictOffset = conflict.size();
+			msgpack::sbuffer buffer;
+			msgpack::packer<msgpack::sbuffer> fields(buffer);
+			fields.pack_map(2);
+			for (int type : types)
+			{
+				PackKey(fields, "type");
+				if (type == -1) fields.pack(std::string("bad"));
+				else fields.pack_fix_uint16(static_cast<uint16_t>(type));
+			}
+			AppendBytes(conflict, ToBytes(buffer));
+			AppendBytes(conflict, ink);
+			const auto rejected = DecodeUInk(conflict);
+			if (!ExpectV11Canvas(state, rejected, 1, 0, UInkReadOutcome::Partial)) continue;
+			const auto& conflictCount = DiagnosticCount(rejected, UInkDiagnosticCode::DuplicateKnownKey);
+			UINK_CHECK(state, conflictCount.count == 1 && conflictCount.firstCanvasOrdinal == 2 &&
+				conflictCount.firstByteOffset == conflictOffset);
+			UINK_CHECK(state, DiagnosticCount(rejected, UInkDiagnosticCode::KnownBlockSkipped).count == 2);
+		}
+	}
+
+	void TestV11IgnoredLayerMetadata(TestState& state)
+	{
+		for (uint32_t layerIndex : { 0u, 1u })
+		{
+			auto block = PackCanvasWithViewport(layerIndex, 1.0f);
+			UINK_CHECK(state, !block.empty() && block.front() == std::byte{ 0x87 });
+			if (block.empty() || block.front() != std::byte{ 0x87 }) continue;
+			block.front() = std::byte{ 0x88 };
+			msgpack::sbuffer buffer;
+			msgpack::packer<msgpack::sbuffer> packer(buffer);
+			PackKey(packer, "background"); packer.pack_map(2);
+			PackKey(packer, "color"); PackColor(packer);
+			PackKey(packer, "color"); PackColor(packer);
+			AppendBytes(block, ToBytes(buffer));
+
+			auto bytes = layerIndex == 0 ? HeaderPrefix() : CanvasPrefix();
+			AppendBytes(bytes, block);
+			const auto read = DecodeUInk(bytes);
+			const auto& duplicate = DiagnosticCount(read, UInkDiagnosticCode::DuplicateKnownKey);
+			if (layerIndex == 0)
+			{
+				UINK_CHECK(state, read.summary.outcome == UInkReadOutcome::Failed &&
+					read.document && read.document->canvases.empty());
+				UINK_CHECK(state, duplicate.count == 1 && duplicate.firstCanvasOrdinal == 1);
+				UINK_CHECK(state, DiagnosticCount(read, UInkDiagnosticCode::KnownBlockSkipped).count == 1);
+			}
+			else
+			{
+				const auto* layer = ExpectV11Canvas(state, read, 2, 0, UInkReadOutcome::Partial, 1);
+				if (!layer) continue;
+				UINK_CHECK(state, layer->layerIndex == 1 && !layer->background && duplicate.count == 0);
+			}
+		}
+	}
+
+	void TestV11DiagnosticLocations(TestState& state)
+	{
+		auto bytes = CanvasPrefix();
+		const size_t gapOffset = bytes.size();
+		auto gap = PackCanvasWithViewport(2, 1.0f);
+		AppendBytes(bytes, gap);
+		const auto topology = DecodeUInk(bytes);
+		if (!ExpectV11Canvas(state, topology, 2, 0, UInkReadOutcome::Partial)) return;
+		const auto& temporary = DiagnosticCount(topology, UInkDiagnosticCode::TemporaryIdentity);
+		UINK_CHECK(state, temporary.count == 1 && temporary.firstCanvasOrdinal == 1 &&
+			temporary.firstByteOffset == HeaderPrefix().size());
+		UINK_CHECK(state, gapOffset > temporary.firstByteOffset);
+
+		auto mediaBytes = CanvasPrefix();
+		const size_t mediaOffset = mediaBytes.size();
+		auto mediaBlock = PackMediaWithInvalidPageCount();
+		// 去掉无关回退，使 Partial 只能由不安全路径引起。
+		const bool prepared = ReplaceFirstAscii(mediaBlock, "documents/file.pdf", "../uments/file.pdf") &&
+			ReplaceFirstAscii(mediaBlock, "pageCount", "extension");
+		UINK_CHECK(state, prepared);
+		if (!prepared) return;
+		AppendBytes(mediaBytes, mediaBlock);
+		const auto mediaRead = DecodeUInk(mediaBytes);
+		const auto* page = ExpectV11Canvas(state, mediaRead, 1, 1, UInkReadOutcome::Partial);
+		if (!page) return;
+		const auto* media = std::get_if<UInkMedia>(&page->content.front());
+		UINK_CHECK(state, media && !media->pathIsSafe);
+		const auto& unsafe = DiagnosticCount(mediaRead, UInkDiagnosticCode::UnsafeMediaPath);
+		UINK_CHECK(state, unsafe.count == 1 && unsafe.firstByteOffset == mediaOffset &&
+			unsafe.firstCanvasOrdinal == 1);
+		const auto headerRead = DecodeUInk(HeaderPrefix());
+		UINK_CHECK(state, headerRead.document && headerRead.document->canvases.empty());
+		const auto& snapshot = DiagnosticCount(headerRead, UInkDiagnosticCode::HeaderSnapshotMismatch);
+		UINK_CHECK(state, snapshot.count == 1 && snapshot.firstByteOffset == 0 &&
+			snapshot.firstCanvasOrdinal == 0);
+	}
+
+	std::vector<std::byte> PackV11OversizedShape()
+	{
+		msgpack::sbuffer shape;
+		msgpack::packer<msgpack::sbuffer> packer(shape);
+		packer.pack_map(5);
+		PackKey(packer, "type"); packer.pack_fix_uint16(kShapeType);
+		PackKey(packer, "contentId"); packer.pack_fix_uint32(0);
+		PackKey(packer, "undoId"); packer.pack_fix_uint32(0);
+		PackKey(packer, "shapeType"); packer.pack_fix_int32(1);
+		PackKey(packer, "geometry"); packer.pack_map(1);
+		PackKey(packer, "points"); packer.pack_array(100001);
+		for (uint32_t index = 0; index < 100001; ++index) packer.pack_nil();
+		return ToBytes(shape);
+	}
+
+	void TestV11ResourceBudgets(TestState& state)
+	{
+		const auto canvasPrefix = CanvasPrefix();
+		const auto header = HeaderPrefix();
+		UINK_CHECK(state, canvasPrefix.size() > header.size() && header.size() == 69);
+		if (canvasPrefix.size() <= header.size() || header.size() != 69) return;
+		const std::vector<std::byte> canvasBlock(canvasPrefix.begin() + header.size(), canvasPrefix.end());
+		for (std::string_view key : { "devices", "workspaces" })
+		{
+			for (uint32_t count : { 1024u, 1025u })
+			{
+				msgpack::sbuffer buffer;
+				msgpack::packer<msgpack::sbuffer> packer(buffer);
+				packer.pack_map(4);
+				PackKey(packer, "type"); packer.pack_fix_uint16(kHeaderExtensionType);
+				PackKey(packer, "name"); packer.pack(std::string("registry regression"));
+				const bool tooManyDevices = key == "devices";
+				PackKey(packer, tooManyDevices ? "devices" : "workspaces");
+				packer.pack_array(count);
+				for (uint32_t index = 0; index < count; ++index) packer.pack_nil();
+				PackKey(packer, tooManyDevices ? "workspaces" : "devices"); packer.pack_array(1);
+				if (tooManyDevices)
+				{
+					packer.pack_map(2);
+					PackKey(packer, "guid"); PackGuid(packer, "30000000-0000-4000-8000-00000000e001");
+					PackKey(packer, "workspaceType"); packer.pack_fix_int32(1);
+				}
+				else
+				{
+					packer.pack_map(6);
+					PackKey(packer, "guid"); PackGuid(packer, "40000000-0000-4000-8000-00000000e001");
+					PackKey(packer, "deviceType"); packer.pack_fix_int32(0);
+					PackKey(packer, "x"); packer.pack_fix_int32(0);
+					PackKey(packer, "y"); packer.pack_fix_int32(0);
+					PackKey(packer, "width"); packer.pack_fix_uint32(1920);
+					PackKey(packer, "height"); packer.pack_fix_uint32(1080);
+				}
+				auto bytes = header;
+				AppendBytes(bytes, ToBytes(buffer));
+				AppendBytes(bytes, canvasBlock);
+				UInkReadLimits limits;
+				limits.maxDiagnostics = 0;
+				const auto read = DecodeUInk(bytes, limits);
+				const UInkCanvas* page = ExpectV11Canvas(state, read, 1, 0, UInkReadOutcome::Partial);
+				if (!page) continue;
+				const auto& extension = read.document->headerExtension;
+				UINK_CHECK(state, extension && extension->name == "registry regression");
+				if (!extension) continue;
+				UINK_CHECK(state, extension->devices.size() == (tooManyDevices ? 0 : 1) &&
+					extension->workspaces.size() == (tooManyDevices ? 1 : 0));
+				UINK_CHECK(state, read.status == (count == 1024 ? UInkReadStatus::Complete :
+					UInkReadStatus::LimitExceeded));
+				if (count == 1025)
+					UINK_CHECK(state, !read.safeAppendOffset && read.provenance.requiresSaveAs);
+				const auto& budget = DiagnosticCount(read, UInkDiagnosticCode::LimitExceeded);
+				UINK_CHECK(state, budget.count == (count == 1024 ? 0u : 1u));
+				UINK_CHECK(state, count == 1024 ||
+					(budget.firstCanvasOrdinal == 0 && budget.firstByteOffset == header.size()));
+			}
+		}
+
+		// 数量符合容器上限，剩余字节仅能放一个元素，不能据声明分配。
+		const auto baseline = DecodeUInk(canvasPrefix);
+		if (!ExpectV11Canvas(state, baseline, 1, 0, UInkReadOutcome::Complete)) return;
+		auto shortArray = canvasPrefix;
+		AppendBytes(shortArray, std::array{ std::byte{ 0xdd }, std::byte{ 0 }, std::byte{ 0x0f },
+			std::byte{ 0x42 }, std::byte{ 0x40 }, std::byte{ 0xc0 } });
+		const auto truncated = DecodeUInk(shortArray);
+		const UInkCanvas* prefix = ExpectV11Canvas(state, truncated, 1, 0, UInkReadOutcome::Partial);
+		if (!prefix) return;
+		UINK_CHECK(state, truncated.status == UInkReadStatus::RecoveredTruncatedTail &&
+			truncated.failedObjectOffset == canvasPrefix.size() &&
+			truncated.modelCharge == baseline.modelCharge);
+
+		auto wideShape = canvasPrefix;
+		AppendBytes(wideShape, PackV11OversizedShape());
+		const auto limited = DecodeUInk(wideShape);
+		CheckLimitPrefix(state, limited, 1, 0);
+		UINK_CHECK(state, DiagnosticCount(limited, UInkDiagnosticCode::LimitExceeded).count == 1 &&
+			limited.geometryPointCount == 0 && limited.validPrefixLength == canvasPrefix.size());
+	}
+
+	void TestV11BudgetRollback(TestState& state)
+	{
+		using namespace std::string_view_literals;
+		std::array<float, 256> badPoints{};
+		badPoints.front() = 10000001.0f;
+		const auto discarded = PackV11InkDeltas(badPoints);
+		const auto validInk = PackV11InkDeltas(std::array{ 1.0f });
+		const auto makeStream = [&](size_t count)
+		{
+			auto bytes = CanvasPrefix();
+			for (size_t index = 0; index < count; ++index) AppendBytes(bytes, discarded);
+			AppendBytes(bytes, validInk);
+			return bytes;
+		};
+		const auto baseline = DecodeUInk(makeStream(0));
+		if (!ExpectV11Canvas(state, baseline, 1, 1, UInkReadOutcome::Complete)) return;
+		const auto oneBad = DecodeUInk(makeStream(1));
+		if (!ExpectV11Canvas(state, oneBad, 1, 1, UInkReadOutcome::Partial)) return;
+		UINK_CHECK(state, oneBad.modelCharge > baseline.modelCharge);
+
+		UInkReadLimits limits;
+		limits.maxModelCharge = oneBad.modelCharge;
+		limits.maxGeometryPoints = badPoints.size();
+		const auto manyBad = DecodeUInk(makeStream(3), limits);
+		if (!ExpectV11Canvas(state, manyBad, 1, 1, UInkReadOutcome::Partial)) return;
+		UINK_CHECK(state, manyBad.status == UInkReadStatus::Complete && manyBad.geometryPointCount == 1);
+		UINK_CHECK(state, manyBad.modelCharge == oneBad.modelCharge &&
+			DiagnosticCount(manyBad, UInkDiagnosticCode::CoordinateOutOfRange).count == 3);
+
+		// 第三个 Shape 的较大临时树把前两个 Shape 残留的对象层费用暴露到峰值。
+		auto document = MakeBasicDocument(false);
+		for (uint32_t index = 0; index < 3; ++index)
+		{
+			UInkShape shape = MakeShape(index, 0);
+			UInkShapeObject object;
+			object.id = Guid("60000000-0000-4000-8000-00000000b001");
+			object.revision = 1;
+			object.partCount = 1;
+			object.preset = std::string(index == 2 ? 8192 : 1024, 'x');
+			object.aux = index;
+			shape.object = std::move(object);
+			document.canvases[0].content.emplace_back(std::move(shape));
+		}
+		const auto encoded = EncodeUInkDocument(document);
+		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
+		if (encoded.status != UInkEncodeStatus::Success) return;
+		auto reference = encoded.bytes;
+		const bool patchedLast = ReplaceFirstAscii(reference, "\xa3" "aux\xce\x00\x00\x00\x02"sv,
+			"\xa3" "aux\xa4oops"sv);
+		UINK_CHECK(state, patchedLast);
+		if (!patchedLast) return;
+		auto allBad = reference;
+		for (auto good : { "\xa3" "aux\xce\x00\x00\x00\x00"sv, "\xa3" "aux\xce\x00\x00\x00\x01"sv })
+			UINK_CHECK(state, ReplaceFirstAscii(allBad, good, "\xa3" "aux\xa4oops"sv));
+		// 对照只保留独立 Shape，第三个 Shape 的坏对象层与实际输入相同。
+		const auto sizes = ObjectSizes(reference);
+		UINK_CHECK(state, sizes.size() == 5);
+		if (sizes.size() != 5) return;
+		document.canvases[0].content.pop_back();
+		for (auto& content : document.canvases[0].content) std::get<UInkShape>(content).object.reset();
+		auto isolated = EncodeUInkDocument(document);
+		UINK_CHECK(state, isolated.status == UInkEncodeStatus::Success);
+		if (isolated.status != UInkEncodeStatus::Success) return;
+		AppendBytes(isolated.bytes, std::span(reference).last(sizes.back()));
+		const auto baselineObject = DecodeUInk(isolated.bytes);
+		if (!ExpectV11Canvas(state, baselineObject, 1, 3, UInkReadOutcome::Partial)) return;
+		limits = {};
+		limits.maxModelCharge = baselineObject.modelCharge;
+		const auto rolledBack = DecodeUInk(allBad, limits);
+		const auto* page = ExpectV11Canvas(state, rolledBack, 1, 3, UInkReadOutcome::Partial);
+		if (!page) return;
+		UINK_CHECK(state, rolledBack.status == UInkReadStatus::Complete &&
+			rolledBack.modelCharge == baselineObject.modelCharge);
+		for (const auto& content : page->content)
+		{
+			const auto* shape = std::get_if<UInkShape>(&content);
+			UINK_CHECK(state, shape && !shape->object);
+		}
+	}
+
+	void TestV11RegistryBudgetRollback(TestState& state)
+	{
+		const std::string name(1024, 'x');
+		const auto makeStream = [&](bool chargeAllNames)
+		{
+			msgpack::sbuffer buffer;
+			msgpack::packer<msgpack::sbuffer> packer(buffer);
+			packer.pack_map(2);
+			PackKey(packer, "type"); packer.pack_fix_uint16(kHeaderExtensionType);
+			PackKey(packer, "workspaces"); packer.pack_array(3);
+			for (int index = 0; index < 3; ++index)
+			{
+				packer.pack_map(4);
+				PackKey(packer, "guid"); PackGuid(packer, "30000000-0000-4000-8000-00000000e001");
+				PackKey(packer, "workspaceType"); packer.pack_fix_int32(1);
+				PackKey(packer, chargeAllNames || index == 2 ? "name" : "junk"); packer.pack(name);
+				PackKey(packer, "currentPageIndex"); packer.pack_nil();
+			}
+			const auto prefix = CanvasPrefix();
+			auto bytes = HeaderPrefix();
+			const size_t headerSize = bytes.size();
+			AppendBytes(bytes, ToBytes(buffer));
+			AppendBytes(bytes, std::span(prefix).subspan(headerSize));
+			return bytes;
+		};
+		const auto baseline = DecodeUInk(makeStream(false));
+		if (!ExpectV11Canvas(state, baseline, 1, 0, UInkReadOutcome::Partial)) return;
+		UInkReadLimits limits;
+		limits.maxModelCharge = baseline.modelCharge;
+		const auto result = DecodeUInk(makeStream(true), limits);
+		if (!ExpectV11Canvas(state, result, 1, 0, UInkReadOutcome::Partial)) return;
+		const auto& extension = result.document->headerExtension;
+		UINK_CHECK(state, result.status == UInkReadStatus::Complete &&
+			extension && extension->workspaces.empty() && result.modelCharge == baseline.modelCharge);
+		UINK_CHECK(state, DiagnosticCount(result, UInkDiagnosticCode::KnownBlockSkipped).count == 3);
+	}
+
+	void TestV11ContentStorageCharge(TestState& state)
+	{
+		auto document = MakeBasicDocument(false);
+		for (uint32_t index = 0; index < 8; ++index)
+			document.canvases.front().content.emplace_back(MakeClear(index, index));
+		const auto encoded = EncodeUInkDocument(document);
+		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
+		if (encoded.status != UInkEncodeStatus::Success) return;
+		const auto sizes = ObjectSizes(encoded.bytes);
+		UINK_CHECK(state, sizes.size() == 10);
+		if (sizes.size() != 10) return;
+		size_t prefixBytes = 0;
+		for (size_t index = 0; index < 6; ++index) prefixBytes += sizes[index];
+		const auto four = DecodeUInk(std::span(encoded.bytes).first(prefixBytes));
+		const auto eight = DecodeUInk(encoded.bytes);
+		if (!ExpectV11Canvas(state, four, 1, 4, UInkReadOutcome::Complete) ||
+			!ExpectV11Canvas(state, eight, 1, 8, UInkReadOutcome::Complete)) return;
+		UINK_CHECK(state, eight.modelCharge >= four.modelCharge + 4 * sizeof(UInkContent));
+	}
+
+	void TestV11ResourceRecovery(TestState& state)
+	{
+		msgpack::sbuffer buffer;
+		msgpack::packer<msgpack::sbuffer> packer(buffer);
+		packer.pack_map(2);
+		PackKey(packer, "payload"); packer.pack_array(9);
+		for (int index = 0; index < 9; ++index) packer.pack_nil();
+		// 在超限字段后再写 type，验证恢复扫描不会依赖键顺序。
+		PackKey(packer, "type"); packer.pack_fix_uint16(kCanvasType);
+		const auto badCanvas = ToBytes(buffer);
+		const auto ink = PackV11InkDeltas(std::array{ 1.0f });
+		UInkReadLimits limits;
+		limits.maxContainerEntries = 8;
+		auto bytes = CanvasPrefix();
+		const size_t badOffset = bytes.size();
+		AppendBytes(bytes, badCanvas);
+		AppendBytes(bytes, ink);
+		AppendBytes(bytes, PackCanvasWithViewport(1, 1.0f));
+		AppendBytes(bytes, ink);
+		const auto recovered = DecodeUInk(bytes, limits);
+		CheckLimitPrefix(state, recovered, 2, 0);
+		ExpectV11Canvas(state, recovered, 2, 1, UInkReadOutcome::Partial, 1);
+		const auto& recoveredLimit = DiagnosticCount(recovered, UInkDiagnosticCode::LimitExceeded);
+		UINK_CHECK(state, recovered.validPrefixLength == badOffset && !recovered.failedObjectOffset &&
+			recoveredLimit.count == 1 && recoveredLimit.firstCanvasOrdinal == 2 &&
+			recoveredLimit.firstByteOffset == badOffset);
+
+		// 同一对象保留超限数组头，但去掉正文，使顶层边界无法确认。
+		const auto truncatedCanvas = std::span(badCanvas).first(10);
+		auto prefix = CanvasPrefix();
+		AppendBytes(prefix, truncatedCanvas);
+		const auto stopped = DecodeUInk(prefix, limits);
+		CheckLimitPrefix(state, stopped, 1, 0);
+		UINK_CHECK(state, stopped.failedObjectOffset == badOffset && stopped.validPrefixLength == badOffset);
+
+		auto noPage = HeaderPrefix();
+		const auto headerBytes = noPage.size();
+		AppendBytes(noPage, badCanvas);
+		const auto failed = DecodeUInk(noPage, limits);
+		CheckLimitFailure(state, failed);
+		UINK_CHECK(state, failed.validPrefixLength == headerBytes);
+	}
+
+	void TestV11RegistryCycles(TestState& state)
+	{
+		const auto tree = EncodeUInkDocument(MakeRichDocument());
+		UINK_CHECK(state, tree.status == UInkEncodeStatus::Success);
+		if (tree.status != UInkEncodeStatus::Success) return;
+		auto cyclicBytes = tree.bytes;
+		UINK_CHECK(state, ReplaceGuidAfterKey(cyclicBytes, "parentDeviceGuid",
+			"40000000-0000-4000-8000-00000000c002"));
+		UINK_CHECK(state, ReplaceGuidAfterKey(cyclicBytes, "parentWorkspaceGuid",
+			"30000000-0000-4000-8000-00000000c002"));
+		const auto cyclic = DecodeUInk(cyclicBytes);
+		if (!ExpectV11Canvas(state, cyclic, 3, 10, UInkReadOutcome::Partial)) return;
+		const auto& extension = cyclic.document->headerExtension;
+		UINK_CHECK(state, extension && extension->devices.size() == 2 &&
+			extension->workspaces.size() == 2);
+		if (!extension || extension->devices.size() != 2 || extension->workspaces.size() != 2) return;
+		UINK_CHECK(state, extension->devices[0].parentResolved && !extension->devices[1].parentResolved);
+		UINK_CHECK(state, extension->workspaces[0].parentResolved &&
+			!extension->workspaces[1].parentResolved && !extension->workspaces[1].parentWorkspaceGuid);
+		const auto& cycles = DiagnosticCount(cyclic, UInkDiagnosticCode::ParentCycle);
+		UINK_CHECK(state, cycles.count == 2 && cycles.firstByteOffset == 69 &&
+			cycles.firstCanvasOrdinal == 0);
+	}
+
+	void TestV11RegistryTailCycles(TestState& state)
+	{
+		auto document = MakeCycleDocument();
+		auto& devices = document.headerExtension->devices;
+		auto& workspaces = document.headerExtension->workspaces;
+		const UInkGuid deviceC = Guid("40000000-0000-4000-8000-00000000d103");
+		const UInkGuid workspaceC = Guid("30000000-0000-4000-8000-00000000d103");
+		const char* deviceRoot = "40000000-0000-4000-8000-00000000d104";
+		const char* workspaceRoot = "30000000-0000-4000-8000-00000000d104";
+		std::get<UInkWindowDevice>(devices[1].geometry).parentDeviceGuid = deviceC;
+		workspaces[1].parentWorkspaceGuid = workspaceC;
+		UInkDevice tail = devices[1];
+		tail.guid = deviceC;
+		std::get<UInkWindowDevice>(tail.geometry).parentDeviceGuid = Guid(deviceRoot);
+		devices.push_back(std::move(tail));
+		UInkDevice display;
+		display.guid = Guid(deviceRoot);
+		display.deviceType = 0;
+		display.geometry = UInkDisplayDevice{ 0, 0, 1920, 1080 };
+		devices.push_back(std::move(display));
+		UInkWorkspace nested = workspaces[1];
+		nested.guid = workspaceC;
+		nested.parentWorkspaceGuid = Guid(workspaceRoot);
+		workspaces.push_back(std::move(nested));
+		UInkWorkspace workspace;
+		workspace.guid = Guid(workspaceRoot);
+		workspace.workspaceType = 1;
+		workspaces.push_back(std::move(workspace));
+		document.header.deviceNum = document.header.workspaceNum = document.header.pageNum = 4;
+		const char* pages[] = { "50000000-0000-4000-8000-00000000d102",
+			"50000000-0000-4000-8000-00000000d103", "50000000-0000-4000-8000-00000000d104" };
+		for (size_t index = 1; index < workspaces.size(); ++index)
+		{
+			UInkCanvas canvas = document.canvases.front();
+			canvas.workspaceGuid = workspaces[index].guid;
+			canvas.pageGuid = Guid(pages[index - 1]);
+			document.canvases.push_back(std::move(canvas));
+		}
+
+		auto encoded = EncodeUInkDocument(document);
+		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
+		if (encoded.status != UInkEncodeStatus::Success) return;
+		const auto baseline = DecodeUInk(encoded.bytes);
+		if (!ExpectV11Canvas(state, baseline, 4, 0, UInkReadOutcome::Complete)) return;
+		// 先写出的根 GUID 位于 C 的 parent 字段。将 C→根 改为 C→B。
+		const bool linked = ReplaceFirstAscii(encoded.bytes, deviceRoot,
+			"40000000-0000-4000-8000-00000000d102") &&
+			ReplaceFirstAscii(encoded.bytes, workspaceRoot, "30000000-0000-4000-8000-00000000d102");
+		UINK_CHECK(state, linked);
+		if (!linked) return;
+		const auto cyclic = DecodeUInk(encoded.bytes);
+		if (!ExpectV11Canvas(state, cyclic, 4, 0, UInkReadOutcome::Partial)) return;
+		const auto& extension = cyclic.document->headerExtension;
+		UINK_CHECK(state, extension && extension->devices.size() == 4 && extension->workspaces.size() == 4);
+		if (!extension || extension->devices.size() != 4 || extension->workspaces.size() != 4) return;
+		UINK_CHECK(state, extension->devices[0].parentResolved && !extension->devices[1].parentResolved &&
+			extension->devices[2].parentResolved && extension->devices[3].parentResolved);
+		UINK_CHECK(state, extension->workspaces[0].parentResolved &&
+			!extension->workspaces[1].parentResolved && !extension->workspaces[1].parentWorkspaceGuid &&
+			extension->workspaces[2].parentResolved && extension->workspaces[3].parentResolved);
+		const auto& cycles = DiagnosticCount(cyclic, UInkDiagnosticCode::ParentCycle);
+		UINK_CHECK(state, cycles.count == 2 && cycles.firstByteOffset == HeaderPrefix().size() &&
+			cycles.firstCanvasOrdinal == 0);
+	}
+
+	void TestDecoderDepthCeiling(TestState& state)
+	{
+		auto bytes = CanvasPrefix();
+		const size_t endOfCanvas = bytes.size();
+		UINK_CHECK(state, endOfCanvas > 0);
+		AppendBytes(bytes, PackUnknown(999, 10000));
+		UInkReadLimits limits;
+		limits.maxDepth = 100000;
+		const auto result = DecodeUInk(bytes, limits);
+		CheckLimitPrefix(state, result, 1, 0);
+		UINK_CHECK(state, DiagnosticCount(result, UInkDiagnosticCode::LimitExceeded).firstByteOffset == endOfCanvas &&
+			result.validPrefixLength == endOfCanvas);
+	}
+
+	// 声明 100 万项、首项即非法标记的大数组：保留有效前缀，不提交坏块。
+	void TestDeclaredContainerReserve(TestState& state)
+	{
+		auto bytes = CanvasPrefix();
+		UINK_CHECK(state, !bytes.empty());
+		if (bytes.empty()) return;
+		const auto append = [&bytes](std::initializer_list<uint8_t> values)
+		{
+			for (uint8_t value : values) bytes.push_back(static_cast<std::byte>(value));
+		};
+		const auto appendText = [&bytes](std::string_view text)
+		{
+			bytes.push_back(static_cast<std::byte>(0xa0 | text.size()));
+			for (char value : text) bytes.push_back(static_cast<std::byte>(value));
+		};
+		append({ 0x84 });
+		appendText("type"); append({ 0xcd, 0x00, 0x06 });
+		appendText("contentId"); append({ 0xce, 0x00, 0x00, 0x00, 0x63 });
+		appendText("undoId"); append({ 0xce, 0x00, 0x00, 0x00, 0x63 });
+		appendText("extra"); append({ 0x81 });
+		appendText("a"); append({ 0xdd, 0x00, 0x0f, 0x42, 0x40, 0xc1 });
+		bytes.insert(bytes.end(), 999999, std::byte{ 0xc0 });
+
+		const auto actual = DecodeUInk(bytes);
+		const auto prefix = DecodeUInk(CanvasPrefix());
+		const size_t badOffset = CanvasPrefix().size();
+		ExpectV11Canvas(state, actual, 1, 0, UInkReadOutcome::Partial);
+		UINK_CHECK(state, actual.status == UInkReadStatus::StoppedAtCorruptTail &&
+			actual.failedObjectOffset == badOffset && actual.validPrefixLength == badOffset &&
+			actual.safeAppendOffset == badOffset && actual.modelCharge == prefix.modelCharge);
+	}
+
+	using WireBytes = std::vector<std::byte>;
+
+
+	// 2 组短键及 width 长键均保留 float32 标记。偏移指向每个 0xca 后的载荷。
+	constexpr std::array<uint8_t, 26> kPlainPointLayout{
+		0x83, 0xa1, 'x', 0xca, 0, 0, 0, 0, 0xa1, 'y', 0xca, 0, 0, 0, 0,
+		0xa5, 'w', 'i', 'd', 't', 'h', 0xca, 0, 0, 0, 0
+	};
+	constexpr std::array<size_t, 3> kPlainPointPayloadOffsets{ 4, 11, 22 };
+
+	void SetWireFloat32(WireBytes& bytes, size_t payloadOffset, uint32_t bits)
+	{
+		for (unsigned shift : { 24u, 16u, 8u, 0u })
+			bytes[payloadOffset++] = static_cast<std::byte>((bits >> shift) & 0xffu);
+	}
+
+	void TestPlainPointFloat32Decode(TestState& state)
+	{
+		using PointBits = std::array<uint32_t, 3>;
+		constexpr uint32_t negativeZero = 0x80000000u;
+		constexpr uint32_t minSubnormal = 0x00000001u;
+		constexpr uint32_t nan = 0x7fc12345u;
+		constexpr uint32_t positiveInfinity = 0x7f800000u;
+		constexpr uint32_t negativeInfinity = 0xff800000u;
+		constexpr PointBits basePoint{ negativeZero, negativeZero, std::bit_cast<uint32_t>(1.5f) };
+		constexpr size_t pointCount = 3;
+
+		msgpack::sbuffer buffer;
+		msgpack::packer<msgpack::sbuffer> packer(buffer);
+		packer.pack_map(8);
+		PackKey(packer, "type"); packer.pack_fix_uint16(kInkType);
+		PackKey(packer, "contentId"); packer.pack_fix_uint32(0);
+		PackKey(packer, "undoId"); packer.pack_fix_uint32(0);
+		PackKey(packer, "inkType"); packer.pack_fix_int32(1);
+		PackKey(packer, "color"); PackColor(packer);
+		PackKey(packer, "opacity"); packer.pack_float(0.5f);
+		PackKey(packer, "texture"); packer.pack_fix_int32(0);
+		PackKey(packer, "points"); packer.pack_array(static_cast<uint32_t>(pointCount));
+		auto seed = CanvasPrefix();
+		const size_t inkOffset = seed.size();
+		AppendBytes(seed, ToBytes(buffer));
+		const size_t pointsOffset = seed.size();
+
+		for (size_t i = 0; i < pointCount; ++i)
+		{
+			const size_t start = seed.size();
+			AppendBytes(seed, std::as_bytes(std::span(kPlainPointLayout)));
+			for (size_t field = 0; field < basePoint.size(); ++field)
+				SetWireFloat32(seed, start + kPlainPointPayloadOffsets[field], basePoint[field]);
+		}
+
+		auto check = [&](size_t pointIndex, const PointBits& value, bool accepted)
+		{
+			auto bytes = seed;
+			for (size_t field = 0; field < value.size(); ++field)
+				SetWireFloat32(bytes, pointsOffset + pointIndex * kPlainPointLayout.size() +
+					kPlainPointPayloadOffsets[field], value[field]);
+
+			const auto actual = DecodeUInk(bytes);
+			const size_t inkCount = accepted ? 1 : 0;
+			const auto outcome = accepted ? UInkReadOutcome::Complete : UInkReadOutcome::Partial;
+			const auto* canvas = ExpectV11Canvas(state, actual, 1, inkCount, outcome);
+
+			const auto& skipped = DiagnosticCount(actual, UInkDiagnosticCode::KnownBlockSkipped);
+			UINK_CHECK(state, skipped.count == (accepted ? 0u : 1u));
+			UINK_CHECK(state, DiagnosticCount(actual, UInkDiagnosticCode::CoordinateOutOfRange).count == 0);
+			UINK_CHECK(state, DiagnosticCount(actual, UInkDiagnosticCode::InvalidFieldValue).count == 0);
+			UINK_CHECK(state, actual.geometryPointCount == (accepted ? pointCount : 0));
+			if (!accepted)
+			{
+				UINK_CHECK(state, skipped.firstByteOffset == inkOffset && skipped.firstCanvasOrdinal == 1);
+				return;
+			}
+
+			if (!canvas) return;
+			const auto* ink = std::get_if<UInkInk>(&canvas->content.front());
+			UINK_CHECK(state, ink && ink->points.size() == pointCount);
+			if (!ink || ink->points.size() != pointCount) return;
+			// 其余点的位移均是 -0，因此特值从目标点起保留，首点也保留负零位。
+			for (size_t i = 0; i < pointCount; ++i)
+			{
+				const auto& point = ink->points[i];
+				UINK_CHECK(state, std::bit_cast<uint32_t>(point.x) == (i < pointIndex ? negativeZero : value[0]));
+				UINK_CHECK(state, std::bit_cast<uint32_t>(point.y) == (i < pointIndex ? negativeZero : value[1]));
+				UINK_CHECK(state, std::bit_cast<uint32_t>(point.width) ==
+					(i == pointIndex ? value[2] : basePoint[2]));
+			}
+		};
+
+		for (size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex)
+		{
+			for (uint32_t bits : { nan, positiveInfinity, negativeInfinity })
+			{
+				check(pointIndex, { bits, basePoint[1], basePoint[2] }, false);
+				check(pointIndex, { basePoint[0], bits, basePoint[2] }, false);
+			}
+			for (uint32_t bits : { 0u, negativeZero, std::bit_cast<uint32_t>(-1.5f), nan, positiveInfinity })
+				check(pointIndex, { basePoint[0], basePoint[1], bits }, false);
+
+			check(pointIndex, { negativeZero, negativeZero, minSubnormal }, true);
+			check(pointIndex, { minSubnormal, 0x80000001u, minSubnormal }, true);
+			check(pointIndex, { std::bit_cast<uint32_t>(1.5f), std::bit_cast<uint32_t>(-2.5f), minSubnormal }, true);
+		}
+	}
+
+	void MeasureV11Decode(TestState& state)
+	{
+		UInkDocument document = MakeBasicDocument(false);
+		for (uint32_t index = 0; index < 250; ++index)
+		{
+			UInkInk ink = MakeInk(index, index);
+			ink.points.clear();
+			for (uint32_t point = 0; point < 120; ++point)
+			{
+				ink.points.push_back({ static_cast<float>(point), static_cast<float>(index),
+					4.0f, std::nullopt });
+			}
+			document.canvases[0].content.emplace_back(std::move(ink));
+		}
+		const auto encoded = EncodeUInkDocument(document);
+		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
+		if (encoded.status != UInkEncodeStatus::Success) return;
+		const auto validated = DecodeUInk(encoded.bytes);
+		const auto* page = ExpectV11Canvas(state, validated, 1, 250, UInkReadOutcome::Complete);
+		if (!page) return;
+		const bool allInk = std::all_of(page->content.begin(), page->content.end(),
+			[](const UInkContent& content) { return std::holds_alternative<UInkInk>(content); });
+		UINK_CHECK(state, validated.status == UInkReadStatus::Complete && allInk);
+		if (validated.status != UInkReadStatus::Complete || !allInk) return;
+		constexpr int kRuns = 20;
+		uint64_t totalMicroseconds = 0;
+		for (int run = 0; run < kRuns; ++run)
+			totalMicroseconds += DecodeUInk(encoded.bytes).summary.decodeMicroseconds;
+		std::cout << "UInk 1.1 decode (250 x 120 points, " << kRuns << " runs): "
+			<< static_cast<double>(totalMicroseconds) / kRuns << " us average" << std::endl;
 	}
 
 	void TestEncoderTopologyValidation(TestState& state)
@@ -1642,6 +2916,349 @@ namespace
 		UINK_CHECK(state, EncodeUInkDocument(document).status == UInkEncodeStatus::InvalidModel);
 	}
 
+	void TestEncoderPayloadLengthBoundaries(TestState& state)
+	{
+		const UInkReadLimits defaults;
+		UInkCanvas canvas = MakeBasicDocument(false).canvases.front();
+		UInkShape shape = MakeShape(0, 0);
+		UInkShapeObject object;
+		object.id = Guid("60000000-0000-4000-8000-00000000b001");
+		object.revision = 1;
+		object.partCount = 1;
+		UInkMessagePackExtension extension;
+		extension.type = -7;
+		// 官方 object.style 的通用 EXT 值仍计算类型字节与载荷长度。
+		extension.data.resize(static_cast<size_t>(defaults.maxStringOrBinaryBytes - 1), std::byte{ 0x5a });
+		object.style = UInkMessagePackValue::Map{
+			{ Value(std::string("vendor.ext")), Value(std::move(extension)) } };
+		shape.object = std::move(object);
+		canvas.content.emplace_back(std::move(shape));
+		const auto atLimit = EncodeUInkPage(canvas, true, true);
+		UINK_CHECK(state, atLimit.status == UInkEncodeStatus::Success && !atLimit.bytes.empty());
+		if (atLimit.status != UInkEncodeStatus::Success || atLimit.bytes.empty()) return;
+		const UInkStreamContext context;
+		const auto decoded = DecodeUInkStream(atLimit.bytes, defaults, &context);
+		const auto* decodedPage = ExpectV11Canvas(state, decoded, 1, 1, UInkReadOutcome::Complete);
+		if (!decodedPage) return;
+		auto& root = std::get<UInkShapeObject>(*std::get<UInkShape>(canvas.content.front()).object);
+		UINK_CHECK(state, decoded.status == UInkReadStatus::Complete &&
+			EncodeUInkPage(*decodedPage, true, true).bytes == atLimit.bytes);
+
+		UInkReadLimits limits = defaults;
+		--limits.maxStringOrBinaryBytes;
+		CheckLimitPrefix(state, DecodeUInkStream(atLimit.bytes, limits, &context), 1, 0);
+
+		auto& ext = std::get<UInkMessagePackExtension>(root.style->front().second.value);
+		ext.data.push_back(std::byte{ 0x5a });
+		const auto aboveLimit = EncodeUInkPage(canvas, true, true);
+		UINK_CHECK(state, aboveLimit.status == UInkEncodeStatus::LimitExceeded && aboveLimit.bytes.empty());
+		UINK_CHECK(state, !aboveLimit.diagnostics.empty() &&
+			aboveLimit.diagnostics.front().code == UInkDiagnosticCode::LimitExceeded &&
+			aboveLimit.diagnostics.front().fieldPath == "shape.object.extension");
+
+		canvas.content.clear();
+		limits.maxStringOrBinaryBytes = 35;
+		// 规范化的 GUID 是 36 字节，也受字符串上限约束。
+		const auto longGuid = EncodeUInkPage(canvas, true, true, limits);
+		UINK_CHECK(state, longGuid.status == UInkEncodeStatus::LimitExceeded && longGuid.bytes.empty());
+	}
+
+	msgpack::sbuffer PackTestRegistry(const char* key, const msgpack::sbuffer& extra)
+	{
+		msgpack::sbuffer field;
+		msgpack::packer<msgpack::sbuffer> packer(field);
+		PackKey(packer, key);
+		packer.pack_array(1);
+		const bool device = std::string_view(key) == "devices";
+		packer.pack_map(device ? 7u : 4u);
+		PackKey(packer, "guid");
+		PackGuid(packer, device ? "40000000-0000-4000-8000-00000000e001" :
+			"30000000-0000-4000-8000-00000000e001");
+		if (device)
+		{
+			PackKey(packer, "deviceType"); packer.pack_fix_int32(0);
+			PackKey(packer, "x"); packer.pack_fix_int32(0);
+			PackKey(packer, "y"); packer.pack_fix_int32(0);
+			PackKey(packer, "width"); packer.pack_fix_uint32(1920);
+			PackKey(packer, "height"); packer.pack_fix_uint32(1080);
+		}
+		else
+		{
+			PackKey(packer, "workspaceType"); packer.pack_fix_int32(1);
+			PackKey(packer, "currentPageIndex"); packer.pack_fix_uint32(0);
+		}
+		field.write(extra.data(), extra.size());
+		return field;
+	}
+
+	void TestRegistryExtraScopeAndReplay(TestState& state)
+	{
+		constexpr uint32_t kLargeExtraBytes = 1024 * 1024;
+		const auto extra = PackExtraBinary(0, 0, kLargeExtraBytes);
+		const auto devices = PackTestRegistry("devices", extra);
+		const auto workspaces = PackTestRegistry("workspaces", extra);
+		auto source = MakeBasicDocument();
+		source.usesImplicitDevice = source.usesImplicitWorkspace = false;
+		auto& extension = source.headerExtension.emplace();
+		UInkDevice device;
+		device.guid = Guid("40000000-0000-4000-8000-00000000e001");
+		device.geometry = UInkDisplayDevice{ 0, 0, 1920, 1080 };
+		extension.devices.push_back(device);
+		UInkWorkspace workspace;
+		workspace.guid = Guid("30000000-0000-4000-8000-00000000e001");
+		workspace.workspaceType = 1;
+		extension.workspaces.push_back(workspace);
+		auto& canvas = source.canvases.front();
+		canvas.deviceGuid = device.guid;
+		canvas.workspaceGuid = workspace.guid;
+		canvas.content.emplace_back(MakeShape(1, 2));
+
+		const auto canonical = EncodeUInkDocument(source);
+		const auto header = EncodeUInkHeaderPrefix(source.header, std::nullopt);
+		const auto prefix = EncodeUInkHeaderPrefix(source.header, source.headerExtension);
+		const auto page = EncodeUInkPage(canvas, false, false);
+		const auto pageObjects = ObjectSizes(page.bytes);
+		const bool fixtureReady = canonical.status == UInkEncodeStatus::Success &&
+			header.status == UInkEncodeStatus::Success && !header.bytes.empty() &&
+			prefix.status == UInkEncodeStatus::Success && !prefix.bytes.empty() &&
+			page.status == UInkEncodeStatus::Success && pageObjects.size() == 3;
+		UINK_CHECK(state, fixtureReady);
+		if (!fixtureReady) return;
+		const auto canonicalRead = DecodeUInk(canonical.bytes);
+		UINK_CHECK(state, canonicalRead.status == UInkReadStatus::Complete && canonicalRead.diagnostics.empty());
+
+		const auto packExtension = [&](bool typeLast, const msgpack::sbuffer* ordinary)
+		{
+			msgpack::sbuffer block;
+			msgpack::packer<msgpack::sbuffer> packer(block);
+			packer.pack_map(3 + (ordinary ? 1u : 0u));
+			const auto packType = [&]()
+			{
+				PackKey(packer, "type"); packer.pack_fix_uint16(kHeaderExtensionType);
+			};
+			if (!typeLast) packType();
+			block.write(devices.data(), devices.size());
+			block.write(workspaces.data(), workspaces.size());
+			if (ordinary) block.write(ordinary->data(), ordinary->size());
+			if (typeLast) packType();
+			return ToBytes(block);
+		};
+		const auto checkOfficialFields = [&](const UInkReadResult& read, UInkReadOutcome outcome)
+		{
+			if (!ExpectV11Canvas(state, read, 1, 2, outcome)) return;
+			const auto roundTrip = EncodeUInkDocument(*read.document);
+			UINK_CHECK(state, roundTrip.status == UInkEncodeStatus::Success &&
+				roundTrip.bytes == canonical.bytes);
+		};
+
+		// 同名数组放到 Shape，分别测试两种键和 type 的两种顺序。
+		const auto shapeStart = page.bytes.end() - pageObjects.back();
+		const auto shapeOffset = prefix.bytes.size() + page.bytes.size() - pageObjects.back();
+		UInkReadLimits tight;
+		tight.maxModelCharge = kLargeExtraBytes;
+		for (const bool typeLast : { false, true })
+		{
+			auto bytes = header.bytes;
+			AppendBytes(bytes, packExtension(typeLast, nullptr));
+			AppendBytes(bytes, page.bytes);
+			const auto registered = DecodeUInk(bytes, tight);
+			UINK_CHECK(state, registered.status == UInkReadStatus::Complete &&
+				registered.summary.outcome == UInkReadOutcome::Complete && registered.diagnostics.empty() &&
+				registered.validPrefixLength == bytes.size() && registered.modelCharge == canonicalRead.modelCharge);
+			UINK_CHECK(state, registered.replayedObjectCount == 0);
+			checkOfficialFields(registered, UInkReadOutcome::Complete);
+
+			for (const auto* field : { &devices, &workspaces })
+			{
+				std::vector<std::byte> shape(shapeStart, page.bytes.end());
+				AppendTestMapField(state, shape, *field);
+				const bool fieldAppended = shape.size() == pageObjects.back() + field->size();
+				UINK_CHECK(state, fieldAppended);
+				if (!fieldAppended) return;
+				if (typeLast) std::rotate(shape.begin() + 1, shape.end() - field->size(), shape.end());
+				bytes = prefix.bytes;
+				AppendBytes(bytes, std::span(page.bytes).first(page.bytes.size() - pageObjects.back()));
+				AppendBytes(bytes, shape);
+
+				const auto limited = DecodeUInk(bytes, tight);
+				CheckLimitPrefix(state, limited, 1, 1);
+				const auto& diagnostic = DiagnosticCount(limited, UInkDiagnosticCode::LimitExceeded);
+				UINK_CHECK(state, limited.validPrefixLength == shapeOffset &&
+					diagnostic.count == 1 && diagnostic.firstByteOffset == shapeOffset);
+
+				const auto charged = DecodeUInk(bytes);
+				UINK_CHECK(state, charged.status == UInkReadStatus::Complete &&
+					charged.modelCharge > kLargeExtraBytes && charged.replayedObjectCount == 0);
+				UInkReadLimits replay;
+				replay.maxModelCharge = charged.modelCharge + 1024;
+				const auto chargedReplay = DecodeUInk(bytes, replay);
+				UINK_CHECK(state, chargedReplay.replayedObjectCount > 0 &&
+					chargedReplay.modelCharge == charged.modelCharge && chargedReplay.status == charged.status);
+				checkOfficialFields(charged, UInkReadOutcome::Complete);
+				checkOfficialFields(chargedReplay, UInkReadOutcome::Complete);
+			}
+		}
+
+		// 普通字段足以越过较窄的临时窗口。用同一输入对跑，避免引入重复 type 诊断。
+		msgpack::sbuffer ordinary;
+		msgpack::packer<msgpack::sbuffer> packer(ordinary);
+		const std::string padding(4096, 'P');
+		PackKey(packer, "vendorPadding");
+		packer.pack_bin(static_cast<uint32_t>(padding.size()));
+		packer.pack_bin_body(padding.data(), static_cast<uint32_t>(padding.size()));
+		std::vector<std::byte> shape(shapeStart, page.bytes.end());
+		AppendTestMapField(state, shape, extra);
+		AppendTestMapField(state, shape, ordinary);
+		auto bytes = header.bytes;
+		AppendBytes(bytes, packExtension(true, &ordinary));
+		AppendBytes(bytes, std::span(page.bytes).first(page.bytes.size() - pageObjects.back()));
+		AppendBytes(bytes, shape);
+		const size_t goodEnd = bytes.size();
+
+		// 让诊断对比包含实际的坏标记，同时检查 extra 内的 wire 错误不会被吞掉。
+		auto clear = EncodeTestContent(state, MakeClear(0, 0));
+		UINK_CHECK(state, !clear.empty());
+		if (clear.empty()) return;
+		msgpack::sbuffer badExtra;
+		msgpack::packer<msgpack::sbuffer> badPacker(badExtra);
+		PackKey(badPacker, "extra"); badPacker.pack_map(1); PackKey(badPacker, "vendor");
+		badExtra.write("\xc1", 1);
+		AppendTestMapField(state, clear, badExtra);
+		AppendBytes(bytes, clear);
+
+		const auto fast = DecodeUInk(bytes, tight);
+		UInkReadLimits replay;
+		replay.maxModelCharge = fast.modelCharge + 1024;
+		const auto replayed = DecodeUInk(bytes, replay);
+		UINK_CHECK(state, fast.replayedObjectCount == 0 && replayed.replayedObjectCount >= 2);
+		UINK_CHECK(state, fast.status == UInkReadStatus::StoppedAtCorruptTail &&
+			replayed.status == fast.status && fast.summary.outcome == UInkReadOutcome::Partial &&
+			replayed.summary.outcome == fast.summary.outcome);
+		UINK_CHECK(state, fast.validPrefixLength == goodEnd && replayed.validPrefixLength == goodEnd &&
+			fast.failedObjectOffset == goodEnd && replayed.failedObjectOffset == goodEnd &&
+			fast.safeAppendOffset == replayed.safeAppendOffset);
+		UINK_CHECK(state, replayed.modelCharge == fast.modelCharge &&
+			replayed.decodedObjectCount == fast.decodedObjectCount &&
+			replayed.geometryPointCount == fast.geometryPointCount);
+		UINK_CHECK(state, fast.diagnostics.size() == 1 && replayed.diagnostics.size() == 1);
+		if (fast.diagnostics.size() != 1 || replayed.diagnostics.size() != 1) return;
+		const auto& a = fast.diagnostics.front();
+		const auto& b = replayed.diagnostics.front();
+		UINK_CHECK(state, a.code == UInkDiagnosticCode::MalformedMessagePack && a.byteOffset == goodEnd &&
+			b.code == a.code && b.severity == a.severity && b.byteOffset == a.byteOffset &&
+			b.objectIndex == a.objectIndex && b.canvasOrdinal == a.canvasOrdinal &&
+			b.fieldPath == a.fieldPath && b.systemError == a.systemError);
+		checkOfficialFields(fast, UInkReadOutcome::Partial);
+		checkOfficialFields(replayed, UInkReadOutcome::Partial);
+	}
+
+	void TestExtraWireSkipping(TestState& state)
+	{
+		// 将大扩展附到带官方对象层的 Shape。按原模型预算解码并重编码，应只留下官方字段。
+		auto document = MakeV11Document();
+		auto& root = std::get<UInkShapeObject>(*std::get<UInkShape>(document.canvases.front().content[3]).object);
+		root.style->emplace_back(Value(std::string("extra")), Value(std::string("object style value")));
+		const auto encoded = EncodeUInkDocument(document);
+		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
+		const auto sizes = ObjectSizes(encoded.bytes);
+		UINK_CHECK(state, sizes.size() == 7);
+		if (sizes.size() != 7) return;
+		size_t shapeOffset = 0;
+		for (size_t i = 0; i < 5; ++i) shapeOffset += sizes[i];
+		const auto shape = std::span(encoded.bytes).subspan(shapeOffset, sizes[5]);
+		std::vector<std::byte> shapeWithExtra(shape.begin(), shape.end());
+		AppendTestMapField(state, shapeWithExtra, PackExtraBinary(4, 32768, 1024 * 1024));
+		std::vector<std::byte> bytes(encoded.bytes.begin(), encoded.bytes.begin() + shapeOffset);
+		AppendBytes(bytes, shapeWithExtra);
+		AppendBytes(bytes, std::span(encoded.bytes).last(sizes.back()));
+		const auto baseline = DecodeUInk(encoded.bytes);
+		if (!ExpectV11Canvas(state, baseline, 1, 5, UInkReadOutcome::Complete)) return;
+		UInkReadLimits limits;
+		limits.maxModelCharge = baseline.modelCharge;
+		const auto skipped = DecodeUInk(bytes, limits);
+		if (!ExpectV11Canvas(state, skipped, 1, 5, UInkReadOutcome::Complete)) return;
+		UINK_CHECK(state, skipped.modelCharge == baseline.modelCharge && skipped.diagnostics.empty());
+		const auto roundTrip = EncodeUInkDocument(*skipped.document);
+		UINK_CHECK(state, roundTrip.status == UInkEncodeStatus::Success && roundTrip.bytes == encoded.bytes);
+		limits = {};
+		limits.maxFileBytes = bytes.size() - 1;
+		CheckLimitFailure(state, DecodeUInk(bytes, limits));
+
+		// 合法块前缀后跟含扩展的 Clear。资源限制、坏键与截断仍采用常规流诊断。
+		auto clearDocument = MakeBasicDocument();
+		clearDocument.canvases.front().content.emplace_back(MakeClear(1, 1));
+		const auto clearStream = EncodeUInkDocument(clearDocument);
+		const auto clearSizes = ObjectSizes(clearStream.bytes);
+		UINK_CHECK(state, clearStream.status == UInkEncodeStatus::Success && clearSizes.size() == 4);
+		if (clearSizes.size() != 4) return;
+		const size_t failedOffset = clearStream.bytes.size() - clearSizes.back();
+		const auto makeTail = [&](const msgpack::sbuffer& extra)
+		{
+			const auto boundary = clearStream.bytes.begin() + failedOffset;
+			std::vector<std::byte> block(boundary, clearStream.bytes.end());
+			AppendTestMapField(state, block, extra);
+			std::vector<std::byte> withTail(clearStream.bytes.begin(), boundary);
+			AppendBytes(withTail, block);
+			return withTail;
+		};
+		auto truncatedBytes = makeTail(PackExtraBinary(0, 0, 64));
+		truncatedBytes.pop_back();
+		const auto truncated = DecodeUInk(truncatedBytes);
+		ExpectV11Canvas(state, truncated, 1, 1, UInkReadOutcome::Partial);
+		UINK_CHECK(state, truncated.status == UInkReadStatus::RecoveredTruncatedTail &&
+			truncated.failedObjectOffset == failedOffset && truncated.validPrefixLength == failedOffset &&
+			HasDiagnostic(truncated, UInkDiagnosticCode::TruncatedTail));
+
+		const auto checkLimited = [&](const auto& input, const UInkReadLimits& budget)
+		{
+			const auto read = DecodeUInk(input, budget);
+			CheckLimitPrefix(state, read, 1, 1);
+			const auto& diagnostic = DiagnosticCount(read, UInkDiagnosticCode::LimitExceeded);
+			UINK_CHECK(state, read.validPrefixLength == failedOffset && diagnostic.count == 1 &&
+				diagnostic.firstByteOffset == failedOffset && diagnostic.firstCanvasOrdinal == 1);
+		};
+		checkLimited(makeTail(PackExtraBinary(64, 0, 1)), {});
+		limits = {};
+		limits.maxStringOrBinaryBytes = 64;
+		checkLimited(makeTail(PackExtraBinary(0, 0, 65)), limits);
+		limits = {};
+		limits.maxContainerEntries = 16;
+		checkLimited(makeTail(PackExtraBinary(0, 16, 1)), limits);
+		limits = {};
+		limits.maxTopLevelObjectBytes = *std::max_element(clearSizes.begin(), clearSizes.end());
+		checkLimited(makeTail(PackExtraBinary(0, 0, 4096)), limits);
+
+		msgpack::sbuffer invalidKey;
+		msgpack::packer<msgpack::sbuffer> packer(invalidKey);
+		PackKey(packer, "extra"); packer.pack_map(1);
+		packer.pack_str(1); packer.pack_str_body("\xff", 1); packer.pack_nil();
+		const auto invalid = DecodeUInk(makeTail(invalidKey));
+		ExpectV11Canvas(state, invalid, 1, 1, UInkReadOutcome::Partial);
+		UINK_CHECK(state, invalid.status == UInkReadStatus::RecoveredInvalidTail &&
+			invalid.validPrefixLength == failedOffset && HasDiagnostic(invalid, UInkDiagnosticCode::InvalidFieldValue));
+
+		msgpack::sbuffer wrongType;
+		msgpack::packer<msgpack::sbuffer> wrongPacker(wrongType);
+		PackKey(wrongPacker, "extra"); wrongPacker.pack_nil();
+		const auto notMap = DecodeUInk(makeTail(wrongType));
+		ExpectV11Canvas(state, notMap, 1, 1, UInkReadOutcome::Partial);
+		UINK_CHECK(state, notMap.status == UInkReadStatus::RecoveredInvalidTail &&
+			notMap.validPrefixLength == failedOffset && HasDiagnostic(notMap, UInkDiagnosticCode::KnownBlockSkipped));
+
+		msgpack::sbuffer emptyExtra;
+		msgpack::packer<msgpack::sbuffer> emptyPacker(emptyExtra);
+		PackKey(emptyPacker, "extra"); emptyPacker.pack_map(0);
+		auto duplicateBytes = makeTail(emptyExtra);
+		std::vector<std::byte> duplicateBlock(duplicateBytes.begin() + failedOffset, duplicateBytes.end());
+		AppendTestMapField(state, duplicateBlock, emptyExtra);
+		duplicateBytes.resize(failedOffset);
+		AppendBytes(duplicateBytes, duplicateBlock);
+		const auto duplicate = DecodeUInk(duplicateBytes);
+		ExpectV11Canvas(state, duplicate, 1, 1, UInkReadOutcome::Partial);
+		UINK_CHECK(state, duplicate.status == UInkReadStatus::RecoveredInvalidTail &&
+			duplicate.validPrefixLength == failedOffset && HasDiagnostic(duplicate, UInkDiagnosticCode::DuplicateKnownKey));
+	}
+
 	void TestReadLimits(TestState& state)
 	{
 		const UInkReadLimits defaults;
@@ -1662,6 +3279,8 @@ namespace
 		const UInkReadResult basic = DecodeUInk(basicEncoded.bytes);
 		UINK_CHECK(state, basic.status == UInkReadStatus::Complete);
 		UINK_CHECK(state, basic.geometryPointCount == 2);
+		if (basicEncoded.status != UInkEncodeStatus::Success || basic.status != UInkReadStatus::Complete ||
+			basic.geometryPointCount != 2) return;
 
 		UInkReadLimits limits;
 		limits.maxFileBytes = basicEncoded.bytes.size();
@@ -1672,23 +3291,33 @@ namespace
 		limits = {};
 		limits.maxTopLevelObjects = basic.decodedObjectCount;
 		UINK_CHECK(state, DecodeUInk(basicEncoded.bytes, limits).status == UInkReadStatus::Complete);
-		limits.maxTopLevelObjects = basic.decodedObjectCount - 1;
+		limits.maxTopLevelObjects = 0;
 		CheckLimitFailure(state, DecodeUInk(basicEncoded.bytes, limits));
+		limits.maxTopLevelObjects = basic.decodedObjectCount - 1;
+		const auto objectLimited = DecodeUInk(basicEncoded.bytes, limits);
+		CheckLimitPrefix(state, objectLimited, 1, 0);
 
 		const std::vector<size_t> sizes = ObjectSizes(basicEncoded.bytes);
+		UINK_CHECK(state, sizes.size() == 3);
+		if (sizes.size() != 3) return;
+		UINK_CHECK(state, objectLimited.failedObjectOffset == sizes[0] + sizes[1]);
 		const size_t largest = *std::max_element(sizes.begin(), sizes.end());
 		limits = {};
 		limits.maxTopLevelObjectBytes = largest;
 		UINK_CHECK(state, DecodeUInk(basicEncoded.bytes, limits).status == UInkReadStatus::Complete);
 		limits.maxTopLevelObjectBytes = largest - 1;
-		CheckLimitFailure(state, DecodeUInk(basicEncoded.bytes, limits));
+		const auto byteLimited = DecodeUInk(basicEncoded.bytes, limits);
+		if (sizes[1] < largest && sizes[0] < largest)
+			CheckLimitPrefix(state, byteLimited, 1, 0);
+		else
+			CheckLimitFailure(state, byteLimited);
 
 		limits = {};
 		limits.maxGeometryPoints = 2;
 		limits.maxSingleGeometryPoints = 2;
 		UINK_CHECK(state, DecodeUInk(basicEncoded.bytes, limits).status == UInkReadStatus::Complete);
 		limits.maxSingleGeometryPoints = 1;
-		CheckLimitFailure(state, DecodeUInk(basicEncoded.bytes, limits));
+		CheckLimitPrefix(state, DecodeUInk(basicEncoded.bytes, limits), 1, 0);
 
 		UInkDocument twoInks = MakeBasicDocument();
 		std::get<UInkInk>(twoInks.canvases[0].content[0]).points.resize(1);
@@ -1701,10 +3330,15 @@ namespace
 		limits.maxGeometryPoints = 2;
 		UINK_CHECK(state, DecodeUInk(twoInkBytes, limits).status == UInkReadStatus::Complete);
 		limits.maxGeometryPoints = 1;
-		CheckLimitFailure(state, DecodeUInk(twoInkBytes, limits));
+		const auto pointLimited = DecodeUInk(twoInkBytes, limits);
+		CheckLimitPrefix(state, pointLimited, 1, 1);
+		UINK_CHECK(state, pointLimited.geometryPointCount == 1);
 
-		const std::vector<std::byte> nestedBytes = EncodeUInkDocument(
-			MakeNestedExtraDocument(4, 12, 40)).bytes;
+		const auto prefix = CanvasPrefix();
+		auto nestedBytes = prefix;
+		auto nestedBlock = EncodeTestContent(state, MakeClear(0, 0));
+		AppendTestMapField(state, nestedBlock, PackExtraBinary(4, 12, 40));
+		AppendBytes(nestedBytes, nestedBlock);
 		uint32_t minimumDepth = 0;
 		for (uint32_t depth = 2; depth <= defaults.maxDepth; ++depth)
 		{
@@ -1723,19 +3357,19 @@ namespace
 			limits.maxDepth = minimumDepth;
 			UINK_CHECK(state, DecodeUInk(nestedBytes, limits).status == UInkReadStatus::Complete);
 			limits.maxDepth = minimumDepth - 1;
-			CheckLimitFailure(state, DecodeUInk(nestedBytes, limits));
+			CheckLimitPrefix(state, DecodeUInk(nestedBytes, limits), 1, 0);
 		}
 
 		limits = {};
 		limits.maxContainerEntries = 13;
 		UINK_CHECK(state, DecodeUInk(nestedBytes, limits).status == UInkReadStatus::Complete);
 		limits.maxContainerEntries = 12;
-		CheckLimitFailure(state, DecodeUInk(nestedBytes, limits));
+		CheckLimitPrefix(state, DecodeUInk(nestedBytes, limits), 1, 0);
 		limits = {};
 		limits.maxStringOrBinaryBytes = 40;
 		UINK_CHECK(state, DecodeUInk(nestedBytes, limits).status == UInkReadStatus::Complete);
 		limits.maxStringOrBinaryBytes = 39;
-		CheckLimitFailure(state, DecodeUInk(nestedBytes, limits));
+		CheckLimitPrefix(state, DecodeUInk(nestedBytes, limits), 1, 0);
 		limits = {};
 		limits.maxStringOrBinaryBytes = 36;
 		UINK_CHECK(state, DecodeUInk(CanvasPrefix(), limits).status == UInkReadStatus::Complete);
@@ -1746,7 +3380,13 @@ namespace
 		limits.maxModelCharge = basic.modelCharge;
 		UINK_CHECK(state, DecodeUInk(basicEncoded.bytes, limits).status == UInkReadStatus::Complete);
 		limits.maxModelCharge = basic.modelCharge - 1;
-		CheckLimitFailure(state, DecodeUInk(basicEncoded.bytes, limits));
+		const auto budgetLimited = DecodeUInk(basicEncoded.bytes, limits);
+		const auto prefixCharge = DecodeUInk(std::span(basicEncoded.bytes).first(sizes[0] + sizes[1]));
+		if (!ExpectV11Canvas(state, prefixCharge, 1, 0, UInkReadOutcome::Complete)) return;
+		if (prefixCharge.modelCharge < basic.modelCharge)
+			CheckLimitPrefix(state, budgetLimited, 1, 0);
+		else
+			CheckLimitFailure(state, budgetLimited);
 		limits = {};
 		limits.maxModelCharge = 127;
 		CheckLimitFailure(state, DecodeUInk(basicEncoded.bytes, limits));
@@ -1757,7 +3397,9 @@ namespace
 		limits.maxMediaPathBytes = static_cast<uint32_t>(mediaPathBytes);
 		UINK_CHECK(state, DecodeUInk(richBytes, limits).status == UInkReadStatus::Complete);
 		limits.maxMediaPathBytes = static_cast<uint32_t>(mediaPathBytes - 1);
-		CheckLimitFailure(state, DecodeUInk(richBytes, limits));
+		const auto pathLimited = DecodeUInk(richBytes, limits);
+		CheckLimitPrefix(state, pathLimited, 3, 9);
+		ExpectV11Canvas(state, pathLimited, 3, 1, UInkReadOutcome::Partial, 2);
 
 		std::vector<std::byte> diagnosticsBytes = CanvasPrefix();
 		for (uint16_t type = 900; type < 906; ++type) AppendBytes(diagnosticsBytes, PackUnknown(type));
@@ -1775,14 +3417,14 @@ namespace
 		limits.maxDepth = 5;
 		UINK_CHECK(state, DecodeUInk(deepUnknown, limits).status == UInkReadStatus::Complete);
 		limits.maxDepth = 4;
-		CheckLimitFailure(state, DecodeUInk(deepUnknown, limits));
+		CheckLimitPrefix(state, DecodeUInk(deepUnknown, limits), 1, 0);
 
 		// 大量微小节点的 wire bytes 很少，但 msgpack 临时对象树仍必须先计费。
 		std::vector<std::byte> wideUnknown = CanvasPrefix();
 		AppendBytes(wideUnknown, PackWideUnknown(4096));
 		limits = {};
 		limits.maxModelCharge = 64 * 1024;
-		CheckLimitFailure(state, DecodeUInk(wideUnknown, limits));
+		CheckLimitPrefix(state, DecodeUInk(wideUnknown, limits), 1, 0);
 	}
 
 	class TempDirectory
@@ -1803,7 +3445,6 @@ namespace
 
 		~TempDirectory()
 		{
-			ResetUInkFileTestFaultInjection();
 			if (path_.empty()) return;
 			WIN32_FIND_DATAW data = {};
 			HANDLE find = FindFirstFileW((path_ + L"\\*").c_str(), &data);
@@ -1834,1753 +3475,55 @@ namespace
 		std::wstring path_;
 	};
 
-	class FaultScope
-	{
-	public:
-		explicit FaultScope(UInkFileTestFaultInjection faults)
-		{
-			SetUInkFileTestFaultInjection(faults);
-		}
-		~FaultScope() { ResetUInkFileTestFaultInjection(); }
-		FaultScope(const FaultScope&) = delete;
-		FaultScope& operator=(const FaultScope&) = delete;
-	};
-
-	UInkAppendPlan PlanInkAppend(const UInkReadResult& source,
-		uint32_t contentId, uint32_t undoId)
-	{
-		UInkAppendBatch batch;
-		batch.objects.emplace_back(MakeInk(contentId, undoId));
-		return AnalyzeUInkAppend(source, batch);
-	}
-
-	void TestFullFileSave(TestState& state)
+	void TestV11FileResourceRejection(TestState& state)
 	{
 		TempDirectory temporary;
 		UINK_CHECK(state, temporary.IsValid());
 		if (!temporary.IsValid()) return;
-		const std::wstring sourcePath = temporary.File(L"save.uink");
-		UINK_CHECK(state, temporary.CopyFixture(L"implicit-single-canvas.uink", L"save.uink"));
-		UInkReadResult source = ReadUInkFile(sourcePath);
-		UINK_CHECK(state, source.status == UInkReadStatus::Complete);
-		std::optional<UInkEditingSession> externalSession = CreateUInkEditingSession(source);
-		UINK_CHECK(state, externalSession.has_value());
-		UINK_CHECK(state, externalSession && externalSession->provenance.requiresSaveAs);
-		if (!externalSession) return;
-		externalSession->document.canvases[0].content.push_back(MakeInk(1, 1));
-		const std::vector<std::byte> importedBefore = ReadBytes(sourcePath);
-		UINK_CHECK(state, SaveUInkFile(sourcePath, *externalSession).status ==
-			UInkSaveStatus::InvalidSession);
-		UINK_CHECK(state, ReadBytes(sourcePath) == importedBefore);
+		const auto path = temporary.File(L"resource-limit.uink");
+		auto bytes = CanvasPrefix();
+		const size_t prefixBytes = bytes.size();
+		if (!WriteBytes(path, bytes)) { UINK_CHECK(state, false); return; }
+		const auto baseline = ReadUInkStoreFile(path);
+		if (!ExpectV11Canvas(state, baseline, 1, 0, UInkReadOutcome::Complete)) return;
 
-		std::optional<UInkEditingSession> session = CreateUInkEditingSession(source,
-			UInkEditingSource::ApplicationOwned);
-		UINK_CHECK(state, session.has_value());
-		if (!session) return;
-		const UInkGuid originalGuid = session->document.header.guid;
-		const UInkGuid originalPageGuid = session->document.canvases[0].pageGuid;
-		session->document.canvases[0].content.push_back(MakeInk(1, 1));
-		const UInkSaveResult saved = SaveUInkFile(sourcePath, *session);
-		UINK_CHECK(state, saved.status == UInkSaveStatus::Committed);
-		UINK_CHECK(state, saved.revision.has_value());
-		const UInkReadResult reloaded = ReadUInkFile(sourcePath);
-		UINK_CHECK(state, reloaded.document && reloaded.document->header.guid == originalGuid);
-		if (reloaded.document)
-		{
-			UINK_CHECK(state, reloaded.document->canvases[0].pageGuid == originalPageGuid);
-			UINK_CHECK(state, reloaded.document->canvases[0].content.size() == 2);
-			UINK_CHECK(state, reloaded.document->header.pageNum == 1);
-		}
+		AppendBytes(bytes, PackV11OversizedShape());
+		if (!WriteBytes(path, bytes)) { UINK_CHECK(state, false); return; }
+		const auto limited = ReadUInkStoreFile(path);
+		CheckLimitPrefix(state, limited, 1, 0);
+		UINK_CHECK(state, limited.validPrefixLength == prefixBytes && ReadBytes(path) == bytes);
+	}
 
-		const std::wstring saveAsPath = temporary.File(L"save-as.uink");
-		UInkSaveOptions saveAsOptions;
-		saveAsOptions.mode = UInkSaveMode::SaveAsNewLogicalFile;
-		const UInkSaveResult saveAs = SaveUInkFile(saveAsPath, *externalSession, saveAsOptions);
-		UINK_CHECK(state, saveAs.status == UInkSaveStatus::Committed);
-		const UInkReadResult saveAsRead = ReadUInkFile(saveAsPath);
-		UINK_CHECK(state, saveAsRead.document && saveAsRead.document->header.guid != originalGuid);
-		UINK_CHECK(state, saveAsRead.document &&
-			saveAsRead.document->canvases[0].pageGuid == originalPageGuid);
+	void TestMediaFileRead(TestState& state)
+	{
+		TempDirectory temporary;
+		UINK_CHECK(state, temporary.IsValid());
+		if (!temporary.IsValid()) return;
+		const auto mainPath = temporary.File(L"media.uink");
+		const auto extraPath = temporary.File(L"media.uink.extra");
+		UINK_CHECK(state, temporary.CopyFixture(L"media-safe.uink", L"media.uink"));
+		const std::array sentinel{ std::byte{ 0x50 }, std::byte{ 0x4b }, std::byte{ 0x01 },
+			std::byte{ 0x02 }, std::byte{ 0x03 } };
+		UINK_CHECK(state, WriteBytes(extraPath, sentinel));
+		const auto source = ReadUInkStoreFile(mainPath);
+		const auto* page = ExpectV11Canvas(state, source, 1, 2, UInkReadOutcome::Complete);
+		if (!page) return;
+		const auto* media = std::get_if<UInkMedia>(&page->content.front());
+		UINK_CHECK(state, media && media->path == "images/pixel.png" && media->pathIsSafe &&
+			media->resourceState == UInkMediaResourceState::Unavailable);
+		UINK_CHECK(state, HasDiagnostic(source, UInkDiagnosticCode::MediaResourceUnavailable));
+		UINK_CHECK(state, ReadBytes(extraPath) == std::vector<std::byte>(sentinel.begin(), sentinel.end()));
 
-		const std::wstring retainedIdentityPath =
-			temporary.File(L"create-new-retained-identity.uink");
-		UInkSaveOptions retainedIdentityOptions;
-		retainedIdentityOptions.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
-		const UInkSaveResult retainedIdentity = SaveUInkFile(
-			retainedIdentityPath, *session, retainedIdentityOptions);
-		UINK_CHECK(state, retainedIdentity.status == UInkSaveStatus::Committed);
-		const UInkReadResult retainedIdentityRead = ReadUInkFile(retainedIdentityPath);
-		UINK_CHECK(state, retainedIdentityRead.document &&
-			retainedIdentityRead.document->header.guid == originalGuid);
-		const std::vector<std::byte> retainedIdentityBytes = ReadBytes(retainedIdentityPath);
-		UINK_CHECK(state, SaveUInkFile(retainedIdentityPath, *session,
-			retainedIdentityOptions).status == UInkSaveStatus::SourceChanged);
-		UINK_CHECK(state, ReadBytes(retainedIdentityPath) == retainedIdentityBytes);
-
-		// 读取返回后不持有编辑期句柄，调用方可以立即获取独占访问。
-		HANDLE exclusive = CreateFileW(sourcePath.c_str(), GENERIC_READ, 0, nullptr,
-			OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-		UINK_CHECK(state, exclusive != INVALID_HANDLE_VALUE);
-		if (exclusive != INVALID_HANDLE_VALUE) CloseHandle(exclusive);
-
-		const std::wstring lockedPath = temporary.File(L"locked.uink");
-		UINK_CHECK(state, temporary.CopyFixture(L"implicit-single-canvas.uink", L"locked.uink"));
-		exclusive = CreateFileW(lockedPath.c_str(), GENERIC_READ, 0, nullptr,
+		// 整读完成即关闭文件，之后的独占读取无需等待其他持有者。
+		HANDLE exclusive = CreateFileW(mainPath.c_str(), GENERIC_READ, 0, nullptr,
 			OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 		UINK_CHECK(state, exclusive != INVALID_HANDLE_VALUE);
 		if (exclusive != INVALID_HANDLE_VALUE)
 		{
-			UInkFileAccessOptions noRetry;
-			noRetry.transientRetryCount = 0;
-			const UInkReadResult locked = ReadUInkFile(lockedPath, {}, noRetry);
-			UINK_CHECK(state, locked.status == UInkReadStatus::IoError);
+			UINK_CHECK(state, ReadUInkStoreFile(mainPath).status == UInkReadStatus::IoError);
 			CloseHandle(exclusive);
 		}
-		UINK_CHECK(state, ReadUInkFile(lockedPath).status == UInkReadStatus::Complete);
-
-		const std::vector<std::byte> stableBytes = ReadBytes(sourcePath);
-		auto runSaveFault = [&](const wchar_t* fixtureName,
-			const UInkFileTestFaultInjection& faults, UInkSaveStatus expected)
-		{
-			const std::wstring path = temporary.File(fixtureName);
-			UINK_CHECK(state, temporary.CopyFixture(L"implicit-single-canvas.uink", fixtureName));
-			const std::vector<std::byte> before = ReadBytes(path);
-			const UInkReadResult read = ReadUInkFile(path);
-			const std::optional<UInkEditingSession> faultSession = CreateUInkEditingSession(read,
-				UInkEditingSource::ApplicationOwned);
-			UINK_CHECK(state, faultSession.has_value());
-			if (!faultSession) return;
-			FaultScope scope(faults);
-			const UInkSaveResult result = SaveUInkFile(path, *faultSession);
-			UINK_CHECK(state, result.status == expected);
-			UINK_CHECK(state, ReadBytes(path) == before);
-			UINK_CHECK(state, ReadUInkFile(path).document.has_value());
-		};
-
-		UInkFileTestFaultInjection faults;
-		faults.failWriteAfterBytes = 1;
-		runSaveFault(L"save-write-fault.uink", faults, UInkSaveStatus::IoError);
-		faults = {};
-		faults.failFlush = true;
-		runSaveFault(L"save-flush-fault.uink", faults, UInkSaveStatus::IoError);
-		faults = {};
-		faults.failSelfValidation = true;
-		runSaveFault(L"save-validation-fault.uink", faults,
-			UInkSaveStatus::SelfValidationFailed);
-		faults = {};
-		faults.failCommit = true;
-		runSaveFault(L"save-commit-fault.uink", faults, UInkSaveStatus::IoError);
-		UINK_CHECK(state, ReadBytes(sourcePath) == stableBytes);
-
-		// 替换后的最终内容复核失败时，旧 predecessor 必须继续作为恢复材料保留。
-		const std::wstring finalValidationPath = temporary.File(L"save-final-validation.uink");
-		UINK_CHECK(state, temporary.CopyFixture(L"implicit-single-canvas.uink",
-			L"save-final-validation.uink"));
-		const std::vector<std::byte> finalValidationBefore = ReadBytes(finalValidationPath);
-		const std::optional<UInkEditingSession> finalValidationSession = CreateUInkEditingSession(
-			ReadUInkFile(finalValidationPath), UInkEditingSource::ApplicationOwned);
-		UINK_CHECK(state, finalValidationSession.has_value());
-		if (finalValidationSession)
-		{
-			faults = {};
-			faults.failCommittedRevisionValidation = true;
-			FaultScope scope(faults);
-			const UInkSaveResult result = SaveUInkFile(finalValidationPath,
-				*finalValidationSession);
-			UINK_CHECK(state, result.status == UInkSaveStatus::PartialCommitRequiresRecovery);
-			UINK_CHECK(state, !result.recoveryPath.empty());
-			UINK_CHECK(state, ReadBytes(result.recoveryPath) == finalValidationBefore);
-			UINK_CHECK(state, ReadUInkFile(result.recoveryPath).document.has_value());
-		}
-
-		const std::wstring saveAsValidationPath =
-			temporary.File(L"save-as-final-validation.uink");
-		if (externalSession)
-		{
-			UInkSaveOptions saveAsValidation;
-			saveAsValidation.mode = UInkSaveMode::SaveAsNewLogicalFile;
-			faults = {};
-			faults.failCommittedRevisionValidation = true;
-			FaultScope scope(faults);
-			const UInkSaveResult result = SaveUInkFile(saveAsValidationPath,
-				*externalSession, saveAsValidation);
-			UINK_CHECK(state, result.status == UInkSaveStatus::PartialCommitRequiresRecovery);
-			UINK_CHECK(state, result.recoveryPath == saveAsValidationPath);
-			UINK_CHECK(state, ReadUInkFile(saveAsValidationPath).document.has_value());
-		}
-
-		const std::wstring conflictPath = temporary.File(L"save-conflict.uink");
-		UINK_CHECK(state, temporary.CopyFixture(L"implicit-single-canvas.uink", L"save-conflict.uink"));
-		const UInkReadResult conflictRead = ReadUInkFile(conflictPath);
-		const std::optional<UInkEditingSession> conflictSession =
-			CreateUInkEditingSession(conflictRead, UInkEditingSource::ApplicationOwned);
-		UINK_CHECK(state, conflictSession.has_value());
-		std::vector<std::byte> externallyChanged = ReadBytes(conflictPath);
-		externallyChanged.push_back(std::byte{ 0xc1 });
-		UINK_CHECK(state, WriteBytes(conflictPath, externallyChanged));
-		if (conflictSession)
-		{
-			const UInkSaveResult conflict = SaveUInkFile(conflictPath, *conflictSession);
-			UINK_CHECK(state, conflict.status == UInkSaveStatus::SourceChanged);
-			UINK_CHECK(state, ReadBytes(conflictPath) == externallyChanged);
-		}
-
-		const std::wstring unknownPath = temporary.File(L"normalize-unknown.uink");
-		UINK_CHECK(state, temporary.CopyFixture(L"unknown-block.uink", L"normalize-unknown.uink"));
-		const UInkReadResult unknownRead = ReadUInkFile(unknownPath);
-		const std::optional<UInkEditingSession> unknownSession = CreateUInkEditingSession(unknownRead);
-		UINK_CHECK(state, unknownSession.has_value());
-		if (unknownSession)
-		{
-			UINK_CHECK(state, SaveUInkFile(unknownPath, *unknownSession).status ==
-				UInkSaveStatus::InvalidSession);
-			UInkSaveOptions normalize;
-			normalize.mode = UInkSaveMode::NormalizeImportedWithExplicitLoss;
-			const UInkSaveResult normalized = SaveUInkFile(unknownPath, *unknownSession, normalize);
-			UINK_CHECK(state, normalized.status == UInkSaveStatus::Committed);
-			const UInkReadResult normalizedRead = ReadUInkFile(unknownPath);
-			UINK_CHECK(state, !normalizedRead.provenance.containsUnknownTopLevel);
-			UINK_CHECK(state, normalizedRead.document &&
-				normalizedRead.document->header.guid == unknownSession->document.header.guid);
-		}
-
-		// 字段降级结果只能经显式另存为写出，并转换为可再次严格读取的规范值。
-		const std::wstring fallbackPath = temporary.File(L"save-fallback.uink");
-		std::vector<std::byte> fallbackBytes = CanvasPrefix();
-		AppendBytes(fallbackBytes, PackInvalidInk(false, -1));
-		UINK_CHECK(state, WriteBytes(fallbackPath, fallbackBytes));
-		const UInkReadResult fallbackRead = ReadUInkFile(fallbackPath);
-		UINK_CHECK(state, fallbackRead.status == UInkReadStatus::Complete);
-		UINK_CHECK(state, fallbackRead.provenance.usedFieldFallback);
-		UINK_CHECK(state, fallbackRead.provenance.requiresSaveAs);
-		const std::optional<UInkEditingSession> fallbackSession =
-			CreateUInkEditingSession(fallbackRead, UInkEditingSource::ApplicationOwned);
-		UINK_CHECK(state, fallbackSession.has_value());
-		if (fallbackSession)
-		{
-			const std::vector<std::byte> before = ReadBytes(fallbackPath);
-			UINK_CHECK(state, SaveUInkFile(fallbackPath, *fallbackSession).status ==
-				UInkSaveStatus::InvalidSession);
-			UINK_CHECK(state, ReadBytes(fallbackPath) == before);
-			const std::wstring fallbackSaveAsPath = temporary.File(L"save-fallback-as.uink");
-			UInkSaveOptions fallbackSaveAs;
-			fallbackSaveAs.mode = UInkSaveMode::SaveAsNewLogicalFile;
-			UINK_CHECK(state, SaveUInkFile(fallbackSaveAsPath, *fallbackSession,
-				fallbackSaveAs).status == UInkSaveStatus::Committed);
-			const UInkReadResult strictFallback = ReadUInkFile(fallbackSaveAsPath);
-			UINK_CHECK(state, strictFallback.status == UInkReadStatus::Complete);
-			UINK_CHECK(state, !strictFallback.provenance.usedFieldFallback);
-			if (strictFallback.document && !strictFallback.document->canvases.empty() &&
-				!strictFallback.document->canvases[0].content.empty())
-			{
-				const UInkInk* ink = std::get_if<UInkInk>(
-					&strictFallback.document->canvases[0].content[0]);
-				UINK_CHECK(state, ink && ink->declaredInkType == 1 &&
-					ink->effectiveKind == UInkInkKind::Pen);
-			}
-			else UINK_CHECK(state, false);
-		}
-
-		// 显式规范化只收敛未知 effective 值，已注册高级内容仍保持强类型语义。
-		UInkDocument richFallbackDocument = MakeRichDocument();
-		richFallbackDocument.canvases[0].content.pop_back(); // 首版文件保存不处理 Media 资源包。
-		richFallbackDocument.headerExtension->workspaces[0].workspaceType = 128;
-		const UInkEncodeResult richFallbackBytes = EncodeUInkDocument(richFallbackDocument);
-		UINK_CHECK(state, richFallbackBytes.status == UInkEncodeStatus::Success);
-		const std::wstring richFallbackPath = temporary.File(L"save-rich-fallback.uink");
-		UINK_CHECK(state, WriteBytes(richFallbackPath, richFallbackBytes.bytes));
-		const UInkReadResult richFallbackRead = ReadUInkFile(richFallbackPath);
-		UINK_CHECK(state, richFallbackRead.document &&
-			richFallbackRead.provenance.usedFieldFallback &&
-			!richFallbackRead.provenance.usedTemporaryIdentity);
-		const std::optional<UInkEditingSession> richFallbackSession =
-			CreateUInkEditingSession(richFallbackRead);
-		UINK_CHECK(state, richFallbackSession.has_value());
-		if (richFallbackSession)
-		{
-			const std::wstring normalizedPath = temporary.File(L"save-rich-normalized.uink");
-			UInkSaveOptions saveAs;
-			saveAs.mode = UInkSaveMode::SaveAsNewLogicalFile;
-			UINK_CHECK(state, SaveUInkFile(normalizedPath, *richFallbackSession,
-				saveAs).status == UInkSaveStatus::Committed);
-			const UInkReadResult normalized = ReadUInkFile(normalizedPath);
-			UINK_CHECK(state, normalized.status == UInkReadStatus::Complete);
-			UINK_CHECK(state, !normalized.provenance.usedFieldFallback);
-			if (normalized.document && normalized.document->headerExtension &&
-				!normalized.document->canvases.empty())
-			{
-				const UInkDocument& document = *normalized.document;
-				const UInkCanvas& primary = document.canvases[0];
-				UINK_CHECK(state, document.headerExtension->workspaces[0].workspaceType == 1);
-				UINK_CHECK(state, primary.content.size() == 9);
-				const UInkInk* advanced = std::get_if<UInkInk>(&primary.content[0]);
-				const UInkShape* line = std::get_if<UInkShape>(&primary.content[2]);
-				const UInkShape* square = std::get_if<UInkShape>(&primary.content[5]);
-				UINK_CHECK(state, advanced && advanced->declaredInkType == 3 &&
-					advanced->declaredTexture == 0 && advanced->color.extended &&
-					advanced->points[0].style &&
-					advanced->points[0].style->color.extended);
-				UINK_CHECK(state, line && line->stroke &&
-					line->stroke->declaredStartMarker == 0 &&
-					line->stroke->declaredEndMarker == 1);
-				UINK_CHECK(state, square && square->fill &&
-					square->fill->declaredFillType == 0 && square->fill->color.extended);
-			}
-			else UINK_CHECK(state, false);
-		}
-
-		// 闭合图形上的端点标记应在读取时降级，并可通过另存为规范化为无标记。
-		const std::wstring closedMarkerPath = temporary.File(L"save-closed-marker.uink");
-		std::vector<std::byte> closedMarkerBytes = CanvasPrefix();
-		AppendBytes(closedMarkerBytes, PackClosedShapeWithMarkers());
-		UINK_CHECK(state, WriteBytes(closedMarkerPath, closedMarkerBytes));
-		const UInkReadResult closedMarkerRead = ReadUInkFile(closedMarkerPath);
-		UINK_CHECK(state, closedMarkerRead.status == UInkReadStatus::Complete);
-		UINK_CHECK(state, closedMarkerRead.provenance.usedFieldFallback);
-		const std::optional<UInkEditingSession> closedMarkerSession =
-			CreateUInkEditingSession(closedMarkerRead, UInkEditingSource::ApplicationOwned);
-		UINK_CHECK(state, closedMarkerSession.has_value());
-		if (closedMarkerSession)
-		{
-			const std::wstring normalizedPath = temporary.File(L"save-closed-marker-as.uink");
-			UInkSaveOptions normalizeMarkers;
-			normalizeMarkers.mode = UInkSaveMode::SaveAsNewLogicalFile;
-			UINK_CHECK(state, SaveUInkFile(normalizedPath, *closedMarkerSession,
-				normalizeMarkers).status == UInkSaveStatus::Committed);
-			const UInkReadResult normalized = ReadUInkFile(normalizedPath);
-			UINK_CHECK(state, normalized.status == UInkReadStatus::Complete);
-			UINK_CHECK(state, !normalized.provenance.usedFieldFallback);
-			if (normalized.document && !normalized.document->canvases.empty() &&
-				!normalized.document->canvases[0].content.empty())
-			{
-				const UInkShape* shape = std::get_if<UInkShape>(
-					&normalized.document->canvases[0].content[0]);
-				UINK_CHECK(state, shape && shape->stroke &&
-					shape->stroke->declaredStartMarker == 0 &&
-					shape->stroke->declaredEndMarker == 0);
-			}
-			else UINK_CHECK(state, false);
-		}
-
-		// 截断恢复只能显式规范化；普通保存不得静默丢弃尾部。
-		const std::wstring truncatedPath = temporary.File(L"save-truncated.uink");
-		std::vector<std::byte> truncatedBytes = CanvasPrefix();
-		const UInkAppendObject trailingInk = MakeInk(0, 0);
-		const UInkEncodeResult trailingInkBytes = EncodeUInkAppendObjects(
-			std::span<const UInkAppendObject>(&trailingInk, 1));
-		AppendBytes(truncatedBytes, std::span<const std::byte>(trailingInkBytes.bytes).first(
-			trailingInkBytes.bytes.size() / 2));
-		UINK_CHECK(state, WriteBytes(truncatedPath, truncatedBytes));
-		const UInkReadResult truncatedRead = ReadUInkFile(truncatedPath);
-		UINK_CHECK(state, truncatedRead.status == UInkReadStatus::RecoveredTruncatedTail);
-		UINK_CHECK(state, truncatedRead.provenance.requiresSaveAs);
-		const std::optional<UInkEditingSession> truncatedSession =
-			CreateUInkEditingSession(truncatedRead, UInkEditingSource::ApplicationOwned);
-		UINK_CHECK(state, truncatedSession.has_value());
-		if (truncatedSession)
-		{
-			UINK_CHECK(state, SaveUInkFile(truncatedPath, *truncatedSession).status ==
-				UInkSaveStatus::InvalidSession);
-			UInkSaveOptions normalizeTruncated;
-			normalizeTruncated.mode = UInkSaveMode::NormalizeImportedWithExplicitLoss;
-			UINK_CHECK(state, SaveUInkFile(truncatedPath, *truncatedSession,
-				normalizeTruncated).status == UInkSaveStatus::Committed);
-			const UInkReadResult normalizedTruncated = ReadUInkFile(truncatedPath);
-			UINK_CHECK(state, normalizedTruncated.status == UInkReadStatus::Complete);
-			UINK_CHECK(state, normalizedTruncated.document &&
-				normalizedTruncated.document->canvases[0].content.empty());
-		}
-
-		// 临时身份无法证明逻辑对象身份，任何完整保存模式都必须拒绝。
-		std::vector<std::byte> temporaryIdentityBytes = HeaderPrefix();
-		AppendBytes(temporaryIdentityBytes, PackCanvasWithInvalidIdentity(false));
-		const UInkReadResult temporaryIdentityRead = DecodeUInk(temporaryIdentityBytes);
-		UINK_CHECK(state, temporaryIdentityRead.provenance.usedTemporaryIdentity);
-		UInkReadResult fileBackedTemporaryIdentity = temporaryIdentityRead;
-		fileBackedTemporaryIdentity.sourcePath = fallbackPath;
-		fileBackedTemporaryIdentity.sourceRevision = ReadUInkFile(fallbackPath).sourceRevision;
-		const std::optional<UInkEditingSession> temporaryIdentitySession =
-			CreateUInkEditingSession(fileBackedTemporaryIdentity,
-				UInkEditingSource::ApplicationOwned);
-		UINK_CHECK(state, temporaryIdentitySession.has_value());
-		if (temporaryIdentitySession)
-		{
-			const std::wstring rejectedPath = temporary.File(L"temporary-identity-as.uink");
-			UInkSaveOptions rejectedSaveAs;
-			rejectedSaveAs.mode = UInkSaveMode::SaveAsNewLogicalFile;
-			UINK_CHECK(state, SaveUInkFile(rejectedPath, *temporaryIdentitySession,
-				rejectedSaveAs).status == UInkSaveStatus::InvalidSession);
-			UINK_CHECK(state, GetFileAttributesW(rejectedPath.c_str()) == INVALID_FILE_ATTRIBUTES);
-		}
-	}
-
-	void TestSiblingMaxPathSave(TestState& state)
-	{
-		// 新建私有目录并保留证据；不复用 TempDirectory 的枚举删除，也不改旧测试数据。
-		std::array<wchar_t, MAX_PATH + 1> baseBuffer{};
-		const DWORD baseLength = GetFullPathNameW(L"TestResults\\release-hardening",
-			static_cast<DWORD>(baseBuffer.size()), baseBuffer.data(), nullptr);
-		UINK_CHECK(state, baseLength > 0 && baseLength < baseBuffer.size());
-		if (!baseLength || baseLength >= baseBuffer.size()) return;
-		const std::wstring base(baseBuffer.data(), baseLength);
-		UINK_CHECK(state, base.size() >= 3 && base[1] == L':' && base[2] == L'\\');
-		if (base.size() < 3 || base[1] != L':' || base[2] != L'\\') return;
-		struct DirectoryLeases
-		{
-			std::vector<HANDLE> values;
-			~DirectoryLeases() { for (HANDLE value : values) CloseHandle(value); }
-		} leases;
-		const auto leaseDirectory = [&leases](const std::wstring& path)
-		{
-			const HANDLE handle = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
-				nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-			BY_HANDLE_FILE_INFORMATION info{};
-			if (handle == INVALID_HANDLE_VALUE) return false;
-			if (GetFileType(handle) != FILE_TYPE_DISK || !GetFileInformationByHandle(handle, &info) ||
-				!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
-			{
-				CloseHandle(handle);
-				return false;
-			}
-			try { leases.values.push_back(handle); }
-			catch (...) { CloseHandle(handle); throw; }
-			return true;
-		};
-		const bool driveLeased = leaseDirectory(base.substr(0, 3));
-		UINK_CHECK(state, driveLeased);
-		if (!driveLeased) return;
-		for (size_t begin = 3; begin < base.size();)
-		{
-			const size_t next = base.find(L'\\', begin);
-			const size_t end = next == std::wstring::npos ? base.size() : next;
-			const bool leased = leaseDirectory(base.substr(0, end));
-			UINK_CHECK(state, leased);
-			if (!leased) return;
-			begin = end + 1;
-		}
-		const auto rootGuid = CreateUInkGuid();
-		const auto fileGuid = CreateUInkGuid();
-		const auto nameGuid = CreateUInkGuid();
-		UINK_CHECK(state, rootGuid && fileGuid && nameGuid);
-		if (!rootGuid || !fileGuid || !nameGuid) return;
-		const std::string rootToken = FormatUInkGuid(*rootGuid);
-		const std::wstring root = base + L"\\uink-maxpath-" + std::wstring(rootToken.begin(), rootToken.end());
-		const bool rootCreated = CreateDirectoryW(root.c_str(), nullptr) != FALSE;
-		UINK_CHECK(state, rootCreated);
-		if (!rootCreated) return;
-		const bool rootLeased = leaseDirectory(root);
-		UINK_CHECK(state, rootLeased);
-		if (!rootLeased) return;
-		std::wstring parent = root + L"\\目录 空格-";
-		UINK_CHECK(state, parent.size() < 151);
-		if (parent.size() >= 151) return;
-		parent.append(151 - parent.size(), L'p');
-		const bool parentCreated = CreateDirectoryW(parent.c_str(), nullptr) != FALSE;
-		UINK_CHECK(state, parentCreated);
-		if (!parentCreated) return;
-		const bool parentLeased = leaseDirectory(parent);
-		UINK_CHECK(state, parentLeased);
-		if (!parentLeased) return;
-		const std::wstring prefix = parent + L"\\";
-		const std::string leaf = FormatUInkGuid(*fileGuid) + "_" + FormatUInkGuid(*nameGuid) + ".uink";
-		const std::wstring path = prefix + std::wstring(leaf.begin(), leaf.end());
-		UINK_CHECK(state, path.size() == 230 && leaf.size() == 78 && prefix.size() == 152);
-		UINK_CHECK(state, GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES);
-		// 明确输出 UTF-8，避免 C locale 的 wcout 在中文路径处丢失后续证据。
-		const int targetBytes = WideCharToMultiByte(CP_UTF8, 0, path.data(), static_cast<int>(path.size()), nullptr, 0, nullptr, nullptr);
-		std::string targetUtf8(targetBytes > 0 ? static_cast<size_t>(targetBytes) : 0, '\0');
-		const bool targetPrinted = targetBytes > 0 && WideCharToMultiByte(CP_UTF8, 0, path.data(), static_cast<int>(path.size()),
-			targetUtf8.data(), targetBytes, nullptr, nullptr) == targetBytes;
-		UINK_CHECK(state, targetPrinted);
-		if (!targetPrinted) return;
-		std::cout << "UInk sibling-maxpath target=" << targetUtf8 << std::endl;
-		std::cout << "UInk sibling-maxpath lengths target=" << path.size() << " parent_prefix=" << prefix.size()
-			<< " old_tmp=" << path.size() + 41 << " new_tmp=" << prefix.size() + 40
-			<< " new_bak=" << prefix.size() + 40 << " new_recovery=" << prefix.size() + 49 << std::endl;
-		const std::wstring unknownPath = prefix + L"unrelated-unknown.bin";
-		const std::vector<std::byte> unknownBytes{ std::byte{ 0x71 }, std::byte{ 0x22 }, std::byte{ 0x19 } };
-		UINK_CHECK(state, WriteBytes(unknownPath, unknownBytes));
-		UInkEditingSession initial;
-		initial.document = MakeBasicDocument();
-		initial.document.header.guid = *fileGuid;
-		UInkSaveOptions create;
-		create.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
-		const UInkSaveResult firstSave = SaveUInkFile(path, initial, create);
-		std::cout << "UInk sibling-maxpath first_save_status=" << static_cast<unsigned>(firstSave.status)
-			<< " system_error=" << firstSave.systemError << std::endl;
-		UINK_CHECK(state, firstSave.status == UInkSaveStatus::Committed);
-		if (firstSave.status != UInkSaveStatus::Committed)
-		{
-			const auto failure = std::find_if(firstSave.diagnostics.begin(), firstSave.diagnostics.end(),
-				[](const auto& value) { return value.code == UInkDiagnosticCode::WriteFailed && value.fieldPath == "temp"; });
-			UINK_CHECK(state, firstSave.status == UInkSaveStatus::IoError && firstSave.systemError == ERROR_PATH_NOT_FOUND);
-			UINK_CHECK(state, failure != firstSave.diagnostics.end() && failure->systemError == ERROR_PATH_NOT_FOUND);
-			UINK_CHECK(state, GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES);
-			UINK_CHECK(state, ReadBytes(unknownPath) == unknownBytes);
-			std::cout << "UInk sibling-maxpath SKIPPED update/recovery: first save failed." << std::endl;
-			return;
-		}
-		const UInkReadResult firstRead = ReadUInkFile(path);
-		UINK_CHECK(state, firstRead.status == UInkReadStatus::Complete && firstRead.document && firstRead.sourceRevision);
-		UINK_CHECK(state, firstSave.revision && firstRead.sourceRevision == firstSave.revision);
-		UINK_CHECK(state, firstRead.document && firstRead.document->header.guid == *fileGuid && firstRead.document->canvases.size() == 1);
-		if (!firstRead.document || !firstRead.sourceRevision || firstRead.document->canvases.size() != 1) return;
-		UINK_CHECK(state, firstRead.document->canvases[0].content.size() == 1);
-		auto editing = CreateUInkEditingSession(firstRead, UInkEditingSource::ApplicationOwned);
-		UINK_CHECK(state, editing.has_value());
-		if (!editing) return;
-		UInkInk addedInk = MakeInk(1, 1);
-		addedInk.color.fallbackRgb = 0xaa4422;
-		editing->document.canvases[0].content.push_back(addedInk);
-		const UInkSaveResult update = SaveUInkFile(path, *editing);
-		UINK_CHECK(state, update.status == UInkSaveStatus::Committed && update.revision);
-		if (update.status != UInkSaveStatus::Committed || !update.revision)
-		{
-			std::cout << "UInk sibling-maxpath SKIPPED recovery: update failed." << std::endl;
-			return;
-		}
-		const UInkReadResult updated = ReadUInkFile(path);
-		UINK_CHECK(state, updated.status == UInkReadStatus::Complete && updated.document && updated.sourceRevision == update.revision);
-		UINK_CHECK(state, updated.document && updated.document->canvases.size() == 1);
-		if (!updated.document || !updated.sourceRevision || updated.document->canvases.size() != 1) return;
-		UINK_CHECK(state, updated.document->header.guid == *fileGuid);
-		UINK_CHECK(state, updated.document->canvases[0].pageGuid == firstRead.document->canvases[0].pageGuid);
-		UINK_CHECK(state, updated.document->canvases[0].content.size() == 2);
-		UINK_CHECK(state, *updated.sourceRevision != *firstRead.sourceRevision);
-		UINK_CHECK(state, updated.sourceRevision->sha256 != firstRead.sourceRevision->sha256);
-		if (updated.document->canvases[0].content.size() == 2)
-		{
-			const auto* actualInk = std::get_if<UInkInk>(&updated.document->canvases[0].content[1]);
-			UINK_CHECK(state, actualInk && actualInk->color.fallbackRgb == addedInk.color.fallbackRgb &&
-				actualInk->points.size() == addedInk.points.size() && NearlyEqual(actualInk->points[1].x, addedInk.points[1].x));
-		}
-		const std::vector<std::byte> predecessor = ReadBytes(path);
-		auto recoverySession = CreateUInkEditingSession(updated, UInkEditingSource::ApplicationOwned);
-		UINK_CHECK(state, recoverySession.has_value());
-		if (!recoverySession) return;
-		recoverySession->document.canvases[0].content.push_back(MakeInk(2, 2));
-		UInkFileTestFaultInjection faults;
-		faults.failCommittedRevisionValidation = true;
-		UInkSaveResult recovery;
-		{
-			FaultScope scope(faults);
-			recovery = SaveUInkFile(path, *recoverySession);
-		}
-		UINK_CHECK(state, recovery.status == UInkSaveStatus::PartialCommitRequiresRecovery && !recovery.recoveryPath.empty());
-		// 只使用生产返回的 opaque locator，不根据最终 basename 猜备份名字。
-		UINK_CHECK(state, recovery.recoveryPath.starts_with(prefix) && recovery.recoveryPath.size() < MAX_PATH);
-		UINK_CHECK(state, ReadBytes(recovery.recoveryPath) == predecessor);
-		const UInkReadResult recovered = ReadUInkFile(recovery.recoveryPath);
-		UINK_CHECK(state, recovered.status == UInkReadStatus::Complete && recovered.document && recovered.sourceRevision);
-		UINK_CHECK(state, recovered.sourceRevision && recovered.sourceRevision->sha256 == updated.sourceRevision->sha256);
-		UINK_CHECK(state, recovered.document && recovered.document->header.guid == *fileGuid &&
-			recovered.document->canvases.size() == 1 && recovered.document->canvases[0].content.size() == 2);
-		UINK_CHECK(state, ReadBytes(unknownPath) == unknownBytes);
-		std::cout << "UInk sibling-maxpath update/recovery completed." << std::endl;
-	}
-
-#if defined(DRAW3_TESTING)
-	class CleanupDeleteDeny
-	{
-		struct Entry
-		{
-			HANDLE handle = INVALID_HANDLE_VALUE;
-			PSECURITY_DESCRIPTOR original = nullptr;
-			PACL dacl = nullptr;
-			bool applied = false;
-			bool protectedDacl = false;
-		};
-		std::array<Entry, 2> entries_{};
-
-	public:
-		~CleanupDeleteDeny()
-		{
-			(void)Restore();
-			for (auto& entry : entries_)
-			{
-				if (entry.original) LocalFree(entry.original);
-				if (entry.handle != INVALID_HANDLE_VALUE) CloseHandle(entry.handle);
-			}
-		}
-		bool Deny(size_t index, const std::wstring& path, bool directory, DWORD rights)
-		{
-			auto& entry = entries_[index];
-			entry.handle = CreateFileW(path.c_str(), READ_CONTROL | WRITE_DAC,
-				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-				FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : 0), nullptr);
-			if (entry.handle == INVALID_HANDLE_VALUE ||
-				GetSecurityInfo(entry.handle, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
-					nullptr, nullptr, &entry.dacl, nullptr, &entry.original) != ERROR_SUCCESS || !entry.dacl) return false;
-			SECURITY_DESCRIPTOR_CONTROL control = 0;
-			DWORD revision = 0;
-			if (!GetSecurityDescriptorControl(entry.original, &control, &revision)) return false;
-			entry.protectedDacl = (control & SE_DACL_PROTECTED) != 0;
-			// 只对当前测试进程的 TokenUser 加 deny ACE；取不到自身 SID 即前提失败。
-			HANDLE token = nullptr;
-			if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
-			struct TokenCloser { HANDLE value; ~TokenCloser() { CloseHandle(value); } } tokenCloser{ token };
-			DWORD tokenBytes = 0;
-			if (GetTokenInformation(token, TokenUser, nullptr, 0, &tokenBytes) ||
-				GetLastError() != ERROR_INSUFFICIENT_BUFFER || tokenBytes < sizeof(TOKEN_USER)) return false;
-			std::vector<std::byte> tokenUserBytes(tokenBytes);
-			if (!GetTokenInformation(token, TokenUser, tokenUserBytes.data(), tokenBytes, &tokenBytes)) return false;
-			const PSID sid = reinterpret_cast<TOKEN_USER*>(tokenUserBytes.data())->User.Sid;
-			if (!IsValidSid(sid)) return false;
-			ACL_SIZE_INFORMATION info{};
-			if (!GetAclInformation(entry.dacl, &info, sizeof(info), AclSizeInformation)) return false;
-			const DWORD size = info.AclBytesInUse + sizeof(ACCESS_DENIED_ACE) - sizeof(DWORD) + GetLengthSid(sid);
-			std::vector<std::byte> storage(size);
-			PACL denied = reinterpret_cast<PACL>(storage.data());
-			const DWORD aclRevision = entry.dacl->AclRevision;
-			if (!InitializeAcl(denied, size, aclRevision) ||
-				!AddAccessDeniedAce(denied, aclRevision, rights, sid)) return false;
-			for (DWORD ace = 0; ace < info.AceCount; ++ace)
-			{
-				void* originalAce = nullptr;
-				if (!GetAce(entry.dacl, ace, &originalAce) ||
-					!AddAce(denied, aclRevision, MAXDWORD, originalAce, static_cast<ACE_HEADER*>(originalAce)->AceSize)) return false;
-			}
-			entry.applied = SetSecurityInfo(entry.handle, SE_FILE_OBJECT,
-				DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-				nullptr, nullptr, denied, nullptr) == ERROR_SUCCESS;
-			return entry.applied;
-		}
-		bool Restore() noexcept
-		{
-			bool restored = true;
-			for (auto& entry : entries_)
-			{
-				if (!entry.applied) continue;
-				const DWORD flags = DACL_SECURITY_INFORMATION |
-					(entry.protectedDacl ? PROTECTED_DACL_SECURITY_INFORMATION : UNPROTECTED_DACL_SECURITY_INFORMATION);
-				if (SetSecurityInfo(entry.handle, SE_FILE_OBJECT, flags, nullptr, nullptr, entry.dacl, nullptr) == ERROR_SUCCESS)
-					entry.applied = false;
-				else restored = false;
-			}
-			return restored;
-		}
-	};
-
-	struct CleanupActorContext
-	{
-		enum class Mode
-		{
-			Observe, OccupyBeforeCreate, ReplaceAfterWrite, RewriteAfterWrite,
-			BackupForeignBeforeReplace, BackupReplaceBeforeCleanup, BackupRewriteBeforeCleanup,
-			RecoveryOwn, RecoveryReplace, RecoveryRewrite, PartialForeign, PartialUnreadable,
-			ThrowAfterReplace, ThrowAfterRecovery, DenyTempDelete, DenyBackupDelete, ReadOnlyBackup,
-			MultiLinkTemp, SharingTemp, MultiLinkBackup
-		};
-		Mode mode = Mode::Observe;
-		std::wstring prefix, target, heldPath, candidate, backup, recovery, linkPath;
-		bool failed = false, actorDone = false, ntfs = false, deleteProbeOpened = false;
-		DWORD deleteProbeError = ERROR_SUCCESS;
-		uint32_t beforeCreate = 0, writerClosed = 0, beforeCleanup = 0, backupBefore = 0;
-		uint32_t replaceFinished = 0, recoveryMoves = 0, backupCleanup = 0, recoveryCleanup = 0;
-		BY_HANDLE_FILE_INFORMATION originalInfo{}, foreignInfo{}, tempInfo{};
-		HANDLE originalPin = INVALID_HANDLE_VALUE, blocking = INVALID_HANDLE_VALUE;
-		CleanupDeleteDeny denied;
-		std::vector<std::byte> tempBytes, originalBytes, changedBytes;
-		~CleanupActorContext()
-		{
-			CloseBlocking();
-			if (originalPin != INVALID_HANDLE_VALUE) CloseHandle(originalPin);
-		}
-		void CloseBlocking() noexcept
-		{
-			if (blocking != INVALID_HANDLE_VALUE) CloseHandle(blocking);
-			blocking = INVALID_HANDLE_VALUE;
-		}
-		const std::vector<std::byte> foreignBytes{ std::byte{ 0x46 }, std::byte{ 0x4f }, std::byte{ 0x52 } };
-		static bool SameIdentity(const BY_HANDLE_FILE_INFORMATION& left, const BY_HANDLE_FILE_INFORMATION& right) noexcept
-		{
-			return left.dwVolumeSerialNumber == right.dwVolumeSerialNumber && left.nFileIndexHigh == right.nFileIndexHigh &&
-				left.nFileIndexLow == right.nFileIndexLow;
-		}
-		bool OrdinaryNtfs(HANDLE file, BY_HANDLE_FILE_INFORMATION& info) noexcept
-		{
-			wchar_t filesystem[32]{};
-			const bool valid = GetFileType(file) == FILE_TYPE_DISK && GetFileInformationByHandle(file, &info) &&
-				!(info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) &&
-				info.nNumberOfLinks == 1 && info.dwVolumeSerialNumber && (info.nFileIndexHigh || info.nFileIndexLow) &&
-				GetVolumeInformationByHandleW(file, nullptr, 0, nullptr, nullptr, nullptr, filesystem, 32) &&
-				wcscmp(filesystem, L"NTFS") == 0;
-			ntfs = ntfs || valid;
-			return valid;
-		}
-		bool Inspect(const std::wstring& path, BY_HANDLE_FILE_INFORMATION& info) noexcept
-		{
-			const HANDLE file = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
-				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-				FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-			const bool ok = file != INVALID_HANDLE_VALUE && OrdinaryNtfs(file, info);
-			if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
-			return ok;
-		}
-		bool PinOriginal(const std::wstring& path) noexcept
-		{
-			if (originalPin != INVALID_HANDLE_VALUE) CloseHandle(originalPin);
-			originalPin = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
-				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-				FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-			return originalPin != INVALID_HANDLE_VALUE && OrdinaryNtfs(originalPin, originalInfo);
-		}
-		bool CreateForeign(const std::wstring& path) noexcept
-		{
-			const HANDLE file = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
-				nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-			if (file == INVALID_HANDLE_VALUE) return false;
-			DWORD written = 0;
-			const bool ok = WriteFile(file, foreignBytes.data(), static_cast<DWORD>(foreignBytes.size()), &written, nullptr) &&
-				written == foreignBytes.size() && FlushFileBuffers(file) && OrdinaryNtfs(file, foreignInfo);
-			CloseHandle(file);
-			return ok;
-		}
-		bool ReplaceWithForeign(const std::wstring& path)
-		{
-			return PinOriginal(path) && MoveFileExW(path.c_str(), heldPath.c_str(), MOVEFILE_WRITE_THROUGH) &&
-				CreateForeign(path) && !SameIdentity(originalInfo, foreignInfo);
-		}
-		bool RewriteSameObject(const std::wstring& path)
-		{
-			if (!PinOriginal(path)) return false;
-			originalBytes = ReadBytes(path);
-			if (originalBytes.empty()) return false;
-			changedBytes = originalBytes;
-			changedBytes.back() ^= std::byte{ 1 }; // 保持 size/ID，强制只有内容见证能拒绝清理。
-			if (!WriteBytes(path, changedBytes) || !Inspect(path, foreignInfo)) return false;
-			return SameIdentity(originalInfo, foreignInfo) && originalInfo.nFileSizeHigh == foreignInfo.nFileSizeHigh &&
-				originalInfo.nFileSizeLow == foreignInfo.nFileSizeLow && changedBytes != originalBytes;
-		}
-		bool CorruptBackup(const std::wstring& path)
-		{
-			BY_HANDLE_FILE_INFORMATION info{};
-			return Inspect(path, info) && WriteBytes(path, foreignBytes);
-		}
-		void ProbeDelete(const std::wstring& path) noexcept
-		{
-			const HANDLE probe = CreateFileW(path.c_str(), DELETE | GENERIC_READ | FILE_READ_ATTRIBUTES,
-				FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-			deleteProbeOpened = probe != INVALID_HANDLE_VALUE;
-			deleteProbeError = deleteProbeOpened ? ERROR_SUCCESS : GetLastError();
-			if (deleteProbeOpened) CloseHandle(probe);
-		}
-		bool DenyDelete(const std::wstring& path)
-		{
-			if (!PinOriginal(path)) { failed = true; return false; }
-			originalBytes = ReadBytes(path);
-			// 仅本轮私有 case 父目录及已创建文件；同时拒绝两条删除权限，避免父权限绕过。
-			if (!denied.Deny(0, prefix.substr(0, prefix.size() - 1), true, FILE_DELETE_CHILD) ||
-				!denied.Deny(1, path, false, DELETE)) { failed = true; return false; }
-			ProbeDelete(path);
-			const bool refused = !deleteProbeOpened && deleteProbeError == ERROR_ACCESS_DENIED;
-			if (!refused) failed = true;
-			return refused;
-		}
-		bool AddSecondLink(const std::wstring& path)
-		{
-			if (!PinOriginal(path)) return false;
-			originalBytes = ReadBytes(path);
-			linkPath = prefix + L"second-link.uink";
-			if (!CreateHardLinkW(linkPath.c_str(), path.c_str(), nullptr)) return false;
-			BY_HANDLE_FILE_INFORMATION info{};
-			return GetFileInformationByHandle(originalPin, &info) && info.nNumberOfLinks == 2 && SameIdentity(info, originalInfo);
-		}
-		static UInkCleanupTestAction Hook(UInkCleanupTestStage stage, const std::wstring& path, void* context) noexcept
-		{
-			auto& value = *static_cast<CleanupActorContext*>(context);
-			try
-			{
-				if (!path.starts_with(value.prefix)) { value.failed = true; return UInkCleanupTestAction::None; }
-				if (stage == UInkCleanupTestStage::TempBeforeCreate)
-				{
-					++value.beforeCreate; value.candidate = path;
-					if (value.mode == Mode::OccupyBeforeCreate)
-						value.actorDone = value.CreateForeign(path);
-				}
-				else if (stage == UInkCleanupTestStage::TempWriterClosed)
-				{
-					++value.writerClosed;
-					value.tempBytes = ReadBytes(path);
-					if (!value.Inspect(path, value.tempInfo)) value.failed = true;
-					if (value.mode == Mode::ReplaceAfterWrite) value.actorDone = value.ReplaceWithForeign(path);
-					if (value.mode == Mode::RewriteAfterWrite) value.actorDone = value.RewriteSameObject(path);
-				}
-				else if (stage == UInkCleanupTestStage::BackupBeforeReplace)
-				{
-					++value.backupBefore; value.backup = path;
-					if (value.mode == Mode::BackupForeignBeforeReplace) value.actorDone = value.CreateForeign(path);
-					if (value.mode == Mode::PartialForeign || value.mode == Mode::PartialUnreadable)
-					{
-						value.actorDone = value.CreateForeign(path) && value.RewriteSameObject(value.target);
-						if (value.mode == Mode::PartialUnreadable && value.actorDone)
-						{
-							value.blocking = CreateFileW(path.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING,
-								FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-							value.actorDone = value.blocking != INVALID_HANDLE_VALUE;
-						}
-					}
-				}
-				else if (stage == UInkCleanupTestStage::ReplaceFinished)
-				{
-					++value.replaceFinished;
-					if (value.mode == Mode::ThrowAfterReplace)
-					{
-						value.actorDone = value.CreateForeign(value.candidate);
-						if (!value.actorDone) value.failed = true;
-						return UInkCleanupTestAction::ThrowBadAlloc;
-					}
-					if (value.mode == Mode::RecoveryOwn || value.mode == Mode::RecoveryReplace ||
-						value.mode == Mode::RecoveryRewrite || value.mode == Mode::ThrowAfterRecovery)
-						value.actorDone = value.CorruptBackup(path);
-				}
-				else if (stage == UInkCleanupTestStage::RecoveryMovesFinished)
-				{
-					++value.recoveryMoves; value.recovery = path;
-					if (value.mode == Mode::RecoveryReplace) value.actorDone = value.actorDone && value.ReplaceWithForeign(path);
-					if (value.mode == Mode::RecoveryRewrite) value.actorDone = value.actorDone && value.RewriteSameObject(path);
-					if (value.mode == Mode::ThrowAfterRecovery) return UInkCleanupTestAction::ThrowBadAlloc;
-				}
-				else if (stage == UInkCleanupTestStage::BeforeCleanup)
-				{
-					if (path == value.candidate)
-					{
-						++value.beforeCleanup;
-						BY_HANDLE_FILE_INFORMATION info{};
-						if (!value.Inspect(path, info)) value.failed = true;
-						if (value.mode == Mode::DenyTempDelete) value.actorDone = value.DenyDelete(path);
-						if (value.mode == Mode::MultiLinkTemp) value.actorDone = value.AddSecondLink(path);
-						if (value.mode == Mode::SharingTemp)
-						{
-							value.originalBytes = ReadBytes(path);
-							value.actorDone = value.PinOriginal(path);
-							value.blocking = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE,
-								FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-							value.actorDone = value.actorDone && value.blocking != INVALID_HANDLE_VALUE;
-							value.ProbeDelete(path);
-							value.actorDone = value.actorDone && !value.deleteProbeOpened && value.deleteProbeError == ERROR_SHARING_VIOLATION;
-						}
-					}
-					else if (path == value.backup)
-					{
-						++value.backupCleanup;
-						if (value.mode == Mode::BackupReplaceBeforeCleanup) value.actorDone = value.ReplaceWithForeign(path);
-						if (value.mode == Mode::BackupRewriteBeforeCleanup) value.actorDone = value.RewriteSameObject(path);
-						if (value.mode == Mode::DenyBackupDelete) value.actorDone = value.DenyDelete(path);
-						if (value.mode == Mode::MultiLinkBackup) value.actorDone = value.AddSecondLink(path);
-						if (value.mode == Mode::ReadOnlyBackup)
-						{
-							value.actorDone = value.PinOriginal(path);
-							value.originalBytes = ReadBytes(path);
-							const DWORD attributes = GetFileAttributesW(path.c_str());
-							value.actorDone = value.actorDone && attributes != INVALID_FILE_ATTRIBUTES &&
-								SetFileAttributesW(path.c_str(), attributes | FILE_ATTRIBUTE_READONLY);
-							value.ProbeDelete(path);
-							value.actorDone = value.actorDone && value.deleteProbeOpened;
-						}
-					}
-					else if (path == value.recovery) ++value.recoveryCleanup;
-				}
-			}
-			catch (...) { value.failed = true; } // actor失败只记前提，不跨noexcept触发terminate。
-			return UInkCleanupTestAction::None;
-		}
-	};
-
-	class CleanupHookScope
-	{
-	public:
-		explicit CleanupHookScope(CleanupActorContext& context) { SetUInkCleanupTestHook(CleanupActorContext::Hook, &context); }
-		~CleanupHookScope() { SetUInkCleanupTestHook(nullptr, nullptr); }
-		CleanupHookScope(const CleanupHookScope&) = delete;
-		CleanupHookScope& operator=(const CleanupHookScope&) = delete;
-	};
-
-	void TestCleanupOwnership(TestState& state)
-	{
-		// 独立GUID树只用于同步真实Save/actor；保留失败证据，不枚举清旧目录。
-		std::array<wchar_t, MAX_PATH + 1> baseBuffer{};
-		const DWORD length = GetFullPathNameW(L"TestResults\\release-hardening", static_cast<DWORD>(baseBuffer.size()), baseBuffer.data(), nullptr);
-		UINK_CHECK(state, length > 0 && length < baseBuffer.size());
-		if (!length || length >= baseBuffer.size()) return;
-		const std::wstring base(baseBuffer.data(), length);
-		UINK_CHECK(state, base.size() >= 3 && base[1] == L':' && base[2] == L'\\');
-		if (base.size() < 3 || base[1] != L':' || base[2] != L'\\') return;
-		struct DirectoryLeases { std::vector<HANDLE> values; ~DirectoryLeases() { for (HANDLE value : values) CloseHandle(value); } } leases;
-		const auto lease = [&leases](const std::wstring& path)
-		{
-			const HANDLE file = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ, nullptr,
-				OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-			BY_HANDLE_FILE_INFORMATION info{};
-			if (file == INVALID_HANDLE_VALUE) return false;
-			if (GetFileType(file) != FILE_TYPE_DISK || !GetFileInformationByHandle(file, &info) ||
-				!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
-				{ CloseHandle(file); return false; }
-			try { leases.values.push_back(file); } catch (...) { CloseHandle(file); throw; }
-			return true;
-		};
-		const bool driveLeased = lease(base.substr(0, 3)); UINK_CHECK(state, driveLeased); if (!driveLeased) return;
-		for (size_t begin = 3; begin < base.size();)
-		{
-			const size_t next = base.find(L'\\', begin); const size_t end = next == std::wstring::npos ? base.size() : next;
-			const bool acquired = lease(base.substr(0, end)); UINK_CHECK(state, acquired); if (!acquired) return;
-			begin = end + 1;
-		}
-		const auto rootGuid = CreateUInkGuid(); UINK_CHECK(state, rootGuid); if (!rootGuid) return;
-		const std::string token = FormatUInkGuid(*rootGuid);
-		const std::wstring root = base + L"\\uink-cleanup-" + std::wstring(token.begin(), token.end());
-		const bool rootCreated = CreateDirectoryW(root.c_str(), nullptr) != FALSE;
-		UINK_CHECK(state, rootCreated); if (!rootCreated) return;
-		const bool rootLeased = lease(root); UINK_CHECK(state, rootLeased); if (!rootLeased) return;
-		std::cout << "UInk cleanup private_root_token=" << token << std::endl;
-		const std::wstring unknown = root + L"\\unrelated-unknown.bin";
-		const std::vector<std::byte> unknownBytes{ std::byte{ 0x91 }, std::byte{ 0x72 }, std::byte{ 0x33 } };
-		UINK_CHECK(state, WriteBytes(unknown, unknownBytes));
-		const auto run = [&](const wchar_t* caseName, CleanupActorContext::Mode mode,
-			const UInkFileTestFaultInjection& faults, UInkSaveStatus expected, DWORD expectedError)
-		{
-			const std::wstring folder = root + L"\\" + caseName;
-			const bool created = CreateDirectoryW(folder.c_str(), nullptr) != FALSE;
-			UINK_CHECK(state, created); if (!created) return;
-			const bool folderLeased = lease(folder); UINK_CHECK(state, folderLeased); if (!folderLeased) return;
-			const std::wstring target = folder + L"\\target.uink";
-			CleanupActorContext actor; actor.mode = mode; actor.prefix = folder + L"\\"; actor.heldPath = folder + L"\\held-original.uink";
-			UInkEditingSession session; session.document = MakeBasicDocument();
-			UInkSaveOptions options; options.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
-			UInkSaveResult result;
-			{
-				FaultScope faultScope(faults);
-				CleanupHookScope hookScope(actor);
-				result = SaveUInkFile(target, session, options);
-			}
-			std::cout << "UInk cleanup stage mode=" << static_cast<unsigned>(mode) << " action=" << actor.actorDone
-				<< " before=" << actor.beforeCreate << " writer_closed=" << actor.writerClosed << " cleanup=" << actor.beforeCleanup
-				<< " ntfs=" << actor.ntfs << " failed=" << actor.failed << " status=" << static_cast<unsigned>(result.status)
-				<< " error=" << result.systemError << std::endl;
-			UINK_CHECK(state, !actor.failed && actor.ntfs && actor.beforeCreate == 1 && !actor.candidate.empty());
-			// GREEN 的未创建分支不应尝试cleanup；不能把旧guard事件次数当正确语义。
-			if (mode == CleanupActorContext::Mode::OccupyBeforeCreate) UINK_CHECK(state, actor.writerClosed == 0 && actor.beforeCleanup <= 1);
-			else UINK_CHECK(state, actor.beforeCleanup == 1);
-			UINK_CHECK(state, result.status == expected && result.systemError == expectedError);
-			UINK_CHECK(state, GetFileAttributesW(target.c_str()) == INVALID_FILE_ATTRIBUTES);
-			if (mode != CleanupActorContext::Mode::Observe)
-			{
-				UINK_CHECK(state, actor.actorDone);
-				const UInkDiagnosticCode wanted = mode == CleanupActorContext::Mode::OccupyBeforeCreate
-					? UInkDiagnosticCode::WriteFailed : UInkDiagnosticCode::SelfValidationFailed;
-				UINK_CHECK(state, std::any_of(result.diagnostics.begin(), result.diagnostics.end(),
-					[&](const auto& value) { return value.code == wanted && value.fieldPath == "temp" && value.systemError == expectedError; }));
-				if (mode == CleanupActorContext::Mode::ReplaceAfterWrite)
-				{
-					const UInkReadResult held = ReadUInkFile(actor.heldPath);
-					UINK_CHECK(state, actor.writerClosed == 1 && held.status == UInkReadStatus::Complete && held.document && held.sourceRevision);
-					UINK_CHECK(state, held.document && held.document->header.guid == session.document.header.guid && held.document->canvases.size() == 1);
-					UINK_CHECK(state, held.sourceRevision && held.sourceRevision->volumeSerial == actor.originalInfo.dwVolumeSerialNumber &&
-						held.sourceRevision->fileIndex == ((static_cast<uint64_t>(actor.originalInfo.nFileIndexHigh) << 32) | actor.originalInfo.nFileIndexLow));
-				}
-				BY_HANDLE_FILE_INFORMATION retainedInfo{};
-				const HANDLE retained = CreateFileW(actor.candidate.c_str(), FILE_READ_ATTRIBUTES,
-					FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-				const bool sameForeign = retained != INVALID_HANDLE_VALUE && GetFileInformationByHandle(retained, &retainedInfo) &&
-					retainedInfo.dwVolumeSerialNumber == actor.foreignInfo.dwVolumeSerialNumber && retainedInfo.nFileIndexHigh == actor.foreignInfo.nFileIndexHigh &&
-					retainedInfo.nFileIndexLow == actor.foreignInfo.nFileIndexLow;
-				if (retained != INVALID_HANDLE_VALUE) CloseHandle(retained);
-				// 原cleanup按路径删异物时，此唯一保留断言真实RED；不把Save失败当安全PASS。
-				UINK_CHECK(state, sameForeign && ReadBytes(actor.candidate) == actor.foreignBytes);
-			}
-			else UINK_CHECK(state, GetFileAttributesW(actor.candidate.c_str()) == INVALID_FILE_ATTRIBUTES);
-			UINK_CHECK(state, ReadBytes(unknown) == unknownBytes);
-		};
-		run(L"precreate-foreign", CleanupActorContext::Mode::OccupyBeforeCreate, {}, UInkSaveStatus::IoError, ERROR_FILE_EXISTS);
-		run(L"temp-replaced", CleanupActorContext::Mode::ReplaceAfterWrite, {}, UInkSaveStatus::SelfValidationFailed, ERROR_SUCCESS);
-		UInkFileTestFaultInjection faults; faults.failWriteAfterBytes = 1;
-		run(L"ours-write", CleanupActorContext::Mode::Observe, faults, UInkSaveStatus::IoError, ERROR_WRITE_FAULT);
-		faults = {}; faults.failFlush = true;
-		run(L"ours-flush", CleanupActorContext::Mode::Observe, faults, UInkSaveStatus::IoError, ERROR_WRITE_FAULT);
-		faults = {}; faults.failSelfValidation = true;
-		run(L"ours-selfvalidate", CleanupActorContext::Mode::Observe, faults, UInkSaveStatus::SelfValidationFailed, ERROR_SUCCESS);
-		faults = {}; faults.failCommit = true;
-		run(L"ours-commit", CleanupActorContext::Mode::Observe, faults, UInkSaveStatus::IoError, ERROR_ACCESS_DENIED);
-
-		const auto expandedFolder = [&](const wchar_t* name)
-		{
-			const std::wstring folder = root + L"\\" + name;
-			const bool created = CreateDirectoryW(folder.c_str(), nullptr) != FALSE;
-			UINK_CHECK(state, created); if (!created) return std::wstring{};
-			const bool acquired = lease(folder); UINK_CHECK(state, acquired); if (!acquired) return std::wstring{};
-			return folder;
-		};
-		const auto report = [](const CleanupActorContext& actor, const UInkSaveResult& result, bool restored)
-		{
-			std::cout << "UInk cleanup expanded mode=" << static_cast<unsigned>(actor.mode) << " action=" << actor.actorDone
-				<< " before=" << actor.beforeCreate << " writer_closed=" << actor.writerClosed << " temp_cleanup=" << actor.beforeCleanup
-				<< " backup_before=" << actor.backupBefore << " replaced_stage=" << actor.replaceFinished
-				<< " backup_cleanup=" << actor.backupCleanup << " recovery_moves=" << actor.recoveryMoves << " recovery_cleanup=" << actor.recoveryCleanup
-				<< " ntfs=" << actor.ntfs << " failed=" << actor.failed << " restored=" << restored
-				<< " delete_probe_opened=" << actor.deleteProbeOpened << " delete_probe_error=" << actor.deleteProbeError
-				<< " status=" << static_cast<unsigned>(result.status) << " error=" << result.systemError
-				<< " temp_id=" << actor.tempInfo.nFileIndexHigh << ":" << actor.tempInfo.nFileIndexLow
-				<< " original_id=" << actor.originalInfo.nFileIndexHigh << ":" << actor.originalInfo.nFileIndexLow
-				<< " foreign_id=" << actor.foreignInfo.nFileIndexHigh << ":" << actor.foreignInfo.nFileIndexLow;
-			for (const auto* path : { &actor.candidate, &actor.backup, &actor.recovery })
-			{
-				if (path->starts_with(actor.prefix))
-				{
-					const std::wstring leaf = path->substr(actor.prefix.size());
-					std::cout << " artifact_leaf=" << std::string(leaf.begin(), leaf.end());
-				}
-			}
-			std::cout << std::endl;
-		};
-		const auto retainedIdentity = [](const std::wstring& path, const BY_HANDLE_FILE_INFORMATION& expected, DWORD links = 1)
-		{
-			const HANDLE file = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
-				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
-			BY_HANDLE_FILE_INFORMATION info{};
-			const bool same = file != INVALID_HANDLE_VALUE && GetFileInformationByHandle(file, &info) &&
-				info.nNumberOfLinks == links && CleanupActorContext::SameIdentity(info, expected);
-			if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
-			return same;
-		};
-		const auto missing = [](const std::wstring& path)
-		{
-			const DWORD attributes = GetFileAttributesW(path.c_str());
-			const DWORD error = attributes == INVALID_FILE_ATTRIBUTES ? GetLastError() : ERROR_SUCCESS;
-			return attributes == INVALID_FILE_ATTRIBUTES && (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND);
-		};
-		const auto runTempRetention = [&](const wchar_t* name, CleanupActorContext::Mode mode)
-		{
-			const std::wstring folder = expandedFolder(name); if (folder.empty()) return;
-			CleanupActorContext actor; actor.mode = mode; actor.prefix = folder + L"\\";
-			actor.target = folder + L"\\target.uink";
-			UInkEditingSession session; session.document = MakeBasicDocument();
-			UInkSaveOptions options; options.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
-			UInkFileTestFaultInjection faults;
-			faults.failSelfValidation = mode != CleanupActorContext::Mode::RewriteAfterWrite;
-			UInkSaveResult result;
-			{
-				FaultScope faultScope(faults); CleanupHookScope hookScope(actor);
-				result = SaveUInkFile(actor.target, session, options);
-			}
-			actor.CloseBlocking();
-			const bool restored = actor.denied.Restore();
-			report(actor, result, restored);
-			UINK_CHECK(state, restored && !actor.failed && actor.actorDone && actor.ntfs &&
-				actor.beforeCreate == 1 && actor.writerClosed == 1 && actor.beforeCleanup == 1);
-			UINK_CHECK(state, result.status == UInkSaveStatus::SelfValidationFailed && result.systemError == ERROR_SUCCESS);
-			UINK_CHECK(state, missing(actor.target));
-			const bool rewritten = mode == CleanupActorContext::Mode::RewriteAfterWrite;
-			UINK_CHECK(state, ReadBytes(actor.candidate) == (rewritten ? actor.changedBytes : actor.originalBytes));
-			const DWORD links = mode == CleanupActorContext::Mode::MultiLinkTemp ? 2 : 1;
-			UINK_CHECK(state, retainedIdentity(actor.candidate, actor.originalInfo, links));
-			if (rewritten)
-				UINK_CHECK(state, actor.changedBytes.size() == actor.originalBytes.size() && actor.changedBytes != actor.originalBytes);
-			else
-			{
-				const auto kept = ReadUInkFile(actor.candidate);
-				UINK_CHECK(state, kept.status == UInkReadStatus::Complete && kept.document && kept.sourceRevision);
-			}
-			if (mode == CleanupActorContext::Mode::DenyTempDelete)
-				UINK_CHECK(state, !actor.deleteProbeOpened && actor.deleteProbeError == ERROR_ACCESS_DENIED);
-			if (mode == CleanupActorContext::Mode::SharingTemp)
-				UINK_CHECK(state, !actor.deleteProbeOpened && actor.deleteProbeError == ERROR_SHARING_VIOLATION);
-			if (links == 2)
-				UINK_CHECK(state, retainedIdentity(actor.linkPath, actor.originalInfo, 2) && ReadBytes(actor.linkPath) == actor.originalBytes);
-			UINK_CHECK(state, ReadBytes(unknown) == unknownBytes);
-		};
-		runTempRetention(L"temp-same-id-content", CleanupActorContext::Mode::RewriteAfterWrite);
-		runTempRetention(L"temp-delete-dacl", CleanupActorContext::Mode::DenyTempDelete);
-		runTempRetention(L"temp-two-links", CleanupActorContext::Mode::MultiLinkTemp);
-		runTempRetention(L"temp-write-sharing", CleanupActorContext::Mode::SharingTemp);
-
-		const auto runUpdate = [&](const wchar_t* name, CleanupActorContext::Mode mode)
-		{
-			const std::wstring folder = expandedFolder(name); if (folder.empty()) return;
-			const std::wstring target = folder + L"\\target.uink";
-			UInkEditingSession initial; initial.document = MakeBasicDocument();
-			UInkSaveOptions create; create.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
-			const UInkSaveResult seeded = SaveUInkFile(target, initial, create);
-			UINK_CHECK(state, seeded.status == UInkSaveStatus::Committed); if (seeded.status != UInkSaveStatus::Committed) return;
-			const std::vector<std::byte> predecessor = ReadBytes(target);
-			const auto source = ReadUInkFile(target);
-			auto editing = CreateUInkEditingSession(source, UInkEditingSource::ApplicationOwned);
-			UINK_CHECK(state, source.status == UInkReadStatus::Complete && source.sourceRevision && editing);
-			if (!source.sourceRevision || !editing) return;
-			editing->document.canvases[0].content.push_back(MakeInk(1, 1));
-			CleanupActorContext actor; actor.mode = mode; actor.target = target; actor.prefix = folder + L"\\";
-			actor.heldPath = folder + L"\\held-original.uink";
-			UInkFileTestFaultInjection faults;
-			faults.failCommit = mode == CleanupActorContext::Mode::BackupForeignBeforeReplace ||
-				mode == CleanupActorContext::Mode::PartialForeign || mode == CleanupActorContext::Mode::PartialUnreadable;
-			UInkSaveResult result;
-			{
-				FaultScope faultScope(faults); CleanupHookScope hookScope(actor);
-				result = SaveUInkFile(target, *editing);
-			}
-			if (mode == CleanupActorContext::Mode::PartialUnreadable)
-				UINK_CHECK(state, actor.blocking != INVALID_HANDLE_VALUE && ReadUInkFile(result.recoveryPath).status == UInkReadStatus::IoError);
-			actor.CloseBlocking();
-			const bool restored = actor.denied.Restore();
-			report(actor, result, restored);
-			UINK_CHECK(state, restored && !actor.failed && actor.ntfs && actor.beforeCreate == 1 && actor.writerClosed == 1 &&
-				actor.backupBefore == 1 && actor.replaceFinished == 1 && !actor.tempBytes.empty());
-			if (mode != CleanupActorContext::Mode::Observe) UINK_CHECK(state, actor.actorDone);
-			const bool partial = mode == CleanupActorContext::Mode::PartialForeign || mode == CleanupActorContext::Mode::PartialUnreadable;
-			const bool recovery = mode == CleanupActorContext::Mode::RecoveryOwn || mode == CleanupActorContext::Mode::RecoveryReplace ||
-				mode == CleanupActorContext::Mode::RecoveryRewrite || mode == CleanupActorContext::Mode::ThrowAfterRecovery;
-			const bool throwing = mode == CleanupActorContext::Mode::ThrowAfterReplace || mode == CleanupActorContext::Mode::ThrowAfterRecovery;
-			if (partial)
-			{
-				// 真正 Partial 选择 foreign/不可读 backup；保留原已自验证 temp，不能用副本替代。
-				UINK_CHECK(state, result.status == UInkSaveStatus::PartialCommitRequiresRecovery &&
-					result.systemError == ERROR_UNABLE_TO_MOVE_REPLACEMENT && result.recoveryPath == actor.backup);
-				UINK_CHECK(state, actor.beforeCleanup == 0 && actor.backupCleanup == 0 && actor.recoveryMoves == 0);
-				UINK_CHECK(state, ReadBytes(actor.candidate) == actor.tempBytes && ReadBytes(target) == actor.changedBytes);
-				const auto kept = ReadUInkFile(actor.candidate);
-				UINK_CHECK(state, kept.status == UInkReadStatus::Complete && kept.document &&
-					kept.document->header.guid == editing->document.header.guid && kept.document->canvases[0].content.size() == 2);
-				UINK_CHECK(state, ReadBytes(actor.backup) == actor.foreignBytes);
-			}
-			else if (mode == CleanupActorContext::Mode::BackupForeignBeforeReplace)
-			{
-				UINK_CHECK(state, result.status == UInkSaveStatus::IoError && result.systemError == ERROR_UNABLE_TO_MOVE_REPLACEMENT);
-				UINK_CHECK(state, actor.beforeCleanup == 1 && actor.backupCleanup == 1 && actor.recoveryMoves == 0);
-				UINK_CHECK(state, missing(actor.candidate) && ReadBytes(target) == predecessor &&
-					ReadBytes(actor.backup) == actor.foreignBytes && retainedIdentity(actor.backup, actor.foreignInfo));
-			}
-			else if (throwing)
-			{
-				// callback 返回有限动作，真实 cpp postmutation 抛错并走原 catch/guard 展开。
-				UINK_CHECK(state, result.status == UInkSaveStatus::InvalidModel && result.systemError == ERROR_SUCCESS);
-				UINK_CHECK(state, actor.beforeCleanup == 0 && actor.backupCleanup == 0 && actor.recoveryCleanup == 0);
-				if (mode == CleanupActorContext::Mode::ThrowAfterReplace)
-				{
-					UINK_CHECK(state, actor.recoveryMoves == 0 && ReadBytes(target) == actor.tempBytes && ReadBytes(actor.backup) == predecessor);
-					UINK_CHECK(state, retainedIdentity(actor.candidate, actor.foreignInfo) && ReadBytes(actor.candidate) == actor.foreignBytes);
-				}
-				else
-					UINK_CHECK(state, actor.recoveryMoves == 1 && ReadBytes(actor.recovery) == actor.tempBytes && ReadBytes(target) == actor.foreignBytes);
-			}
-			else if (recovery)
-			{
-				UINK_CHECK(state, result.status == UInkSaveStatus::SourceChanged && result.systemError == ERROR_SUCCESS);
-				UINK_CHECK(state, actor.recoveryMoves == 1 && actor.recoveryCleanup == 1 && missing(actor.candidate) &&
-					missing(actor.backup) && ReadBytes(target) == actor.foreignBytes);
-				if (mode == CleanupActorContext::Mode::RecoveryOwn) UINK_CHECK(state, missing(actor.recovery));
-				else
-				{
-					UINK_CHECK(state, CleanupActorContext::SameIdentity(actor.originalInfo, actor.tempInfo));
-					UINK_CHECK(state, retainedIdentity(actor.recovery, actor.foreignInfo));
-					if (mode == CleanupActorContext::Mode::RecoveryReplace)
-					{
-						UINK_CHECK(state, ReadBytes(actor.recovery) == actor.foreignBytes && ReadBytes(actor.heldPath) == actor.tempBytes);
-						const auto held = ReadUInkFile(actor.heldPath);
-						UINK_CHECK(state, held.status == UInkReadStatus::Complete && held.document && held.document->canvases[0].content.size() == 2);
-					}
-					else UINK_CHECK(state, ReadBytes(actor.recovery) == actor.changedBytes && actor.changedBytes.size() == actor.tempBytes.size());
-				}
-			}
-			else
-			{
-				UINK_CHECK(state, result.status == UInkSaveStatus::Committed && result.systemError == ERROR_SUCCESS);
-				UINK_CHECK(state, actor.beforeCleanup == 0 && actor.backupCleanup == 1 && actor.recoveryMoves == 0 &&
-					missing(actor.candidate) && ReadBytes(target) == actor.tempBytes);
-				if (mode == CleanupActorContext::Mode::Observe)
-					UINK_CHECK(state, result.recoveryPath.empty() && missing(actor.backup));
-				else
-				{
-					UINK_CHECK(state, result.recoveryPath == actor.backup);
-					const auto warning = std::find_if(result.diagnostics.begin(), result.diagnostics.end(), [](const auto& value)
-					{
-						return value.code == UInkDiagnosticCode::IoError && value.severity == UInkDiagnosticSeverity::Warning &&
-							value.fieldPath == "backup.cleanup" && value.systemError != ERROR_SUCCESS;
-					});
-					UINK_CHECK(state, warning != result.diagnostics.end());
-					if (warning != result.diagnostics.end()) std::cout << "UInk cleanup warning mode=" << static_cast<unsigned>(mode) << " error=" << warning->systemError << std::endl;
-					if (mode == CleanupActorContext::Mode::BackupReplaceBeforeCleanup)
-						UINK_CHECK(state, retainedIdentity(actor.backup, actor.foreignInfo) && ReadBytes(actor.backup) == actor.foreignBytes &&
-							ReadBytes(actor.heldPath) == predecessor);
-					else if (mode == CleanupActorContext::Mode::BackupRewriteBeforeCleanup)
-						UINK_CHECK(state, retainedIdentity(actor.backup, actor.originalInfo) && ReadBytes(actor.backup) == actor.changedBytes &&
-							actor.changedBytes.size() == predecessor.size() && actor.changedBytes != predecessor);
-					else
-					{
-						const DWORD links = mode == CleanupActorContext::Mode::MultiLinkBackup ? 2 : 1;
-						UINK_CHECK(state, retainedIdentity(actor.backup, actor.originalInfo, links) && ReadBytes(actor.backup) == predecessor);
-						if (links == 2)
-							UINK_CHECK(state, retainedIdentity(actor.linkPath, actor.originalInfo, 2) && ReadBytes(actor.linkPath) == predecessor);
-					}
-					if (mode == CleanupActorContext::Mode::DenyBackupDelete)
-						UINK_CHECK(state, !actor.deleteProbeOpened && actor.deleteProbeError == ERROR_ACCESS_DENIED &&
-							warning != result.diagnostics.end() && warning->systemError == ERROR_ACCESS_DENIED);
-					if (mode == CleanupActorContext::Mode::ReadOnlyBackup)
-						UINK_CHECK(state, actor.deleteProbeOpened && (GetFileAttributesW(actor.backup.c_str()) & FILE_ATTRIBUTE_READONLY));
-					if (mode == CleanupActorContext::Mode::MultiLinkBackup)
-						UINK_CHECK(state, warning != result.diagnostics.end() && warning->systemError == ERROR_NOT_SUPPORTED);
-				}
-				const auto published = ReadUInkFile(target);
-				UINK_CHECK(state, published.status == UInkReadStatus::Complete && published.document && published.sourceRevision &&
-					published.document->canvases[0].content.size() == 2 && published.document->header.guid == editing->document.header.guid);
-			}
-			UINK_CHECK(state, ReadBytes(unknown) == unknownBytes);
-		};
-		runUpdate(L"normal-update-owned", CleanupActorContext::Mode::Observe);
-		runUpdate(L"backup-failed-foreign", CleanupActorContext::Mode::BackupForeignBeforeReplace);
-		runUpdate(L"backup-replaced", CleanupActorContext::Mode::BackupReplaceBeforeCleanup);
-		runUpdate(L"backup-same-id-content", CleanupActorContext::Mode::BackupRewriteBeforeCleanup);
-		runUpdate(L"recovery-owned", CleanupActorContext::Mode::RecoveryOwn);
-		runUpdate(L"recovery-replaced", CleanupActorContext::Mode::RecoveryReplace);
-		runUpdate(L"recovery-same-id-content", CleanupActorContext::Mode::RecoveryRewrite);
-		runUpdate(L"partial-foreign-backup", CleanupActorContext::Mode::PartialForeign);
-		runUpdate(L"partial-unreadable-backup", CleanupActorContext::Mode::PartialUnreadable);
-		runUpdate(L"exception-after-replace", CleanupActorContext::Mode::ThrowAfterReplace);
-		runUpdate(L"exception-after-recovery", CleanupActorContext::Mode::ThrowAfterRecovery);
-		runUpdate(L"backup-delete-dacl", CleanupActorContext::Mode::DenyBackupDelete);
-		runUpdate(L"backup-readonly-disposition", CleanupActorContext::Mode::ReadOnlyBackup);
-		runUpdate(L"backup-two-links", CleanupActorContext::Mode::MultiLinkBackup);
-
-		static_assert(!std::is_copy_constructible_v<UInkOwnedVersion> && !std::is_copy_assignable_v<UInkOwnedVersion>);
-		static_assert(std::is_nothrow_move_constructible_v<UInkOwnedVersion> && std::is_nothrow_move_assignable_v<UInkOwnedVersion>);
-		const auto makeOwned = [&](const std::wstring& path, UInkOwnedVersion& owned)
-		{
-			UInkEditingSession session; session.document = MakeBasicDocument();
-			UInkSaveOptions create; create.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
-			const auto saved = SaveUInkFileWithOwnedVersion(path, session, owned, create);
-			UINK_CHECK(state, saved.status == UInkSaveStatus::Committed && saved.revision && owned);
-			return saved.status == UInkSaveStatus::Committed && static_cast<bool>(owned);
-		};
-		{
-			const std::wstring folder = expandedFolder(L"cap-owned-move-remove");
-			if (!folder.empty())
-			{
-				const std::wstring path = folder + L"\\version.uink";
-				UInkOwnedVersion original;
-				uint32_t error = ERROR_SUCCESS;
-				UINK_CHECK(state, !original && !TryRemoveOwnedUInkVersion(original, error) && error == ERROR_INVALID_HANDLE);
-				if (makeOwned(path, original))
-				{
-					const auto bytes = ReadBytes(path);
-					UInkOwnedVersion moved(std::move(original)), final;
-					final = std::move(moved);
-					UINK_CHECK(state, !original && !moved && final);
-					UINK_CHECK(state, !TryRemoveOwnedUInkVersion(original, error) && error == ERROR_INVALID_HANDLE && ReadBytes(path) == bytes);
-					UINK_CHECK(state, TryRemoveOwnedUInkVersion(final, error) && error == ERROR_SUCCESS && !final && missing(path));
-					UINK_CHECK(state, !TryRemoveOwnedUInkVersion(final, error) && error == ERROR_INVALID_HANDLE && missing(path));
-					std::cout << "UInk CAP authority move/owned-remove/empty-consumed verified." << std::endl;
-				}
-			}
-		}
-		const auto refuseChangedOwned = [&](const wchar_t* name, bool sameId)
-		{
-			const std::wstring folder = expandedFolder(name); if (folder.empty()) return;
-			const std::wstring path = folder + L"\\version.uink";
-			UInkOwnedVersion owned; if (!makeOwned(path, owned)) return;
-			const auto bytes = ReadBytes(path);
-			CleanupActorContext actor; actor.prefix = folder + L"\\";
-			actor.heldPath = folder + L"\\held-owned.uink";
-			const bool changed = sameId ? actor.RewriteSameObject(path) : actor.ReplaceWithForeign(path);
-			UINK_CHECK(state, changed && actor.ntfs); if (!changed) return;
-			uint32_t error = ERROR_SUCCESS;
-			UINK_CHECK(state, !TryRemoveOwnedUInkVersion(owned, error) && error == ERROR_FILE_INVALID && owned);
-			UINK_CHECK(state, retainedIdentity(path, actor.foreignInfo) &&
-				ReadBytes(path) == (sameId ? actor.changedBytes : actor.foreignBytes));
-			owned = UInkOwnedVersion{}; // 回收失败释放权限句柄，保留磁盘材料，不累积失败 lease。
-			UINK_CHECK(state, !owned && ReadBytes(path) == (sameId ? actor.changedBytes : actor.foreignBytes));
-			if (sameId) UINK_CHECK(state, actor.changedBytes.size() == bytes.size() && actor.changedBytes != bytes);
-			else UINK_CHECK(state, retainedIdentity(actor.heldPath, actor.originalInfo) && ReadBytes(actor.heldPath) == bytes);
-			std::cout << "UInk CAP authority changed-object same_id=" << sameId << " retained error=" << error << std::endl;
-		};
-		refuseChangedOwned(L"cap-owned-foreign", false);
-		refuseChangedOwned(L"cap-owned-same-id-content", true);
-		{
-			const std::wstring folder = expandedFolder(L"cap-owned-reset-destruct");
-			if (!folder.empty())
-			{
-				const std::wstring path = folder + L"\\version.uink";
-				std::vector<std::byte> bytes;
-				{
-					UInkOwnedVersion owned;
-					if (makeOwned(path, owned))
-					{
-						bytes = ReadBytes(path);
-						owned = UInkOwnedVersion{};
-						UINK_CHECK(state, !owned && ReadBytes(path) == bytes);
-					}
-				}
-				UINK_CHECK(state, !bytes.empty() && ReadBytes(path) == bytes && ReadUInkFile(path).status == UInkReadStatus::Complete);
-				const std::wstring destructorPath = folder + L"\\destructor-version.uink";
-				{
-					UInkOwnedVersion owned; (void)makeOwned(destructorPath, owned);
-				}
-				UINK_CHECK(state, ReadUInkFile(destructorPath).status == UInkReadStatus::Complete);
-				std::cout << "UInk CAP authority reset/destructor retains bytes." << std::endl;
-			}
-		}
-		{
-			const std::wstring folder = expandedFolder(L"cap-owned-no-reauthorize");
-			if (!folder.empty())
-			{
-				const std::wstring path = folder + L"\\version.uink";
-				UInkOwnedVersion owned;
-				if (makeOwned(path, owned))
-				{
-					const auto before = ReadBytes(path);
-					UInkEditingSession duplicate; duplicate.document = MakeBasicDocument();
-					UInkSaveOptions create; create.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
-					const auto conflict = SaveUInkFileWithOwnedVersion(path, duplicate, owned, create);
-					UINK_CHECK(state, conflict.status == UInkSaveStatus::SourceChanged && !owned && ReadBytes(path) == before);
-					auto editing = CreateUInkEditingSession(ReadUInkFile(path), UInkEditingSource::ApplicationOwned);
-					UINK_CHECK(state, editing);
-					if (editing)
-					{
-						editing->document.canvases[0].content.push_back(MakeInk(1, 1));
-						const auto updated = SaveUInkFileWithOwnedVersion(path, *editing, owned);
-						UINK_CHECK(state, updated.status == UInkSaveStatus::Committed && updated.revision && !owned);
-						const auto after = ReadBytes(path);
-						const auto read = ReadUInkFile(path);
-						uint32_t error = ERROR_SUCCESS;
-						UINK_CHECK(state, after != before && read.status == UInkReadStatus::Complete && read.document &&
-							read.document->canvases[0].content.size() == 2);
-						UINK_CHECK(state, !TryRemoveOwnedUInkVersion(owned, error) && error == ERROR_INVALID_HANDLE && ReadBytes(path) == after);
-					}
-				}
-				const std::wstring partialPath = folder + L"\\partial-version.uink";
-				UInkEditingSession partial; partial.document = MakeBasicDocument();
-				UInkSaveOptions create; create.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
-				UInkFileTestFaultInjection faults; faults.failCommittedRevisionValidation = true;
-				UInkSaveResult saved;
-				{
-					FaultScope faultScope(faults);
-					saved = SaveUInkFileWithOwnedVersion(partialPath, partial, owned, create);
-				}
-				const auto retained = ReadBytes(partialPath);
-				uint32_t error = ERROR_SUCCESS;
-				UINK_CHECK(state, saved.status == UInkSaveStatus::PartialCommitRequiresRecovery && !owned &&
-					saved.recoveryPath == partialPath && !retained.empty() && ReadUInkFile(partialPath).status == UInkReadStatus::Complete);
-				UINK_CHECK(state, !TryRemoveOwnedUInkVersion(owned, error) && error == ERROR_INVALID_HANDLE && ReadBytes(partialPath) == retained);
-				std::cout << "UInk CAP authority SourceChanged/update/partial grants none." << std::endl;
-			}
-		}
-
-		class OwnedPrepFailureScope
-		{
-		public:
-			OwnedPrepFailureScope() { SetUInkOwnedVersionPrepFailureForTesting(true); }
-			~OwnedPrepFailureScope() { SetUInkOwnedVersionPrepFailureForTesting(false); }
-		};
-		const auto runPrepFailure = [&](const wchar_t* name, bool invalidModel, bool partial)
-		{
-			const std::wstring folder = expandedFolder(name); if (folder.empty()) return;
-			const std::wstring path = folder + L"\\version.uink";
-			UInkEditingSession session; session.document = MakeBasicDocument();
-			if (invalidModel) session.document.header.guid = UInkGuid{};
-			UInkSaveOptions create; create.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
-			UInkFileTestFaultInjection faults; faults.failCommittedRevisionValidation = partial;
-			CleanupActorContext actor; actor.prefix = folder + L"\\";
-			UInkOwnedVersion owned;
-			UInkSaveResult saved;
-			{
-				FaultScope faultScope(faults); CleanupHookScope hookScope(actor); OwnedPrepFailureScope prepScope;
-				saved = SaveUInkFileWithOwnedVersion(path, session, owned, create);
-			}
-			const auto expected = invalidModel ? UInkSaveStatus::InvalidModel :
-				(partial ? UInkSaveStatus::PartialCommitRequiresRecovery : UInkSaveStatus::Committed);
-			std::cout << "UInk CAP prep-failure invalid_model=" << invalidModel << " partial=" << partial
-				<< " before=" << actor.beforeCreate << " writer_closed=" << actor.writerClosed
-				<< " status=" << static_cast<unsigned>(saved.status) << " owned=" << static_cast<bool>(owned) << std::endl;
-			UINK_CHECK(state, !actor.failed && !owned && saved.status == expected);
-			if (invalidModel)
-				UINK_CHECK(state, actor.beforeCreate == 0 && actor.writerClosed == 0 && missing(path));
-			else
-			{
-				const auto read = ReadUInkFile(path);
-				UINK_CHECK(state, actor.ntfs && actor.beforeCreate == 1 && actor.writerClosed == 1 && ReadBytes(path) == actor.tempBytes &&
-					read.status == UInkReadStatus::Complete && read.document && read.sourceRevision &&
-					read.document->header.guid == session.document.header.guid && read.document->canvases[0].content.size() == 1);
-				if (partial) UINK_CHECK(state, saved.systemError == ERROR_FILE_INVALID && saved.recoveryPath == path);
-				else
-				{
-					UINK_CHECK(state, saved.revision && saved.systemError == ERROR_SUCCESS);
-					const auto original = ReadBytes(path);
-					CleanupActorContext duplicateActor; duplicateActor.prefix = actor.prefix;
-					UInkSaveResult conflict;
-					{
-						CleanupHookScope hookScope(duplicateActor); OwnedPrepFailureScope prepScope;
-						conflict = SaveUInkFileWithOwnedVersion(path, session, owned, create);
-					}
-					UINK_CHECK(state, !owned && !duplicateActor.failed && duplicateActor.beforeCreate == 1 &&
-						duplicateActor.writerClosed == 1 && conflict.status == UInkSaveStatus::SourceChanged &&
-						conflict.systemError == ERROR_FILE_EXISTS && ReadBytes(path) == original);
-					std::cout << "UInk CAP prep-failure SourceChanged preserves original bytes; single transaction." << std::endl;
-				}
-			}
-			UINK_CHECK(state, ReadBytes(unknown) == unknownBytes);
-		};
-		runPrepFailure(L"cap-prep-failed-committed", false, false);
-		runPrepFailure(L"cap-prep-failed-invalid-model", true, false);
-		runPrepFailure(L"cap-prep-failed-partial", false, true);
-		UINK_CHECK(state, ReadBytes(unknown) == unknownBytes);
-	}
-#endif
-
-	void TestAppendTransactions(TestState& state)
-	{
-		TempDirectory temporary;
-		UINK_CHECK(state, temporary.IsValid());
-		if (!temporary.IsValid()) return;
-
-		const std::wstring appendPath = temporary.File(L"append.uink");
-		UINK_CHECK(state, temporary.CopyFixture(L"implicit-single-canvas.uink", L"append.uink"));
-		UInkReadResult source = ReadUInkFile(appendPath);
-		UInkAppendPlan plan = PlanInkAppend(source, 1, 1);
-		UINK_CHECK(state, plan.status == UInkAppendPlanStatus::Ready);
-		const UInkAppendResult appended = ExecuteUInkAppend(appendPath, plan);
-		UINK_CHECK(state, appended.status == UInkAppendStatus::CommittedDurable);
-		UINK_CHECK(state, appended.revision.has_value());
-		source = ReadUInkFile(appendPath);
-		UINK_CHECK(state, source.document && source.document->canvases[0].content.size() == 2);
-
-		UInkAppendBatch shapeBatch;
-		shapeBatch.objects.emplace_back(MakeShape(2, 0));
-		plan = AnalyzeUInkAppend(source, shapeBatch);
-		UINK_CHECK(state, plan.status == UInkAppendPlanStatus::Ready);
-		UInkAppendOptions buffered;
-		buffered.durability = UInkAppendDurability::Buffered;
-		const UInkAppendResult bufferedResult = ExecuteUInkAppend(appendPath, plan, buffered);
-		UINK_CHECK(state, bufferedResult.status == UInkAppendStatus::CommittedBuffered);
-		UINK_CHECK(state, ReadUInkFile(appendPath).document->canvases[0].content.size() == 3);
-
-		const std::wstring canvasPath = temporary.File(L"append-canvas.uink");
-		UINK_CHECK(state, temporary.CopyFixture(L"implicit-single-canvas.uink", L"append-canvas.uink"));
-		const UInkReadResult canvasSource = ReadUInkFile(canvasPath);
-		UInkCanvas newCanvas;
-		newCanvas.pageGuid = Guid("20000000-0000-4000-8000-00000000e002");
-		newCanvas.pageIndex = 1;
-		newCanvas.pageNumber = 2;
-		newCanvas.layerIndex = 0;
-		newCanvas.layerNumber = 0;
-		newCanvas.viewport = UInkViewport{ 10.0f, 20.0f, 1.0f };
-		UInkAppendBatch canvasBatch;
-		canvasBatch.objects.emplace_back(newCanvas);
-		UInkAppendPlan canvasPlan = AnalyzeUInkAppend(canvasSource, canvasBatch);
-		UINK_CHECK(state, canvasPlan.status == UInkAppendPlanStatus::Ready);
-		UINK_CHECK(state, ExecuteUInkAppend(canvasPath, canvasPlan).status ==
-			UInkAppendStatus::CommittedDurable);
-		const UInkReadResult twoPages = ReadUInkFile(canvasPath);
-		UINK_CHECK(state, twoPages.document && twoPages.document->canvases.size() == 2);
-		UINK_CHECK(state, HasDiagnostic(twoPages, UInkDiagnosticCode::HeaderSnapshotMismatch));
-
-		const std::wstring recoveredPath = temporary.File(L"append-recovered.uink");
-		UINK_CHECK(state, temporary.CopyFixture(L"truncated-tail.uink", L"append-recovered.uink"));
-		const UInkReadResult recoveredSource = ReadUInkFile(recoveredPath);
-		UINK_CHECK(state, recoveredSource.status == UInkReadStatus::RecoveredTruncatedTail);
-		UInkAppendPlan recoveredPlan = PlanInkAppend(recoveredSource, 1, 1);
-		UINK_CHECK(state, recoveredPlan.status == UInkAppendPlanStatus::Ready);
-		UINK_CHECK(state, recoveredPlan.truncateOffset == 380);
-		UINK_CHECK(state, ExecuteUInkAppend(recoveredPath, recoveredPlan).status ==
-			UInkAppendStatus::CommittedDurable);
-		const UInkReadResult recoveredRead = ReadUInkFile(recoveredPath);
-		UINK_CHECK(state, recoveredRead.status == UInkReadStatus::Complete);
-		UINK_CHECK(state, recoveredRead.document &&
-			recoveredRead.document->canvases[0].content.size() == 2);
-
-		// 只有 Header 的合法空文件可直接追加第一个 Canvas，但不能直接追加内容。
-		const std::wstring firstCanvasPath = temporary.File(L"append-first-canvas.uink");
-		const std::vector<std::byte> headerOnly = HeaderPrefix();
-		UINK_CHECK(state, WriteBytes(firstCanvasPath, headerOnly));
-		const UInkReadResult headerOnlySource = ReadUInkFile(firstCanvasPath);
-		UINK_CHECK(state, headerOnlySource.status == UInkReadStatus::Complete);
-		UINK_CHECK(state, headerOnlySource.safeAppendOffset &&
-			*headerOnlySource.safeAppendOffset == headerOnly.size());
-		UINK_CHECK(state, PlanInkAppend(headerOnlySource, 0, 0).status ==
-			UInkAppendPlanStatus::InvalidBatch);
-		UInkCanvas firstCanvas = MakeBasicDocument(false).canvases[0];
-		UInkAppendBatch firstCanvasBatch;
-		firstCanvasBatch.objects.emplace_back(std::move(firstCanvas));
-		const UInkAppendPlan firstCanvasPlan = AnalyzeUInkAppend(headerOnlySource, firstCanvasBatch);
-		UINK_CHECK(state, firstCanvasPlan.status == UInkAppendPlanStatus::Ready);
-		UINK_CHECK(state, ExecuteUInkAppend(firstCanvasPath, firstCanvasPlan).status ==
-			UInkAppendStatus::CommittedDurable);
-		const UInkReadResult firstCanvasRead = ReadUInkFile(firstCanvasPath);
-		UINK_CHECK(state, firstCanvasRead.document && firstCanvasRead.document->canvases.size() == 1);
-
-		const std::wstring conflictPath = temporary.File(L"append-conflict.uink");
-		UINK_CHECK(state, temporary.CopyFixture(L"implicit-single-canvas.uink", L"append-conflict.uink"));
-		const UInkReadResult conflictSource = ReadUInkFile(conflictPath);
-		const UInkAppendPlan conflictPlan = PlanInkAppend(conflictSource, 1, 1);
-		std::vector<std::byte> conflictBytes = ReadBytes(conflictPath);
-		conflictBytes.push_back(std::byte{ 0xc1 });
-		UINK_CHECK(state, WriteBytes(conflictPath, conflictBytes));
-		const UInkAppendResult conflict = ExecuteUInkAppend(conflictPath, conflictPlan);
-		UINK_CHECK(state, conflict.status == UInkAppendStatus::SourceChanged);
-		UINK_CHECK(state, ReadBytes(conflictPath) == conflictBytes);
-
-		const std::wstring digestPath = temporary.File(L"append-digest.uink");
-		UINK_CHECK(state, temporary.CopyFixture(L"implicit-single-canvas.uink", L"append-digest.uink"));
-		UInkAppendPlan digestPlan = PlanInkAppend(ReadUInkFile(digestPath), 1, 1);
-		const std::vector<std::byte> digestBefore = ReadBytes(digestPath);
-		if (!digestPlan.bytes.empty()) digestPlan.bytes[0] ^= std::byte{ 0x01 };
-		UINK_CHECK(state, ExecuteUInkAppend(digestPath, digestPlan).status ==
-			UInkAppendStatus::InvalidPlan);
-		UINK_CHECK(state, ReadBytes(digestPath) == digestBefore);
-		digestPlan = PlanInkAppend(ReadUInkFile(digestPath), 1, 1);
-		if (digestPlan.truncateOffset != 0) --digestPlan.truncateOffset;
-		UINK_CHECK(state, ExecuteUInkAppend(digestPath, digestPlan).status ==
-			UInkAppendStatus::InvalidPlan);
-		UINK_CHECK(state, ReadBytes(digestPath) == digestBefore);
-
-		auto prepareFaultPlan = [&](const wchar_t* name,
-			std::vector<std::byte>& before, UInkAppendPlan& outputPlan)
-		{
-			UINK_CHECK(state, temporary.CopyFixture(L"implicit-single-canvas.uink", name));
-			const std::wstring path = temporary.File(name);
-			before = ReadBytes(path);
-			outputPlan = PlanInkAppend(ReadUInkFile(path), 1, 1);
-			UINK_CHECK(state, outputPlan.status == UInkAppendPlanStatus::Ready);
-		};
-
-		std::vector<std::byte> before;
-		UInkAppendPlan faultPlan;
-		prepareFaultPlan(L"append-write-fault.uink", before, faultPlan);
-		UInkFileTestFaultInjection faults;
-		faults.failWriteAfterBytes = std::max<uint64_t>(1, faultPlan.bytes.size() / 2);
-		{
-			FaultScope scope(faults);
-			const UInkAppendResult result = ExecuteUInkAppend(
-				temporary.File(L"append-write-fault.uink"), faultPlan);
-			UINK_CHECK(state, result.status == UInkAppendStatus::WriteFailedRolledBack);
-		}
-		UINK_CHECK(state, ReadBytes(temporary.File(L"append-write-fault.uink")) == before);
-
-		prepareFaultPlan(L"append-rollback-flush-fault.uink", before, faultPlan);
-		faults = {};
-		faults.failWriteAfterBytes = std::max<uint64_t>(1, faultPlan.bytes.size() / 2);
-		faults.failFlush = true;
-		{
-			FaultScope scope(faults);
-			const UInkAppendResult result = ExecuteUInkAppend(
-				temporary.File(L"append-rollback-flush-fault.uink"), faultPlan);
-			UINK_CHECK(state, result.status == UInkAppendStatus::PartialCommitRequiresRecovery);
-			UINK_CHECK(state, result.observedLength == before.size());
-		}
-		UINK_CHECK(state, ReadBytes(temporary.File(L"append-rollback-flush-fault.uink")) == before);
-
-		const std::wstring repairedFailurePath = temporary.File(L"append-repair-fault.uink");
-		UINK_CHECK(state, temporary.CopyFixture(L"truncated-tail.uink", L"append-repair-fault.uink"));
-		const std::vector<std::byte> truncatedOriginal = ReadBytes(repairedFailurePath);
-		const UInkAppendPlan repairFaultPlan = PlanInkAppend(
-			ReadUInkFile(repairedFailurePath), 1, 1);
-		faults = {};
-		faults.failWriteAfterBytes = std::max<uint64_t>(1, repairFaultPlan.bytes.size() / 2);
-		{
-			FaultScope scope(faults);
-			const UInkAppendResult result = ExecuteUInkAppend(repairedFailurePath, repairFaultPlan);
-			UINK_CHECK(state, result.status == UInkAppendStatus::TailRepairedNoAppend);
-			UINK_CHECK(state, result.observedLength == 380);
-		}
-		const std::vector<std::byte> repairedBytes = ReadBytes(repairedFailurePath);
-		UINK_CHECK(state, repairedBytes.size() == 380);
-		UINK_CHECK(state, std::equal(repairedBytes.begin(), repairedBytes.end(),
-			truncatedOriginal.begin()));
-
-		prepareFaultPlan(L"append-rollback-fault.uink", before, faultPlan);
-		faults = {};
-		faults.failWriteAfterBytes = std::max<uint64_t>(1, faultPlan.bytes.size() / 2);
-		faults.failRollback = true;
-		{
-			FaultScope scope(faults);
-			const UInkAppendResult result = ExecuteUInkAppend(
-				temporary.File(L"append-rollback-fault.uink"), faultPlan);
-			UINK_CHECK(state, result.status == UInkAppendStatus::PartialCommitRequiresRecovery);
-			UINK_CHECK(state, result.lastTrustedBoundary == before.size());
-			UINK_CHECK(state, result.observedLength > before.size());
-		}
-
-		prepareFaultPlan(L"append-flush-fault.uink", before, faultPlan);
-		faults = {};
-		faults.failFlush = true;
-		{
-			FaultScope scope(faults);
-			const UInkAppendResult result = ExecuteUInkAppend(
-				temporary.File(L"append-flush-fault.uink"), faultPlan);
-			UINK_CHECK(state, result.status == UInkAppendStatus::WrittenNotDurable);
-			UINK_CHECK(state, result.revision.has_value());
-		}
-		UINK_CHECK(state, ReadUInkFile(temporary.File(L"append-flush-fault.uink")).document->
-			canvases[0].content.size() == 2);
-
-		prepareFaultPlan(L"append-final-validation.uink", before, faultPlan);
-		faults = {};
-		faults.failCommittedRevisionValidation = true;
-		{
-			FaultScope scope(faults);
-			const UInkAppendResult result = ExecuteUInkAppend(
-				temporary.File(L"append-final-validation.uink"), faultPlan);
-			UINK_CHECK(state, result.status == UInkAppendStatus::PartialCommitRequiresRecovery);
-			UINK_CHECK(state, !result.revision.has_value());
-			UINK_CHECK(state, std::any_of(result.diagnostics.begin(), result.diagnostics.end(),
-				[](const UInkDiagnostic& diagnostic)
-				{
-					return diagnostic.code == UInkDiagnosticCode::SourceChanged;
-				}));
-		}
-		UINK_CHECK(state, ReadUInkFile(temporary.File(L"append-final-validation.uink")).document->
-			canvases[0].content.size() == 2);
-
-		prepareFaultPlan(L"append-buffered.uink", before, faultPlan);
-		faults = {};
-		faults.failFlush = true;
-		{
-			FaultScope scope(faults);
-			const UInkAppendResult result = ExecuteUInkAppend(
-				temporary.File(L"append-buffered.uink"), faultPlan, buffered);
-			UINK_CHECK(state, result.status == UInkAppendStatus::CommittedBuffered);
-		}
-
-		const std::wstring concurrentPath = temporary.File(L"append-concurrent.uink");
-		UINK_CHECK(state, temporary.CopyFixture(L"implicit-single-canvas.uink", L"append-concurrent.uink"));
-		const UInkReadResult concurrentSource = ReadUInkFile(concurrentPath);
-		const UInkAppendPlan firstPlan = PlanInkAppend(concurrentSource, 1, 1);
-		const UInkAppendPlan secondPlan = PlanInkAppend(concurrentSource, 1, 1);
-		UInkAppendResult firstResult;
-		UInkAppendResult secondResult;
-		std::thread first([&] { firstResult = ExecuteUInkAppend(concurrentPath, firstPlan); });
-		std::thread second([&] { secondResult = ExecuteUInkAppend(concurrentPath, secondPlan); });
-		first.join();
-		second.join();
-		const int committedCount =
-			(firstResult.status == UInkAppendStatus::CommittedDurable ? 1 : 0) +
-			(secondResult.status == UInkAppendStatus::CommittedDurable ? 1 : 0);
-		const int conflictCount =
-			(firstResult.status == UInkAppendStatus::SourceChanged ? 1 : 0) +
-			(secondResult.status == UInkAppendStatus::SourceChanged ? 1 : 0);
-		UINK_CHECK(state, committedCount == 1 && conflictCount == 1);
-		UINK_CHECK(state, ReadUInkFile(concurrentPath).document->canvases[0].content.size() == 2);
-	}
-
-	void TestMediaFilePolicy(TestState& state)
-	{
-		TempDirectory temporary;
-		UINK_CHECK(state, temporary.IsValid());
-		if (!temporary.IsValid()) return;
-		const std::wstring mainPath = temporary.File(L"media.uink");
-		const std::wstring extraPath = temporary.File(L"media.uink.extra");
-		UINK_CHECK(state, temporary.CopyFixture(L"media-safe.uink", L"media.uink"));
-		const std::array<std::byte, 5> sentinel = {
-			std::byte{ 0x50 }, std::byte{ 0x4b }, std::byte{ 0x01 }, std::byte{ 0x02 }, std::byte{ 0x03 } };
-		UINK_CHECK(state, WriteBytes(extraPath, sentinel));
-		const std::vector<std::byte> extraBefore = ReadBytes(extraPath);
-		const UInkReadResult source = ReadUInkFile(mainPath);
-		UINK_CHECK(state, source.document && HasMedia(*source.document));
-		const std::optional<UInkEditingSession> session = CreateUInkEditingSession(source);
-		UINK_CHECK(state, session.has_value());
-		if (!session) return;
-
-		UINK_CHECK(state, SaveUInkFile(mainPath, *session).status ==
-			UInkSaveStatus::ResourcePackUnsupported);
-		UInkSaveOptions saveAs;
-		saveAs.mode = UInkSaveMode::SaveAsNewLogicalFile;
-		const std::wstring saveAsPath = temporary.File(L"media-save-as.uink");
-		UINK_CHECK(state, SaveUInkFile(saveAsPath, *session, saveAs).status ==
-			UInkSaveStatus::ResourcePackUnsupported);
-		UINK_CHECK(state, GetFileAttributesW(saveAsPath.c_str()) == INVALID_FILE_ATTRIBUTES);
-		UINK_CHECK(state, ReadBytes(extraPath) == extraBefore);
-
-		UInkAppendPlan nonMedia = PlanInkAppend(source, 2, 2);
-		UINK_CHECK(state, nonMedia.status == UInkAppendPlanStatus::Ready);
-		UINK_CHECK(state, nonMedia.sourceContainsMedia);
-		UINK_CHECK(state, ExecuteUInkAppend(mainPath, nonMedia).status ==
-			UInkAppendStatus::CommittedDurable);
-		UINK_CHECK(state, ReadBytes(extraPath) == extraBefore);
-		const UInkReadResult appended = ReadUInkFile(mainPath);
-		UINK_CHECK(state, appended.document && appended.document->canvases[0].content.size() == 3);
-
-		UInkMedia media;
-		media.contentId = 3;
-		media.undoId = 3;
-		media.path = "media/new.png";
-		media.mimeType = "image/png";
-		media.width = 1.0f;
-		media.height = 1.0f;
-		UInkAppendBatch mediaBatch;
-		mediaBatch.objects.emplace_back(media);
-		const std::vector<std::byte> mainBeforeRejectedAppend = ReadBytes(mainPath);
-		HANDLE exclusive = CreateFileW(mainPath.c_str(), GENERIC_READ, 0, nullptr,
-			OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-		UINK_CHECK(state, exclusive != INVALID_HANDLE_VALUE);
-		const UInkAppendPlan mediaPlan = AnalyzeUInkAppend(appended, mediaBatch);
-		UINK_CHECK(state, mediaPlan.status == UInkAppendPlanStatus::ResourcePackUnsupported);
-		UINK_CHECK(state, ExecuteUInkAppend(mainPath, mediaPlan).status ==
-			UInkAppendStatus::ResourcePackUnsupported);
-		if (exclusive != INVALID_HANDLE_VALUE) CloseHandle(exclusive);
-		UINK_CHECK(state, ReadBytes(mainPath) == mainBeforeRejectedAppend);
-		UINK_CHECK(state, ReadBytes(extraPath) == extraBefore);
-	}
-
-	void TestAppendAnalysisRejections(TestState& state)
-	{
-		const std::wstring fixturePath = FixtureDirectory() + L"\\implicit-single-canvas.uink";
-		const UInkReadResult source = ReadUInkFile(fixturePath);
-		UInkAppendBatch empty;
-		UINK_CHECK(state, AnalyzeUInkAppend(source, empty).status ==
-			UInkAppendPlanStatus::InvalidBatch);
-		UInkAppendBatch badContent;
-		badContent.objects.emplace_back(MakeInk(8, 0));
-		UINK_CHECK(state, AnalyzeUInkAppend(source, badContent).status ==
-			UInkAppendPlanStatus::InvalidBatch);
-		UInkCanvas gapCanvas;
-		gapCanvas.pageGuid = Guid("20000000-0000-4000-8000-00000000e100");
-		gapCanvas.pageIndex = 2;
-		gapCanvas.pageNumber = 3;
-		gapCanvas.layerIndex = 0;
-		gapCanvas.layerNumber = 0;
-		gapCanvas.viewport = UInkViewport{};
-		UInkAppendBatch gapBatch;
-		gapBatch.objects.emplace_back(gapCanvas);
-		UINK_CHECK(state, AnalyzeUInkAppend(source, gapBatch).status ==
-			UInkAppendPlanStatus::InvalidBatch);
-
-		std::vector<std::byte> invalidMiddle = CanvasPrefix();
-		AppendBytes(invalidMiddle, PackDuplicateInk());
-		UInkAppendObject validInk = MakeInk(0, 0);
-		const UInkEncodeResult validBytes = EncodeUInkAppendObjects(
-			std::span<const UInkAppendObject>(&validInk, 1));
-		AppendBytes(invalidMiddle, validBytes.bytes);
-		UInkReadResult synthetic = DecodeUInk(invalidMiddle);
-		synthetic.sourcePath = fixturePath;
-		synthetic.sourceRevision = source.sourceRevision;
-		UInkAppendBatch validBatch;
-		validBatch.objects.emplace_back(MakeInk(1, 1));
-		UINK_CHECK(state, AnalyzeUInkAppend(synthetic, validBatch).status ==
-			UInkAppendPlanStatus::RequiresFullSave);
-
-		UInkReadResult objectLimitSource = source;
-		objectLimitSource.decodedObjectCount = UInkReadLimits{}.maxTopLevelObjects;
-		UINK_CHECK(state, AnalyzeUInkAppend(objectLimitSource, validBatch).status ==
-			UInkAppendPlanStatus::RequiresFullSave);
-		UInkReadResult pointLimitSource = source;
-		pointLimitSource.geometryPointCount = UInkReadLimits{}.maxGeometryPoints;
-		UINK_CHECK(state, AnalyzeUInkAppend(pointLimitSource, validBatch).status ==
-			UInkAppendPlanStatus::RequiresFullSave);
-
-		TempDirectory temporary;
-		UINK_CHECK(state, temporary.IsValid());
-		if (temporary.IsValid())
-		{
-			const std::wstring richPath = temporary.File(L"append-ppt.uink");
-			const UInkEncodeResult richBytes = EncodeUInkDocument(MakeRichDocument());
-			UINK_CHECK(state, richBytes.status == UInkEncodeStatus::Success);
-			UINK_CHECK(state, WriteBytes(richPath, richBytes.bytes));
-			const UInkReadResult richSource = ReadUInkFile(richPath);
-			UInkCanvas mismatchedPpt = MakeRichDocument().canvases[2];
-			mismatchedPpt.deviceGuid = Guid("40000000-0000-4000-8000-00000000c001");
-			mismatchedPpt.slideId = 43;
-			mismatchedPpt.content.clear();
-			UInkAppendBatch mismatchedBatch;
-			mismatchedBatch.objects.emplace_back(std::move(mismatchedPpt));
-			UINK_CHECK(state, AnalyzeUInkAppend(richSource, mismatchedBatch).status ==
-				UInkAppendPlanStatus::InvalidBatch);
-		}
+		UINK_CHECK(state, ReadUInkStoreFile(mainPath).status == UInkReadStatus::Complete);
 	}
 
 	void TestLatestVisibility(TestState& state)
@@ -3630,6 +3573,9 @@ namespace
 		canvas.content.push_back(MakeInk(2, 2));
 		canvas.content.push_back(MakeClear(3, 3));
 		canvas.content.push_back(MakeInk(4, 4));
+		std::get<UInkInk>(canvas.content[0]).color.fallbackRgb = 0x102030;
+		std::get<UInkInk>(canvas.content[2]).color.fallbackRgb = 0x405060;
+		std::get<UInkInk>(canvas.content[4]).color.fallbackRgb = 0x708090;
 
 		const UInkEncodeResult encoded = EncodeUInkDocument(document);
 		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success);
@@ -3664,211 +3610,118 @@ namespace
 		UINK_CHECK(state, EncodeUInkDocument(sharedWithFollowing).status ==
 			UInkEncodeStatus::InvalidModel);
 
-		UInkAppendBatch appendBatch;
-		appendBatch.objects.emplace_back(MakeClear(1, 1));
-		UINK_CHECK(state, EncodeUInkAppendObjects(appendBatch.objects).status ==
-			UInkEncodeStatus::Success);
-
-		Draw3UInkCanvasSnapshot tail;
-		tail.pageGuid = Guid("50000000-0000-4000-8000-00000000c106");
-		tail.pageNumber = 1;
-		tail.viewport = { 0.0f, 0.0f, 1.0f };
-		Draw3UInkStrokeSnapshot stroke;
-		stroke.style = { Draw3UInkStrokeKind::Pen, 1.0f, 0x102030, 0 };
-		stroke.points = { { 1.0f, 2.0f, 3.0f }, { 4.0f, 5.0f, 3.0f } };
-		tail.strokes.push_back(stroke);
-		const auto afterFirstClear = MergeDraw3UInkCanvasTail(nullptr, tail, true);
-		UINK_CHECK(state, afterFirstClear && afterFirstClear->operations.size() == 2 &&
-			afterFirstClear->intervalOrdinal == 1 && afterFirstClear->strokes.empty());
-		tail.intervalOrdinal = 1;
-		tail.strokes[0].style.fallbackRgb = 0x405060;
-		const auto afterSecondClear = afterFirstClear
-			? MergeDraw3UInkCanvasTail(&*afterFirstClear, tail, true) : std::nullopt;
-		UINK_CHECK(state, afterSecondClear && afterSecondClear->operations.size() == 4 &&
-			afterSecondClear->intervalOrdinal == 2);
-		tail.intervalOrdinal = 2;
-		tail.strokes[0].style.fallbackRgb = 0x708090;
-		const auto canonical = afterSecondClear
-			? MergeDraw3UInkCanvasTail(&*afterSecondClear, tail, false) : std::nullopt;
-		UINK_CHECK(state, canonical && canonical->operations.size() == 5);
-		const auto middle = canonical
-			? ProjectDraw3UInkCanvasInterval(*canonical, 1) : std::nullopt;
-		UINK_CHECK(state, middle && middle->strokes.size() == 1 &&
-			middle->strokes[0].style.fallbackRgb == 0x405060 &&
-			middle->operations.empty() && middle->intervalOrdinal == 1);
+		// 多个 Clear 的文件只恢复最近边界与紧邻的两个区间。
+		const auto* page = ExpectV11Canvas(state, decoded, 1, 5, UInkReadOutcome::Complete);
+		if (!page) return;
+		const auto imported = ImportUInkV11Page(*page);
+		UINK_CHECK(state, imported.status == Draw3UInkV11ImportStatus::Success && imported.page);
+		if (!imported.page) return;
+		const auto& restored = *imported.page;
+		UINK_CHECK(state, imported.counts.multipleClears == 1 && restored.intervalOrdinal == 1 &&
+			restored.operations.size() == 3 && restored.strokes.size() == 1);
+		if (restored.operations.size() != 3 || restored.strokes.size() != 1) return;
+		const auto* previous = std::get_if<Draw3UInkStrokeSnapshot>(&restored.operations[0]);
+		UINK_CHECK(state, previous && previous->style.fallbackRgb == 0x405060 &&
+			std::holds_alternative<Draw3UInkClearSnapshot>(restored.operations[1]) &&
+			restored.strokes.front().style.fallbackRgb == 0x708090);
 	}
 
-#include "shape_uink_tests.inl"
-
-	void TestDraw3Export(TestState& state)
+	void TestDraw3PageExport(TestState& state)
 	{
-		InkCanvasCollection collection(Draw3Guid(
-			"30000000-0000-4000-8000-00000000f001"));
-		InkPage page(Draw3Guid("50000000-0000-4000-8000-00000000f001"));
-		InkCanvas* canvas = page.GetOrCreateCanvas(kDefaultDeviceKey,
-			InkViewport{ 10.0f, -20.0f, 1.0f });
-		UINK_CHECK(state, canvas != nullptr);
-		if (!canvas) return;
-		const StoredInkType types[] = { StoredInkType::Pen, StoredInkType::Highlighter,
-			StoredInkType::Eraser, StoredInkType::SolidLine, StoredInkType::DashedLine,
-			StoredInkType::OutlineRectangle, StoredInkType::FilledRectangle };
-		for (size_t index = 0; index < std::size(types); ++index)
+		Draw3UInkCanvasSnapshot page;
+		page.pageGuid = Guid("50000000-0000-4000-8000-00000000f001");
+		page.pageNumber = 1;
+		page.viewport = { 10.0f, -20.0f, 1.0f };
+		const Draw3UInkStrokeKind kinds[] = { Draw3UInkStrokeKind::Pen, Draw3UInkStrokeKind::Highlighter,
+			Draw3UInkStrokeKind::Eraser, Draw3UInkStrokeKind::SolidLine, Draw3UInkStrokeKind::DashedLine,
+			Draw3UInkStrokeKind::OutlineRectangle, Draw3UInkStrokeKind::FilledRectangle };
+		for (uint32_t index = 0; index < std::size(kinds); ++index)
 		{
-			StoredInkStyle style;
-			style.inkType = types[index];
-			style.fallbackRgb = static_cast<uint32_t>(0x100000 + index);
-			style.opacity = types[index] == StoredInkType::Highlighter ? 0.4f : 1.0f;
-			style.texture = 0;
-			std::vector<StoredInkPoint> points = {
-				{ 10.0f + static_cast<float>(index), 20.0f, 4.0f },
-				{ 110.0f + static_cast<float>(index), 60.0f, 4.0f } };
-			const std::optional<size_t> appended = canvas->AppendStroke(
-				InkStroke(style, std::move(points)));
-			UINK_CHECK(state, appended == std::optional<size_t>(index));
+			Draw3UInkStrokeSnapshot stroke;
+			stroke.style.kind = kinds[index];
+			stroke.style.fallbackRgb = 0x100000 + index;
+			stroke.style.opacity = kinds[index] == Draw3UInkStrokeKind::Highlighter ? 0.4f : 1.0f;
+			stroke.points = { { 10.0f + index, 20.0f, 4.0f }, { 110.0f + index, 60.0f, 4.0f } };
+			stroke.undoId = index;
+			page.strokes.push_back(std::move(stroke));
 		}
-		UINK_CHECK(state, collection.AppendPage(std::move(page)) == std::optional<size_t>(0));
 
-		Draw3UInkCaptureOptions options;
-		options.fileGuid = Guid("10000000-0000-4000-8000-00000000f001");
-		options.workspaceName = "draw3";
-		options.dpiScale = 2.0f;
-		const Draw3UInkCaptureResult captured = CaptureDraw3UInkExportSnapshot(collection, options);
-		UINK_CHECK(state, captured.status == Draw3UInkExportStatus::Success);
-		UINK_CHECK(state, captured.snapshot.has_value());
-		if (!captured.snapshot) return;
-		UINK_CHECK(state, captured.snapshot->assignedIndependentUndoGroups);
-		UINK_CHECK(state, captured.snapshot->canvases.size() == 1);
-		UINK_CHECK(state, captured.snapshot->canvases[0].strokes.size() == 7);
-
-		const Draw3UInkExportResult exported = ExportDraw3SnapshotToUInk(*captured.snapshot);
-		UINK_CHECK(state, exported.status == Draw3UInkExportStatus::Success);
-		UINK_CHECK(state, exported.document.has_value());
-		UINK_CHECK(state, exported.capabilities.inkCount == 3);
-		UINK_CHECK(state, exported.capabilities.shapeCount == 4);
-		UINK_CHECK(state, exported.capabilities.approximatedHighlighterNibCount == 1);
-		UINK_CHECK(state, exported.capabilities.assignedIndependentUndoGroups);
-		if (!exported.document) return;
-		const UInkCanvas& output = exported.document->canvases[0];
-		UINK_CHECK(state, output.workspaceGuid ==
-			std::optional<UInkGuid>(Guid("30000000-0000-4000-8000-00000000f001")));
-		UINK_CHECK(state, output.viewport && NearlyEqual(output.viewport->x, 10.0f));
-		UINK_CHECK(state, output.content.size() == 7);
-		UINK_CHECK(state, std::get<UInkInk>(output.content[0]).effectiveKind == UInkInkKind::Pen);
-		UINK_CHECK(state, std::get<UInkInk>(output.content[1]).effectiveKind ==
-			UInkInkKind::Highlighter);
-		UINK_CHECK(state, std::get<UInkInk>(output.content[2]).effectiveKind == UInkInkKind::Erase);
-		const UInkShape& solid = std::get<UInkShape>(output.content[3]);
-		const UInkShape& dashed = std::get<UInkShape>(output.content[4]);
-		const UInkShape& outline = std::get<UInkShape>(output.content[5]);
-		const UInkShape& filled = std::get<UInkShape>(output.content[6]);
-		UINK_CHECK(state, solid.declaredShapeType == 0 && solid.stroke);
-		UINK_CHECK(state, dashed.declaredShapeType == 0 && dashed.stroke &&
-			dashed.stroke->dashArray.size() == 2);
-		if (dashed.stroke)
-		{
-			UINK_CHECK(state, NearlyEqual(dashed.stroke->dashArray[0], 16.0f));
-			UINK_CHECK(state, NearlyEqual(dashed.stroke->dashArray[1], 24.0f));
-		}
-		UINK_CHECK(state, outline.declaredShapeType == 2 && outline.stroke && !outline.fill);
-		UINK_CHECK(state, filled.declaredShapeType == 2 && !filled.stroke && filled.fill);
-		const UInkRectangleGeometry* rectangle =
-			std::get_if<UInkRectangleGeometry>(&outline.geometry);
-		UINK_CHECK(state, rectangle && NearlyEqual(rectangle->cornerRadiusX, 8.0f));
-		UINK_CHECK(state, EncodeUInkDocument(*exported.document).status == UInkEncodeStatus::Success);
-
-		// 高 DPI 屏保存的旧矩形（圆角 4*dpiScale）重新导入时仍走旧四图形兼容路径。
+		Draw3UInkV11PageContext context;
+		context.workspaceGuid = Guid("30000000-0000-4000-8000-00000000f001");
+		context.workspaceType = 1;
 		for (const float dpiScale : { 2.0f, 1.5f })
 		{
-			Draw3UInkCaptureOptions scaledOptions = options;
-			scaledOptions.dpiScale = dpiScale;
-			const Draw3UInkCaptureResult scaledCapture = CaptureDraw3UInkExportSnapshot(collection, scaledOptions);
-			const Draw3UInkExportResult scaledExport = scaledCapture.snapshot
-				? ExportDraw3SnapshotToUInk(*scaledCapture.snapshot) : Draw3UInkExportResult{};
-			UINK_CHECK(state, scaledExport.status == Draw3UInkExportStatus::Success && scaledExport.document);
-			if (!scaledExport.document) continue;
-			const Draw3UInkImportResult reimported = ImportDraw3UInkDocument(*scaledExport.document);
-			UINK_CHECK(state, reimported.status == Draw3UInkImportStatus::Success && reimported.snapshot);
-			if (!reimported.snapshot || reimported.snapshot->canvases[0].strokes.size() != 7) continue;
-			const auto& reimportedStrokes = reimported.snapshot->canvases[0].strokes;
-			UINK_CHECK(state, reimportedStrokes[5].style.kind == Draw3UInkStrokeKind::OutlineRectangle);
-			UINK_CHECK(state, reimportedStrokes[6].style.kind == Draw3UInkStrokeKind::FilledRectangle);
-			UINK_CHECK(state, reimportedStrokes[5].shape && reimportedStrokes[6].shape);
+			context.dpiScale = dpiScale;
+			const auto exported = ExportDraw3PageToUInkV11(page, context);
+			UINK_CHECK(state, exported.status == Draw3UInkExportStatus::Success && exported.canvas);
+			if (!exported.canvas) continue;
+			const auto& output = *exported.canvas;
+			UINK_CHECK(state, output.workspaceGuid == context.workspaceGuid && output.viewport &&
+				output.viewport->x == 10.0f && output.viewport->y == -20.0f && output.content.size() == 7);
+			if (output.content.size() != 7) continue;
+			UINK_CHECK(state, std::get<UInkInk>(output.content[0]).effectiveKind == UInkInkKind::Pen);
+			const auto& highlighter = std::get<UInkInk>(output.content[1]);
+			UINK_CHECK(state, highlighter.effectiveKind == UInkInkKind::Highlighter && highlighter.nib &&
+				highlighter.nib->aspect == 0.125f);
+			UINK_CHECK(state, std::get<UInkInk>(output.content[2]).effectiveKind == UInkInkKind::Erase);
+			const auto& solid = std::get<UInkShape>(output.content[3]);
+			const auto& dashed = std::get<UInkShape>(output.content[4]);
+			const auto& outline = std::get<UInkShape>(output.content[5]);
+			const auto& filled = std::get<UInkShape>(output.content[6]);
+			UINK_CHECK(state, solid.declaredShapeType == 0 && solid.stroke);
+			UINK_CHECK(state, dashed.declaredShapeType == 0 && dashed.stroke &&
+				(dashed.stroke->dashArray == std::vector<float>{ 16.0f, 24.0f }));
+			UINK_CHECK(state, outline.declaredShapeType == 2 && outline.stroke && !outline.fill);
+			UINK_CHECK(state, filled.declaredShapeType == 2 && !filled.stroke && filled.fill);
+			const auto* rectangle = std::get_if<UInkRectangleGeometry>(&outline.geometry);
+			UINK_CHECK(state, rectangle && rectangle->cornerRadiusX == 4.0f * dpiScale);
+			const auto encoded = EncodeUInkPage(output, false, true);
+			UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success && !encoded.bytes.empty());
+			if (encoded.status == UInkEncodeStatus::Success && !encoded.bytes.empty())
+				CheckNoWireExtra(state, encoded.bytes, 1 + output.content.size());
+			const auto read = ImportUInkV11Page(output, { dpiScale });
+			UINK_CHECK(state, read.status == Draw3UInkV11ImportStatus::Success && read.page &&
+				read.page->strokes.size() == 7);
+			if (!read.page || read.page->strokes.size() != 7) continue;
+			for (uint32_t index = 0; index < std::size(kinds); ++index)
+			{
+				const auto& stroke = read.page->strokes[index];
+				UINK_CHECK(state, stroke.style.kind == (index < 5 ? kinds[index] : Draw3UInkStrokeKind::Shape) &&
+					stroke.undoId == index);
+			}
+			const auto& outlineShape = read.page->strokes[5].shape;
+			const auto& filledShape = read.page->strokes[6].shape;
+			UINK_CHECK(state, outlineShape && outlineShape->legacyKind == shapes::LegacyKind::OutlineRectangle);
+			UINK_CHECK(state, filledShape && filledShape->legacyKind == shapes::LegacyKind::FilledRectangle);
 		}
 
-		Draw3UInkExportSnapshot invalid = *captured.snapshot;
-		invalid.canvases[0].strokes[0].points[0].width = 0.0f;
-		UINK_CHECK(state, ExportDraw3SnapshotToUInk(invalid).status ==
+		auto invalid = page;
+		invalid.strokes[0].points[0].width = 0.0f;
+		UINK_CHECK(state, ExportDraw3PageToUInkV11(invalid, context).status ==
 			Draw3UInkExportStatus::InvalidSourceStroke);
-		invalid = *captured.snapshot;
-		invalid.canvases[0].viewport.scale = 2.0f;
-		UINK_CHECK(state, ExportDraw3SnapshotToUInk(invalid).status ==
+		invalid = page;
+		invalid.viewport.scale = 2.0f;
+		UINK_CHECK(state, ExportDraw3PageToUInkV11(invalid, context).status ==
 			Draw3UInkExportStatus::InvalidSnapshot);
-		invalid = *captured.snapshot;
-		invalid.canvases[0].pageIndex = 1;
-		UINK_CHECK(state, ExportDraw3SnapshotToUInk(invalid).status ==
-			Draw3UInkExportStatus::InvalidSnapshot);
-		invalid = *captured.snapshot;
-		invalid.canvases[0].strokes[0].style.texture = 1;
-		UINK_CHECK(state, ExportDraw3SnapshotToUInk(invalid).status ==
+		invalid = page;
+		invalid.strokes[0].style.texture = 1;
+		UINK_CHECK(state, ExportDraw3PageToUInkV11(invalid, context).status ==
 			Draw3UInkExportStatus::InvalidSourceStroke);
-		invalid = *captured.snapshot;
-		invalid.canvases[0].strokes[0].style.kind =
-			static_cast<Draw3UInkStrokeKind>(255);
-		UINK_CHECK(state, ExportDraw3SnapshotToUInk(invalid).status ==
+		invalid = page;
+		invalid.strokes[0].style.kind = static_cast<Draw3UInkStrokeKind>(255);
+		UINK_CHECK(state, ExportDraw3PageToUInkV11(invalid, context).status ==
 			Draw3UInkExportStatus::InvalidSourceStroke);
-		invalid = *captured.snapshot;
-		invalid.assignedIndependentUndoGroups = false;
-		const Draw3UInkExportResult customGroups = ExportDraw3SnapshotToUInk(invalid);
-		UINK_CHECK(state, customGroups.status == Draw3UInkExportStatus::Success);
-		UINK_CHECK(state, !customGroups.capabilities.assignedIndependentUndoGroups);
 
-		InkCanvasCollection mappedCollection(Draw3Guid(
-			"30000000-0000-4000-8000-00000000f010"));
-		InkPage mappedPage(Draw3Guid("50000000-0000-4000-8000-00000000f010"));
-		InkCanvas* mappedCanvas = mappedPage.GetOrCreateCanvas(DeviceKey{ 42 });
-		UINK_CHECK(state, mappedCanvas != nullptr);
-		if (mappedCanvas)
-		{
-			StoredInkStyle style;
-			style.inkType = StoredInkType::Pen;
-			UINK_CHECK(state, mappedCanvas->AppendStroke(InkStroke(style,
-				{ { 1.0f, 2.0f, 3.0f } })).has_value());
-		}
-		UINK_CHECK(state, mappedCollection.AppendPage(std::move(mappedPage)).has_value());
-		Draw3UInkCaptureOptions missingMapping;
-		missingMapping.fileGuid = Guid("10000000-0000-4000-8000-00000000f010");
-		UINK_CHECK(state, CaptureDraw3UInkExportSnapshot(mappedCollection, missingMapping).status ==
-			Draw3UInkExportStatus::MissingDeviceMapping);
-		UInkDevice mappedDevice;
-		mappedDevice.guid = Guid("40000000-0000-4000-8000-00000000f010");
-		mappedDevice.deviceType = 0;
-		mappedDevice.geometry = UInkDisplayDevice{ 0, 0, 1920, 1080 };
-		missingMapping.devices.push_back({ DeviceKey{ 42 }, mappedDevice });
-		const Draw3UInkCaptureResult mappedCapture =
-			CaptureDraw3UInkExportSnapshot(mappedCollection, missingMapping);
-		UINK_CHECK(state, mappedCapture.status == Draw3UInkExportStatus::Success);
-		UINK_CHECK(state, mappedCapture.snapshot &&
-			mappedCapture.snapshot->canvases[0].deviceGuid ==
-			std::optional<UInkGuid>(mappedDevice.guid));
-
-		InkCanvasCollection emptyPageCollection(Draw3Guid(
-			"30000000-0000-4000-8000-00000000f020"));
-		UINK_CHECK(state, emptyPageCollection.AppendPage(Draw3Guid(
-			"50000000-0000-4000-8000-00000000f020")).has_value());
-		Draw3UInkCaptureOptions emptyPageOptions;
-		emptyPageOptions.fileGuid = Guid("10000000-0000-4000-8000-00000000f020");
-		UINK_CHECK(state, CaptureDraw3UInkExportSnapshot(emptyPageCollection,
-			emptyPageOptions).status == Draw3UInkExportStatus::InvalidSnapshot);
-		if (mappedCapture.snapshot)
-		{
-			Draw3UInkExportSnapshot invalidDevice = *mappedCapture.snapshot;
-			std::get<UInkDisplayDevice>(invalidDevice.devices[0].geometry).width = 0;
-			const Draw3UInkExportResult invalidDeviceResult =
-				ExportDraw3SnapshotToUInk(invalidDevice);
-			UINK_CHECK(state, invalidDeviceResult.status ==
-				Draw3UInkExportStatus::InvalidSnapshot);
-			UINK_CHECK(state, !invalidDeviceResult.diagnostics.empty());
-		}
+		page.operations = { page.strokes.front(), Draw3UInkClearSnapshot{ 1 } };
+		page.strokes.clear();
+		page.intervalOrdinal = 1;
+		const auto cleared = ExportDraw3PageToUInkV11(page, context);
+		UINK_CHECK(state, cleared.status == Draw3UInkExportStatus::Success && cleared.canvas);
+		if (cleared.status != Draw3UInkExportStatus::Success || !cleared.canvas) return;
+		const auto encoded = EncodeUInkPage(*cleared.canvas, false, true);
+		UINK_CHECK(state, encoded.status == UInkEncodeStatus::Success && !encoded.bytes.empty());
+		if (encoded.status != UInkEncodeStatus::Success || encoded.bytes.empty()) return;
+		CheckNoWireExtra(state, encoded.bytes, 3);
 	}
 }
 
@@ -3879,29 +3732,28 @@ int RunFinalizedTailPersistenceTests(const draw3::InkStroke& stroke)
 	TempDirectory temporary;
 	UINK_CHECK(state, temporary.IsValid());
 	if (!temporary.IsValid()) return state.failures;
-	InkCanvasCollection collection(Draw3Guid("30000000-0000-4000-8000-00000000f031"));
-	InkPage page(Draw3Guid("50000000-0000-4000-8000-00000000f031"));
-	InkCanvas* canvas = page.GetOrCreateCanvas(kDefaultDeviceKey);
-	UINK_CHECK(state, canvas != nullptr);
-	if (!canvas) return state.failures;
-	UINK_CHECK(state, canvas->AppendStroke(stroke) == std::optional<size_t>(0));
-	UINK_CHECK(state, collection.AppendPage(std::move(page)) == std::optional<size_t>(0));
-	Draw3UInkCaptureOptions captureOptions;
-	captureOptions.fileGuid = Guid("10000000-0000-4000-8000-00000000f031");
-	const auto captured = CaptureDraw3UInkExportSnapshot(collection, captureOptions);
-	UINK_CHECK(state, captured.snapshot.has_value());
-	if (!captured.snapshot) return state.failures;
-	const auto exported = ExportDraw3SnapshotToUInk(*captured.snapshot);
-	UINK_CHECK(state, exported.status == Draw3UInkExportStatus::Success &&
-		exported.document && exported.capabilities.inkCount == 1);
-	if (!exported.document) return state.failures;
-	UInkEditingSession session;
-	session.document = *exported.document;
-	UInkSaveOptions saveOptions;
-	saveOptions.mode = UInkSaveMode::CreateNewLogicalFileWithIdentity;
-	const auto path = temporary.File(L"finalized-tail.uink");
-	UINK_CHECK(state, SaveUInkFile(path, session, saveOptions).status == UInkSaveStatus::Committed);
-	const auto read = ReadUInkFile(path);
+	Draw3UInkCanvasSnapshot page;
+	page.pageGuid = Guid("50000000-0000-4000-8000-00000000f031");
+	page.pageNumber = 1;
+	Draw3UInkStrokeSnapshot source;
+	source.style.kind = Draw3UInkStrokeKind::Pen;
+	source.style.fallbackRgb = stroke.Style().fallbackRgb;
+	source.style.opacity = stroke.Style().opacity;
+	source.style.texture = stroke.Style().texture;
+	for (const auto& point : stroke.Points())
+		source.points.push_back({ point.x, point.y, point.width });
+	page.strokes.emplace_back(std::move(source));
+	const auto exported = ExportDraw3PageToUInkV11(page);
+	UINK_CHECK(state, exported.status == Draw3UInkExportStatus::Success && exported.canvas);
+	if (!exported.canvas) return state.failures;
+	const auto header = MakeDraw3UInkV11FileHeader(Guid("10000000-0000-4000-8000-00000000f031"));
+	UINK_CHECK(state, header.status == Draw3UInkExportStatus::Success);
+	if (header.status != Draw3UInkExportStatus::Success) return state.failures;
+	const auto published = PublishUInkSnapshotFile(temporary.File(L"finalized-tail.uink"),
+		header.header, header.headerExtension, *exported.canvas);
+	UINK_CHECK(state, published.success && published.published && !published.publishedPath.empty());
+	if (!published.success) return state.failures;
+	const auto read = ReadUInkStoreFile(published.publishedPath);
 	UINK_CHECK(state, read.status == UInkReadStatus::Complete && read.document.has_value());
 	if (!read.document) return state.failures;
 	UINK_CHECK(state, read.document->canvases.size() == 1 &&
@@ -3911,17 +3763,13 @@ int RunFinalizedTailPersistenceTests(const draw3::InkStroke& stroke)
 	const auto* encodedInk = std::get_if<UInkInk>(&read.document->canvases[0].content[0]);
 	UINK_CHECK(state, encodedInk != nullptr);
 	if (!encodedInk) return state.failures;
-	UINK_CHECK(state, !encodedInk->extra && !encodedInk->color.extended &&
-		encodedInk->effectiveTexture == 0);
+	UINK_CHECK(state, !encodedInk->color.extended && encodedInk->effectiveTexture == 0);
 	for (const auto& point : encodedInk->points) UINK_CHECK(state, !point.style);
-	const auto imported = ImportDraw3UInkDocument(*read.document);
-	UINK_CHECK(state, imported.status == Draw3UInkImportStatus::Success && imported.snapshot);
-	if (!imported.snapshot) return state.failures;
-	UINK_CHECK(state, imported.snapshot->canvases.size() == 1 &&
-		imported.snapshot->canvases[0].strokes.size() == 1);
-	if (imported.snapshot->canvases.size() != 1 ||
-		imported.snapshot->canvases[0].strokes.size() != 1) return state.failures;
-	const auto& restored = imported.snapshot->canvases[0].strokes[0];
+	const auto imported = ImportUInkV11Page(read.document->canvases.front());
+	UINK_CHECK(state, imported.status == Draw3UInkV11ImportStatus::Success && imported.page &&
+		imported.page->strokes.size() == 1);
+	if (!imported.page || imported.page->strokes.size() != 1) return state.failures;
+	const auto& restored = imported.page->strokes.front();
 	UINK_CHECK(state, restored.style.kind == Draw3UInkStrokeKind::Pen &&
 		restored.style.fallbackRgb == stroke.Style().fallbackRgb &&
 		restored.style.opacity == stroke.Style().opacity &&
@@ -3956,27 +3804,42 @@ int RunFinalizedTailPersistenceTests(const draw3::InkStroke& stroke)
 int RunUInkTests()
 {
 	TestState state;
-	ResetUInkFileTestFaultInjection();
-	TestLegacyEraserPrivateField(state);
 	TestOfficialFixtures(state);
 	TestExactEncodingAndRichRoundTrip(state);
 	TestMalformedAndRecovery(state);
 	TestEncoderTopologyValidation(state);
 	TestReadLimits(state);
-	TestFullFileSave(state);
-	TestSiblingMaxPathSave(state);
-#if defined(DRAW3_TESTING)
-	TestCleanupOwnership(state);
-#endif
-	TestAppendTransactions(state);
-	TestMediaFilePolicy(state);
-	TestAppendAnalysisRejections(state);
+	TestExtraWireSkipping(state);
+	TestRegistryExtraScopeAndReplay(state);
+	TestEncoderPayloadLengthBoundaries(state);
+	TestV11WireAndRoundTrip(state);
+	TestV11FieldFallbacks(state);
+	TestV11ShapeObjectRecovery(state);
+	TestV11GeometryRecovery(state);
+	TestV11GeometryEncoding(state);
+	TestV11PresetIntegerWidths(state);
+	TestV11ShapeStyleColorWire(state);
+	TestV11PresentationBinding(state);
+	TestV11VersionAndStreamRecovery(state);
+	TestV11CanvasOrdinals(state);
+	TestV11IgnoredLayerMetadata(state);
+	TestV11DiagnosticLocations(state);
+	TestV11ResourceBudgets(state);
+	TestV11BudgetRollback(state);
+	TestV11RegistryBudgetRollback(state);
+	TestV11ContentStorageCharge(state);
+	TestV11ResourceRecovery(state);
+	TestV11FileResourceRejection(state);
+	TestV11RegistryCycles(state);
+	TestV11RegistryTailCycles(state);
+	TestDecoderDepthCeiling(state);
+	TestDeclaredContainerReserve(state);
+	TestPlainPointFloat32Decode(state);
+	MeasureV11Decode(state);
+	TestMediaFileRead(state);
 	TestLatestVisibility(state);
 	TestClearContent(state);
-	TestDraw3Export(state);
-	TestParametricShapePersistence(state);
-	TestConstructedShapePersistence(state);
-	ResetUInkFileTestFaultInjection();
+	TestDraw3PageExport(state);
 	if (state.failures == 0)
 		std::cout << "All UInk persistence tests passed." << std::endl;
 	return state.failures;

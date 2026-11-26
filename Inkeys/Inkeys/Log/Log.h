@@ -21,7 +21,7 @@ namespace Inkeys::Log
 	{
 		Main, Launch, Config, I18n, Window, UI3, Bar, Setting, Whiteboard,
 		PageControl, SelectionOverlay, Freeze, Magnifier, Ppt, PptCOM,
-		Draw3, Input, Haptics, Update, Plugin, State, Shutdown, Logging,
+		Draw3, Input, Haptics, Update, Plugin, State, Shutdown, Logging, UInk,
 		Count
 	};
 
@@ -51,6 +51,8 @@ namespace Inkeys::Log
 
 	// 热路径：只尝试一次取锁；拿不到锁、缓冲不足或被过滤即返回 false（前两者计入丢弃计数）。
 	bool TryWrite(Level level, Module module, std::optional<Channel> channel, std::string_view text) noexcept;
+	// 调用方在提交前格式化失败时，记入同一丢弃计数。
+	void RecordDropped(Level level) noexcept;
 
 	bool Start(const SessionInfo& info) noexcept; // 建目录、打开文件、写会话头、启动写线程；不执行清理
 	// 读取配置后调用一次：设置阈值/通道/清理参数，写一行不受阈值影响的 session.config，再投递启动清理。
@@ -61,6 +63,12 @@ namespace Inkeys::Log
 	void EnterDiscardMode() noexcept;             // 只接受调用、不缓存不写文件（测试夹具/启动失败）
 	bool Started() noexcept;                      // 是否已有写线程在写文件
 	std::wstring Directory();                     // 日志目录（Start 前返回空串）
+
+#ifdef DRAW3_TESTING
+	// 仅供无窗口测试：在生产者线程观察已格式化的 UInk 消息，回调须存活到 worker 退出。
+	using UInkTestSink = void (*)(Level, std::string_view) noexcept;
+	void SetUInkTestSink(UInkTestSink sink) noexcept;
+#endif
 
 	namespace Detail
 	{

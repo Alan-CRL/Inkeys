@@ -34,18 +34,8 @@ import draw3.runtime_metrics;
 
 int RunHighlighterGeometryTests();
 int RunCanvasNavigationTests();
-int RunDesktopAutoSaveTests();
-int RunDesktopSaveSnapshotLifetimeTests();
-int RunPresentationSaveSnapshotLifetimeTests();
-int RunDesktopAutoSaveIndexBoundsTests();
-int RunPresentationAutoSaveTests();
-int RunPresentationAutoSaveAtomicChild(const wchar_t* root,
-	const wchar_t* readyEventName, const wchar_t* resumeEventName);
-int RunPresentationUInkRoundTripTests();
-int RunPresentationSessionRegressionTests();
-int RunPresentationSessionIntegrityTests();
-int RunPresentationVersionCapTests();
-int RunPresentationAutoSaveSessionChild(const wchar_t* root, const wchar_t* phase);
+int RunDesktopInkSnapshotsTests();
+int RunDesktopInkSnapshotLifetimeTests();
 int RunInkDocumentTests();
 int RunInkHistoryTests();
 int RunLaserIncrementalCoverageTests();
@@ -53,7 +43,12 @@ int RunPenCursorTests();
 int RunRuntimeBenchmark(const wchar_t* applicationPath, const wchar_t* reportPath);
 int RunShapeCoreTests();
 int RunUInkTests();
-int RunUInkPageFileTests();
+int RunUInkStoreTests();
+int RunPagedInkStoreTests();
+int RunPagedInkStorePresentationChild(const wchar_t* root);
+int RunPresentationPagesTests();
+int RunPagedInkSaveSnapshotLifetimeTests();
+int RunUInkV11Draw3Tests();
 int RunFinalizedTailPersistenceTests(const draw3::InkStroke& stroke);
 int RunThinStrokeGpuTests();
 int RunModelerReplay(const wchar_t* reportPath);
@@ -66,8 +61,8 @@ namespace
 {
 	std::atomic<uint64_t> gAllocationCount = 0;
 #if defined(DRAW3_TESTING)
-	thread_local bool failNextPresentationCollectionAllocation = false;
-	std::atomic<uint64_t> presentationCollectionAllocationFailures = 0;
+	thread_local bool failNextTestAllocation = false;
+	std::atomic<uint64_t> testAllocationFailures = 0;
 #endif
 
 	struct TestState
@@ -3388,21 +3383,21 @@ namespace
 }
 
 #if defined(DRAW3_TESTING)
-void FailNextPresentationCollectionAllocationForTesting() noexcept
+void FailNextTestAllocation() noexcept
 {
-	failNextPresentationCollectionAllocation = true;
+	failNextTestAllocation = true;
 }
 
-bool CancelNextPresentationCollectionAllocationForTesting() noexcept
+bool CancelNextTestAllocation() noexcept
 {
-	const bool armed = failNextPresentationCollectionAllocation;
-	failNextPresentationCollectionAllocation = false;
+	const bool armed = failNextTestAllocation;
+	failNextTestAllocation = false;
 	return armed;
 }
 
-uint64_t PresentationCollectionAllocationFailuresForTesting() noexcept
+uint64_t TestAllocationFailureCount() noexcept
 {
-	return presentationCollectionAllocationFailures.load(std::memory_order_relaxed);
+	return testAllocationFailures.load(std::memory_order_relaxed);
 }
 #endif
 
@@ -3508,11 +3503,11 @@ void* operator new(size_t size)
 {
 	gAllocationCount.fetch_add(1, std::memory_order_relaxed);
 #if defined(DRAW3_TESTING)
-	if (failNextPresentationCollectionAllocation)
+	if (failNextTestAllocation)
 	{
-		failNextPresentationCollectionAllocation = false;
-		presentationCollectionAllocationFailures.fetch_add(1, std::memory_order_relaxed);
-		throw std::bad_alloc(); // 仅本测试 worker 的下一次真实堆分配失败，普通测试/产品默认关闭。
+		failNextTestAllocation = false;
+		testAllocationFailures.fetch_add(1, std::memory_order_relaxed);
+		throw std::bad_alloc(); // 仅让注入线程的下一次真实堆分配失败，默认关闭。
 	}
 #endif
 	if (void* memory = std::malloc(size)) return memory;
@@ -3562,8 +3557,8 @@ int wmain(int argc, wchar_t* argv[])
 			if (!SnapshotLifetimeProbe::Released(range)) ++failures;
 			SnapshotLifetimeProbe::Report("observer-clear-keeps-capacity-control", range);
 		}
-		failures += RunDesktopSaveSnapshotLifetimeTests();
-		failures += RunPresentationSaveSnapshotLifetimeTests();
+		failures += RunDesktopInkSnapshotLifetimeTests();
+		failures += RunPagedInkSaveSnapshotLifetimeTests();
 		std::cout << "[SnapshotLifetime] failures=" << failures << '\n';
 		return failures == 0 ? 0 : 1;
 	}
@@ -3588,31 +3583,24 @@ int wmain(int argc, wchar_t* argv[])
 		return argc == 3 ? RunModelerReplay(argv[2]) : 90;
 	if (argc >= 2 && wcscmp(argv[1], L"--modeler-benchmark") == 0)
 		return argc == 3 ? RunModelerBenchmark(argv[2]) : 90;
-	if (argc == 5 && wcscmp(argv[1], L"--presentation-atomic-child") == 0)
-		return RunPresentationAutoSaveAtomicChild(argv[2], argv[3], argv[4]);
-	if (argc >= 2 && wcscmp(argv[1], L"--presentation-session-child") == 0)
-		return argc == 4 ? RunPresentationAutoSaveSessionChild(argv[2], argv[3]) : 90;
-	if (argc >= 2 && wcscmp(argv[1], L"--presentation-session-only") == 0)
-		return argc == 2 ? (RunPresentationSessionRegressionTests() == 0 ? 0 : 1) : 90;
-	if (argc >= 2 && wcscmp(argv[1], L"--presentation-autosave-only") == 0)
-		return argc == 2 ? (RunPresentationAutoSaveTests() == 0 ? 0 : 1) : 90;
-	if (argc >= 2 && wcscmp(argv[1], L"--presentation-session-integrity-only") == 0)
-		return argc == 2 ? (RunPresentationSessionIntegrityTests() == 0 ? 0 : 1) : 90;
-	if (argc >= 2 && wcscmp(argv[1], L"--presentation-version-cap-only") == 0)
-		return argc == 2 ? (RunPresentationVersionCapTests() == 0 ? 0 : 1) : 90;
-	if (argc == 2 && wcscmp(argv[1], L"--desktop-autosave-index-bounds-only") == 0)
-		return RunDesktopAutoSaveIndexBoundsTests() == 0 ? 0 : 1;
-	if (argc == 2 && wcscmp(argv[1], L"--desktop-autosave-only") == 0)
-		return RunDesktopAutoSaveTests() == 0 ? 0 : 1;
-	if (argc == 2 && wcscmp(argv[1], L"--uink-presentation-only") == 0)
-		return RunPresentationUInkRoundTripTests() == 0 ? 0 : 1;
+	if (argc == 2 && (wcscmp(argv[1], L"--desktop-ink-snapshots-only") == 0 ||
+		wcscmp(argv[1], L"--desktop-autosave-only") == 0))
+		return RunDesktopInkSnapshotsTests() == 0 ? 0 : 1;
 	// 仅运行共享文件编解码/事务回归，避开完整默认套件的 GPU 测试。
-	if (argc == 2 && wcscmp(argv[1], L"--uink-page-file-only") == 0)
-		return RunUInkPageFileTests() == 0 ? 0 : 1;
+	if (argc == 2 && wcscmp(argv[1], L"--uink-store-only") == 0)
+		return RunUInkStoreTests() == 0 ? 0 : 1;
+	if (argc >= 2 && wcscmp(argv[1], L"--paged-ink-store-presentation-child") == 0)
+		return argc == 3 ? RunPagedInkStorePresentationChild(argv[2]) : 90;
+	if (argc == 2 && wcscmp(argv[1], L"--paged-ink-store-only") == 0)
+		return RunPagedInkStoreTests() == 0 ? 0 : 1;
+	if (argc == 2 && wcscmp(argv[1], L"--presentation-pages-only") == 0)
+		return RunPresentationPagesTests() == 0 ? 0 : 1;
+	if (argc == 2 && wcscmp(argv[1], L"--uink-v11-draw3-only") == 0)
+		return RunUInkV11Draw3Tests() == 0 ? 0 : 1;
 	if (argc == 2 && wcscmp(argv[1], L"--shape-core-only") == 0)
 		return RunShapeCoreTests() == 0 ? 0 : 1;
 	if (argc == 2 && wcscmp(argv[1], L"--uink-file-only") == 0)
-		return RunUInkTests() + RunUInkPageFileTests() == 0 ? 0 : 1;
+		return RunUInkTests() + RunUInkStoreTests() + RunUInkV11Draw3Tests() == 0 ? 0 : 1;
 	if (argc == 4 && wcscmp(argv[1], L"--benchmark") == 0)
 		return RunRuntimeBenchmark(argv[2], argv[3]);
 	if (argc == 2 && wcscmp(argv[1], L"--laser-incremental-only") == 0)
@@ -3657,15 +3645,17 @@ int wmain(int argc, wchar_t* argv[])
 	TestPerformanceHudMetrics(state);
 	state.failures += RunHighlighterGeometryTests();
 	state.failures += RunCanvasNavigationTests();
-	state.failures += RunDesktopAutoSaveTests();
-	state.failures += RunPresentationAutoSaveTests();
+	state.failures += RunDesktopInkSnapshotsTests();
 	state.failures += RunInkDocumentTests();
 	state.failures += RunInkHistoryTests();
 	state.failures += RunLaserIncrementalCoverageTests();
 	state.failures += RunPenCursorTests();
 	state.failures += RunShapeCoreTests();
 	state.failures += RunUInkTests();
-	state.failures += RunUInkPageFileTests();
+	state.failures += RunUInkStoreTests();
+	state.failures += RunPagedInkStoreTests();
+	state.failures += RunPresentationPagesTests();
+	state.failures += RunUInkV11Draw3Tests();
 	state.failures += RunThinStrokeGpuTests();
 	if (state.failures == 0)
 	{

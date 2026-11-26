@@ -95,7 +95,7 @@ namespace Inkeys::Log
 		{
 			"Main", "Launch", "Config", "I18n", "Window", "UI3", "Bar", "Setting", "Whiteboard",
 			"PageControl", "SelectionOverlay", "Freeze", "Magnifier", "Ppt", "PptCOM",
-			"Draw3", "Input", "Haptics", "Update", "Plugin", "State", "Shutdown", "Log",
+			"Draw3", "Input", "Haptics", "Update", "Plugin", "State", "Shutdown", "Log", "UInk",
 		};
 		static_assert(std::size(ModuleNames) == static_cast<std::size_t>(Module::Count));
 		constexpr const char* ChannelNames[] = { "TouchArea", "PptCOM", "Draw3", "Haptics", "Cursor", "CanvasPan" };
@@ -202,6 +202,10 @@ namespace Inkeys::Log
 			return value == static_cast<int>(State::Buffering) || value == static_cast<int>(State::Accepting);
 		}
 
+#ifdef DRAW3_TESTING
+		constinit std::atomic<UInkTestSink> uinkTestSink{nullptr};
+#endif
+
 		// 生产者入口：时间戳/线程 ID 在锁外采集，锁内只有容量检查与 memcpy；不做 I/O、分配或格式化。
 		bool Enqueue(Level level, Module module, std::uint8_t channel, std::string_view text, bool tryOnly) noexcept
 		{
@@ -210,6 +214,11 @@ namespace Inkeys::Log
 			// 超长截断退回到 UTF-8 字符边界，避免把多字节字符切成非法序列；截断标记由写线程补上。
 			if (textSize < text.size())
 				while (textSize > 0 && (static_cast<unsigned char>(text[textSize]) & 0xC0u) == 0x80u) --textSize;
+#ifdef DRAW3_TESTING
+			if (module == Module::UInk)
+				if (const auto observe = uinkTestSink.load(std::memory_order_acquire))
+					observe(level, text.substr(0, textSize));
+#endif
 			const std::size_t recordSize = (sizeof(RecordHeader) + textSize + 7u) & ~static_cast<std::size_t>(7u);
 			RecordHeader header{};
 			header.size = static_cast<std::uint32_t>(recordSize);
@@ -593,6 +602,13 @@ namespace Inkeys::Log
 		} exitGuard;
 	}
 
+#ifdef DRAW3_TESTING
+	void SetUInkTestSink(UInkTestSink observe) noexcept
+	{
+		uinkTestSink.store(observe, std::memory_order_release);
+	}
+#endif
+
 	bool Enabled(Level level) noexcept
 	{
 		if (level >= Level::Critical) return true;
@@ -620,6 +636,11 @@ namespace Inkeys::Log
 		if (channel ? !ChannelEnabled(*channel) : !Enabled(level)) return false;
 		const LastErrorGuard lastError;
 		return Enqueue(level, module, channel ? static_cast<std::uint8_t>(*channel) : Detail::NoChannel, text, true);
+	}
+
+	void RecordDropped(Level level) noexcept
+	{
+		CountDrop(level);
 	}
 
 	namespace Detail

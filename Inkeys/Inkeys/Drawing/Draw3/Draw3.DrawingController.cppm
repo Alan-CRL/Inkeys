@@ -27,14 +27,13 @@
 
 export module Inkeys.Drawing.Draw3.drawing_controller;
 
-import Inkeys.Drawing.Draw3.auto_save;
+import Inkeys.Drawing.Draw3.desktop_ink_snapshots;
 import Inkeys.Drawing.Draw3.contact_input;
 import Inkeys.Drawing.Draw3.haptic_feedback;
 import Inkeys.Drawing.Draw3.ink_document;
 import Inkeys.Drawing.Draw3.ink_history;
 import Inkeys.Drawing.Draw3.ink_history_gpu;
 import Inkeys.Drawing.Draw3.ink_prediction;
-import Inkeys.Drawing.Draw3.presentation_auto_save;
 import Inkeys.Drawing.Draw3.renderer;
 import Inkeys.Drawing.Draw3.runtime_metrics;
 import Inkeys.Drawing.Draw3.transparent_presentation;
@@ -52,7 +51,7 @@ export namespace Inkeys::Drawing::Draw3
 	// 显式无窗口诊断入口：用生产 Laser 烘干路径验证真实 WARP Map 失败。
 	int RunLaserRasterFailureProductionProbe(InkRenderer& renderer,
 		ID3D11Buffer* unwritableInkBuffer) noexcept;
-	// 无 HWND、无磁盘：同一生产 Exit 捕获入口验证停放 Desktop 的源身份。
+	// 无 HWND：验证桌面退出捕获及临时根上的保存与跨 Clear 冷恢复。
 	int RunParkedDesktopExitAutoSaveTest() noexcept;
 	// 无 HWND、无磁盘：生产 PPT 快照构造验证活动/停放槽的 retained 身份。
 	int RunParkedPresentationRetainedSaveTest() noexcept;
@@ -74,9 +73,12 @@ export namespace Inkeys::Drawing::Draw3
 	// 无 HWND、无磁盘：真实 Coordinator/CPU history 验证 Run 共用内容 proof 接缝。
 	int RunDraw3ContentProofProductionProbe() noexcept;
 	int RunWhiteboardStorageProductionTest() noexcept;
+	int RunWhiteboardLoadBenchmark(unsigned rounds) noexcept;
 	// 无窗口：参数图形、复合历史、旧图形身份及白板冷恢复。
 	int RunShapeDocumentProductionTest() noexcept;
 	int RunWhiteboardThemePreferenceProductionTest(WhiteboardTheme) noexcept;
+
+	enum class DesktopSnapshotTrigger : std::uint8_t { Clear, Exit };
 
 	struct DrawingControllerRuntimeObserver
 	{
@@ -92,11 +94,11 @@ export namespace Inkeys::Drawing::Draw3
 		void (*workspaceChanged)(void*, Bridge::Workspace, std::size_t, std::size_t,
 			const Bridge::PresentationReadyIdentity*) = nullptr;
 		void (*controlWake)(void*, ControlWakeKind) = nullptr;
-		bool (*desktopAutoSaveRequested)(void*, DesktopAutoSaveTrigger,
-			draw3::uink::Draw3UInkExportSnapshot&&) = nullptr;
-		bool (*desktopLoadRequested)(void*, draw3::uink::UInkGuid) = nullptr;
-		bool (*presentationSaveRequested)(void*, PresentationSaveRequest&&) = nullptr;
-		bool (*presentationLoadRequested)(void*, PresentationLoadRequest&&) = nullptr;
+		bool (*desktopAutoSaveRequested)(void*, DesktopSnapshotTrigger, DesktopInkSaveRequest) = nullptr;
+		bool (*desktopLoadRequested)(void*, DesktopInkLoadRequest) = nullptr;
+		// 存储由 Host 持有，借用在本次 Run 内有效。
+		PagedInkStore* (*presentationStoreRequested)(void*, const Bridge::PresentationTarget&) noexcept = nullptr;
+		void (*presentationDrain)(void*, void*, void (*)(void*, PresentationPagedCompletion&&)) = nullptr;
 		void (*drawingActivityChanged)(void*, bool) = nullptr;
 		void (*eraserDiagnostics)(void*, const SpeedEraser::Diagnostics&) = nullptr;
 		void (*penDiagnostics)(void*, const PenRuntimeDiagnostics&) = nullptr;

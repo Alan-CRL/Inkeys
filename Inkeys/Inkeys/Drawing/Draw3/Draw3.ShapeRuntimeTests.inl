@@ -418,7 +418,7 @@ int RunShapeInteractionProductionTest()
 		check(ApplyRuntimeJournalCpu(*canvas,pages[0],false,allocate) && SameShapeSemantics(*canvas->Strokes()[created->strokeIndex].Shape(),before),"rotation undo restores before geometry");
 		check(after && ApplyRuntimeJournalCpu(*canvas,pages[0],true,allocate) && SameShapeSemantics(*canvas->Strokes()[created->strokeIndex].Shape(),*after),"rotation redo restores after geometry");
 	}
-	// SetStyle辅助开关只替换当前对象，撤销/重做和冷历史都沿用同一journal。
+	// SetStyle 辅助开关只替换当前对象；会话内撤销与重做仍使用同一 journal。
 	for (auto preset : {PresetKind::Rectangle,PresetKind::Circle,PresetKind::Ellipse})
 	{
 		style.auxiliary = DefaultAuxiliary(preset);
@@ -434,17 +434,20 @@ int RunShapeInteractionProductionTest()
 		check(candidate && CommitRuntimeShapeEditCpu(*canvas,pages[0],*item,before,*candidate,allocate) &&
 			pages[0].operationCursor == cursor + 1 && pages[0].operations.back().kind == CanvasOperationKind::Replace && canvas->Strokes().size() == count,
 			"SetStyle auxiliary toggle records exactly one Replace");
-		const auto cold = WhiteboardHistoryJson(*document.PageAt(0),pages[0]);
-		InkPage restored(pageGuid); CanvasPageRuntimeState restoredRuntime;
-		check(RestoreWhiteboardHistory(cold,restored,restoredRuntime),"auxiliary Replace cold history decodes");
-		auto* restoredCanvas = restored.FindCanvas(kDefaultDeviceKey);
-		if (restoredCanvas)
-		{
-			check(ApplyRuntimeJournalCpu(*restoredCanvas,restoredRuntime,false,allocate) &&
-				restoredCanvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == style.auxiliary,"cold undo restores auxiliary before snapshot");
-			check(ApplyRuntimeJournalCpu(*restoredCanvas,restoredRuntime,true,allocate) &&
-				restoredCanvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == toggle.style.auxiliary,"cold redo restores auxiliary after snapshot");
-		}
+		// 冷页只保存已生效的辅助设置，修改前的版本留在内存 journal。
+		const auto snapshot = CaptureCanvasTail(*document.PageAt(0),pages[0],0);
+		const auto exported = snapshot ? draw3::uink::ExportDraw3PageToUInkV11(*snapshot)
+			: draw3::uink::Draw3UInkV11PageExportResult{};
+		const auto imported = exported.canvas ? draw3::uink::ImportUInkV11Page(*exported.canvas)
+			: draw3::uink::Draw3UInkV11PageImportResult{};
+		check(candidate && imported.page && std::any_of(imported.page->strokes.begin(), imported.page->strokes.end(),
+			[&](const auto& stroke)
+			{
+				return stroke.shape && stroke.shape->id == candidate->id && stroke.shape->revision == candidate->revision &&
+					stroke.shape->construction && stroke.shape->construction->tool.preset == preset &&
+					stroke.shape->style.auxiliary == toggle.style.auxiliary;
+			}),
+			"UInk 1.1 cold load preserves the current auxiliary shape");
 		check(ApplyRuntimeJournalCpu(*canvas,pages[0],false,allocate) &&
 			canvas->Strokes()[created->strokeIndex].Shape()->style.auxiliary == style.auxiliary,"one undo restores object auxiliary");
 		check(ApplyRuntimeJournalCpu(*canvas,pages[0],true,allocate) &&

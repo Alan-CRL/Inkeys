@@ -2291,7 +2291,7 @@ namespace Inkeys::Shutdown
 			{ CleanupRealCase::NaturalClose, L"C11-natural-close" },
 			{ CleanupRealCase::ReadDesktopCommitted, L"C09-read-committed" },
 			{ CleanupRealCase::ReadPptCommitted, L"C10-read-committed" },
-			{ CleanupRealCase::ReadPptForeignSession, L"C10-read-foreign-session" }
+			{ CleanupRealCase::ReadPptFreshStore, L"C10-read-fresh-store" }
 		};
 
 		CleanupRealCase ParseCleanupRealCase(const wchar_t* option) noexcept
@@ -2311,7 +2311,7 @@ namespace Inkeys::Shutdown
 		bool IsCleanupRealReader(CleanupRealCase scenario) noexcept
 		{
 			return scenario >= CleanupRealCase::ReadDesktopCommitted
-				&& scenario <= CleanupRealCase::ReadPptForeignSession;
+				&& scenario <= CleanupRealCase::ReadPptFreshStore;
 		}
 
 		bool AllZeroCleanupBytes(const void* data, size_t size) noexcept
@@ -2324,7 +2324,7 @@ namespace Inkeys::Shutdown
 		bool ValidCleanupReceipt(const CleanupRealReceipt& receipt, bool desktop) noexcept
 		{
 			if (AllZeroCleanupBytes(receipt.fileGuid, 16)
-				|| AllZeroCleanupBytes(receipt.workspaceGuid, 16)
+				|| AllZeroCleanupBytes(receipt.workspaceGuid, 16) != desktop
 				|| AllZeroCleanupBytes(receipt.pageGuid, 16)
 				|| !AllZeroCleanupBytes(receipt.reserved, sizeof(receipt.reserved))
 				|| !receipt.uinkLength || receipt.uinkLength > 8u * 1024u * 1024u
@@ -2333,67 +2333,34 @@ namespace Inkeys::Shutdown
 				|| receipt.retainedCanvasCount > 16 || receipt.deviceCount > 4
 				|| receipt.totalPages == 0 || receipt.totalPages > 3
 				|| receipt.pageIndex > receipt.totalPages || receipt.bindingMode > 4
-				|| receipt.pageKind > 4 || receipt.processLocalIdentity > 1 || receipt.desktopTrigger > 1
-				|| AllZeroCleanupBytes(receipt.indexSha256, 32)
+				|| receipt.pageKind > 4 || receipt.processLocalIdentity > 1
 				|| AllZeroCleanupBytes(receipt.uinkSha256, 32)
 				|| AllZeroCleanupBytes(receipt.geometrySha256, 32)) return false;
-			// 日期与session都是固定ASCII字段；禁止截断、非canonical尾部和隐藏附加路径。
-			const auto canonical = [](const char* text, size_t capacity, size_t length) noexcept
-			{
-				if (length >= capacity || text[length] != '\0') return false;
-				for (size_t i = length; i != capacity; ++i) if (text[i]) return false;
-				return true;
-			};
-			if (!canonical(receipt.storageSession, 40, 36)) return false;
-			bool nonzeroSession = false;
-			for (size_t i = 0; i != 36; ++i)
-			{
-				const char value = receipt.storageSession[i];
-				if (i == 8 || i == 13 || i == 18 || i == 23) { if (value != '-') return false; }
-				else
-				{
-					if (!((value >= '0' && value <= '9') || (value >= 'a' && value <= 'f'))) return false;
-					if (value != '0') nonzeroSession = true;
-				}
-			}
-			if (!nonzeroSession) return false;
-			if (!AllZeroCleanupBytes(receipt.localDate, 16))
-			{
-				if (!canonical(receipt.localDate, 16, 10)) return false;
-				for (size_t i = 0; i != 10; ++i)
-					if (i == 4 || i == 7) { if (receipt.localDate[i] != '-') return false; }
-					else if (receipt.localDate[i] < '0' || receipt.localDate[i] > '9') return false;
-			}
-			else if (!AllZeroCleanupBytes(receipt.localDate, 16)) return false;
 			if (desktop)
 			{
-				if (receipt.workspaceType != 0 || receipt.pageIndex != 0 || receipt.totalPages != 1
-					|| receipt.bindingMode || receipt.pageKind || receipt.processLocalIdentity
-					|| receipt.mutationRevision || receipt.bindingRevision || receipt.targetRevision || receipt.sessionRevision
-					|| !receipt.sequenceInSession || !receipt.dailySequence || receipt.activeCanvasCount != 1
-					|| receipt.retainedCanvasCount || !AllZeroCleanupBytes(receipt.presentationKey, 16)
-					|| !AllZeroCleanupBytes(receipt.slideIds, sizeof(receipt.slideIds))
-					|| !canonical(receipt.localDate, 16, 10)) return false;
-				const auto digit = [&](size_t index) noexcept { return static_cast<unsigned>(receipt.localDate[index] - '0'); };
-				const unsigned year = digit(0) * 1000 + digit(1) * 100 + digit(2) * 10 + digit(3);
-				const unsigned month = digit(5) * 10 + digit(6), day = digit(8) * 10 + digit(9);
-				if (!year || month < 1 || month > 12 || !day) return false;
-				constexpr unsigned days[]{ 31,28,31,30,31,30,31,31,30,31,30,31 };
-				const bool leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-				if (day > days[month - 1] + (month == 2 && leap ? 1u : 0u)) return false;
+				const auto* end = static_cast<const char*>(memchr(receipt.desktopRelativePath, '\0', sizeof(receipt.desktopRelativePath)));
+				if (!end || !AllZeroCleanupBytes(end, sizeof(receipt.desktopRelativePath) - (end - receipt.desktopRelativePath)) ||
+					!ValidCleanupDesktopPath({ receipt.desktopRelativePath, static_cast<size_t>(end - receipt.desktopRelativePath) }))
+					return false;
+				return receipt.workspaceType == 0 && receipt.pageIndex == 0 && receipt.totalPages == 1
+					&& !receipt.bindingMode && !receipt.pageKind && !receipt.processLocalIdentity
+					&& !receipt.mutationRevision && !receipt.bindingRevision && !receipt.targetRevision && !receipt.sessionRevision
+					&& receipt.activeCanvasCount == 1 && !receipt.retainedCanvasCount && !receipt.deviceCount
+					&& !receipt.intervalOrdinal && receipt.strokeCount == 1
+					&& receipt.desktopTopology == (kCleanupDesktopImplicitDevice | kCleanupDesktopImplicitWorkspace)
+					&& (receipt.desktopInkSample == CleanupDesktopInkSample::A || receipt.desktopInkSample == CleanupDesktopInkSample::B)
+					&& AllZeroCleanupBytes(receipt.presentationKey, 16)
+					&& AllZeroCleanupBytes(receipt.slideIds, sizeof(receipt.slideIds));
 			}
-			else
-			{
-				// 首批仅两张固定StableSlideId和独立EndScreen，拒绝未知enum/另一页拓扑。
-				if (receipt.workspaceType != 2 || receipt.bindingMode != 0 || receipt.pageKind > 1
-					|| receipt.processLocalIdentity || receipt.totalPages != 2 || receipt.activeCanvasCount != 3
-					|| receipt.retainedCanvasCount || !receipt.mutationRevision || receipt.bindingRevision != 1
-					|| !receipt.targetRevision || receipt.dailySequence || receipt.sequenceInSession || receipt.desktopTrigger
-					|| receipt.slideIds[0] != 601 || receipt.slideIds[1] != 602 || receipt.slideIds[2] || receipt.slideIds[3]
-					|| AllZeroCleanupBytes(receipt.presentationKey, 16) || !AllZeroCleanupBytes(receipt.localDate, 16)
-					|| (receipt.pageKind == 0 ? receipt.pageIndex >= receipt.totalPages : receipt.pageIndex != receipt.totalPages)) return false;
-			}
-			return true;
+			// 拓扑含两张幻灯片和结束页；夹具只给第 1 张写墨，只有该页登记。
+			return receipt.workspaceType == 2 && receipt.bindingMode == 0 && receipt.pageKind == 0
+				&& !receipt.processLocalIdentity && receipt.totalPages == 2 && receipt.activeCanvasCount == 1
+				&& !receipt.retainedCanvasCount && !receipt.mutationRevision && receipt.bindingRevision == 1
+				&& receipt.targetRevision && !receipt.desktopTopology && receipt.desktopInkSample == CleanupDesktopInkSample::None
+				&& receipt.slideIds[0] == 601 && receipt.slideIds[1] == 602 && !receipt.slideIds[2] && !receipt.slideIds[3]
+				&& !AllZeroCleanupBytes(receipt.presentationKey, 16)
+				&& AllZeroCleanupBytes(receipt.desktopRelativePath, sizeof(receipt.desktopRelativePath))
+				&& receipt.pageIndex == 0 && receipt.intervalOrdinal == 0;
 		}
 
 		struct CleanupRealPathLeases
@@ -2472,7 +2439,7 @@ namespace Inkeys::Shutdown
 			if (!view.value) return 83;
 			auto* packet = static_cast<CleanupRealPacket*>(view.value);
 			const auto& header = packet->header;
-			const bool pptReader = scenario == CleanupRealCase::ReadPptCommitted || scenario == CleanupRealCase::ReadPptForeignSession;
+			const bool pptReader = scenario == CleanupRealCase::ReadPptCommitted || scenario == CleanupRealCase::ReadPptFreshStore;
 			CleanupRealTrace initialTrace{};
 			memcpy(&initialTrace, &packet->trace, sizeof(initialTrace));
 			// 旧HWND仅用于重构bindingToken，绝不赋予对已死进程窗口的操作权。
@@ -2540,7 +2507,7 @@ namespace Inkeys::Shutdown
 			packet->header.expectedIntent = 1;
 			memcpy(packet->header.nonce, &run.nonce, 16);
 			if (expected) packet->expected = *expected;
-			if (scenario == CleanupRealCase::ReadPptCommitted || scenario == CleanupRealCase::ReadPptForeignSession)
+			if (scenario == CleanupRealCase::ReadPptCommitted || scenario == CleanupRealCase::ReadPptFreshStore)
 				packet->trace.oldDrawpad = originDrawpad;
 			if (!DuplicateHandle(GetCurrentProcess(), mapping.value, GetCurrentProcess(),
 				&childMapping.value, FILE_MAP_WRITE, TRUE, 0)) return false;
@@ -2640,9 +2607,9 @@ namespace Inkeys::Shutdown
 					&& (trace.armState == 2 || trace.armState == 4) && trace.gateSuccessPresents > trace.baselineSuccessPresents;
 			if (exitCode != 0 || packet->header.result != 1 || stage != static_cast<LONG>(CleanupRealStage::Finished)) return false;
 			if (IsCleanupRealReader(scenario))
-				return trace.readerSucceeded == 1 && (scenario == CleanupRealCase::ReadPptForeignSession
-					|| (ValidCleanupReceipt(packet->observed, scenario == CleanupRealCase::ReadDesktopCommitted) && expected
-						&& memcmp(&packet->observed, expected, sizeof(*expected)) == 0));
+				return trace.readerSucceeded == 1 && expected &&
+					ValidCleanupReceipt(packet->observed, scenario == CleanupRealCase::ReadDesktopCommitted) &&
+					memcmp(&packet->observed, expected, sizeof(*expected)) == 0;
 			if (scenario == CleanupRealCase::PresenterRelease || scenario == CleanupRealCase::WindowBeforeRelease
 				|| scenario == CleanupRealCase::WindowCreatedRelease)
 				return trace.startReturned == 1 && trace.stopReturned == 1 && trace.oldSignalCancelled == 1
@@ -2655,6 +2622,59 @@ namespace Inkeys::Shutdown
 					&& trace.afterGraceSuccessPresents > trace.baselineSuccessPresents && trace.stopReturned == 1;
 			return trace.startReturned == 1 && trace.stopReturned == 1 && trace.intentObserved == 1
 				&& (trace.armState == 2 || trace.armState == 4) && trace.ordinaryDeadline > trace.closeRequestTick;
+		}
+
+		bool RemoveCleanupPptStorage(const std::wstring& runDirectory)
+		{
+			// 仅清理当前 C10 子进程创建的文稿文件，保留监督器证据并禁止跨重解析点。
+			const auto artifacts = runDirectory + L"\\artifacts";
+			const auto scenario = artifacts + L"\\C10";
+			const auto save = scenario + L"\\Save";
+			const auto root = save + L"\\Ink";
+			const auto presentation = root + L"\\presentation";
+			for (const auto* directory : { &runDirectory, &artifacts, &scenario, &save, &root, &presentation })
+			{
+				const DWORD attributes = GetFileAttributesW(directory->c_str());
+				if (attributes == INVALID_FILE_ATTRIBUTES) return true;
+				if (!(attributes & FILE_ATTRIBUTE_DIRECTORY) || (attributes & FILE_ATTRIBUTE_REPARSE_POINT)) return false;
+			}
+			WIN32_FIND_DATAW entry{};
+			const HANDLE search = FindFirstFileW((presentation + L"\\fixture-source.pptx_*").c_str(), &entry);
+			bool succeeded = true;
+			if (search != INVALID_HANDLE_VALUE)
+			{
+				do
+				{
+					if (!(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
+						(entry.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT))
+					{
+						succeeded = false;
+						continue;
+					}
+					const auto document = presentation + L"\\" + entry.cFileName;
+					WIN32_FIND_DATAW file{};
+					const HANDLE files = FindFirstFileW((document + L"\\*.uink").c_str(), &file);
+					if (files != INVALID_HANDLE_VALUE)
+					{
+						do
+						{
+							if ((file.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) ||
+								!DeleteFileW((document + L"\\" + file.cFileName).c_str())) succeeded = false;
+						} while (FindNextFileW(files, &file));
+						if (GetLastError() != ERROR_NO_MORE_FILES) succeeded = false;
+						FindClose(files);
+					}
+					succeeded = RemoveDirectoryW(document.c_str()) && succeeded;
+				} while (FindNextFileW(search, &entry));
+				if (GetLastError() != ERROR_NO_MORE_FILES) succeeded = false;
+				FindClose(search);
+			}
+			for (const auto* directory : { &presentation, &root, &save, &scenario, &artifacts })
+			{
+				// artifacts 里可能还有普通监督证据，只在它为空时一并移除。
+				if (!RemoveDirectoryW(directory->c_str()) && directory != &artifacts) succeeded = false;
+			}
+			return succeeded;
 		}
 
 		int RunCleanupRealTests(CleanupRealCase scenario)
@@ -2686,7 +2706,10 @@ namespace Inkeys::Shutdown
 			const bool ppt = scenario == CleanupRealCase::PptHold || scenario == CleanupRealCase::PptRelease;
 			if (passed && (desktop || ppt))
 			{
-				const bool receiptValid = ValidCleanupReceipt(observed, desktop);
+				const auto expectedSample = scenario == CleanupRealCase::DesktopHold
+					? CleanupDesktopInkSample::A : CleanupDesktopInkSample::B;
+				const bool receiptValid = ValidCleanupReceipt(observed, desktop)
+					&& (!desktop || observed.desktopInkSample == expectedSample);
 				const bool readable = receiptValid && RunCleanupRealProcess(run,
 					desktop ? CleanupRealCase::ReadDesktopCommitted : CleanupRealCase::ReadPptCommitted,
 					nullptr, nullptr, &observed, producerPid, 0, producerDrawpad);
@@ -2694,13 +2717,19 @@ namespace Inkeys::Shutdown
 				passed = passed && readable;
 				if (ppt)
 				{
-					const bool foreign = receiptValid && RunCleanupRealProcess(run, CleanupRealCase::ReadPptForeignSession,
+					const bool independent = receiptValid && RunCleanupRealProcess(run, CleanupRealCase::ReadPptFreshStore,
 						nullptr, nullptr, &observed, producerPid, 0, producerDrawpad);
-					PrintTestResult("cleanup-real-foreign-session-rejected", foreign);
-					passed = passed && foreign;
+					PrintTestResult("cleanup-real-fresh-store-keeps-existing-bytes", independent);
+					passed = passed && independent;
 				}
 			}
-			DeleteFileW(run.copiedImage.c_str()); // reader阶段完毕；仅本次copy，不清孤儿版本或未知数据。
+			if (ppt)
+			{
+				const bool cleaned = RemoveCleanupPptStorage(run.directory);
+				PrintTestResult("cleanup-real-ppt-storage-cleaned", cleaned);
+				passed = passed && cleaned;
+			}
+			DeleteFileW(run.copiedImage.c_str()); // reader阶段完毕，释放本次镜像副本。
 			return passed ? 0 : 65;
 		}
 

@@ -33,7 +33,7 @@
 		const auto& t = part.transform;
 		const float sx = std::hypot(t.m11, t.m12), sy = std::hypot(t.m21, t.m22);
 		const bool orthogonal = std::abs(t.m11 * t.m21 + t.m12 * t.m22) <= 0.00001f * sx * sy;
-		// UInk rotation 使用弧度，精确的局部变换另保存在扩展中。
+		// UInk rotation 使用弧度，精确的局部变换由官方 object 层保存。
 		const float rotation = std::atan2(t.m12, t.m11);
 		if (part.kind == shapes::Kind::Rectangle && orthogonal)
 		{
@@ -112,57 +112,5 @@
 			result.push_back(std::move(output));
 		}
 		return result;
-	}
-	bool AppendParametricShape(const Draw3UInkStrokeSnapshot& source, UInkCanvas& canvas,
-		Draw3UInkCapabilityReport& report)
-	{
-		if (!source.shape || !shapes::Validate(*source.shape)) return false;
-		auto normalized = *source.shape;
-		if (normalized.construction && normalized.construction->tool.preset == shapes::PresetKind::Cone)
-		{
-			// Validate 已拒绝旧四部件；当前圆锥仍从构造重建，统一允许浮点尾差的派生部件。
-			auto rebuilt = shapes::MakeConstructedShape(*normalized.construction,normalized.style,normalized.id,normalized.revision);
-			if (!rebuilt) return false;
-			rebuilt->transform = normalized.transform; normalized = std::move(*rebuilt);
-		}
-		shapes::GeometryResult geometry;
-		if (!shapes::BuildGeometry(normalized, geometry)) return false;
-		// 与画布共用派生器，v4引用计数同时包含辅助部件；根仍只保存构造真值和aux。
-		shapes::GeometryResult auxiliary;
-		if (!shapes::BuildAuxiliaryGeometry(normalized,auxiliary)) return false;
-		geometry.parts.insert(geometry.parts.end(),auxiliary.parts.begin(),auxiliary.parts.end());
-		std::vector<UInkShape> standard;
-		for (const auto& part : geometry.parts)
-		{
-			if (part.paths.empty()) return false;
-			for (auto& output : StandardShapeParts(part)) standard.push_back(std::move(output));
-		}
-		const auto count = standard.size();
-		const auto metadataVersion = kInkeysShapeVersion;
-		if (!count || count > UINT32_MAX || canvas.content.size() > UINT32_MAX - count) return false;
-		for (size_t index = 0; index < count; ++index)
-		{
-			auto output = std::move(standard[index]);
-			output.contentId = static_cast<uint32_t>(canvas.content.size());
-			output.undoId = source.undoId;
-			output.renderOnlyWhenLatest = source.renderOnlyWhenLatest;
-			// 只在首部件存根对象，后续部件用引用，避免复合对象产生平方级元数据。
-			auto metadata = index == 0 ? EncodeInkeysShapeMetadata(normalized) : ShapeValue(ShapeMap{});
-			if (index != 0)
-			{
-				auto& reference = std::get<ShapeMap>(metadata.value);
-				ShapeField(reference, "version", ShapeValue(metadataVersion));
-				ShapeField(reference, "id", ShapeValue(FormatUInkGuid(UInkGuid(normalized.id))));
-				ShapeField(reference, "revision", ShapeValue(normalized.revision));
-				ShapeField(reference, "reference", ShapeValue(true));
-			}
-			auto& map = std::get<ShapeMap>(metadata.value);
-			ShapeField(map, "partIndex", ShapeValue(uint64_t(index)));
-			ShapeField(map, "partCount", ShapeValue(uint64_t(count)));
-			output.extra = ShapeMap{ { ShapeValue(std::string("inkeysShape")), std::move(metadata) } };
-			canvas.content.emplace_back(std::move(output));
-		}
-		++report.shapeCount;
-		return true;
 	}
 }

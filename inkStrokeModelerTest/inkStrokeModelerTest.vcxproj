@@ -280,21 +280,9 @@
 	<ClCompile Include="draw3\uink_codec.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
-	<ClCompile Include="draw3\uink_file.cpp" />
-	<ClCompile Include="draw3\uink_file.cppm">
-	  <CompileAs>CompileAsCppModule</CompileAs>
-	</ClCompile>
 	<ClCompile Include="draw3\shape_core.cpp" />
-	<ClCompile Include="draw3\uink_draw3_export.cpp" />
-	<ClCompile Include="draw3\uink_draw3_export.cppm">
-	  <CompileAs>CompileAsCppModule</CompileAs>
-	</ClCompile>
-	<ClCompile Include="draw3\uink_draw3_import.cpp" />
-	<ClCompile Include="draw3\uink_draw3_import.cppm">
-	  <CompileAs>CompileAsCppModule</CompileAs>
-	</ClCompile>
-	<ClCompile Include="draw3\uink_draw3_capture.cpp" />
-	<ClCompile Include="draw3\uink_draw3_capture.cppm">
+	<ClCompile Include="draw3\uink_draw3_v11.cpp" />
+	<ClCompile Include="draw3\uink_draw3_v11.cppm">
 	  <CompileAs>CompileAsCppModule</CompileAs>
 	</ClCompile>
 	<ClCompile Include="draw3\ink_history.cpp" />
@@ -364,9 +352,8 @@
 	<ClInclude Include="draw3\shape_interaction.h" />
 	<ClInclude Include="draw3\shape_interaction.inl" />
 	<ClInclude Include="draw3\shape_presets.inl" />
-	<ClInclude Include="draw3\shape_uink_metadata.inl" />
 	<ClInclude Include="draw3\shape_uink_standard.inl" />
-	<ClInclude Include="draw3\shape_uink_import.inl" />
+	<ClInclude Include="draw3\shape_uink_v11.inl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shader.hlsl">

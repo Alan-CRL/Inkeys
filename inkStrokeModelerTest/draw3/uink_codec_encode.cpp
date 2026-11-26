@@ -12,8 +12,8 @@
 #include <limits>
 #include <map>
 #include <new>
+#include <optional>
 #include <set>
-#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -70,20 +70,12 @@ namespace draw3::uink
 		class UInkEncoder
 		{
 		public:
-			UInkEncoder() : packer_(buffer_) {}
+			explicit UInkEncoder(const UInkReadLimits& limits = {}) : packer_(buffer_), limits_(limits) {}
 
 			bool PackDocument(const UInkDocument& document)
 			{
 				if (!ValidateDocument(document)) return false;
-				size_t objectStart = buffer_.size();
-				PackHeader(document.header);
-				if (!CheckPackedObject(objectStart, "header")) return false;
-				if (document.headerExtension)
-				{
-					objectStart = buffer_.size();
-					PackHeaderExtension(*document.headerExtension);
-					if (!CheckPackedObject(objectStart, "headerExtension")) return false;
-				}
+				if (!PackHeaderBlocks(document.header, document.headerExtension)) return false;
 
 				std::vector<size_t> order(document.canvases.size());
 				for (size_t index = 0; index < order.size(); ++index) order[index] = index;
@@ -95,62 +87,29 @@ namespace draw3::uink
 				for (const size_t index : order)
 				{
 					const UInkCanvas& canvas = document.canvases[index];
-					objectStart = buffer_.size();
-					PackCanvas(canvas, document.usesImplicitWorkspace,
-						document.usesImplicitDevice);
-					if (!CheckPackedObject(objectStart, "canvas")) return false;
-					for (const UInkContent& content : canvas.content)
-					{
-						objectStart = buffer_.size();
-						PackContent(content);
-						if (!CheckPackedObject(objectStart, "content")) return false;
-					}
+					if (!PackPageBlocks(canvas, document.usesImplicitWorkspace,
+						document.usesImplicitDevice)) return false;
 				}
 				return true;
 			}
 
-			bool PackAppendObjects(std::span<const UInkAppendObject> objects)
+			bool PackHeaderPrefix(const UInkHeader& header,
+				const std::optional<UInkHeaderExtension>& extension)
 			{
-				if (objects.empty()) return Fail("append.objects");
-				uint64_t topLevelCount = 0;
+				if (header.guid.IsZero()) return Fail("header.guid");
+				if (extension && !ValidateHeaderExtension(*extension)) return false;
+				return PackHeaderBlocks(header, extension);
+			}
+
+			bool PackPage(const UInkCanvas& canvas, bool implicitWorkspace, bool implicitDevice)
+			{
+				if (!ValidateCanvas(canvas, implicitWorkspace, implicitDevice)) return false;
+				// 内容之外还需要为 Canvas 自身保留一个顶层对象名额。
+				if (canvas.content.size() >= limits_.maxTopLevelObjects) return FailLimit("file.objects");
 				uint64_t totalPoints = 0;
-				for (const UInkAppendObject& object : objects)
-				{
-					const bool valid = std::visit([&](const auto& value) -> bool
-					{
-						using T = std::decay_t<decltype(value)>;
-						if constexpr (std::is_same_v<T, UInkCanvas>)
-						{
-							if (!ValidateCanvas(value, false, false, true)) return false;
-							for (const UInkContent& content : value.content)
-								if (!AddGeometryPoints(GeometryPointCount(content), totalPoints)) return false;
-							if (!CountTopLevelObject(topLevelCount, "append.objects")) return false;
-							const size_t canvasStart = buffer_.size();
-							PackCanvas(value, !value.workspaceGuid, !value.deviceGuid);
-							if (!CheckPackedObject(canvasStart, "canvas")) return false;
-							for (const UInkContent& content : value.content)
-							{
-								if (!ValidateContent(content)) return false;
-								if (!CountTopLevelObject(topLevelCount, "append.objects")) return false;
-								const size_t contentStart = buffer_.size();
-								PackContent(content);
-								if (!CheckPackedObject(contentStart, "content")) return false;
-							}
-							return true;
-						}
-						else
-						{
-							if (!ValidateContentValue(value)) return false;
-							if (!AddGeometryPoints(GeometryPointCount(value), totalPoints)) return false;
-							if (!CountTopLevelObject(topLevelCount, "append.objects")) return false;
-							const size_t contentStart = buffer_.size();
-							PackContentValue(value);
-							return CheckPackedObject(contentStart, "content");
-						}
-					}, object);
-					if (!valid) return false;
-				}
-				return true;
+				for (const UInkContent& content : canvas.content)
+					if (!AddGeometryPoints(GeometryPointCount(content), totalPoints)) return false;
+				return PackPageBlocks(canvas, implicitWorkspace, implicitDevice);
 			}
 
 			UInkEncodeResult Finish()
@@ -196,15 +155,9 @@ namespace draw3::uink
 				return true;
 			}
 
-			bool CountTopLevelObject(uint64_t& count, const char* path)
-			{
-				if (count >= limits_.maxTopLevelObjects) return FailLimit(path);
-				++count;
-				return true;
-			}
-
 			bool CheckPackedObject(size_t objectStart, const char* path)
 			{
+				if (failed_) return false;
 				if (buffer_.size() < objectStart ||
 					static_cast<uint64_t>(buffer_.size() - objectStart) >
 					limits_.maxTopLevelObjectBytes) return FailLimit(path);
@@ -239,15 +192,23 @@ namespace draw3::uink
 				return true;
 			}
 
+			bool ValidateStringLength(size_t size, const char* path)
+			{
+				if (static_cast<uint64_t>(size) > limits_.maxStringOrBinaryBytes ||
+					size > std::numeric_limits<uint32_t>::max()) return FailLimit(path);
+				return true;
+			}
+
 			bool ValidateString(const std::string& value, const char* path)
 			{
-				if (static_cast<uint64_t>(value.size()) > limits_.maxStringOrBinaryBytes ||
-					value.size() > std::numeric_limits<uint32_t>::max()) return FailLimit(path);
-				return IsValidUtf8ForWrite(value) || Fail(path);
+				return ValidateStringLength(value.size(), path) &&
+					(IsValidUtf8ForWrite(value) || Fail(path));
 			}
 
 			void PackString(std::string_view value)
 			{
+				// 固定键名和 GUID 也占用解码器的字符串长度预算。
+				if (!ValidateStringLength(value.size(), "string")) return;
 				packer_.pack_str(static_cast<uint32_t>(value.size()));
 				packer_.pack_str_body(value.data(), static_cast<uint32_t>(value.size()));
 			}
@@ -257,80 +218,69 @@ namespace draw3::uink
 				PackString(value);
 			}
 
+			void PackOptionalInt32(std::string_view key, const std::optional<int32_t>& value)
+			{
+				if (value) { PackKey(key); packer_.pack_fix_int32(*value); }
+			}
+
 			void PackGuid(const UInkGuid& guid)
 			{
 				PackString(FormatUInkGuid(guid));
 			}
 
-			bool ValidateExtraValue(const UInkMessagePackValue& value,
+			bool ValidateGenericValue(const UInkMessagePackValue& value,
 				uint32_t depth, uint64_t& charge)
 			{
-				if (depth > limits_.maxDepth) return FailLimit("extra.depth");
+				if (depth > limits_.maxDepth) return FailLimit("shape.object.depth");
 				if (limits_.maxModelCharge < 48 || charge > limits_.maxModelCharge - 48)
-					return FailLimit("extra");
+					return FailLimit("shape.object");
 				charge += 48;
 				return std::visit([&](const auto& stored) -> bool
 				{
 					using T = std::decay_t<decltype(stored)>;
 					if constexpr (std::is_same_v<T, std::string>)
-						return ValidateString(stored, "extra.string");
+						return ValidateString(stored, "shape.object.string");
 					else if constexpr (std::is_same_v<T, std::vector<std::byte>>)
 					{
 						if (static_cast<uint64_t>(stored.size()) > limits_.maxStringOrBinaryBytes ||
 							stored.size() > std::numeric_limits<uint32_t>::max())
-							return FailLimit("extra.binary");
+							return FailLimit("shape.object.binary");
 						return true;
 					}
 					else if constexpr (std::is_same_v<T, UInkMessagePackValue::Array>)
 					{
 						if (static_cast<uint64_t>(stored.size()) > limits_.maxContainerEntries ||
 							stored.size() > std::numeric_limits<uint32_t>::max())
-							return FailLimit("extra.array");
+							return FailLimit("shape.object.array");
 						for (const UInkMessagePackValue& item : stored)
-							if (!ValidateExtraValue(item, depth + 1, charge)) return false;
+							if (!ValidateGenericValue(item, depth + 1, charge)) return false;
 						return true;
 					}
 					else if constexpr (std::is_same_v<T, UInkMessagePackValue::Map>)
 					{
 						if (static_cast<uint64_t>(stored.size()) > limits_.maxContainerEntries ||
 							stored.size() > std::numeric_limits<uint32_t>::max())
-							return FailLimit("extra.map");
+							return FailLimit("shape.object.map");
 						for (const auto& [key, item] : stored)
 						{
-							if (!ValidateExtraValue(key, depth + 1, charge) ||
-								!ValidateExtraValue(item, depth + 1, charge)) return false;
+							if (!ValidateGenericValue(key, depth + 1, charge) ||
+								!ValidateGenericValue(item, depth + 1, charge)) return false;
 						}
 						return true;
 					}
 					else if constexpr (std::is_same_v<T, UInkMessagePackExtension>)
 					{
-						if (static_cast<uint64_t>(stored.data.size()) > limits_.maxStringOrBinaryBytes ||
+						// EXT 的类型字节计入读取上限，载荷必须严格小于上限。
+						if (static_cast<uint64_t>(stored.data.size()) >= limits_.maxStringOrBinaryBytes ||
 							stored.data.size() > std::numeric_limits<uint32_t>::max())
-							return FailLimit("extra.extension");
+							return FailLimit("shape.object.extension");
 						return true;
 					}
 					else return true;
 				}, value.value);
 			}
 
-			bool ValidateExtra(const std::optional<UInkExtra>& extra)
-			{
-				if (!extra) return true;
-				if (static_cast<uint64_t>(extra->size()) > limits_.maxContainerEntries ||
-					extra->size() > std::numeric_limits<uint32_t>::max()) return FailLimit("extra");
-				uint64_t charge = 0;
-				for (const auto& [key, value] : *extra)
-				{
-					const std::string* text = std::get_if<std::string>(&key.value);
-					if (!text) return Fail("extra.key", UInkDiagnosticCode::InvalidFieldType);
-					if (!ValidateString(*text, "extra.key") ||
-						!ValidateExtraValue(key, 1, charge) ||
-						!ValidateExtraValue(value, 1, charge)) return false;
-				}
-				return true;
-			}
-
-			void PackExtraValue(const UInkMessagePackValue& value)
+			void PackGenericValue(const UInkMessagePackValue& value)
 			{
 				std::visit([&](const auto& stored)
 				{
@@ -351,15 +301,15 @@ namespace draw3::uink
 					else if constexpr (std::is_same_v<T, UInkMessagePackValue::Array>)
 					{
 						packer_.pack_array(static_cast<uint32_t>(stored.size()));
-						for (const UInkMessagePackValue& item : stored) PackExtraValue(item);
+						for (const UInkMessagePackValue& item : stored) PackGenericValue(item);
 					}
 					else if constexpr (std::is_same_v<T, UInkMessagePackValue::Map>)
 					{
 						packer_.pack_map(static_cast<uint32_t>(stored.size()));
 						for (const auto& [key, item] : stored)
 						{
-							PackExtraValue(key);
-							PackExtraValue(item);
+							PackGenericValue(key);
+							PackGenericValue(item);
 						}
 					}
 					else if constexpr (std::is_same_v<T, UInkMessagePackExtension>)
@@ -369,16 +319,6 @@ namespace draw3::uink
 							static_cast<uint32_t>(stored.data.size()));
 					}
 				}, value.value);
-			}
-
-			void PackExtra(const UInkExtra& extra)
-			{
-				packer_.pack_map(static_cast<uint32_t>(extra.size()));
-				for (const auto& [key, value] : extra)
-				{
-					PackExtraValue(key);
-					PackExtraValue(value);
-				}
 			}
 
 			bool ValidateColor(const UInkColor& color, const char* path)
@@ -405,6 +345,32 @@ namespace draw3::uink
 				PackKey("components");
 				packer_.pack_array(3);
 				for (const float value : color.extended->components) packer_.pack_float(value);
+			}
+
+			bool PackHeaderBlocks(const UInkHeader& header,
+				const std::optional<UInkHeaderExtension>& extension)
+			{
+				size_t objectStart = buffer_.size();
+				PackHeader(header);
+				if (!CheckPackedObject(objectStart, "header")) return false;
+				if (!extension) return true;
+				objectStart = buffer_.size();
+				PackHeaderExtension(*extension);
+				return CheckPackedObject(objectStart, "headerExtension");
+			}
+
+			bool PackPageBlocks(const UInkCanvas& canvas, bool implicitWorkspace, bool implicitDevice)
+			{
+				size_t objectStart = buffer_.size();
+				PackCanvas(canvas, implicitWorkspace, implicitDevice);
+				if (!CheckPackedObject(objectStart, "canvas")) return false;
+				for (const UInkContent& content : canvas.content)
+				{
+					objectStart = buffer_.size();
+					PackContent(content);
+					if (!CheckPackedObject(objectStart, "content")) return false;
+				}
+				return true;
 			}
 
 			void PackHeader(const UInkHeader& header)
@@ -482,7 +448,6 @@ namespace draw3::uink
 					device.deviceType < 0) return Fail("headerExtension.devices");
 				if (device.name && !ValidateString(*device.name, "device.name")) return false;
 				if (device.hardware && !ValidateHardware(*device.hardware)) return false;
-				if (!ValidateExtra(device.extra)) return false;
 				if (device.deviceType == 0)
 				{
 					const UInkDisplayDevice* display = std::get_if<UInkDisplayDevice>(&device.geometry);
@@ -504,7 +469,7 @@ namespace draw3::uink
 			void PackDevice(const UInkDevice& device)
 			{
 				uint32_t count = 2 + static_cast<uint32_t>(device.name.has_value() +
-					device.hardware.has_value() + device.extra.has_value());
+					device.hardware.has_value());
 				if (device.deviceType == 0) count += 4;
 				else if (device.deviceType == 1) count += 6;
 				packer_.pack_map(count);
@@ -530,7 +495,6 @@ namespace draw3::uink
 					PackKey("height"); packer_.pack_float(window->height);
 					PackKey("zIndex"); packer_.pack_fix_uint32(window->zIndex);
 				}
-				if (device.extra) { PackKey("extra"); PackExtra(*device.extra); }
 			}
 
 			bool ValidateWorkspace(const UInkWorkspace& workspace)
@@ -543,14 +507,13 @@ namespace draw3::uink
 					return Fail("headerExtension.workspaces");
 				if (workspace.name && !ValidateString(*workspace.name, "workspace.name")) return false;
 				if (workspace.hostId && !ValidateString(*workspace.hostId, "workspace.hostId")) return false;
-				return ValidateExtra(workspace.extra);
+				return true;
 			}
 
 			void PackWorkspace(const UInkWorkspace& workspace)
 			{
 				uint32_t count = 3 + static_cast<uint32_t>(workspace.name.has_value() +
-					workspace.parentWorkspaceGuid.has_value() + workspace.hostId.has_value() +
-					workspace.extra.has_value());
+					workspace.parentWorkspaceGuid.has_value() + workspace.hostId.has_value());
 				packer_.pack_map(count);
 				PackKey("guid"); PackGuid(workspace.guid);
 				PackKey("workspaceType"); packer_.pack_fix_int32(workspace.workspaceType);
@@ -561,7 +524,6 @@ namespace draw3::uink
 				}
 				if (workspace.hostId) { PackKey("hostId"); PackString(*workspace.hostId); }
 				PackKey("currentPageIndex"); packer_.pack_fix_uint32(workspace.currentPageIndex);
-				if (workspace.extra) { PackKey("extra"); PackExtra(*workspace.extra); }
 			}
 
 			bool ValidateHeaderExtension(const UInkHeaderExtension& extension)
@@ -571,8 +533,8 @@ namespace draw3::uink
 					!ValidateString(*extension.explanation, "headerExtension.explanation")) return false;
 				if (extension.devices.size() > limits_.maxContainerEntries ||
 					extension.workspaces.size() > limits_.maxContainerEntries ||
-					extension.devices.size() > std::numeric_limits<uint32_t>::max() ||
-					extension.workspaces.size() > std::numeric_limits<uint32_t>::max())
+					extension.devices.size() > kUInkMaxRegistryEntries ||
+					extension.workspaces.size() > kUInkMaxRegistryEntries)
 					return FailLimit("headerExtension");
 				std::map<GuidBytes, size_t> deviceIndices;
 				for (size_t index = 0; index < extension.devices.size(); ++index)
@@ -633,14 +595,14 @@ namespace draw3::uink
 						current = workspaceIndices.find(parent->Bytes())->second;
 					}
 				}
-				return ValidateExtra(extension.extra);
+				return true;
 			}
 
 			void PackHeaderExtension(const UInkHeaderExtension& extension)
 			{
 				uint32_t count = 1 + static_cast<uint32_t>(extension.name.has_value() +
 					extension.explanation.has_value() + !extension.devices.empty() +
-					!extension.workspaces.empty() + extension.extra.has_value());
+					!extension.workspaces.empty());
 				packer_.pack_map(count);
 				PackKey("type"); packer_.pack_fix_uint16(kHeaderExtensionType);
 				if (extension.name) { PackKey("name"); PackString(*extension.name); }
@@ -660,7 +622,6 @@ namespace draw3::uink
 					packer_.pack_array(static_cast<uint32_t>(extension.workspaces.size()));
 					for (const UInkWorkspace& workspace : extension.workspaces) PackWorkspace(workspace);
 				}
-				if (extension.extra) { PackKey("extra"); PackExtra(*extension.extra); }
 			}
 
 			bool ValidateViewport(const UInkViewport& viewport)
@@ -671,18 +632,23 @@ namespace draw3::uink
 			}
 
 			bool ValidateCanvas(const UInkCanvas& canvas, bool implicitWorkspace,
-				bool implicitDevice, bool appendStandalone = false)
+				bool implicitDevice)
 			{
 				if (canvas.pageGuid.IsZero() || canvas.temporaryWorkspace || canvas.temporaryDevice ||
 					canvas.temporaryPage || canvas.temporaryLayer || canvas.presentationUnbound)
 					return Fail("canvas.identity");
-				if (!appendStandalone && ((!implicitWorkspace && !canvas.workspaceGuid) ||
+				if ((!implicitWorkspace && !canvas.workspaceGuid) ||
 					(implicitWorkspace && canvas.workspaceGuid) ||
 					(!implicitDevice && !canvas.deviceGuid) ||
-					(implicitDevice && canvas.deviceGuid))) return Fail("canvas.registryReference");
+					(implicitDevice && canvas.deviceGuid)) return Fail("canvas.registryReference");
 				if (canvas.viewport && canvas.layerIndex != 0) return Fail("canvas.viewport");
 				if (canvas.viewport && !ValidateViewport(*canvas.viewport)) return false;
-				if (!ValidateExtra(canvas.extra)) return false;
+				// CANVAS-8：页面元数据只允许写在第 0 层。
+				if (canvas.layerIndex != 0 &&
+					(canvas.background || canvas.pageState || canvas.pageKind || canvas.binding))
+					return Fail("canvas.pageMetadata");
+				if (canvas.background &&
+					!ValidateColor(canvas.background->color, "canvas.background.color")) return false;
 				if (canvas.content.size() > limits_.maxTopLevelObjects) return FailLimit("canvas.content");
 				uint32_t previousUndo = 0;
 				bool previousWasClear = false;
@@ -710,7 +676,9 @@ namespace draw3::uink
 			void PackCanvas(const UInkCanvas& canvas, bool implicitWorkspace, bool implicitDevice)
 			{
 				uint32_t count = 6 + static_cast<uint32_t>(!implicitWorkspace + !implicitDevice +
-					canvas.slideId.has_value() + canvas.viewport.has_value() + canvas.extra.has_value());
+					canvas.slideId.has_value() + canvas.viewport.has_value() +
+					canvas.background.has_value() + canvas.pageState.has_value() +
+					canvas.pageKind.has_value() + canvas.binding.has_value());
 				packer_.pack_map(count);
 				PackKey("type"); packer_.pack_fix_uint16(kCanvasType);
 				if (!implicitWorkspace) { PackKey("workspaceGuid"); PackGuid(*canvas.workspaceGuid); }
@@ -729,7 +697,27 @@ namespace draw3::uink
 					PackKey("y"); packer_.pack_float(canvas.viewport->y);
 					PackKey("scale"); packer_.pack_float(canvas.viewport->scale);
 				}
-				if (canvas.extra) { PackKey("extra"); PackExtra(*canvas.extra); }
+				if (canvas.background)
+				{
+					PackKey("background");
+					packer_.pack_map(2);
+					PackKey("color"); PackColor(canvas.background->color);
+					PackKey("pattern"); packer_.pack_fix_int32(canvas.background->pattern);
+				}
+				PackOptionalInt32("pageState", canvas.pageState);
+				PackOptionalInt32("pageKind", canvas.pageKind);
+				PackOptionalInt32("binding", canvas.binding);
+			}
+
+			bool ValidateCoordinateRange(double x, double y, const char* path)
+			{
+				return (std::abs(x) <= kUInkMaxCoordinate && std::abs(y) <= kUInkMaxCoordinate) ||
+					Fail(path, UInkDiagnosticCode::CoordinateOutOfRange);
+			}
+
+			static float InkPositionDelta(size_t index, float position, float previous) noexcept
+			{
+				return index == 0 ? position : position - previous;
 			}
 
 			bool ValidateInk(const UInkInk& ink)
@@ -738,20 +726,23 @@ namespace draw3::uink
 					return FailLimit("ink.points");
 				if (ink.declaredInkType < 0 || ink.declaredTexture < 0 || ink.points.empty() ||
 					!std::isfinite(ink.opacity) || ink.opacity < 0.0f || ink.opacity > 1.0f ||
-					!ValidateColor(ink.color, "ink.color") || !ValidateExtra(ink.extra))
+					!ValidateColor(ink.color, "ink.color"))
 					return Fail("ink");
-				if (ink.eraserShape > 2 || (ink.eraserShape != 0 && ink.declaredInkType != 0))
-					return Fail("ink.inkeysEraserShape");
+				if (ink.nib && HasInvalidUInkNibAspect(*ink.nib)) return Fail("ink.nib.aspect");
 				float previousX = 0.0f;
 				float previousY = 0.0f;
+				double absoluteX = 0.0;
+				double absoluteY = 0.0;
 				for (size_t index = 0; index < ink.points.size(); ++index)
 				{
 					const UInkInkPoint& point = ink.points[index];
 					if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
 						!std::isfinite(point.width) || point.width <= 0.0f ||
 						(point.style.has_value() && ink.declaredInkType != 3)) return Fail("ink.points");
-					if (index != 0 && (!std::isfinite(point.x - previousX) ||
-						!std::isfinite(point.y - previousY))) return Fail("ink.points.delta");
+					// INK-4：用实际写出的 float32 位移累加，避免舍入后超出读取范围。
+					absoluteX += InkPositionDelta(index, point.x, previousX);
+					absoluteY += InkPositionDelta(index, point.y, previousY);
+					if (!ValidateCoordinateRange(absoluteX, absoluteY, "ink.points")) return false;
 					if (point.style && (!std::isfinite(point.style->opacity) ||
 						point.style->opacity < 0.0f || point.style->opacity > 1.0f ||
 						!ValidateColor(point.style->color, "ink.points.color"))) return Fail("ink.points");
@@ -764,7 +755,7 @@ namespace draw3::uink
 			void PackInk(const UInkInk& ink)
 			{
 				uint32_t count = 8 + static_cast<uint32_t>(ink.renderOnlyWhenLatest +
-					ink.extra.has_value() + (ink.declaredInkType == 0 && ink.eraserShape != 0));
+					ink.nib.has_value() + ink.cap.has_value());
 				packer_.pack_map(count);
 				PackKey("type"); packer_.pack_fix_uint16(kInkType);
 				PackKey("contentId"); packer_.pack_fix_uint32(ink.contentId);
@@ -780,8 +771,8 @@ namespace draw3::uink
 				{
 					const UInkInkPoint& point = ink.points[index];
 					packer_.pack_map(point.style ? 5 : 3);
-					PackKey("x"); packer_.pack_float(index == 0 ? point.x : point.x - previousX);
-					PackKey("y"); packer_.pack_float(index == 0 ? point.y : point.y - previousY);
+					PackKey("x"); packer_.pack_float(InkPositionDelta(index, point.x, previousX));
+					PackKey("y"); packer_.pack_float(InkPositionDelta(index, point.y, previousY));
 					PackKey("width"); packer_.pack_float(point.width);
 					if (point.style)
 					{
@@ -795,18 +786,183 @@ namespace draw3::uink
 				{
 					PackKey("renderOnlyWhenLatest"); packer_.pack_true();
 				}
-				if (ink.extra) { PackKey("extra"); PackExtra(*ink.extra); }
-				// 圆形不增加键，保持原文件字节；UInk 1.1 升为官方字段。
-				if (ink.declaredInkType == 0 && ink.eraserShape != 0)
+				if (ink.nib)
 				{
-					PackKey("inkeysEraserShape"); packer_.pack_uint8(ink.eraserShape);
+					const bool hasOrientation = ink.nib->orientation != 0;
+					PackKey("nib");
+					packer_.pack_map(1 + static_cast<uint32_t>(ink.nib->aspect.has_value() + hasOrientation));
+					PackKey("shape"); packer_.pack_fix_int32(ink.nib->shape);
+					if (ink.nib->aspect) { PackKey("aspect"); packer_.pack_float(*ink.nib->aspect); }
+					if (hasOrientation)
+					{
+						PackKey("orientation"); packer_.pack_fix_int32(ink.nib->orientation);
+					}
 				}
+				PackOptionalInt32("cap", ink.cap);
+			}
+
+			enum class PresetIntegerWidth { Generic, Int32, UInt32 };
+
+			static PresetIntegerWidth PresetIntegerType(const UInkMessagePackValue& key,
+				bool construction) noexcept
+			{
+				const auto* text = std::get_if<std::string>(&key.value);
+				if (!text) return PresetIntegerWidth::Generic;
+				if (construction)
+				{
+					if (*text == "mode" || *text == "constraint") return PresetIntegerWidth::Int32;
+					if (*text == "sides" || *text == "constraintVertex") return PresetIntegerWidth::UInt32;
+				}
+				else if (*text == "linePattern") return PresetIntegerWidth::Int32;
+				return PresetIntegerWidth::Generic;
+			}
+
+			static std::optional<int64_t> ReadShapeParameterInteger(
+				const UInkMessagePackValue& value) noexcept
+			{
+				if (const auto* number = std::get_if<int64_t>(&value.value)) return *number;
+				if (const auto* number = std::get_if<uint64_t>(&value.value);
+					number && std::in_range<int64_t>(*number)) return static_cast<int64_t>(*number);
+				return std::nullopt;
+			}
+
+			static bool IsShapeStyleColor(const UInkMessagePackValue& key) noexcept
+			{
+				const auto* text = std::get_if<std::string>(&key.value);
+				return text && (*text == "strokeColor" || *text == "fillColor");
+			}
+
+			static std::optional<uint32_t> ReadShapeStyleColorFallback(
+				const UInkMessagePackValue& value) noexcept
+			{
+				constexpr uint32_t kMaxRgb = 0xffffff;
+				if (const auto number = ReadShapeParameterInteger(value);
+					number && *number >= 0 && *number <= kMaxRgb)
+					return static_cast<uint32_t>(*number);
+				const auto* float32 = std::get_if<float>(&value.value);
+				const auto* float64 = std::get_if<double>(&value.value);
+				if (!float32 && !float64) return std::nullopt;
+				const double number = float64 ? *float64 : *float32;
+				if (number >= 0.0 && number <= kMaxRgb && std::trunc(number) == number)
+					return static_cast<uint32_t>(number);
+				return std::nullopt;
+			}
+
+			static std::optional<float> ReadShapeStyleColorComponent(
+				const UInkMessagePackValue& value) noexcept
+			{
+				return std::visit([](const auto& number) -> std::optional<float>
+				{
+					using T = std::decay_t<decltype(number)>;
+					if constexpr (std::is_same_v<T, float> || std::is_same_v<T, double>)
+					{
+						if (!std::isfinite(number) ||
+							std::abs(number) > std::numeric_limits<float>::max()) return std::nullopt;
+						const float converted = static_cast<float>(number);
+						if (static_cast<T>(converted) == number) return converted;
+					}
+					else if constexpr (std::is_same_v<T, int64_t> || std::is_same_v<T, uint64_t>)
+					{
+						const float converted = static_cast<float>(number);
+						// 最大整数可能向上舍入，先检查范围再转回整数。
+						if (static_cast<double>(converted) < std::ldexp(1.0, std::numeric_limits<T>::digits) &&
+							static_cast<T>(converted) == number) return converted;
+					}
+					return std::nullopt;
+				}, value.value);
+			}
+
+			bool ValidateShapeStyleColor(const UInkMessagePackValue& value)
+			{
+				const auto* map = std::get_if<UInkMessagePackValue::Map>(&value.value);
+				if (!map) return Fail("shape.object.style.color");
+				bool hasFallback = false;
+				const std::string* space = nullptr;
+				const UInkMessagePackValue::Array* components = nullptr;
+				for (const auto& [key, entry] : *map)
+				{
+					const auto* text = std::get_if<std::string>(&key.value);
+					if (!text) continue;
+					if (*text == "fallback")
+					{
+						if (hasFallback || !ReadShapeStyleColorFallback(entry))
+							return Fail("shape.object.style.color.fallback");
+						hasFallback = true;
+					}
+					else if (*text == "space")
+					{
+						if (space || !(space = std::get_if<std::string>(&entry.value)))
+							return Fail("shape.object.style.color.space");
+					}
+					else if (*text == "components")
+					{
+						if (components || !(components = std::get_if<UInkMessagePackValue::Array>(&entry.value)) ||
+							components->size() != 3) return Fail("shape.object.style.color.components");
+					}
+				}
+				if (!hasFallback || (space != nullptr) != (components != nullptr))
+					return Fail("shape.object.style.color");
+				if (components)
+				{
+					for (const auto& entry : *components)
+					{
+						const auto component = ReadShapeStyleColorComponent(entry);
+						if (!component || (*space == "srgb" && (*component < 0.0f || *component > 1.0f)))
+							return Fail("shape.object.style.color.components");
+					}
+				}
+				return true;
+			}
+
+			bool ValidateShapeParameters(const std::optional<UInkMessagePackValue::Map>& parameters,
+				bool construction)
+			{
+				if (!parameters) return true;
+				if (parameters->size() > limits_.maxContainerEntries ||
+					parameters->size() > std::numeric_limits<uint32_t>::max())
+					return FailLimit("shape.object");
+				uint64_t charge = 0;
+				// Shape、object 和参数 Map 各占一层，键和值从第 4 层开始。
+				for (const auto& [key, value] : *parameters)
+					if (!ValidateGenericValue(key, 4, charge) || !ValidateGenericValue(value, 4, charge))
+						return false;
+				for (const auto& [key, value] : *parameters)
+				{
+					if (!construction && IsShapeStyleColor(key))
+					{
+						if (!ValidateShapeStyleColor(value)) return false;
+						continue;
+					}
+					const PresetIntegerWidth width = PresetIntegerType(key, construction);
+					if (width == PresetIntegerWidth::Generic) continue;
+					const auto number = ReadShapeParameterInteger(value);
+					if (!number || (width == PresetIntegerWidth::Int32 ?
+						!std::in_range<int32_t>(*number) : !std::in_range<uint32_t>(*number)))
+						return Fail(construction ? "shape.object.construction" : "shape.object.style");
+				}
+				return true;
+			}
+
+			bool ValidateShapeObject(const std::variant<UInkShapeObject, UInkShapeObjectRef>& object)
+			{
+				if (const auto* ref = std::get_if<UInkShapeObjectRef>(&object))
+					return (!ref->ref.IsZero() && ref->partIndex != 0) || Fail("shape.object.ref");
+				const auto& first = std::get<UInkShapeObject>(object);
+				if (first.id.IsZero() || first.revision == 0 || first.partCount == 0)
+					return Fail("shape.object");
+				if (first.preset && !ValidateString(*first.preset, "shape.object.preset"))
+					return false;
+				if (first.transform)
+					for (float value : *first.transform)
+						if (!std::isfinite(value)) return Fail("shape.object.transform");
+				return ValidateShapeParameters(first.construction, true) &&
+					ValidateShapeParameters(first.style, false);
 			}
 
 			bool ValidateShape(const UInkShape& shape)
 			{
-				if (shape.declaredShapeType < 0 || shape.declaredShapeType > 6 ||
-					!ValidateExtra(shape.extra)) return Fail("shape");
+				if (shape.declaredShapeType < 0 || shape.declaredShapeType > 6) return Fail("shape");
+				if (shape.object && !ValidateShapeObject(*shape.object)) return false;
 				const bool open = shape.declaredShapeType == 0 || shape.declaredShapeType == 1;
 				if ((open && (!shape.stroke || shape.fill)) ||
 					(!open && !shape.stroke && !shape.fill)) return Fail("shape.style");
@@ -816,19 +972,19 @@ namespace draw3::uink
 				{
 					const UInkLineGeometry* line = std::get_if<UInkLineGeometry>(&shape.geometry);
 					const size_t minimum = shape.declaredShapeType == 6 ? 3 : 2;
-					if (line && line->points.size() > limits_.maxSingleGeometryPoints)
+					if (line && (line->points.size() > kUInkMaxShapeVertices ||
+						line->points.size() > limits_.maxSingleGeometryPoints))
 						return FailLimit("shape.geometry.points");
 					if (!line || line->points.size() < minimum ||
 						(shape.declaredShapeType == 0 && line->points.size() != 2))
 						return Fail("shape.geometry");
 					for (const UInkShapePoint& point : line->points)
-						if (!std::isfinite(point.x) || !std::isfinite(point.y)) return Fail("shape.geometry");
+						if (!ValidateCoordinateRange(point.x, point.y, "shape.geometry")) return false;
 				}
 				else if (shape.declaredShapeType == 2)
 				{
 					const UInkRectangleGeometry* rectangle = std::get_if<UInkRectangleGeometry>(&shape.geometry);
-					if (!rectangle || !std::isfinite(rectangle->centerX) ||
-						!std::isfinite(rectangle->centerY) || !std::isfinite(rectangle->width) ||
+					if (!rectangle || !std::isfinite(rectangle->width) ||
 						!std::isfinite(rectangle->height) || !std::isfinite(rectangle->rotation) ||
 						rectangle->width <= 0.0f || rectangle->height <= 0.0f ||
 						!std::isfinite(rectangle->cornerRadiusX) ||
@@ -838,27 +994,34 @@ namespace draw3::uink
 								rectangle->cornerRadiusX <= rectangle->width * 0.5f &&
 								rectangle->cornerRadiusY <= rectangle->height * 0.5f)))
 						return Fail("shape.geometry");
+					if (!ValidateCoordinateRange(rectangle->centerX, rectangle->centerY,
+						"shape.geometry")) return false;
 				}
 				else if (shape.declaredShapeType == 3)
 				{
 					const UInkSquareGeometry* square = std::get_if<UInkSquareGeometry>(&shape.geometry);
-					if (!square || !std::isfinite(square->centerX) || !std::isfinite(square->centerY) ||
-						!std::isfinite(square->size) || !std::isfinite(square->rotation) || square->size <= 0.0f)
+					if (!square || !std::isfinite(square->size) ||
+						!std::isfinite(square->rotation) || square->size <= 0.0f)
 						return Fail("shape.geometry");
+					if (!ValidateCoordinateRange(square->centerX, square->centerY,
+						"shape.geometry")) return false;
 				}
 				else if (shape.declaredShapeType == 4)
 				{
 					const UInkEllipseGeometry* ellipse = std::get_if<UInkEllipseGeometry>(&shape.geometry);
-					if (!ellipse || !std::isfinite(ellipse->centerX) || !std::isfinite(ellipse->centerY) ||
-						!std::isfinite(ellipse->width) || !std::isfinite(ellipse->height) ||
+					if (!ellipse || !std::isfinite(ellipse->width) || !std::isfinite(ellipse->height) ||
 						!std::isfinite(ellipse->rotation) || ellipse->width <= 0.0f || ellipse->height <= 0.0f)
 						return Fail("shape.geometry");
+					if (!ValidateCoordinateRange(ellipse->centerX, ellipse->centerY,
+						"shape.geometry")) return false;
 				}
 				else
 				{
 					const UInkCircleGeometry* circle = std::get_if<UInkCircleGeometry>(&shape.geometry);
-					if (!circle || !std::isfinite(circle->centerX) || !std::isfinite(circle->centerY) ||
-						!std::isfinite(circle->radius) || circle->radius <= 0.0f) return Fail("shape.geometry");
+					if (!circle || !std::isfinite(circle->radius) || circle->radius <= 0.0f)
+						return Fail("shape.geometry");
+					if (!ValidateCoordinateRange(circle->centerX, circle->centerY,
+						"shape.geometry")) return false;
 				}
 
 				if (shape.stroke)
@@ -959,7 +1122,8 @@ namespace draw3::uink
 			{
 				uint32_t count = 3 + static_cast<uint32_t>(!stroke.dashArray.empty() +
 					(stroke.dashOffset != 0.0f) + (stroke.declaredStartMarker != 0) +
-					(stroke.declaredEndMarker != 0));
+					(stroke.declaredEndMarker != 0) + stroke.lineCap.has_value() +
+					stroke.lineJoin.has_value());
 				packer_.pack_map(count);
 				PackKey("color"); PackColor(stroke.color);
 				PackKey("opacity"); packer_.pack_float(stroke.opacity);
@@ -981,6 +1145,8 @@ namespace draw3::uink
 				{
 					PackKey("endMarker"); packer_.pack_fix_int32(stroke.declaredEndMarker);
 				}
+				PackOptionalInt32("lineCap", stroke.lineCap);
+				PackOptionalInt32("lineJoin", stroke.lineJoin);
 			}
 
 			void PackFill(const UInkShapeFill& fill)
@@ -991,10 +1157,89 @@ namespace draw3::uink
 				PackKey("opacity"); packer_.pack_float(fill.opacity);
 			}
 
+			void PackShapeStyleColor(const UInkMessagePackValue::Map& color)
+			{
+				// TYPE-1：对象样式的 Color Map 也按登记类型编码，保留扩展键。
+				packer_.pack_map(static_cast<uint32_t>(color.size()));
+				for (const auto& [key, value] : color)
+				{
+					PackGenericValue(key);
+					const auto* text = std::get_if<std::string>(&key.value);
+					if (text && *text == "fallback")
+						packer_.pack_fix_uint32(*ReadShapeStyleColorFallback(value));
+					else if (text && *text == "components")
+					{
+						const auto& components = std::get<UInkMessagePackValue::Array>(value.value);
+						packer_.pack_array(static_cast<uint32_t>(components.size()));
+						for (const auto& component : components)
+							packer_.pack_float(*ReadShapeStyleColorComponent(component));
+					}
+					else PackGenericValue(value);
+				}
+			}
+
+			void PackShapeParameters(const UInkMessagePackValue::Map& parameters, bool construction)
+			{
+				// TYPE-1：登记的整数使用固定宽度，扩展键沿用通用编码。
+				packer_.pack_map(static_cast<uint32_t>(parameters.size()));
+				for (const auto& [key, value] : parameters)
+				{
+					PackGenericValue(key);
+					if (!construction && IsShapeStyleColor(key))
+					{
+						PackShapeStyleColor(std::get<UInkMessagePackValue::Map>(value.value));
+						continue;
+					}
+					switch (PresetIntegerType(key, construction))
+					{
+					case PresetIntegerWidth::Int32:
+						packer_.pack_fix_int32(static_cast<int32_t>(*ReadShapeParameterInteger(value)));
+						break;
+					case PresetIntegerWidth::UInt32:
+						packer_.pack_fix_uint32(static_cast<uint32_t>(*ReadShapeParameterInteger(value)));
+						break;
+					case PresetIntegerWidth::Generic:
+						PackGenericValue(value);
+						break;
+					}
+				}
+			}
+
+			void PackShapeObject(const std::variant<UInkShapeObject, UInkShapeObjectRef>& object)
+			{
+				if (const auto* ref = std::get_if<UInkShapeObjectRef>(&object))
+				{
+					packer_.pack_map(2);
+					PackKey("ref"); PackGuid(ref->ref);
+					PackKey("partIndex"); packer_.pack_fix_uint32(ref->partIndex);
+					return;
+				}
+				const auto& first = std::get<UInkShapeObject>(object);
+				packer_.pack_map(3 + static_cast<uint32_t>(first.preset.has_value() +
+					first.transform.has_value() + first.construction.has_value() +
+					first.style.has_value() + first.aux.has_value()));
+				PackKey("id"); PackGuid(first.id);
+				PackKey("revision"); packer_.pack_fix_uint64(first.revision);
+				PackKey("partCount"); packer_.pack_fix_uint32(first.partCount);
+				if (first.preset) { PackKey("preset"); PackString(*first.preset); }
+				if (first.transform)
+				{
+					PackKey("transform"); packer_.pack_array(6);
+					for (float value : *first.transform) packer_.pack_float(value);
+				}
+				if (first.construction)
+				{
+					PackKey("construction"); PackShapeParameters(*first.construction, true);
+				}
+				if (first.style) { PackKey("style"); PackShapeParameters(*first.style, false); }
+				if (first.aux) { PackKey("aux"); packer_.pack_fix_uint32(*first.aux); }
+			}
+
 			void PackShape(const UInkShape& shape)
 			{
 				uint32_t count = 5 + static_cast<uint32_t>(shape.stroke.has_value() +
-					shape.fill.has_value() + shape.renderOnlyWhenLatest + shape.extra.has_value());
+					shape.fill.has_value() + shape.renderOnlyWhenLatest +
+					shape.object.has_value());
 				packer_.pack_map(count);
 				PackKey("type"); packer_.pack_fix_uint16(kShapeType);
 				PackKey("contentId"); packer_.pack_fix_uint32(shape.contentId);
@@ -1007,7 +1252,7 @@ namespace draw3::uink
 				{
 					PackKey("renderOnlyWhenLatest"); packer_.pack_true();
 				}
-				if (shape.extra) { PackKey("extra"); PackExtra(*shape.extra); }
+				if (shape.object) { PackKey("object"); PackShapeObject(*shape.object); }
 			}
 
 			bool ValidateMedia(const UInkMedia& media)
@@ -1019,7 +1264,7 @@ namespace draw3::uink
 					!std::isfinite(media.volume) || media.volume < 0.0f || media.volume > 1.0f ||
 					!std::isfinite(media.startTime) || media.startTime < 0.0 ||
 					!std::isfinite(media.playbackRate) || media.playbackRate <= 0.0f ||
-					(media.pageCount && *media.pageCount == 0) || !ValidateExtra(media.extra))
+					(media.pageCount && *media.pageCount == 0))
 					return Fail("media");
 				for (const float value : media.transform)
 					if (!std::isfinite(value)) return Fail("media.transform");
@@ -1040,7 +1285,7 @@ namespace draw3::uink
 					media.height.has_value() + !identityTransform + (media.opacity != 1.0f) +
 					media.pageCount.has_value() + (media.pageIndex != 0) + media.autoplay +
 					media.loop + (media.volume != 1.0f) + (media.startTime != 0.0) +
-					(media.playbackRate != 1.0f) + media.extra.has_value());
+					(media.playbackRate != 1.0f));
 				packer_.pack_map(count);
 				PackKey("type"); packer_.pack_fix_uint16(kMediaType);
 				PackKey("contentId"); packer_.pack_fix_uint32(media.contentId);
@@ -1065,21 +1310,14 @@ namespace draw3::uink
 				{
 					PackKey("playbackRate"); packer_.pack_float(media.playbackRate);
 				}
-				if (media.extra) { PackKey("extra"); PackExtra(*media.extra); }
-			}
-
-			bool ValidateClear(const UInkClear& clear)
-			{
-				return ValidateExtra(clear.extra) || Fail("clear.extra");
 			}
 
 			void PackClear(const UInkClear& clear)
 			{
-				packer_.pack_map(3 + static_cast<uint32_t>(clear.extra.has_value()));
+				packer_.pack_map(3);
 				PackKey("type"); packer_.pack_fix_uint16(kClearType);
 				PackKey("contentId"); packer_.pack_fix_uint32(clear.contentId);
 				PackKey("undoId"); packer_.pack_fix_uint32(clear.undoId);
-				if (clear.extra) { PackKey("extra"); PackExtra(*clear.extra); }
 			}
 
 			bool ValidateContent(const UInkContent& content)
@@ -1093,7 +1331,7 @@ namespace draw3::uink
 				if constexpr (std::is_same_v<T, UInkInk>) return ValidateInk(value);
 				else if constexpr (std::is_same_v<T, UInkShape>) return ValidateShape(value);
 				else if constexpr (std::is_same_v<T, UInkMedia>) return ValidateMedia(value);
-				else return ValidateClear(value);
+				else return true;
 			}
 
 			void PackContent(const UInkContent& content)
@@ -1190,9 +1428,8 @@ namespace draw3::uink
 						const UInkWorkspace* owner = registeredWorkspaces.find(*workspace)->second;
 						if (owner->workspaceType == 2)
 						{
-							const UInkInkeysPageKind kind = InkeysPageKind(canvas.extra);
-							if (kind == UInkInkeysPageKind::Invalid ||
-								(kind == UInkInkeysPageKind::EndScreen) == canvas.slideId.has_value())
+							// 图层连续性检查保证同组有第 0 层，其他图层沿用该层的绑定。
+							if (canvas.layerIndex == 0 && !HasValidUInkPresentationBinding(canvas))
 								return Fail("canvas.slideId");
 							if (canvas.slideId)
 							{
@@ -1288,49 +1525,48 @@ namespace draw3::uink
 			bool failed_ = false;
 			bool limitExceeded_ = false;
 		};
+
+		template<typename Pack>
+		UInkEncodeResult EncodeObjectStream(Pack&& pack, const UInkReadLimits& limits = {})
+		{
+			try
+			{
+				UInkEncoder encoder(limits);
+				pack(encoder);
+				return encoder.Finish();
+			}
+			catch (const std::bad_alloc&)
+			{
+				return { UInkEncodeStatus::LimitExceeded, {},
+					{{ UInkDiagnosticCode::LimitExceeded, UInkDiagnosticSeverity::Fatal,
+						0, 0, "allocation", 0 }} };
+			}
+			catch (...)
+			{
+				return { UInkEncodeStatus::InternalError, {},
+					{{ UInkDiagnosticCode::WriteFailed, UInkDiagnosticSeverity::Error,
+						0, 0, "encoder", 0 }} };
+			}
+		}
 	}
 
 	UInkEncodeResult EncodeUInkDocument(const UInkDocument& document)
 	{
-		try
-		{
-			UInkEncoder encoder;
-			encoder.PackDocument(document);
-			return encoder.Finish();
-		}
-		catch (const std::bad_alloc&)
-		{
-			return { UInkEncodeStatus::LimitExceeded, {},
-				{{ UInkDiagnosticCode::LimitExceeded, UInkDiagnosticSeverity::Fatal,
-					0, 0, "allocation", 0 }} };
-		}
-		catch (...)
-		{
-			return { UInkEncodeStatus::InternalError, {},
-				{{ UInkDiagnosticCode::WriteFailed, UInkDiagnosticSeverity::Error,
-					0, 0, "encoder", 0 }} };
-		}
+		return EncodeObjectStream([&](UInkEncoder& encoder) { encoder.PackDocument(document); });
 	}
 
-	UInkEncodeResult EncodeUInkAppendObjects(std::span<const UInkAppendObject> objects)
+	UInkEncodeResult EncodeUInkHeaderPrefix(const UInkHeader& header,
+		const std::optional<UInkHeaderExtension>& extension)
 	{
-		try
+		return EncodeObjectStream([&](UInkEncoder& encoder) { encoder.PackHeaderPrefix(header, extension); });
+	}
+
+	UInkEncodeResult EncodeUInkPage(const UInkCanvas& canvas, bool implicitWorkspace,
+		bool implicitDevice, const UInkReadLimits& limits)
+	{
+		return EncodeObjectStream([&](UInkEncoder& encoder)
 		{
-			UInkEncoder encoder;
-			encoder.PackAppendObjects(objects);
-			return encoder.Finish();
-		}
-		catch (const std::bad_alloc&)
-		{
-			return { UInkEncodeStatus::LimitExceeded, {},
-				{{ UInkDiagnosticCode::LimitExceeded, UInkDiagnosticSeverity::Fatal,
-					0, 0, "allocation", 0 }} };
-		}
-		catch (...)
-		{
-			return { UInkEncodeStatus::InternalError, {},
-				{{ UInkDiagnosticCode::WriteFailed, UInkDiagnosticSeverity::Error,
-					0, 0, "encoder", 0 }} };
-		}
+			encoder.PackPage(canvas, implicitWorkspace, implicitDevice);
+		}, limits);
 	}
 }

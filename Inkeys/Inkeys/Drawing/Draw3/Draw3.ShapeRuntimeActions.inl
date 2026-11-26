@@ -762,7 +762,6 @@ auto renderPendingShapeConstruction = [&](RECT& dirty,bool& failed,bool layersRe
 };
 
 // 物理接触还未Up时先只处理取消屏障；文档命令按原FIFO留到active清空后执行。
-std::deque<CanvasCommand> shapeDeferredCommands;
 auto drainActiveShapeControlBarrier = [&](RECT& dirty)
 {
 	if (active.empty() || !shapeUi.construction || !window_.HasPendingCanvasCommand()) return;

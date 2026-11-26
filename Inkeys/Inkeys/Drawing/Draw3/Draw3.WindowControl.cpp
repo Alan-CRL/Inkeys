@@ -25,6 +25,7 @@
 #include <optional>
 #include <stdexcept>
 #include <mutex>
+#include <type_traits>
 #include <utility>
 #include <tchar.h> // Tablet Pen Service 属性宏仍使用 _T。
 
@@ -908,6 +909,9 @@ namespace Inkeys::Drawing::Draw3
 			// Host generation 之间不得继承上一代异步 completion 或画布命令。
 			const std::scoped_lock lock(canvasCommandMutex_);
 			canvasCommands_.clear();
+			desktopCompletion_.reset();
+			commandsBeforeDesktopCompletion_ = 0;
+			desktopCompletionFirst_ = false;
 			presentationCompletion_.reset();
 			commandsBeforePresentationCompletion_ = 0;
 		}
@@ -976,6 +980,9 @@ namespace Inkeys::Drawing::Draw3
 		{
 			const std::scoped_lock lock(canvasCommandMutex_);
 			canvasCommands_.clear();
+			desktopCompletion_.reset();
+			commandsBeforeDesktopCompletion_ = 0;
+			desktopCompletionFirst_ = false;
 			presentationCompletion_.reset();
 			commandsBeforePresentationCompletion_ = 0;
 		}
@@ -1621,11 +1628,20 @@ namespace Inkeys::Drawing::Draw3
 		bool tookCompletion = false;
 		{
 			const std::scoped_lock lock(canvasCommandMutex_);
-			if (presentationCompletion_ && commandsBeforePresentationCompletion_ == 0)
+			const bool presentationReady = presentationCompletion_ && commandsBeforePresentationCompletion_ == 0;
+			const bool desktopReady = desktopCompletion_ && commandsBeforeDesktopCompletion_ == 0;
+			if (desktopReady && (!presentationReady || desktopCompletionFirst_))
+			{
+				command = {};
+				command.type = CanvasCommandType::DesktopPersistenceCompleted;
+				command.desktopPersistenceCompletion = std::exchange(desktopCompletion_, std::nullopt);
+				tookCompletion = true;
+			}
+			else if (presentationReady)
 			{
 				command = {};
 				command.type = CanvasCommandType::PresentationPersistenceCompleted;
-				command.presentationPersistenceCompletion = std::move(presentationCompletion_);
+				command.presentationPersistenceCompletion = std::exchange(presentationCompletion_, std::nullopt);
 				tookCompletion = true;
 			}
 			else
@@ -1633,6 +1649,7 @@ namespace Inkeys::Drawing::Draw3
 				if (canvasCommands_.empty()) return false;
 				command = std::move(canvasCommands_.front());
 				canvasCommands_.pop_front();
+				if (desktopCompletion_) --commandsBeforeDesktopCompletion_;
 				if (presentationCompletion_) --commandsBeforePresentationCompletion_;
 			}
 		}
@@ -1644,7 +1661,7 @@ namespace Inkeys::Drawing::Draw3
 	bool WindowController::HasPendingCanvasCommand() noexcept
 	{
 		const std::scoped_lock lock(canvasCommandMutex_);
-		return presentationCompletion_ || !canvasCommands_.empty();
+		return desktopCompletion_ || presentationCompletion_ || !canvasCommands_.empty();
 	}
 
 	bool WindowController::ConsumeResizeRequest(WindowSize& size)
@@ -1698,6 +1715,7 @@ namespace Inkeys::Drawing::Draw3
 			if (command.type == CanvasCommandType::SetPresentationTarget &&
 				!canvasCommands_.empty() &&
 				// 预留终态也构成 FIFO 屏障，不能把其前方目标与后方目标合并。
+				(!desktopCompletion_ || commandsBeforeDesktopCompletion_ < canvasCommands_.size()) &&
 				(!presentationCompletion_ || commandsBeforePresentationCompletion_ < canvasCommands_.size()) &&
 				canvasCommands_.back().type == CanvasCommandType::SetPresentationTarget)
 				canvasCommands_.back() = std::move(command);
@@ -1881,18 +1899,53 @@ namespace Inkeys::Drawing::Draw3
 		QueueCanvasCommand(command);
 	}
 
-	bool WindowController::TryEnqueuePresentationCompletion(
-		const std::shared_ptr<const PresentationPersistenceCompletion>& completion) noexcept
+	bool WindowController::TryEnqueueDesktopCompletion(
+		std::optional<DesktopInkCompletion>& completion) noexcept
 	{
+		static_assert(std::is_nothrow_move_constructible_v<DesktopInkCompletion>);
+		static_assert(std::is_nothrow_move_assignable_v<DesktopInkCompletion>);
+		if (!completion) return false;
+		{
+			const std::scoped_lock lock(canvasCommandMutex_);
+			if (desktopCompletion_) return false;
+			desktopCompletion_ = std::exchange(completion, std::nullopt);
+			commandsBeforeDesktopCompletion_ = canvasCommands_.size();
+			// 两类槽都在同一条命令之后就绪时，先交付较早入槽的回执。
+			desktopCompletionFirst_ = !presentationCompletion_;
+		}
+		RequestControlWake();
+		return true;
+	}
+
+	std::optional<DesktopInkCompletion> WindowController::TakeDesktopCompletionForExit() noexcept
+	{
+		const std::scoped_lock lock(canvasCommandMutex_);
+		commandsBeforeDesktopCompletion_ = 0;
+		return std::exchange(desktopCompletion_, std::nullopt);
+	}
+
+	bool WindowController::TryEnqueuePresentationCompletion(
+		std::optional<PresentationPagedCompletion>& completion) noexcept
+	{
+		static_assert(std::is_nothrow_move_constructible_v<PresentationPagedCompletion>);
+		static_assert(std::is_nothrow_move_assignable_v<PresentationPagedCompletion>);
 		if (!completion) return false;
 		{
 			const std::scoped_lock lock(canvasCommandMutex_);
 			if (presentationCompletion_) return false;
-			presentationCompletion_ = completion;
+			presentationCompletion_ = std::exchange(completion, std::nullopt);
+			desktopCompletionFirst_ = desktopCompletion_.has_value();
 			commandsBeforePresentationCompletion_ = canvasCommands_.size();
 		}
 		RequestControlWake();
 		return true;
+	}
+
+	std::optional<PresentationPagedCompletion> WindowController::TakePresentationCompletionForExit() noexcept
+	{
+		const std::scoped_lock lock(canvasCommandMutex_);
+		commandsBeforePresentationCompletion_ = 0;
+		return std::exchange(presentationCompletion_, std::nullopt);
 	}
 
 	void WindowController::RequestExit() noexcept

@@ -2006,6 +2006,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (count != 2) return 2;
 			return runDraw3SelfTest([] { return Inkeys::Drawing::Draw3::RunPenWidthProductionProbe(); });
 		}
+		if (count > 1 && CompareStringOrdinal(arguments[1], -1,
+			L"--draw3-whiteboard-load-benchmark", -1, TRUE) == CSTR_EQUAL)
+		{
+			unsigned rounds = 20;
+			bool valid = count == 2;
+			if (count == 4 && wcscmp(arguments[2], L"--rounds") == 0)
+			{
+				rounds = 0;
+				const wchar_t* digit = arguments[3];
+				for (; *digit >= L'0' && *digit <= L'9' && rounds <= 1000; ++digit)
+					rounds = rounds * 10 + (*digit - L'0');
+				valid = !*digit && rounds >= 2 && rounds <= 1000;
+			}
+			LocalFree(arguments);
+			return runDraw3SelfTest([&]
+			{
+				if (valid) return Inkeys::Drawing::Draw3::RunWhiteboardLoadBenchmark(rounds);
+				std::fputs("[Whiteboard.LoadBenchmark] usage: --draw3-whiteboard-load-benchmark [--rounds 2..1000]\n", stderr);
+				return 2;
+			});
+		}
 		// argv 识别也覆盖给 mode 加引号的合法写法；坏形状不能落入普通 GUI。
 		if (count > 1 && wcscmp(arguments[1], kHostMetricsSmokeArg) == 0)
 		{
@@ -4022,13 +4043,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			static_cast<Inkeys::Drawing::Draw3::WhiteboardPattern>(whiteboardDefault.pattern) };
 		draw3StartOptions.allowDirectComposition = preferDraw3DirectComposition;
 		draw3StartOptions.preferredPresentationMode = preferredMode;
-		draw3StartOptions.autoSaveRoot =
-			GetCurrentExeDirectory() + L"\\Inkeys\\AutoSave";
 		{
 			// 程序目录取不到时只在内存记录，避免拼出盘符根路径。
 			const std::wstring exeDirectory = GetCurrentExeDirectory();
+			// 墨迹存储根为 Inkeys\Save\Ink；旧 Inkeys\AutoSave 不再访问也不清理。空根关闭持久化。
 			if (!exeDirectory.empty())
+			{
+				draw3StartOptions.autoSaveRoot = exeDirectory + L"\\Inkeys\\Save\\Ink";
 				draw3StartOptions.devicePerformancePath = exeDirectory + L"\\Inkeys\\Memory\\device-performance.json";
+			}
 		}
 		draw3StartOptions.startupMilestone = [](void*,
 			Inkeys::Drawing::Draw3::HostStartupStage stage) noexcept

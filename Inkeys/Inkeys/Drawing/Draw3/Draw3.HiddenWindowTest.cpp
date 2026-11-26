@@ -22,8 +22,9 @@ import Inkeys.Drawing.Draw3.ink_prediction;
 import Inkeys.Drawing.Draw3.ink_history;
 import Inkeys.Drawing.Draw3.ink_history_gpu;
 import Inkeys.Drawing.Draw3.dirty_region;
-import draw3.uink_file;
-import draw3.uink_draw3_import;
+import Inkeys.Drawing.Draw3.paged_ink_store;
+import draw3.uink_draw3_v11;
+import draw3.uink_store;
 
 #include <algorithm>
 #include <array>
@@ -40,6 +41,7 @@ import draw3.uink_draw3_import;
 #include <filesystem>
 #include <fstream>
 #include <json/json.h>
+#include <optional>
 #include <span>
 #include <string>
 #include <tchar.h>
@@ -97,6 +99,106 @@ namespace Inkeys::Drawing::Draw3
 				return GetCapture() == window ? 1 : 0;
 			}
 			return DrawpadMsgCallback(window, message, wParam, lParam);
+		}
+
+		// 只清理本测试新建的根，目录联接和符号链接始终作为叶子处理。
+		void RemoveHiddenPersistenceRoot(const std::wstring& path)
+		{
+			const DWORD attributes = GetFileAttributesW(path.c_str());
+			if (attributes == INVALID_FILE_ATTRIBUTES) return;
+			if (!(attributes & FILE_ATTRIBUTE_DIRECTORY))
+			{
+				DeleteFileW(path.c_str());
+				return;
+			}
+			if (!(attributes & FILE_ATTRIBUTE_REPARSE_POINT))
+			{
+				WIN32_FIND_DATAW entry{};
+				const HANDLE search = FindFirstFileW((path + L"\\*").c_str(), &entry);
+				if (search != INVALID_HANDLE_VALUE)
+				{
+					struct FindGuard { HANDLE handle; ~FindGuard() { FindClose(handle); } } guard{ search };
+					do
+					{
+						if (wcscmp(entry.cFileName, L".") && wcscmp(entry.cFileName, L".."))
+							RemoveHiddenPersistenceRoot(path + L"\\" + entry.cFileName);
+					} while (FindNextFileW(search, &entry));
+				}
+			}
+			RemoveDirectoryW(path.c_str());
+		}
+
+		struct HiddenPersistenceRoot
+		{
+			std::wstring path;
+
+			bool Create(const wchar_t* prefix)
+			{
+				wchar_t temporary[MAX_PATH]{};
+				const DWORD length = GetTempPathW(MAX_PATH, temporary);
+				LARGE_INTEGER started{};
+				if (!length || length >= MAX_PATH || !QueryPerformanceCounter(&started)) return false;
+				auto candidate = std::wstring(temporary, length) + prefix +
+					std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(started.QuadPart);
+				if (!CreateDirectoryW(candidate.c_str(), nullptr)) return false;
+				path = std::move(candidate);
+				return true;
+			}
+
+			bool Remove()
+			{
+				if (path.empty()) return true;
+				RemoveHiddenPersistenceRoot(path);
+				const DWORD error = GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES
+					? GetLastError() : ERROR_SUCCESS;
+				if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND) return false;
+				path.clear();
+				return true;
+			}
+
+			~HiddenPersistenceRoot()
+			{
+				try { (void)Remove(); }
+				catch (...) {}
+			}
+		};
+
+		struct HiddenPresentationFile
+		{
+			std::wstring path;
+			draw3::uink::UInkReadResult read;
+		};
+
+		std::optional<HiddenPresentationFile> ReadHiddenPresentationFile(
+			const std::wstring& root, const Bridge::PresentationTarget& target)
+		{
+			// 按真实命名定位文稿目录，再用文件中的 Workspace 身份校验，拒绝重复文件。
+			const PagedInkFileNaming naming{ PagedInkFileKind::Presentation,
+				std::wstring(target.presentationName.begin(), target.presentationName.end()),
+				draw3::uink::UInkGuid(target.key.bytes) };
+			const auto example = MakePagedInkPath(root, naming, {}, naming.presentationKey);
+			const auto directory = example.substr(0, example.find_last_of(L'\\'));
+			const auto attributes = GetFileAttributesW(directory.c_str());
+			if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT)) return {};
+			WIN32_FIND_DATAW entry{};
+			const HANDLE search = FindFirstFileW((directory + L"\\*.uink").c_str(), &entry);
+			if (search == INVALID_HANDLE_VALUE) return {};
+			struct FindGuard { HANDLE handle; ~FindGuard() { FindClose(handle); } } guard{ search };
+			if (entry.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) return {};
+			const auto path = directory + L"\\" + entry.cFileName;
+			if (FindNextFileW(search, &entry) || GetLastError() != ERROR_NO_MORE_FILES) return {};
+			auto read = draw3::uink::ReadUInkStoreFile(path);
+			if (read.status != draw3::uink::UInkReadStatus::Complete || !read.document ||
+				read.summary.version != draw3::uink::kUInkVersion || !read.document->headerExtension ||
+				read.document->header.guid.IsZero() || read.provenance.contentSequenceRecovered ||
+				read.provenance.containsInvalidCompleteBlocks) return {};
+			const auto& workspaces = read.document->headerExtension->workspaces;
+			if (workspaces.size() != 1 || workspaces.front().workspaceType != 2 ||
+				workspaces.front().guid.IsZero() || workspaces.front().hostId != FormatPresentationKey(target.key)) return {};
+			for (const auto& canvas : read.document->canvases)
+				if (canvas.workspaceGuid != workspaces.front().guid || canvas.pageGuid.IsZero())
+					return {};
+			return HiddenPresentationFile{ path, std::move(read) };
 		}
 
 		template <typename Predicate>
@@ -504,38 +606,43 @@ namespace Inkeys::Drawing::Draw3
 		}
 
 
-		bool CheckSizeBoundaryFile(const SpeedEraser::Diagnostics& diagnostic)
+		bool CheckSizeBoundaryFile(const SpeedEraser::Diagnostics& diagnostic, const std::wstring& root)
 		{
 			using namespace draw3::uink;
-			const auto file=CreateUInkGuid(), workspace=CreateUInkGuid(), page=CreateUInkGuid();
-			if(!file || !workspace || !page || !diagnostic.resumedWithAnchor)return false;
-			Draw3UInkExportSnapshot snapshot;
-			snapshot.fileGuid=*file;snapshot.workspaceGuid=*workspace;
-			Draw3UInkCanvasSnapshot canvas;canvas.pageGuid=*page;canvas.pageNumber=1;
-			Draw3UInkStrokeSnapshot stroke;stroke.style.kind=Draw3UInkStrokeKind::Eraser;
-			for(size_t i=0;i<3;++i)stroke.points.push_back({diagnostic.boundaryPoints[i*3],
-				diagnostic.boundaryPoints[i*3+1],diagnostic.boundaryPoints[i*3+2]});
-			canvas.strokes.push_back(stroke);snapshot.canvases.push_back(canvas);
-			const auto exported=ExportDraw3SnapshotToUInk(snapshot);
-			if(!exported.document)return false;
-			UInkEditingSession session;session.document=*exported.document;session.provenance.sourceWasExternal=false;
-			const std::string id=FormatUInkGuid(*file);
-			const std::wstring path=L"Build\\eraser-size-boundary-"+std::wstring(id.begin(),id.end())+L".uink";
-			UInkSaveOptions options;options.mode=UInkSaveMode::SaveAsNewLogicalFile;
-			if(SaveUInkFile(path,session,options).status!=UInkSaveStatus::Committed)return false;
-			const auto read=ReadUInkFile(path);
-			if(!read.document)return false;
-			const auto imported=ImportDraw3UInkDocument(*read.document);
-			if(!imported.snapshot || imported.snapshot->canvases.size()!=1 ||
-				imported.snapshot->canvases[0].strokes.size()!=1)return false;
-			const auto& restored=imported.snapshot->canvases[0].strokes[0].points;
-			if(restored.size()!=3)return false;
-			for(size_t i=0;i<3;++i)
-				if(std::abs(restored[i].x-stroke.points[i].x)>0.001f ||
-					std::abs(restored[i].y-stroke.points[i].y)>0.001f ||
-					std::abs(restored[i].width-stroke.points[i].width)>0.001f)return false;
-			return restored[0].x==restored[1].x && restored[0].y==restored[1].y &&
-				restored[0].width>restored[1].width && restored[2].width<=diagnostic.dpiX/96*36;
+			const auto file = CreateUInkGuid();
+			const auto page = CreateUInkGuid();
+			if (!file || !page || !diagnostic.resumedWithAnchor || root.empty()) return false;
+			Draw3UInkCanvasSnapshot canvas;
+			canvas.pageGuid = *page;
+			canvas.pageNumber = 1;
+			Draw3UInkStrokeSnapshot stroke;
+			stroke.style.kind = Draw3UInkStrokeKind::Eraser;
+			for (size_t i = 0; i < 3; ++i)
+				stroke.points.push_back({ diagnostic.boundaryPoints[i * 3],
+					diagnostic.boundaryPoints[i * 3 + 1], diagnostic.boundaryPoints[i * 3 + 2] });
+			canvas.strokes.push_back(stroke);
+			const auto header = MakeDraw3UInkV11FileHeader(*file);
+			const auto exported = ExportDraw3PageToUInkV11(canvas);
+			if (header.status != Draw3UInkExportStatus::Success || !exported.canvas) return false;
+			const auto id = FormatUInkGuid(*file);
+			const auto path = root + L"\\eraser-size-boundary-" + std::wstring(id.begin(), id.end()) + L".uink";
+			const auto saved = PublishUInkSnapshotFile(path, header.header, header.headerExtension, *exported.canvas);
+			if (!saved.success) return false;
+			const auto read = ReadUInkStoreFile(saved.publishedPath);
+			if (read.status != UInkReadStatus::Complete || !read.document ||
+				read.summary.version != kUInkVersion || read.document->canvases.size() != 1 ||
+				read.document->canvases.front().pageGuid != *page) return false;
+			const auto imported = ImportUInkV11Page(read.document->canvases.front());
+			if (!imported.page || imported.page->strokes.size() != 1) return false;
+			const auto& restored = imported.page->strokes.front().points;
+			if (restored.size() != 3) return false;
+			// 尺寸切换在同一点产生新宽度。1.1 往返必须保留这两个点及尾段尺寸。
+			for (size_t i = 0; i < 3; ++i)
+				if (std::abs(restored[i].x - stroke.points[i].x) > 0.001f ||
+					std::abs(restored[i].y - stroke.points[i].y) > 0.001f ||
+					std::abs(restored[i].width - stroke.points[i].width) > 0.001f) return false;
+			return restored[0].x == restored[1].x && restored[0].y == restored[1].y &&
+				restored[0].width > restored[1].width && restored[2].width <= diagnostic.dpiX / 96 * 36;
 		}
 
 		bool CheckPenDwellAndResume(HWND drawpad, int& failures)
@@ -795,26 +902,34 @@ namespace Inkeys::Drawing::Draw3
 			return succeeded;
 		}
 
+		bool CheckPresentationRequestBalance(int& failures)
+		{
+			const auto saved = ProductHost().HiddenPersistenceSnapshot();
+			if (!Check(saved.has_value(), "PPT persistence accounting available after stop", failures)) return false;
+			bool succeeded = Check(saved->presentationOutstanding == 0,
+				"no accepted PPT request remains outstanding after stop", failures);
+			succeeded &= Check(saved->presentationUnmatchedTerminals == 0,
+				"no unmatched PPT terminal after stop", failures);
+			succeeded &= Check(saved->presentationAccepted == saved->presentationCommitted + saved->presentationLoaded +
+				saved->presentationMerged + saved->presentationFailed + saved->presentationCanceled,
+				"accepted PPT requests balance with all terminal categories after stop", failures);
+			succeeded &= Check(saved->presentationLanePageFailures == 0,
+				"no failed pages within PPT lane loads", failures);
+			return succeeded;
+		}
+
 		bool CheckPresentationPersistence(Inkeys::Window::Service& service,
 			HWND drawpad, HWND presentation,
-			const HostStyleCallbacks& callbacks, HostStartOptions options, int& failures)
+			const HostStyleCallbacks& callbacks, HostStartOptions options,
+			HiddenPersistenceRoot& persistenceRoot, int& failures)
 		{
-			// 独立真实 Host / worker 事务；测试文件只写到当前 Build 产物旁的唯一目录，留供复核。
+			// 独立真实 Host 与 worker，持有测试根直到 RunMode 停止 Host。
 			StopProduct();
-			wchar_t imagePath[32768]{};
-			const DWORD imageLength = GetModuleFileNameW(nullptr, imagePath, 32768);
-			if (!Check(imageLength > 0 && imageLength < 32768,
-				"resolve hidden persistence artifact directory", failures)) return false;
-			LARGE_INTEGER started{};
-			QueryPerformanceCounter(&started);
-			const auto root = std::filesystem::path(imagePath).parent_path() /
-				L"Draw3HiddenPptPersistence" / (std::to_wstring(GetCurrentProcessId()) +
-					L"-" + std::to_wstring(started.QuadPart));
-			std::error_code directoryError;
-			std::filesystem::create_directories(root, directoryError);
-			if (!Check(!directoryError, "create isolated presentation persistence root", failures)) return false;
-			options.autoSaveRoot = root.wstring();
-			std::fprintf(stderr, "[Draw3Hidden] persistence_root=%ls\n", options.autoSaveRoot.c_str());
+			// 必须在下一次 Start 清空计数前核对上一轮退出保存。
+			bool succeeded = CheckPresentationRequestBalance(failures);
+			if (!Check(persistenceRoot.Create(L"Draw3HiddenPptPersistence-"),
+				"create isolated presentation persistence root", failures)) return false;
+			options.autoSaveRoot = persistenceRoot.path;
 			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
 				"start hidden Host with real persistence worker", failures)) return false;
 
@@ -842,7 +957,6 @@ namespace Inkeys::Drawing::Draw3
 			auto targetB = *resolvedB;
 			targetA.sessionRevision = 31;
 			targetB.sessionRevision = 32;
-			bool succeeded = true;
 			const auto select = [&](Bridge::PresentationTarget& target, bool hasContent, const char* name)
 			{
 				const auto accepted = PublishProductPresentationTarget(target);
@@ -951,15 +1065,38 @@ namespace Inkeys::Drawing::Draw3
 			targetA.pageIndex = targetA.totalPages;
 			targetA.slideId.reset();
 			succeeded &= select(targetA, true, "return to end screen restores its own ink B");
+			// 新笔取消 Clear 重做分支，停放后该页才可按正常资格驱逐。
+			const auto beforeEndBranch = ProductHost().RuntimeSnapshot();
+			const auto beforeParkWrites = ProductHost().HiddenPersistenceSnapshot();
+			succeeded &= writePage(175, 125, "new end-page stroke retires the Clear redo branch");
+			succeeded &= Check(WaitUntil([beforeEndBranch]
+			{
+				const auto state = ProductHost().RuntimeSnapshot();
+				return state.inputRecycled > beforeEndBranch.inputRecycled && !state.canRedo;
+			}), "end page becomes eligible for cold re-entry after its write", failures);
 			succeeded &= select(targetB, false, "dirty A parks at independent persistent B");
-			const auto beforeRestart = Bridge::ReadyIdentityFor(targetB);
-			StopProduct(); // 最终屏障与 CloseAndDrain 必须使已接受的旧页保存落盘。
-			const auto presentationRoot = root / L"presentation";
-			succeeded &= Check(std::filesystem::is_regular_file(presentationRoot / L"index.json"),
-				"real controller save committed the presentation index", failures);
-			bool completeFile = false;
-			bool separateEndContents = false;
-			bool distinctInkFingerprints = false;
+			const auto parkedIdentity = Bridge::ReadyIdentityFor(targetB);
+			std::optional<HiddenPresentationFile> originalFile;
+			succeeded &= Check(WaitUntil([&]
+			{
+				const auto persisted = ProductHost().HiddenPersistenceSnapshot();
+				if (!beforeParkWrites || !persisted ||
+					persisted->presentationCommitted <= beforeParkWrites->presentationCommitted) return false;
+				auto file = ReadHiddenPresentationFile(options.autoSaveRoot, targetA);
+				if (!file || file->read.document->canvases.size() != 3) return false;
+				const auto& pages = file->read.document->canvases;
+				const auto end = std::find_if(pages.begin(), pages.end(), [](const auto& canvas)
+				{
+					return draw3::uink::EffectiveUInkPageKind(canvas) == 1;
+				});
+				if (end == pages.end() || end->content.size() != 2 ||
+					!std::holds_alternative<draw3::uink::UInkInk>(end->content.front()) ||
+					!std::holds_alternative<draw3::uink::UInkInk>(end->content.back())) return false;
+				originalFile = std::move(file);
+				return true;
+			}), "parked write publishes a single complete UInk 1.1 file", failures);
+			if (!originalFile) return false;
+			const auto beforeCold = ProductHost().HiddenPersistenceSnapshot();
 			const auto inkFingerprint = [](const draw3::uink::UInkCanvas& canvas)
 			{
 				std::uint64_t hash = 1469598103934665603ull;
@@ -977,71 +1114,48 @@ namespace Inkeys::Drawing::Draw3
 					}
 				return hash;
 			};
-			const auto files = presentationRoot / L"files";
-			if (std::filesystem::is_directory(files))
-				for (const auto& file : std::filesystem::directory_iterator(files))
-				{
-					if (!file.is_regular_file() || file.path().extension() != L".uink") continue;
-					const auto read = draw3::uink::ReadUInkFile(file.path().wstring());
-					const bool complete = read.status == draw3::uink::UInkReadStatus::Complete && read.document;
-					succeeded &= Check(complete, "drained controller file is a complete readable UInk transaction", failures);
-					completeFile = completeFile || complete;
-					if (complete)
-					{
-						const draw3::uink::UInkCanvas* firstSlide = nullptr;
-						const draw3::uink::UInkCanvas* lastSlide = nullptr;
-						const draw3::uink::UInkCanvas* endScreen = nullptr;
-						for (const auto& canvas : read.document->canvases)
-						{
-							if (canvas.slideId == 601) firstSlide = &canvas;
-							if (canvas.slideId == 603) lastSlide = &canvas;
-							if (draw3::uink::InkeysPageKind(canvas.extra) ==
-								draw3::uink::UInkInkeysPageKind::EndScreen) endScreen = &canvas;
-						}
-						separateEndContents = separateEndContents || (lastSlide && endScreen &&
-							lastSlide->pageGuid != endScreen->pageGuid &&
-							!lastSlide->content.empty() && !endScreen->content.empty() &&
-							endScreen->pageIndex == 3 && !endScreen->slideId);
-						// 文件内真实笔迹坐标区分 A/B/Z，配合下方目标身份与成功 ULW Present 校验。
-						if (firstSlide && lastSlide && endScreen &&
-							!firstSlide->content.empty() && !lastSlide->content.empty() &&
-							!endScreen->content.empty())
-						{
-							const auto a = inkFingerprint(*lastSlide);
-							const auto b = inkFingerprint(*firstSlide);
-							const auto z = inkFingerprint(*endScreen);
-							distinctInkFingerprints = distinctInkFingerprints ||
-								(a != b && a != z && b != z);
-						}
-					}
-				}
-			succeeded &= Check(completeFile, "held-contact boundary produced durable UInk ink", failures);
+			const auto& originalPages = originalFile->read.document->canvases;
+			const draw3::uink::UInkCanvas* firstSlide = nullptr;
+			const draw3::uink::UInkCanvas* lastSlide = nullptr;
+			const draw3::uink::UInkCanvas* endScreen = nullptr;
+			for (const auto& canvas : originalPages)
+			{
+				succeeded &= Check(draw3::uink::EffectiveUInkBinding(canvas) == 0,
+					"durable stable pages use the effective SlideID binding", failures);
+				if (canvas.slideId == 601) firstSlide = &canvas;
+				if (canvas.slideId == 603) lastSlide = &canvas;
+				if (draw3::uink::EffectiveUInkPageKind(canvas) == 1) endScreen = &canvas;
+			}
+			const bool separateEndContents = firstSlide && lastSlide && endScreen &&
+				!firstSlide->content.empty() && !lastSlide->content.empty() && !endScreen->content.empty() &&
+				lastSlide->pageGuid != endScreen->pageGuid && firstSlide->pageGuid != endScreen->pageGuid &&
+				endScreen->pageIndex == 3 && endScreen->pageNumber == 4 && !endScreen->slideId;
 			succeeded &= Check(separateEndContents,
-				"one UInk file contains distinct last-slide and marked end-page content", failures);
-			succeeded &= Check(distinctInkFingerprints,
+				"one UInk file contains distinct first, last and official end-page content", failures);
+			if (!separateEndContents) return false;
+			const auto a = inkFingerprint(*lastSlide);
+			const auto b = inkFingerprint(*firstSlide);
+			const auto z = inkFingerprint(*endScreen);
+			succeeded &= Check(a != b && a != z && b != z,
 				"real UInk coordinates distinguish Selection A/B/Z content", failures);
-			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
-				"restart hidden Host from the same isolated persistence root", failures)) return false;
-			const auto restarted = ProductHost().RuntimeSnapshot();
-			succeeded &= Check(restarted.running &&
-				restarted.workspace == Bridge::Workspace::Desktop &&
-				!restarted.presentationReady && !restarted.presentationUiReady,
-				"Host restart clears old presentation and UI readiness", failures);
-			PublishProductState(pen);
-			// 全新 Controller 没有 warm slot；直接以结束页目标冷读，再核对真实 SlideID 重排。
+			// 同一次 Host 运行内，从已驱逐的 lane 恢复；直接选结束页并按新拓扑投影。
 			++targetA.sessionRevision;
 			targetA.slideIds = { 603, 601, 602 };
 			targetA.pageKind = Bridge::PresentationPageKind::EndScreen;
 			targetA.pageIndex = targetA.totalPages;
 			targetA.slideId.reset();
 			succeeded &= select(targetA, true,
-				"cold Host enters end screen before any normal slide and restores ink B");
+				"cold lane enters end screen before any normal slide and restores ink B");
+			const auto afterCold = ProductHost().HiddenPersistenceSnapshot();
+			succeeded &= Check(beforeCold && afterCold &&
+				afterCold->presentationLoaded > beforeCold->presentationLoaded,
+				"same-run re-entry loaded A from the real paged worker", failures);
 			targetA.pageKind = Bridge::PresentationPageKind::Slide;
 			targetA.pageIndex = 1;
 			targetA.slideId = 601;
 			succeeded &= select(targetA, true, "cold reload restores sealed old-page ink at reordered SlideID");
-			succeeded &= Check(!PublishProductPresentationUiReady(beforeRestart),
-				"previous Host UI commit cannot open the restarted Host", failures);
+			succeeded &= Check(!PublishProductPresentationUiReady(parkedIdentity),
+				"parked document UI commit cannot open the cold lane", failures);
 			targetA.pageIndex = 0;
 			targetA.slideId = 603;
 			succeeded &= select(targetA, true, "cold reorder preserves last-slide ink A");
@@ -1202,6 +1316,40 @@ namespace Inkeys::Drawing::Draw3
 			succeeded &= Check(service.SetDrawpadSurfaceVisibility(
 				Inkeys::Window::DrawpadSurfaceVisibility::Hidden),
 				"restore hidden integration windows after Selection paging", failures);
+			StopProduct(); // 以真实退出屏障排空冷投影和末页笔迹的写入。
+			succeeded &= CheckPresentationRequestBalance(failures);
+			const auto continued = ReadHiddenPresentationFile(options.autoSaveRoot, targetA);
+			succeeded &= Check(continued && continued->path == originalFile->path &&
+				continued->read.document->header.guid == originalFile->read.document->header.guid &&
+				continued->read.document->headerExtension->workspaces.front().guid ==
+					originalFile->read.document->headerExtension->workspaces.front().guid &&
+				continued->read.validPrefixLength > originalFile->read.validPrefixLength,
+				"same-run re-entry appends to the same file and Workspace", failures);
+			if (continued)
+			{
+				const auto& pages = continued->read.document->canvases;
+				const auto matchesPage = [&](const auto& original, std::size_t index)
+				{
+					return std::count_if(pages.begin(), pages.end(), [&](const auto& page)
+					{
+						return page.pageGuid == original.pageGuid && page.slideId == original.slideId &&
+							page.pageIndex == index && page.pageNumber == index + 1 &&
+							draw3::uink::EffectiveUInkPageKind(page) ==
+								draw3::uink::EffectiveUInkPageKind(original);
+					}) == 1;
+				};
+				succeeded &= Check(pages.size() == 3 && matchesPage(*lastSlide, 0) &&
+					matchesPage(*firstSlide, 1) && matchesPage(*endScreen, 3),
+					"cold SlideID reorder persists new pageIndex and pageNumber with stable GUIDs", failures);
+			}
+			if (!Check(StartProduct(drawpad, presentation, callbacks, options),
+				"restart hidden Host from the same isolated persistence root", failures)) return false;
+			const auto restarted = ProductHost().RuntimeSnapshot();
+			succeeded &= Check(restarted.running &&
+				restarted.workspace == Bridge::Workspace::Desktop &&
+				!restarted.presentationReady && !restarted.presentationUiReady &&
+				!PublishProductPresentationUiReady(parkedIdentity),
+				"Host restart clears old presentation and UI readiness", failures);
 			if (succeeded) Report("PASS", "real Host held-contact save, drain, cold reload and SlideID reorder");
 			return succeeded;
 		}
@@ -1219,39 +1367,18 @@ namespace Inkeys::Drawing::Draw3
 			options.enableHiddenTestContactInjection = exerciseCommands || exerciseEraser;
 			options.allowDirectComposition = allowDirectComposition;
 			options.requirePresentationUiReady = true;
+			HiddenPersistenceRoot commandRoot, presentationRoot, eraserRoot;
 			if (exerciseCommands)
 			{
-				// PPT 命令必须经过真实异步加载；缺少 root 会让 Controller 按设计阻止输入。
-				wchar_t imagePath[32768]{};
-				const DWORD imageLength = GetModuleFileNameW(nullptr, imagePath, 32768);
-				if (!Check(imageLength > 0 && imageLength < 32768,
-					"resolve hidden command persistence directory", failures)) return false;
-				LARGE_INTEGER started{};
-				if (!Check(QueryPerformanceCounter(&started) != FALSE,
-					"identify hidden command persistence run", failures)) return false;
-				const auto parent = std::filesystem::path(imagePath).parent_path() /
-					L"Draw3HiddenPptCommands";
-				std::error_code directoryError;
-				std::filesystem::create_directories(parent, directoryError);
-				const DWORD parentAttributes = GetFileAttributesW(parent.c_str());
-				if (!Check(!directoryError && parentAttributes != INVALID_FILE_ATTRIBUTES &&
-					(parentAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
-					(parentAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0,
-					"create non-reparse hidden command persistence parent", failures)) return false;
-				const auto root = parent / (std::to_wstring(GetCurrentProcessId()) +
-					L"-" + std::to_wstring(started.QuadPart));
-				const bool created = std::filesystem::create_directory(root, directoryError);
-				const DWORD rootAttributes = GetFileAttributesW(root.c_str());
-				if (!Check(created && !directoryError && rootAttributes != INVALID_FILE_ATTRIBUTES &&
-					(rootAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
-					(rootAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0,
-					"create unique non-reparse hidden command persistence root", failures)) return false;
-				options.autoSaveRoot = root.wstring();
-				std::fprintf(stderr, "[Draw3Hidden] command_persistence_root=%ls\n",
-					options.autoSaveRoot.c_str());
+				// PPT 命令经过真实异步加载，所有产物保留到 Host 停止后再清理。
+				if (!Check(commandRoot.Create(L"Draw3HiddenPptCommands-"),
+					"create unique hidden command persistence root", failures)) return false;
+				options.autoSaveRoot = commandRoot.path;
 			}
 			if(exerciseEraser)
 			{
+				if (!Check(eraserRoot.Create(L"Draw3HiddenEraser-"),
+					"create isolated eraser round-trip root", failures)) return false;
 				// 隐藏 HWND 位于屏幕外；注入明确的逻辑像素表面，不伪造 EDID 或实测物理尺寸。
 				SpeedEraser::DisplayScale scale;scale.monitor=1;scale.generation=7;
 				scale.pixelWidth=320;scale.pixelHeight=240;scale.logicalOutputKnown=true;
@@ -1411,7 +1538,7 @@ namespace Inkeys::Drawing::Draw3
 				}), "command fixture restores real drawing readiness before contact injection", failures);
 				// 通过隐藏 Drawpad 的 WndProc mailbox 注入完整 Down/Move/Up，
 				// 不调用 SendInput，也不绕过真实绘制线程直接访问 Renderer。
-				// Service 诊断跨 Host 启动累计，Host 的 NotFound 每次归零；只比较本次增量。
+				// 仅比较当前命令场景内的准入与终态。
 				const auto commandPersistenceBaseline = ProductHost().HiddenPersistenceSnapshot();
 				const auto beforeContact = ProductHost().RuntimeSnapshot();
 				modeSucceeded &= Check(beforeContact.completedStrokeKind ==
@@ -1813,24 +1940,17 @@ namespace Inkeys::Drawing::Draw3
 				PublishProductCommand(Bridge::CommandType::Redo);
 				modeSucceeded &= Check(WaitUntil([afterBlockedPresentationUndo]{const auto s=ProductHost().RuntimeSnapshot();return s.redoCommandCount>afterBlockedPresentationUndo.redoCommandCount && s.currentPageHasContent;}),"Presentation stroke Redo remains available after boundary restore",failures);
 
-				const auto presentationRoot = std::filesystem::path(options.autoSaveRoot) / L"presentation";
-				const auto readTargetAIndex = [&]
+				std::optional<HiddenPresentationFile> beforeContinuation;
+				modeSucceeded &= Check(WaitUntil([&]
 				{
-					std::ifstream file(presentationRoot / L"index.json", std::ios::binary);
-					Json::CharReaderBuilder reader;
-					Json::Value index;
-					std::string parseError;
-					if (file && Json::parseFromStream(reader, file, &index, &parseError))
-						for (const auto& entry : index["entries"])
-							if (entry["sourceIdentity"].asString() == targetA.sourceIdentity
-								&& entry["presentationKey"].asString() == FormatPresentationKey(targetA.key))
-								return entry;
-					return Json::Value{};
-				};
-				const auto beforeContinuationRevision = readTargetAIndex()["mutationRevision"].asUInt64();
+					beforeContinuation = ReadHiddenPresentationFile(options.autoSaveRoot, targetA);
+					return beforeContinuation.has_value();
+				}), "capture the current A file before continuation writes", failures);
 				modeSucceeded &= exerciseClearContinuation("Presentation", [&](bool canonicalRootJustRestored)
 				{
-					// accepted 包含 Save/Load，初次 NotFound 也计入 failed；合并请求不重复计 accepted。
+					const auto other = PublishProductPresentationTarget(targetB);
+					if (!other || !waitForPresentation(targetB, *other, false,
+						"continuation parks A while B stays isolated")) return false;
 					if (!Check(WaitUntil([&]
 					{
 						const auto saved = ProductHost().HiddenPersistenceSnapshot();
@@ -1838,45 +1958,27 @@ namespace Inkeys::Drawing::Draw3
 						const auto accepted = saved->presentationAccepted - commandPersistenceBaseline->presentationAccepted;
 						const auto committed = saved->presentationCommitted - commandPersistenceBaseline->presentationCommitted;
 						const auto loaded = saved->presentationLoaded - commandPersistenceBaseline->presentationLoaded;
+						const auto merged = saved->presentationMerged - commandPersistenceBaseline->presentationMerged;
 						const auto failed = saved->presentationFailed - commandPersistenceBaseline->presentationFailed;
-						const auto notFound = saved->presentationNotFound - commandPersistenceBaseline->presentationNotFound;
-						return committed != 0 && committed + loaded + failed == accepted && failed == notFound;
-					}), "continuation persistence requests reach their successful terminal states", failures)) return false;
-					// 首次离页必须读取新索引指向的 A 根文件，不能只靠 worker 计数或 Clear 前的旧 A。
+						const auto canceled = saved->presentationCanceled - commandPersistenceBaseline->presentationCanceled;
+						return accepted == committed + loaded + merged + failed + canceled &&
+							committed != 0 && loaded != 0 && failed == 0 && canceled == 0;
+					}), "continuation persistence requests reach their terminal states", failures)) return false;
+					// 停放是真实保存点。只接受此后追加的 A 根版本，未登记的结束页保持稀疏。
 					if (canonicalRootJustRestored && !Check(WaitUntil([&]
 					{
-						const auto entry = readTargetAIndex();
-						if (entry.isNull() || entry["mutationRevision"].asUInt64() <= beforeContinuationRevision) return false;
-						const auto fileGuid = draw3::uink::ParseUInkGuid(entry["fileGuid"].asString());
-						const auto workspaceGuid = draw3::uink::ParseUInkGuid(entry["workspaceGuid"].asString());
-						if (!fileGuid || !workspaceGuid) return false;
-						const auto read = draw3::uink::ReadUInkFile(
-							(presentationRoot / entry["relativePath"].asString()).wstring());
-						if (read.status != draw3::uink::UInkReadStatus::Complete || !read.document) return false;
-						draw3::uink::Draw3UInkImportExpectation expectation;
-						expectation.fileGuid = *fileGuid;
-						expectation.hostId = FormatPresentationKey(targetA.key);
-						expectation.bindingMode = draw3::uink::Draw3UInkImportBindingMode::StableSlideId;
-						expectation.slideIds = targetA.slideIds;
-						expectation.knownSlideIds = targetA.slideIds;
-						expectation.pageCount = targetA.totalPages;
-						expectation.allowEndScreen = true;
-						const auto imported = draw3::uink::ImportApplicationOwnedPresentation(*read.document, expectation);
-						if (!imported.snapshot || imported.snapshot->workspaceGuid != *workspaceGuid
-							|| imported.snapshot->activeCanvases.size() != Bridge::PresentationDocumentPageCount(targetA)) return false;
-						// 保存包含独立结束页；按真实 SlideID 验证 A，不能把结束页当作普通页。
-						const auto& canvases = imported.snapshot->activeCanvases;
-						const auto canvas = std::find_if(canvases.begin(), canvases.end(), [&](const auto& page)
-						{ return page.slideId == targetA.slideId; });
-						const auto endScreen = std::find_if(canvases.begin(), canvases.end(), [](const auto& page)
-						{ return draw3::uink::InkeysPageKind(page.extra) == draw3::uink::UInkInkeysPageKind::EndScreen; });
-						return canvas != canvases.end() && canvas->intervalOrdinal == 0 && canvas->strokes.size() == 2
-							&& endScreen != canvases.end() && !endScreen->slideId && endScreen->strokes.empty()
-							&& endScreen->pageGuid != canvas->pageGuid;
-					}), "continuation canonical root is durable before parking", failures)) return false;
-					const auto other = PublishProductPresentationTarget(targetB);
-					if (!other || !waitForPresentation(targetB, *other, false,
-						"continuation parks A while B stays isolated")) return false;
+						const auto file = ReadHiddenPresentationFile(options.autoSaveRoot, targetA);
+						if (!file || !beforeContinuation || file->path != beforeContinuation->path ||
+							file->read.validPrefixLength <= beforeContinuation->read.validPrefixLength) return false;
+						const auto& canvases = file->read.document->canvases;
+						if (canvases.size() != 1) return false;
+						const auto& canvas = canvases.front();
+						return canvas.slideId == targetA.slideId && canvas.pageIndex == 0 && canvas.pageNumber == 1 &&
+							draw3::uink::EffectiveUInkBinding(canvas) == 0 &&
+							draw3::uink::EffectiveUInkPageKind(canvas) == 0 && canvas.content.size() == 2 &&
+							std::all_of(canvas.content.begin(), canvas.content.end(), [](const auto& item)
+							{ return std::holds_alternative<draw3::uink::UInkInk>(item); });
+					}), "parked continuation canonical root is durable and blank end page has no record", failures)) return false;
 					if (!Check(!ProductHost().RuntimeSnapshot().canUndo,
 						"new empty Presentation page has no synthetic Clear undo", failures)) return false;
 					const auto returned = PublishProductPresentationTarget(targetA);
@@ -2349,7 +2451,7 @@ namespace Inkeys::Drawing::Draw3
 						s.eraser.resumedMaxRadiusPx<=s.eraser.dpiX/96*10 &&
 						s.eraser.resumedBottom-s.eraser.resumedTop<=s.eraser.dpiY/96*22+10;
 				}),"resumed actual geometry footprint has no old large-radius tail",failures);
-				modeSucceeded &= Check(CheckSizeBoundaryFile(ProductHost().RuntimeSnapshot().eraser),
+				modeSucceeded &= Check(CheckSizeBoundaryFile(ProductHost().RuntimeSnapshot().eraser, eraserRoot.path),
 					"actual size-boundary points survive UInk save/read/import",failures);
 				mouseContact(HiddenTestContactPhase::Up,lastX+4,84);
 				modeSucceeded &= Check(WaitUntil([]{return !ProductHost().RuntimeSnapshot().eraser.active;}),
@@ -2615,7 +2717,7 @@ namespace Inkeys::Drawing::Draw3
 				modeSucceeded &= Check(WaitUntil([]{const auto d=ProductHost().RuntimeSnapshot().eraser;
 					return d.resumedWithAnchor && d.resumedMaxRadiusPx<=10 && d.idleModelReanchors>0 && d.evidenceSeconds<0.0001;}),"long-idle Touch resume preserves current radius without synthetic speed",failures);
 				areaProbe("after-resume");
-				modeSucceeded &= Check(CheckSizeBoundaryFile(ProductHost().RuntimeSnapshot().eraser),
+				modeSucceeded &= Check(CheckSizeBoundaryFile(ProductHost().RuntimeSnapshot().eraser, eraserRoot.path),
 					"area-assisted size boundary survives actual UInk save/read/import",failures);
 				ProductHost().SetHiddenTestContactArea({0,0,0,0,SpeedEraser::ContactAreaUnits::CanvasPixels});
 				postSource(HiddenTestContactPhase::Up,kHiddenTestTouchFlag,areaX+4,144);
@@ -2854,11 +2956,13 @@ namespace Inkeys::Drawing::Draw3
 			}
 
 			if (exerciseCommands)
-				modeSucceeded &= CheckPresentationPersistence(service, drawpad, presentation, callbacks, options, failures);
+				modeSucceeded &= CheckPresentationPersistence(service, drawpad, presentation, callbacks, options, presentationRoot, failures);
 
 			const auto stopStarted = std::chrono::steady_clock::now();
 			StopProduct();
 			const auto stopElapsed = std::chrono::steady_clock::now() - stopStarted;
+			if (exerciseCommands)
+				modeSucceeded &= CheckPresentationRequestBalance(failures);
 			modeSucceeded &= Check(stopElapsed < 10s && !ProductRunning() &&
 				!ProductFirstFrameReady(), "bounded complete Draw3 stop", failures);
 			modeSucceeded &= Check(IsWindow(drawpad) && IsWindow(presentation) &&
@@ -2866,6 +2970,11 @@ namespace Inkeys::Drawing::Draw3
 				GetWindow(drawpad, GW_OWNER) == presentation &&
 				GetWindow(presentation, GW_OWNER) == freeze,
 				"Host stop leaves hidden Window Service HWND intact", failures);
+			const bool removedCommands = commandRoot.Remove();
+			const bool removedPresentation = presentationRoot.Remove();
+			modeSucceeded &= Check(removedCommands && removedPresentation,
+				"remove isolated hidden PPT persistence roots", failures);
+			modeSucceeded &= Check(eraserRoot.Remove(), "remove isolated eraser round-trip root", failures);
 			return modeSucceeded;
 		}
 	}

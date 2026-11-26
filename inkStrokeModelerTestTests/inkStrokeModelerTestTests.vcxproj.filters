@@ -45,13 +45,22 @@
 	<ClCompile Include="uink_tests.cpp">
 	  <Filter>Tests</Filter>
 	</ClCompile>
-    <ClCompile Include="desktop_autosave_tests.cpp">
+	<ClCompile Include="desktop_ink_snapshots_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
+	<ClCompile Include="uink_store_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
+	<ClCompile Include="paged_ink_store_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
+	<ClCompile Include="presentation_pages_tests.cpp">
+	  <Filter>Tests</Filter>
+	</ClCompile>
+	<ClCompile Include="uink_v11_draw3_tests.cpp">
 	  <Filter>Tests</Filter>
 	</ClCompile>
     <ClCompile Include="runtime_benchmark.cpp">
-      <Filter>Tests</Filter>
-    </ClCompile>
-    <ClCompile Include="presentation_autosave_tests.cpp">
       <Filter>Tests</Filter>
     </ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\contact_input.cpp">
@@ -79,20 +88,16 @@
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cpp"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec_encode.cpp"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_codec.cppm"><Filter>draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cpp"><Filter>draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_file.cppm"><Filter>draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cpp"><Filter>draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_export.cppm"><Filter>draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cpp"><Filter>draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_import.cppm"><Filter>draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_capture.cpp"><Filter>draw3</Filter></ClCompile>
-	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_capture.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_v11.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\inkStrokeModelerTest\draw3\uink_draw3_v11.cppm"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DiagnosticOutput.cpp"><Filter>draw3</Filter></ClCompile>
-	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cpp"><Filter>draw3</Filter></ClCompile>
-	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.AutoSave.cppm"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.Presentation.cpp"><Filter>draw3</Filter></ClCompile>
-	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cpp"><Filter>draw3</Filter></ClCompile>
-	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationAutoSave.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DesktopInkSnapshots.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.DesktopInkSnapshots.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PagedInkStore.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PagedInkStore.cppm"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationPages.cpp"><Filter>draw3</Filter></ClCompile>
+	<ClCompile Include="..\Inkeys\Inkeys\Drawing\Draw3\Draw3.PresentationPages.cppm"><Filter>draw3</Filter></ClCompile>
 	<ClCompile Include="..\inkStrokeModelerTest\draw3\ink_history.cpp">
 	  <Filter>draw3</Filter>
 	</ClCompile>
@@ -158,13 +163,12 @@
   <ItemGroup>
     <ClCompile Include="shape_core_tests.cpp"><Filter>Tests</Filter></ClCompile>
     <ClCompile Include="..\inkStrokeModelerTest\draw3\shape_core.cpp"><Filter>draw3</Filter></ClCompile>
-    <ClInclude Include="shape_uink_tests.inl"><Filter>Tests</Filter></ClInclude>
+    <ClInclude Include="uink_v11_draw3_shape_tests.inl"><Filter>Tests</Filter></ClInclude>
     <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_core.h"><Filter>draw3</Filter></ClInclude>
     <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_interaction.h"><Filter>draw3</Filter></ClInclude>
     <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_interaction.inl"><Filter>draw3</Filter></ClInclude>
     <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_presets.inl"><Filter>draw3</Filter></ClInclude>
-    <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_metadata.inl"><Filter>draw3</Filter></ClInclude>
     <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_standard.inl"><Filter>draw3</Filter></ClInclude>
-    <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_import.inl"><Filter>draw3</Filter></ClInclude>
+    <ClInclude Include="..\inkStrokeModelerTest\draw3\shape_uink_v11.inl"><Filter>draw3</Filter></ClInclude>
   </ItemGroup>
 </Project>

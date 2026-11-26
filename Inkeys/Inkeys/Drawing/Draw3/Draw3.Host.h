@@ -277,6 +277,14 @@ namespace Inkeys::Drawing::Draw3
 		FirstFrameCommitted,
 	};
 
+	// 隔离回归夹具观察桌面 worker；回调上下文须保活至 Host::Stop 返回。
+	struct HostDesktopInkSnapshotsTestHook
+	{
+		void (*beforeSave)(void*) = nullptr;
+		void* context = nullptr;
+		void (*afterSave)(void*, const std::wstring& publishedPath) noexcept = nullptr;
+	};
+
 	struct HostStartOptions
 	{
 		HostPresentationMode requiredPresentationMode = HostPresentationMode::Automatic;
@@ -288,7 +296,7 @@ namespace Inkeys::Drawing::Draw3
 		PresentationFallbackReport previousAttempt;
 		// 产品需要页码提交确认；独立 Host 无 PageControl 时可显式省略。
 		bool requirePresentationUiReady = false;
-		// 空路径关闭持久化 worker；产品固定传入 <程序根目录>/Inkeys/AutoSave。
+		// 空路径关闭持久化 worker；产品固定传入 <程序根目录>/Inkeys/Save/Ink。
 		std::wstring autoSaveRoot;
 		// 设备性能统计文件；空路径 = 只在内存记录（测试/夹具）。产品传入 <程序根目录>/Inkeys/Memory/device-performance.json。
 		std::wstring devicePerformancePath;
@@ -325,6 +333,10 @@ namespace Inkeys::Drawing::Draw3
 		InputPreference inputPreference = InputPreference::Automatic;
 		bool largeScreenTouchMode = false;
 		bool enableUlwMultiStepCommit = true;
+		// 只由显式隐藏自检启用，写入工作线程可在这里等待故障夹具放行。
+		void* presentationStoreTestContext = nullptr;
+		void (*beforePresentationStoreWriteForTest)(void*) = nullptr;
+		HostDesktopInkSnapshotsTestHook desktopInkSnapshotsTestHook;
 	};
 
 	// 只供显式 hidden caller 读取 worker 事实，不加到普通帧/RuntimeSnapshot 热路。
@@ -334,7 +346,10 @@ namespace Inkeys::Drawing::Draw3
 		std::uint64_t desktopFailed = 0, desktopPending = 0;
 		std::uint64_t presentationAccepted = 0, presentationCommitted = 0;
 		std::uint64_t presentationLoaded = 0, presentationFailed = 0;
-		std::uint64_t presentationNotFound = 0; // hidden实测Load终态，不能当Save失败。
+		std::uint64_t presentationEmptyLane = 0; // 已确认空清单的成功加载，是 presentationLoaded 的子集。
+		std::uint64_t presentationMerged = 0, presentationCanceled = 0;
+		std::uint64_t presentationOutstanding = 0, presentationUnmatchedTerminals = 0;
+		std::uint64_t presentationLanePageFailures = 0;
 	};
 
 	// GPU owner 按值采集；adapter 描述只在启动和释放前复制，快照不持有 COM 对象。

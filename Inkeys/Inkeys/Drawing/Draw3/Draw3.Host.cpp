@@ -2,6 +2,7 @@
 #include "Draw3.Host.h"
 #include "../../../IdtStart.h"
 #include "Draw3.PresentationState.h"
+#include "Draw3.Presentation.h"
 #include "Draw3.HapticDiagnostics.h"
 #include "Draw3.Product.h"
 #include <dxgi.h>
@@ -9,17 +10,18 @@
 #include "Draw3.SpeedEraser.h"
 #include "Draw3.DevicePerformanceLedger.h"
 
+import Inkeys.Conv.Text;
 import Inkeys.Display;
 import Inkeys.UI.PageControl;
 
 import Inkeys.Drawing.Draw3.contact_input;
 import Inkeys.Drawing.Draw3.pen_cursor;
-import Inkeys.Drawing.Draw3.auto_save;
+import Inkeys.Drawing.Draw3.desktop_ink_snapshots;
 import Inkeys.Drawing.Draw3.drawing_controller;
 import Inkeys.Drawing.Draw3.graphics_initialization;
 import Inkeys.Drawing.Draw3.haptic_feedback;
 import Inkeys.Drawing.Draw3.ink_prediction;
-import Inkeys.Drawing.Draw3.presentation_auto_save;
+import Inkeys.Drawing.Draw3.paged_ink_store;
 import Inkeys.Drawing.Draw3.renderer;
 import Inkeys.Drawing.Draw3.realtime_stylus;
 import Inkeys.Drawing.Draw3.runtime_metrics;
@@ -32,12 +34,11 @@ import Inkeys.Drawing.Draw3.window_control;
 #include <condition_variable>
 #include <cstdio>
 #include <exception>
-#if defined(INKEYS_ENABLE_UI3_PRESENTATION_HARNESS) && INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
-#include <filesystem>
-#endif
 #include <iostream>
 #include <limits>
+#include <map>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -50,19 +51,164 @@ namespace Inkeys::Drawing::Draw3
 		constexpr DiagnosticOutput::Target kTouchAreaTarget{ DiagnosticOutput::Stream::Error,
 			Inkeys::Log::Channel::TouchArea, Inkeys::Log::Module::Input };
 
-		std::uint64_t DrainPresentationCompletions(PresentationAutoSaveService& service,
-			std::shared_ptr<const PresentationPersistenceCompletion>& pending,
-			WindowController& window) noexcept
+		struct HiddenPresentationAccounting
 		{
-			std::uint64_t notFound = 0;
-			while (pending || service.TryTakeCompletion(pending))
+			HostHiddenPersistenceSnapshot counts;
+			std::set<std::uint64_t> outstandingIds;
+
+			std::uint64_t Accept() noexcept
 			{
-				if (!window.TryEnqueuePresentationCompletion(pending)) break;
-				if (pending->operation == PresentationPersistenceOperation::Load &&
-					pending->status == PresentationPersistenceStatus::NotFound) ++notFound;
-				pending.reset();
+				// 整个 Host 运行代次共用序号，即使请求跨文稿或业务身份相同也可逐笔区分。
+				const auto id = ++counts.presentationAccepted;
+				++counts.presentationOutstanding;
+				try { outstandingIds.insert(id); }
+				catch (...) { /* 诊断登记失败保留未结项，准入结果仍由服务决定。 */ }
+				return id;
 			}
-			return notFound;
+
+			void Settle(const PagedInkCompletion& completion) noexcept
+			{
+				if (outstandingIds.erase(completion.requestId) == 0)
+				{
+					++counts.presentationUnmatchedTerminals;
+					return;
+				}
+				--counts.presentationOutstanding;
+				switch (completion.result)
+				{
+				case PagedInkResult::Succeeded:
+					if (completion.identity.kind == PagedInkRequestKind::Full ||
+						completion.identity.kind == PagedInkRequestKind::Clear)
+					{
+						++counts.presentationCommitted;
+						break;
+					}
+					if (completion.identity.kind == PagedInkRequestKind::LoadLane)
+					{
+						// 批内每个失败页单计，整批只占一条失败终态。
+						const auto failures = std::count_if(completion.lanePages.begin(), completion.lanePages.end(),
+							[](const PagedInkLanePage& page) { return page.result != PagedInkResult::Succeeded; });
+						if (failures != 0)
+						{
+							counts.presentationLanePageFailures += static_cast<std::uint64_t>(failures);
+							++counts.presentationFailed;
+							break;
+						}
+						if (completion.lanePages.empty()) ++counts.presentationEmptyLane;
+					}
+					++counts.presentationLoaded;
+					break;
+				case PagedInkResult::Failed:
+				case PagedInkResult::FileFailed: ++counts.presentationFailed; break;
+				case PagedInkResult::Merged: ++counts.presentationMerged; break;
+				case PagedInkResult::Canceled: ++counts.presentationCanceled; break;
+				}
+			}
+		};
+
+		class PresentationStoreRegistry
+		{
+		public:
+			void BeginRun() noexcept
+			{
+				const std::scoped_lock lock(mutex_);
+				accepting_ = true;
+			}
+
+			PagedInkStore* Get(const Bridge::PresentationTarget& target, const std::wstring& root,
+				float dpiScale, void (*wake)(void*) noexcept, void* wakeContext,
+				PagedInkStoreTestHook testHook = {})
+			{
+				if (target.key.IsZero() || root.empty()) return nullptr;
+				const std::scoped_lock lock(mutex_);
+				if (!accepting_) return nullptr;
+				if (auto found = stores_.find(target.key); found != stores_.end())
+					return found->second.get();
+
+				const auto workspaceGuid = draw3::uink::CreateUInkGuid();
+				if (!workspaceGuid) return nullptr;
+				PagedInkStoreOptions options;
+				options.root = root;
+				options.naming = { PagedInkFileKind::Presentation, utf8ToUtf16(target.presentationName),
+					draw3::uink::UInkGuid(target.key.bytes) };
+				options.pageContext.workspaceGuid = *workspaceGuid;
+				options.pageContext.workspaceType = 2;
+				options.pageContext.dpiScale = dpiScale;
+				options.hostId = FormatPresentationKey(target.key);
+				options.importOptions.dpiScale = dpiScale;
+				options.wake = wake;
+				options.wakeContext = wakeContext;
+				auto store = std::make_unique<PagedInkStore>(std::move(options), testHook);
+				return stores_.emplace(target.key, std::move(store)).first->second.get();
+			}
+
+			std::optional<PresentationPagedCompletion> Take() noexcept
+			{
+				const std::scoped_lock lock(mutex_);
+				// 逐文稿保留服务回执顺序，轮转避免较早文稿填满终态槽而饿死其他文稿。
+				auto next = stores_.upper_bound(lastTaken_);
+				for (std::size_t i = 0; i < stores_.size(); ++i, ++next)
+				{
+					if (next == stores_.end()) next = stores_.begin();
+					if (auto completion = next->second->Take())
+					{
+						lastTaken_ = next->first;
+						return PresentationPagedCompletion{ next->first, std::move(*completion) };
+					}
+				}
+				return std::nullopt;
+			}
+
+			void Drain()
+			{
+				const std::scoped_lock lock(mutex_);
+				for (auto& entry : stores_) entry.second->Drain();
+			}
+
+			void Close()
+			{
+				const std::scoped_lock lock(mutex_);
+				accepting_ = false;
+				for (auto& entry : stores_) entry.second->Close();
+			}
+
+			void Clear() noexcept
+			{
+				const std::scoped_lock lock(mutex_);
+				stores_.clear();
+				lastTaken_ = {};
+			}
+
+		private:
+			std::mutex mutex_;
+			std::map<Bridge::PresentationKey, std::unique_ptr<PagedInkStore>> stores_;
+			Bridge::PresentationKey lastTaken_;
+			bool accepting_ = false;
+		};
+
+		template<class Observe>
+		std::size_t DrainPresentationCompletions(PresentationStoreRegistry& stores,
+			std::optional<PresentationPagedCompletion>& pending, WindowController& window,
+			Observe&& observe) noexcept
+		{
+			std::size_t delivered = 0;
+			for (;;)
+			{
+				if (!pending)
+				{
+					pending = stores.Take();
+					if (!pending) break;
+					// 无窗口自检可在 Host 核销前丢弃服务回执。
+					if (!observe(pending->completion))
+					{
+						pending.reset();
+						continue;
+					}
+				}
+				if (!window.TryEnqueuePresentationCompletion(pending)) break;
+				++delivered;
+			}
+			return delivered;
 		}
 
 		UINT QueryCompatibleWindowDpi(HWND hwnd) noexcept
@@ -219,8 +365,8 @@ namespace Inkeys::Drawing::Draw3
 		};
 		try
 		{
-			WindowController window;
 			ContactInputCoordinator input;
+			WindowController window;
 			window.SetInputCoordinator(&input);
 			const auto clearWakes = [&]
 			{
@@ -241,11 +387,18 @@ namespace Inkeys::Drawing::Draw3
 			target.totalPages = 1;
 			target.bindingRevision = 1;
 			target.targetRevision = 1;
-			auto first = std::make_shared<PresentationPersistenceCompletion>();
-			first->target = target;
-			first->slotGeneration = 1;
-			auto second = std::make_shared<PresentationPersistenceCompletion>(*first);
-			second->slotGeneration = 2;
+			const auto terminal = [&](std::uint64_t slotGeneration)
+			{
+				PresentationPagedCompletion value;
+				value.key = target.key;
+				value.completion.identity.slotGeneration = slotGeneration;
+				value.completion.identity.loadGeneration = slotGeneration + 10;
+				value.completion.identity.kind = PagedInkRequestKind::LoadLane;
+				value.completion.identity.laneBinding = 0;
+				return std::optional{ std::move(value) };
+			};
+			auto first = terminal(1);
+			auto second = terminal(2);
 			CanvasCommand clear;
 			clear.type = CanvasCommandType::Clear;
 			CanvasCommand undo;
@@ -265,13 +418,22 @@ namespace Inkeys::Drawing::Draw3
 			}
 			window.EnqueueCanvasCommand(undo);
 			CanvasCommand command;
+			const auto isTerminal = [&](std::uint64_t generation, const Bridge::PresentationKey& key)
+			{
+				if (command.type != CanvasCommandType::PresentationPersistenceCompleted ||
+					!command.presentationPersistenceCompletion || command.presentationPersistenceCompletion->key != key)
+					return false;
+				const auto& identity = command.presentationPersistenceCompletion->completion.identity;
+				return identity.slotGeneration == generation && identity.loadGeneration == generation + 10 &&
+					identity.kind == PagedInkRequestKind::LoadLane && identity.laneBinding == 0;
+			};
 			check(window.TryDequeueCanvasCommand(command) && command.type == clear.type,
 				"ordinary command before terminal keeps FIFO");
 			check(window.TryDequeueCanvasCommand(command) && command.type == scene.type &&
 				command.presentationTarget->targetRevision == 1, "target coalescing cannot cross terminal barrier");
 			clearWakes();
 			const auto beforeWake = input.CaptureWakeGeneration();
-			check(window.TryDequeueCanvasCommand(command) && command.presentationPersistenceCompletion == first,
+			check(window.TryDequeueCanvasCommand(command) && isTerminal(1, target.key) && !first,
 				"reserved terminal preserves payload identity");
 			check(input.CaptureWakeGeneration() != beforeWake, "terminal consumption wakes next retained delivery");
 			check(window.TryDequeueCanvasCommand(command) && command.type == scene.type &&
@@ -290,63 +452,161 @@ namespace Inkeys::Drawing::Draw3
 			const DWORD temporaryLength = GetTempPathW(MAX_PATH, temporary);
 			check(temporaryLength != 0 && temporaryLength < MAX_PATH, "private fixture root available");
 			if (temporaryLength == 0 || temporaryLength >= MAX_PATH) return 1;
-			const auto root = std::filesystem::path(temporary) /
-				(L"InkeysPptCompletion-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
-					std::to_wstring(GetTickCount64()));
-			PresentationAutoSaveService service;
-			check(service.Start(root.wstring()), "real completion service starts");
-			target.targetRevision = 4;
-			for (std::uint64_t generation : { 11, 12, 13 })
+			struct TemporaryRoot
 			{
-				PresentationLoadRequest request{ target };
-				request.slotGeneration = generation;
-				check(service.SubmitLoad(std::move(request)) == PresentationPersistenceSubmitStatus::Accepted,
-					"real service accepts each identity-stamped request");
-			}
-			service.CloseAndDrain();
-			std::shared_ptr<const PresentationPersistenceCompletion> pending;
+				std::wstring path;
+				bool created = false;
+				~TemporaryRoot() { if (created) RemoveDirectoryW(path.c_str()); }
+			} root{ std::wstring(temporary) + L"InkeysPptCompletion-" + std::to_wstring(GetCurrentProcessId()) +
+				L"-" + std::to_wstring(GetTickCount64()) };
+			root.created = CreateDirectoryW(root.path.c_str(), nullptr) != FALSE;
+			check(root.created, "real service uses a private fixture root");
+			if (!root.created) return 1;
+			HiddenPresentationAccounting accounting;
+			PagedInkStoreTestHook hook;
+			hook.context = &accounting;
+			hook.recordAccepted = [](void* context) noexcept
+			{
+				return static_cast<HiddenPresentationAccounting*>(context)->Accept();
+			};
+			PresentationStoreRegistry stores;
+			stores.BeginRun();
+			const auto wake = [](void* context) noexcept
+			{
+				(void)static_cast<ContactInputCoordinator*>(context)->PublishControlWake();
+			};
+			const auto getStore = [&](const Bridge::PresentationTarget& storeTarget)
+			{
+				return stores.Get(storeTarget, root.path, 1.0f, wake, &input, hook);
+			};
+			auto* store = getStore(target);
+			check(store != nullptr, "real document store starts");
+			if (!store) return 1;
+			auto fallback = target;
+			fallback.bindingMode = Bridge::SlideBindingMode::PageIndexFallback;
+			check(getStore(fallback) == store, "two bindings use the same document store");
+			auto another = target;
+			another.key.bytes.back() ^= 1;
+			auto* secondStore = getStore(another);
+			check(secondStore != nullptr && secondStore != store, "document registry uses the complete key");
+			if (!secondStore) return 1;
+
+			clearWakes();
+			const auto beforeServiceWake = input.CaptureWakeGeneration();
+			for (std::uint64_t generation : { 11, 12, 13 })
+				check(store->LoadLane({ 0, generation, generation + 10 }) == PagedInkAdmission::Accepted,
+					"real service accepts each identity-stamped lane request");
+			stores.Drain();
+			check(input.CaptureWakeGeneration() != beforeServiceWake, "service publication wakes the Host pump");
+			std::optional<PresentationPagedCompletion> pending;
+			std::size_t droppedTerminals = 0;
+			const auto pump = [&](bool dropForTest = false)
+			{
+				return DrainPresentationCompletions(stores, pending, window,
+					[&](const PagedInkCompletion& completion) noexcept
+					{
+						if (dropForTest)
+						{
+							++droppedTerminals;
+							return false;
+						}
+						accounting.Settle(completion);
+						return true;
+					});
+			};
+			const auto isEmptyLane = [&]
+			{
+				const auto& completion = command.presentationPersistenceCompletion->completion;
+				return completion.result == PagedInkResult::Succeeded && completion.lanePages.empty();
+			};
 			window.EnqueueCanvasCommand(clear);
-			check(DrainPresentationCompletions(service, pending, window) == 1 && pending &&
-				pending->slotGeneration == 12, "full slot retains second terminal in Host");
+			check(pump() == 1 && pending && pending->completion.identity.slotGeneration == 12,
+				"full slot retains second terminal in Host");
 			window.EnqueueCanvasCommand(undo);
 			check(window.TryDequeueCanvasCommand(command) && command.type == clear.type,
 				"real delivery follows earlier ordinary command");
-			check(window.TryDequeueCanvasCommand(command) && command.presentationPersistenceCompletion &&
-				command.presentationPersistenceCompletion->slotGeneration == 11, "first real terminal delivered once");
-			check(DrainPresentationCompletions(service, pending, window) == 1 && pending &&
-				pending->slotGeneration == 13, "third terminal retained while second waits");
+			check(window.TryDequeueCanvasCommand(command) && isTerminal(11, target.key) && isEmptyLane(),
+				"first empty-lane success delivered once");
+			check(pump() == 1 && pending && pending->completion.identity.slotGeneration == 13,
+				"third terminal retained while second waits");
 			check(window.TryDequeueCanvasCommand(command) && command.type == undo.type,
 				"later terminal cannot overtake already queued ordinary command");
-			check(window.TryDequeueCanvasCommand(command) && command.presentationPersistenceCompletion &&
-				command.presentationPersistenceCompletion->slotGeneration == 12, "second terminal not starved");
-			check(DrainPresentationCompletions(service, pending, window) == 1 && !pending,
-				"last terminal drains without a new persistence event or user input");
-			check(window.TryDequeueCanvasCommand(command) && command.presentationPersistenceCompletion &&
-				command.presentationPersistenceCompletion->slotGeneration == 13 && !window.HasPendingCanvasCommand(),
-				"all accepted terminals delivered in order");
+			check(window.TryDequeueCanvasCommand(command) && isTerminal(12, target.key) && isEmptyLane(),
+				"second empty-lane success not starved");
+			check(pump() == 1 && !pending, "last terminal drains without a new persistence event or user input");
+			check(window.TryDequeueCanvasCommand(command) && isTerminal(13, target.key) && isEmptyLane() &&
+				!window.HasPendingCanvasCommand(), "all accepted terminals delivered in order");
+
+			check(store->LoadLane({ 0, 14, 24 }) == PagedInkAdmission::Accepted &&
+				secondStore->LoadLane({ 0, 15, 25 }) == PagedInkAdmission::Accepted,
+				"the two real stores accept concurrent lane requests");
+			stores.Close();
+			check(pump() == 1 && pending && pending->key == target.key &&
+				window.TryDequeueCanvasCommand(command) && isTerminal(15, another.key) && isEmptyLane() &&
+				pump() == 1 && !pending && window.TryDequeueCanvasCommand(command) &&
+				isTerminal(14, target.key) && isEmptyLane(),
+				"document rotation preserves routing even while the slot is occupied");
+
+			first = terminal(1);
 			check(window.TryEnqueuePresentationCompletion(first), "fixture leaves old terminal pending");
-			pending = second;
+			pending = terminal(2);
 			window.DetachExternal();
 			pending.reset(); // 与 Host Stop 的 owner-join 后清理一致。
-			check(service.Start(root.wstring()), "service restarts after drain");
-			target.targetRevision = 5;
-			check(service.SubmitLoad({ target }) == PresentationPersistenceSubmitStatus::Accepted,
-				"new generation load accepted");
-			service.CloseAndDrain();
-			check(DrainPresentationCompletions(service, pending, window) == 1 &&
-				window.TryDequeueCanvasCommand(command) && command.presentationPersistenceCompletion &&
-				command.presentationPersistenceCompletion->target.targetRevision == 5 &&
-				!window.HasPendingCanvasCommand() && !pending, "restart cannot deliver stale terminal");
+			stores.Clear();
+			stores.BeginRun();
+			window.SetInputCoordinator(&input);
+			store = getStore(target);
+			check(store != nullptr, "document store starts in the next Host run");
+			if (!store) return 1;
+			check(store->LoadLane({ 0, 16, 26 }) == PagedInkAdmission::Accepted, "new generation load accepted");
+			stores.Close();
+			check(pump() == 1 && window.TryDequeueCanvasCommand(command) &&
+				isTerminal(16, target.key) && isEmptyLane() && !window.HasPendingCanvasCommand() && !pending,
+				"restart cannot deliver stale terminal");
+			check(accounting.counts.presentationAccepted == 6 && accounting.counts.presentationLoaded == 6 &&
+				accounting.counts.presentationOutstanding == 0 && accounting.counts.presentationUnmatchedTerminals == 0,
+				"every request from the real stores settles once");
+
+			// 实际准入后丢弃一个真实终态，验证已排空的服务仍有一笔未对账。
+			stores.Clear();
+			stores.BeginRun();
+			store = getStore(target);
+			check(store && store->LoadLane({ 0, 17, 27 }) == PagedInkAdmission::Accepted &&
+				accounting.counts.presentationAccepted == 7 && accounting.counts.presentationOutstanding == 1,
+				"real admission is counted before the Host receives a terminal");
+			stores.Close();
+			check(pump(true) == 0 && droppedTerminals == 1 && !pending && !window.HasPendingCanvasCommand() &&
+				accounting.counts.presentationOutstanding == 1 && accounting.counts.presentationLoaded == 6 &&
+				accounting.counts.presentationUnmatchedTerminals == 0,
+				"a dropped terminal leaves one accepted request outstanding");
+
+			HiddenPresentationAccounting mixedAccounting;
+			auto mixed = terminal(18);
+			mixed->completion.requestId = mixedAccounting.Accept();
+			mixed->completion.result = PagedInkResult::Succeeded;
+			mixed->completion.lanePages.resize(3);
+			mixed->completion.lanePages.front().result = PagedInkResult::Succeeded;
+			mixedAccounting.Settle(mixed->completion);
+			check(mixedAccounting.counts.presentationLanePageFailures == 2 &&
+				mixedAccounting.counts.presentationFailed == 1 && mixedAccounting.counts.presentationLoaded == 0 &&
+				mixedAccounting.counts.presentationEmptyLane == 0,
+				"two failed pages count separately and their lane counts as one failure");
+			mixedAccounting.Settle(mixed->completion);
+			check(mixedAccounting.counts.presentationUnmatchedTerminals == 1 &&
+				mixedAccounting.counts.presentationOutstanding == 0 && mixedAccounting.counts.presentationFailed == 1 &&
+				mixedAccounting.counts.presentationLanePageFailures == 2,
+				"a duplicate terminal is unmatched and cannot settle a request twice");
+
 			window.SetInputCoordinator(nullptr);
-			std::error_code error;
-			std::filesystem::remove_all(root, error);
+			root.created = RemoveDirectoryW(root.path.c_str()) == FALSE;
+			check(!root.created, "empty lanes leave the fixture root empty");
 		}
 		catch (...)
 		{
 			check(false, "completion delivery fixture completes without exception");
 		}
 		if (failures == 0)
-			std::fputs("[Draw3PptCompletion] PASS: reserved FIFO terminal, real Host drain, wake and restart\n", stderr);
+			std::fputs("[Draw3PptCompletion] PASS: reserved FIFO terminal, real Host drain, wake, restart and request accounting\n", stderr);
 		return failures == 0 ? 0 : 1;
 	}
 
@@ -376,13 +636,17 @@ namespace Inkeys::Drawing::Draw3
 		static_assert(sizeof(RuntimeMetricsState) <= 4096);
 		RuntimeMetricsState runtimeMetrics;
 		Bridge::StateBridge bridge;
-		DesktopAutoSaveService autoSave;
-		PresentationAutoSaveService presentationAutoSave;
 		// 设备性能账本：声明在 drawing 之前，析构晚于 Controller；Start 早于绘制线程、Stop 晚于 join。
 		DevicePerformanceLedger devicePerformance;
 		// 只由绘制 owner 访问；槽占用时保留终态，下一次 General wake 再交付。
-		std::shared_ptr<const PresentationPersistenceCompletion> pendingPresentationCompletion;
+		std::optional<PresentationPagedCompletion> pendingPresentationCompletion;
+		std::optional<DesktopInkCompletion> pendingDesktopCompletion;
+		bool desktopPersistenceInstallationClosed = false; // 由绘制 owner 在退出 ACK 前封闭。
 		ContactInputCoordinator input;
+		// 声明在 input 之后，析构时 worker 不会唤醒已析构的协调器。
+		DesktopInkSnapshots desktopSnapshots;
+		PresentationStoreRegistry presentationStores;
+		float presentationStoreDpiScale = 1.0f;
 		WindowController window;
 		Haptics::ClickMailbox hapticClicks;
 		std::mutex commandPublishMutex;
@@ -620,7 +884,8 @@ namespace Inkeys::Drawing::Draw3
 		HostStyleCallbacks styleCallbacks = {};
 		HostRuntimeCallbacks runtimeCallbacks = {};
 		HostStartOptions startOptions = {};
-		std::atomic_uint64_t hiddenPresentationNotFound = 0;
+		mutable std::mutex hiddenPersistenceMutex;
+		HiddenPresentationAccounting hiddenPersistence;
 		std::mutex startupMutex;
 		std::condition_variable startupCondition;
 		mutable std::mutex contentMutex;
@@ -1003,7 +1268,10 @@ namespace Inkeys::Drawing::Draw3
 
 		void ResetRuntimeDiagnostics()
 		{
-			hiddenPresentationNotFound.store(0, std::memory_order_release);
+			{
+				const std::scoped_lock lock(hiddenPersistenceMutex);
+				hiddenPersistence = {};
+			}
 			presentationMode.store(HostPresentationMode::Automatic, std::memory_order_release);
 			presentCount.store(0, std::memory_order_release);
 			successfulPresentCount.store(0, std::memory_order_release);
@@ -1243,6 +1511,7 @@ namespace Inkeys::Drawing::Draw3
 			case CanvasCommandType::PreviousPage:
 				self->previousPageCommandCount.fetch_add(1, std::memory_order_acq_rel); break;
 			case CanvasCommandType::PrepareExitAutoSave:
+				self->desktopPersistenceInstallationClosed = true;
 				{
 					std::scoped_lock lock(self->exitAutoSaveMutex);
 					self->exitAutoSavePrepared = true;
@@ -1413,53 +1682,130 @@ namespace Inkeys::Drawing::Draw3
 			}
 		}
 
+		static const char* DesktopAdmissionReason(DesktopInkAdmission status) noexcept
+		{
+			switch (status)
+			{
+			case DesktopInkAdmission::Accepted: return "accepted";
+			case DesktopInkAdmission::Closed: return "closed";
+			case DesktopInkAdmission::InvalidRequest: return "invalid_request";
+			case DesktopInkAdmission::ReservationFailed: return "reservation_failed";
+			case DesktopInkAdmission::MissingSave: return "missing_save";
+			}
+			return "unknown";
+		}
+
 		static bool ObserveDesktopAutoSave(void* context,
-			DesktopAutoSaveTrigger trigger,
-			draw3::uink::Draw3UInkExportSnapshot&& snapshot)
+			DesktopSnapshotTrigger trigger, DesktopInkSaveRequest request) noexcept
 		{
 			auto* self = static_cast<Impl*>(context);
 			if (!self) return false;
-			const DesktopAutoSaveSubmitStatus status = self->autoSave.Submit(
-				trigger, std::move(snapshot));
-			if (status == DesktopAutoSaveSubmitStatus::Accepted ||
-				status == DesktopAutoSaveSubmitStatus::Existing) return true;
-			const char* reason = status == DesktopAutoSaveSubmitStatus::Closed
-				? "closed" : "invalid";
+			const auto status = self->desktopSnapshots.Save(std::move(request));
+			if (status == DesktopInkAdmission::Accepted) return true;
 			DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
-				"[Draw3.AutoSave] action=submit trigger=%s result=failed reason=%s\n",
-				trigger == DesktopAutoSaveTrigger::Exit ? "exit" : "clear", reason);
+				"[Draw3.DesktopInkSnapshots] action=submit trigger=%s result=failed reason=%s\n",
+				trigger == DesktopSnapshotTrigger::Exit ? "exit" : "clear", DesktopAdmissionReason(status));
 			return false;
 		}
 
-		static bool ObserveDesktopLoad(void* context,
-			draw3::uink::UInkGuid fileGuid)
-		{
-			auto* self = static_cast<Impl*>(context);
-			return self && self->autoSave.SubmitLoad(std::move(fileGuid)) ==
-				DesktopAutoSaveSubmitStatus::Accepted;
-		}
-
-		static bool ObservePresentationSave(void* context,
-			PresentationSaveRequest&& request)
+		static bool ObserveDesktopLoad(void* context, DesktopInkLoadRequest request) noexcept
 		{
 			auto* self = static_cast<Impl*>(context);
 			if (!self) return false;
-			const auto status = self->presentationAutoSave.SubmitSave(std::move(request));
-			if (status == PresentationPersistenceSubmitStatus::Accepted ||
-				status == PresentationPersistenceSubmitStatus::ReplacedPending) return true;
-			DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.Presentation] action=save_submit result=failed\n");
+			const auto status = self->desktopSnapshots.Load(std::move(request));
+			if (status == DesktopInkAdmission::Accepted) return true;
+			DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
+				"[Draw3.DesktopInkSnapshots] action=load_submit result=failed reason=%s\n", DesktopAdmissionReason(status));
 			return false;
 		}
 
-		static bool ObservePresentationLoad(void* context,
-			PresentationLoadRequest&& request)
+		void StartDesktopSnapshots(float dpiScale) noexcept
+		{
+			if (startOptions.autoSaveRoot.empty()) return;
+			DesktopInkSnapshotsTestHook hook;
+			if (startOptions.enableHiddenTestContactInjection)
+			{
+				const auto& fixture = startOptions.desktopInkSnapshotsTestHook;
+				hook.context = this;
+				if (fixture.beforeSave)
+					hook.beforeWork = [](void* context, DesktopInkOperation operation, const DesktopInkIdentity&)
+					{
+						if (operation != DesktopInkOperation::Save) return;
+						const auto& hook = static_cast<Impl*>(context)->startOptions.desktopInkSnapshotsTestHook;
+						hook.beforeSave(hook.context);
+					};
+				if (fixture.afterSave)
+					hook.afterSave = [](void* context, const DesktopInkCompletion& completion) noexcept
+					{
+						if (!completion.publishedPath) return;
+						const auto& hook = static_cast<Impl*>(context)->startOptions.desktopInkSnapshotsTestHook;
+						hook.afterSave(hook.context, *completion.publishedPath);
+					};
+			}
+			try
+			{
+				if (desktopSnapshots.Start({ startOptions.autoSaveRoot, dpiScale,
+					&WakeForPresentationPersistence, this }, hook)) return;
+			}
+			catch (...) {}
+			DiagnosticOutput::Text(DiagnosticOutput::ErrError,
+				"[Draw3.DesktopInkSnapshots] action=start result=failed reason=service_start\n");
+		}
+
+		static PagedInkStore* ObservePresentationStore(void* context,
+			const Bridge::PresentationTarget& target) noexcept
 		{
 			auto* self = static_cast<Impl*>(context);
-			if (!self) return false;
-			if (self->presentationAutoSave.SubmitLoad(std::move(request)) ==
-				PresentationPersistenceSubmitStatus::Accepted) return true;
-			DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.Presentation] action=load_submit result=failed\n");
-			return false;
+			if (!self || self->startOptions.autoSaveRoot.empty()) return nullptr;
+			const char* failureReason = "store_unavailable";
+			try
+			{
+				PagedInkStoreTestHook hook;
+				if (self->startOptions.enableHiddenTestContactInjection)
+				{
+					hook.context = self;
+					hook.recordAccepted = [](void* owner) noexcept
+					{
+						auto& host = *static_cast<Impl*>(owner);
+						const std::scoped_lock lock(host.hiddenPersistenceMutex);
+						return host.hiddenPersistence.Accept();
+					};
+				}
+				if (self->startOptions.enableHiddenTestContactInjection &&
+					self->startOptions.beforePresentationStoreWriteForTest)
+				{
+					hook.beforeWork = [](void* owner, const PagedInkRequestIdentity& identity)
+					{
+						auto& options = static_cast<Impl*>(owner)->startOptions;
+						if (identity.kind == PagedInkRequestKind::Full || identity.kind == PagedInkRequestKind::Clear)
+							options.beforePresentationStoreWriteForTest(options.presentationStoreTestContext);
+					};
+				}
+				if (auto* store = self->presentationStores.Get(target, self->startOptions.autoSaveRoot,
+					self->presentationStoreDpiScale, &WakeForPresentationPersistence, self, hook))
+					return store;
+			}
+			catch (...) { failureReason = "exception"; }
+			DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
+				"[Draw3.Presentation] action=start result=failed reason=%s\n", failureReason);
+			return nullptr;
+		}
+
+		static void ObservePresentationDrain(void* context, void* receiver,
+			void (*settle)(void*, PresentationPagedCompletion&&))
+		{
+			auto& self = *static_cast<Impl*>(context);
+			self.presentationStores.Drain();
+			// 退出/致命故障已封闭业务，先结算已离开 worker 的终态，再取仍在服务里的终态。
+			if (auto reserved = self.window.TakePresentationCompletionForExit())
+				settle(receiver, std::move(*reserved));
+			if (auto pending = std::exchange(self.pendingPresentationCompletion, std::nullopt))
+				settle(receiver, std::move(*pending));
+			while (auto completion = self.presentationStores.Take())
+			{
+				self.ObservePresentationTerminal(completion->completion);
+				settle(receiver, std::move(*completion));
+			}
 		}
 
 		static void WakeForPresentationPersistence(void* context) noexcept
@@ -2112,24 +2458,59 @@ namespace Inkeys::Drawing::Draw3
 			window.EnqueueCanvasCommand(canvas);
 		}
 
-		void PumpPresentationCompletions()
+		void ObservePresentationTerminal(const PagedInkCompletion& completion) noexcept
 		{
-			const auto notFound = DrainPresentationCompletions(
-				presentationAutoSave, pendingPresentationCompletion, window);
-			if (startOptions.enableHiddenTestContactInjection)
-				hiddenPresentationNotFound.fetch_add(notFound, std::memory_order_acq_rel);
+			if (!startOptions.enableHiddenTestContactInjection) return;
+			const std::scoped_lock lock(hiddenPersistenceMutex);
+			hiddenPersistence.Settle(completion);
 		}
 
-		void PumpDesktopCompletions()
+		void PumpPresentationCompletions()
 		{
-			DesktopPersistenceCompletion completion;
-			while (autoSave.TryTakeCompletion(completion))
+			DrainPresentationCompletions(presentationStores, pendingPresentationCompletion, window,
+				[this](const PagedInkCompletion& completion) noexcept
+				{
+					ObservePresentationTerminal(completion);
+					return true;
+				});
+		}
+
+		static void LogDesktopCancellation(const DesktopInkCompletion& completion) noexcept
+		{
+			if (completion.result != DesktopInkResult::Canceled) return;
+			DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
+				"[Draw3.DesktopInkSnapshots] action=%s result=canceled reason=closing generation=%llu systemError=%lu diagnostics=%zu read_diagnostics=%zu\n",
+				completion.operation == DesktopInkOperation::Save ? "save" : "load",
+				static_cast<unsigned long long>(completion.identity.clearGeneration),
+				static_cast<unsigned long>(completion.systemError), completion.diagnostics.size(),
+				completion.readDiagnostics.size());
+		}
+
+		void SettleDesktopCompletions() noexcept
+		{
+			// ACK 后或绘制线程退出后只核销终态；已取入槽的回执已记录诊断。
+			(void)window.TakeDesktopCompletionForExit();
+			pendingDesktopCompletion.reset();
+			while (auto completion = desktopSnapshots.Take()) LogDesktopCancellation(*completion);
+		}
+
+		void PumpDesktopCompletions() noexcept
+		{
+			if (desktopPersistenceInstallationClosed)
 			{
-				CanvasCommand command;
-				command.type = CanvasCommandType::DesktopPersistenceCompleted;
-				command.desktopPersistenceCompletion = std::make_shared<
-					DesktopPersistenceCompletion>(std::move(completion));
-				window.EnqueueCanvasCommand(std::move(command));
+				SettleDesktopCompletions();
+				return;
+			}
+			for (;;)
+			{
+				if (!pendingDesktopCompletion)
+				{
+					pendingDesktopCompletion = desktopSnapshots.Take();
+					if (!pendingDesktopCompletion) break;
+					LogDesktopCancellation(*pendingDesktopCompletion);
+				}
+				// 已有回执占槽时保留本个，消费槽后仍会发布普通 wake。
+				if (!window.TryEnqueueDesktopCompletion(pendingDesktopCompletion)) break;
 			}
 		}
 
@@ -2285,14 +2666,10 @@ namespace Inkeys::Drawing::Draw3
 				startOptions.startupMilestone(startOptions.startupContext,
 					HostStartupStage::WindowAttached);
 			LogDraw3WindowState("attached", hwnd, presentationHwnd);
-			autoSave.CloseAndDrain();
-			presentationAutoSave.CloseAndDrain();
-			if (!options.autoSaveRoot.empty() && !autoSave.Start(
-				options.autoSaveRoot, this, &WakeForPresentationPersistence))
-				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=start result=failed\n");
-			if (!options.autoSaveRoot.empty() && !presentationAutoSave.Start(
-				options.autoSaveRoot, this, &WakeForPresentationPersistence))
-				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.Presentation] action=start result=failed\n");
+			desktopSnapshots.Close();
+			SettleDesktopCompletions();
+			desktopPersistenceInstallationClosed = false;
+			presentationStores.BeginRun();
 			devicePerformance.Start(options.devicePerformancePath);
 			input.EnableDiagnostics(options.enableHiddenTestContactInjection || options.enableRuntimeMetrics);
 			if (options.enableRuntimeMetrics) runtimeMetrics.inputBaseline = input.DiagnosticsSnapshot();
@@ -2447,6 +2824,8 @@ namespace Inkeys::Drawing::Draw3
 								interruptedStrokeReconnectEnabled.load(std::memory_order_acquire);
 							window.SetEraserDiagnosticsEnabled(startOptions.enableEraserDiagnostics ||
 								startOptions.enableHiddenTestContactInjection);
+							StartDesktopSnapshots(configuration.dpiScale);
+							presentationStoreDpiScale = configuration.dpiScale;
 							DrawingControllerRuntimeObserver observer{
 								this, &ObservePresented, &ObserveResized,
 								&ObserveCommand, &ObserveDocument,
@@ -2454,8 +2833,8 @@ namespace Inkeys::Drawing::Draw3
 								&ObserveWorkspace, &ConsumeBridge,
 								&ObserveDesktopAutoSave,
 								&ObserveDesktopLoad,
-								&ObservePresentationSave,
-								&ObservePresentationLoad,
+								&ObservePresentationStore,
+								&ObservePresentationDrain,
 								&ObserveDrawingActivity,
 								&ObserveEraserDiagnostics,
 								startOptions.enableHiddenTestContactInjection ? &ObservePenDiagnostics : nullptr
@@ -2611,8 +2990,10 @@ namespace Inkeys::Drawing::Draw3
 				failedCleanup.BeginKnownFailure();
 				running.store(false, std::memory_order_release);
 				shortcuts.Stop();
-				autoSave.CloseAndDrain();
-				presentationAutoSave.CloseAndDrain();
+				desktopSnapshots.Close();
+				SettleDesktopCompletions();
+				presentationStores.Close();
+				presentationStores.Clear();
 				devicePerformance.Stop();
 				EndDrawingActivity();
 				window.SetInputCoordinator(nullptr);
@@ -2634,8 +3015,10 @@ namespace Inkeys::Drawing::Draw3
 			failedCleanup.BeginKnownFailure();
 			lock.unlock();
 			if (drawingThread.joinable()) drawingThread.join();
-			autoSave.CloseAndDrain();
-			presentationAutoSave.CloseAndDrain();
+			desktopSnapshots.Close();
+			SettleDesktopCompletions();
+			presentationStores.Close();
+			presentationStores.Clear();
 			devicePerformance.Stop();
 			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
@@ -2770,8 +3153,10 @@ namespace Inkeys::Drawing::Draw3
 			if (drawingThread.joinable()) drawingThread.request_stop();
 			startupCondition.notify_all();
 			if (drawingThread.joinable()) drawingThread.join();
-			autoSave.CloseAndDrain();
-			presentationAutoSave.CloseAndDrain();
+			desktopSnapshots.Close();
+			SettleDesktopCompletions();
+			presentationStores.Close();
+			presentationStores.Clear();
 			devicePerformance.Stop();
 			EndDrawingActivity();
 			window.SetInputCoordinator(nullptr);
@@ -2838,8 +3223,10 @@ namespace Inkeys::Drawing::Draw3
 				!attachedPresentationWindow.load(std::memory_order_acquire) &&
 				!running.load(std::memory_order_acquire) && !drawingThread.joinable())
 			{
-				autoSave.CloseAndDrain();
-				presentationAutoSave.CloseAndDrain();
+				desktopSnapshots.Close();
+				SettleDesktopCompletions();
+				presentationStores.Close();
+				presentationStores.Clear();
 				devicePerformance.Stop();
 				EndDrawingActivity();
 				runtimeCallbacks = {};
@@ -2878,20 +3265,23 @@ namespace Inkeys::Drawing::Draw3
 							!running.load(std::memory_order_acquire);
 					});
 				if (exitAutoSavePrepared && !whiteboardExitDurable.load(std::memory_order_acquire))
-					DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=exit_barrier result=failed reason=whiteboard_not_durable\n");
+					DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.DesktopInkSnapshots] action=exit_barrier result=failed reason=whiteboard_not_durable\n");
 				if (!exitAutoSavePrepared)
-					DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=exit_barrier result=failed reason=controller_stopped\n");
+					DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.DesktopInkSnapshots] action=exit_barrier result=failed reason=controller_stopped\n");
 			}
 			else
-				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.AutoSave] action=exit_barrier result=failed reason=bridge_closed\n");
+				DiagnosticOutput::Text(DiagnosticOutput::ErrError, "[Draw3.DesktopInkSnapshots] action=exit_barrier result=failed reason=bridge_closed\n");
 			// worker 无超时排空后才允许绘制线程销毁 Document/Controller。
-			autoSave.CloseAndDrain();
-			presentationAutoSave.CloseAndDrain();
+			desktopSnapshots.Close();
+			presentationStores.Close();
 			window.RequestExit();
 			input.PublishControlWake();
 			if (drawingThread.joinable()) drawingThread.request_stop();
 			startupCondition.notify_all();
 			if (drawingThread.joinable()) drawingThread.join();
+			SettleDesktopCompletions();
+			// owner 退出后才能释放各槽借用的服务。
+			presentationStores.Clear();
 			// 绘制线程已退出（Run 退出前已移交最后一段）：账本立即落盘并停止写盘线程。
 			devicePerformance.Stop();
 			EndDrawingActivity();
@@ -2942,12 +3332,14 @@ namespace Inkeys::Drawing::Draw3
 	{
 		// startOptions 在当前 generation 不变，Stop 不改写此字段；禁止并行下一 Start。
 		if (!impl_->startOptions.enableHiddenTestContactInjection) return std::nullopt;
-		const auto desktop = impl_->autoSave.Diagnostics();
-		const auto presentation = impl_->presentationAutoSave.Diagnostics();
-		return HostHiddenPersistenceSnapshot{ desktop.accepted, desktop.committed,
-			desktop.failed, desktop.pending, presentation.accepted, presentation.committed,
-			presentation.loaded, presentation.failed,
-			impl_->hiddenPresentationNotFound.load(std::memory_order_acquire) };
+		const auto desktop = impl_->desktopSnapshots.Diagnostics();
+		const std::scoped_lock lock(impl_->hiddenPersistenceMutex);
+		auto snapshot = impl_->hiddenPersistence.counts;
+		snapshot.desktopAccepted = desktop.accepted;
+		snapshot.desktopCommitted = desktop.committed;
+		snapshot.desktopFailed = desktop.failed;
+		snapshot.desktopPending = desktop.pending;
+		return snapshot;
 	}
 
 	bool Host::FirstFrameReady() const noexcept

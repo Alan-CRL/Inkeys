@@ -41,10 +41,7 @@
 	<ClCompile Include="draw3\ink_document.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\uink_model.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\uink_codec.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
-	<ClCompile Include="draw3\uink_file.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
-	<ClCompile Include="draw3\uink_draw3_export.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
-	<ClCompile Include="draw3\uink_draw3_import.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
-	<ClCompile Include="draw3\uink_draw3_capture.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
+	<ClCompile Include="draw3\uink_draw3_v11.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\canvas_navigation.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_history.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_history_gpu.cppm"><Filter>源文件\Draw3 模块\接口</Filter></ClCompile>
@@ -65,10 +62,7 @@
 	<ClCompile Include="draw3\uink_model.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\uink_codec.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\uink_codec_encode.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
-	<ClCompile Include="draw3\uink_file.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
-	<ClCompile Include="draw3\uink_draw3_export.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
-	<ClCompile Include="draw3\uink_draw3_import.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
-	<ClCompile Include="draw3\uink_draw3_capture.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
+	<ClCompile Include="draw3\uink_draw3_v11.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\canvas_navigation.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_history.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
 	<ClCompile Include="draw3\ink_history_gpu.cpp"><Filter>源文件\Draw3 模块\实现</Filter></ClCompile>
@@ -157,8 +151,7 @@
     <ClInclude Include="draw3\shape_interaction.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="draw3\shape_interaction.inl"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="draw3\shape_presets.inl"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="draw3\shape_uink_metadata.inl"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="draw3\shape_uink_standard.inl"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="draw3\shape_uink_import.inl"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="draw3\shape_uink_v11.inl"><Filter>头文件</Filter></ClInclude>
   </ItemGroup>
 </Project>

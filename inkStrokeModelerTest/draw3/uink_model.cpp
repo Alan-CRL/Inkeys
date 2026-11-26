@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -99,6 +100,64 @@ namespace draw3::uink
 		bytes[6] = static_cast<uint8_t>((bytes[6] & 0x0f) | 0x40);
 		bytes[8] = static_cast<uint8_t>((bytes[8] & 0x3f) | 0x80);
 		return UInkGuid(bytes);
+	}
+
+	bool HasInvalidUInkNibAspect(const UInkNib& nib) noexcept
+	{
+		return nib.shape == 1 &&
+			(!nib.aspect || !std::isfinite(*nib.aspect) || *nib.aspect <= 0.0f);
+	}
+
+	UInkNib EffectiveUInkNib(const std::optional<UInkNib>& nib) noexcept
+	{
+		// NIB-6/7：非法矩形按圆形显示，未知方向按 Fixed。
+		if (!nib || nib->shape != 1 || HasInvalidUInkNibAspect(*nib)) return {};
+		return { 1, nib->aspect, nib->orientation == 1 ? 1 : 0 };
+	}
+
+	int32_t EffectiveUInkCap(const UInkInk& ink) noexcept
+	{
+		const int32_t cap = ink.cap.value_or(0);
+		return EffectiveUInkNib(ink.nib).shape == 0 && (cap == 1 || cap == 2) ? cap : 0;
+	}
+
+	int32_t EffectiveUInkLineCap(const UInkShapeStroke& stroke) noexcept
+	{
+		const int32_t cap = stroke.lineCap.value_or(0);
+		return cap == 1 || cap == 2 ? cap : 0;
+	}
+
+	int32_t EffectiveUInkLineJoin(const UInkShapeStroke& stroke) noexcept
+	{
+		const int32_t join = stroke.lineJoin.value_or(0);
+		return join == 1 || join == 2 ? join : 0;
+	}
+
+	int32_t EffectiveUInkBackgroundPattern(const UInkBackground& background) noexcept
+	{
+		return background.pattern == 1 || background.pattern == 2 ? background.pattern : 0;
+	}
+
+	int32_t EffectiveUInkPageState(const UInkCanvas& canvas) noexcept
+	{
+		return canvas.pageState == 1 ? 1 : 0;
+	}
+
+	int32_t EffectiveUInkPageKind(const UInkCanvas& canvas) noexcept
+	{
+		return canvas.pageKind == 1 ? 1 : 0;
+	}
+
+	int32_t EffectiveUInkBinding(const UInkCanvas& canvas) noexcept
+	{
+		return canvas.binding == 1 ? 1 : 0;
+	}
+
+	bool HasValidUInkPresentationBinding(const UInkCanvas& layerZero) noexcept
+	{
+		// CANVAS-13：按 SlideID 绑定的普通页必须提供 slideId。
+		return EffectiveUInkBinding(layerZero) == 1 || EffectiveUInkPageKind(layerZero) == 1 ||
+			layerZero.slideId.has_value();
 	}
 
 	bool IsSafeMediaPath(const std::string& path, uint64_t maxBytes) noexcept

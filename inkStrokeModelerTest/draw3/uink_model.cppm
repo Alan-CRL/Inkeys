@@ -13,7 +13,12 @@ export module draw3.uink_model;
 
 export namespace draw3::uink
 {
-	inline constexpr uint16_t kUInkVersion = 10;
+	inline constexpr uint16_t kUInkVersion = 11;
+	inline constexpr uint16_t kUInkMinReadableVersion = 10;
+	inline constexpr uint16_t kUInkMaxReadableVersion = 19;
+	inline constexpr uint32_t kUInkMaxRegistryEntries = 1024;
+	inline constexpr uint32_t kUInkMaxShapeVertices = 100000;
+	inline constexpr double kUInkMaxCoordinate = 1e7;
 	inline constexpr uint16_t kHeaderType = 0;
 	inline constexpr uint16_t kHeaderExtensionType = 1;
 	inline constexpr uint16_t kCanvasType = 2;
@@ -58,33 +63,6 @@ export namespace draw3::uink
 
 		Storage value;
 	};
-
-	using UInkExtra = UInkMessagePackValue::Map;
-
-	enum class UInkInkeysPageKind : uint8_t
-	{
-		Normal,
-		EndScreen,
-		Invalid,
-	};
-
-	// 结束页只认一个精确的应用标记；未知值或重复键不能获得无 SlideID 豁免。
-	inline UInkInkeysPageKind InkeysPageKind(
-		const std::optional<UInkExtra>& extra) noexcept
-	{
-		if (!extra) return UInkInkeysPageKind::Normal;
-		bool found = false;
-		for (const auto& pair : *extra)
-		{
-			const auto* key = std::get_if<std::string>(&pair.first.value);
-			if (!key || *key != "inkeysPageKind") continue;
-			if (found) return UInkInkeysPageKind::Invalid;
-			found = true;
-			const auto* value = std::get_if<std::string>(&pair.second.value);
-			if (!value || *value != "end-screen") return UInkInkeysPageKind::Invalid;
-		}
-		return found ? UInkInkeysPageKind::EndScreen : UInkInkeysPageKind::Normal;
-	}
 
 	struct UInkHeader
 	{
@@ -134,7 +112,6 @@ export namespace draw3::uink
 		std::optional<std::string> name;
 		std::optional<UInkHardware> hardware;
 		std::variant<UInkDisplayDevice, UInkWindowDevice, UInkUnknownDevice> geometry;
-		std::optional<UInkExtra> extra;
 		bool parentResolved = true;
 		bool usable = true;
 	};
@@ -147,7 +124,6 @@ export namespace draw3::uink
 		std::optional<UInkGuid> parentWorkspaceGuid;
 		std::optional<std::string> hostId;
 		uint32_t currentPageIndex = 0;
-		std::optional<UInkExtra> extra;
 		bool parentResolved = true;
 		bool usable = true;
 	};
@@ -158,7 +134,6 @@ export namespace draw3::uink
 		std::optional<std::string> explanation;
 		std::vector<UInkDevice> devices;
 		std::vector<UInkWorkspace> workspaces;
-		std::optional<UInkExtra> extra;
 	};
 
 	struct UInkViewport
@@ -208,6 +183,13 @@ export namespace draw3::uink
 		std::optional<UInkPointStyle> style;
 	};
 
+	struct UInkNib
+	{
+		int32_t shape = 0;
+		std::optional<float> aspect;
+		int32_t orientation = 0;
+	};
+
 	struct UInkInk
 	{
 		uint32_t contentId = 0;
@@ -220,9 +202,8 @@ export namespace draw3::uink
 		int32_t effectiveTexture = 0;
 		std::vector<UInkInkPoint> points;
 		bool renderOnlyWhenLatest = false;
-		std::optional<UInkExtra> extra;
-		// UInk 1.1 升为官方字段；当前为可忽略的笔划私有扩展。
-		uint8_t eraserShape = 0;
+		std::optional<UInkNib> nib;
+		std::optional<int32_t> cap;
 	};
 
 	struct UInkShapePoint
@@ -285,6 +266,8 @@ export namespace draw3::uink
 		int32_t declaredEndMarker = 0;
 		int32_t effectiveStartMarker = 0;
 		int32_t effectiveEndMarker = 0;
+		std::optional<int32_t> lineCap;
+		std::optional<int32_t> lineJoin;
 	};
 
 	struct UInkShapeFill
@@ -292,6 +275,24 @@ export namespace draw3::uink
 		int32_t declaredFillType = 0;
 		UInkColor color;
 		float opacity = 1.0f;
+	};
+
+	struct UInkShapeObject
+	{
+		UInkGuid id;
+		uint64_t revision = 0;
+		std::optional<std::string> preset;
+		uint32_t partCount = 0;
+		std::optional<std::array<float, 6>> transform;
+		std::optional<UInkMessagePackValue::Map> construction;
+		std::optional<UInkMessagePackValue::Map> style;
+		std::optional<uint32_t> aux;
+	};
+
+	struct UInkShapeObjectRef
+	{
+		UInkGuid ref;
+		uint32_t partIndex = 0;
 	};
 
 	struct UInkShape
@@ -303,7 +304,7 @@ export namespace draw3::uink
 		std::optional<UInkShapeStroke> stroke;
 		std::optional<UInkShapeFill> fill;
 		bool renderOnlyWhenLatest = false;
-		std::optional<UInkExtra> extra;
+		std::optional<std::variant<UInkShapeObject, UInkShapeObjectRef>> object;
 	};
 
 	enum class UInkMediaResourceState : uint8_t
@@ -328,7 +329,6 @@ export namespace draw3::uink
 		float volume = 1.0f;
 		double startTime = 0.0;
 		float playbackRate = 1.0f;
-		std::optional<UInkExtra> extra;
 		UInkMediaResourceState resourceState = UInkMediaResourceState::Unavailable;
 		bool pathIsSafe = false;
 	};
@@ -337,10 +337,15 @@ export namespace draw3::uink
 	{
 		uint32_t contentId = 0;
 		uint32_t undoId = 0;
-		std::optional<UInkExtra> extra;
 	};
 
 	using UInkContent = std::variant<UInkInk, UInkShape, UInkMedia, UInkClear>;
+
+	struct UInkBackground
+	{
+		UInkColor color;
+		int32_t pattern = 0;
+	};
 
 	struct UInkCanvas
 	{
@@ -353,14 +358,30 @@ export namespace draw3::uink
 		uint32_t layerNumber = 0;
 		std::optional<int32_t> slideId;
 		std::optional<UInkViewport> viewport;
-		std::optional<UInkExtra> extra;
 		std::vector<UInkContent> content;
 		bool temporaryWorkspace = false;
 		bool temporaryDevice = false;
 		bool temporaryPage = false;
 		bool temporaryLayer = false;
 		bool presentationUnbound = false;
+		std::optional<UInkBackground> background;
+		std::optional<int32_t> pageState;
+		std::optional<int32_t> pageKind;
+		std::optional<int32_t> binding;
 	};
+
+	// 声明值保留用于读写，有效值用于解释笔尖和页面元数据。
+	bool HasInvalidUInkNibAspect(const UInkNib& nib) noexcept;
+	UInkNib EffectiveUInkNib(const std::optional<UInkNib>& nib) noexcept;
+	int32_t EffectiveUInkCap(const UInkInk& ink) noexcept;
+	int32_t EffectiveUInkLineCap(const UInkShapeStroke& stroke) noexcept;
+	int32_t EffectiveUInkLineJoin(const UInkShapeStroke& stroke) noexcept;
+	int32_t EffectiveUInkBackgroundPattern(const UInkBackground& background) noexcept;
+	int32_t EffectiveUInkPageState(const UInkCanvas& canvas) noexcept;
+	int32_t EffectiveUInkPageKind(const UInkCanvas& canvas) noexcept;
+	int32_t EffectiveUInkBinding(const UInkCanvas& canvas) noexcept;
+	// 检查 PPT 页面第 0 层的 SlideID 要求，包含旧私有标记的兼容回退。
+	bool HasValidUInkPresentationBinding(const UInkCanvas& layerZero) noexcept;
 
 	struct UInkDocument
 	{
@@ -405,12 +426,12 @@ export namespace draw3::uink
 		ContentSequenceRecovered,
 		UnsafeMediaPath,
 		MediaResourceUnavailable,
-		SourceChanged,
-		ResourcePackUnsupported,
 		WriteFailed,
 		FlushFailed,
 		RollbackFailed,
-		SelfValidationFailed
+		SelfValidationFailed,
+		CoordinateOutOfRange,
+		DecodeFailed
 	};
 
 	struct UInkDiagnostic
@@ -421,6 +442,8 @@ export namespace draw3::uink
 		uint64_t objectIndex = 0;
 		std::string fieldPath;
 		uint32_t systemError = 0;
+		// Canvas 按对象流从 1 编号，含可识别但被跳过的 Canvas。0 表示文件级诊断。
+		uint64_t canvasOrdinal = 0;
 	};
 
 	struct UInkReadLimits
@@ -457,18 +480,32 @@ export namespace draw3::uink
 		bool containsInvalidCompleteBlocks = false;
 		bool invalidBlockBeforeValidBlock = false;
 		bool contentSequenceRecovered = false;
-		bool sourceWasExternal = true;
 		bool requiresSaveAs = false;
 	};
 
-	struct UInkSourceRevision
+	enum class UInkReadOutcome : uint8_t
 	{
-		uint32_t volumeSerial = 0;
-		uint64_t fileIndex = 0;
-		uint64_t length = 0;
-		uint64_t lastWriteTime = 0;
-		std::array<uint8_t, 32> sha256 = {};
-		friend bool operator==(const UInkSourceRevision&, const UInkSourceRevision&) noexcept = default;
+		Complete,
+		Partial,
+		Failed
+	};
+
+	struct UInkDiagnosticCount
+	{
+		UInkDiagnosticCode code = UInkDiagnosticCode::None;
+		uint64_t count = 0;
+		uint64_t firstByteOffset = 0;
+		uint64_t firstCanvasOrdinal = 0;
+	};
+
+	struct UInkReadSummary
+	{
+		UInkReadOutcome outcome = UInkReadOutcome::Failed;
+		// 按 UInkDiagnosticCode 索引，count 为 0 表示未出现。
+		std::array<UInkDiagnosticCount, static_cast<std::size_t>(UInkDiagnosticCode::DecodeFailed) + 1>
+			diagnosticCounts{};
+		std::optional<uint16_t> version;
+		uint64_t decodeMicroseconds = 0;
 	};
 
 	struct UInkReadResult
@@ -481,23 +518,12 @@ export namespace draw3::uink
 		std::optional<uint64_t> failedObjectOffset;
 		std::optional<uint64_t> safeAppendOffset;
 		uint64_t decodedObjectCount = 0;
+		uint64_t replayedObjectCount = 0;
 		uint64_t geometryPointCount = 0;
 		uint64_t modelCharge = 0;
-		std::optional<UInkSourceRevision> sourceRevision;
 		std::wstring sourcePath;
+		UInkReadSummary summary;
 	};
-
-	struct UInkEditingSession
-	{
-		UInkDocument document;
-		UInkLoadProvenance provenance;
-		std::vector<UInkDiagnostic> loadDiagnostics;
-		std::optional<UInkSourceRevision> sourceRevision;
-		std::wstring sourcePath;
-	};
-
-	using UInkAppendObject = std::variant<UInkCanvas, UInkInk, UInkShape, UInkMedia,
-		UInkClear>;
 
 	bool IsSafeMediaPath(const std::string& path,
 		uint64_t maxBytes = 32768) noexcept;

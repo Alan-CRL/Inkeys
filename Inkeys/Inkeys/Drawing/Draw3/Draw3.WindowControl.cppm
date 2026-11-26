@@ -10,6 +10,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
 #include "Draw3.TouchpadNavigation.h"
 #include "Draw3.RtsStartup.h"
@@ -23,9 +24,9 @@
 export module Inkeys.Drawing.Draw3.window_control;
 
 import Inkeys.Drawing.Draw3.contact_input;
-import Inkeys.Drawing.Draw3.auto_save;
+import Inkeys.Drawing.Draw3.desktop_ink_snapshots;
 import Inkeys.Drawing.Draw3.pen_cursor;
-export import Inkeys.Drawing.Draw3.presentation_auto_save;
+export import Inkeys.Drawing.Draw3.paged_ink_store;
 
 namespace Inkeys::Drawing::Draw3 { class TouchpadNavigationOwner; class TouchpadInteractionOwner; }
 
@@ -117,10 +118,15 @@ export namespace Inkeys::Drawing::Draw3
 		PresentationPersistenceCompleted,
 		PrepareExitAutoSave,
 		SetWhiteboardTheme,
-		WhiteboardPersistenceCompleted,
-		ShapeInteraction,
+		ShapeInteraction = 14, // 保留场景诊断中的命令编号。
 		ShortcutFence,
 		RePresentWhiteboardPage, // 冷页失败只补原白板页呈现，不执行绝对切页。
+	};
+
+	struct PresentationPagedCompletion
+	{
+		Bridge::PresentationKey key;
+		PagedInkCompletion completion;
 	};
 
 	struct CanvasCommand
@@ -135,10 +141,8 @@ export namespace Inkeys::Drawing::Draw3
 		std::uint64_t whiteboardGeneration = 0;
 		std::shared_ptr<const Bridge::PresentationTarget> presentationTarget;
 		std::shared_ptr<const Shortcuts::Request> shortcut;
-		std::shared_ptr<const DesktopPersistenceCompletion>
-			desktopPersistenceCompletion;
-		std::shared_ptr<const PresentationPersistenceCompletion>
-			presentationPersistenceCompletion;
+		std::optional<DesktopInkCompletion> desktopPersistenceCompletion;
+		std::optional<PresentationPagedCompletion> presentationPersistenceCompletion;
 		// 为真时，CPU 已在目标场景也要补发 ready。普通同场景命令保持假，避免每次撤销都补发。
 		bool sceneClosedAdmission = false;
 		// 普通业务绑定已接受时的场景；前缀准备失败时不得改动其他文稿。
@@ -264,8 +268,12 @@ export namespace Inkeys::Drawing::Draw3
 		ProductVisualStyle ProductVisualStyleSnapshot() const noexcept;
 		void EnqueueCanvasCommand(CanvasCommand command);
 		// 单个预留终态槽不分配；占用时调用者保留 payload，消费后唤醒继续交付。
-		bool TryEnqueuePresentationCompletion(
-			const std::shared_ptr<const PresentationPersistenceCompletion>& completion) noexcept;
+		// 槽空时移动回执，槽满时由 Host 留待下次唤醒。
+		bool TryEnqueueDesktopCompletion(std::optional<DesktopInkCompletion>& completion) noexcept;
+		std::optional<DesktopInkCompletion> TakeDesktopCompletionForExit() noexcept;
+		bool TryEnqueuePresentationCompletion(std::optional<PresentationPagedCompletion>& completion) noexcept;
+		// 退出保存已封闭业务，绘制线程直接结算槽中的终态。
+		std::optional<PresentationPagedCompletion> TakePresentationCompletionForExit() noexcept;
 		void RequestExit() noexcept;
 		// 配置基础工具的应用内瞬态光标外观；Shape 统一复用 Pen 外观。
 		bool ConfigureDrawingCursor(DrawingTool tool,
@@ -424,7 +432,10 @@ export namespace Inkeys::Drawing::Draw3
 		WindowSize size_ = {};
 		std::mutex canvasCommandMutex_;
 		std::deque<CanvasCommand> canvasCommands_;
-		std::shared_ptr<const PresentationPersistenceCompletion> presentationCompletion_;
+		std::optional<DesktopInkCompletion> desktopCompletion_;
+		std::size_t commandsBeforeDesktopCompletion_ = 0;
+		bool desktopCompletionFirst_ = false;
+		std::optional<PresentationPagedCompletion> presentationCompletion_;
 		std::size_t commandsBeforePresentationCompletion_ = 0;
 		std::atomic<bool> resizeRequested_ = false;
 		std::atomic<bool> fullPresentRequested_ = false;
