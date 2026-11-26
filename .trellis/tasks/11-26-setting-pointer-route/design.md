@@ -71,6 +71,7 @@ namespace Inkeys::UI::Setting::PointerInput
 - Move/Up 只接受同 `device + contact + generation`；其他 → `Ignore`。
 - 同一 pointerId 再 Down、同设备新主接触 → 先 `Cancel` 旧接触再按新 Down 处理（对齐主栏 R2.4）。
 - `CancelActive()` 幂等。
+- 起始容差（实机反馈后补充，2026-11-26）：半径 `ContactSlopPixels = 20` 物理像素，不随 DPI 缩放，与主栏主按钮点击/拖动分界（`ShouldAllowBarBottomDockClick` 的 20 px）一致（用户确认；先试过 8 DIP）；主栏量的是路径累计长度，这里量的是相对按下点的直线距离，避免原地抖动累加成“拖动”；越过前的 Move 不进入 ImGui，越过前的 Up 按按下点抬起；越过后如实跟随。原因：组件卡片长按要求按住位移小于 `io.MouseDragThreshold`（6 物理像素），原兼容鼠标路径由系统吸收抖动，改为直接导入 Pointer 原始坐标后轻微抖动即转为页面滚动。容差内 ImGui 看到的位移为 0、越过即跳到 ≥ 容差，仍保持“静止容差 = 拖动阈值”无死区的合同。
 
 ### 3.3 窗口过程接线（`ImGuiWndProc`）
 
@@ -91,6 +92,16 @@ namespace Inkeys::UI::Setting::PointerInput
 | Cancel | `AddMouseSourceEvent(src)`、`AddMousePosEvent(-FLT_MAX,-FLT_MAX)`、`AddMouseButtonEvent(0,false)`（移出后松开，ImGui 不会判为点击） |
 
 之后 `RenderPipeline::Request(Client::Settings)` 唤醒一帧（与现有 ImGui 输入后请求帧的方式一致）。仅在 `Setting::IsVisible()` 且 ImGui context 存在时写 IO；否则只裁决不写入。
+
+> 实施修订：设置窗口可见期间每帧结束都返回 `FrameResult::Continue` 持续出帧，写 IO 后无需额外 `Request`。
+
+#### backend 光标补位覆盖（实施中发现）
+
+`ImGui_ImplWin32_NewFrame` 在窗口有焦点、`MouseTrackedArea == 0` 时会用 `GetCursorPos` 补一个鼠标位置事件；触摸被消费后系统光标不跟手指移动，这个补位会把触摸位置覆盖成旧光标位置。处理：
+- PointerInput 维护跨线程覆盖状态：接触活动时为接触位置；触摸抬起/取消后“停放”在 `(-FLT_MAX, -FLT_MAX)`；笔结束后清除（悬停由兼容鼠标提供）。
+- 渲染线程在 `ImGui_ImplWin32_NewFrame()` 之后、`ImGui::NewFrame()` 之前调用 `ApplySettingPointerOverride()` 追加覆盖位置；`AddMousePosEvent` 对重复值去重，追加无副作用。
+- 窗口线程先写 IO 事件、再发布覆盖状态，渲染线程不会在按下/抬起事件入队前读到新的停放状态。
+- HiMsg 放行任意鼠标消息（真实鼠标或笔悬停）即结束停放。
 
 ImGui 的 `ConfigInputTrickleEventQueue`（默认开）保证同帧内 Down/Up 不丢点击。
 
