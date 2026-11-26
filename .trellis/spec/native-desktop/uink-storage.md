@@ -1,6 +1,6 @@
 # UInk 1.1 墨迹存储与读取（2026-11-26 起）
 
-本文是 Draw3 墨迹持久化的唯一权威合同，取代旧的 UInk 1.0 私有字段、整文件 SHA/回读、日索引、PPT 多轨索引与白板历史 JSON。来源任务：`.trellis/tasks/11-24-uink-1-1-adaptation/`（C1.4+C1.5）；规范副本见该任务 `research/uink-v11-spec.md`，下文规则编号（SAVE-10、CANVAS-8、NIB-6 等）均指它。场景行为（何时保存、撤回语义、slot）分别见 [draw3-integration.md](draw3-integration.md)、[whiteboard.md](whiteboard.md)；运行时模型见 [runtime-and-rendering.md](../native/runtime-and-rendering.md)。
+本文是 Draw3 墨迹持久化的唯一权威合同，取代旧的 UInk 1.0 私有字段、整文件 SHA/回读、日索引、PPT 多轨索引与白板历史 JSON。来源任务：`.trellis/tasks/archive/2026-11/11-24-uink-1-1-adaptation/`（C1.4+C1.5）；规范副本见该任务 `research/uink-v11-spec.md`，下文规则编号（SAVE-10、CANVAS-8、NIB-6 等）均指它。场景行为（何时保存、撤回语义、slot）分别见 [draw3-integration.md](draw3-integration.md)、[whiteboard.md](whiteboard.md)；运行时模型见 [runtime-and-rendering.md](../native/runtime-and-rendering.md)。
 
 ## Scenario: 五层结构、写入格式与目录布局
 
