@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "字号修正契约与 Tests Required"}
+{"file": ".trellis/spec/native-desktop/settings-component-editor.md", "reason": "预览与真实主栏一致性"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "编码约定、BOM/CRLF"}
+{"file": ".trellis/tasks/11-26-bar-text-scale-anim-mismatch/research/root-cause-claude.md", "reason": "验收现象与根因"}

@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/native-desktop/rendering-and-ui.md", "reason": "主栏与控件静止字号及连续动画目标（2026-10-24）节：字号修正契约与测试要求"}
+{"file": ".trellis/spec/native-desktop/ui3-layers.md", "reason": "UI3 分层与模块边界"}
+{"file": ".trellis/spec/native-desktop/settings-component-editor.md", "reason": "组件页预览复刻实例与真实主栏共用 More 定位的契约"}
+{"file": ".trellis/spec/native-desktop/eraser-attributes.md", "reason": "属性面板开合姿态与 BarAttributePanelFrame"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 编码约定"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "ARM64 构建与 Win7 兼容"}
+{"file": ".trellis/tasks/11-26-bar-text-scale-anim-mismatch/research/root-cause-claude.md", "reason": "根因与证据链"}
+{"file": ".trellis/tasks/11-26-bar-text-scale-anim-mismatch/research/codex-sol-report.md", "reason": "Codex 独立调查原文"}
