@@ -653,6 +653,8 @@ namespace Inkeys::UI::Bar
 			std::uint64_t presentationGeneration = 0;
 			D2D1_RECT_F toolbar{}, parameters{}, colors{}, picker{}, palette{};
 			std::array<EraserSurfacePose, 4> poses{};
+			// 各层展开态（几何进度 1，含工作区 fit）倍率，只作字号取整目标；开合全程不变，文字与表面等比。
+			std::array<double, 4> fontTargetScales{1, 1, 1, 1};
 			std::array<double, 4> panelOpacity{};
 			std::array<PanelFrame,4> panelFrames{};
 			bool paletteLayer = false, sidesLayer = false, pickerLayer = false, pickerBelow = true;
@@ -1438,6 +1440,7 @@ namespace Inkeys::UI::Bar
 			const double anchorY = ((snapshot->canvasOriginY+anchor.y)/scale-toolbarY.val)/toolbarFit;
 			auto barFrame = ResolveBarAttributePanelFrame(toolbarMotion, {0, 0, toolbarWidth, toolbarHeight}, {anchorX, anchorY, anchorX, anchorY}, 60);
 			std::array<EraserSurfacePose, 4> poses{};
+			std::array<double, 4> fontTargetScales{1, 1, 1, 1};
 			poses[0] = FitEditorPose(ComposeEraserPose({toolbarFit, toolbarX.val, toolbarY.val}, barFrame.pose), {0, 0, toolbarWidth, toolbarHeight}, safeWork);
 			if (frozen)
 			{
@@ -1447,14 +1450,19 @@ namespace Inkeys::UI::Bar
 				std::scoped_lock lock(inputMutex); toolbarHoldX=poses[0].x*scale; toolbarHoldY=poses[0].y*scale;
 			}
 			const bool below = toolbarBelow;
-			const auto layerPose = [&](const BarAttributePanelMotion& motion, EraserAttributeRect panel, EraserAttributeRect parent,
-				double triggerX, double triggerY, bool preferBelow, bool& placedBelow)
+			const auto layerBase = [&](EraserAttributeRect panel, EraserAttributeRect parent, double triggerX, bool preferBelow, bool& placedBelow)
 			{
 				const double fit = (std::min)({1., safeWork.Width()/panel.Width(), safeWork.Height()/panel.Height()});
 				placedBelow = preferBelow;
 				double top = preferBelow ? parent.bottom+8 : parent.top-8-panel.Height()*fit;
 				if (top<safeWork.top || top+panel.Height()*fit>safeWork.bottom) { placedBelow = !preferBelow; top = placedBelow ? parent.bottom+8 : parent.top-8-panel.Height()*fit; }
-				auto base = FitEditorPose({fit, triggerX-panel.Width()*fit/2, top}, panel, safeWork);
+				return FitEditorPose({fit, triggerX-panel.Width()*fit/2, top}, panel, safeWork);
+			};
+			const auto layerPose = [&](const BarAttributePanelMotion& motion, EraserAttributeRect panel, EraserAttributeRect parent,
+				double triggerX, double triggerY, bool preferBelow, bool& placedBelow)
+			{
+				const double fit = (std::min)({1., safeWork.Width()/panel.Width(), safeWork.Height()/panel.Height()});
+				const auto base = layerBase(panel, parent, triggerX, preferBelow, placedBelow);
 				const double ax = (triggerX-base.x)/fit, ay = (triggerY-base.y)/fit;
 				const auto frame = ResolveBarAttributePanelFrame(motion, panel, {ax, ay, ax, ay}, 60);
 				return FitEditorPose(ComposeEraserPose(base, frame.pose), panel, safeWork);
@@ -1469,6 +1477,29 @@ namespace Inkeys::UI::Bar
 			const auto paletteRect = poses[2].Apply({0, 0, 215, 75});
 			if (colorPicker.Visible()) poses[3] = ResolveEditorPickerPose(colorPicker.Geometry(), safeWork, barRect, paletteRect,
 				poses[2].x+195*poses[2].scale, poses[2].y+55*poses[2].scale, layerBelow, below, pickerBelow);
+			// 字号取整目标取展开态链（几何进度 1，面板姿态为恒等）：工具栏按目标宽高的静止 fit，参数/色板以工具栏展开态为父级，
+			// 取色器以工具栏与色板展开态求空闲区域。不追当前回弹、紧凑倍率与收缩中的下层矩形，开合全程目标不变、文字与表面等比。
+			// 后续用户展开倍率须乘在各层展开态姿态上。
+			{
+				const double toolbarRestFit = (std::min)({1., available/(std::max)(1., targetWidth), available/(std::max)(1., targetHeight)});
+				const EraserAttributeRect restShell{0, 0, targetWidth, targetHeight};
+				auto toolbarExpanded = FitEditorPose(ComposeEraserPose({toolbarRestFit, toolbarX.val, toolbarY.val}, barFrame.expandedPose), restShell, safeWork);
+				if (frozen) { toolbarExpanded.x = poses[0].x; toolbarExpanded.y = poses[0].y; toolbarExpanded = FitEditorPose(toolbarExpanded, restShell, safeWork); }
+				fontTargetScales[0] = toolbarExpanded.scale;
+				const auto barExpanded = toolbarExpanded.Apply(restShell);
+				const auto expandedLayer = [&](const BarAttributePanelMotion& motion, EraserAttributeRect panel, unsigned trigger, bool& placedBelow)
+				{
+					const auto base = layerBase(panel, barExpanded, toolbarExpanded.x+targetX[trigger]*toolbarExpanded.scale, below, placedBelow);
+					return FitEditorPose(ComposeEraserPose(base, ResolveBarAttributePanelFrame(motion, panel, {0, 0, 0, 0}, 60).expandedPose), panel, safeWork);
+				};
+				bool sidesExpandedBelow = below, paletteExpandedBelow = below, pickerExpandedBelow = below;
+				fontTargetScales[1] = expandedLayer(sidesMotion, {0, 0, sidesPanelWidth, sidesPanelHeight}, SidesEntry, sidesExpandedBelow).scale;
+				const auto paletteExpanded = expandedLayer(paletteMotion, {0, 0, 215, 75}, Color, paletteExpandedBelow);
+				fontTargetScales[2] = paletteExpanded.scale;
+				if (colorPicker.Visible())
+					fontTargetScales[3] = ResolveEditorPickerPose(1.0, safeWork, barExpanded, paletteExpanded.Apply({0, 0, 215, 75}),
+						paletteExpanded.x+195*paletteExpanded.scale, paletteExpanded.y+55*paletteExpanded.scale, paletteExpandedBelow, below, pickerExpandedBelow).scale;
+			}
 			RECT nextBounds{};
 			std::array<RECT,4> panelVisualBounds{};
 			const auto include = [&](EraserAttributeRect rect)
@@ -1542,7 +1573,7 @@ namespace Inkeys::UI::Bar
 			next.paletteLayer = paletteMotion.Visible(); next.sidesLayer = sidesMotion.Visible(); next.pickerLayer = colorPicker.Visible();
 			next.panelOpacity = {toolbarMotion.Opacity(), sidesMotion.Opacity(), paletteMotion.Opacity(), colorPicker.Opacity()};
 			for (auto& pose : poses) { pose.x -= bounds.left/scale; pose.y -= bounds.top/scale; }
-			next.poses = poses;
+			next.poses = poses; next.fontTargetScales = fontTargetScales;
 			next.toolbar = EditorRect(poses[0].Apply({0, 0, toolbarWidth, toolbarHeight}));
 			if (next.sidesLayer) next.parameters = EditorRect(poses[1].Apply({0, 0, sidesPanelWidth, sidesPanelHeight}));
 			if (next.paletteLayer) next.colors = EditorRect(poses[2].Apply({0, 0, 215, 75}));
@@ -1884,6 +1915,8 @@ namespace Inkeys::UI::Bar
 			if (!dc) return;
 			renderer.SetFrameEdgeLightingAllowed(BarUiEdgeLightingEnabled);
 			renderer.SetFrameZoom(scale);
+			// 每帧重置字号目标变换；仍用立即落定上下文（不引入修正动画与续帧），各层绘制前再设展开态目标。
+			renderer.BeginFontFrame(std::chrono::steady_clock::now(), {0.0, 1.0, false, true}, scale);
 			if (candidate.input && !snapshot->drawingPreview) { auto coverage = *snapshot; coverage.handles = candidate.visualHandles; DrawEditorInputCoverage(renderer, dc, coverage, bounds, scale); }
 			if (candidate.paletteLayer || candidate.sidesLayer || candidate.pickerLayer)
 			{
@@ -2044,6 +2077,8 @@ namespace Inkeys::UI::Bar
 				renderer.PushPanelOpacity(dc, {0, 0, static_cast<FLOAT>(bounds.right-bounds.left), static_cast<FLOAT>(bounds.bottom-bounds.top)}, panels[panel].Opacity());
 				dc->SetTransform(D2D1::Matrix3x2F(static_cast<FLOAT>(pose.scale), 0, 0, static_cast<FLOAT>(pose.scale), static_cast<FLOAT>(pose.x*scale), static_cast<FLOAT>(pose.y*scale))*original);
 				renderer.SetFrameDiffuseMaskGeometryScale(1./(std::max)(.01, pose.scale));
+				// 宿主 DC 原始变换为单位矩阵，目标 Y 向量 {0, 展开态倍率} 即展开时的实际变换。
+				renderer.SetFontTargetScale(candidate.fontTargetScales[panel]);
 				if (panel != 3) panels[panel].DrawFrame(renderer, dc, {0, 0});
 				renderer.SetResidentContentOpacity(panel ? 1 : appliedContentOpacity);
 				if (!panel)
@@ -4025,6 +4060,104 @@ namespace Inkeys::UI::Bar
 			scene.Configure({}, work, {}); now += std::chrono::milliseconds(17); scene.Advance(now);
 			expect(scene.impl_->toolbarMotion.Active() && scene.impl_->toolbarMotion.TargetGeometry() == 0, "close uses panel motion to compact anchor"); settle();
 			expect(!scene.impl_->snapshot && !scene.impl_->initialized && !scene.Visible(), "close retires snapshot and layout after .24 second motion");
+		}
+		// 浮条文字字号取整目标取展开态：开合逐帧走生产呈现，文字按钮的修正目标全程不变，不随当前回弹/紧凑倍率逐帧取整。
+		{
+			++scenes;
+			const float scale = 1.25f;
+			const RECT work{0, 0, static_cast<LONG>(900*scale), static_cast<LONG>(700*scale)};
+			ToolSpec tool; tool.preset = PresetKind::RegularPolygon; tool.creationMode = CreationMode::CenterRadius; tool.sides = 5;
+			ObjectId id{}; id[0] = 9; ShapeStyle objectStyle; objectStyle.width = 4;
+			auto shape = MakePresetShape(tool, {0, 0}, {35, 25}, objectStyle, id);
+			expect(shape.has_value(), "font target fixture creates regular polygon");
+			if (shape)
+			{
+				shape->transform.dx = 400; shape->transform.dy = 300;
+				auto snapshot = std::make_shared<ShapeUiSnapshot>(); snapshot->object = *shape;
+				snapshot->identity.session = 19; snapshot->identity.objectId = id; snapshot->displayScale = scale;
+				snapshot->handles = BuildEditHandles(*shape, {scale}, &snapshot->frameRect);
+				GeometryResult geometry; BuildGeometry(*shape, geometry, {scale}); snapshot->bounds = geometry.bounds;
+				HostedShapeEditor scene;
+				auto sink = [](const UPDATELAYEREDWINDOWINFO&)->BOOL { return TRUE; };
+				std::vector<std::pair<unsigned, double>> targets;
+				std::array<unsigned, 2> movingSamples{}, sidesSamples{};
+				const auto frame = [&](const char* phase, size_t direction)
+				{
+					now += std::chrono::milliseconds(17); scene.Advance(now);
+					if (!scene.impl_->candidate.visible) return;
+					const double poseScale = scene.impl_->candidate.poses[0].scale;
+					const bool moving = std::abs(poseScale-scene.impl_->candidate.fontTargetScales[0])>.001;
+					expect(SUCCEEDED(scene.EnsureDeviceResources(RenderPipeline::GetDeviceEpoch())) && SUCCEEDED(scene.Present(sink)), "font target frame presents");
+					scene.CommitPresented();
+					bool sampled = false;
+					for (unsigned item : ToolbarItems)
+					{
+						if (!item || !scene.impl_->buttons[item]) continue;
+						const auto& word = scene.impl_->buttons[item]->name;
+						// 只采样本帧确实绘制过的文字（面板与文字可见），跳过修正类构造时的默认系数 1。
+						if (!word.enable.val || word.content.GetVal().empty() || word.pct.val<.05 || scene.impl_->candidate.panelOpacity[0]<.05) continue;
+						sampled = true;
+						const auto found = std::find_if(targets.begin(), targets.end(), [&](const auto& t) { return t.first == item; });
+						if (found == targets.end()) targets.emplace_back(item, word.fontCorrection.Target());
+						else expect(word.fontCorrection.Target() == found->second, phase);
+						// 边数按钮 13 DIP：静止目标即展开态 floor(T)/T，T = 13 × 显示倍率 × 工具栏展开态倍率。
+						if (item == SidesEntry)
+						{
+							if (moving) ++sidesSamples[direction];
+							const double t = static_cast<double>(word.size.tar)*scale*scene.impl_->candidate.fontTargetScales[0];
+							expect(std::abs(word.fontCorrection.Target()-std::floor(t)/t)<1e-9, "toolbar text rounds against the expanded floor(T)/T target");
+						}
+					}
+					if (sampled && moving) ++movingSamples[direction];
+				};
+				scene.Configure(snapshot, work, {});
+				for (int f = 0; f<35; ++f) frame("opening toolbar text keeps the expanded font rounding target", 0);
+				expect(std::abs(scene.impl_->candidate.poses[0].scale-scene.impl_->candidate.fontTargetScales[0])<1e-9, "settled toolbar pose equals its expanded font target scale");
+				scene.Configure({}, work, {});
+				for (int f = 0; f<35; ++f) frame("closing toolbar text keeps the expanded font rounding target", 1);
+				expect(!targets.empty() && movingSamples[0]>2 && movingSamples[1]>2 && sidesSamples[0]>2 && sidesSamples[1]>2, "font target fixture samples drawn toolbar and sides text while opening and while closing");
+			}
+		}
+		// 窄工作区取色器走回退适配：整体收起时下层同步收缩，取色器展开态字号倍率仍按各层展开态求得，全程不变且等于静止实际倍率。
+		{
+			++scenes;
+			bool exercised = false;
+			for (const LONG width : {LONG{340}, LONG{380}, LONG{420}, LONG{470}})
+			{
+				const RECT work{0, 0, width, 430};
+				ToolSpec tool; tool.preset = PresetKind::RegularPolygon; tool.creationMode = CreationMode::CenterRadius; tool.sides = 5;
+				ObjectId id{}; id[0] = 10; ShapeStyle objectStyle; objectStyle.width = 4;
+				auto shape = MakePresetShape(tool, {0, 0}, {30, 20}, objectStyle, id);
+				if (!shape) { expect(false, "picker fallback fixture creates regular polygon"); break; }
+				shape->transform.dx = static_cast<float>(width/2); shape->transform.dy = 215;
+				auto snapshot = std::make_shared<ShapeUiSnapshot>(); snapshot->object = *shape;
+				snapshot->identity.session = 21; snapshot->identity.objectId = id; snapshot->displayScale = 1;
+				snapshot->handles = BuildEditHandles(*shape, {1}, &snapshot->frameRect);
+				GeometryResult geometry; BuildGeometry(*shape, geometry, {1}); snapshot->bounds = geometry.bounds;
+				HostedShapeEditor scene;
+				const auto advance = [&](int frames) { for (int f = 0; f<frames; ++f) { now += std::chrono::milliseconds(17); scene.Advance(now); } };
+				scene.Configure(snapshot, work, {}); advance(35);
+				scene.impl_->colorOpen = true; scene.impl_->pickerOpen = true; scene.Configure(snapshot, work, {}); advance(40);
+				const auto& rest = scene.impl_->candidate;
+				if (!rest.pickerLayer) continue;
+				const double restScale = rest.fontTargetScales[3];
+				expect(std::abs(restScale-rest.poses[3].scale)<1e-9, "resting picker font target equals its actual fitted scale");
+				if (!(restScale>0 && restScale<1-1e-6)) continue;
+				exercised = true;
+				const double restPalette = rest.poses[2].scale;
+				unsigned shrinkingFrames = 0;
+				scene.Configure({}, work, {});
+				for (int f = 0; f<35; ++f)
+				{
+					advance(1);
+					if (!scene.impl_->candidate.pickerLayer) continue;
+					if (scene.impl_->candidate.poses[2].scale<restPalette-1e-6) ++shrinkingFrames;
+					expect(scene.impl_->candidate.fontTargetScales[3] == restScale, "fitted picker keeps its expanded font target while lower layers shrink on close");
+				}
+				expect(shrinkingFrames>0, "picker fallback fixture samples frames where the palette shrinks while the picker is visible");
+				break;
+			}
+			expect(exercised, "picker fallback font fixture reaches a fitted picker scale below 1");
 		}
 		// 高频拖动：真实Bridge对同一手势预览latest-wins，终结意图在队列拥塞时仍按序送达。
 		{
