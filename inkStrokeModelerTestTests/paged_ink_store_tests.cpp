@@ -531,7 +531,207 @@ namespace
 		return std::all_of(text.begin(), text.end(), [](wchar_t c) { return c >= L'0' && c <= L'9'; });
 	}
 
-	void TestAppendReplaceAndLoad(TestState& test, const TempDirectory& root)
+		// ---- C1.6b 逐笔续接（Append） ----
+	struct RecoveryHookLog
+	{
+		int files = 0;
+		int pendings = 0;
+		int clears = 0;
+		uint8_t lastKind = 0xff;
+		uint64_t lastStart = 0;
+		bool failPending = false; // 模拟会话记录写盘失败
+		bool failClear = false;
+
+		static bool File(void* context, const std::wstring&) noexcept { ++static_cast<RecoveryHookLog*>(context)->files; return true; }
+		static bool Pending(void* context, const std::wstring&, uint64_t start, uint8_t kind) noexcept
+		{
+			auto& self = *static_cast<RecoveryHookLog*>(context);
+			++self.pendings;
+			self.lastKind = kind;
+			self.lastStart = start;
+			return !self.failPending;
+		}
+		static bool Clear(void* context, const std::wstring&) noexcept
+		{
+			auto& self = *static_cast<RecoveryHookLog*>(context);
+			++self.clears;
+			return !self.failClear;
+		}
+	};
+
+	PagedInkSaveRequest AppendRequest(uint8_t id, uint32_t pageIndex, Draw3UInkStrokeSnapshot stroke,
+		uint64_t base, uint64_t revision)
+	{
+		Draw3UInkCanvasSnapshot page;
+		page.pageGuid = Guid(id);
+		page.pageIndex = pageIndex;
+		page.pageNumber = pageIndex + 1;
+		page.strokes.push_back(std::move(stroke));
+		PagedInkSaveRequest request{ { page.pageGuid, revision, kSlot, 0, std::nullopt, PagedInkRequestKind::Append },
+			std::move(page), std::nullopt };
+		request.baseRevision = base;
+		return request;
+	}
+
+	std::optional<PagedInkCompletion> SaveAndTake(PagedInkStore& store, PagedInkSaveRequest request)
+	{
+		if (store.Save(std::move(request)) != PagedInkAdmission::Accepted) return std::nullopt;
+		store.Drain();
+		return store.Take();
+	}
+
+	std::optional<Draw3UInkCanvasSnapshot> LoadSnapshot(PagedInkStore& store, uint8_t id, uint64_t generation)
+	{
+		if (store.Load({ Guid(id), kSlot, generation }) != PagedInkAdmission::Accepted) return std::nullopt;
+		store.Drain();
+		auto loaded = store.Take();
+		if (!loaded || loaded->result != PagedInkResult::Succeeded || !loaded->snapshot) return std::nullopt;
+		return std::move(loaded->snapshot);
+	}
+
+	void TestAppendStrokeContinuesPage(TestState& test, const TempDirectory& root)
+	{
+		WakeCounter wake;
+		RecoveryHookLog hooks;
+		auto options = Options(root, wake);
+		options.recoveryContext = &hooks;
+		options.registerRecoveryFile = RecoveryHookLog::File;
+		options.registerRecoveryPending = RecoveryHookLog::Pending;
+		options.clearRecoveryPending = RecoveryHookLog::Clear;
+		PagedInkStore store(options);
+
+		// 新页：第一笔建文件（发布前登记候选路径，建好后登记文件身份）。
+		auto first = SaveAndTake(store, AppendRequest(1, 0, Pen(1), 0, 1));
+		PAGED_REQUIRE(first && first->result == PagedInkResult::Succeeded && first->confirmedRevision == 1);
+		PAGED_CHECK(hooks.files == 2 && hooks.pendings == 0);
+		// 续接到最后一个 Canvas：单块不登记。
+		auto second = SaveAndTake(store, AppendRequest(1, 0, Pen(20), 1, 2));
+		PAGED_REQUIRE(second && second->result == PagedInkResult::Succeeded && second->confirmedRevision == 2);
+		PAGED_CHECK(hooks.pendings == 0);
+		auto loaded = LoadSnapshot(store, 1, 11);
+		PAGED_REQUIRE(loaded && loaded->strokes.size() == 2);
+		PAGED_CHECK(HasPen(loaded->strokes[0], 1) && HasPen(loaded->strokes[1], 20));
+		PAGED_CHECK(loaded->strokes[0].undoId != loaded->strokes[1].undoId);
+
+		// 基准失配：前面有写入没确认，不续接。
+		auto mismatch = SaveAndTake(store, AppendRequest(1, 0, Pen(30), 5, 6));
+		PAGED_REQUIRE(mismatch && mismatch->result != PagedInkResult::Succeeded);
+		PAGED_CHECK(mismatch->error == PagedInkError::AppendBaseMismatch);
+
+		// 第二页成为最后一个 Canvas；回到第一页落笔时先搬页（登记 Relocate）再续接。
+		auto other = SaveAndTake(store, AppendRequest(2, 1, Pen(40), 0, 1));
+		PAGED_REQUIRE(other && other->result == PagedInkResult::Succeeded);
+		auto back = SaveAndTake(store, AppendRequest(1, 0, Pen(50), 2, 3));
+		PAGED_REQUIRE(back && back->result == PagedInkResult::Succeeded && back->confirmedRevision == 3);
+		PAGED_CHECK(hooks.pendings == 2 && hooks.lastKind == 2 && hooks.clears == 2); // 第二页 AppendPage + 搬页
+		loaded = LoadSnapshot(store, 1, 12);
+		PAGED_REQUIRE(loaded && loaded->strokes.size() == 3);
+		PAGED_CHECK(HasPen(loaded->strokes[2], 50));
+		const auto beforeCompact = store.FileState();
+		PAGED_CHECK(!beforeCompact.failed);
+
+		// 续接之后的整页版本照常替换；整页准入不越过 Append 合并。
+		auto page = Page(1, 0, 1);
+		page.strokes.push_back(Pen(20, 1));
+		page.strokes.push_back(Pen(50, 2));
+		page.strokes.push_back(Pen(60, 3));
+		auto full = SaveAndTake(store, SavePage(page, 4));
+		PAGED_REQUIRE(full && full->result == PagedInkResult::Succeeded && full->confirmedRevision == 4);
+		auto afterFull = SaveAndTake(store, AppendRequest(1, 0, Pen(70), 4, 5));
+		PAGED_REQUIRE(afterFull && afterFull->result == PagedInkResult::Succeeded);
+
+		// 正序整理：不受空闲阈值限制，整理后登记新的文件身份。
+		const int filesBefore = hooks.files;
+		store.RequestOrderedCompact();
+		store.Drain();
+		PAGED_CHECK(hooks.files == filesBefore + 1);
+		const auto wire = ReadUInkStoreFile(store.FilePath());
+		PAGED_REQUIRE(wire.status == UInkReadStatus::Complete && wire.document && wire.document->canvases.size() == 2);
+		loaded = LoadSnapshot(store, 1, 13);
+		PAGED_REQUIRE(loaded && loaded->strokes.size() == 5);
+		PAGED_CHECK(HasPen(loaded->strokes[4], 70));
+
+		// 准入校验：目标修订不晚于基准、含多笔或带 Clear 操作都拒绝。
+		PAGED_CHECK(store.Save(AppendRequest(1, 0, Pen(1), 5, 5)) == PagedInkAdmission::InvalidRequest);
+		auto twoStrokes = AppendRequest(1, 0, Pen(1), 5, 6);
+		twoStrokes.snapshot.operations.push_back(Draw3UInkClearSnapshot{});
+		PAGED_CHECK(store.Save(std::move(twoStrokes)) == PagedInkAdmission::InvalidRequest);
+		(void)TakeAll(store);
+	}
+
+	// 写前登记失败拒绝写入；清除失败后，下一次单块追加先重新登记，覆盖盘上残留的旧起点。
+	void TestAppendRecoveryRegistrationFailures(TestState& test, const TempDirectory& root)
+	{
+		WakeCounter wake;
+		RecoveryHookLog hooks;
+		auto options = Options(root, wake);
+		options.recoveryContext = &hooks;
+		options.registerRecoveryFile = RecoveryHookLog::File;
+		options.registerRecoveryPending = RecoveryHookLog::Pending;
+		options.clearRecoveryPending = RecoveryHookLog::Clear;
+		PagedInkStore store(options);
+		PAGED_REQUIRE(SaveAndTake(store, AppendRequest(1, 0, Pen(1), 0, 1)));
+		PAGED_REQUIRE(SaveAndTake(store, AppendRequest(2, 1, Pen(2), 0, 1)));
+
+		// 回翻搬页需要登记，登记失败：不写，修订不推进。
+		hooks.failPending = true;
+		auto refused = SaveAndTake(store, AppendRequest(1, 0, Pen(3), 1, 2));
+		PAGED_REQUIRE(refused && refused->result != PagedInkResult::Succeeded);
+		PAGED_CHECK(refused->confirmedRevision != 2 && !store.FileState().failed);
+		hooks.failPending = false;
+
+		// 搬页成功但清除失败：之后续接最后一个 Canvas 的单块也须先登记。
+		hooks.failClear = true;
+		auto moved = SaveAndTake(store, AppendRequest(1, 0, Pen(3), 1, 2));
+		PAGED_REQUIRE(moved && moved->result == PagedInkResult::Succeeded);
+		hooks.failClear = false;
+		const int pendingsBefore = hooks.pendings;
+		const int clearsBefore = hooks.clears;
+		auto single = SaveAndTake(store, AppendRequest(1, 0, Pen(4), 2, 3));
+		PAGED_REQUIRE(single && single->result == PagedInkResult::Succeeded);
+		PAGED_CHECK(hooks.pendings == pendingsBefore + 1 && hooks.clears == clearsBefore + 1);
+		// 残留已清掉：再续接一笔不再登记。
+		auto next = SaveAndTake(store, AppendRequest(1, 0, Pen(5), 3, 4));
+		PAGED_REQUIRE(next && next->result == PagedInkResult::Succeeded);
+		PAGED_CHECK(hooks.pendings == pendingsBefore + 1);
+		auto loaded = LoadSnapshot(store, 1, 31);
+		PAGED_REQUIRE(loaded && loaded->strokes.size() == 4);
+		(void)TakeAll(store);
+	}
+
+	void TestAdoptRecoveredPages(TestState& test, const TempDirectory& root)
+	{
+		WakeCounter wake;
+		std::wstring oldPath;
+		{
+			PagedInkStore old(Options(root, wake));
+			auto first = Page(1, 0, 1);
+			first.strokes.push_back(Pen(20, 1));
+			PAGED_REQUIRE(SaveAndTake(old, SavePage(first, 1)) && old.FilePath().size());
+			PAGED_REQUIRE(SaveAndTake(old, SavePage(Page(2, 3, 40), 1)));
+			oldPath = old.FilePath();
+		}
+		const auto wire = ReadUInkStoreFile(oldPath);
+		PAGED_REQUIRE(wire.status == UInkReadStatus::Complete && wire.document && wire.document->canvases.size() == 2);
+
+		// 新进程：worker 先接管旧页（重新编码写进新文件），之后的读取如同本进程写过。
+		auto options = Options(root, wake);
+		options.adoptPages = wire.document->canvases;
+		PagedInkStore adopted(options);
+		auto loaded = LoadSnapshot(adopted, 1, 21);
+		PAGED_REQUIRE(loaded && loaded->strokes.size() == 2);
+		PAGED_CHECK(HasPen(loaded->strokes[0], 1) && HasPen(loaded->strokes[1], 20));
+		auto other = LoadSnapshot(adopted, 2, 22);
+		PAGED_REQUIRE(other && other->pageIndex == 3 && other->strokes.size() == 1);
+		PAGED_CHECK(!adopted.FileState().failed && !adopted.FilePath().empty() && adopted.FilePath() != oldPath);
+		// 接管的页以修订 1 确认：基准 1 的续接可以直接接上。
+		auto append = SaveAndTake(adopted, AppendRequest(1, 0, Pen(60), 1, 2));
+		PAGED_REQUIRE(append && append->result == PagedInkResult::Succeeded);
+		loaded = LoadSnapshot(adopted, 1, 23);
+		PAGED_REQUIRE(loaded && loaded->strokes.size() == 3);
+	}
+
+void TestAppendReplaceAndLoad(TestState& test, const TempDirectory& root)
 	{
 		WakeCounter wake;
 		PagedInkStore store(Options(root, wake));
@@ -3621,6 +3821,9 @@ int RunPagedInkStoreTests()
 {
 	constexpr std::pair<const char*, void (*)(TestState&, const TempDirectory&)> cases[] = {
 		{ "AppendReplaceAndLoad", TestAppendReplaceAndLoad },
+		{ "AppendStrokeContinuesPage", TestAppendStrokeContinuesPage },
+		{ "AdoptRecoveredPages", TestAdoptRecoveredPages },
+		{ "AppendRecoveryRegistrationFailures", TestAppendRecoveryRegistrationFailures },
 		{ "ClearMemoryAndDiskIntervals", TestClearMemoryAndDiskIntervals },
 		{ "UInkLogThreshold", TestUInkLogThreshold },
 		{ "BoundaryMismatch", TestBoundaryMismatch },

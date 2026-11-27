@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -72,6 +72,8 @@ namespace Inkeys::UI::MessageBox
 			const wchar_t* title = request.title ? request.title : L"";
 			const wchar_t* body = request.body ? request.body : L"";
 			const UINT flags = Detail::BuildFallbackFlags(request);
+			// 系统框即将显示：同样视为可交互，调用方此后只等待用户。
+			if (request.interactiveEvent) SetEvent(request.interactiveEvent);
 #ifdef INKEYS_MESSAGE_BOX_TESTING
 			if (testAutomation.systemFallbackCallback)
 				return testAutomation.systemFallbackCallback(request, owner, flags,
@@ -246,6 +248,7 @@ namespace Inkeys::UI::MessageBox
 				output.ownerlessTopmostAtCreation = request.ownerlessTopmostAtCreation;
 				output.fallback = request.fallback;
 				output.cancellation = request.cancellation;
+				output.interactiveEvent = request.interactiveEvent;
 #ifdef INKEYS_MESSAGE_BOX_TESTING
 				output.automation = testAutomation;
 #endif

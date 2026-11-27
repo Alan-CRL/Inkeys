@@ -552,6 +552,9 @@
     <ClInclude Include="Inkeys\Helper\FailedCleanupDeadline.h">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClInclude>
+    <ClInclude Include="Inkeys\Helper\Helper.Fatal.h">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClInclude>
     <ClInclude Include="Inkeys\Helper\Ui3PresentationFixtureAuth.h">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClInclude>
@@ -739,6 +742,9 @@
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClInclude>
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.RecoverySession.h">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClInclude>
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Shortcut.h">
@@ -2132,6 +2138,12 @@
     <ClCompile Include="Inkeys\Helper\FailedCleanupDeadline.cpp">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.Fatal.cpp">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Helper\Helper.Fatal.State.cpp">
+      <Filter>Modules\Inkeys\Helper</Filter>
+    </ClCompile>
     <ClCompile Include="Inkeys\Helper\Ui3PresentationFixtureAuth.cpp">
       <Filter>Modules\Inkeys\Helper</Filter>
     </ClCompile>
@@ -2598,6 +2610,9 @@
       <Filter>Modules\Inkeys\Business</Filter>
     </ClCompile>
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Product.cpp">
+      <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
+    </ClCompile>
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RecoverySession.cpp">
       <Filter>Modules\Inkeys\Drawing\Draw3</Filter>
     </ClCompile>
   </ItemGroup>

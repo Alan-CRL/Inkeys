@@ -691,7 +691,9 @@ namespace
 		state.whiteboardStyle = whiteboardStyleToken;
 		state.selectionMode =
 			IsComputerInteractionMode(stateMode.StateModeSelect);
-		state.autoSaveEnabled = Inkeys::config.Drawing.AutoSave.Enable;
+		// 桌面画布始终保存（C1.6b 去掉了开关）；Bridge 字段保留给隐藏测试关闭持久化。
+		state.autoSaveEnabled = true;
+		state.crashRecoverInk = Inkeys::config.Application.CrashRecoverInk;
 		Inkeys::Drawing::Draw3::PublishProductState(state);
 		Inkeys::Drawing::Draw3::ProductHost().SetUlwMultiStepCommitEnabled(
 			Inkeys::config.Experimental.Inkeys3.Draw3.EnableUlwMultiStepCommit.load());
@@ -2556,6 +2558,18 @@ bool ChangeStateModeToPen()
 	return true;
 }
 
+bool ChangeStateModeToPenIfIdle()
+{
+	{
+		std::scoped_lock lock(stateModeTransitionMutex);
+		if (stateMode.StateModeSelect != StateModeSelectEnum::IdtSelection &&
+			stateMode.StateModeSelect != StateModeSelectEnum::IdtClickThrough) return false;
+		ApplyPenModeTransitionLocked();
+	}
+	SyncDraw3State();
+	return true;
+}
+
 bool PenToolSelectionWouldChange(PenToolSelectionEnum tool)
 {
 	PenModeSelectEnum penMode = PenModeSelectEnum::IdtPenSoftPen;
@@ -3318,6 +3332,7 @@ int RunStateModeProductionTest() noexcept
 				a.shapeTool == b.shapeTool && a.shapeStyle == b.shapeStyle &&
 				a.paintDevice == b.paintDevice && a.eraserInputs == b.eraserInputs && a.cursorSettings == b.cursorSettings &&
 				a.selectionMode == b.selectionMode && a.autoSaveEnabled == b.autoSaveEnabled &&
+				a.crashRecoverInk == b.crashRecoverInk &&
 				a.page == b.page && a.hasPage == b.hasPage && a.workspace == b.workspace &&
 				a.presentationTarget == b.presentationTarget;
 		};

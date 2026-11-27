@@ -470,6 +470,7 @@ namespace draw3::uink
 					range.nextContentId = uint64_t{ last.contentId } + 1;
 					range.lastUndoId = last.undoId;
 				}, canvas.content.back());
+				range.lastIsClear = std::holds_alternative<UInkClear>(canvas.content.back());
 			}
 			return range;
 		}
@@ -480,6 +481,7 @@ namespace draw3::uink
 			directory.lastPageGuid = guid;
 			directory.nextContentId = range.nextContentId;
 			directory.lastUndoId = range.lastUndoId;
+			directory.lastIsClear = range.lastIsClear;
 		}
 
 		bool PageOrder(uint32_t leftIndex, uint64_t leftSequence,
@@ -802,6 +804,188 @@ namespace draw3::uink
 		}
 	}
 
+	namespace
+	{
+		// 在文件末尾写入并 Flush；失败时截断回写入前末尾，截断失败则标记尾部未确认（与 AppendPage 同一协议）。
+		UInkStoreWriteResult WriteTailWithRollback(HANDLE file, uint64_t offset, std::span<const std::byte> bytes,
+			const char* writeStage, const char* flushStage, uint64_t& fileBytes, bool& tailUnconfirmed) noexcept
+		{
+			if (const DWORD error = Seek(file, offset))
+				return WriteFailure(UInkDiagnosticCode::IoError, "tail.seek", error, offset);
+			DWORD error = WriteExact(file, bytes);
+			auto code = UInkDiagnosticCode::WriteFailed;
+			if (error == ERROR_SUCCESS)
+			{
+				code = UInkDiagnosticCode::FlushFailed;
+				error = Flush(file);
+			}
+			if (error == ERROR_SUCCESS) return { true };
+			auto failure = WriteFailure(code, writeStage, error, offset);
+			if (code == UInkDiagnosticCode::FlushFailed) failure.failureStage = flushStage;
+			const DWORD truncateError = Truncate(file, offset);
+			const DWORD flushError = truncateError == ERROR_SUCCESS ? Flush(file) : ERROR_SUCCESS;
+			if (truncateError != ERROR_SUCCESS || flushError != ERROR_SUCCESS)
+			{
+				tailUnconfirmed = true;
+				failure.rollbackStage = truncateError ? "tail.truncate" : "tail.rollbackFlush";
+				failure.rollbackSystemError = truncateError ? truncateError : flushError;
+				AddWriteDiagnostic(failure, UInkDiagnosticCode::RollbackFailed,
+					failure.rollbackStage, failure.rollbackSystemError, offset);
+				if (const DWORD sizeError = FileSize(file, fileBytes))
+					AddWriteDiagnostic(failure, UInkDiagnosticCode::IoError,
+						"tail.sizeAfterRollback", sizeError, offset);
+			}
+			return failure;
+		}
+	}
+
+	UInkStoreWriteResult UInkPagedFileWriter::AppendContent(const UInkCanvas& pageIdentity,
+		std::span<const UInkContent> blocks) noexcept
+	{
+		auto& state = *impl_;
+		if (IsSealed()) return WriteFailure(UInkDiagnosticCode::IoError, "writer.sealed", ERROR_INVALID_HANDLE);
+		try
+		{
+			if (!pageIdentity.content.empty() || blocks.empty())
+				return WriteFailure(UInkDiagnosticCode::InvalidFieldValue, "content.request");
+			if (pageIdentity.layerIndex != 0 || pageIdentity.workspaceGuid != state.workspaceGuid ||
+				pageIdentity.deviceGuid != state.deviceGuid)
+				return WriteFailure(UInkDiagnosticCode::InvalidFieldValue, "canvas.identity");
+			if (state.requiresSlideBinding && !HasValidUInkPresentationBinding(pageIdentity))
+				return WriteFailure(UInkDiagnosticCode::InvalidFieldValue, "canvas.slideId");
+			// SAVE-7：只能续接文件中最后一个 Canvas；它在物理上也必须位于文件末尾。
+			const auto page = state.directory.pages.find(pageIdentity.pageGuid.Bytes());
+			if (page == state.directory.pages.end() || !state.directory.lastPageGuid ||
+				*state.directory.lastPageGuid != pageIdentity.pageGuid ||
+				page->second.offset + page->second.length != state.fileBytes ||
+				page->second.pageIndex != pageIdentity.pageIndex)
+				return WriteFailure(UInkDiagnosticCode::InvalidObjectOrder, "content.notLastCanvas");
+			UInkPageRange& range = page->second;
+
+			UInkReadLimits limits;
+			limits.maxFileBytes = kUInkStoreMaxPageBytes;
+			auto encoded = EncodeUInkContentBlocks(blocks, range.nextContentId, range.lastUndoId,
+				range.lastIsClear, limits);
+			if (encoded.status != UInkEncodeStatus::Success) return EncodeFailure(encoded, "content.encode");
+			if (encoded.bytes.size() > kUInkStoreMaxPageBytes - (std::min)(range.length, kUInkStoreMaxPageBytes))
+				return WriteFailure(UInkDiagnosticCode::LimitExceeded, "page.bytes");
+
+			// 写前自检：用同页身份的空 Canvas 加新块在内存中解码一次（解码器会重排续接编号，只记 Warning），
+			// 保证写得进去就读得回来。
+			auto probe = EncodeStorePage(pageIdentity, state.directory.context);
+			if (probe.status != UInkEncodeStatus::Success) return EncodeFailure(probe, "content.encode_probe");
+			probe.bytes.insert(probe.bytes.end(), encoded.bytes.begin(), encoded.bytes.end());
+			uint64_t canvasCount = 0;
+			auto decoded = DecodeUInkStream(probe.bytes, UInkReadLimits{}, state.directory.context,
+				state.fileBytes, canvasCount);
+			if (decoded.status != UInkReadStatus::Complete || !decoded.document || canvasCount != 1 ||
+				decoded.document->canvases.size() != 1 ||
+				decoded.document->canvases.front().content.size() != blocks.size() ||
+				decoded.provenance.containsInvalidCompleteBlocks)
+			{
+				UInkStoreWriteResult failure;
+				failure.failureStage = "content.decode";
+				failure.diagnostics = std::move(decoded.diagnostics);
+				AddWriteDiagnostic(failure, UInkDiagnosticCode::SelfValidationFailed,
+					failure.failureStage, ERROR_SUCCESS, state.fileBytes);
+				return failure;
+			}
+
+			const uint64_t offset = state.fileBytes;
+			auto written = WriteTailWithRollback(state.file.Get(), offset, encoded.bytes,
+				"content.write", "content.flush", state.fileBytes, state.tailUnconfirmed);
+			if (!written.success)
+			{
+				if (state.tailUnconfirmed) Close();
+				return written;
+			}
+
+			range.length += encoded.bytes.size();
+			range.nextContentId += blocks.size();
+			std::visit([&](const auto& last) { range.lastUndoId = last.undoId; }, blocks.back());
+			range.lastIsClear = std::holds_alternative<UInkClear>(blocks.back());
+			SetLastPage(state.directory, pageIdentity.pageGuid, range);
+			state.fileBytes += encoded.bytes.size();
+			return { true };
+		}
+		catch (const std::bad_alloc&)
+		{
+			return WriteFailure(UInkDiagnosticCode::LimitExceeded, "allocation", ERROR_NOT_ENOUGH_MEMORY);
+		}
+		catch (...)
+		{
+			return WriteFailure(UInkDiagnosticCode::WriteFailed, "content");
+		}
+	}
+
+	UInkStoreWriteResult UInkPagedFileWriter::RelocatePage(const UInkGuid& pageGuid) noexcept
+	{
+		auto& state = *impl_;
+		if (IsSealed()) return WriteFailure(UInkDiagnosticCode::IoError, "writer.sealed", ERROR_INVALID_HANDLE);
+		try
+		{
+			const auto page = state.directory.pages.find(pageGuid.Bytes());
+			if (page == state.directory.pages.end())
+				return WriteFailure(UInkDiagnosticCode::InvalidFieldValue, "relocate.unknownPage");
+			UInkPageRange& range = page->second;
+			if (state.directory.lastPageGuid && *state.directory.lastPageGuid == pageGuid &&
+				range.offset + range.length == state.fileBytes) return { true };
+			if (range.length == 0 || range.length > kUInkStoreMaxPageBytes ||
+				range.offset > state.fileBytes || range.length > state.fileBytes - range.offset)
+				return WriteFailure(UInkDiagnosticCode::LimitExceeded, "relocate.range");
+
+			// 读写共用一个句柄，但每次读、写前都显式定位，互不依赖文件位置（不能复用 CopyRange）。
+			const HANDLE file = state.file.Get();
+			const uint64_t target = state.fileBytes;
+			std::array<std::byte, 64 * 1024> buffer;
+			uint64_t copied = 0;
+			DWORD error = ERROR_SUCCESS;
+			const char* stage = nullptr;
+			while (copied < range.length && error == ERROR_SUCCESS)
+			{
+				const auto size = static_cast<size_t>((std::min)(range.length - copied, uint64_t{ buffer.size() }));
+				const auto chunk = std::span(buffer).first(size);
+				if ((error = Seek(file, range.offset + copied)) != ERROR_SUCCESS) { stage = "relocate.seekSource"; break; }
+				if ((error = ReadExact(file, chunk)) != ERROR_SUCCESS) { stage = "relocate.read"; break; }
+				if ((error = Seek(file, target + copied)) != ERROR_SUCCESS) { stage = "relocate.seekTarget"; break; }
+				if ((error = WriteExact(file, chunk)) != ERROR_SUCCESS) { stage = "relocate.write"; break; }
+				copied += size;
+			}
+			if (error == ERROR_SUCCESS && (error = Flush(file)) != ERROR_SUCCESS) stage = "relocate.flush";
+			if (error != ERROR_SUCCESS)
+			{
+				auto failure = WriteFailure(UInkDiagnosticCode::WriteFailed, stage, error, target);
+				const DWORD truncateError = Truncate(file, target);
+				const DWORD flushError = truncateError == ERROR_SUCCESS ? Flush(file) : ERROR_SUCCESS;
+				if (truncateError != ERROR_SUCCESS || flushError != ERROR_SUCCESS)
+				{
+					state.tailUnconfirmed = true;
+					failure.rollbackStage = truncateError ? "relocate.truncate" : "relocate.rollbackFlush";
+					failure.rollbackSystemError = truncateError ? truncateError : flushError;
+					AddWriteDiagnostic(failure, UInkDiagnosticCode::RollbackFailed,
+						failure.rollbackStage, failure.rollbackSystemError, target);
+					Close();
+				}
+				return failure;
+			}
+
+			state.directory.supersededBytes += range.length;
+			range.offset = target;
+			range.writeSequence = state.nextSequence++;
+			SetLastPage(state.directory, pageGuid, range);
+			state.fileBytes = target + range.length;
+			return { true };
+		}
+		catch (const std::bad_alloc&)
+		{
+			return WriteFailure(UInkDiagnosticCode::LimitExceeded, "allocation", ERROR_NOT_ENOUGH_MEMORY);
+		}
+		catch (...)
+		{
+			return WriteFailure(UInkDiagnosticCode::WriteFailed, "relocate");
+		}
+	}
+
 	UInkStoreCompactResult UInkPagedFileWriter::Compact() noexcept
 	{
 		auto& state = *impl_;
@@ -890,6 +1074,7 @@ namespace draw3::uink
 			state.directory.lastPageGuid = next.lastPageGuid;
 			state.directory.nextContentId = next.nextContentId;
 			state.directory.lastUndoId = next.lastUndoId;
+			state.directory.lastIsClear = next.lastIsClear;
 			state.header = header;
 			state.headerLength = prefix.bytes.size();
 			state.fileBytes = offset;
@@ -1005,6 +1190,54 @@ namespace draw3::uink
 			// 报告解码器识别到的 Canvas 数（含字段无效被丢弃的），调用方据此区分结构错误与单项损坏。
 			if (canvasCountBeforeDeduplication)
 				*canvasCountBeforeDeduplication = recognizedCanvases;
+			KeepLatestPages(result.document->canvases);
+			return result;
+		}
+		catch (const std::bad_alloc&)
+		{
+			FailRead(result, facts, UInkReadStatus::LimitExceeded, UInkDiagnosticCode::LimitExceeded,
+				"allocation", limits, ERROR_NOT_ENOUGH_MEMORY);
+			return result;
+		}
+		catch (...)
+		{
+			FailRead(result, facts, UInkReadStatus::IoError, UInkDiagnosticCode::DecodeFailed, "file.read", limits);
+			return result;
+		}
+	}
+
+	UInkReadResult ReadUInkStoreFilePrefix(const std::wstring& path, uint64_t prefixBytes,
+		const UInkReadLimits& limits, UInkStoreReadFacts* facts) noexcept
+	{
+		if (facts) *facts = {};
+		UInkReadResult result;
+		try
+		{
+			result.sourcePath = path;
+			WIN32_FILE_ATTRIBUTE_DATA attributes{};
+			if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attributes))
+			{
+				FailRead(result, facts, UInkReadStatus::IoError, UInkDiagnosticCode::IoError,
+					"file.attributes", limits, GetLastError());
+				return result;
+			}
+			const uint64_t fileSize = (static_cast<uint64_t>(attributes.nFileSizeHigh) << 32) | attributes.nFileSizeLow;
+			UInkPageRange prefix{};
+			prefix.length = (std::min)(prefixBytes, fileSize);
+			std::vector<std::byte> bytes;
+			// 文件仍可能在读之间被截短：ReadRange 再次核对实际长度，越界按 I/O 失败处理。
+			if (!ReadRange(path, &prefix, (std::min)(limits.maxFileBytes, UInkReadLimits{}.maxFileBytes),
+				limits, bytes, result, facts)) return result;
+			result = DecodeUInkStream(bytes, limits);
+			result.sourcePath = path;
+			if (!result.document) return result;
+			if (result.document->canvases.empty())
+			{
+				const auto status = result.status == UInkReadStatus::Complete ?
+					UInkReadStatus::RecoveredInvalidTail : result.status;
+				FailRead(result, facts, status, UInkDiagnosticCode::InvalidObjectOrder, "file.canvas", limits);
+				return result;
+			}
 			KeepLatestPages(result.document->canvases);
 			return result;
 		}

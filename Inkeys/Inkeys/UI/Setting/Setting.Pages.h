@@ -357,6 +357,8 @@ namespace Inkeys::UI::Setting::Design
 		// 日志与配置·日志：输出等级 0 调试..4 关闭；清理时长单位天，大小上限单位 MB。
 		int logThreshold = 1;
 		LogLimitDraft logRetention, logMaxSize;
+		// 教学安全模式：崩溃重启后自动恢复墨迹。放在末尾，避免打乱上方字段的位置初始化。
+		bool crashRecoverInk = true;
 	};
 
 	struct GeneralEvents
@@ -375,6 +377,7 @@ namespace Inkeys::UI::Setting::Design
 		bool rightClickCloseChanged = false;
 		bool desktopCanvasNonFullscreenChanged = false;
 		bool safetyModeChanged = false;
+		bool crashRecoverInkChanged = false;
 		bool allowMultipleInstancesChanged = false;
 		bool startupPreviewChanged = false;
 		bool startupEffectChanged = false;

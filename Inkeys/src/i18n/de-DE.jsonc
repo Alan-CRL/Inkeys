@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "Inkeys hat ein Problem festgestellt. OK wählen, um Inkeys neu zu starten und eine Wiederherstellung zu versuchen."
+      "Body": "Inkeys hat ein Problem festgestellt. OK wählen, um Inkeys neu zu starten und eine Wiederherstellung zu versuchen.",
+      "RepeatBody": "Bei Inkeys ist kurz nach dem Neustart erneut ein Problem aufgetreten. Inkeys neu starten?"
+    },
+    "InkRecovery":
+    {
+      "Title": "Freihand wiederherstellen",
+      "Desktop": "Inkeys wurde zuletzt nicht normal beendet. Freihand auf der Desktop-Leinwand wiederherstellen?\nZuletzt gespeichert: {}",
+      "Whiteboard": "Inkeys wurde zuletzt nicht normal beendet. Freihand im Whiteboard wiederherstellen?\nZuletzt gespeichert: {}",
+      "Yes": "Wiederherstellen",
+      "No": "Nicht wiederherstellen"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "Deckkraft",
       "WindowBehaviorSection": "Fensterverhalten",
       "OtherOptionsSection": "Weitere Optionen",
-      "SafetyRecoverySection": "Sicherheit und Wiederherstellung",
+      "SafetyRecoverySection": "Unterrichtssicherheitsmodus",
       "ShortcutGlobalSection": "Globale Aktionen",
       "ShortcutEditingSection": "Anmerkungen bearbeiten",
       "ShortcutAuxiliarySection": "Zusätzliche Aktionen",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "Zeichenflächen speichern",
-        "Enable": "Desktop-Zeichenfläche automatisch speichern",
-        "EnableE": "Eine nicht leere Desktop-Zeichenfläche beim Leeren oder Beenden automatisch speichern, damit sie aus dem Verlauf wiederhergestellt werden kann.",
         "SaveTime":
         {
           "N": "Aufbewahrungsdauer des Verlaufs",
@@ -735,11 +742,15 @@
         {
           "N": "Verhalten bei Absturz",
           "E": "Aktion bei einem Absturz der Anwendung auswählen.",
-          "Mode1": "Fehlerdialog anzeigen und neu starten",
+          "Mode1": "Hinweis anzeigen und neu starten",
           "Mode2": "Ohne Nachfrage neu starten",
-          "Mode3": "Dem System überlassen",
-          "Mode4": "Sofort beenden",
+          "Mode3": "Sofort beenden",
           "Note": "Bei Fehlern während des Starts wird weiterhin ein Hinweis angezeigt."
+        },
+        "RecoverInk":
+        {
+          "N": "Freihand nach Absturz-Neustart wiederherstellen",
+          "E": "Stellt beim nächsten Start nach einem Absturz oder unerwarteten Beenden die zuletzt nicht gespeicherte Freihand wieder her."
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "Zufällige Testzustände hinzufügen oder entfernen, um Animationen, lange Texte und Fortschrittsringe zu prüfen.",
         "Add": "Zufälligen Status hinzufügen",
         "Remove": "Einen Status entfernen"
+      },
+      "CrashTest":
+      {
+        "Section": "Absturz-Wiederherstellungstest",
+        "N": "Fehler auslösen",
+        "E": "Wird gemäß der aktuellen Absturzbehandlung verarbeitet; zum Testen von automatischem Neustart und Freihand-Wiederherstellung. „UI-Hänger simulieren“ greift nicht, solange ein Debugger angehängt ist.",
+        "WildPointer": "Absturz durch ungültigen Zeiger",
+        "Draw3Fatal": "Schweren Zeichenfehler simulieren",
+        "UiHang": "UI-Hänger simulieren",
+        "ConfirmWildPointer": "Greift sofort auf einen ungültigen Zeiger zu und bringt die App zum Absturz; danach greift die aktuelle Absturzbehandlung. Fortfahren?",
+        "ConfirmDraw3Fatal": "Lässt den Zeichenthread einen schweren Fehler auslösen und anhalten; danach greift die aktuelle Absturzbehandlung. Fortfahren?",
+        "ConfirmUiHang": "Blockiert den UI-Thread für 20 Sekunden; nach etwa 15 Sekunden greift die aktuelle Absturzbehandlung. Fortfahren?"
       },
       "ConsoleSection": "Diagnoseprotokollausgabe",
       "CanvasInformation": "Informationen zur Zeichenflächeninitialisierung",

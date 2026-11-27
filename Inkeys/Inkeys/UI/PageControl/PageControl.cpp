@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -28,6 +28,7 @@ module;
 #include "../../Input/UiTouchRouting.h"
 #include "../../Input/UiPointerDiagnostics.h"
 #include "../../Input/MouseHook.Transport.h"
+#include "../../Helper/Helper.Fatal.h"
 #include "../../Window/Window.MessageDispatch.h"
 
 #include <algorithm>
@@ -1446,6 +1447,13 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 			DeviceLost,
 		};
 
+		// 四个翻页表面各用一个持续失败槽，健康表面的成功不能清掉另一表面的故障计时。
+		[[nodiscard]] Inkeys::Fatal::FailureSlot PageFailureSlot(std::size_t index) noexcept
+		{
+			return static_cast<Inkeys::Fatal::FailureSlot>(
+				static_cast<std::size_t>(Inkeys::Fatal::FailureSlot::UiPageControl) + (index < 4 ? index : 0));
+		}
+
 		struct PresentSceneResult
 		{
 			PresentStatus status = PresentStatus::Retry;
@@ -2746,6 +2754,17 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 						hiddenWindowPerformanceTiming->presentSceneMs += std::chrono::duration<double, std::milli>(
 							std::chrono::steady_clock::now() - presentStarted).count();
 					presentStatus = presentResult.status;
+					// 教学安全模式持续失败：每个表面独立计时，只计明确的 API 失败（延期、等待、无效几何/HWND 不算）；
+					// 设备丢失另计到 UiDeviceRecovery。
+					const auto pageFailureSlot = PageFailureSlot(index);
+					// 只有真实提交了像素才算成功；无像素的 Success（复用旧帧）不清除失败计时。
+					if (presentStatus == PresentStatus::Success && presentResult.pixelsSubmitted)
+						Inkeys::Fatal::RecordSuccess(pageFailureSlot);
+					else if (presentStatus == PresentStatus::Retry && !presentResult.deferred
+						&& (FAILED(presentResult.failureHr) || presentResult.resourcesFailed
+							|| (presentResult.failureError != ERROR_SUCCESS
+								&& presentResult.failureError != ERROR_INVALID_WINDOW_HANDLE)))
+						Inkeys::Fatal::RecordFailure(pageFailureSlot);
 					keepAnimating = keepAnimating
 						|| presentResult.continueRendering;
 					if (presentStatus == PresentStatus::Success)
@@ -2788,6 +2807,7 @@ content.switching=true; // 页码保持不变，等待文字由AssignLoadState�
 					&& SameRect(confirmed.presentation, presentation))))
 			{
 				// Hide 确认时尚未结束的捕获，可在终态后的已确认隐藏快路补做退休。
+				if (!shouldShow) Inkeys::Fatal::ClearFailure(PageFailureSlot(index));
 				ReleaseHiddenSurfaceResources(state, !shouldShow && !keepAnimating);
 				if (!keepAnimating) state.scene.SuspendForIdle(frameContext.frameTime);
 				return keepAnimating ? FrameResult::Continue : FrameResult::Idle;

@@ -1,4 +1,4 @@
-module;
+﻿module;
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -16,6 +16,8 @@ module;
 #include "../Bar/Bar.InteractionWorker.h"
 #include "../../../IdtState.h"
 #include "../../Drawing/Draw3/Draw3.ShapeInteraction.h"
+#include "../../Helper/Helper.Fatal.h"
+#include "../Bar/Bar.PresentDecision.h"
 module Inkeys.UI.SelectionOverlay;
 import Inkeys.UI.Bar;
 import Inkeys.UI.RenderPipeline;
@@ -98,19 +100,20 @@ namespace Inkeys::UI::SelectionOverlay
 			if(!minimized)minimizedFocusLossSent=false;
 			if(!target->Visible()||minimized)
 			{
-				(void)service.Hide(WindowRole::SelectionOverlay);target->CommitPresented(false);return FrameResult::Idle;
+				(void)service.Hide(WindowRole::SelectionOverlay);target->CommitPresented(false);Inkeys::Fatal::ClearFailure(Inkeys::Fatal::FailureSlot::UiSelection);return FrameResult::Idle;
 			}
 			const RECT bounds=target->Bounds();
 			// 快照、布局、动画与光照均未变化时不重复回读/ULW；窗口与命中沿用上次成功帧。
 			if(!target->NeedsPresent())return target->AnimationActive()?FrameResult::Continue:FrameResult::Idle;
 			const HRESULT resource=target->EnsureDeviceResources(frame.epoch);
-			if(FAILED(resource))return resource==D2DERR_RECREATE_TARGET?FrameResult::DeviceLost:FrameResult::Retry;
+			// 教学安全模式持续失败：只计真实 API 失败；重建目标交给共享设备恢复。
+			if(FAILED(resource)){if(resource!=D2DERR_RECREATE_TARGET&&!Inkeys::UI::Bar::IsBarSharedDeviceLost(resource))Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::UiSelection);return resource==D2DERR_RECREATE_TARGET?FrameResult::DeviceLost:FrameResult::Retry;}
 				const HRESULT present = target->Present([hwnd](const UPDATELAYEREDWINDOWINFO& info){return UpdateLayeredWindowIndirect(hwnd,&info);});
 			if (present == D2DERR_RECREATE_TARGET) { target->ReleaseDeviceResources(); return FrameResult::DeviceLost; }
-			if (FAILED(present)) return FrameResult::Retry;
+			if (FAILED(present)) { if (!Inkeys::UI::Bar::IsBarSharedDeviceLost(present)) Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::UiSelection); return FrameResult::Retry; }
 			// 窗口外框和输入真值在完整ULW事务成功后一起提交，失败继续沿用旧帧。
 			if(!service.SetBounds(WindowRole::SelectionOverlay,bounds)||!service.Show(WindowRole::SelectionOverlay))return FrameResult::Retry;
-			target->CommitPresented();return target->AnimationActive()?FrameResult::Continue:FrameResult::Idle;
+			target->CommitPresented();Inkeys::Fatal::RecordSuccess(Inkeys::Fatal::FailureSlot::UiSelection);return target->AnimationActive()?FrameResult::Continue:FrameResult::Idle;
 		}
 		void Input(const Bar::SurfaceInputEvent& e,void*)
 		{

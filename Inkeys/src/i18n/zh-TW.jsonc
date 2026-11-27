@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "Inkeys 發生問題。選擇「確定」以重新啟動 Inkeys 並嘗試復原。"
+      "Body": "Inkeys 發生問題。選擇「確定」以重新啟動 Inkeys 並嘗試復原。",
+      "RepeatBody": "Inkeys 在重新啟動後不久再次發生問題。是否重新啟動 Inkeys？"
+    },
+    "InkRecovery":
+    {
+      "Title": "復原墨跡",
+      "Desktop": "上次 Inkeys 沒有正常結束。是否復原桌面畫布上的墨跡？\n最後儲存時間：{}",
+      "Whiteboard": "上次 Inkeys 沒有正常結束。是否復原白板中的墨跡？\n最後儲存時間：{}",
+      "Yes": "復原",
+      "No": "不復原"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "透明度",
       "WindowBehaviorSection": "視窗行為",
       "OtherOptionsSection": "其他選項",
-      "SafetyRecoverySection": "安全與復原",
+      "SafetyRecoverySection": "教學安全模式",
       "ShortcutGlobalSection": "全域操作",
       "ShortcutEditingSection": "註解編輯",
       "ShortcutAuxiliarySection": "輔助操作",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "畫布儲存",
-        "Enable": "啟用桌面畫布自動儲存",
-        "EnableE": "清空桌面畫布或結束軟體時，自動儲存非空畫布，供後續從歷史畫布還原。",
         "SaveTime":
         {
           "N": "歷史畫布保留期限",
@@ -735,11 +742,15 @@
         {
           "N": "當機處理方式",
           "E": "軟體發生崩潰錯誤時執行的操作。",
-          "Mode1": "彈窗提示並重啟軟體",
-          "Mode2": "靜默重啟軟體",
-          "Mode3": "交給系統崩潰過濾器處理",
-          "Mode4": "直接關閉軟體",
+          "Mode1": "提示並重啟",
+          "Mode2": "靜默重啟",
+          "Mode3": "直接結束",
           "Note": "啟動過程發生錯誤時仍會顯示提示。"
+        },
+        "RecoverInk":
+        {
+          "N": "當機重啟後自動復原墨跡",
+          "E": "軟體當機或非正常結束後再次啟動時，復原上次未儲存的墨跡。"
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "新增或刪除隨機測試狀態，檢查動畫、長文字與進度環。",
         "Add": "新增隨機狀態",
         "Remove": "刪除一個狀態"
+      },
+      "CrashTest":
+      {
+        "Section": "當機復原測試",
+        "N": "觸發故障",
+        "E": "依目前的「當機處理方式」處理，用於測試自動重啟與墨跡復原。附加偵錯工具時「模擬介面卡死」不會觸發。",
+        "WildPointer": "野指標當機",
+        "Draw3Fatal": "模擬繪製致命錯誤",
+        "UiHang": "模擬介面卡死",
+        "ConfirmWildPointer": "將立即存取野指標使軟體當機，並依目前的「當機處理方式」處理。確定繼續嗎？",
+        "ConfirmDraw3Fatal": "將讓繪製執行緒擲回致命錯誤並停止，軟體會依目前的「當機處理方式」處理。確定繼續嗎？",
+        "ConfirmUiHang": "將讓介面執行緒卡住 20 秒，約 15 秒後依目前的「當機處理方式」處理。確定繼續嗎？"
       },
       "ConsoleSection": "診斷記錄輸出",
       "CanvasInformation": "畫布初始化資訊",

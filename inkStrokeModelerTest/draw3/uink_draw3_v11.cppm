@@ -187,7 +187,14 @@ export namespace draw3::uink
 		std::optional<UInkGuid> workspaceGuid;
 		Draw3UInkV11FallbackCounts counts;
 		std::vector<UInkDiagnostic> diagnostics;
+		// 本次导入实际消耗的页级冷读预算（足迹访问、页瓦片、图形几何）。逐笔续接据此累计整页用量：
+		// 单项开销与先后顺序无关，累计不超过页预算即等价于整页冷读时不会因预算跳过。
+		uint64_t footprintUsed = 0;
+		uint64_t pageTilesUsed = 0;
+		uint64_t geometryUsed = 0;
 	};
+	// 页级几何预算（与导入内部的 V11GeometryWork 初值一致）。
+	inline constexpr uint64_t kDraw3UInkV11PageGeometryBudget = uint64_t{ 1 } << 26;
 
 	const char* Draw3UInkV11ColdPreflightFailure(const Draw3UInkV11PageImportResult& result) noexcept;
 

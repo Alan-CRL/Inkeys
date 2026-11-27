@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "Si è verificato un problema in Inkeys. Scegli OK per riavviare Inkeys e tentare il recupero."
+      "Body": "Si è verificato un problema in Inkeys. Scegli OK per riavviare Inkeys e tentare il recupero.",
+      "RepeatBody": "Inkeys ha riscontrato di nuovo un problema poco dopo il riavvio. Riavviare Inkeys?"
+    },
+    "InkRecovery":
+    {
+      "Title": "Ripristina l'inchiostro",
+      "Desktop": "L'ultima volta Inkeys non si è chiuso correttamente. Ripristinare l'inchiostro della tela del desktop?\nUltimo salvataggio: {}",
+      "Whiteboard": "L'ultima volta Inkeys non si è chiuso correttamente. Ripristinare l'inchiostro della lavagna?\nUltimo salvataggio: {}",
+      "Yes": "Ripristina",
+      "No": "Non ripristinare"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "Opacità",
       "WindowBehaviorSection": "Comportamento finestra",
       "OtherOptionsSection": "Altre opzioni",
-      "SafetyRecoverySection": "Sicurezza e recupero",
+      "SafetyRecoverySection": "Modalità sicura per la didattica",
       "ShortcutGlobalSection": "Azioni globali",
       "ShortcutEditingSection": "Modifica annotazioni",
       "ShortcutAuxiliarySection": "Azioni aggiuntive",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "Salvataggio tela",
-        "Enable": "Salva automaticamente la tela del desktop",
-        "EnableE": "Salva automaticamente la tela del desktop, se non vuota, quando viene cancellata o quando chiudi l'app, per poterla recuperare dalla cronologia.",
         "SaveTime":
         {
           "N": "Conservazione cronologia",
@@ -735,11 +742,15 @@
         {
           "N": "Gestione arresti anomali",
           "E": "Scegli cosa fare se l'applicazione si arresta in modo anomalo.",
-          "Mode1": "Mostra errore e riavvia",
+          "Mode1": "Avvisa e riavvia",
           "Mode2": "Riavvia senza avvisi",
-          "Mode3": "Affida la gestione al sistema",
-          "Mode4": "Chiudi subito",
+          "Mode3": "Chiudi subito",
           "Note": "Gli errori all'avvio mostrano comunque un avviso."
+        },
+        "RecoverInk":
+        {
+          "N": "Ripristina l'inchiostro dopo il riavvio per arresto anomalo",
+          "E": "Al riavvio dopo un arresto anomalo o una chiusura imprevista, ripristina l'inchiostro non salvato l'ultima volta."
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "Aggiungi o rimuovi stati di prova casuali per verificare animazione, testo lungo e anello di avanzamento.",
         "Add": "Aggiungi stato casuale",
         "Remove": "Rimuovi uno stato"
+      },
+      "CrashTest":
+      {
+        "Section": "Test di ripristino dopo arresto anomalo",
+        "N": "Provoca un errore",
+        "E": "Gestito secondo l'opzione attuale per gli arresti anomali; serve a testare il riavvio automatico e il ripristino dell'inchiostro. \"Simula blocco dell'interfaccia\" non si attiva con un debugger collegato.",
+        "WildPointer": "Arresto per puntatore non valido",
+        "Draw3Fatal": "Simula errore fatale di disegno",
+        "UiHang": "Simula blocco dell'interfaccia",
+        "ConfirmWildPointer": "Accede subito a un puntatore non valido facendo arrestare l'app, poi gestita secondo l'opzione attuale. Continuare?",
+        "ConfirmDraw3Fatal": "Fa generare al thread di disegno un errore fatale e lo arresta; l'app viene poi gestita secondo l'opzione attuale. Continuare?",
+        "ConfirmUiHang": "Blocca il thread dell'interfaccia per 20 secondi; dopo circa 15 secondi si applica l'opzione attuale. Continuare?"
       },
       "ConsoleSection": "Output del registro diagnostico",
       "CanvasInformation": "Informazioni di inizializzazione della tela",

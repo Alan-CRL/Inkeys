@@ -1,6 +1,7 @@
 ﻿module;
 #include "Draw3.DiagnosticOutput.h"
 #include "Draw3.CompositionClock.h"
+#include "../../Helper/Helper.Fatal.h"
 #include "Assets/EraserGripVisual.h"
 
 #ifndef NOMINMAX
@@ -797,6 +798,18 @@ namespace Inkeys::Drawing::Draw3
 		{
 			if (state.pendingWrites != 0) --state.pendingWrites;
 			const auto& identity = result.identity;
+			if (identity.kind == PagedInkRequestKind::Append)
+			{
+				// 逐笔续接只推进确认修订，不动 Clear 边界身份；失配或失败时在途写入结束后补一次整页。
+				if (result.result == PagedInkResult::Succeeded && result.confirmedRevision == identity.revision &&
+					identity.revision > state.confirmedRevision.value_or(0) && identity.revision <= state.revision)
+				{
+					state.confirmedRevision = identity.revision;
+					if (identity.revision == state.revision) state.failed = false;
+				}
+				else if (result.result != PagedInkResult::Merged) state.saveRequestedWhileWriting = true;
+				return;
+			}
 			const bool sameBoundary = identity.boundaryGeneration
 				? *identity.boundaryGeneration == state.boundaryGeneration && runtime.intervalOrdinal != 0
 				: runtime.intervalOrdinal == 0;
@@ -1798,6 +1811,34 @@ namespace Inkeys::Drawing::Draw3
 			return output;
 		}
 
+		// C1.6b：刚提交的这一笔的单笔快照（undoId 0），供 Append 续接。页元数据由调用方按整页规则补齐。
+		std::optional<draw3::uink::Draw3UInkCanvasSnapshot> CaptureStrokeForAppend(const InkPage& page,
+			std::size_t strokeIndex, std::uint32_t pageIndex, std::optional<std::int32_t> slideId = std::nullopt)
+		{
+			const InkCanvas* canvas = page.FindCanvas(kDefaultDeviceKey);
+			if (!canvas) return std::nullopt;
+			const std::span<const InkStroke> strokes = canvas->Strokes();
+			if (strokeIndex >= strokes.size()) return std::nullopt;
+			const InkStroke& stroke = strokes[strokeIndex];
+			const auto kind = UInkKindForStoredType(stroke.Style().inkType);
+			if (!kind) return std::nullopt;
+			draw3::uink::Draw3UInkCanvasSnapshot output;
+			output.pageGuid = draw3::uink::UInkGuid(page.PageGuid().Bytes());
+			output.pageIndex = pageIndex;
+			output.pageNumber = pageIndex + 1;
+			output.slideId = slideId;
+			output.viewport = { canvas->Viewport().x, canvas->Viewport().y, 1.0f };
+			draw3::uink::Draw3UInkStrokeSnapshot outputStroke;
+			outputStroke.shape = stroke.Shape();
+			outputStroke.style = { *kind, stroke.Style().opacity, stroke.Style().fallbackRgb,
+				stroke.Style().texture, static_cast<uint8_t>(stroke.Style().eraserShape) };
+			outputStroke.points.reserve(stroke.Points().size());
+			for (const StoredInkPoint& point : stroke.Points())
+				outputStroke.points.push_back({ point.x, point.y, point.width });
+			output.strokes.push_back(std::move(outputStroke));
+			return output;
+		}
+
 		std::optional<PagedInkSaveRequest> BuildWhiteboardSaveRequest(const InkPage& page,
 			const CanvasPageRuntimeState& runtime, const WhiteboardPageState& state, WhiteboardTheme theme,
 			uint32_t pageIndex, PagedInkRequestKind kind, uint64_t revision)
@@ -2503,6 +2544,18 @@ namespace Inkeys::Drawing::Draw3
 				const auto& identity = result.identity;
 				if (page.PageGuid().Bytes() != identity.pageGuid.Bytes() || state.pendingWrites == 0) return;
 				--state.pendingWrites;
+				if (identity.kind == PagedInkRequestKind::Append)
+				{
+					// 逐笔续接只推进确认修订；失配或失败时在途写入结束后补一次整页。
+					if (result.result == PagedInkResult::Succeeded && result.confirmedRevision == identity.revision &&
+						identity.revision > state.confirmedRevision.value_or(0) && identity.revision <= state.revision)
+						state.confirmedRevision = identity.revision;
+					else if (result.result != PagedInkResult::Merged) state.saveRequestedWhileWriting = true;
+					if (state.pendingWrites != 0 || !allowFollowup) return;
+					if (std::exchange(state.saveRequestedWhileWriting, false) && slot.store && !slot.store->FileState().failed)
+						(void)SavePresentationPage(slot, page, runtime, state);
+					return;
+				}
 				if (identity.kind == PagedInkRequestKind::Full && state.fullQueuedRevision == identity.revision)
 					state.fullQueuedRevision.reset();
 				const auto boundary = identity.boundaryGeneration
@@ -18560,6 +18613,7 @@ namespace Inkeys::Drawing::Draw3
 			metricsState_->renderAttempt = true;
 			metricsState_->ObserveOutput(true, presentation_.RequestedOutputTarget(), presentation_.RequestedOutputRevision());
 		}
+		const std::uint64_t committedBeforePresent = presentation_.CommittedPresentCount();
 		const bool succeeded = presentation_.Present(
 			dirtyRects, presentFull, currentContentRevision_);
 		LARGE_INTEGER returnQpc = {};
@@ -18574,6 +18628,11 @@ namespace Inkeys::Drawing::Draw3
 		lastPresentDurationMs_ = (std::max)(0.0,
 			GetQpcTimeMilliseconds() - presentStartMs - presentLatencyWaitMs);
 		lastPresentSucceeded_ = succeeded;
+		// 教学安全模式持续失败：Present 返回 false 均为真实提交失败；持续 10 秒交给兜底。
+		// ULW 节流时 Present 可能只累计脏区并返回 true，只有提交计数实际推进才算成功。
+		if (!succeeded) Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::Draw3Present);
+		else if (presentation_.CommittedPresentCount() != committedBeforePresent)
+			Inkeys::Fatal::RecordSuccess(Inkeys::Fatal::FailureSlot::Draw3Present);
 		if (metricsState_)
 		{
 			const auto observation = presentation_.LastPresentObservation();
@@ -18653,6 +18712,7 @@ namespace Inkeys::Drawing::Draw3
 				metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
 				if (!metricsState_->runFrameActive) metricsState_->Finish();
 			}
+			Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::Draw3Present);
 			lastPresentSucceeded_ = false;
 			if (!renderer_.device || FAILED(renderer_.device->GetDeviceRemovedReason()))
 			{
@@ -18688,6 +18748,7 @@ namespace Inkeys::Drawing::Draw3
 				metricsState_->Mark(RuntimeMetricsFrameReason::RasterFailed);
 				if (!metricsState_->runFrameActive) metricsState_->Finish();
 			}
+			Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::Draw3Present);
 			lastPresentSucceeded_ = false;
 			if (!renderer_.device || FAILED(renderer_.device->GetDeviceRemovedReason()))
 			{
@@ -18823,6 +18884,24 @@ namespace Inkeys::Drawing::Draw3
 		} whiteboardWake{ &input_ };
 		// Store 析构会等待所有回调结束；上下文在该实例关闭后才销毁。
 		std::optional<PagedInkStore> whiteboardStore;
+		// C1.6b 桌面活动区间文件：Clear 后首笔建文件、之后逐笔续接；Clear 时换新文件（旧文件保留）。
+		// epoch 随 Clear 递增，旧区间的回执只结算 pendingWrites，不推进新区间的确认修订。
+		struct DesktopJournalState
+		{
+			std::uint64_t revision = 0;
+			std::optional<std::uint64_t> confirmedRevision;
+			std::uint32_t pendingWrites = 0;
+			bool saveRequested = false;
+			std::uint64_t epoch = 1;
+			// Clear 后的换文件：未准入或失败时 rotatePending（下次写入前或空闲时重试），已准入未回执时 rotateInFlight。
+			// 两者任一成立时不写新区间：成功回执之前新区间可能接到清前文件后面，或被迟到的重试清掉登记。
+			bool rotatePending = false;
+			bool rotateInFlight = false;
+			std::uint32_t rotateIdleRetries = 0; // 每个 epoch 空闲重试上限 3 次
+			draw3::uink::UInkGuid rotateGuid; // Rotate 的队列身份（被清的桌面页）；切到白板/PPT 后仍可重试
+		} desktopJournal;
+		WhiteboardWake desktopJournalWake{ &input_ };
+		std::optional<PagedInkStore> desktopJournalStore;
 		const auto whiteboardDocumentRefs = [&]
 		{
 			return SelectWhiteboardDocument(activeWorkspace, {document_, pageRuntimeStates, currentPageIndex_}, whiteboardSlot);
@@ -18969,6 +19048,7 @@ namespace Inkeys::Drawing::Draw3
 		{
 			if (activeWorkspace == Bridge::Workspace::Whiteboard && currentPageIndex_ < whiteboardPages.size())
 				++whiteboardPages[currentPageIndex_].revision;
+			if (activeWorkspace == Bridge::Workspace::Desktop) ++desktopJournal.revision;
 			if (activeWorkspace != Bridge::Workspace::Presentation ||
 				!activePresentationKey || !activePresentationTarget) return;
 			if (currentPageIndex_ < activePresentationPages.size())
@@ -19222,7 +19302,8 @@ namespace Inkeys::Drawing::Draw3
 					DiagnosticOutput::Printf(DiagnosticOutput::Stream::Output,
 						"[Draw3Diag][page-save] stage=%s page=%zu kind=%s success=%u queueMs=%.3f writeMs=%.3f workMs=%.3f fileBytes=%llu pageBytes=%llu\n",
 						PagedInkWriteDiagnosticStage(result), index + 1,
-						identity.kind == PagedInkRequestKind::Clear ? "Clear" : "Full",
+						identity.kind == PagedInkRequestKind::Clear ? "Clear" :
+						identity.kind == PagedInkRequestKind::Append ? "Append" : "Full",
 						success ? 1u : 0u, result.queueMs, result.writeMs, result.workMs,
 						static_cast<unsigned long long>(result.fileBytes), static_cast<unsigned long long>(result.pageBytes));
 					CompleteWhiteboardPageSave(*whiteboardStore, *found, runtimes[index], state,
@@ -21946,6 +22027,11 @@ namespace Inkeys::Drawing::Draw3
 			};
 			auto processCommandAndReconcile = [&](ContactRecord* record)
 			{
+				// 每条命令都是一个工作单元：批量消费持续推进时不误判卡死，空闲分支里顺带执行的命令也受监督。
+				Inkeys::Fatal::Beat(Inkeys::Fatal::Slot::Draw3Loop);
+				// 注入的唤醒可能在帧中被消费，帧顶检查之后才到的注入在这里同样生效，避免随后的无期限等待吞掉它。
+				if (Inkeys::Fatal::ConsumeDraw3DebugFault())
+					throw std::runtime_error("Draw3 debug fatal injected from settings");
 				MetricsStageScope ingress(metricsState_ ? metricsState_->CurrentCosts() : nullptr,
 					RuntimeMetricsCostStage::Ingress, metricsState_ ? metricsState_->metricFrequency : 0,
 					metricsState_ ? &metricsState_->ingressDepth : nullptr);
@@ -22207,9 +22293,16 @@ namespace Inkeys::Drawing::Draw3
 		// 其余模式立即返回。失败时已安排恢复：请求整帧唤醒下一帧，由帧开头的恢复流程处理。
 		auto completeUlwBeforeIdle = [&](bool textureValid = true) -> bool
 		{
+			const std::uint64_t committedBefore = presentation_.CommittedPresentCount();
 			const UlwFrameReport report = presentation_.CompleteUlwBeforeIdle(textureValid);
 			frameLatencyWaitMs_ += report.waitedMs;
-			if (!report.failed) return true;
+			if (!report.failed)
+			{
+				if (presentation_.CommittedPresentCount() != committedBefore)
+					Inkeys::Fatal::RecordSuccess(Inkeys::Fatal::FailureSlot::Draw3Present);
+				return true;
+			}
+			Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::Draw3Present);
 			graphicsRecoveryPending_ = presentation_.RecoveryPending();
 			window_.RequestFullPresent();
 			return false;
@@ -22218,9 +22311,16 @@ namespace Inkeys::Drawing::Draw3
 		// 拷出的耗时由帧预算吸收，其中阻塞 Map 计入等待。失败时同 C3 处理。
 		auto serviceUlwBeforeFrameWait = [&]()
 		{
+			const std::uint64_t committedBefore = presentation_.CommittedPresentCount();
 			const UlwFrameReport report = presentation_.ServiceUlwBeforeFrameWait();
 			frameLatencyWaitMs_ += report.waitedMs;
-			if (!report.failed) return;
+			if (!report.failed)
+			{
+				if (presentation_.CommittedPresentCount() != committedBefore)
+					Inkeys::Fatal::RecordSuccess(Inkeys::Fatal::FailureSlot::Draw3Present);
+				return;
+			}
+			Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::Draw3Present);
 			graphicsRecoveryPending_ = presentation_.RecoveryPending();
 			window_.RequestFullPresent();
 		};
@@ -22872,6 +22972,10 @@ namespace Inkeys::Drawing::Draw3
 				options.pageContext.dpiScale = configuration_.dpiScale;
 				options.importOptions.dpiScale = configuration_.dpiScale;
 				options.wakeContext = &whiteboardWake;
+				options.recoveryContext = observer_.whiteboardRecoveryContext;
+				options.registerRecoveryFile = observer_.registerRecoveryFile;
+				options.registerRecoveryPending = observer_.registerRecoveryPending;
+				options.clearRecoveryPending = observer_.clearRecoveryPending;
 				options.wake = [](void* context) noexcept
 				{
 					auto& wake = *static_cast<WhiteboardWake*>(context);
@@ -22887,6 +22991,32 @@ namespace Inkeys::Drawing::Draw3
 
 		// 运行实例预建白板槽与服务；首次写入才创建文件。槽未能初始化时沿用切场景重试。
 		if (createBlankSlot(whiteboardSlot, 1)) (void)startWhiteboardPagedStore(*whiteboardSlot.document);
+		if (!observer_.whiteboardRoot.empty())
+		{
+			// 桌面活动区间文件服务；首次写入才建文件，开关关闭时不会收到任何请求。
+			try
+			{
+				PagedInkStoreOptions options;
+				options.root = observer_.whiteboardRoot;
+				options.naming.kind = PagedInkFileKind::Desktop;
+				options.pageContext.dpiScale = configuration_.dpiScale;
+				options.importOptions.dpiScale = configuration_.dpiScale;
+				options.recoveryContext = observer_.desktopRecoveryContext;
+				options.registerRecoveryFile = observer_.registerRecoveryFile;
+				options.registerRecoveryPending = observer_.registerRecoveryPending;
+				options.clearRecoveryPending = observer_.clearRecoveryPending;
+				options.clearRecoveryFile = observer_.clearRecoveryFile;
+				options.wakeContext = &desktopJournalWake;
+				options.wake = [](void* context) noexcept
+				{
+					auto& wake = *static_cast<WhiteboardWake*>(context);
+					wake.ready.store(true, std::memory_order_release);
+					(void)wake.input->PublishControlWake();
+				};
+				desktopJournalStore.emplace(std::move(options));
+			}
+			catch (...) {}
+		}
 
 		auto swapActiveDocument = [&](DrawingDocumentSlot& slot) noexcept
 		{
@@ -23003,6 +23133,295 @@ namespace Inkeys::Drawing::Draw3
 			return activeWorkspace == Bridge::Workspace::Presentation && activePresentationKey &&
 				SavePresentationSlot(activeDocumentSlot);
 		};
+		// ---- C1.6b 逐笔追加写入（只在“崩溃重启后自动恢复墨迹”开启时） ----
+		// 改动前的当前页修订；markPresentationMutation 之前读取，作为 Append 的基准修订。
+		// 桌面活动区间文件的整页写入（首笔、撤回等失配后的补写）。空页且尚未建文件时不写（Clear 后不建空文件）。
+		auto submitDesktopRotate = [&]() -> bool
+		{
+			auto& state = desktopJournal;
+			if (!desktopJournalStore || state.rotateGuid.IsZero() || desktopJournalStore->RotateFile(state.rotateGuid,
+				state.epoch, desktopClearGeneration) != PagedInkAdmission::Accepted)
+			{
+				state.rotatePending = true;
+				return false;
+			}
+			state.rotatePending = false;
+			state.rotateInFlight = true;
+			return true;
+		};
+		auto saveDesktopJournal = [&]()
+		{
+			if (!desktopJournalStore || activeWorkspace != Bridge::Workspace::Desktop || !document_ ||
+				currentPageIndex_ >= pageRuntimeStates.size() || !window_.CrashRecoverInkEnabled()) return;
+			auto& state = desktopJournal;
+			if (state.revision == 0 || state.confirmedRevision == state.revision) return;
+			if (state.pendingWrites != 0)
+			{
+				state.saveRequested = true;
+				return;
+			}
+			const InkPage* page = document_->PageAt(currentPageIndex_);
+			if (!page) return;
+			// 换文件成功回执之前不写新区间；成功回执到达后由 saveRequested 补写。
+			if (state.rotatePending || state.rotateInFlight)
+			{
+				if (state.rotatePending) (void)submitDesktopRotate();
+				state.saveRequested = true;
+				return;
+			}
+			try
+			{
+				auto snapshot = CaptureCanvasTail(*page, pageRuntimeStates[currentPageIndex_], 0);
+				if (!snapshot || (snapshot->strokes.empty() && !state.confirmedRevision)) return;
+				snapshot->intervalOrdinal = 0;
+				snapshot->viewport.scale = 1.0f;
+				PagedInkSaveRequest request{ { snapshot->pageGuid, state.revision, 1, state.epoch, std::nullopt,
+					PagedInkRequestKind::Full }, std::move(*snapshot), std::nullopt };
+				if (desktopJournalStore->Save(std::move(request)) == PagedInkAdmission::Accepted) ++state.pendingWrites;
+			}
+			catch (...) {}
+		};
+		auto consumeDesktopJournalCompletions = [&]()
+		{
+			if (!desktopJournalStore) return;
+			bool rotateFailed = false;
+			while (auto completion = desktopJournalStore->Take())
+			{
+				const auto& identity = completion->identity;
+				if (identity.kind == PagedInkRequestKind::Rotate)
+				{
+					if (identity.loadGeneration != desktopJournal.epoch) continue;
+					desktopJournal.rotateInFlight = false;
+					// 会话条目没清掉（记录写盘失败）：保留待处理，下次写入前或空闲时重试，这一轮不连环重提。
+					if (completion->result != PagedInkResult::Succeeded)
+					{
+						desktopJournal.rotatePending = true;
+						rotateFailed = true;
+					}
+					continue;
+				}
+				if (desktopJournal.pendingWrites != 0) --desktopJournal.pendingWrites;
+				if (identity.loadGeneration != desktopJournal.epoch) continue;
+				const bool succeeded = completion->result == PagedInkResult::Succeeded &&
+					completion->confirmedRevision == identity.revision;
+				if (succeeded && identity.revision > desktopJournal.confirmedRevision.value_or(0) &&
+					identity.revision <= desktopJournal.revision)
+					desktopJournal.confirmedRevision = identity.revision;
+				else if (!succeeded && completion->result != PagedInkResult::Merged) desktopJournal.saveRequested = true;
+			}
+			if (!rotateFailed && desktopJournal.pendingWrites == 0 && std::exchange(desktopJournal.saveRequested, false))
+				saveDesktopJournal();
+		};
+		// C1.6b 恢复装入的落盘确认：装入的墨迹确认写进本进程文件后才让恢复方结算旧记录。
+		// 桌面：同一 epoch 的确认修订追上装入修订；Clear 换了 epoch 说明用户已清掉，也算完成。
+		// 白板：所有页都不脏且无在途写入；白板文件失败报 false。
+		struct DesktopRecoveryDurable { std::uint64_t epoch = 0; std::uint64_t revision = 0; };
+		std::optional<DesktopRecoveryDurable> desktopRecoveryDurable;
+		bool whiteboardRecoveryDurablePending = false;
+		auto settleRecoveryDurable = [&]()
+		{
+			if (desktopRecoveryDurable)
+			{
+				// Clear 只有在换文件成功回执之后才算完成（会话里的清前文件条目已清掉）。
+				const bool cleared = desktopJournal.epoch != desktopRecoveryDurable->epoch &&
+					!desktopJournal.rotatePending && !desktopJournal.rotateInFlight;
+				const bool confirmed = desktopJournal.epoch == desktopRecoveryDurable->epoch &&
+					desktopJournal.confirmedRevision &&
+					*desktopJournal.confirmedRevision >= desktopRecoveryDurable->revision &&
+					desktopJournalStore && desktopJournalStore->RecoveryPendingSettled();
+				const bool failed = !desktopJournalStore || desktopJournalStore->FileState().failed;
+				if (cleared || confirmed || failed)
+				{
+					desktopRecoveryDurable.reset();
+					if (observer_.recoveryDurable) observer_.recoveryDurable(observer_.recoveryContext, 0, cleared || confirmed);
+				}
+			}
+			if (whiteboardRecoveryDurablePending)
+			{
+				const bool failed = !whiteboardStore || whiteboardStore->FileState().failed;
+				// 有损确认（冷读会跳过内容）或会话里残留写前登记（恢复会截掉末页）都不算落盘。
+				bool durable = whiteboardStore && whiteboardStore->RecoveryPendingSettled();
+				for (const auto& state : whiteboardPages)
+					durable = durable && !state.Dirty() && state.pendingWrites == 0 && !state.degraded;
+				if (failed || durable)
+				{
+					whiteboardRecoveryDurablePending = false;
+					if (observer_.recoveryDurable) observer_.recoveryDurable(observer_.recoveryContext, 1, !failed && durable);
+				}
+			}
+		};
+		// 无接触的空闲时机：当前页因撤回、重做、图形编辑等无法逐笔续接而变脏时补一次整页写入。
+		// 每个页修订只尝试一次，失败不在空闲循环里反复重试（等下一次改动或离页）。
+		const void* idleRecoverySaveState = nullptr;
+		std::uint64_t idleRecoverySaveRevision = 0;
+		auto serviceIdleRecoverySave = [&]()
+		{
+			if (!window_.CrashRecoverInkEnabled() || !document_) return;
+			// Clear 后的换文件失败：空闲时有界重试（Clear 后不再落笔、或已切到白板/PPT 时也要清掉会话里的清前文件）。
+			if (desktopJournalStore && desktopJournal.rotatePending && !desktopJournal.rotateInFlight &&
+				desktopJournal.rotateIdleRetries < 3)
+			{
+				++desktopJournal.rotateIdleRetries;
+				(void)submitDesktopRotate();
+				return;
+			}
+			const auto attempt = [&](const void* state, std::uint64_t revision)
+			{
+				if (state == idleRecoverySaveState && revision == idleRecoverySaveRevision) return false;
+				idleRecoverySaveState = state;
+				idleRecoverySaveRevision = revision;
+				return true;
+			};
+			if (activeWorkspace == Bridge::Workspace::Desktop)
+			{
+				// 无确认修订也补：开关中途开启时已有墨迹、Redo Clear 恢复了非空后继（空页由 saveDesktopJournal 跳过）。
+				if (desktopJournalStore && desktopJournal.pendingWrites == 0 && desktopJournal.revision != 0 &&
+					desktopJournal.confirmedRevision != desktopJournal.revision &&
+					attempt(&desktopJournal, desktopJournal.revision))
+					saveDesktopJournal();
+				return;
+			}
+			if (activeWorkspace == Bridge::Workspace::Whiteboard)
+			{
+				if (!whiteboardStore || currentPageIndex_ >= whiteboardPages.size()) return;
+				auto& state = whiteboardPages[currentPageIndex_];
+				if (!state.cold && state.Dirty() && state.pendingWrites == 0 && attempt(&state, state.revision))
+					saveWhiteboardPage(currentPageIndex_);
+				return;
+			}
+			if (activeWorkspace == Bridge::Workspace::Presentation && activeDocumentSlot.store &&
+				activeDocumentSlot.persistenceInitialized && currentPageIndex_ < activePresentationPages.size())
+			{
+				auto& state = activePresentationPages[currentPageIndex_];
+				const InkPage* page = document_->PageAt(currentPageIndex_);
+				if (page && state.Dirty() && state.pendingWrites == 0 && attempt(&state, state.revision))
+					(void)SavePresentationPage(activeDocumentSlot, *page, pageRuntimeStates[currentPageIndex_], state);
+			}
+		};
+		auto currentPageRevision = [&]() noexcept -> std::optional<std::uint64_t>
+		{
+			if (activeWorkspace == Bridge::Workspace::Desktop && desktopJournalStore) return desktopJournal.revision;
+			if (activeWorkspace == Bridge::Workspace::Whiteboard && currentPageIndex_ < whiteboardPages.size())
+				return whiteboardPages[currentPageIndex_].revision;
+			if (activeWorkspace == Bridge::Workspace::Presentation && activePresentationKey &&
+				activePresentationTarget && currentPageIndex_ < activePresentationPages.size())
+				return activePresentationPages[currentPageIndex_].revision;
+			return std::nullopt;
+		};
+		// 抬笔成功后交出这一笔：只做单笔快照与有界入队，不读盘、不编码、不等待。
+		auto submitStrokeAppend = [&](std::optional<std::uint64_t> baseRevision, std::size_t strokeIndex)
+		{
+			if (!baseRevision || !document_ || !window_.CrashRecoverInkEnabled()) return;
+			const InkPage* page = document_->PageAt(currentPageIndex_);
+			if (!page) return;
+			try
+			{
+				if (activeWorkspace == Bridge::Workspace::Desktop)
+				{
+					if (!desktopJournalStore) return;
+					auto& state = desktopJournal;
+					if (state.revision != *baseRevision + 1) return;
+					// Clear 后第一笔：建新文件并写入这一笔（整页即这一笔），之后逐笔续接。
+					if (state.rotatePending || state.rotateInFlight || (!state.confirmedRevision && state.pendingWrites == 0))
+					{
+						saveDesktopJournal();
+						return;
+					}
+					auto snapshot = CaptureStrokeForAppend(*page, strokeIndex, 0);
+					if (!snapshot) return;
+					PagedInkSaveRequest request{ { snapshot->pageGuid, state.revision, 1, state.epoch,
+						std::nullopt, PagedInkRequestKind::Append }, std::move(*snapshot), std::nullopt };
+					request.baseRevision = *baseRevision;
+					if (desktopJournalStore->Save(std::move(request)) == PagedInkAdmission::Accepted) ++state.pendingWrites;
+					else state.saveRequested = state.pendingWrites != 0;
+					return;
+				}
+				if (activeWorkspace == Bridge::Workspace::Whiteboard)
+				{
+					if (!whiteboardStore || currentPageIndex_ >= whiteboardPages.size()) return;
+					auto& state = whiteboardPages[currentPageIndex_];
+					if (state.cold || state.revision != *baseRevision + 1) return;
+					// 页还没有盘上版本也没有在途写入：先整页写入（此时页上内容很少），之后逐笔续接。
+					if (!state.confirmedRevision && state.pendingWrites == 0)
+					{
+						saveWhiteboardPage(currentPageIndex_);
+						return;
+					}
+					auto snapshot = CaptureStrokeForAppend(*page, strokeIndex, static_cast<std::uint32_t>(currentPageIndex_));
+					if (!snapshot) return;
+					const auto theme = currentPageIndex_ < whiteboardThemes.size() ? whiteboardThemes[currentPageIndex_] : WhiteboardTheme{};
+					snapshot->background = draw3::uink::Draw3UInkBackground{ theme.backgroundRgb, static_cast<int32_t>(theme.pattern) };
+					PagedInkSaveRequest request{ { snapshot->pageGuid, state.revision, kWhiteboardSlotGeneration, 0,
+						std::nullopt, PagedInkRequestKind::Append }, std::move(*snapshot), std::nullopt };
+					request.baseRevision = *baseRevision;
+					if (whiteboardStore->Save(std::move(request)) == PagedInkAdmission::Accepted) ++state.pendingWrites;
+					else state.saveRequestedWhileWriting = state.pendingWrites != 0;
+					return;
+				}
+				if (activeWorkspace != Bridge::Workspace::Presentation || !activeDocumentSlot.store ||
+					!activeDocumentSlot.persistenceInitialized || currentPageIndex_ >= activePresentationPages.size()) return;
+				auto& state = activePresentationPages[currentPageIndex_];
+				if (!state.metadata || state.revision != *baseRevision + 1) return;
+				if (!state.confirmedRevision && state.pendingWrites == 0)
+				{
+					(void)SavePresentationPage(activeDocumentSlot, *page, pageRuntimeStates[currentPageIndex_], state);
+					return;
+				}
+				const auto& metadata = *state.metadata;
+				auto snapshot = CaptureStrokeForAppend(*page, strokeIndex, metadata.pageIndex, metadata.slideId);
+				if (!snapshot) return;
+				snapshot->pageGuid = metadata.pageGuid;
+				snapshot->pageNumber = metadata.pageNumber;
+				if (metadata.binding != 0) snapshot->binding = metadata.binding;
+				snapshot->retained = metadata.pageState == 1;
+				snapshot->endScreen = metadata.pageKind == 1;
+				PagedInkSaveRequest request{ { metadata.pageGuid, state.revision, activeDocumentSlot.slotGeneration, 0,
+					std::nullopt, PagedInkRequestKind::Append }, std::move(*snapshot), std::nullopt };
+				request.baseRevision = *baseRevision;
+				if (activeDocumentSlot.store->Save(std::move(request)) == PagedInkAdmission::Accepted) ++state.pendingWrites;
+				else state.saveRequestedWhileWriting = state.pendingWrites != 0;
+			}
+			catch (...) {} // 分配失败只少一次续接，页保持脏，离页时整页保存。
+		};
+		// 场景与白板页变化：发布给崩溃恢复会话（只写原子量）；离开白板或结束一份放映时请求正序整理。
+		// 每轮循环只比较三个值，开销可忽略；放映存储由 Host 持有，一次 Run 内常驻。
+		Bridge::Workspace trackedRecoveryWorkspace = Bridge::Workspace::Desktop;
+		std::size_t trackedRecoveryPage = (std::numeric_limits<std::size_t>::max)();
+		PagedInkStore* trackedPresentationStore = nullptr;
+		bool trackedRecoveryInitialized = false;
+		auto trackRecoveryScene = [&]() noexcept
+		{
+			PagedInkStore* presentationStore = activeWorkspace == Bridge::Workspace::Presentation
+				? activeDocumentSlot.store : nullptr;
+			const std::size_t whiteboardPage = activeWorkspace == Bridge::Workspace::Whiteboard
+				? currentPageIndex_ : (std::numeric_limits<std::size_t>::max)();
+			if (trackedRecoveryInitialized && activeWorkspace == trackedRecoveryWorkspace &&
+				whiteboardPage == trackedRecoveryPage && presentationStore == trackedPresentationStore) return;
+			if (trackedRecoveryInitialized && window_.CrashRecoverInkEnabled())
+			{
+				// 排在离场保存之后：worker 只在两条队列都空时整理。
+				if (trackedRecoveryWorkspace == Bridge::Workspace::Whiteboard &&
+					activeWorkspace != Bridge::Workspace::Whiteboard && whiteboardStore)
+					whiteboardStore->RequestOrderedCompact();
+				if (trackedPresentationStore && trackedPresentationStore != presentationStore)
+					trackedPresentationStore->RequestOrderedCompact();
+			}
+			trackedRecoveryInitialized = true;
+			trackedRecoveryWorkspace = activeWorkspace;
+			trackedRecoveryPage = whiteboardPage;
+			trackedPresentationStore = presentationStore;
+			if (!observer_.recoverySceneChanged) return;
+			std::array<std::uint8_t, 16> guid{};
+			const std::uint8_t* guidBytes = nullptr;
+			if (whiteboardPage != (std::numeric_limits<std::size_t>::max)() && document_)
+				if (const InkPage* page = document_->PageAt(whiteboardPage))
+				{
+					guid = page->PageGuid().Bytes();
+					guidBytes = guid.data();
+				}
+			observer_.recoverySceneChanged(observer_.recoveryContext, activeWorkspace, guidBytes,
+				guidBytes ? whiteboardPage : 0);
+		};
 
 		std::deque<CanvasCommand> shapeDeferredCommands;
 		const auto savePresentationAtExit = [&]()
@@ -23027,6 +23446,7 @@ namespace Inkeys::Drawing::Draw3
 					{
 					case PagedInkRequestKind::Clear:
 					case PagedInkRequestKind::Full:
+					case PagedInkRequestKind::Append:
 						CompletePresentationPageSave(slot, completion, allowFollowup);
 						break;
 					case PagedInkRequestKind::LoadLane:
@@ -23065,6 +23485,13 @@ namespace Inkeys::Drawing::Draw3
 			const bool whiteboardDurable = SaveWhiteboardAtExit(whiteboardStore ? &*whiteboardStore : nullptr,
 				whiteboardDocumentRefs(), whiteboardPages, whiteboardThemes, consumeWhiteboardCompletions);
 			if (observer_.whiteboardExitSaved) observer_.whiteboardExitSaved(observer_.context, whiteboardDurable);
+			// 退出时仍在白板：在已排空的写入之后做一次正序整理（C1.6b）；致命退出不额外等待。
+			if (!fatal && whiteboardStore && activeWorkspace == Bridge::Workspace::Whiteboard &&
+				window_.CrashRecoverInkEnabled())
+			{
+				whiteboardStore->RequestOrderedCompact();
+				whiteboardStore->Drain();
+			}
 			size_t eligibleCount = 0;
 			size_t queuedCount = 0;
 			const auto submit = [&](bool eligible, const char* source,
@@ -23102,10 +23529,35 @@ namespace Inkeys::Drawing::Draw3
 			if (!savePresentationAtExit())
 				DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
 					"[Draw3.Presentation] action=exit result=failed reason=not_durable exit=%s\n", reason);
+			// 退出时仍在放映：同样正序整理当前文稿的文件。
+			if (!fatal && activeWorkspace == Bridge::Workspace::Presentation && activeDocumentSlot.store &&
+				window_.CrashRecoverInkEnabled())
+			{
+				activeDocumentSlot.store->RequestOrderedCompact();
+				activeDocumentSlot.store->Drain();
+			}
 			if (fatal)
 				DiagnosticOutput::Printf(DiagnosticOutput::Stream::Error,
 					"[Draw3.DesktopInkSnapshots] action=fatal_exit_snapshot reason=%s eligible=%zu queued=%zu durable=pending_worker\n",
 					reason, eligibleCount, queuedCount);
+			// C1.6b：正常退出时排空桌面活动区间写入，按各场景的实际回执报告恢复装入的落盘结果；
+			// 仍未确认的报告 false（旧记录保持未结算），恢复线程不必等到超时。
+			if (!fatal)
+			{
+				if (desktopJournalStore)
+				{
+					for (int round = 0; round < 2; ++round)
+					{
+						desktopJournalStore->Drain();
+						consumeDesktopJournalCompletions(); // 回执可能补发一次整页，再排空一次
+					}
+				}
+				settleRecoveryDurable();
+				if (std::exchange(desktopRecoveryDurable, std::nullopt) && observer_.recoveryDurable)
+					observer_.recoveryDurable(observer_.recoveryContext, 0, false);
+				if (std::exchange(whiteboardRecoveryDurablePending, false) && observer_.recoveryDurable)
+					observer_.recoveryDurable(observer_.recoveryContext, 1, false);
+			}
 		};
 
 		bool fatalCaptureAttempted = false;
@@ -23703,6 +24155,19 @@ namespace Inkeys::Drawing::Draw3
 			{
 				// CPU Clear 已成功。GPU 重建失败也不能撤销已接收的保存，新的代次退休旧恢复点。
 				++desktopClearGeneration;
+				// C1.6b：Clear 后换新的活动区间文件（旧文件保留）；新区间首笔才建文件。
+				// 开关关闭时也换：之后再开启，新笔不会接到清前文件上。
+				if (desktopJournalStore)
+				{
+					++desktopJournal.epoch;
+					desktopJournal.confirmedRevision.reset();
+					desktopJournal.saveRequested = false;
+					desktopJournal.rotateInFlight = false;
+					desktopJournal.rotateIdleRetries = 0;
+					if (const InkPage* clearedPage = document_->PageAt(currentPageIndex_))
+						desktopJournal.rotateGuid = draw3::uink::UInkGuid(clearedPage->PageGuid().Bytes());
+					(void)submitDesktopRotate();
+				}
 				if (desktopSnapshot)
 					desktopClearRecovery = CommitDesktopClearSnapshot(std::move(desktopSnapshot),
 						desktopClearGeneration, window_.AutoSaveEnabled(), observer_);
@@ -23735,6 +24200,15 @@ namespace Inkeys::Drawing::Draw3
 			return true;
 		};
 
+		// C1.6b：跨 Clear 撤回把清前区间装回桌面页（热、冷两条路径）。活动区间文件此时不含这些墨迹，
+		// 推进修订并立即补一次整页写入，否则崩溃恢复会漏掉撤回恢复的区间。
+		auto noteDesktopJournalRestored = [&]()
+		{
+			if (activeWorkspace != Bridge::Workspace::Desktop || !desktopJournalStore) return;
+			++desktopJournal.revision;
+			saveDesktopJournal();
+		};
+
 		auto restoreCurrentPageFromSnapshot = [&](const
 			draw3::uink::Draw3UInkCanvasSnapshot& snapshot,
 			LaserParticleDirtySnapshot& particleSnapshot,
@@ -23751,6 +24225,7 @@ namespace Inkeys::Drawing::Draw3
 			if (activeWorkspace == Bridge::Workspace::Desktop) desktopClearRecovery.reset();
 			restoreAfterDocumentSlotSwitch(frameDirty, particleSnapshot,
 				forceFullPresent, width, height, true);
+			noteDesktopJournalRestored();
 			return true;
 		};
 
@@ -23775,6 +24250,7 @@ namespace Inkeys::Drawing::Draw3
 			if (activeWorkspace == Bridge::Workspace::Desktop) desktopClearRecovery.reset();
 			renderer_.ClearShapeRenderCache();
 			restoreAfterDocumentSlotSwitch(frameDirty,particleSnapshot,forceFullPresent,width,height,true);
+			noteDesktopJournalRestored();
 			return true;
 		};
 
@@ -23818,6 +24294,120 @@ namespace Inkeys::Drawing::Draw3
 					dirty, forceFullPresent, width, height);
 				if (restored) setFullCommandDirty(dirty); else frameDirty.Add(dirty);
 				return restored;
+			};
+			// C1.6b：崩溃恢复的白板装入。只在白板尚未进入（停放在白板槽）且白板会话仍为空时装入；
+			// 按旧页号补足页数（空洞为空白页，上限 256 页），各页热装入并标脏，随后照常写进本进程的白板文件。
+			const auto installWhiteboardRecovery = [&](std::vector<draw3::uink::Draw3UInkCanvasSnapshot> recovered,
+				std::size_t recoveredCurrent) -> bool
+			{
+				constexpr std::size_t kMaxRecoveredPages = 256;
+				if (activeWorkspace == Bridge::Workspace::Whiteboard || !whiteboardSlot.document || recovered.empty()) return false;
+				auto& document = *whiteboardSlot.document;
+				auto& runtimes = whiteboardSlot.pageRuntimeStates;
+				for (const auto& state : whiteboardPages)
+					if (state.revision != 0 || state.pendingWrites != 0 || state.confirmedRevision) return false;
+				for (std::size_t index = 0; index < document.Pages().size(); ++index)
+					if (const InkPage* page = document.PageAt(index))
+						if (const InkCanvas* canvas = page->FindCanvas(kDefaultDeviceKey); canvas && !canvas->Strokes().empty())
+							return false;
+				std::size_t pageCount = document.Pages().size();
+				for (const auto& page : recovered)
+					if (page.pageIndex < kMaxRecoveredPages) pageCount = (std::max)(pageCount, static_cast<std::size_t>(page.pageIndex) + 1);
+				// 崩溃时停在未写过的空白页上：页数也要覆盖它，当前页不被夹到最后一个已保存页。
+				if (recoveredCurrent < kMaxRecoveredPages) pageCount = (std::max)(pageCount, recoveredCurrent + 1);
+				while (document.Pages().size() < pageCount)
+				{
+					runtimes.emplace_back();
+					std::optional<std::size_t> index;
+					try { index = TryAppendBlankPage(document); }
+					catch (...) { index.reset(); }
+					if (!index || *index + 1 != runtimes.size())
+					{
+						runtimes.pop_back(); // 文档页与 runtime 保持一一对应
+						return false;
+					}
+					runtimes.back().rasterState = allocateRasterStateToken();
+				}
+				ExtendWhiteboardThemes(whiteboardThemes, pageCount - 1, 0);
+				whiteboardPages.resize(whiteboardThemes.size());
+				std::size_t skipped = 0;
+				for (auto& page : recovered)
+				{
+					if (page.pageIndex >= pageCount || page.pageIndex >= runtimes.size())
+					{
+						++skipped;
+						continue;
+					}
+					const std::size_t index = page.pageIndex;
+					const InkPage* target = document.PageAt(index);
+					if (!target) continue;
+					page.pageGuid = draw3::uink::UInkGuid(target->PageGuid().Bytes());
+					if (page.background && index < whiteboardThemes.size())
+					{
+						whiteboardThemes[index].backgroundRgb = page.background->rgb;
+						whiteboardThemes[index].pattern = static_cast<decltype(whiteboardThemes[index].pattern)>(page.background->pattern);
+					}
+					double footprintMs = 0;
+					std::size_t splitUndoGroups = 0;
+					auto candidate = MaterializeWhiteboardPage(std::move(page), allocateRasterStateToken, footprintMs, splitUndoGroups);
+					if (!candidate || !document.ReplacePage(index, std::move(candidate->first)))
+					{
+						++skipped;
+						continue;
+					}
+					runtimes[index] = std::move(candidate->second);
+					if (index < whiteboardPages.size()) whiteboardPages[index].revision = 1; // 未写盘的热页
+				}
+				if (skipped != 0)
+					DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
+						"[Draw3.Recovery] action=whiteboard_install skipped=%zu pages=%zu\n", skipped, recovered.size());
+				whiteboardSlot.currentPageIndex = (std::min)(recoveredCurrent, document.Pages().size() - 1);
+				return true;
+			};
+			// C1.6b：崩溃恢复的桌面区间装入。只在桌面是当前场景且当前页为空时装入，不覆盖新写的内容；
+			// 装成普通可见历史（逐笔可撤回），随后整页写进本进程的活动区间文件。
+			const auto installDesktopRecovery = [&](draw3::uink::Draw3UInkCanvasSnapshot recovered,
+				std::optional<draw3::uink::Draw3UInkCanvasSnapshot> previous) -> bool
+			{
+				if (activeWorkspace != Bridge::Workspace::Desktop || !document_ ||
+					currentPageIndex_ >= pageRuntimeStates.size() || currentPageHasContent()) return false;
+				const InkPage* current = document_->PageAt(currentPageIndex_);
+				if (!current) return false;
+				// 上一区间作为跨 Clear 撤回点（CPU 副本，撤回到底时按热路径装回），身份绑定当前页。
+				const auto installPrevious = [&]()
+				{
+					if (!previous) return;
+					const InkPage* page = document_->PageAt(currentPageIndex_);
+					if (!page) return;
+					previous->pageGuid = draw3::uink::UInkGuid(page->PageGuid().Bytes());
+					previous->intervalOrdinal = 0;
+					DesktopClearRecovery recovery;
+					recovery.canvas = std::make_shared<const draw3::uink::Draw3UInkCanvasSnapshot>(std::move(*previous));
+					recovery.pageGuid = page->PageGuid();
+					recovery.clearGeneration = desktopClearGeneration;
+					desktopClearRecovery = std::move(recovery);
+					(void)publishHistoryAvailability(); // 只装撤回点时主栏也要能发出撤回
+				};
+				if (recovered.strokes.empty())
+				{
+					// Clear 后崩溃、当前区间为空：只装撤回点。
+					installPrevious();
+					return previous.has_value() || desktopClearRecovery.has_value();
+				}
+				recovered.pageGuid = draw3::uink::UInkGuid(current->PageGuid().Bytes());
+				recovered.intervalOrdinal = 0;
+				if (const InkCanvas* currentCanvas = current->FindCanvas(kDefaultDeviceKey))
+					recovered.viewport = { currentCanvas->Viewport().x, currentCanvas->Viewport().y,
+						currentCanvas->Viewport().scale };
+				auto candidate = MaterializeCanvasPage(recovered, false, allocateRasterStateToken);
+				if (!candidate || !document_->ReplacePage(currentPageIndex_, std::move(candidate->first))) return false;
+				pageRuntimeStates[currentPageIndex_] = std::move(candidate->second);
+				restoreSwitchedDocument();
+				markPresentationMutation();
+				publishCurrentPageContent();
+				saveDesktopJournal();
+				installPrevious();
+				return true;
 			};
 			auto reportCommand = [&](CanvasCommandType type)
 			{
@@ -23919,6 +24509,55 @@ namespace Inkeys::Drawing::Draw3
 			{
 				if (whiteboardWake.ready.exchange(false, std::memory_order_acq_rel))
 					consumeWhiteboardCompletions(!window_.ExitRequested() && !currentLoadRetry.ExitPrepared());
+				if (desktopJournalWake.ready.exchange(false, std::memory_order_acq_rel)) consumeDesktopJournalCompletions();
+				if (observer_.takeWhiteboardRecovery)
+				{
+					std::vector<draw3::uink::Draw3UInkCanvasSnapshot> recoveredPages;
+					std::size_t recoveredCurrent = 0;
+					if (observer_.takeWhiteboardRecovery(observer_.recoveryContext, recoveredPages, recoveredCurrent))
+					{
+						bool installed = false;
+						try { installed = installWhiteboardRecovery(std::move(recoveredPages), recoveredCurrent); }
+						catch (...) { installed = false; }
+						// 停放的白板不走空闲补写：装入后立即把各页写进本进程的白板文件，确认后再结算旧记录。
+						if (installed)
+						{
+							saveWhiteboard();
+							whiteboardRecoveryDurablePending = true;
+						}
+						if (observer_.whiteboardRecoveryInstalled)
+							observer_.whiteboardRecoveryInstalled(observer_.recoveryContext, installed);
+					}
+				}
+				if (observer_.takeDesktopRecovery)
+				{
+					draw3::uink::Draw3UInkCanvasSnapshot recovered;
+					std::optional<draw3::uink::Draw3UInkCanvasSnapshot> previous;
+					if (observer_.takeDesktopRecovery(observer_.recoveryContext, recovered, previous))
+					{
+						bool installed = false;
+						const bool hasInk = !recovered.strokes.empty();
+						try { installed = installDesktopRecovery(std::move(recovered), std::move(previous)); }
+						catch (...) { installed = false; }
+						if (installed && hasInk)
+							desktopRecoveryDurable = DesktopRecoveryDurable{ desktopJournal.epoch, desktopJournal.revision };
+						if (observer_.desktopRecoveryInstalled)
+							observer_.desktopRecoveryInstalled(observer_.recoveryContext, installed);
+						// 只装了撤回点：没有要写盘的墨迹，直接报告已落盘（上一区间本就在 desktop\ 下）。
+						if (installed && !hasInk && observer_.recoveryDurable)
+							observer_.recoveryDurable(observer_.recoveryContext, 0, true);
+						// 桌面就是当前场景：恢复的墨迹可见，请求切到绘制。
+						if (installed && hasInk && observer_.recoveryInkVisible)
+							observer_.recoveryInkVisible(observer_.recoveryContext);
+					}
+				}
+				settleRecoveryDurable();
+				// PPT 接管旧进程的墨迹后，等当前页加载完成：当前页有墨迹就请求切到绘制（每个存储只判一次）。
+				if (activeWorkspace == Bridge::Workspace::Presentation && activeDocumentSlot.store &&
+					activeDocumentSlot.persistenceInitialized &&
+					!(activePresentationLoadPending || presentationLoadUnresolved()) &&
+					activeDocumentSlot.store->TakeAdoptedNotice() && currentPageHasContent() && observer_.recoveryInkVisible)
+					observer_.recoveryInkVisible(observer_.recoveryContext);
 				if (std::exchange(presentationEvictionWake, false) &&
 					!window_.ExitRequested() && !currentLoadRetry.ExitPrepared())
 					RetryPresentationEvictions(presentationSlots);
@@ -24099,7 +24738,9 @@ namespace Inkeys::Drawing::Draw3
 					const auto slot = route.active ? activeDocumentSlot : DocumentSlotRefs(*route.parked);
 					const auto& completion = envelope.completion;
 					const auto& identity = completion.identity;
-					if (identity.kind == PagedInkRequestKind::Clear || identity.kind == PagedInkRequestKind::Full)
+					// C1.6b：逐笔续接的回执与整页同样结算 pendingWrites、确认修订与后续补写。
+					if (identity.kind == PagedInkRequestKind::Clear || identity.kind == PagedInkRequestKind::Full ||
+						identity.kind == PagedInkRequestKind::Append)
 					{
 						CompletePresentationPageSave(slot, completion, true);
 						if (const auto page = FindPresentationPage(slot, identity.pageGuid))
@@ -25056,6 +25697,12 @@ namespace Inkeys::Drawing::Draw3
 		{
 		while (true)
 		{
+			// 教学安全模式卡死检测：每个循环（工作单元）开始时 Beat；只在真正的空闲等待前 Idle。
+			Inkeys::Fatal::Beat(Inkeys::Fatal::Slot::Draw3Loop);
+			// 调试页“模拟绘制致命错误”：与真实故障一样经 Run 的异常出口收敛到 Host 停止。
+			if (Inkeys::Fatal::ConsumeDraw3DebugFault())
+				throw std::runtime_error("Draw3 debug fatal injected from settings");
+			trackRecoveryScene();
 			FlushCursorDiagnostics();
 			shapePreviewSlot.BeginFrame();
 			const bool selectionMode = window_.SelectionMode();
@@ -25367,12 +26014,17 @@ namespace Inkeys::Drawing::Draw3
 			{
 				// C1：ULW 异步读回时探测上一帧是否就绪（不等待），被节流累计的脏区到点时拷出提交。
 				// 其中的阻塞 Map（流水模式熔断后或即时模式拷出累计脏区）计入等待，不计入工作耗时。
+				const std::uint64_t ulwCommittedBefore = presentation_.CommittedPresentCount();
 				const UlwFrameReport ulwFrame = presentation_.BeginUlwFrame(
 					frameStartMs, 1000.0 / configuration_.timingProfile.target_fps);
 				frameLatencyWaitMs_ += ulwFrame.waitedMs;
 				if (metricsState_) metricsState_->frame.latencyWaitMs += ulwFrame.waitedMs;
+				// 异步读回的上一帧在这里完成提交，提交计数推进即为成功证据。
+				if (!ulwFrame.failed && presentation_.CommittedPresentCount() != ulwCommittedBefore)
+					Inkeys::Fatal::RecordSuccess(Inkeys::Fatal::FailureSlot::Draw3Present);
 				if (ulwFrame.failed)
 				{
+					Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::Draw3Present);
 					graphicsRecoveryPending_ = presentation_.RecoveryPending();
 					window_.RequestFullPresent();
 					continue;
@@ -25871,7 +26523,9 @@ namespace Inkeys::Drawing::Draw3
 				// 抬笔进入空闲：把本段设备性能累加移交账本（短锁合并，不做 I/O）。
 				if (!performanceTally.Empty() || !performanceDeferredTally.Empty() || performanceSignaturePending)
 					submitPerformanceTally();
+				serviceIdleRecoverySave(); // C1.6b：仍在工作单元内（Idle 之前），整页截取受卡死监督
 				if (metrics_) metrics_->BeginIdle(frameStartMs);
+				Inkeys::Fatal::Idle(Inkeys::Fatal::Slot::Draw3Loop);
 				if (metricsState_) metricsState_->Finish(); // idle/Hold等待不能混入render wall。
 				lastActiveFrameStartMs = 0.0;
 				if (laserLifecycle.phase == LaserTrailPhase::Hold)
@@ -26881,7 +27535,9 @@ namespace Inkeys::Drawing::Draw3
 									runtime->lastInputSnapshot.phase == ContactPhase::Up ? runtime->lastInputSnapshot : runtime->deferredUpSnapshot);
 							{
 								// 进入 runtime history 即成为“有内容”，GPU 呈现失败不回滚文档真值。
+								const auto appendBaseRevision = currentPageRevision();
 								markPresentationMutation();
+								submitStrokeAppend(appendBaseRevision, strokeIndex);
 								publishCurrentPageContent();
 								const InkRasterStateToken beforeState = committed->beforeState;
 								// Runtime history 先登记成功，随后才允许产生可见 L2 像素。
@@ -27860,6 +28516,8 @@ namespace Inkeys::Drawing::Draw3
 				const double adjustMs = presentation_.FramePhaseAdjustMs(frameStartMs, intervalMs, workMs);
 				input_.WaitForFrameDeadline(intervalMs - workMs + adjustMs);
 			};
+			// 光栅提交失败的帧没有 Present，同样计入持续失败（活动帧与空闲帧共用此出口）。
+			if (rasterSubmissionFailed) Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::Draw3Present);
 			const bool eraserIdle = EraserContactsIdle(active, navigationActive, mouseVisualSeconds);
 			if (rasterSubmissionFailed && (active.empty() || eraserIdle))
 			{
@@ -27943,6 +28601,7 @@ namespace Inkeys::Drawing::Draw3
 					: QpcDeltaSeconds(nearestDeadlineQpc,
 						waitStartQpc.QuadPart, qpcFrequency) * 1000.0;
 				if (metrics_) metrics_->BeginIdle(GetQpcTimeMilliseconds());
+				Inkeys::Fatal::Idle(Inkeys::Fatal::Slot::Draw3Loop);
 				if (eraserIdle)
 					WaitForEraserIdle(input_, active, frameWakeGeneration, timeoutMilliseconds,
 						nearestDeadlineQpc != (std::numeric_limits<int64_t>::max)(),

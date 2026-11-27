@@ -13,6 +13,7 @@ import Inkeys.Display;
 #include "IdtImage.h"
 #include "IdtPlug-in.h"
 #include "Inkeys/Window/Window.Legacy.hpp"
+#include "Inkeys/Helper/Helper.Fatal.h"
 
 #include <atomic>
 #include <cstdint>
@@ -82,12 +83,15 @@ bool WhiteboardFreezeSurfaceOwned() noexcept
 }
 
 bool SubmitFreezeSurface(HWND hwnd, UPDATELAYEREDWINDOWINFO* info,
-	bool whiteboardOwner) noexcept
+	bool whiteboardOwner, bool* apiFailed) noexcept
 {
+	if (apiFailed) *apiFailed = false;
 	if (!hwnd || !info || WhiteboardFreezeSurfaceOwned() != whiteboardOwner) return false;
 	std::scoped_lock lock(freezeSurfaceMutex);
 	if (WhiteboardFreezeSurfaceOwned() != whiteboardOwner) return false;
-	return UpdateLayeredWindowIndirect(hwnd, info) != FALSE;
+	const bool submitted = UpdateLayeredWindowIndirect(hwnd, info) != FALSE;
+	if (!submitted && apiFailed) *apiFailed = true;
+	return submitted;
 }
 
 void FreezeFrameWindow()
@@ -146,7 +150,12 @@ void FreezeFrameWindow()
 	{
 		sizeWnd = { surface.width(), surface.height() };
 		ulwi.hdcSrc = surface.dc();
-		return SubmitFreezeSurface(freeze_window, &ulwi, false);
+		bool ulwFailed = false;
+		const bool submitted = SubmitFreezeSurface(freeze_window, &ulwi, false, &ulwFailed);
+		// 教学安全模式持续失败：只计 ULW 真实失败；白板接管表面导致的拒绝不算。
+		if (submitted) Inkeys::Fatal::RecordSuccess(Inkeys::Fatal::FailureSlot::Freeze);
+		else if (ulwFailed) Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::Freeze);
+		return submitted;
 	};
 
 	ulwi.hdcSrc = freeze_background.dc();
@@ -178,6 +187,8 @@ void FreezeFrameWindow()
 		{
 			if (surfaces.RetireIfUnused(pixelsRequired, whiteboardOwner, submitSurface))
 			{
+				// 已退休或交给白板：Freeze 不再提交，清除失败计时；退休提交失败时保留计时继续重试。
+				Inkeys::Fatal::ClearFailure(Inkeys::Fatal::FailureSlot::Freeze);
 				ulwi.hdcSrc = nullptr;
 				show_freeze_window = false;
 			}
@@ -185,7 +196,12 @@ void FreezeFrameWindow()
 			continue;
 		}
 		const bool recreated = freeze_background.empty();
-		if (!surfaces.Ensure(monitor->pixelWidth, freezeHeight)) continue;
+		if (!surfaces.Ensure(monitor->pixelWidth, freezeHeight))
+		{
+			// 运行时 DIB 分配失败（如内存不足）每 20ms 重试；持续 10 秒交给教学安全模式。
+			Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::Freeze);
+			continue;
+		}
 		sizeWnd = { freeze_background.width(), freeze_background.height() };
 		ulwi.hdcSrc = freeze_background.dc();
 		if (recreated && freezeActive && FreezeRecall <= 0 && !FreezePPT)

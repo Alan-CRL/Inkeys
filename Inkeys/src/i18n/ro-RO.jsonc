@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "Inkeys a întâmpinat o problemă. Selectați OK pentru a reporni Inkeys și a încerca restabilirea."
+      "Body": "Inkeys a întâmpinat o problemă. Selectați OK pentru a reporni Inkeys și a încerca restabilirea.",
+      "RepeatBody": "Inkeys a întâmpinat din nou o problemă la scurt timp după repornire. Reporniți Inkeys?"
+    },
+    "InkRecovery":
+    {
+      "Title": "Restabilește cerneala",
+      "Desktop": "Ultima dată Inkeys nu s-a închis normal. Restabiliți cerneala de pe pânza desktopului?\nUltima salvare: {}",
+      "Whiteboard": "Ultima dată Inkeys nu s-a închis normal. Restabiliți cerneala de pe tablă?\nUltima salvare: {}",
+      "Yes": "Restabilește",
+      "No": "Nu restabili"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "Opacitate",
       "WindowBehaviorSection": "Comportamentul ferestrei",
       "OtherOptionsSection": "Alte opțiuni",
-      "SafetyRecoverySection": "Siguranță și restabilire",
+      "SafetyRecoverySection": "Mod de siguranță la oră",
       "ShortcutGlobalSection": "Acțiuni globale",
       "ShortcutEditingSection": "Editarea adnotărilor",
       "ShortcutAuxiliarySection": "Acțiuni auxiliare",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "Salvarea pânzei",
-        "Enable": "Salvare automată a pânzei desktop",
-        "EnableE": "Salvează automat pânza desktop care nu este goală la golire sau la ieșire, pentru a o putea restabili ulterior din istoric.",
         "SaveTime":
         {
           "N": "Perioada de păstrare a istoricului",
@@ -735,11 +742,15 @@
         {
           "N": "Gestionarea căderilor",
           "E": "Alegeți acțiunea la o cădere a programului.",
-          "Mode1": "Afișează eroarea și repornește",
+          "Mode1": "Anunță și repornește",
           "Mode2": "Repornire silențioasă",
-          "Mode3": "Lasă sistemul să gestioneze",
-          "Mode4": "Închide direct",
+          "Mode3": "Închide direct",
           "Note": "Erorile la pornire afișează totuși un mesaj."
+        },
+        "RecoverInk":
+        {
+          "N": "Restabilește cerneala după repornirea din cauza unei erori",
+          "E": "La repornirea după o eroare sau o închidere neașteptată, restabilește cerneala care nu a fost salvată ultima dată."
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "Adaugă sau elimină stări de test aleatorii pentru a verifica animația, textul lung și inelul de progres.",
         "Add": "Adaugă o stare aleatorie",
         "Remove": "Elimină o stare"
+      },
+      "CrashTest":
+      {
+        "Section": "Test de restabilire după eroare",
+        "N": "Provoacă o defecțiune",
+        "E": "Tratat conform modului actual de gestionare a erorilor; pentru testarea repornirii automate și a restabilirii cernelii. „Simulează blocarea interfeței” nu se declanșează cu un depanator atașat.",
+        "WildPointer": "Eroare prin pointer invalid",
+        "Draw3Fatal": "Simulează eroare fatală de desenare",
+        "UiHang": "Simulează blocarea interfeței",
+        "ConfirmWildPointer": "Accesează imediat un pointer invalid și blochează aplicația, care este apoi tratată conform modului actual. Continuați?",
+        "ConfirmDraw3Fatal": "Face ca firul de desenare să arunce o eroare fatală și să se oprească; aplicația este tratată conform modului actual. Continuați?",
+        "ConfirmUiHang": "Blochează firul interfeței timp de 20 de secunde; după circa 15 secunde se aplică modul actual. Continuați?"
       },
       "ConsoleSection": "Jurnal de diagnosticare",
       "CanvasInformation": "Informații despre inițializarea pânzei",

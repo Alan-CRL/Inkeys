@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../IdtMain.h"
 
@@ -20,6 +20,8 @@ public:
 
 	static void SetFlag(int initialState = 0);
 	static void IsSecond(bool initialState = false);
+	// 崩溃拉起后的五分钟内再出致命故障不再拉起；UEF 之外的重启链（已知失败强退）共用同一判定。
+	static bool CrashRestartSuppressed() noexcept;
 
 	// 仅由继承父进程句柄验真的无 GUI 测试子进程设置；正式默认 Disabled。
 	enum class IsolatedUefTestMode : unsigned char { Disabled, StallAfterDumpOpen, ManualHoldAfterReport, ReportDiskFullOnce };

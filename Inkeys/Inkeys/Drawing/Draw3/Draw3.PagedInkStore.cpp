@@ -144,6 +144,7 @@ namespace Inkeys::Drawing::Draw3
 			case PagedInkError::FileCreateFailed: return "file_create_failed";
 			case PagedInkError::FileWriteFailed: return "file_write_failed";
 			case PagedInkError::Exception: return "exception";
+			case PagedInkError::AppendBaseMismatch: return "append_base_mismatch";
 			}
 			return "unknown";
 		}
@@ -317,7 +318,9 @@ namespace Inkeys::Drawing::Draw3
 		}
 		swprintf_s(date, L"%04u-%02u-%02u", static_cast<unsigned>(time.year),
 			static_cast<unsigned>(time.month), static_cast<unsigned>(time.day));
-		return JoinPath(JoinPath(JoinPath(root, L"whiteboard"), date), filename);
+		// 桌面活动区间文件与 C1.4 的 Clear 快照（desktop\）分目录，互不混入对方的读取。
+		return JoinPath(JoinPath(JoinPath(root, naming.kind == PagedInkFileKind::Desktop ? L"desktop-live" : L"whiteboard"),
+			date), filename);
 	}
 
 	const char* PagedInkWriteDiagnosticStage(const PagedInkCompletion& completion) noexcept
@@ -339,8 +342,8 @@ namespace Inkeys::Drawing::Draw3
 		struct Node
 		{
 			Node(PagedInkRequestIdentity identity, std::optional<Draw3UInkCanvasSnapshot> page,
-				std::optional<PagedInkBoundaryIdentity> boundary) noexcept
-				: snapshot(std::move(page)), expectedBoundary(boundary)
+				std::optional<PagedInkBoundaryIdentity> boundary, uint64_t base = 0) noexcept
+				: snapshot(std::move(page)), expectedBoundary(boundary), baseRevision(base)
 			{
 				completion.identity = identity;
 			}
@@ -348,6 +351,7 @@ namespace Inkeys::Drawing::Draw3
 			PagedInkCompletion completion;
 			std::optional<Draw3UInkCanvasSnapshot> snapshot;
 			std::optional<PagedInkBoundaryIdentity> expectedBoundary;
+			uint64_t baseRevision = 0; // 仅 Append
 			Clock::time_point queuedAt = Clock::now();
 		};
 
@@ -363,6 +367,9 @@ namespace Inkeys::Drawing::Draw3
 			int32_t binding = 0;
 			std::optional<int32_t> pageState;
 			std::optional<int32_t> pageKind;
+			// C1.6b：盘上整页的冷读预算用量。整页写入时由整页冷读给出，逐笔续接累加；未知时续接先补一次整页。
+			struct ColdUsage { uint64_t footprint = 0; uint64_t tiles = 0; uint64_t geometry = 0; };
+			std::optional<ColdUsage> coldUsage;
 		};
 
 		using Queue = std::list<Node>;
@@ -441,7 +448,9 @@ namespace Inkeys::Drawing::Draw3
 				--next;
 				const auto& queued = next->completion.identity;
 				if (queued.pageGuid != identity.pageGuid) continue;
-				if (queued.kind == PagedInkRequestKind::Clear ||
+				// Append 续接的是它准入时的盘上状态，后面的 Full 不能越过它合并到更早的 Full。
+				if (queued.kind == PagedInkRequestKind::Clear || queued.kind == PagedInkRequestKind::Append ||
+					queued.kind == PagedInkRequestKind::Rotate ||
 					queued.slotGeneration != identity.slotGeneration ||
 					queued.boundaryGeneration != identity.boundaryGeneration)
 					break;
@@ -452,7 +461,7 @@ namespace Inkeys::Drawing::Draw3
 
 		PagedInkAdmission Submit(PagedInkRequestIdentity identity,
 			std::optional<Draw3UInkCanvasSnapshot> snapshot = std::nullopt,
-			std::optional<PagedInkBoundaryIdentity> expectedBoundary = std::nullopt) noexcept
+			std::optional<PagedInkBoundaryIdentity> expectedBoundary = std::nullopt, uint64_t baseRevision = 0) noexcept
 		{
 			if (identity.pageGuid.IsZero() && identity.kind != PagedInkRequestKind::LoadLane)
 				return PagedInkAdmission::InvalidRequest;
@@ -461,14 +470,15 @@ namespace Inkeys::Drawing::Draw3
 				const std::lock_guard lock(mutex);
 				if (closing) return PagedInkAdmission::Closed;
 				const bool save = snapshot.has_value();
-				if (save && file.failed) return PagedInkAdmission::FileFailed;
+				// Rotate 换掉已失败的文件，正是失败后恢复写入的途径，不受文件失败准入限制。
+				if (save && file.failed && identity.kind != PagedInkRequestKind::Rotate) return PagedInkAdmission::FileFailed;
 				const bool pendingSave = !save && HasPendingLoadDependency(identity);
 				const auto merged = save ? MergeCandidate(identity) : saves.end();
 				auto& queue = save ? saves : pendingSave ? completed : loads;
 				try
 				{
 					// 一个节点同时预留任务和完成槽。准入后只转移节点，完成投递无需分配。
-					queue.emplace_back(identity, std::move(snapshot), expectedBoundary);
+					queue.emplace_back(identity, std::move(snapshot), expectedBoundary, baseRevision);
 				}
 				catch (...)
 				{
@@ -766,7 +776,16 @@ namespace Inkeys::Drawing::Draw3
 			}
 			log.stage = "create.context";
 			const auto workspaceType = options.naming.kind == PagedInkFileKind::Presentation ? 2 : 1;
-			if (options.pageContext.workspaceType != workspaceType ||
+			if (options.naming.kind == PagedInkFileKind::Desktop)
+			{
+				// 桌面：隐式 Workspace，页上下文不得声明显式 Workspace。
+				if (options.pageContext.workspaceType || options.pageContext.workspaceGuid)
+				{
+					completion.error = PagedInkError::InvalidSnapshot;
+					return {};
+				}
+			}
+			else if (options.pageContext.workspaceType != workspaceType ||
 				(workspaceType == 2 && (options.naming.presentationKey.IsZero() ||
 					!options.hostId || ParseUInkGuid(*options.hostId) != options.naming.presentationKey)))
 			{
@@ -790,6 +809,13 @@ namespace Inkeys::Drawing::Draw3
 			log.stage = "create.directory";
 			completion.systemError = EnsureDirectories(log.createPath.substr(0, log.createPath.find_last_of(L"\\/")));
 			if (completion.systemError != ERROR_SUCCESS) return {};
+			// 发布前先登记候选路径（尚无文件身份，恢复时按完整文件读）：发布后、身份登记前崩溃也不会漏掉这个文件。
+			log.stage = "create.recovery_register";
+			if (!NoteRecoveryFile(log.createPath))
+			{
+				completion.systemError = ERROR_WRITE_FAULT;
+				return {};
+			}
 			log.stage = "create.prepare";
 			UInkStoreWriteResult result;
 			writer = UInkPagedFileWriter::Create(log.createPath, header.header, header.headerExtension, canvas, result);
@@ -939,8 +965,10 @@ namespace Inkeys::Drawing::Draw3
 
 			// 前缀和当前区间各自导出时可能都符合预算，整页冷读时则共用一份预算。
 			bool degraded = prefixDegraded || exportSkipped;
+			std::optional<ConfirmedPage::ColdUsage> coldUsage;
 			{
 				const auto cold = ImportUInkV11Page(canvas, options.importOptions);
+				coldUsage = ConfirmedPage::ColdUsage{ cold.footprintUsed, cold.pageTilesUsed, cold.geometryUsed };
 				log.coldInvalidShapeSkipped = cold.counts.invalidShapeSkipped;
 				log.coldGeometryLimit = cold.counts.geometryLimit;
 				log.coldFootprintBudget = cold.counts.footprintBudget;
@@ -965,6 +993,13 @@ namespace Inkeys::Drawing::Draw3
 			}
 			completion.error = writer ? PagedInkError::FileWriteFailed : PagedInkError::FileCreateFailed;
 			log.stage = "append.prepare";
+			const bool hadWriter = writer != nullptr;
+			// 整页写入可能停在对象边界上冒充完整页：写前登记起点，写完清除（C1.6b §5）。
+			if (hadWriter && !NoteRecoveryPending(kRecoveryPendingPage))
+			{
+				log.stage = "append.recovery_register";
+				return;
+			}
 			const auto writeStarted = Clock::now();
 			auto write = writer ? writer->AppendPage(canvas) : CreatePagedFile(canvas, completion, log);
 			completion.writeMs = ElapsedMs(writeStarted);
@@ -978,6 +1013,8 @@ namespace Inkeys::Drawing::Draw3
 				if (!write.diagnostics.empty()) completion.diagnostics = std::move(write.diagnostics);
 				return;
 			}
+			if (hadWriter) ClearRecoveryPending();
+			else (void)NoteRecoveryFile(writer->Path());
 
 			const auto& pages = writer->Directory().pages;
 			const auto page = pages.find(key);
@@ -987,6 +1024,7 @@ namespace Inkeys::Drawing::Draw3
 			saved.revision = identity.revision;
 			saved.prefixDegraded = prefixDegraded;
 			saved.degraded = degraded;
+			saved.coldUsage = coldUsage;
 			if (clear)
 			{
 				saved.boundary = PagedInkBoundaryIdentity{ *identity.boundaryGeneration, identity.revision };
@@ -1014,12 +1052,249 @@ namespace Inkeys::Drawing::Draw3
 			completion.error = PagedInkError::None;
 		}
 
+		// ---- C1.6b 崩溃恢复：写前登记与逐笔续接 ----
+		static constexpr uint8_t kRecoveryPendingPage = 0;
+		static constexpr uint8_t kRecoveryPendingRelocate = 2;
+		static constexpr uint8_t kRecoveryPendingShapeGroup = 3;
+
+		// 返回 false 时调用方拒绝这次写入。登记文件同时清除该槽位的写前登记。
+		bool NoteRecoveryFile(const std::wstring& filePath) noexcept
+		{
+			if (!options.registerRecoveryFile || filePath.empty()) return true;
+			bool registered = false;
+			try { registered = options.registerRecoveryFile(options.recoveryContext, filePath); }
+			catch (...) {}
+			if (registered) recoveryPendingStale = false;
+			else ::Inkeys::Log::Warn(::Inkeys::Log::Module::UInk, "[UInkRecovery] scene={} event=register_file_failed", LogScene());
+			return registered;
+		}
+
+		bool NoteRecoveryPending(uint8_t kind) noexcept
+		{
+			if (!options.registerRecoveryPending || !writer) return true;
+			bool registered = false;
+			try { registered = options.registerRecoveryPending(options.recoveryContext, writer->Path(), writer->FileBytes(), kind); }
+			catch (...) {}
+			// 登记成功后，写入失败（即使已回截）也会把起点留在记录里，直到确认清除。
+			if (registered) recoveryPendingStale = true;
+			else ::Inkeys::Log::Warn(::Inkeys::Log::Module::UInk, "[UInkRecovery] scene={} event=register_pending_failed", LogScene());
+			return registered;
+		}
+
+		void ClearRecoveryPending() noexcept
+		{
+			if (!options.clearRecoveryPending || !writer) return;
+			bool cleared = false;
+			try { cleared = options.clearRecoveryPending(options.recoveryContext, writer->Path()); }
+			catch (...) {}
+			// 清除没落盘：盘上仍是旧起点，之后的单块追加若不先重新登记，恢复时会被截掉。
+			recoveryPendingStale = !cleared;
+			recoveryClearRetryPending = !cleared;
+			if (!cleared)
+				::Inkeys::Log::Warn(::Inkeys::Log::Module::UInk, "[UInkRecovery] scene={} event=clear_pending_failed", LogScene());
+		}
+
+		// 把这一笔续接到盘上已确认版本之后（design §13.1）。整页导出按可见历史顺序重编 contentId / undoId，
+		// 所以盘上版本等于改动前的内存页时，单笔导出平移编号后的追加结果与整页导出一致。
+		void AppendStroke(Node& node, std::wstring& publishedPath, PageWriteLog& log)
+		{
+			auto& completion = node.completion;
+			const auto& identity = completion.identity;
+			const auto key = identity.pageGuid.Bytes();
+			const auto record = confirmed.find(key);
+			const bool onDisk = record != confirmed.end();
+			log.stage = "append_stroke.base";
+			if (onDisk ? (record->second.revision != node.baseRevision || record->second.degraded ||
+				record->second.prefixDegraded) : node.baseRevision != 0)
+			{
+				completion.error = PagedInkError::AppendBaseMismatch;
+				return;
+			}
+			log.stage = "append_stroke.export";
+			auto exported = ExportDraw3PageToUInkV11(*node.snapshot, options.pageContext);
+			completion.fallbackCounts = exported.counts;
+			completion.diagnostics = std::move(exported.diagnostics);
+			if (exported.status != Draw3UInkExportStatus::Success || !exported.canvas)
+			{
+				completion.error = PagedInkError::ExportFailed;
+				return;
+			}
+			auto& canvas = *exported.canvas;
+			if (canvas.content.empty() || exported.counts.invalidShapeSkipped != 0)
+			{
+				// 被跳过的图形会让整页版本降级，交给整页写入按原规则处理。
+				completion.error = PagedInkError::AppendBaseMismatch;
+				return;
+			}
+			ConfirmedPage::ColdUsage coldUsage;
+			{
+				// 这一笔本身须能冷读，且累加到盘上整页的用量后仍在页预算内；否则交给整页写入按原规则判定降级。
+				const auto cold = ImportUInkV11Page(canvas, options.importOptions);
+				if (Draw3UInkV11ColdPreflightFailure(cold) || cold.counts.invalidShapeSkipped != 0 ||
+					cold.counts.geometryLimit != 0 || cold.counts.footprintBudget != 0)
+				{
+					completion.error = PagedInkError::AppendBaseMismatch;
+					return;
+				}
+				coldUsage = { cold.footprintUsed, cold.pageTilesUsed, cold.geometryUsed };
+				if (onDisk)
+				{
+					const auto& used = record->second.coldUsage;
+					const auto& importOptions = options.importOptions;
+					const auto within = [](uint64_t base, uint64_t add, uint64_t budget)
+					{
+						return base <= budget && add <= budget - base;
+					};
+					if (!used || (importOptions.footprintBudget &&
+						!within(used->footprint, coldUsage.footprint, *importOptions.footprintBudget)) ||
+						!within(used->tiles, coldUsage.tiles, importOptions.footprintPageMaxTiles) ||
+						!within(used->geometry, coldUsage.geometry, kDraw3UInkV11PageGeometryBudget))
+					{
+						completion.error = PagedInkError::AppendBaseMismatch;
+						return;
+					}
+					coldUsage.footprint += used->footprint;
+					coldUsage.tiles += used->tiles;
+					coldUsage.geometry += used->geometry;
+				}
+			}
+
+			const bool hadWriter = writer != nullptr;
+			bool pageInFile = false;
+			uint64_t nextContentId = 0;
+			uint32_t lastUndoId = 0;
+			bool atTail = false;
+			if (hadWriter)
+			{
+				const auto& directory = writer->Directory();
+				if (const auto page = directory.pages.find(key); page != directory.pages.end())
+				{
+					pageInFile = true;
+					nextContentId = page->second.nextContentId;
+					lastUndoId = page->second.lastUndoId;
+					atTail = directory.lastPageGuid && *directory.lastPageGuid == identity.pageGuid &&
+						page->second.offset + page->second.length == writer->FileBytes();
+				}
+			}
+			if (onDisk && !pageInFile)
+			{
+				// 确认目录里有、当前文件里却没有（不应出现）：单笔写成新页会丢掉该页已有内容，交给整页写入。
+				completion.error = PagedInkError::AppendBaseMismatch;
+				return;
+			}
+			completion.error = hadWriter ? PagedInkError::FileWriteFailed : PagedInkError::FileCreateFailed;
+			const auto writeStarted = Clock::now();
+			UInkStoreWriteResult write;
+			if (!onDisk)
+			{
+				// 新页：这一笔就是该页第一个完整版本（SAVE-13）。
+				log.stage = "append_stroke.page";
+				if (hadWriter && !NoteRecoveryPending(kRecoveryPendingPage))
+				{
+					log.stage = "append_stroke.recovery_register";
+					return;
+				}
+				write = hadWriter ? writer->AppendPage(canvas) : CreatePagedFile(canvas, completion, log);
+				if (write.success)
+				{
+					if (hadWriter) ClearRecoveryPending();
+					else (void)NoteRecoveryFile(writer->Path());
+				}
+			}
+			else
+			{
+				const uint32_t undoId = nextContentId == 0 ? 0 : lastUndoId + 1;
+				uint64_t contentId = nextContentId;
+				for (auto& block : canvas.content)
+					std::visit([&](auto& value)
+					{
+						value.contentId = static_cast<uint32_t>(contentId++);
+						value.undoId = undoId; // 单笔（含多部件图形）同属一个撤回组
+					}, block);
+				std::vector<UInkContent> blocks = std::move(canvas.content);
+				canvas.content.clear();
+				const bool relocate = !atTail;
+				// 单块追加通常不登记（残缺块由解码器丢弃）；上次清除失败时须先登记，覆盖盘上残留的旧起点。
+				const bool registered = relocate || blocks.size() > 1 || recoveryPendingStale;
+				if (registered && !NoteRecoveryPending(relocate ? kRecoveryPendingRelocate : kRecoveryPendingShapeGroup))
+				{
+					log.stage = "append_stroke.recovery_register";
+					return;
+				}
+				write.success = true;
+				if (relocate)
+				{
+					// 回翻页上的落笔：先把这一页搬到文件末尾成为最后一个 Canvas。
+					log.stage = "append_stroke.relocate";
+					write = writer->RelocatePage(identity.pageGuid);
+				}
+				if (write.success)
+				{
+					log.stage = "append_stroke.content";
+					write = writer->AppendContent(canvas, blocks);
+				}
+				if (write.success && registered) ClearRecoveryPending();
+			}
+			completion.writeMs = ElapsedMs(writeStarted);
+			publishedPath.swap(write.publishedPath);
+			if (!write.success)
+			{
+				if (write.failureStage) log.stage = write.failureStage;
+				log.facts.rollbackStage = write.rollbackStage;
+				log.facts.rollbackSystemError = write.rollbackSystemError;
+				if (write.systemError != 0) completion.systemError = write.systemError;
+				if (!write.diagnostics.empty()) completion.diagnostics = std::move(write.diagnostics);
+				return;
+			}
+			if (writer)
+			{
+				const auto& pages = writer->Directory().pages;
+				if (const auto page = pages.find(key); page != pages.end()) completion.pageBytes = page->second.length;
+			}
+			{
+				// 只推进确认修订，不改 Clear 前缀身份（boundary / clearContentId / prefixDegraded）。
+				const std::lock_guard lock(mutex);
+				auto& entry = confirmed[key];
+				if (!onDisk)
+				{
+					entry.pageNumber = canvas.pageNumber;
+					entry.slideId = canvas.slideId;
+					entry.binding = EffectiveUInkBinding(canvas);
+					entry.pageState = canvas.pageState;
+					entry.pageKind = canvas.pageKind;
+				}
+				entry.revision = identity.revision;
+				entry.coldUsage = coldUsage;
+				completion.confirmedBoundary = entry.boundary;
+				completion.confirmedRevision = entry.revision;
+				completion.degraded = entry.degraded;
+			}
+			completion.result = PagedInkResult::Succeeded;
+			completion.error = PagedInkError::None;
+		}
+
+
 		void PublishWriterState() noexcept
 		{
 			// 发布后即使重开失败，该服务也只认这个文件。
 			file.sealed = writer ? writer->IsSealed() : !path.empty();
 			file.tailUnconfirmed = writer && writer->IsTailUnconfirmed();
 			file.failed = file.sealed || file.tailUnconfirmed;
+		}
+
+		bool PhysicallyOrdered() const noexcept
+		{
+			try
+			{
+				std::vector<std::pair<uint64_t, uint32_t>> order;
+				order.reserve(writer->Directory().pages.size());
+				for (const auto& [guid, page] : writer->Directory().pages) order.emplace_back(page.offset, page.pageIndex);
+				std::sort(order.begin(), order.end());
+				for (std::size_t index = 1; index < order.size(); ++index)
+					if (order[index].second < order[index - 1].second) return false;
+			}
+			catch (...) {} // 分配失败：按已有序处理，跳过这次重排
+			return true;
 		}
 
 		void CompactIfNeeded(std::unique_lock<std::mutex>& lock)
@@ -1031,12 +1306,16 @@ namespace Inkeys::Drawing::Draw3
 
 			const auto beforeBytes = writer->FileBytes();
 			const auto supersededBytes = writer->SupersededBytes();
-			if (supersededBytes == 0) return;
+			// 离开白板 / 结束放映时的正序整理不受空闲阈值限制（C1.6b）。没有被替代字节但页的物理顺序
+			// 与页号不一致（先写高页号再首次写低页号、回翻搬页）时同样整理。
+			const bool forced = std::exchange(forceCompact, false);
+			if (supersededBytes == 0 && !(forced && !PhysicallyOrdered())) return;
 			const auto percent = testHook.compactMinSupersededPercent;
 			// 用向上取整的整数阈值，避免把整文件字节乘以百分数。
-			const bool overThreshold = supersededBytes >= testHook.compactMinSupersededBytes &&
+			const bool overThreshold = forced ||
+				(supersededBytes >= testHook.compactMinSupersededBytes &&
 				percent <= 100 && supersededBytes >=
-				beforeBytes / 100 * percent + (beforeBytes % 100 * percent + 99) / 100;
+				beforeBytes / 100 * percent + (beforeBytes % 100 * percent + 99) / 100);
 
 			const auto& pages = writer->Directory().pages;
 			size_t currentDamage = 0;
@@ -1069,6 +1348,8 @@ namespace Inkeys::Drawing::Draw3
 				const auto afterBytes = writer->FileBytes();
 				// 最近的坏版本会阻止整理，因此一旦提交，记录的坏段都已随替代段移除。
 				if (result.replacementCommitted) damagedVersions.clear();
+				// 整理用新文件替换旧文件：偏移全部变化，先登记新的文件身份（同时清除写前登记）再处理后续请求。
+				if (result.replacementCommitted && writer) (void)NoteRecoveryFile(writer->Path());
 				if (result.success)
 				{
 					::Inkeys::Log::Debug(::Inkeys::Log::Module::UInk,
@@ -1098,8 +1379,69 @@ namespace Inkeys::Drawing::Draw3
 			busy = false;
 		}
 
+		void AdoptRecoveredPages() noexcept
+		{
+			if (options.adoptPages.empty()) return;
+			{
+				const std::lock_guard lock(mutex);
+				busy = true;
+			}
+			std::size_t adopted = 0;
+			try
+			{
+				PageWriteLog log;
+				for (const auto& canvas : options.adoptPages)
+				{
+					PagedInkCompletion scratch;
+					std::wstring published;
+					// 与普通写入同一协议：首页建文件前登记候选路径，后续整页前登记起点。
+					const bool hadWriter = writer != nullptr;
+					if (hadWriter && !NoteRecoveryPending(kRecoveryPendingPage)) break;
+					auto write = hadWriter ? writer->AppendPage(canvas) : CreatePagedFile(canvas, scratch, log);
+					if (!write.success) break;
+					if (hadWriter) ClearRecoveryPending();
+					else (void)NoteRecoveryFile(writer->Path());
+					ConfirmedPage saved;
+					saved.revision = 1;
+					{
+						// 接管的页同样记下整页冷读用量，之后的逐笔续接才能按页预算累计。
+						const auto cold = ImportUInkV11Page(canvas, options.importOptions);
+						saved.coldUsage = ConfirmedPage::ColdUsage{ cold.footprintUsed, cold.pageTilesUsed, cold.geometryUsed };
+						saved.degraded = Draw3UInkV11ColdPreflightFailure(cold) || cold.counts.invalidShapeSkipped != 0 ||
+							cold.counts.geometryLimit != 0 || cold.counts.footprintBudget != 0;
+					}
+					if (const auto clear = LastClear(canvas, canvas.content.size()))
+					{
+						saved.boundary = PagedInkBoundaryIdentity{ 1, 1 };
+						saved.clearContentId = std::get<UInkClear>(canvas.content[*clear]).contentId;
+					}
+					saved.pageNumber = canvas.pageNumber;
+					saved.slideId = canvas.slideId;
+					saved.binding = EffectiveUInkBinding(canvas);
+					saved.pageState = canvas.pageState;
+					saved.pageKind = canvas.pageKind;
+					const std::lock_guard lock(mutex);
+					confirmed[canvas.pageGuid.Bytes()] = saved;
+					if (writer) path = writer->Path();
+					++adopted;
+				}
+			}
+			catch (...) {}
+			::Inkeys::Log::Info(::Inkeys::Log::Module::UInk, "[UInkRecovery] scene={} event=adopt pages={} adopted={}",
+				LogScene(), options.adoptPages.size(), adopted);
+			std::vector<UInkCanvas>{}.swap(options.adoptPages);
+			if (adopted != 0) adoptedNotice.store(true, std::memory_order_release);
+			{
+				const std::lock_guard lock(mutex);
+				PublishWriterState();
+				busy = false;
+			}
+			changed.notify_all();
+		}
+
 		void Run()
 		{
+			AdoptRecoveredPages();
 			for (;;)
 			{
 				bool save = false;
@@ -1128,6 +1470,20 @@ namespace Inkeys::Drawing::Draw3
 					if (loads.empty() && saves.empty())
 					{
 						if (closing) break;
+						if (std::exchange(recoveryClearRetryPending, false) && recoveryPendingStale && writer)
+						{
+							// 清除写前登记失败后空闲重试一次（锁外写会话记录）；之后重新进入循环判断队列。
+							lock.unlock();
+							ClearRecoveryPending();
+							recoveryClearRetryPending = false;
+							// 清掉了：唤醒调用方重查恢复结算（此时可能没有别的回执会唤醒它）。
+							if (!recoveryPendingStale && options.wake)
+							{
+								try { options.wake(options.wakeContext); }
+								catch (...) {}
+							}
+							continue;
+						}
 						CompactIfNeeded(lock);
 						lock.unlock();
 						changed.notify_all();
@@ -1160,7 +1516,24 @@ namespace Inkeys::Drawing::Draw3
 					try
 					{
 						if (testHook.beforeWork) testHook.beforeWork(testHook.context, node.completion.identity);
-						if (save) SavePage(node, publishedPath, writeLog, spliceRead);
+						if (save && node.completion.identity.kind == PagedInkRequestKind::Rotate)
+						{
+							// 换新文件：之前的写入都已落盘；关闭写入器，下一次写入按首次写入建新文件。
+							// 先持久化“无活动区间文件”，否则崩溃恢复仍会读到清前的旧区间（失败时由绘制线程重试 Rotate）。
+							bool fileCleared = true;
+							if (options.clearRecoveryFile)
+							{
+								try { fileCleared = options.clearRecoveryFile(options.recoveryContext, node.baseRevision); }
+								catch (...) { fileCleared = false; }
+							}
+							if (fileCleared) recoveryPendingStale = false;
+							writer.reset();
+							rotated = true;
+							node.completion.result = fileCleared ? PagedInkResult::Succeeded : PagedInkResult::Failed;
+						}
+						else if (save && node.completion.identity.kind == PagedInkRequestKind::Append)
+							AppendStroke(node, publishedPath, writeLog);
+						else if (save) SavePage(node, publishedPath, writeLog, spliceRead);
 						else if (node.completion.identity.kind == PagedInkRequestKind::LoadLane)
 							LoadLane(node.completion);
 						else
@@ -1213,6 +1586,13 @@ namespace Inkeys::Drawing::Draw3
 				std::size_t ready = 1;
 				{
 					const std::lock_guard lock(mutex);
+					if (std::exchange(rotated, false))
+					{
+						path.clear();
+						confirmed.clear();
+						damagedVersions.clear();
+						damageTrackingIncomplete = false;
+					}
 					if (!publishedPath.empty()) path.swap(publishedPath);
 					if (save)
 					{
@@ -1253,6 +1633,13 @@ namespace Inkeys::Drawing::Draw3
 		bool closing = false;
 		bool busy = false;
 		bool compactCheckPending = false;
+		bool forceCompact = false; // C1.6b 正序整理请求，下一次整理检查忽略空闲阈值
+		bool rotated = false; // 仅 worker 线程：本次请求是换新文件
+		// 会话记录里可能留有未清的写前登记：登记成功即置位，确认清除（或登记文件、Rotate 清条目）后复位。
+		// 置位期间单块追加也先重新登记，覆盖旧起点。worker 写，绘制线程经 RecoveryPendingSettled 只读。
+		std::atomic<bool> recoveryPendingStale{ false };
+		bool recoveryClearRetryPending = false; // 仅 worker：清除失败后在下一次空闲时重试一次
+		std::atomic<bool> adoptedNotice{ false };
 		bool compacting = false;
 		bool evictionRetryPending = false;
 		std::size_t activeEvictions = 0;
@@ -1280,6 +1667,15 @@ namespace Inkeys::Drawing::Draw3
 	PagedInkAdmission PagedInkStore::Save(PagedInkSaveRequest request) noexcept
 	{
 		const auto& identity = request.identity;
+		if (identity.kind == PagedInkRequestKind::Append)
+		{
+			// 只含这一笔、不带 Clear 与上一区间；目标修订必须晚于基准修订。
+			if (impl_->options.root.empty() || identity.revision <= request.baseRevision ||
+				identity.pageGuid != request.snapshot.pageGuid || request.previousIntervalOnDisk ||
+				request.snapshot.strokes.empty() || !request.snapshot.operations.empty())
+				return PagedInkAdmission::InvalidRequest;
+			return impl_->Submit(identity, std::move(request.snapshot), std::nullopt, request.baseRevision);
+		}
 		if (impl_->options.root.empty() || identity.revision == 0 || identity.pageGuid != request.snapshot.pageGuid ||
 			(identity.kind != PagedInkRequestKind::Clear && identity.kind != PagedInkRequestKind::Full) ||
 			(identity.kind == PagedInkRequestKind::Clear &&
@@ -1330,6 +1726,30 @@ namespace Inkeys::Drawing::Draw3
 			{ return impl_->loads.empty() && impl_->saves.empty() && !impl_->busy && !impl_->compactCheckPending; });
 	}
 
+	PagedInkAdmission PagedInkStore::RotateFile(const draw3::uink::UInkGuid& pageGuid, uint64_t loadGeneration,
+		uint64_t clearGeneration) noexcept
+	{
+		if (impl_->options.naming.kind != PagedInkFileKind::Desktop || pageGuid.IsZero())
+			return PagedInkAdmission::InvalidRequest;
+		Draw3UInkCanvasSnapshot marker;
+		marker.pageGuid = pageGuid;
+		// Rotate 不用基准修订，借该字段把 Clear 代次带给 worker。
+		return impl_->Submit({ pageGuid, 1, 0, loadGeneration, std::nullopt, PagedInkRequestKind::Rotate },
+			std::move(marker), std::nullopt, clearGeneration);
+	}
+
+	void PagedInkStore::RequestOrderedCompact() noexcept
+	{
+		{
+			const std::lock_guard lock(impl_->mutex);
+			if (impl_->closing) return;
+			// 排在已准入写入之后：worker 只在两条队列都空时做整理检查。
+			impl_->forceCompact = true;
+			impl_->compactCheckPending = true;
+		}
+		impl_->changed.notify_all();
+	}
+
 	void PagedInkStore::Close(PagedInkCloseMode mode)
 	{
 		std::size_t ready = 0;
@@ -1360,6 +1780,16 @@ namespace Inkeys::Drawing::Draw3
 	{
 		const std::lock_guard lock(impl_->mutex);
 		return impl_->path;
+	}
+
+	bool PagedInkStore::TakeAdoptedNotice() noexcept
+	{
+		return impl_->adoptedNotice.exchange(false, std::memory_order_acq_rel);
+	}
+
+	bool PagedInkStore::RecoveryPendingSettled() const noexcept
+	{
+		return !impl_->recoveryPendingStale.load(std::memory_order_acquire);
 	}
 
 	PagedInkFileState PagedInkStore::FileState() const noexcept

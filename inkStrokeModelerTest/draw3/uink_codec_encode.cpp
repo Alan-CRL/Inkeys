@@ -112,6 +112,42 @@ namespace draw3::uink
 				return PackPageBlocks(canvas, implicitWorkspace, implicitDevice);
 			}
 
+			// 续接已落盘页的内容块（SAVE-7/8）：编号接在 firstContentId 之后，撤回组与 Clear 边界规则同 ValidateCanvas。
+			bool PackContentBlocks(std::span<const UInkContent> blocks, uint64_t firstContentId,
+				uint32_t previousUndoId, bool previousWasClear)
+			{
+				if (blocks.empty()) return Fail("content.empty");
+				if (blocks.size() >= limits_.maxTopLevelObjects) return FailLimit("content.objects");
+				uint64_t totalPoints = 0;
+				uint32_t previousUndo = previousUndoId;
+				bool previousClear = previousWasClear;
+				for (size_t index = 0; index < blocks.size(); ++index)
+				{
+					const uint64_t expectedId = firstContentId + index;
+					if (expectedId > (std::numeric_limits<uint32_t>::max)()) return FailLimit("content.contentId");
+					const bool currentIsClear = std::holds_alternative<UInkClear>(blocks[index]);
+					const bool sequenceValid = std::visit([&](const auto& content)
+					{
+						if (content.contentId != expectedId) return false;
+						if (expectedId == 0) return content.undoId == 0;
+						if (content.undoId < previousUndo) return false;
+						return !((currentIsClear || previousClear) && content.undoId == previousUndo);
+					}, blocks[index]);
+					if (!sequenceValid || !ValidateContent(blocks[index]))
+						return Fail("content.sequence");
+					std::visit([&](const auto& content) { previousUndo = content.undoId; }, blocks[index]);
+					previousClear = currentIsClear;
+					if (!AddGeometryPoints(GeometryPointCount(blocks[index]), totalPoints)) return false;
+				}
+				for (const UInkContent& content : blocks)
+				{
+					const size_t objectStart = buffer_.size();
+					PackContent(content);
+					if (!CheckPackedObject(objectStart, "content")) return false;
+				}
+				return true;
+			}
+
 			UInkEncodeResult Finish()
 			{
 				UInkEncodeResult result;
@@ -1567,6 +1603,15 @@ namespace draw3::uink
 		return EncodeObjectStream([&](UInkEncoder& encoder)
 		{
 			encoder.PackPage(canvas, implicitWorkspace, implicitDevice);
+		}, limits);
+	}
+
+	UInkEncodeResult EncodeUInkContentBlocks(std::span<const UInkContent> blocks, uint64_t firstContentId,
+		uint32_t previousUndoId, bool previousWasClear, const UInkReadLimits& limits)
+	{
+		return EncodeObjectStream([&](UInkEncoder& encoder)
+		{
+			encoder.PackContentBlocks(blocks, firstContentId, previousUndoId, previousWasClear);
 		}, limits);
 	}
 }

@@ -258,6 +258,8 @@ bool ChangeStateModeForShortcutIfRevision(bool restoreAnnotation,
 	std::uint64_t expectedRevision, std::uint64_t freezeRevision);
 bool ToggleFreezeForShortcutIfRevision(std::uint64_t expectedRevision);
 bool ChangeStateModeToPen();
+// 仅在“选择 / 穿透”时切到画笔（判断与切换在同一把锁内，不覆盖用户刚选的工具）；返回是否切换。
+bool ChangeStateModeToPenIfIdle();
 enum class PenToolSelectionEnum : std::uint8_t { SoftPen, HardPen, Highlighter, Laser };
 bool PenToolSelectionWouldChange(PenToolSelectionEnum tool);
 bool ChangeStateModeToPenTool(PenToolSelectionEnum tool);

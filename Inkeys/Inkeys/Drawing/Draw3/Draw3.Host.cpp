@@ -1,5 +1,7 @@
 ﻿#include "Draw3.DiagnosticOutput.h"
 #include "Draw3.Host.h"
+#include "Draw3.RecoverySession.h"
+#include "../../Helper/Helper.Fatal.h"
 #include "../../../IdtStart.h"
 #include "Draw3.PresentationState.h"
 #include "Draw3.Presentation.h"
@@ -17,6 +19,7 @@ import Inkeys.UI.PageControl;
 import Inkeys.Drawing.Draw3.contact_input;
 import Inkeys.Drawing.Draw3.pen_cursor;
 import Inkeys.Drawing.Draw3.desktop_ink_snapshots;
+import draw3.uink_store; // C1.6b 恢复读取 ReadUInkStoreFilePrefix
 import Inkeys.Drawing.Draw3.drawing_controller;
 import Inkeys.Drawing.Draw3.graphics_initialization;
 import Inkeys.Drawing.Draw3.haptic_feedback;
@@ -117,7 +120,8 @@ namespace Inkeys::Drawing::Draw3
 
 			PagedInkStore* Get(const Bridge::PresentationTarget& target, const std::wstring& root,
 				float dpiScale, void (*wake)(void*) noexcept, void* wakeContext,
-				PagedInkStoreTestHook testHook = {})
+				PagedInkStoreTestHook testHook = {},
+				void (*decorate)(void*, PagedInkStoreOptions&) = nullptr, void* decorateContext = nullptr)
 			{
 				if (target.key.IsZero() || root.empty()) return nullptr;
 				const std::scoped_lock lock(mutex_);
@@ -138,6 +142,8 @@ namespace Inkeys::Drawing::Draw3
 				options.importOptions.dpiScale = dpiScale;
 				options.wake = wake;
 				options.wakeContext = wakeContext;
+				// C1.6b：按文稿键接上崩溃恢复会话的写前登记钩子。
+				if (decorate) decorate(decorateContext, options);
 				auto store = std::make_unique<PagedInkStore>(std::move(options), testHook);
 				return stores_.emplace(target.key, std::move(store)).first->second.get();
 			}
@@ -646,6 +652,533 @@ namespace Inkeys::Drawing::Draw3
 		// 声明在 input 之后，析构时 worker 不会唤醒已析构的协调器。
 		DesktopInkSnapshots desktopSnapshots;
 		PresentationStoreRegistry presentationStores;
+		// ---- C1.6b 崩溃恢复会话 ----
+		struct RecoveryAdapter
+		{
+			Recovery::Session* session = nullptr;
+			Recovery::Workspace slot = Recovery::Workspace::Whiteboard;
+			std::string key;
+		};
+		Recovery::Session recoverySession;
+		// 启动恢复线程：扫描被放弃的会话、弹窗、把桌面区间交给绘制线程装入。只认领最新的一份。
+		std::thread recoveryThread;
+		std::atomic<bool> recoveryStop{ false };
+		void* recoveryClaim = nullptr; // 认领锁持有到进程结束（DELETE_ON_CLOSE）
+		std::vector<void*> olderRecoveryClaims; // 较旧的被放弃会话：认领后才删除或借用，同样持有到进程结束
+		// 装入后的落盘结果（绘制线程回报）：确认写进本进程文件后才结算旧记录。
+		std::optional<bool> desktopRecoveryDurable;
+		std::optional<bool> whiteboardRecoveryDurable;
+		// 开始停止（退出屏障之前）：恢复线程不再弹窗或交接装入，绘制线程不再取待装入数据。
+		std::atomic<bool> recoveryClosing{ false };
+		std::mutex recoveryMutex;
+		std::condition_variable recoveryCondition;
+		std::optional<draw3::uink::Draw3UInkCanvasSnapshot> pendingDesktopRecovery;
+		// 上一区间（desktop\ 下最近一次 Clear 的快照）：随当前区间一起交给绘制线程，恢复后可撤回到这一区间。
+		std::optional<draw3::uink::Draw3UInkCanvasSnapshot> pendingDesktopPrevious;
+		// 本次运行最近一次桌面 Clear 快照的请求 ID：其保存成功后登记为会话的上一区间。
+		std::mutex desktopClearRequestMutex;
+		std::optional<std::array<std::uint8_t, 16>> desktopClearRequestId;
+		std::atomic<bool> desktopRecoveryPending{ false };
+		std::optional<bool> desktopRecoveryResult;
+		// PPT：本次启动内识别到同一文稿时接管（键为 FormatPresentationKey）。扫描完成前识别到的文稿短暂等待。
+		struct PresentationAdopt
+		{
+			std::vector<draw3::uink::UInkCanvas> pages;
+			std::optional<draw3::uink::UInkGuid> workspaceGuid;
+		};
+		std::map<std::string, PresentationAdopt> pendingPresentationAdopt;
+		bool presentationScanDone = true;
+		// 白板：未进入白板时装入白板槽。
+		std::optional<std::vector<draw3::uink::Draw3UInkCanvasSnapshot>> pendingWhiteboardRecovery;
+		std::size_t pendingWhiteboardPage = 0;
+		std::atomic<bool> whiteboardRecoveryPending{ false };
+		std::optional<bool> whiteboardRecoveryResult;
+
+		static bool TakeWhiteboardRecovery(void* context, std::vector<draw3::uink::Draw3UInkCanvasSnapshot>& pages,
+			std::size_t& currentPage) noexcept
+		{
+			auto& self = *static_cast<Impl*>(context);
+			if (!self.whiteboardRecoveryPending.load(std::memory_order_acquire) ||
+				self.recoveryClosing.load(std::memory_order_acquire)) return false;
+			try
+			{
+				const std::scoped_lock lock(self.recoveryMutex);
+				if (!self.pendingWhiteboardRecovery) return false;
+				pages = std::move(*self.pendingWhiteboardRecovery);
+				currentPage = self.pendingWhiteboardPage;
+				self.pendingWhiteboardRecovery.reset();
+				self.whiteboardRecoveryPending.store(false, std::memory_order_release);
+				return true;
+			}
+			catch (...) { return false; }
+		}
+
+		static void WhiteboardRecoveryInstalled(void* context, bool installed) noexcept
+		{
+			auto& self = *static_cast<Impl*>(context);
+			{
+				const std::scoped_lock lock(self.recoveryMutex);
+				self.whiteboardRecoveryResult = installed;
+			}
+			self.recoveryCondition.notify_all();
+		}
+
+		static bool TakeDesktopRecovery(void* context, draw3::uink::Draw3UInkCanvasSnapshot& output,
+			std::optional<draw3::uink::Draw3UInkCanvasSnapshot>& previous) noexcept
+		{
+			auto& self = *static_cast<Impl*>(context);
+			if (!self.desktopRecoveryPending.load(std::memory_order_acquire) ||
+				self.recoveryClosing.load(std::memory_order_acquire)) return false;
+			try
+			{
+				const std::scoped_lock lock(self.recoveryMutex);
+				if (!self.pendingDesktopRecovery) return false;
+				output = std::move(*self.pendingDesktopRecovery);
+				previous = std::move(self.pendingDesktopPrevious);
+				self.pendingDesktopRecovery.reset();
+				self.pendingDesktopPrevious.reset();
+				self.desktopRecoveryPending.store(false, std::memory_order_release);
+				return true;
+			}
+			catch (...) { return false; }
+		}
+
+		static void RecoveryInkVisible(void* context) noexcept
+		{
+			auto& self = *static_cast<Impl*>(context);
+			try
+			{
+				if (self.startOptions.recoveryEnterDrawing)
+					self.startOptions.recoveryEnterDrawing(self.startOptions.recoveryPromptContext);
+			}
+			catch (...) {}
+		}
+
+		static void RecoveryDurable(void* context, std::uint8_t scene, bool durable) noexcept
+		{
+			auto& self = *static_cast<Impl*>(context);
+			{
+				const std::scoped_lock lock(self.recoveryMutex);
+				(scene == 0 ? self.desktopRecoveryDurable : self.whiteboardRecoveryDurable) = durable;
+			}
+			self.recoveryCondition.notify_all();
+		}
+
+		// 恢复线程等待落盘结果；退出或超时按未结算处理（下次启动仍可恢复）。
+		bool WaitRecoveryDurable(std::optional<bool>& result) noexcept
+		{
+			try
+			{
+				std::unique_lock lock(recoveryMutex);
+				recoveryCondition.wait_for(lock, std::chrono::minutes(2), [&]
+				{
+					return result.has_value() || recoveryStop.load(std::memory_order_acquire);
+				});
+				return result.value_or(false);
+			}
+			catch (...) { return false; }
+		}
+
+		static void DesktopRecoveryInstalled(void* context, bool installed) noexcept
+		{
+			auto& self = *static_cast<Impl*>(context);
+			{
+				const std::scoped_lock lock(self.recoveryMutex);
+				self.desktopRecoveryResult = installed;
+			}
+			self.recoveryCondition.notify_all();
+		}
+
+		// 恢复读取：FileId 与记录一致且有写前登记时截到登记起点（该次整页、搬页或图形组写入不完整），
+		// 否则读全文件；单块残缺由解码器丢弃。返回各页最新完整版本。
+		static std::optional<draw3::uink::UInkReadResult> ReadRecoveredFile(const Recovery::FileEntry& entry) noexcept
+		{
+			Recovery::FileIdentity actual;
+			if (!Recovery::QueryFileIdentity(entry.path, actual)) return std::nullopt;
+			std::uint64_t limit = (std::numeric_limits<std::uint64_t>::max)();
+			if (entry.pending && entry.identity.valid && actual == entry.identity) limit = entry.pending->start;
+			auto read = draw3::uink::ReadUInkStoreFilePrefix(entry.path, limit);
+			if (!read.document || read.document->canvases.empty()) return std::nullopt;
+			return read;
+		}
+
+		// desktop\ 下的单页 Clear 快照（隐式 Workspace、单 Canvas）。读不出或无墨迹时返回空。
+		static std::optional<draw3::uink::Draw3UInkCanvasSnapshot> ReadDesktopSnapshot(const std::wstring& path,
+			float dpiScale) noexcept
+		{
+			try
+			{
+				const auto read = draw3::uink::ReadUInkStoreFile(path);
+				if (!read.document || read.document->canvases.size() != 1) return std::nullopt;
+				draw3::uink::Draw3UInkV11ImportOptions importOptions;
+				importOptions.dpiScale = dpiScale;
+				auto imported = draw3::uink::ImportUInkV11Page(read.document->canvases.front(), importOptions);
+				if (!imported.page || imported.page->strokes.empty()) return std::nullopt;
+				return std::move(imported.page);
+			}
+			catch (...) { return std::nullopt; }
+		}
+
+		static std::uint64_t LastWriteFileTime(const std::wstring& path) noexcept
+		{
+			WIN32_FILE_ATTRIBUTE_DATA data{};
+			if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data)) return 0;
+			return (static_cast<std::uint64_t>(data.ftLastWriteTime.dwHighDateTime) << 32) | data.ftLastWriteTime.dwLowDateTime;
+		}
+
+		// 用户决定（2026-11-27）：最后一次保存墨迹距今不超过 5 分钟直接恢复，超过才询问。
+		// 取不到时间或时间在未来（时钟回拨）时按需要询问处理。
+		static bool RecoveryNeedsPrompt(std::uint64_t lastWriteFileTime) noexcept
+		{
+			constexpr std::uint64_t kSilentWindow = 5ull * 60ull * 10'000'000ull; // FILETIME 单位 100 ns
+			if (lastWriteFileTime == 0) return true;
+			FILETIME now{};
+			GetSystemTimeAsFileTime(&now);
+			const std::uint64_t current = (static_cast<std::uint64_t>(now.dwHighDateTime) << 32) | now.dwLowDateTime;
+			return current < lastWriteFileTime || current - lastWriteFileTime > kSilentWindow;
+		}
+
+		void RunRecoveryScan(std::wstring root, HostStartOptions options, float dpiScale) noexcept
+		{
+			struct ScanDone
+			{
+				Impl& self;
+				~ScanDone()
+				{
+					{
+						const std::scoped_lock lock(self.recoveryMutex);
+						self.presentationScanDone = true;
+					}
+					self.recoveryCondition.notify_all();
+				}
+			} scanDone{ *this };
+			try
+			{
+				auto sessions = Recovery::ScanAbandonedSessions(root, recoverySession.Name());
+				if (sessions.empty()) return;
+				auto& session = sessions.front();
+				recoveryClaim = Recovery::ClaimSession(root, session.baseName);
+				if (!recoveryClaim) return; // 已被另一个实例认领
+				auto& record = session.record;
+				// 只恢复最新的一份。较旧的被放弃会话先认领：最新会话缺某个场景而旧会话该场景未结算时借用过来
+				// （双重崩溃：上一次恢复装入后、写盘确认前又崩溃），其余旧记录在最新记录持久化后删除（文件留在磁盘上）。
+				std::vector<std::wstring> olderRecords;
+				for (std::size_t index = 1; index < sessions.size(); ++index)
+				{
+					void* claim = Recovery::ClaimSession(root, sessions[index].baseName);
+					if (!claim) continue;
+					olderRecoveryClaims.push_back(claim);
+					olderRecords.push_back(sessions[index].recordPath);
+					const auto& older = sessions[index].record;
+					// 最新会话 Clear 过（desktopCleared 或有 Clear 代次）就不借用：旧会话的桌面内容已被清掉。
+					// 旧会话只剩上一区间（Clear 后崩溃）同样可借用，与扫描的“可恢复”判定一致。
+					const bool olderDesktopRecoverable = older.desktop || (older.desktopPreviousInterval &&
+						older.desktopPreviousGeneration == older.desktopClearGeneration);
+					if (!record.desktop && !record.desktopCleared && record.desktopClearGeneration == 0 &&
+						olderDesktopRecoverable && !older.settledDesktop)
+					{
+						record.desktop = older.desktop;
+						record.desktopCleared = older.desktopCleared;
+						record.desktopClearGeneration = older.desktopClearGeneration;
+						record.desktopPreviousInterval = older.desktopPreviousInterval;
+						record.desktopPreviousGeneration = older.desktopPreviousGeneration;
+						record.settledDesktop = false;
+					}
+					if (!record.whiteboard && older.whiteboard && !older.settledWhiteboard)
+					{
+						record.whiteboard = older.whiteboard;
+						record.whiteboardPageIndex = older.whiteboardPageIndex;
+						record.whiteboardPageGuid = older.whiteboardPageGuid;
+						record.settledWhiteboard = false;
+					}
+				}
+				// 合并后的最新记录没写成功：保留旧记录（认领锁随进程结束释放），下次启动再试。
+				if (Recovery::WriteSessionRecord(session.recordPath, record))
+					for (const auto& path : olderRecords) DeleteFileW(path.c_str());
+				const bool crashSceneDesktop = record.workspace == Recovery::Workspace::Desktop;
+				// PPT：读出待接管的页，只在本次启动内有效；读完即结算（本进程不再识别到就不再恢复）。
+				for (const auto& entry : record.presentations)
+				{
+					if (std::find(record.settledPresentations.begin(), record.settledPresentations.end(), entry.key)
+						!= record.settledPresentations.end()) continue;
+					if (auto read = ReadRecoveredFile(entry.file))
+					{
+						PresentationAdopt adopt;
+						if (read->document->headerExtension && !read->document->headerExtension->workspaces.empty())
+							adopt.workspaceGuid = read->document->headerExtension->workspaces.front().guid;
+						adopt.pages = std::move(read->document->canvases);
+						const std::scoped_lock lock(recoveryMutex);
+						pendingPresentationAdopt[entry.key] = std::move(adopt);
+					}
+					record.settledPresentations.push_back(entry.key);
+				}
+				{
+					const std::scoped_lock lock(recoveryMutex);
+					presentationScanDone = true;
+				}
+				recoveryCondition.notify_all();
+				// 白板：崩溃场景且有墨迹时弹窗（静默重启档除外），否则静默恢复数据、界面留在桌面。
+				if (record.whiteboard && !record.settledWhiteboard)
+				{
+					auto read = ReadRecoveredFile(*record.whiteboard);
+					bool hasInk = false;
+					if (read)
+						for (const auto& canvas : read->document->canvases) hasInk = hasInk || !canvas.content.empty();
+					if (!read || !hasInk)
+					{
+						if (read || ++record.failedRecoveryAttempts >= 3) record.settledWhiteboard = true;
+					}
+					else
+					{
+						const bool crashSceneWhiteboard = record.workspace == Recovery::Workspace::Whiteboard;
+						bool accept = true;
+						const auto lastWrite = LastWriteFileTime(record.whiteboard->path);
+						if (crashSceneWhiteboard && !options.recoverySkipPrompt && options.recoveryPrompt &&
+							RecoveryNeedsPrompt(lastWrite))
+							accept = options.recoveryPrompt(options.recoveryPromptContext, 1, lastWrite);
+						if (recoveryClosing.load(std::memory_order_acquire)) return;
+						if (!accept) record.settledWhiteboard = true;
+						else
+						{
+							draw3::uink::Draw3UInkV11ImportOptions importOptions;
+							importOptions.dpiScale = dpiScale;
+							std::vector<draw3::uink::Draw3UInkCanvasSnapshot> pages;
+							for (const auto& canvas : read->document->canvases)
+								if (auto imported = draw3::uink::ImportUInkV11Page(canvas, importOptions); imported.page)
+									pages.push_back(std::move(*imported.page));
+							{
+								const std::scoped_lock lock(recoveryMutex);
+								pendingWhiteboardRecovery = std::move(pages);
+								pendingWhiteboardPage = record.whiteboardPageIndex.value_or(0);
+								whiteboardRecoveryResult.reset();
+								whiteboardRecoveryDurable.reset(); // 发布前清空：落盘结果可能紧跟装入结果到达
+								whiteboardRecoveryPending.store(true, std::memory_order_release);
+							}
+							(void)input.PublishControlWake();
+							std::unique_lock lock(recoveryMutex);
+							recoveryCondition.wait_for(lock, std::chrono::seconds(60), [this]
+							{
+								return whiteboardRecoveryResult.has_value() || recoveryStop.load(std::memory_order_acquire);
+							});
+							if (whiteboardRecoveryResult.value_or(false))
+							{
+								lock.unlock();
+								if (crashSceneWhiteboard && options.recoveryEnterWhiteboard)
+									options.recoveryEnterWhiteboard(options.recoveryPromptContext);
+								// 结算等装入的各页确认写进本进程的白板文件：之前再崩溃，旧记录仍可恢复。
+								if (WaitRecoveryDurable(whiteboardRecoveryDurable)) record.settledWhiteboard = true;
+								else DiagnosticOutput::Text(DiagnosticOutput::OutWarn,
+									"[Draw3.Recovery] action=whiteboard_install result=deferred reason=not_durable\n");
+							}
+							else
+							{
+								pendingWhiteboardRecovery.reset();
+								whiteboardRecoveryPending.store(false, std::memory_order_release);
+							}
+						}
+					}
+				}
+
+				// 上一区间快照与最新 Clear 同代次才有效（Clear 后崩溃、尚未落新笔时桌面条目为空，但仍可恢复后撤回）。
+				const bool previousValid = record.desktopPreviousInterval &&
+					record.desktopPreviousGeneration == record.desktopClearGeneration;
+				// 已在退出：不再弹窗装入桌面，直接写下白板的结算结果。
+				if ((record.desktop || previousValid) && !record.settledDesktop && !recoveryClosing.load(std::memory_order_acquire))
+				{
+					auto read = record.desktop ? ReadRecoveredFile(*record.desktop) : std::nullopt;
+					const draw3::uink::UInkCanvas* canvas = read ? &read->document->canvases.front() : nullptr;
+					const bool hasCurrent = canvas && !canvas->content.empty();
+					std::optional<draw3::uink::Draw3UInkCanvasSnapshot> previous;
+					if (previousValid) previous = ReadDesktopSnapshot(*record.desktopPreviousInterval, dpiScale);
+					// 区分“无条目 / 读到空页 / 读失败”：读失败沿用 3 次重试预算，不用另一段内容顶替后结算。
+					const bool currentFailed = record.desktop && !read;
+					const bool previousFailed = previousValid && !previous;
+					if (currentFailed || (!hasCurrent && !previous))
+					{
+						if ((currentFailed || previousFailed) ? ++record.failedRecoveryAttempts >= 3 : true)
+							record.settledDesktop = true;
+					}
+					else
+					{
+						bool accept = true;
+						const auto lastWrite = record.desktop ? LastWriteFileTime(record.desktop->path) : 0;
+						// 只有当前区间有墨迹时才询问；只剩上一区间（Clear 后崩溃）时静默装入撤回点。
+						if (hasCurrent && crashSceneDesktop && !options.recoverySkipPrompt && options.recoveryPrompt &&
+							RecoveryNeedsPrompt(lastWrite))
+							accept = options.recoveryPrompt(options.recoveryPromptContext, 0, lastWrite);
+						if (recoveryClosing.load(std::memory_order_acquire)) return;
+						if (!accept) record.settledDesktop = true;
+						else
+						{
+							draw3::uink::Draw3UInkV11ImportOptions importOptions;
+							importOptions.dpiScale = dpiScale;
+							std::optional<draw3::uink::Draw3UInkCanvasSnapshot> current;
+							if (hasCurrent) current = draw3::uink::ImportUInkV11Page(*canvas, importOptions).page;
+							else if (previous)
+							{
+								current.emplace();
+								current->pageGuid = previous->pageGuid; // 空的当前区间：只装入撤回点
+							}
+							// 交接时的 Clear 代次：装入后若用户又 Clear 过，上一区间不再属于当前区间，放弃接手。
+							const auto expectedGeneration = recoverySession.DesktopClearGeneration();
+							if (current && !recoveryClosing.load(std::memory_order_acquire))
+							{
+								{
+									const std::scoped_lock lock(recoveryMutex);
+									pendingDesktopRecovery = std::move(current);
+									pendingDesktopPrevious = std::move(previous);
+									desktopRecoveryResult.reset();
+									desktopRecoveryDurable.reset();
+									desktopRecoveryPending.store(true, std::memory_order_release);
+								}
+								(void)input.PublishControlWake();
+								std::unique_lock lock(recoveryMutex);
+								// 绘制线程在空闲时装入；恢复线程等待结果，退出时放弃（保持未结算）。
+								recoveryCondition.wait_for(lock, std::chrono::seconds(60), [this]
+								{
+									return desktopRecoveryResult.has_value() || recoveryStop.load(std::memory_order_acquire);
+								});
+								if (desktopRecoveryResult.value_or(false))
+								{
+									lock.unlock();
+									if (WaitRecoveryDurable(desktopRecoveryDurable))
+									{
+										// 本进程接手上一区间：再次崩溃时仍能撤回到它。代次已变（装入后又 Clear）时不接手；
+										// 登记失败则保留旧记录，下次启动仍可恢复。
+										bool handedOver = true;
+										if (previousValid && recoverySession.DesktopClearGeneration() == expectedGeneration)
+											handedOver = recoverySession.RegisterDesktopPreviousInterval(*record.desktopPreviousInterval,
+												expectedGeneration);
+										record.settledDesktop = handedOver;
+									}
+									else DiagnosticOutput::Text(DiagnosticOutput::OutWarn,
+										"[Draw3.Recovery] action=desktop_install result=deferred reason=not_durable\n");
+								}
+								else
+								{
+									pendingDesktopRecovery.reset();
+									pendingDesktopPrevious.reset();
+									desktopRecoveryPending.store(false, std::memory_order_release);
+									DiagnosticOutput::Text(DiagnosticOutput::OutWarn,
+										"[Draw3.Recovery] action=desktop_install result=deferred reason=not_installed\n");
+								}
+							}
+							else if (++record.failedRecoveryAttempts >= 3) record.settledDesktop = true;
+						}
+					}
+				}
+				const bool presentationsSettled = std::all_of(record.presentations.begin(), record.presentations.end(),
+					[&](const Recovery::PresentationEntry& entry)
+					{
+						return std::find(record.settledPresentations.begin(), record.settledPresentations.end(),
+							entry.key) != record.settledPresentations.end();
+					});
+				if ((!(record.desktop || previousValid) || record.settledDesktop) &&
+					(!record.whiteboard || record.settledWhiteboard) && presentationsSettled)
+					DeleteFileW(session.recordPath.c_str());
+				else (void)Recovery::WriteSessionRecord(session.recordPath, record);
+			}
+			catch (...) {}
+		}
+		RecoveryAdapter whiteboardRecovery{ &recoverySession, Recovery::Workspace::Whiteboard, {} };
+		RecoveryAdapter desktopRecovery{ &recoverySession, Recovery::Workspace::Desktop, {} };
+		std::map<std::string, std::unique_ptr<RecoveryAdapter>> presentationRecovery;
+
+		static bool RecoveryRegisterFile(void* context, const std::wstring& path) noexcept
+		{
+			auto* adapter = static_cast<RecoveryAdapter*>(context);
+			if (!adapter || !adapter->session || !adapter->session->Active()) return true;
+			Recovery::FileIdentity identity;
+			(void)Recovery::QueryFileIdentity(path, identity);
+			bool registered = false;
+			switch (adapter->slot)
+			{
+			case Recovery::Workspace::Desktop: registered = adapter->session->RegisterDesktopFile(path, identity); break;
+			case Recovery::Workspace::Whiteboard: registered = adapter->session->RegisterWhiteboardFile(path, identity); break;
+			default: registered = adapter->session->RegisterPresentationFile(adapter->key, path, identity); break;
+			}
+			// 开关关闭：照常尝试登记（便于中途开启），但会话记录写失败不影响 C1.4 的普通保存。
+			return registered || !adapter->session->RecoverInk();
+		}
+
+		static bool RecoveryRegisterPending(void* context, const std::wstring& path, std::uint64_t start,
+			std::uint8_t kind) noexcept
+		{
+			auto* adapter = static_cast<RecoveryAdapter*>(context);
+			if (!adapter || !adapter->session || !adapter->session->Active()) return true;
+			// 开关关闭：不做同步登记，写入开销与 C1.4 一致（清除照常，用于收掉开启期间的残留登记）。
+			if (!adapter->session->RecoverInk()) return true;
+			// 恢复只在文件身份一致时才按登记截断：查不到身份的登记形同虚设，按登记失败处理。
+			Recovery::FileIdentity identity;
+			if (!Recovery::QueryFileIdentity(path, identity)) return false;
+			Recovery::PendingWrite pending;
+			pending.kind = static_cast<Recovery::PendingKind>(kind <= 3 ? kind : 0);
+			pending.start = start;
+			return adapter->session->RegisterPending(adapter->slot, adapter->key, identity, pending);
+		}
+
+		static bool RecoveryClearPending(void* context, const std::wstring& path) noexcept
+		{
+			auto* adapter = static_cast<RecoveryAdapter*>(context);
+			if (!adapter || !adapter->session || !adapter->session->Active()) return true;
+			Recovery::FileIdentity identity;
+			(void)Recovery::QueryFileIdentity(path, identity);
+			return adapter->session->ClearPending(adapter->slot, adapter->key, identity);
+		}
+
+		static bool RecoveryClearFile(void* context, std::uint64_t clearGeneration) noexcept
+		{
+			auto* adapter = static_cast<RecoveryAdapter*>(context);
+			if (!adapter || !adapter->session || !adapter->session->Active()) return true;
+			return adapter->slot != Recovery::Workspace::Desktop || adapter->session->ClearDesktopFile(clearGeneration);
+		}
+
+		static void RecoveryDecoratePresentationStore(void* context, PagedInkStoreOptions& options)
+		{
+			auto& self = *static_cast<Impl*>(context);
+			if (!self.recoverySession.Active() || !options.hostId) return;
+			try
+			{
+				// 扫描完成前识别到的文稿：有界等待（超时按无恢复处理），保证接管先于首次 LoadLane。
+				std::unique_lock lock(self.recoveryMutex);
+				self.recoveryCondition.wait_for(lock, std::chrono::seconds(3), [&] { return self.presentationScanDone; });
+				if (const auto found = self.pendingPresentationAdopt.find(*options.hostId);
+					found != self.pendingPresentationAdopt.end())
+				{
+					if (found->second.workspaceGuid) options.pageContext.workspaceGuid = *found->second.workspaceGuid;
+					options.adoptPages = std::move(found->second.pages);
+					self.pendingPresentationAdopt.erase(found);
+				}
+			}
+			catch (...) {}
+			auto& adapter = self.presentationRecovery[*options.hostId];
+			if (!adapter) adapter = std::make_unique<RecoveryAdapter>(RecoveryAdapter{ &self.recoverySession,
+				Recovery::Workspace::Presentation, *options.hostId });
+			options.recoveryContext = adapter.get();
+			options.registerRecoveryFile = &RecoveryRegisterFile;
+			options.registerRecoveryPending = &RecoveryRegisterPending;
+			options.clearRecoveryPending = &RecoveryClearPending;
+		}
+
+		static void RecoverySceneChanged(void* context, Bridge::Workspace workspace,
+			const std::uint8_t* pageGuid, std::size_t pageIndex) noexcept
+		{
+			auto& self = *static_cast<Impl*>(context);
+			if (!self.recoverySession.Active()) return;
+			self.recoverySession.PublishWorkspace(workspace == Bridge::Workspace::Whiteboard ? Recovery::Workspace::Whiteboard
+				: workspace == Bridge::Workspace::Presentation ? Recovery::Workspace::Presentation : Recovery::Workspace::Desktop);
+			if (pageGuid)
+			{
+				try
+				{
+					std::array<std::uint8_t, 16> bytes{};
+					std::copy(pageGuid, pageGuid + bytes.size(), bytes.begin());
+					self.recoverySession.PublishWhiteboardPage(draw3::uink::FormatUInkGuid(draw3::uink::UInkGuid(bytes)),
+						static_cast<std::uint32_t>(pageIndex));
+				}
+				catch (...) {}
+			}
+		}
 		float presentationStoreDpiScale = 1.0f;
 		WindowController window;
 		Haptics::ClickMailbox hapticClicks;
@@ -1700,6 +2233,15 @@ namespace Inkeys::Drawing::Draw3
 		{
 			auto* self = static_cast<Impl*>(context);
 			if (!self) return false;
+			if (trigger == DesktopSnapshotTrigger::Clear && self->recoverySession.Active())
+			{
+				try
+				{
+					const std::scoped_lock lock(self->desktopClearRequestMutex);
+					self->desktopClearRequestId = request.identity.requestId.Bytes();
+				}
+				catch (...) {}
+			}
 			const auto status = self->desktopSnapshots.Save(std::move(request));
 			if (status == DesktopInkAdmission::Accepted) return true;
 			DiagnosticOutput::Printf(DiagnosticOutput::ErrError,
@@ -1782,7 +2324,8 @@ namespace Inkeys::Drawing::Draw3
 					};
 				}
 				if (auto* store = self->presentationStores.Get(target, self->startOptions.autoSaveRoot,
-					self->presentationStoreDpiScale, &WakeForPresentationPersistence, self, hook))
+					self->presentationStoreDpiScale, &WakeForPresentationPersistence, self, hook,
+					&RecoveryDecoratePresentationStore, self))
 					return store;
 			}
 			catch (...) { failureReason = "exception"; }
@@ -2262,6 +2805,8 @@ namespace Inkeys::Drawing::Draw3
 				}
 			}
 			window.SetAutoSaveEnabled(state.autoSaveEnabled);
+			window.SetCrashRecoverInkEnabled(state.crashRecoverInk);
+			recoverySession.PublishRecoverInk(state.crashRecoverInk);
 			const bool selectionChanged = selectionMode.exchange(state.selectionMode,
 				std::memory_order_acq_rel) != state.selectionMode;
 			DrawingTool tool = DrawingTool::Pen;
@@ -2486,6 +3031,25 @@ namespace Inkeys::Drawing::Draw3
 				completion.readDiagnostics.size());
 		}
 
+		// C1.6b：最近一次 Clear 的快照完整落盘后登记为会话的上一区间（代次与 Rotate 的 Clear 代次一致）。
+		void NoteDesktopClearSnapshotSaved(const DesktopInkCompletion& completion) noexcept
+		{
+			if (!recoverySession.Active() || completion.operation != DesktopInkOperation::Save ||
+				completion.result != DesktopInkResult::Succeeded || completion.degraded || !completion.publishedPath)
+				return;
+			try
+			{
+				{
+					const std::scoped_lock lock(desktopClearRequestMutex);
+					if (!desktopClearRequestId || *desktopClearRequestId != completion.identity.requestId.Bytes()) return;
+				}
+				// 本回调可能在绘制线程上：只记下请求，由会话 worker 写盘。开关关闭时不登记。
+				if (recoverySession.RecoverInk())
+					recoverySession.PublishDesktopPreviousInterval(*completion.publishedPath, completion.identity.clearGeneration);
+			}
+			catch (...) {}
+		}
+
 		void SettleDesktopCompletions() noexcept
 		{
 			// ACK 后或绘制线程退出后只核销终态；已取入槽的回执已记录诊断。
@@ -2508,6 +3072,7 @@ namespace Inkeys::Drawing::Draw3
 					pendingDesktopCompletion = desktopSnapshots.Take();
 					if (!pendingDesktopCompletion) break;
 					LogDesktopCancellation(*pendingDesktopCompletion);
+					NoteDesktopClearSnapshotSaved(*pendingDesktopCompletion);
 				}
 				// 已有回执占槽时保留本个，消费槽后仍会发布普通 wake。
 				if (!window.TryEnqueueDesktopCompletion(pendingDesktopCompletion)) break;
@@ -2670,6 +3235,28 @@ namespace Inkeys::Drawing::Draw3
 			SettleDesktopCompletions();
 			desktopPersistenceInstallationClosed = false;
 			presentationStores.BeginRun();
+			// C1.6b：先拿存活锁再发布会话记录；隐藏自检不建立会话。失败等同开关关闭（写 Warn）。
+			if (!options.autoSaveRoot.empty() && !options.enableHiddenTestContactInjection &&
+				!recoverySession.Active() && !recoverySession.Start(options.autoSaveRoot, options.crashRecoverInk))
+				DiagnosticOutput::Text(DiagnosticOutput::OutWarn, "[Draw3.Recovery] action=session_start result=failed\n");
+			// 启动时开关开启才扫描旧会话；扫描、读盘与弹窗都在独立线程上，不占用绘制线程。
+			if (recoverySession.Active() && options.crashRecoverInk && !recoveryThread.joinable())
+			{
+				recoveryStop.store(false, std::memory_order_release);
+				recoveryClosing.store(false, std::memory_order_release);
+				{
+					const std::scoped_lock lock(recoveryMutex);
+					presentationScanDone = false;
+				}
+				// DPI 按值传入：与绘制线程启动时的 configuration.dpiScale 同一算法、同一窗口，避免读共享字段的数据竞争。
+				const float scanDpiScale = (std::max)(static_cast<float>(QueryCompatibleWindowDpi(hwnd)) / 96.0f, 0.1f);
+				try { recoveryThread = std::thread(&Impl::RunRecoveryScan, this, options.autoSaveRoot, options, scanDpiScale); }
+				catch (...)
+				{
+					const std::scoped_lock lock(recoveryMutex);
+					presentationScanDone = true;
+				}
+			}
 			devicePerformance.Start(options.devicePerformancePath);
 			input.EnableDiagnostics(options.enableHiddenTestContactInjection || options.enableRuntimeMetrics);
 			if (options.enableRuntimeMetrics) runtimeMetrics.inputBaseline = input.DiagnosticsSnapshot();
@@ -2844,6 +3431,23 @@ namespace Inkeys::Drawing::Draw3
 							observer.whiteboardChanged = &ObserveWhiteboard;
 							observer.whiteboardExitSaved = &ObserveWhiteboardExit;
 							observer.whiteboardRoot = startOptions.autoSaveRoot;
+							if (recoverySession.Active())
+							{
+								observer.takeDesktopRecovery = &TakeDesktopRecovery;
+								observer.takeWhiteboardRecovery = &TakeWhiteboardRecovery;
+								observer.whiteboardRecoveryInstalled = &WhiteboardRecoveryInstalled;
+								observer.desktopRecoveryInstalled = &DesktopRecoveryInstalled;
+								observer.recoveryDurable = &RecoveryDurable;
+								observer.recoveryInkVisible = &RecoveryInkVisible;
+								observer.whiteboardRecoveryContext = &whiteboardRecovery;
+								observer.desktopRecoveryContext = &desktopRecovery;
+								observer.registerRecoveryFile = &RecoveryRegisterFile;
+								observer.registerRecoveryPending = &RecoveryRegisterPending;
+								observer.clearRecoveryPending = &RecoveryClearPending;
+								observer.clearRecoveryFile = &RecoveryClearFile;
+								observer.recoverySceneChanged = &RecoverySceneChanged;
+								observer.recoveryContext = this;
+							}
 							observer.whiteboardDefaultTheme = startOptions.whiteboardDefaultTheme;
 							observer.whiteboardThemeEdited = &ObserveWhiteboardThemeEdited;
 							observer.whiteboardViewportChanged = &ObserveWhiteboardViewport;
@@ -2958,6 +3562,8 @@ namespace Inkeys::Drawing::Draw3
 						window.RequestExit();
 					}
 				}
+				// Run 返回后的宿主清理仍算 Draw3 槽的工作单元；清理卡住超过 15 秒由教学安全模式兜底。
+				if (initialized) Inkeys::Fatal::Beat(Inkeys::Fatal::Slot::Draw3Loop);
 				if (initialized) UpdateCanvasInformation(runtimeMetrics.runFailed.load(std::memory_order_acquire)
 					? "绘制异常，已停止" : "已停止");
 				// Run 正常、异常或 stop 返回时都补齐活动结束，再释放 controller。
@@ -3217,6 +3823,9 @@ namespace Inkeys::Drawing::Draw3
 
 		void Stop() noexcept
 		{
+			// 先关恢复的弹窗与装入准入；落盘结果仍可在退出屏障期间由绘制线程报告。
+			recoveryClosing.store(true, std::memory_order_release);
+			recoveryCondition.notify_all();
 			hapticClicks.Stop();
 			displaySubscription.Reset(); // 等待回调退出后再拆除输入与窗口。
 			if (!attachedWindow.load(std::memory_order_acquire) &&
@@ -3282,6 +3891,14 @@ namespace Inkeys::Drawing::Draw3
 			SettleDesktopCompletions();
 			// owner 退出后才能释放各槽借用的服务。
 			presentationStores.Clear();
+			// 恢复线程可能还在等弹窗或装入结果：通知退出后等待（弹窗本身由 MessageBox 自行收口）。
+			// 绘制线程退出前已按各场景的实际回执报告落盘结果（见 settleRecoveryDurable 的退出调用）。
+			recoveryStop.store(true, std::memory_order_release);
+			recoveryCondition.notify_all();
+			if (recoveryThread.joinable()) recoveryThread.join();
+			// 三个存储服务都已排空关闭（白板随绘制线程退出）：写 clean 后释放存活锁。
+			// 退出屏障未完成时不写 clean，下次启动按非正常结束处理。
+			recoverySession.Stop(exitAutoSavePrepared);
 			// 绘制线程已退出（Run 退出前已移交最后一段）：账本立即落盘并停止写盘线程。
 			devicePerformance.Stop();
 			EndDrawingActivity();
@@ -3723,6 +4340,13 @@ namespace Inkeys::Drawing::Draw3
 		const uint32_t next = enabled ? (1u | (visual ? 2u : 0u)) : 0u;
 		if (impl_->canvasDebugOptions.exchange(next, std::memory_order_acq_rel) != next)
 			(void)impl_->input.PublishControlWake();
+	}
+
+	void Host::InjectDebugFatalForTest() noexcept
+	{
+		Inkeys::Fatal::RequestDraw3DebugFault();
+		// 绘制线程可能正阻塞在空闲等待里，控制唤醒让它立刻进入下一轮循环消费标志。
+		(void)impl_->input.PublishControlWake();
 	}
 
 	bool Host::CanvasDebugEnabled() const noexcept

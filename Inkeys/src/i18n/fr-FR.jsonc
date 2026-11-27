@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "Inkeys a rencontré un problème. Sélectionnez OK pour redémarrer Inkeys et tenter une restauration."
+      "Body": "Inkeys a rencontré un problème. Sélectionnez OK pour redémarrer Inkeys et tenter une restauration.",
+      "RepeatBody": "Inkeys a de nouveau rencontré un problème peu après son redémarrage. Redémarrer Inkeys ?"
+    },
+    "InkRecovery":
+    {
+      "Title": "Restaurer l'encre",
+      "Desktop": "Inkeys ne s'est pas fermé normalement la dernière fois. Restaurer l'encre du canevas du bureau ?\nDernier enregistrement : {}",
+      "Whiteboard": "Inkeys ne s'est pas fermé normalement la dernière fois. Restaurer l'encre du tableau blanc ?\nDernier enregistrement : {}",
+      "Yes": "Restaurer",
+      "No": "Ne pas restaurer"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "Opacité",
       "WindowBehaviorSection": "Comportement de la fenêtre",
       "OtherOptionsSection": "Autres options",
-      "SafetyRecoverySection": "Sécurité et restauration",
+      "SafetyRecoverySection": "Mode sécurité en classe",
       "ShortcutGlobalSection": "Actions globales",
       "ShortcutEditingSection": "Modification des annotations",
       "ShortcutAuxiliarySection": "Actions supplémentaires",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "Enregistrement des canevas",
-        "Enable": "Enregistrer automatiquement le canevas du bureau",
-        "EnableE": "Enregistrer automatiquement un canevas de bureau non vide lors de son effacement ou à la fermeture de l’application, pour pouvoir le restaurer depuis l’historique.",
         "SaveTime":
         {
           "N": "Durée de conservation de l’historique",
@@ -735,11 +742,15 @@
         {
           "N": "Gestion des plantages",
           "E": "Choisir l’action à effectuer si l’application plante.",
-          "Mode1": "Afficher une erreur et redémarrer",
+          "Mode1": "Avertir et redémarrer",
           "Mode2": "Redémarrer sans message",
-          "Mode3": "Laisser le système gérer",
-          "Mode4": "Fermer directement",
+          "Mode3": "Fermer directement",
           "Note": "Les erreurs au démarrage affichent toujours un message."
+        },
+        "RecoverInk":
+        {
+          "N": "Restaurer l'encre après un redémarrage suite à un plantage",
+          "E": "Au redémarrage après un plantage ou une fermeture inattendue, restaure l'encre qui n'avait pas été enregistrée."
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "Ajoutez ou supprimez des états de test aléatoires pour vérifier les animations, les textes longs et les anneaux de progression.",
         "Add": "Ajouter un état aléatoire",
         "Remove": "Supprimer un état"
+      },
+      "CrashTest":
+      {
+        "Section": "Test de restauration après plantage",
+        "N": "Provoquer une panne",
+        "E": "Traité selon le mode actuel de gestion des plantages ; sert à tester le redémarrage automatique et la restauration de l'encre. « Simuler un blocage de l'interface » ne se déclenche pas si un débogueur est attaché.",
+        "WildPointer": "Plantage par pointeur invalide",
+        "Draw3Fatal": "Simuler une erreur fatale de dessin",
+        "UiHang": "Simuler un blocage de l'interface",
+        "ConfirmWildPointer": "Accède immédiatement à un pointeur invalide et fait planter l'application, qui est ensuite traitée selon le mode actuel. Continuer ?",
+        "ConfirmDraw3Fatal": "Fait lever une erreur fatale au thread de dessin puis l'arrête ; l'application est ensuite traitée selon le mode actuel. Continuer ?",
+        "ConfirmUiHang": "Bloque le thread de l'interface pendant 20 secondes ; après environ 15 secondes, le mode actuel s'applique. Continuer ?"
       },
       "ConsoleSection": "Sortie du journal de diagnostic",
       "CanvasInformation": "Informations d’initialisation du canevas",

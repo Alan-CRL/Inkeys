@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "Inkeys bir sorunla karşılaştı. Inkeys'i yeniden başlatıp kurtarmayı denemek için Tamam'ı seçin."
+      "Body": "Inkeys bir sorunla karşılaştı. Inkeys'i yeniden başlatıp kurtarmayı denemek için Tamam'ı seçin.",
+      "RepeatBody": "Inkeys yeniden başlatıldıktan kısa süre sonra yine bir sorunla karşılaştı. Inkeys yeniden başlatılsın mı?"
+    },
+    "InkRecovery":
+    {
+      "Title": "Mürekkebi kurtar",
+      "Desktop": "Inkeys son kez normal şekilde kapanmadı. Masaüstü tuvalindeki mürekkep kurtarılsın mı?\nSon kayıt: {}",
+      "Whiteboard": "Inkeys son kez normal şekilde kapanmadı. Beyaz tahtadaki mürekkep kurtarılsın mı?\nSon kayıt: {}",
+      "Yes": "Kurtar",
+      "No": "Kurtarma"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "Opaklık",
       "WindowBehaviorSection": "Pencere davranışı",
       "OtherOptionsSection": "Diğer seçenekler",
-      "SafetyRecoverySection": "Güvenlik ve kurtarma",
+      "SafetyRecoverySection": "Ders güvenli modu",
       "ShortcutGlobalSection": "Genel işlemler",
       "ShortcutEditingSection": "Açıklama düzenleme",
       "ShortcutAuxiliarySection": "Ek işlemler",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "Tuval kaydetme",
-        "Enable": "Masaüstü tuvalini otomatik kaydet",
-        "EnableE": "Masaüstü tuvali temizlenirken veya uygulamadan çıkılırken, boş olmayan tuvali geçmişten kurtarılabilmesi için otomatik kaydedin.",
         "SaveTime":
         {
           "N": "Geçmişi saklama süresi",
@@ -735,11 +742,15 @@
         {
           "N": "Çökme davranışı",
           "E": "Uygulama çöktüğünde yapılacak işlemi seçin.",
-          "Mode1": "Hata iletisi göster ve yeniden başlat",
+          "Mode1": "Bildir ve yeniden başlat",
           "Mode2": "Sessizce yeniden başlat",
-          "Mode3": "Sistem işlesin",
-          "Mode4": "Doğrudan çık",
+          "Mode3": "Doğrudan çık",
           "Note": "Başlangıç sırasında oluşan hatalar yine de bildirilir."
+        },
+        "RecoverInk":
+        {
+          "N": "Çökme sonrası yeniden başlatmada mürekkebi kurtar",
+          "E": "Çökme veya beklenmedik kapanmadan sonra yeniden başlatıldığında, son kaydedilmemiş mürekkebi geri yükler."
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "Animasyonu, uzun metni ve ilerleme halkasını denetlemek için rastgele test durumları ekleyin veya kaldırın.",
         "Add": "Rastgele durum ekle",
         "Remove": "Bir durumu kaldır"
+      },
+      "CrashTest":
+      {
+        "Section": "Çökme kurtarma testi",
+        "N": "Arıza tetikle",
+        "E": "Geçerli çökme işleme seçeneğine göre işlenir; otomatik yeniden başlatmayı ve mürekkep kurtarmayı test etmek içindir. Hata ayıklayıcı bağlıyken \"Arayüz donmasını taklit et\" tetiklenmez.",
+        "WildPointer": "Geçersiz işaretçi çökmesi",
+        "Draw3Fatal": "Çizim ölümcül hatasını taklit et",
+        "UiHang": "Arayüz donmasını taklit et",
+        "ConfirmWildPointer": "Hemen geçersiz bir işaretçiye erişip uygulamayı çökertir; ardından geçerli çökme işleme seçeneği uygulanır. Devam edilsin mi?",
+        "ConfirmDraw3Fatal": "Çizim iş parçacığının ölümcül hata fırlatıp durmasını sağlar; ardından geçerli seçenek uygulanır. Devam edilsin mi?",
+        "ConfirmUiHang": "Arayüz iş parçacığını 20 saniye dondurur; yaklaşık 15 saniye sonra geçerli seçenek uygulanır. Devam edilsin mi?"
       },
       "ConsoleSection": "Tanılama günlüğü çıktısı",
       "CanvasInformation": "Tuval başlatma bilgisi",

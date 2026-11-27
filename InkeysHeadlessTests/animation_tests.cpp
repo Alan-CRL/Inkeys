@@ -92,6 +92,7 @@ int RunKeyboardShortcutInputTests();
 int RunAutoCollapseInteractionTests();
 int RunMouseHookTransportTests();
 int RunStatusIndicatorTests();
+int RunFatalWatchdogTests();
 
 namespace
 {
@@ -1720,6 +1721,9 @@ int main(int argc, char** argv)
 {
 	if (argc == 2 && std::string_view(argv[1]) == "--page-control-only")
 		return RunPageControlTests();
+	// 教学安全模式看门狗判定与原子状态，纯值测试。
+	if (argc == 2 && std::string_view(argv[1]) == "--fatal-watchdog-only")
+		return RunFatalWatchdogTests() == 0 ? 0 : 1;
 	// PPT解析与诊断协议均为纯值/无窗口测试，可独立定位请求时序。
 	if (argc == 2 && std::string_view(argv[1]) == "--ppt-session-only")
 		return RunPptSessionTests();
@@ -1924,6 +1928,7 @@ int main(int argc, char** argv)
 	failureCount += RunAutoCollapseInteractionTests();
 	failureCount += RunMouseHookTransportTests();
 	failureCount += RunStatusIndicatorTests();
+	failureCount += RunFatalWatchdogTests();
 	if (benchmark) RunBenchmarks();
 
 	if (failureCount != 0)

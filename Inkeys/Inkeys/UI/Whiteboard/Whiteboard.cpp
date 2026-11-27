@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -33,6 +33,7 @@ module;
 #if defined(INKEYS_WHITEBOARD_PATTERN_PROFILE)
 #include "../../Drawing/Draw3/Draw3.DiagnosticOutput.h"
 #endif
+#include "../../Helper/Helper.Fatal.h"
 
 module Inkeys.UI.Whiteboard;
 
@@ -238,6 +239,8 @@ namespace Inkeys::UI::Whiteboard
 		void ReleaseInactiveBackgroundResources()
 		{
 			std::scoped_lock renderLock(backgroundRenderMutex);
+			// 白板隐藏或释放后不再提交：清除持续失败计时，旧失败不跨切换延续。
+			Inkeys::Fatal::ClearFailure(Inkeys::Fatal::FailureSlot::UiWhiteboard);
 			// 仅退休当前客户端的像素资源；文稿、主题与共享 WARP epoch 均保持。
 			backgroundScene.ReleaseDeviceResources();
 			configuredBackgroundScreen = {};
@@ -436,6 +439,9 @@ namespace Inkeys::UI::Whiteboard
 				DiscardBackgroundSubmission();
 			}
 			const HRESULT resourceHr = backgroundScene.EnsureDeviceResources(frameContext.epoch, width, height);
+			// 教学安全模式持续失败：只计真实 API 失败；设备丢失另计到 UiDeviceRecovery。
+			if (FAILED(resourceHr) && !IsDeviceLost(resourceHr))
+				Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::UiWhiteboard);
 			if (FAILED(resourceHr)) return IsDeviceLost(resourceHr) ? FrameResult::DeviceLost : FrameResult::Retry;
 			if (backgroundSubmission && (!backgroundState.FrameCurrent(backgroundSubmission->frame)
 				|| backgroundSubmission->deviceGeneration != frameContext.epoch.generation
@@ -548,6 +554,7 @@ namespace Inkeys::UI::Whiteboard
 				D2D1_DC_INITIALIZE_MODE_COPY, &source);
 			HRESULT releaseDcHr = S_OK;
 			bool presented = false;
+			bool ulwFailed = false; // ULW 真实失败；表面被替换或白板失去表面不算
 			if (SUCCEEDED(getDcHr) && source)
 			{
 #if INKEYS_ENABLE_UI3_PRESENTATION_HARNESS
@@ -572,7 +579,7 @@ namespace Inkeys::UI::Whiteboard
 				info.dwFlags = ULW_ALPHA;
 				HDC destinationDc = GetDC(nullptr);
 				info.hdcDst = destinationDc;
-				const bool pixelsApplied = currentSurface() && SubmitFreezeSurface(hwnd, &info, true);
+				const bool pixelsApplied = currentSurface() && SubmitFreezeSurface(hwnd, &info, true, &ulwFailed);
 				if (pixelsApplied) presentationRevision = nativeLease.PixelsChanged(WindowRole::Freeze);
 				presented = pixelsApplied && !surfaceReplaced();
 				if (destinationDc) ReleaseDC(nullptr, destinationDc);
@@ -591,6 +598,8 @@ namespace Inkeys::UI::Whiteboard
 			if (FAILED(getDcHr) || FAILED(releaseDcHr)
 				|| FAILED(endDrawHr) || !presented)
 			{
+				if (FAILED(getDcHr) || FAILED(releaseDcHr) || FAILED(endDrawHr) || ulwFailed)
+					Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::UiWhiteboard);
 				backgroundState.Invalidate();
 				backgroundScene.ReleaseDeviceResources();
 				return FrameResult::Retry;
@@ -632,6 +641,7 @@ namespace Inkeys::UI::Whiteboard
 				contentRevision, ++backgroundFrameSerial, presentationRevision}, frameContext.epoch.generation,
 				0, backgroundScene.AnimationActive()};
 			(void)PublishBackgroundCandidate(*backgroundSubmission);
+			Inkeys::Fatal::RecordSuccess(Inkeys::Fatal::FailureSlot::UiWhiteboard);
 			return FrameResult::Retry;
 		}
 

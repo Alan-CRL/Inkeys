@@ -35,6 +35,7 @@
 #include "../../../resource.h"
 #include "Setting.FrameSubmission.h"
 #include "../../../SuperTop/IdtSuperTop.h"
+#include "../../Helper/Helper.Fatal.h"
 
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -202,6 +203,8 @@ namespace
 	float settingTitleTextWidth = 0.0F;
 	float settingVersionTextWidth = 0.0F;
 	HRESULT settingLastResourceFailure = S_OK;
+	// 教学安全模式：只在设置窗口可见时累计持续失败（隐藏期间的 resident 重建失败不计）。只在渲染线程读写。
+	bool settingFailureTrackingVisible = false;
 	HRESULT settingLastRemovedReason = S_OK;
 	const char* settingLastFailureStage = nullptr;
 	uint64_t settingLastFailureEpoch = 0;
@@ -212,6 +215,9 @@ namespace
 		settingHomeEntryCache.Reset(); settingEraserDemo.Reset(); settingEraserCursors.Reset(); settingFrameSubmission.Reset();
 		if (SUCCEEDED(result)) result = E_FAIL;
 		const HRESULT removedReason = g_pd3dDevice ? g_pd3dDevice->GetDeviceRemovedReason() : S_OK;
+		// 所有调用点都是真实 API 失败（遮挡探测的正常 Retry 不经过这里）；共享设备丢失另计到 UiDeviceRecovery。
+		if (settingFailureTrackingVisible && !Inkeys::UI::Setting::IsSharedDeviceLoss(result, removedReason))
+			Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::UiSetting);
 		if (result != settingLastResourceFailure || removedReason != settingLastRemovedReason
 			|| stage != settingLastFailureStage || settingFrameContext.epoch.generation != settingLastFailureEpoch)
 		{
@@ -976,6 +982,8 @@ namespace
 		ShellExecute,
 		Information,
 		ConfirmRestart,
+		// 调试页“崩溃恢复测试”：确认后触发 crashTest 指定的故障。
+		ConfirmCrashTest,
 		Restart,
 		Close,
 		ShowWindow,
@@ -1011,6 +1019,7 @@ namespace
 		int showCommand = SW_SHOW;
 		I18n::TextSnapshot dialogText;
 		Inkeys::Business::DesktopShortcut::Kind shortcutKind = Inkeys::Business::DesktopShortcut::Kind::App;
+		int crashTest = 0; // 0 野指针、1 模拟绘制致命错误、2 模拟界面卡死
 	};
 
 	class SettingBusinessQueue
@@ -1174,6 +1183,48 @@ namespace
 					RestartProgram();
 				return true;
 			}
+			case SettingBusinessKind::ConfirmCrashTest:
+			{
+				// 确认框在业务 worker 上等待用户，不占用 UI3 调度线程（否则等待本身会被看门狗判为卡死）。
+				const auto& title = command.dialogText.text[0];
+				const auto& okLabel = command.dialogText.text[1];
+				const auto& cancelLabel = command.dialogText.text[2];
+				auto request = Inkeys::UI::MessageBox::MakeOkCancelRequest(
+					title.c_str(), command.text.c_str());
+				request.language = command.dialogText.language;
+				request.cancellation = token;
+				request.labels.ok = okLabel.c_str();
+				request.labels.cancel = cancelLabel.c_str();
+				request.defaultResult = Inkeys::UI::MessageBox::Result::Cancel;
+				request.owner = Inkeys::Window::GetService().Handle(
+					Inkeys::Window::WindowRole::Setting);
+				request.requireOwner = true;
+				request.fallback.modality =
+					Inkeys::UI::MessageBox::SystemModality::System;
+				if (Inkeys::UI::MessageBox::Show(request)
+					!= Inkeys::UI::MessageBox::Result::Ok || token.stop_requested()) return true;
+				if (command.crashTest == 0)
+				{
+					// 真实访问违规：走 Windows 崩溃回调（UEF）路径。volatile 防止编译器优化掉写入。
+					int* volatile wildPointer = nullptr;
+					*wildPointer = 0x1C6;
+				}
+				else if (command.crashTest == 1)
+					Inkeys::Drawing::Draw3::InjectProductDebugFatal();
+				else if (command.crashTest == 2)
+				{
+					// 让 UI3 共享调度线程卡住 20 秒，约 15 秒后由看门狗按 ThreadHang 处理。
+					// 看门狗未启动（启动未完成）时不会触发，不投递，避免白白卡住界面。
+					if (!Inkeys::Fatal::RuntimeArmed())
+					{
+						Inkeys::Log::Warn(Inkeys::Log::Module::Setting, "模拟界面卡死未执行：教学安全模式看门狗未启动");
+						return true;
+					}
+					if (!Inkeys::UI::RenderPipeline::PostControl([] { Sleep(20000); }))
+						Inkeys::Log::Warn(Inkeys::Log::Module::Setting, "模拟界面卡死未执行：UI3 调度器拒绝控制任务");
+				}
+				return true;
+			}
 			case SettingBusinessKind::Restart:
 				RestartProgram();
 				return true;
@@ -1326,6 +1377,7 @@ namespace
 		// 同一渲染帧入队的正文与公共文案冻结在一起；worker 不再读取后来的语言。
 		if (command.dialogText.text.size() < 3 && (command.kind == SettingBusinessKind::Information
 			|| command.kind == SettingBusinessKind::ConfirmRestart
+			|| command.kind == SettingBusinessKind::ConfirmCrashTest
 			|| command.kind == SettingBusinessKind::WorkspaceTransitionFailureNotice))
 		{
 			command.dialogText.text = { L"Inkeys Tips", L"OK", L"Cancel" };
@@ -1464,6 +1516,13 @@ namespace
 	void QueueConfirmRestart(wstring message)
 	{
 		QueueBusiness({ SettingBusinessKind::ConfirmRestart, std::move(message) });
+	}
+
+	void QueueConfirmCrashTest(int crashTest, wstring message)
+	{
+		SettingBusinessCommand command{ SettingBusinessKind::ConfirmCrashTest, std::move(message) };
+		command.crashTest = crashTest;
+		QueueBusiness(std::move(command));
 	}
 
 	void QueueRestart()
@@ -3347,13 +3406,14 @@ SettingSessionCoroutine RunSettingSession()
 					Inkeys::UI::Setting::Design::GeneralDraft draft{
 						Inkeys::config.Application.StartUp.load(), BarZoom, Experimental.Inkeys3.EdgeLightingEnable,
 						Inkeys::config.UI.TopSleepTime.load(), Inkeys::config.UI.Bar.RightClickClose.load(),
-						std::clamp(Inkeys::config.Application.TeachingSafetyMode.load(), 0, 3),
+						std::clamp(Inkeys::config.Application.TeachingSafetyMode.load(), 0, 2),
 						Experimental.Inkeys3.StartupPreviewPreferenceState.ConfiguredEnabled(),
 						Experimental.Inkeys3.AnimationEnable, Experimental.Inkeys3.AnimationSpeedRate,
 						Experimental.Inkeys3.DynamicEdgeLighting,
 						static_cast<int>(Inkeys::UI::NormalizeStartupPlacement(Inkeys::config.UI.Bar.StartupPlacement.load())),
 						std::clamp(Inkeys::config.UI.Bar.UseTaskbarHeightAsScaleBase.load(), 0, 2) };
 					draft.settingEntryAnimation = Inkeys::config.UI.Setting.EntryAnimation;
+					draft.crashRecoverInk = Inkeys::config.Application.CrashRecoverInk;
 					draft.startupEffect = static_cast<int>(Inkeys::UI::NormalizeStartupPreviewEffect(
 						Inkeys::config.Experimental.Inkeys3.UI3.StartupPreview.Effect.load()));
 					draft.allowMultipleInstances = Inkeys::config.Config.AllowMultipleInstances;
@@ -3470,6 +3530,12 @@ SettingSessionCoroutine RunSettingSession()
 							Inkeys::config.Application.TeachingSafetyMode = draft.safetyMode;
 							QueueConfigWrite();
 							CrashHandler::SetFlag(draft.safetyMode);
+						}
+						if (events.crashRecoverInkChanged && Inkeys::config.Application.CrashRecoverInk != draft.crashRecoverInk)
+						{
+							Inkeys::config.Application.CrashRecoverInk = draft.crashRecoverInk;
+							SyncDraw3State(); // 绘制线程下一次操作即按新开关处理
+							QueueConfigWrite();
 						}
 					}
 
@@ -3893,24 +3959,10 @@ SettingSessionCoroutine RunSettingSession()
 						if (saveEntries || events.touchAreaChanged) QueueConfigWrite();
 						break;
 					}
-					// 绘制·保存：画布自动保存（原位于日志与配置·配置），不显示画布恢复提示。
+					// 绘制·保存：桌面画布始终保存（“启用桌面画布自动保存”已去掉，以后提供按天数清理）；子页暂时留空。
 					if (destination.section == Design::Section::DrawSave)
 					{
 						Design::PageHeader(IA(I18nKey.SettingsUI.Design.DrawSave).c_str());
-						Design::SectionHeader(
-							IA(I18nKey.SettingsUI.Configuration.CanvasSave.N).c_str());
-						{
-							bool autoSave = Inkeys::config.Drawing.AutoSave.Enable;
-							if (Design::ToggleRow("##configuration-history",
-								IA(I18nKey.SettingsUI.Configuration.CanvasSave.Enable).c_str(),
-								IA(I18nKey.SettingsUI.Configuration.CanvasSave.EnableE).c_str(), "\ue81c",
-								autoSave))
-							{
-								Inkeys::config.Drawing.AutoSave.Enable = autoSave;
-								SyncDraw3State();
-								QueueConfigWrite();
-							}
-						}
 						break;
 					}
 					// 其余两个子页：绘制效果（笔迹视觉）与交互与手势（输入、橡皮、光标、白板、触觉）。
@@ -5106,6 +5158,20 @@ SettingSessionCoroutine RunSettingSession()
 								Inkeys::UI::Bar::DebugStatusIndicatorCount() == 0 } });
 					if (statusAction == 0) Inkeys::UI::Bar::DebugAddRandomStatusIndicator();
 					else if (statusAction == 1) Inkeys::UI::Bar::DebugRemoveStatusIndicator();
+					// 崩溃恢复测试：按当前“崩溃处理方式”处理，验证自动重启与墨迹恢复；确认框在业务 worker 上弹出。
+					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.CrashTest.Section).c_str());
+					const int crashTestAction = Design::ButtonGroupRow("##crash-recovery-test",
+						IA(I18nKey.SettingsUI.DebugSoftware.CrashTest.N).c_str(),
+						IA(I18nKey.SettingsUI.DebugSoftware.CrashTest.E).c_str(), "\ue7ba", {
+							{ "wild-pointer", IA(I18nKey.SettingsUI.DebugSoftware.CrashTest.WildPointer), false, false },
+							{ "draw3-fatal", IA(I18nKey.SettingsUI.DebugSoftware.CrashTest.Draw3Fatal), false, false },
+							{ "ui-hang", IA(I18nKey.SettingsUI.DebugSoftware.CrashTest.UiHang), false, false } });
+					if (crashTestAction == 0)
+						QueueConfirmCrashTest(0, IW(I18nKey.SettingsUI.DebugSoftware.CrashTest.ConfirmWildPointer));
+					else if (crashTestAction == 1)
+						QueueConfirmCrashTest(1, IW(I18nKey.SettingsUI.DebugSoftware.CrashTest.ConfirmDraw3Fatal));
+					else if (crashTestAction == 2)
+						QueueConfirmCrashTest(2, IW(I18nKey.SettingsUI.DebugSoftware.CrashTest.ConfirmUiHang));
 					Design::SectionHeader(IA(I18nKey.SettingsUI.DebugSoftware.ConsoleSection).c_str());
 					const auto consoleToggle = [&](const char* id, const char* title, const char* description,
 						bool& value, auto& saved)
@@ -5564,11 +5630,14 @@ SettingSessionCoroutine RunSettingSession()
 			{
 				settingFrameResult = FrameResult::Continue;
 				settingLastResourceFailure = S_OK; settingLastFailureStage = nullptr;
+				// DXGI_STATUS_OCCLUDED 等成功码不代表已提交，只有 S_OK 才清除失败计时。
+				if (result == S_OK) Inkeys::Fatal::RecordSuccess(Inkeys::Fatal::FailureSlot::UiSetting);
 			}
 			co_await suspend_always{};
 		}
 
 		//::ShowWindow(setting_window, SW_HIDE);
+		Inkeys::Fatal::ClearFailure(Inkeys::Fatal::FailureSlot::UiSetting);
 
 		// HWND 会晚于 Setting session 销毁，先撤销可选材质避免残留透明状态。
 		DisableSettingBackdrop(setting_window);
@@ -5642,6 +5711,8 @@ namespace
 			decision = settingSessionState.Resolve(
 				context.epoch.generation, !settingSession.Done(),
 				g_pSwapChain != nullptr);
+			settingFailureTrackingVisible = settingSessionState.IsVisible();
+			if (!settingFailureTrackingVisible) Inkeys::Fatal::ClearFailure(Inkeys::Fatal::FailureSlot::UiSetting);
 			resize = settingSessionState.Resize();
 			fontRebuildSerial = settingSessionState.FontRebuildSerial();
 			inputResetSerial = settingSessionState.InputResetSerial();

@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "Inkeys mengalami masalah. Pilih OK untuk memulai ulang dan mencoba memulihkan Inkeys."
+      "Body": "Inkeys mengalami masalah. Pilih OK untuk memulai ulang dan mencoba memulihkan Inkeys.",
+      "RepeatBody": "Inkeys kembali mengalami masalah tak lama setelah dimulai ulang. Mulai ulang Inkeys?"
+    },
+    "InkRecovery":
+    {
+      "Title": "Pulihkan tinta",
+      "Desktop": "Inkeys tidak keluar dengan normal terakhir kali. Pulihkan tinta di kanvas desktop?\nTerakhir disimpan: {}",
+      "Whiteboard": "Inkeys tidak keluar dengan normal terakhir kali. Pulihkan tinta di papan tulis?\nTerakhir disimpan: {}",
+      "Yes": "Pulihkan",
+      "No": "Jangan pulihkan"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "Opasitas",
       "WindowBehaviorSection": "Perilaku jendela",
       "OtherOptionsSection": "Opsi lainnya",
-      "SafetyRecoverySection": "Keamanan dan pemulihan",
+      "SafetyRecoverySection": "Mode aman mengajar",
       "ShortcutGlobalSection": "Tindakan global",
       "ShortcutEditingSection": "Penyuntingan anotasi",
       "ShortcutAuxiliarySection": "Tindakan tambahan",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "Penyimpanan kanvas",
-        "Enable": "Simpan otomatis kanvas desktop",
-        "EnableE": "Simpan kanvas desktop yang berisi tinta secara otomatis saat dibersihkan atau aplikasi ditutup, agar dapat dipulihkan dari riwayat kanvas.",
         "SaveTime":
         {
           "N": "Masa penyimpanan riwayat",
@@ -735,11 +742,15 @@
         {
           "N": "Penanganan crash",
           "E": "Pilih tindakan saat aplikasi mengalami crash.",
-          "Mode1": "Tampilkan dialog galat lalu mulai ulang",
+          "Mode1": "Beri tahu lalu mulai ulang",
           "Mode2": "Mulai ulang senyap",
-          "Mode3": "Serahkan ke sistem",
-          "Mode4": "Langsung keluar",
+          "Mode3": "Langsung keluar",
           "Note": "Galat saat memulai tetap menampilkan pesan."
+        },
+        "RecoverInk":
+        {
+          "N": "Pulihkan tinta setelah mulai ulang karena crash",
+          "E": "Saat aplikasi dibuka lagi setelah crash atau berhenti tidak normal, pulihkan tinta yang belum tersimpan terakhir kali."
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "Tambah atau hapus status uji acak untuk memeriksa animasi, teks panjang, dan cincin progres.",
         "Add": "Tambah status acak",
         "Remove": "Hapus satu status"
+      },
+      "CrashTest":
+      {
+        "Section": "Uji pemulihan crash",
+        "N": "Picu kegagalan",
+        "E": "Ditangani sesuai cara penanganan crash saat ini; untuk menguji mulai ulang otomatis dan pemulihan tinta. \"Simulasikan UI macet\" tidak terpicu saat debugger terpasang.",
+        "WildPointer": "Crash pointer liar",
+        "Draw3Fatal": "Simulasikan galat fatal gambar",
+        "UiHang": "Simulasikan UI macet",
+        "ConfirmWildPointer": "Langsung mengakses pointer liar sehingga aplikasi crash, lalu ditangani sesuai cara penanganan crash saat ini. Lanjutkan?",
+        "ConfirmDraw3Fatal": "Membuat utas gambar melempar galat fatal lalu berhenti; aplikasi ditangani sesuai cara penanganan crash saat ini. Lanjutkan?",
+        "ConfirmUiHang": "Membuat utas UI macet selama 20 detik; setelah sekitar 15 detik ditangani sesuai cara penanganan crash saat ini. Lanjutkan?"
       },
       "ConsoleSection": "Keluaran log diagnostik",
       "CanvasInformation": "Info inisialisasi kanvas",

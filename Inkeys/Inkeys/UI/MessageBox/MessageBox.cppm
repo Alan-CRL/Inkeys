@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -122,6 +122,8 @@ export namespace Inkeys::UI::MessageBox
 		FallbackPolicy fallback{};
 		// 可取消请求必须使用自绘窗口；失败时不降级到不可取消的系统模态框。
 		std::stop_token cancellation{};
+		// 可选：对话框首帧可交互（或即将进入系统回退框）时 SetEvent。调用方拥有句柄。
+		HANDLE interactiveEvent = nullptr;
 	};
 
 	[[nodiscard]] Request MakeOkRequest(
@@ -238,6 +240,7 @@ namespace Inkeys::UI::MessageBox::Detail
 		FallbackPolicy fallback{};
 		OwnedIcon icon{};
 		std::stop_token cancellation{};
+		HANDLE interactiveEvent = nullptr;
 #ifdef INKEYS_MESSAGE_BOX_TESTING
 		Test::Automation automation{};
 #endif

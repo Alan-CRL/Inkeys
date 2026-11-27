@@ -1,4 +1,4 @@
-#include "Draw3.DiagnosticOutput.h"
+﻿#include "Draw3.DiagnosticOutput.h"
 #include "Draw3.Product.h"
 #include "Draw3.TouchpadNavigation.h"
 #include "Draw3.HapticDiagnostics.h"
@@ -106,6 +106,12 @@ namespace Inkeys::Drawing::Draw3
 			productHost.RetryCanvasRecovery(expected, stillDesired);
 	}
 
+	void InjectProductDebugFatal() noexcept
+	{
+		if (productStopping.load(std::memory_order_acquire)) return;
+		productHost.InjectDebugFatalForTest();
+	}
+
 	Haptics::Context ProductHapticContext() noexcept
 	{
 		if (productStopping.load(std::memory_order_acquire)) return {};
@@ -202,6 +208,7 @@ namespace Inkeys::Drawing::Draw3
 		merged.cursorSettings = state.cursorSettings;
 		merged.selectionMode = state.selectionMode;
 		merged.autoSaveEnabled = state.autoSaveEnabled;
+		merged.crashRecoverInk = state.crashRecoverInk;
 		productHost.PublishState(merged);
 	}
 

@@ -297,7 +297,16 @@ inline constexpr struct I18nKeyRoot
         struct Node__Dialogs__Crash
         {
             const char* Body = "Dialogs/Crash/Body";
+            const char* RepeatBody = "Dialogs/Crash/RepeatBody";
         } Crash{};
+        struct Node__Dialogs__InkRecovery
+        {
+            const char* Title = "Dialogs/InkRecovery/Title";
+            const char* Desktop = "Dialogs/InkRecovery/Desktop";
+            const char* Whiteboard = "Dialogs/InkRecovery/Whiteboard";
+            const char* Yes = "Dialogs/InkRecovery/Yes";
+            const char* No = "Dialogs/InkRecovery/No";
+        } InkRecovery{};
     } Dialogs{};
     struct Node__SettingsUI
     {
@@ -453,8 +462,6 @@ inline constexpr struct I18nKeyRoot
             struct Node__SettingsUI__Configuration__CanvasSave
             {
                 const char* N = "SettingsUI/Configuration/CanvasSave/N";
-                const char* Enable = "SettingsUI/Configuration/CanvasSave/Enable";
-                const char* EnableE = "SettingsUI/Configuration/CanvasSave/EnableE";
                 struct Node__SettingsUI__Configuration__CanvasSave__SaveTime
                 {
                     const char* N = "SettingsUI/Configuration/CanvasSave/SaveTime/N";
@@ -741,9 +748,13 @@ inline constexpr struct I18nKeyRoot
                     const char* Mode1 = "SettingsUI/Regular/Tentative/SafeMode/Mode1";
                     const char* Mode2 = "SettingsUI/Regular/Tentative/SafeMode/Mode2";
                     const char* Mode3 = "SettingsUI/Regular/Tentative/SafeMode/Mode3";
-                    const char* Mode4 = "SettingsUI/Regular/Tentative/SafeMode/Mode4";
                     const char* Note = "SettingsUI/Regular/Tentative/SafeMode/Note";
                 } SafeMode{};
+                struct Node__SettingsUI__Regular__Tentative__RecoverInk
+                {
+                    const char* N = "SettingsUI/Regular/Tentative/RecoverInk/N";
+                    const char* E = "SettingsUI/Regular/Tentative/RecoverInk/E";
+                } RecoverInk{};
                 struct Node__SettingsUI__Regular__Tentative__AllowMultipleInstances
                 {
                     const char* N = "SettingsUI/Regular/Tentative/AllowMultipleInstances/N";
@@ -1560,6 +1571,18 @@ inline constexpr struct I18nKeyRoot
                 const char* Add = "SettingsUI/DebugSoftware/StatusIndicator/Add";
                 const char* Remove = "SettingsUI/DebugSoftware/StatusIndicator/Remove";
             } StatusIndicator{};
+            struct Node__SettingsUI__DebugSoftware__CrashTest
+            {
+                const char* Section = "SettingsUI/DebugSoftware/CrashTest/Section";
+                const char* N = "SettingsUI/DebugSoftware/CrashTest/N";
+                const char* E = "SettingsUI/DebugSoftware/CrashTest/E";
+                const char* WildPointer = "SettingsUI/DebugSoftware/CrashTest/WildPointer";
+                const char* Draw3Fatal = "SettingsUI/DebugSoftware/CrashTest/Draw3Fatal";
+                const char* UiHang = "SettingsUI/DebugSoftware/CrashTest/UiHang";
+                const char* ConfirmWildPointer = "SettingsUI/DebugSoftware/CrashTest/ConfirmWildPointer";
+                const char* ConfirmDraw3Fatal = "SettingsUI/DebugSoftware/CrashTest/ConfirmDraw3Fatal";
+                const char* ConfirmUiHang = "SettingsUI/DebugSoftware/CrashTest/ConfirmUiHang";
+            } CrashTest{};
             const char* ConsoleSection = "SettingsUI/DebugSoftware/ConsoleSection";
             const char* CanvasInformation = "SettingsUI/DebugSoftware/CanvasInformation";
             const char* PresentationFallback = "SettingsUI/DebugSoftware/PresentationFallback";

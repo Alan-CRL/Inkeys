@@ -463,7 +463,10 @@ auto commitShapeConstruction = [&](draw3::shapes::ShapeObject object,RECT& dirty
 		shapeUi.focus.pending = {{created->renderItem,object.id,page->PageGuid(),currentPageIndex_,created->beforeState,created->afterState}};
 		if (!drawFocusLayer(dirty)) abandonFocusLayer(dirty);
 		shapeUi.pendingObject = std::move(object); shapeUi.pendingItem = created->renderItem; shapeUi.pendingPage = page->PageGuid(); shapeUi.pendingPageIndex = currentPageIndex_;
-		markPresentationMutation(); publishCurrentPageContent();
+		// C1.6b：构造完成的图形（全部部件同一撤回组）一次续接。
+		const auto shapeBase = currentPageRevision(); markPresentationMutation();
+		if (const auto* added = runtime.history.Find(created->renderItem)) submitStrokeAppend(shapeBase, added->strokeIndex);
+		publishCurrentPageContent();
 		if (observer_.strokeCompleted) observer_.strokeCompleted(observer_.context,Bridge::CompletedStrokeKind::Shape);
 		if (metricsState_) { metricsState_->PruneStored(*canvas,runtime); metricsState_->InvalidateLiveRasters(); metricsState_->InvalidateL2(); }
 		return true;
@@ -490,7 +493,9 @@ auto commitShapeConstruction = [&](draw3::shapes::ShapeObject object,RECT& dirty
 	*canvas = std::move(candidate); runtime = std::move(candidateRuntime);
 	renderer_.ClearOperatorLayerContent(renderer_.layerL0); renderer_.ClearOperatorLayerContent(renderer_.layerL1);
 	shapeUi.pendingObject = std::move(object); shapeUi.pendingItem = item; shapeUi.pendingPage = page->PageGuid(); shapeUi.pendingPageIndex = currentPageIndex_;
-	markPresentationMutation(); publishCurrentPageContent();
+	const auto shapeBase = currentPageRevision(); markPresentationMutation();
+	if (const auto* added = runtime.history.Find(item)) submitStrokeAppend(shapeBase, added->strokeIndex);
+	publishCurrentPageContent();
 	if (observer_.strokeCompleted) observer_.strokeCompleted(observer_.context,Bridge::CompletedStrokeKind::Shape);
 	if (metricsState_) { metricsState_->PruneStored(*canvas,runtime); metricsState_->InvalidateLiveRasters(); metricsState_->InvalidateL2(); }
 	return true;

@@ -776,6 +776,10 @@ namespace draw3::uink
 			for (const UInkCanvas* layer : layers)
 				ReadCanvasContent(*layer, options, duplicateRoots, geometryWork,
 					footprintRemaining, pageTilesRemaining, page, result.counts, nextUndoId);
+			if (options.footprintBudget && footprintRemaining && *footprintRemaining <= *options.footprintBudget)
+				result.footprintUsed = *options.footprintBudget - *footprintRemaining;
+			result.pageTilesUsed = options.footprintPageMaxTiles - pageTilesRemaining;
+			result.geometryUsed = V11GeometryWork{}.remaining - geometryWork.remaining;
 			result.status = Draw3UInkV11ImportStatus::Success;
 			return result;
 		}

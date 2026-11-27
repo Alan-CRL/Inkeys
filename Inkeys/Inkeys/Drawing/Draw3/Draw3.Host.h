@@ -298,6 +298,18 @@ namespace Inkeys::Drawing::Draw3
 		bool requirePresentationUiReady = false;
 		// 空路径关闭持久化 worker；产品固定传入 <程序根目录>/Inkeys/Save/Ink。
 		std::wstring autoSaveRoot;
+		// 崩溃重启后自动恢复墨迹（C1.6b）：启动时的开关值，决定是否建立崩溃恢复会话记录；运行中切换经 ProductState 发布。
+		bool crashRecoverInk = false;
+		// 崩溃恢复弹窗（C1.6b）：在恢复线程上同步调用，返回 true 表示恢复。scene 0 桌面、1 白板；
+		// lastWriteFileTime 为该场景文件最后写入时间（FILETIME）。为空时视同选“是”。
+		bool (*recoveryPrompt)(void* context, int scene, std::uint64_t lastWriteFileTime) = nullptr;
+		void* recoveryPromptContext = nullptr;
+		// 静默重启档的崩溃拉起（-CrashTry 且“静默重启”）：不弹窗，直接按“是”处理。
+		bool recoverySkipPrompt = false;
+		// 崩溃场景是白板且已恢复：请求进入白板（由主线程走现有准入与交接）。
+		void (*recoveryEnterWhiteboard)(void* context) = nullptr;
+		// 恢复的墨迹在当前画面上可见（桌面装入、PPT 当前页有接管的墨迹）：请求切到绘制。可能在绘制线程上调用，只能置标志。
+		void (*recoveryEnterDrawing)(void* context) = nullptr;
 		// 设备性能统计文件；空路径 = 只在内存记录（测试/夹具）。产品传入 <程序根目录>/Inkeys/Memory/device-performance.json。
 		std::wstring devicePerformancePath;
 		WhiteboardTheme whiteboardDefaultTheme;
@@ -521,6 +533,8 @@ namespace Inkeys::Drawing::Draw3
 		void SetCanvasDebugOptions(bool enabled, bool visual) noexcept;
 		bool CanvasDebugEnabled() const noexcept;
 		bool CanvasDebugVisual() const noexcept;
+		// 调试页“模拟绘制致命错误”：绘制循环下一轮抛出异常并停止（只用于测试崩溃恢复）。
+		void InjectDebugFatalForTest() noexcept;
 		// 设备性能看板：报告版本与 knownRevision 相同返回 false 且不复制（设置页每帧调用）。
 		bool DevicePerformanceSnapshot(std::uint64_t knownRevision, DevicePerformance::Report& out) const;
 		// 关闭后绘制线程不累加、不移交，也就不写盘；已有数据保留。启动前设置也保留到 Start。

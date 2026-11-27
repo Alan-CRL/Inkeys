@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "Inkeys ha encontrado un problema. Selecciona Aceptar para reiniciar Inkeys e intentar la recuperación."
+      "Body": "Inkeys ha encontrado un problema. Selecciona Aceptar para reiniciar Inkeys e intentar la recuperación.",
+      "RepeatBody": "Inkeys ha vuelto a tener un problema poco después de reiniciarse. ¿Reiniciar Inkeys?"
+    },
+    "InkRecovery":
+    {
+      "Title": "Recuperar la tinta",
+      "Desktop": "Inkeys no se cerró correctamente la última vez. ¿Recuperar la tinta del lienzo del escritorio?\nÚltimo guardado: {}",
+      "Whiteboard": "Inkeys no se cerró correctamente la última vez. ¿Recuperar la tinta de la pizarra?\nÚltimo guardado: {}",
+      "Yes": "Recuperar",
+      "No": "No recuperar"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "Opacidad",
       "WindowBehaviorSection": "Comportamiento de la ventana",
       "OtherOptionsSection": "Otras opciones",
-      "SafetyRecoverySection": "Seguridad y recuperación",
+      "SafetyRecoverySection": "Modo de seguridad en clase",
       "ShortcutGlobalSection": "Acciones globales",
       "ShortcutEditingSection": "Edición de anotaciones",
       "ShortcutAuxiliarySection": "Acciones adicionales",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "Guardado de lienzos",
-        "Enable": "Guardar automáticamente el lienzo del escritorio",
-        "EnableE": "Guardar automáticamente el lienzo del escritorio si contiene trazos al limpiarlo o salir de la aplicación, para poder restaurarlo desde el historial.",
         "SaveTime":
         {
           "N": "Plazo de conservación del historial",
@@ -735,11 +742,15 @@
         {
           "N": "Gestión de fallos",
           "E": "Elegir qué hacer si la aplicación falla.",
-          "Mode1": "Mostrar aviso de error y reiniciar",
+          "Mode1": "Avisar y reiniciar",
           "Mode2": "Reiniciar sin avisar",
-          "Mode3": "Dejar que lo gestione el sistema",
-          "Mode4": "Salir directamente",
+          "Mode3": "Salir directamente",
           "Note": "Los errores durante el inicio siguen mostrando un aviso."
+        },
+        "RecoverInk":
+        {
+          "N": "Recuperar la tinta tras reiniciar por un fallo",
+          "E": "Al volver a iniciar tras un fallo o un cierre inesperado, recupera la tinta que no se guardó la última vez."
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "Añade o elimina estados de prueba aleatorios para comprobar las animaciones, los textos largos y los anillos de progreso.",
         "Add": "Añadir estado aleatorio",
         "Remove": "Eliminar un estado"
+      },
+      "CrashTest":
+      {
+        "Section": "Prueba de recuperación tras fallo",
+        "N": "Provocar un fallo",
+        "E": "Se gestiona según la opción actual de gestión de fallos; sirve para probar el reinicio automático y la recuperación de la tinta. «Simular bloqueo de la interfaz» no se activa con un depurador conectado.",
+        "WildPointer": "Fallo por puntero no válido",
+        "Draw3Fatal": "Simular error grave de dibujo",
+        "UiHang": "Simular bloqueo de la interfaz",
+        "ConfirmWildPointer": "Accede de inmediato a un puntero no válido y bloquea la aplicación, que se gestiona según la opción actual de gestión de fallos. ¿Continuar?",
+        "ConfirmDraw3Fatal": "Hace que el hilo de dibujo lance un error grave y se detenga; la aplicación se gestiona según la opción actual. ¿Continuar?",
+        "ConfirmUiHang": "Bloquea el hilo de la interfaz durante 20 segundos; tras unos 15 segundos se aplica la opción actual de gestión de fallos. ¿Continuar?"
       },
       "ConsoleSection": "Salida del registro de diagnóstico",
       "CanvasInformation": "Información de inicialización del lienzo",

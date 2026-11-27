@@ -121,6 +121,28 @@ export namespace Inkeys::Drawing::Draw3
 		void (*whiteboardViewportChanged)(void*, const WhiteboardViewportSample&) noexcept = nullptr;
 		// 第二个参数：激光主体是否还在（主栏据此决定是否保持完整）。
 		void (*laserVisibilityChanged)(void*, bool, bool) = nullptr;
+		// C1.6b 崩溃恢复会话（Host 持有，可空）：白板存储的写前登记钩子，语义同 PagedInkStoreOptions 的同名字段。
+		void* whiteboardRecoveryContext = nullptr;
+		void* desktopRecoveryContext = nullptr; // 桌面活动区间文件用，钩子同上
+		bool (*registerRecoveryFile)(void*, const std::wstring&) noexcept = nullptr;
+		bool (*registerRecoveryPending)(void*, const std::wstring&, std::uint64_t, std::uint8_t) noexcept = nullptr;
+		bool (*clearRecoveryPending)(void*, const std::wstring&) noexcept = nullptr;
+		bool (*clearRecoveryFile)(void*, std::uint64_t) noexcept = nullptr; // 桌面 Clear 换文件时清掉会话里的活动区间条目
+		// 绘制线程在切场景、白板翻页时调用：只写原子量，不加锁、不等待。pageGuid 为 16 字节，可空。
+		void (*recoverySceneChanged)(void*, Bridge::Workspace, const std::uint8_t*, std::size_t) noexcept = nullptr;
+		void* recoveryContext = nullptr;
+		// 崩溃恢复的桌面区间装入：绘制线程空闲时取走待装入的快照（只读原子量后才加锁），装入后回报结果。
+		// 第三个参数：上一区间（desktop\ 下最近一次 Clear 的快照，可空），装入后作为跨 Clear 撤回点。
+		bool (*takeDesktopRecovery)(void*, draw3::uink::Draw3UInkCanvasSnapshot&,
+			std::optional<draw3::uink::Draw3UInkCanvasSnapshot>&) noexcept = nullptr;
+		void (*desktopRecoveryInstalled)(void*, bool) noexcept = nullptr;
+		bool (*takeWhiteboardRecovery)(void*, std::vector<draw3::uink::Draw3UInkCanvasSnapshot>&, std::size_t&) noexcept = nullptr;
+		void (*whiteboardRecoveryInstalled)(void*, bool) noexcept = nullptr;
+		// 装入成功后的落盘结果（scene 0 桌面、1 白板）：装入的墨迹已由本进程确认写盘才报 true，恢复方据此结算旧记录。
+		// 文件失败报 false（保持未结算）。只报一次。
+		void (*recoveryDurable)(void*, std::uint8_t scene, bool durable) noexcept = nullptr;
+		// 恢复的墨迹在当前画面上可见（桌面装入了墨迹、PPT 接管后当前页有墨迹）：请求切到绘制。只写标志，不等待。
+		void (*recoveryInkVisible)(void*) noexcept = nullptr;
 	};
 
 	// 协调窗口请求、三层画布和多 contact 实时绘制循环。

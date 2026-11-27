@@ -66,4 +66,9 @@ export namespace draw3::uink
 	// 编码一个完整 Canvas 版本及其内容块。
 	UInkEncodeResult EncodeUInkPage(const UInkCanvas& canvas, bool implicitWorkspace,
 		bool implicitDevice, const UInkReadLimits& limits = {});
+
+	// 编码续接到已落盘最后一个 Canvas 之后的内容块（SAVE-7/8）。firstContentId 为该页下一个编号，
+	// previousUndoId / previousWasClear 描述该页最后一个已落盘块，用于校验撤回组与 Clear 边界。
+	UInkEncodeResult EncodeUInkContentBlocks(std::span<const UInkContent> blocks, uint64_t firstContentId,
+		uint32_t previousUndoId, bool previousWasClear, const UInkReadLimits& limits = {});
 }

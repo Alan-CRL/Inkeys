@@ -264,6 +264,8 @@ namespace Inkeys::Drawing::Draw3::Bridge
 		CursorSettings cursorSettings;
 		bool selectionMode = true;
 		bool autoSaveEnabled = false;
+		// 崩溃重启后自动恢复墨迹（C1.6b）：开启时三场景逐笔追加写入。
+		bool crashRecoverInk = false;
 		std::uint32_t page = 0;
 		bool hasPage = false;
 		Workspace workspace = Workspace::Desktop;

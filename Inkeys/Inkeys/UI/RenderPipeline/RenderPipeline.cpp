@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include <windows.h>
 
@@ -26,6 +26,8 @@ module;
 #include <string_view>
 #include <thread>
 #include <utility>
+
+#include "../../Helper/Helper.Fatal.h"
 
 module Inkeys.UI.RenderPipeline;
 
@@ -681,6 +683,7 @@ namespace Inkeys::UI::RenderPipeline
 						// 生命周期控制始终先于设备恢复重试，且与渲染回调同线程串行。
 						for (auto& task : tasks)
 						{
+							Inkeys::Fatal::Beat(Inkeys::Fatal::Slot::UiScheduler);
 							try { task(); }
 							catch (...) {}
 						}
@@ -712,6 +715,8 @@ namespace Inkeys::UI::RenderPipeline
 				auto previousFrame = std::chrono::steady_clock::time_point{};
 				while (!impl_->stopRequested.load(std::memory_order_acquire))
 				{
+					// 教学安全模式卡死检测：每个工作单元开始时 Beat，只在真正空闲等待前 Idle。
+					Inkeys::Fatal::Beat(Inkeys::Fatal::Slot::UiScheduler);
 					pending |= takeControl();
 					impl_->EmitDiagnostics();
 					if (pending == 0)
@@ -733,7 +738,9 @@ namespace Inkeys::UI::RenderPipeline
 									waitMs = static_cast<DWORD>(delay.count());
 							}
 							// 异常转 idle 后只等到诊断期限；超时不制造任何渲染请求。
+							Inkeys::Fatal::Idle(Inkeys::Fatal::Slot::UiScheduler);
 							WaitForSingleObject(impl_->wakeEvent, waitMs);
+							Inkeys::Fatal::Beat(Inkeys::Fatal::Slot::UiScheduler);
 							pending = takeRequested();
 							pending |= takeControl();
 						}
@@ -753,6 +760,7 @@ namespace Inkeys::UI::RenderPipeline
 						const double remainingMs = std::chrono::duration<double, std::milli>(nextDeadline - now).count();
 						if (!Inkeys::UI::Bar::TryWaitForRemainingFrameTime(remainingMs))
 							std::this_thread::sleep_until(nextDeadline);
+						Inkeys::Fatal::Beat(Inkeys::Fatal::Slot::UiScheduler);
 					}
 					const auto frameTime = std::chrono::steady_clock::now();
 					previousFrame = frameTime;
@@ -781,6 +789,9 @@ namespace Inkeys::UI::RenderPipeline
 						const auto recoveryStart = frameSampleActive
 							? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 						const bool recovered = deviceRecovery && deviceRecovery();
+						// 共享设备恢复失败只记到 UiDeviceRecovery；持续 10 秒交给教学安全模式。
+						if (recovered) Inkeys::Fatal::RecordSuccess(Inkeys::Fatal::FailureSlot::UiDeviceRecovery);
+						else Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::UiDeviceRecovery);
 						const auto recoveryEnd = frameSampleActive
 							? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 						if (rawActive)
@@ -849,6 +860,7 @@ namespace Inkeys::UI::RenderPipeline
 							sample->epoch = context.epoch.generation;
 							sample->backend = context.epoch.backend;
 						}
+						Inkeys::Fatal::Beat(Inkeys::Fatal::Slot::UiScheduler);
 						const auto callbackStart = frameSampleActive
 							? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
 						{
@@ -912,6 +924,7 @@ namespace Inkeys::UI::RenderPipeline
 						retried |= registered;
 					}
 				}
+				Inkeys::Fatal::Idle(Inkeys::Fatal::Slot::UiScheduler);
 				// 退出只投递已经到期的记录，不为诊断延迟进程关闭。
 				impl_->EmitDiagnostics();
 				std::deque<ControlTask> finalTasks;

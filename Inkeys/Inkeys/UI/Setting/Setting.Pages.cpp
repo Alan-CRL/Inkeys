@@ -1413,8 +1413,10 @@ namespace Inkeys::UI::Setting::Design
 		events.safetyModeChanged = ComboRow("teaching-safety", IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.N).c_str(),
 			IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.E).c_str(), "\ue72e", draft.safetyMode,
 			{ IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode1), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode2),
-			IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3), IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4) },
+			IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3) },
 			IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Note).c_str());
+		events.crashRecoverInkChanged = ToggleRow("crash-recover-ink", IA(I18nKey.SettingsUI.Regular.Tentative.RecoverInk.N).c_str(),
+			IA(I18nKey.SettingsUI.Regular.Tentative.RecoverInk.E).c_str(), "\ue777", draft.crashRecoverInk);
 	}
 
 	// 外观·主题：主题、光源与透明度；动画相关条目位于外观·动画子页。

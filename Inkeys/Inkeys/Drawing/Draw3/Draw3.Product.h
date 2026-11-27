@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Draw3.Bridge.h"
 #include "Draw3.Host.h"
@@ -21,6 +21,8 @@ namespace Inkeys::Drawing::Draw3
 	bool ProductRunning() noexcept;
 	bool RetryProductCanvasRecovery(const CanvasRecoveryState& expected,
 		const std::function<bool()>& stillDesired = {}) noexcept;
+	// 调试页“模拟绘制致命错误”：让绘制循环抛出异常并停止，交给教学安全模式处理。
+	void InjectProductDebugFatal() noexcept;
 	Haptics::Context ProductHapticContext() noexcept;
 	bool PublishProductHapticClick(const Haptics::Click& source) noexcept;
 	bool ProductFirstFrameReady() noexcept;

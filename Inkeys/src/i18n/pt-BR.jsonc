@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "O Inkeys encontrou um problema. Selecione OK para reiniciar o Inkeys e tentar restaurar o trabalho."
+      "Body": "O Inkeys encontrou um problema. Selecione OK para reiniciar o Inkeys e tentar restaurar o trabalho.",
+      "RepeatBody": "O Inkeys encontrou um problema novamente logo após reiniciar. Reiniciar o Inkeys?"
+    },
+    "InkRecovery":
+    {
+      "Title": "Restaurar a tinta",
+      "Desktop": "O Inkeys não foi encerrado normalmente da última vez. Restaurar a tinta da tela da área de trabalho?\nÚltimo salvamento: {}",
+      "Whiteboard": "O Inkeys não foi encerrado normalmente da última vez. Restaurar a tinta do quadro branco?\nÚltimo salvamento: {}",
+      "Yes": "Restaurar",
+      "No": "Não restaurar"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "Opacidade",
       "WindowBehaviorSection": "Comportamento das janelas",
       "OtherOptionsSection": "Outras opções",
-      "SafetyRecoverySection": "Segurança e restauração",
+      "SafetyRecoverySection": "Modo de segurança em aula",
       "ShortcutGlobalSection": "Ações globais",
       "ShortcutEditingSection": "Edição de anotações",
       "ShortcutAuxiliarySection": "Ações auxiliares",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "Salvar tela de desenho",
-        "Enable": "Salvar automaticamente o desenho da área de trabalho",
-        "EnableE": "Ao limpar o desenho da área de trabalho ou sair do programa, salva automaticamente as telas com conteúdo para restauração posterior pelo histórico.",
         "SaveTime":
         {
           "N": "Prazo de retenção",
@@ -737,9 +744,13 @@
           "E": "Define a ação a executar se o Inkeys falhar.",
           "Mode1": "Avisar e reiniciar",
           "Mode2": "Reiniciar sem aviso",
-          "Mode3": "Usar o tratamento de falhas do sistema",
-          "Mode4": "Encerrar imediatamente",
+          "Mode3": "Encerrar imediatamente",
           "Note": "Erros durante a inicialização continuam sendo avisados."
+        },
+        "RecoverInk":
+        {
+          "N": "Restaurar a tinta após reiniciar por falha",
+          "E": "Ao iniciar novamente após uma falha ou um encerramento inesperado, restaura a tinta que não foi salva da última vez."
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "Adicione ou remova estados de teste aleatórios para verificar animações, textos longos e anéis de progresso.",
         "Add": "Adicionar status aleatório",
         "Remove": "Remover um status"
+      },
+      "CrashTest":
+      {
+        "Section": "Teste de restauração após falha",
+        "N": "Provocar uma falha",
+        "E": "Tratado conforme a opção atual de tratamento de falhas; serve para testar a reinicialização automática e a restauração da tinta. \"Simular travamento da interface\" não é acionado com um depurador anexado.",
+        "WildPointer": "Falha por ponteiro inválido",
+        "Draw3Fatal": "Simular erro fatal de desenho",
+        "UiHang": "Simular travamento da interface",
+        "ConfirmWildPointer": "Acessa imediatamente um ponteiro inválido e faz o app falhar, que é tratado conforme a opção atual. Continuar?",
+        "ConfirmDraw3Fatal": "Faz o thread de desenho lançar um erro fatal e parar; o app é tratado conforme a opção atual. Continuar?",
+        "ConfirmUiHang": "Trava o thread da interface por 20 segundos; após cerca de 15 segundos a opção atual é aplicada. Continuar?"
       },
       "ConsoleSection": "Saída do log de diagnóstico",
       "CanvasInformation": "Informações de inicialização do desenho",

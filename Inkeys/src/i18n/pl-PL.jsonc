@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "W programie Inkeys wystąpił problem. Wybierz OK, aby ponownie uruchomić Inkeys i spróbować przywrócić działanie."
+      "Body": "W programie Inkeys wystąpił problem. Wybierz OK, aby ponownie uruchomić Inkeys i spróbować przywrócić działanie.",
+      "RepeatBody": "Wkrótce po ponownym uruchomieniu w Inkeys ponownie wystąpił problem. Uruchomić Inkeys ponownie?"
+    },
+    "InkRecovery":
+    {
+      "Title": "Przywróć atrament",
+      "Desktop": "Ostatnio Inkeys nie zamknął się prawidłowo. Przywrócić atrament na kanwie pulpitu?\nOstatni zapis: {}",
+      "Whiteboard": "Ostatnio Inkeys nie zamknął się prawidłowo. Przywrócić atrament na tablicy?\nOstatni zapis: {}",
+      "Yes": "Przywróć",
+      "No": "Nie przywracaj"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "Nieprzezroczystość",
       "WindowBehaviorSection": "Zachowanie okna",
       "OtherOptionsSection": "Inne opcje",
-      "SafetyRecoverySection": "Bezpieczeństwo i przywracanie",
+      "SafetyRecoverySection": "Tryb bezpieczny na lekcji",
       "ShortcutGlobalSection": "Działania globalne",
       "ShortcutEditingSection": "Edycja adnotacji",
       "ShortcutAuxiliarySection": "Działania pomocnicze",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "Zapisywanie płótna",
-        "Enable": "Automatycznie zapisuj płótno pulpitu",
-        "EnableE": "Automatycznie zapisuj niepuste płótno pulpitu podczas jego czyszczenia lub zamykania programu, aby można je było przywrócić z historii.",
         "SaveTime":
         {
           "N": "Okres przechowywania historii",
@@ -735,11 +742,15 @@
         {
           "N": "Obsługa awarii",
           "E": "Wybierz działanie w razie awarii programu.",
-          "Mode1": "Pokaż błąd i uruchom ponownie",
+          "Mode1": "Powiadom i uruchom ponownie",
           "Mode2": "Uruchom ponownie bez powiadomienia",
-          "Mode3": "Pozostaw obsługę systemowi",
-          "Mode4": "Zamknij od razu",
+          "Mode3": "Zamknij od razu",
           "Note": "Błędy podczas uruchamiania nadal powodują wyświetlenie komunikatu."
+        },
+        "RecoverInk":
+        {
+          "N": "Przywracaj atrament po ponownym uruchomieniu po awarii",
+          "E": "Po ponownym uruchomieniu po awarii lub nieoczekiwanym zamknięciu przywraca atrament, który nie został ostatnio zapisany."
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "Dodaj lub usuń losowe stany testowe, aby sprawdzić animację, długi tekst i pierścień postępu.",
         "Add": "Dodaj losowy stan",
         "Remove": "Usuń jeden stan"
+      },
+      "CrashTest":
+      {
+        "Section": "Test przywracania po awarii",
+        "N": "Wywołaj awarię",
+        "E": "Obsługiwane zgodnie z bieżącym sposobem obsługi awarii; służy do testowania automatycznego ponownego uruchomienia i przywracania atramentu. „Symuluj zawieszenie interfejsu” nie działa, gdy podłączony jest debuger.",
+        "WildPointer": "Awaria przez nieprawidłowy wskaźnik",
+        "Draw3Fatal": "Symuluj krytyczny błąd rysowania",
+        "UiHang": "Symuluj zawieszenie interfejsu",
+        "ConfirmWildPointer": "Natychmiast odwołuje się do nieprawidłowego wskaźnika i powoduje awarię aplikacji, obsługiwaną zgodnie z bieżącym ustawieniem. Kontynuować?",
+        "ConfirmDraw3Fatal": "Powoduje krytyczny błąd w wątku rysowania i jego zatrzymanie; aplikacja jest obsługiwana zgodnie z bieżącym ustawieniem. Kontynuować?",
+        "ConfirmUiHang": "Blokuje wątek interfejsu na 20 sekund; po około 15 sekundach działa bieżące ustawienie obsługi awarii. Kontynuować?"
       },
       "ConsoleSection": "Dziennik diagnostyczny",
       "CanvasInformation": "Informacje o inicjalizacji płótna",

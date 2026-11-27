@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "Inkeys encountered a problem. Select OK to restart Inkeys and try to recover."
+      "Body": "Inkeys encountered a problem. Select OK to restart Inkeys and try to recover.",
+      "RepeatBody": "Inkeys encountered a problem again shortly after restarting. Restart Inkeys?"
+    },
+    "InkRecovery":
+    {
+      "Title": "Recover ink",
+      "Desktop": "Inkeys did not exit normally last time. Recover the ink on the desktop canvas?\nLast saved: {}",
+      "Whiteboard": "Inkeys did not exit normally last time. Recover the ink in the whiteboard?\nLast saved: {}",
+      "Yes": "Recover",
+      "No": "Don't recover"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "Opacity",
       "WindowBehaviorSection": "Window behavior",
       "OtherOptionsSection": "Other options",
-      "SafetyRecoverySection": "Safety and recovery",
+      "SafetyRecoverySection": "Teaching safety mode",
       "ShortcutGlobalSection": "Global actions",
       "ShortcutEditingSection": "Annotation editing",
       "ShortcutAuxiliarySection": "Additional actions",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "Canvas saving",
-        "Enable": "Enable desktop canvas auto-save",
-        "EnableE": "Automatically save a non-empty desktop canvas when it is cleared or when the app exits, so it can be restored from canvas history.",
         "SaveTime":
         {
           "N": "History retention period",
@@ -735,11 +742,15 @@
         {
           "N": "Crash handling",
           "E": "Choose what happens when the application crashes.",
-          "Mode1": "Show error dialog and restart",
+          "Mode1": "Prompt and restart",
           "Mode2": "Silent restart",
-          "Mode3": "Let system handle",
-          "Mode4": "Quit directly",
+          "Mode3": "Quit directly",
           "Note": "Errors during startup still display a prompt."
+        },
+        "RecoverInk":
+        {
+          "N": "Recover ink after a crash restart",
+          "E": "When the app starts again after a crash or an unexpected exit, restore the ink that was not saved last time."
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "Add or remove random test states to check animations, long text and progress rings.",
         "Add": "Add random state",
         "Remove": "Remove one state"
+      },
+      "CrashTest":
+      {
+        "Section": "Crash recovery test",
+        "N": "Trigger a failure",
+        "E": "Handled by the current crash handling option; used to test automatic restart and ink recovery. \"Simulate UI hang\" does not trigger while a debugger is attached.",
+        "WildPointer": "Wild pointer crash",
+        "Draw3Fatal": "Simulate drawing fatal error",
+        "UiHang": "Simulate UI hang",
+        "ConfirmWildPointer": "This immediately accesses a wild pointer and crashes the app, which is then handled by the current crash handling option. Continue?",
+        "ConfirmDraw3Fatal": "This makes the drawing thread throw a fatal error and stop; the app is then handled by the current crash handling option. Continue?",
+        "ConfirmUiHang": "This blocks the UI thread for 20 seconds; after about 15 seconds the app is handled by the current crash handling option. Continue?"
       },
       "ConsoleSection": "Diagnostic log output",
       "CanvasInformation": "Canvas initialization information",

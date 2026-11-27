@@ -4354,7 +4354,7 @@ namespace
 		// 子页属于哪个页面由导航表推断；按键与快捷键无子页，单独构造目的地。
 		const auto Dest = [](Design::Section section) { return Design::NavigationDestination{ Design::PageForSection(section), section }; };
 		const Design::NavigationDestination keysPage{ Design::PageId::Keys };
-		Design::GeneralDraft draft{ true, 1.37F, false, 5, true, 2, false, false, 4.7F, true };
+		Design::GeneralDraft draft{ true, 1.37F, false, 5, true, 1, false, false, 4.7F, true };
 		draft.iconOrder = 3; draft.expansionDirection = 0;
 		auto& io = ImGui::GetIO(); const auto previousFlags = io.ConfigFlags;
 		const bool previousTrickle = io.ConfigInputTrickleEventQueue;
@@ -4416,7 +4416,7 @@ namespace
 				&& !events.startupChanged && !events.createShortcut
 				&& !events.barZoomChanged && !events.barZoomActive && !events.settingEntryAnimationChanged
 				&& !events.edgeLightingChanged && !events.topIntervalChanged && !events.rightClickCloseChanged
-				&& !events.safetyModeChanged && !events.allowMultipleInstancesChanged && !events.startupPreviewChanged && !events.startupEffectChanged && !events.animationChanged
+				&& !events.safetyModeChanged && !events.crashRecoverInkChanged && !events.allowMultipleInstancesChanged && !events.startupPreviewChanged && !events.startupEffectChanged && !events.animationChanged
 				&& !events.dynamicEdgeLightingChanged
 				&& !events.startupPlacementChanged && !events.taskbarScaleBaseChanged
 				&& !events.pptDockMaskChanged && !events.pptDockDirectionChanged && !events.whiteboardDockMaskChanged && !events.whiteboardDockDirectionChanged
@@ -4452,7 +4452,7 @@ namespace
 			if (section == Design::Section::Basic)
 				checks.Expect(frame.blueVertices > 0, "actual operation-mode explanation draws the themed blue informational card");
 			checks.Expect(draft.startup && Near(draft.barZoom, 1.37F) && draft.settingEntryAnimation == 1
-				&& !draft.edgeLighting && draft.topInterval == 5 && draft.rightClickClose && draft.safetyMode == 2
+				&& !draft.edgeLighting && draft.topInterval == 5 && draft.rightClickClose && draft.safetyMode == 1
 				&& !draft.startupPreview && !draft.animation && Near(draft.animationRate, 4.7F) && draft.dynamicEdgeLighting
 				&& draft.selectMode == 0 && draft.iconOrder == 3 && draft.expansionDirection == 0 && !draft.allowMultipleInstances,
 				"page filtering and conditional hidden controls preserve every resident draft value");
@@ -4514,12 +4514,12 @@ namespace
 		draw(Dest(Design::Section::Basic), outside, false);
 		focus(Dest(Design::Section::Basic), "allow-multiple-instances", "##toggle");
 		chord(Dest(Design::Section::Basic), ImGuiKey_Space);
-		checks.Expect(draft.allowMultipleInstances && multipleInstanceChanges == 1 && draft.safetyMode == 2,
+		checks.Expect(draft.allowMultipleInstances && multipleInstanceChanges == 1 && draft.safetyMode == 1,
 			"actual safety-page switch enables multiple instances with one independent event");
 		draw(Dest(Design::Section::Basic), outside, false);
 		focus(Dest(Design::Section::Basic), "allow-multiple-instances", "##toggle");
 		chord(Dest(Design::Section::Basic), ImGuiKey_Space);
-		checks.Expect(!draft.allowMultipleInstances && multipleInstanceChanges == 2 && draft.safetyMode == 2,
+		checks.Expect(!draft.allowMultipleInstances && multipleInstanceChanges == 2 && draft.safetyMode == 1,
 			"actual safety-page switch disables future extra instances without changing the safety selection");
 		draw(keysPage, outside, false);
 		focus(keysPage, "##启用固定快捷键", "##toggle", 5);
@@ -4772,8 +4772,8 @@ namespace
 			io.AddKeyEvent(ImGuiKey_F4, false); draw(behaviorSection, outside, false);
 			if (teachingPopup)
 			{
-				const int teachingLastItem = 3;
-				const auto teachingLastLabel = IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode4);
+				const int teachingLastItem = 2;
+				const auto teachingLastLabel = IA(I18nKey.SettingsUI.Regular.Tentative.SafeMode.Mode3);
 				const auto teachingLastId = ImHashStr(teachingLastLabel.c_str(), 0,
 					ImHashData(&teachingLastItem, sizeof(teachingLastItem), teachingPopup->ID));
 				ImGui::FocusWindow(teachingPopup); ImGui::SetNavID(teachingLastId, ImGuiNavLayer_Main, teachingPopup->NavRootFocusScopeId, ImRect{});
@@ -4788,7 +4788,7 @@ namespace
 				auto teachingUp = draw(behaviorSection, teachingOptionPoint, false).events;
 				const int teachingEdits = (teachingDown.safetyModeChanged ? 1 : 0) + (teachingUp.safetyModeChanged ? 1 : 0);
 				teachingDown.safetyModeChanged = teachingUp.safetyModeChanged = false;
-				checks.Expect(draft.safetyMode == 3 && teachingEdits == 1 && noEdits(teachingDown) && noEdits(teachingUp)
+				checks.Expect(draft.safetyMode == 2 && teachingEdits == 1 && noEdits(teachingDown) && noEdits(teachingUp)
 					&& draft.autoCollapse == savedBehavior.autoCollapse && draft.topInterval == savedBehavior.topInterval
 					&& draft.rightClickClose == savedBehavior.rightClickClose && draft.allowMultipleInstances == savedBehavior.allowMultipleInstances,
 					"mouse commits final teaching safety option once without editing other behavior preferences");

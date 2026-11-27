@@ -47,6 +47,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "Inkeys/Drawing/Draw3/Draw3.PptTiming.h"
 #include "Inkeys/Helper/FailedCleanupDeadline.h"
 #include "Inkeys/Helper/FailedCleanupRealCases.h"
+#include "Inkeys/Helper/Helper.Fatal.h"
 #include "Inkeys/Helper/Ui3PresentationFixtureAuth.h"
 #include "Inkeys/UI/Bar/Bar.Presentation.Source.h"
 #include "Inkeys/UI/Bar/Bar.InteractionWorker.h"
@@ -57,6 +58,7 @@ import Inkeys.Drawing.Draw3.transparent_presentation;
 #include "PptWaitingDiagnostics.h"
 #include "resource.h"
 #include <array>
+#include <csignal>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -407,7 +409,18 @@ namespace Inkeys::Shutdown
 {
 	ULONGLONG PublishFatalFailedCleanupNoWait() noexcept
 	{
-		// 失败清理owner已能自守截止；不能在这里重新建线程、Arm、日志或等待业务清理。
+		// 运行期（启动门禁已完成）的已知失败强退：教学安全模式“提示并重启/静默重启”时不抢 Close，
+		// 只把故障报告给看门狗，由看门狗线程走 UEF 抢 CrashRestart 并建立监督（提示档按静默重启处理）。
+		// 本函数仍只做原子发布与唤醒，不建线程、不 Arm、不等待；调用方的原强退截止照常执行，
+		// 监督已建立时进程死亡后由它拉起新实例，未建立时只是不重启。
+		const int safetyMode = Inkeys::config.Application.TeachingSafetyMode.load();
+		if (Inkeys::Fatal::RuntimeArmed() && safetyMode != 2 && !CrashHandler::CrashRestartSuppressed()
+			&& InterlockedCompareExchange(&offSignalInterop, 0, 0) == 0)
+		{
+			Inkeys::Fatal::Report(Inkeys::Fatal::Reason::KnownFailureCleanup);
+			return PublishedShutdownDeadlineTick();
+		}
+		// 启动期或“直接退出”档：失败清理owner已能自守截止；不能在这里重新建线程、Arm、日志或等待业务清理。
 		LONG intent = InterlockedCompareExchange(&offSignalInterop, 1, 0);
 		// 只有赢得意图的一方释放占位，避免与 SetOffSignal 的释放并发重复关闭同一句柄。
 		const bool wonClose = intent == 0;
@@ -520,6 +533,65 @@ namespace
 		return OpenVerifiedEmbeddedResourceFile(path, type, name);
 	}
 
+	// C1.6b：崩溃场景是白板且已恢复时，由主循环在启动完成后请求进入白板（走现有准入与交接）。
+	std::atomic<bool> g_recoveryEnterWhiteboard{ false };
+	void RequestRecoveryEnterWhiteboard(void*)
+	{
+		g_recoveryEnterWhiteboard.store(true, std::memory_order_release);
+	}
+	// C1.6b：恢复的墨迹在当前画面上可见时切到绘制（用户决定，2026-11-27）。可能来自绘制线程，只置标志，由主循环处理。
+	std::atomic<bool> g_recoveryEnterDrawing{ false };
+	void RequestRecoveryEnterDrawing(void*)
+	{
+		g_recoveryEnterDrawing.store(true, std::memory_order_release);
+	}
+
+	// C1.6b 崩溃恢复弹窗：在 Draw3 的恢复线程上同步调用。scene 0 桌面、1 白板；正文给出场景与最后保存时间。
+	bool PromptInkRecovery(void*, int scene, std::uint64_t lastWriteFileTime)
+	{
+		std::wstring title = L"Recover ink";
+		std::wstring body = scene == 1
+			? L"Inkeys did not exit normally last time. Recover the ink in the whiteboard?\nLast saved: {}"
+			: L"Inkeys did not exit normally last time. Recover the ink on the desktop canvas?\nLast saved: {}";
+		std::wstring yes = L"Recover", no = L"Don't recover";
+		LANGID language = MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
+		I18n::TextSnapshot localized;
+		if (I18n::capture({ I18nKey.Dialogs.InkRecovery.Title,
+			scene == 1 ? I18nKey.Dialogs.InkRecovery.Whiteboard : I18nKey.Dialogs.InkRecovery.Desktop,
+			I18nKey.Dialogs.InkRecovery.Yes, I18nKey.Dialogs.InkRecovery.No }, localized)
+			&& localized.text.size() == 4)
+		{
+			title = localized.text[0]; body = localized.text[1];
+			yes = localized.text[2]; no = localized.text[3]; language = localized.language;
+		}
+		// 最后保存时间：今天只显示时分，否则带日期。
+		std::wstring when = L"-";
+		if (lastWriteFileTime != 0)
+		{
+			FILETIME utc{ static_cast<DWORD>(lastWriteFileTime), static_cast<DWORD>(lastWriteFileTime >> 32) };
+			FILETIME local{};
+			SYSTEMTIME saved{}, today{};
+			if (FileTimeToLocalFileTime(&utc, &local) && FileTimeToSystemTime(&local, &saved))
+			{
+				GetLocalTime(&today);
+				wchar_t buffer[64]{};
+				if (saved.wYear == today.wYear && saved.wMonth == today.wMonth && saved.wDay == today.wDay)
+					swprintf_s(buffer, L"%02u:%02u", saved.wHour, saved.wMinute);
+				else
+					swprintf_s(buffer, L"%04u-%02u-%02u %02u:%02u", saved.wYear, saved.wMonth, saved.wDay,
+						saved.wHour, saved.wMinute);
+				when = buffer;
+			}
+		}
+		if (const auto position = body.find(L"{}"); position != std::wstring::npos) body.replace(position, 2, when);
+		auto request = Inkeys::UI::MessageBox::MakeYesNoRequest(title.c_str(), body.c_str());
+		request.language = language;
+		request.labels.yes = yes.c_str();
+		request.labels.no = no.c_str();
+		request.ownerlessTopmostAtCreation = true;
+		return Inkeys::UI::MessageBox::Show(request) == Inkeys::UI::MessageBox::Result::Yes;
+	}
+
 	LONG WINAPI CrashFilterLifecycleSentinel(EXCEPTION_POINTERS*)
 	{
 		return EXCEPTION_CONTINUE_SEARCH;
@@ -529,12 +601,28 @@ namespace
 	{
 		// 仅显式无窗口测试进程触碰 UEF；退出前恢复进入测试时的原处理器。
 		const auto original = SetUnhandledExceptionFilter(nullptr);
+		const auto originalPureCall = _get_purecall_handler();
+		const auto originalInvalidParameter = _get_invalid_parameter_handler();
+		const auto originalAbort = signal(SIGABRT, SIG_GET);
 		CrashHandler::Initialize();
 		CrashHandler::Initialize();
+		// 教学安全模式：CRT 三个入口必须改为交给处理核心，重复初始化不得覆盖首次保存的旧值。
+		const bool crtInstalled = _get_purecall_handler() != nullptr
+			&& _get_invalid_parameter_handler() != nullptr
+			&& signal(SIGABRT, SIG_GET) != SIG_DFL && signal(SIGABRT, SIG_GET) != SIG_ERR;
 		const auto installed = SetUnhandledExceptionFilter(nullptr);
 		SetUnhandledExceptionFilter(installed);
 		CrashHandler::Shutdown();
 		CrashHandler::Shutdown();
+		const bool crtRestored = _get_purecall_handler() == originalPureCall
+			&& _get_invalid_parameter_handler() == originalInvalidParameter
+			&& signal(SIGABRT, SIG_GET) == originalAbort;
+		if (!crtInstalled || !crtRestored)
+		{
+			SetUnhandledExceptionFilter(original);
+			std::fputs("[CrashFilter] FAIL: CRT fatal entries were not installed or restored\n", stderr);
+			return 1;
+		}
 		const auto afterNull = SetUnhandledExceptionFilter(CrashFilterLifecycleSentinel);
 		if (!installed || afterNull != nullptr)
 		{
@@ -4050,6 +4138,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			if (!exeDirectory.empty())
 			{
 				draw3StartOptions.autoSaveRoot = exeDirectory + L"\\Inkeys\\Save\\Ink";
+				// C1.6b：开关开启时建立崩溃恢复会话记录，三场景逐笔追加写入。
+				draw3StartOptions.crashRecoverInk = Inkeys::config.Application.CrashRecoverInk;
+				draw3StartOptions.recoveryPrompt = &PromptInkRecovery;
+				draw3StartOptions.recoveryEnterWhiteboard = &RequestRecoveryEnterWhiteboard;
+				draw3StartOptions.recoveryEnterDrawing = &RequestRecoveryEnterDrawing;
+				// 静默重启档的崩溃拉起不弹窗；非正常结束后手动启动一律按规则弹窗。
+				draw3StartOptions.recoverySkipPrompt = LaunchState::crashTry &&
+					Inkeys::config.Application.TeachingSafetyMode.load() == 1;
 				draw3StartOptions.devicePerformancePath = exeDirectory + L"\\Inkeys\\Memory\\device-performance.json";
 			}
 		}
@@ -4257,6 +4353,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	Inkeys::Log::Info(Inkeys::Log::Module::Main, "开始等待关闭程序信号发出");
 
 	int developerModeExitCode = 0;
+	bool watchdogStarted = false;
 	while (!offSignal)
 	{
 		this_thread::sleep_for(chrono::milliseconds(100));
@@ -4264,6 +4361,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		if (Inkeys::Startup::ActiveSnapshot().failed) SetOffSignal(1);
 		if (!offSignal && !Inkeys::Drawing::Draw3::ProductRunning())
 		{
+			if (Inkeys::Fatal::RuntimeArmed())
+			{
+				// 运行期失去绘图消费者（设备恢复失败、Run 异常、内存不足等最终都汇到这里）：
+				// 按教学安全模式交给崩溃处理核心重启或退出。不能先 SetOffSignal(1)，否则 Close 意图先占槽、无法重启。
+				// 跳过下方的受控清理是有意的：进程随即结束，窗口、捕获与 RTS 由系统回收；墨迹靠逐笔持久化恢复。
+				Inkeys::Log::TryFormat(Inkeys::Log::Level::Critical, Inkeys::Log::Module::Main,
+					"Draw3 Host 运行期意外停止，交给教学安全模式处理");
+				Inkeys::Fatal::RaiseNow(Inkeys::Fatal::Reason::Draw3Stopped);
+			}
 			// 意外失去绘图消费者时先阻断旧可见性请求，再由窗口 owner 成对撤下画布。
 			SetOffSignal(1);
 			auto& service = Inkeys::Window::GetService();
@@ -4290,6 +4396,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			break;
 		}
 		const auto whiteboardStartup = Inkeys::Startup::ActiveSnapshot();
+		if (!watchdogStarted && !offSignal && !whiteboardStartup.failed && whiteboardStartup.totalUnits
+			&& whiteboardStartup.completedUnits == whiteboardStartup.totalUnits)
+		{
+			// 启动门禁完成后才监督卡死与持续失败；启动期故障仍走启动失败提示。
+			watchdogStarted = true;
+			if (Inkeys::Fatal::StartWatchdog())
+				Inkeys::Log::Info(Inkeys::Log::Module::Main, "教学安全模式看门狗已启动");
+			else
+				Inkeys::Log::Warn(Inkeys::Log::Module::Main, "教学安全模式看门狗启动失败，错误码={}", GetLastError());
+		}
 		if (!offSignal && !whiteboardStartup.failed && whiteboardStartup.totalUnits
 			&& whiteboardStartup.completedUnits == whiteboardStartup.totalUnits
 			&& Inkeys::Launch::CommandPipe::server.TakeReadyPending())
@@ -4297,6 +4413,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 			LaunchState::openWhiteboard = false;
 			RequestWhiteboardFromShortcut();
 		}
+		if (!offSignal && !whiteboardStartup.failed && whiteboardStartup.totalUnits
+			&& whiteboardStartup.completedUnits == whiteboardStartup.totalUnits
+			&& g_recoveryEnterWhiteboard.exchange(false, std::memory_order_acq_rel))
+			RequestWhiteboardFromShortcut(); // 恢复的白板停在记录的页（装入时已设当前页）
+		// 只从“选择 / 穿透”切到画笔；已在画笔、橡皮、图形等绘制状态时保持不变。
+		if (!offSignal && g_recoveryEnterDrawing.exchange(false, std::memory_order_acq_rel))
+			(void)ChangeStateModeToPenIfIdle();
 		// Bar 渲染线程只发布有限 DIP；主线程沿既有配置路径去重落盘。
 		double committedStartupWidthDip = 0.0;
 		if (Inkeys::UI::StartupPreview::TakeCommittedStartupBarWidthDip(
@@ -4353,6 +4476,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		Inkeys::UI::StartupPreview::Stop();
 		break;
 	}
+	// 退出已受理（意图槽非 0）时看门狗本就暂停；这里显式停止，退出卡住由 15 秒监督兜底。
+	Inkeys::Fatal::StopWatchdog();
 	ShutdownTrace::Scope shutdownTrace("main-shutdown");
 	{ ShutdownTrace::Scope trace("main-command-pipe"); Inkeys::Launch::CommandPipe::server.Stop(); }
 	// Preview 先停止接收 render callback，再注销并销毁 owner HWND。

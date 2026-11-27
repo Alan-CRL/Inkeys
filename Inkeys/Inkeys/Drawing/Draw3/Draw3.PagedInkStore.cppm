@@ -13,7 +13,8 @@ export import draw3.uink_draw3_v11;
 
 export namespace Inkeys::Drawing::Draw3
 {
-	enum class PagedInkFileKind : uint8_t { Whiteboard, Presentation };
+	// Desktop（C1.6b）：桌面活动区间文件，隐式 Workspace，路径 root\desktop-live\日期\。
+	enum class PagedInkFileKind : uint8_t { Whiteboard, Presentation, Desktop };
 
 	struct PagedInkFileNaming
 	{
@@ -31,13 +32,15 @@ export namespace Inkeys::Drawing::Draw3
 	std::wstring MakePagedInkPath(const std::wstring& root, const PagedInkFileNaming& naming,
 		const PagedInkLocalTime& time, const draw3::uink::UInkGuid& fileGuid);
 
-	enum class PagedInkRequestKind : uint8_t { Clear, Full, Load, LoadPreviousInterval, LoadLane };
+	// Append（C1.6b）：抬笔后把这一笔续接到盘上已确认版本之后；只在“崩溃重启后自动恢复墨迹”开启时提交。
+	enum class PagedInkRequestKind : uint8_t { Clear, Full, Load, LoadPreviousInterval, LoadLane, Append, Rotate };
 	enum class PagedInkAdmission : uint8_t { Accepted, Closed, FileFailed, InvalidRequest, ReservationFailed };
 	enum class PagedInkResult : uint8_t { Succeeded, Failed, Merged, Canceled, FileFailed };
 	enum class PagedInkError : uint8_t
 	{
 		None, PendingWrite, BoundaryMismatch, InvalidSnapshot, MissingPage, ExportFailed,
-		SpliceFailed, ReadFailed, ImportFailed, FileCreateFailed, FileWriteFailed, Exception
+		SpliceFailed, ReadFailed, ImportFailed, FileCreateFailed, FileWriteFailed, Exception,
+		AppendBaseMismatch // 盘上确认版本不是 Append 的基准修订（前面有写入失败或未准入），需整页补写
 	};
 	enum class PagedInkCloseMode : uint8_t { Drain, Cancel };
 
@@ -67,6 +70,8 @@ export namespace Inkeys::Drawing::Draw3
 		draw3::uink::Draw3UInkCanvasSnapshot snapshot;
 		// 有值时 snapshot 只包含当前区间，并要求匹配盘上确认边界。
 		std::optional<PagedInkBoundaryIdentity> previousIntervalOnDisk;
+		// 仅 Append：改动前的页修订。worker 只在盘上确认修订等于它时续接，snapshot 只含这一笔。
+		uint64_t baseRevision = 0;
 	};
 
 	struct PagedInkLoadRequest
@@ -185,6 +190,19 @@ export namespace Inkeys::Drawing::Draw3
 		// wakeContext 须存活至 Close 返回，返回后服务保证不再调用唤醒回调。
 		void (*wake)(void*) noexcept = nullptr;
 		void* wakeContext = nullptr;
+		// 崩溃恢复会话的写前登记（C1.6b，可空）。worker 同步调用：建文件前登记候选路径、建好或整理替换后登记文件身份
+		// （清除写前登记），整页类写入、搬页与多块图形追加前登记起点，写完后清除。
+		// 候选路径或写前登记失败时拒绝这次写入；清除失败后，之后每次写入都先重新登记，覆盖残留的旧起点。
+		// clearRecoveryFile 仅桌面 Rotate 使用：持久化“当前无活动区间文件”及该次 Clear 的代次。
+		void* recoveryContext = nullptr;
+		bool (*registerRecoveryFile)(void*, const std::wstring& path) noexcept = nullptr;
+		bool (*registerRecoveryPending)(void*, const std::wstring& path, uint64_t start, uint8_t kind) noexcept = nullptr;
+		bool (*clearRecoveryPending)(void*, const std::wstring& path) noexcept = nullptr;
+		bool (*clearRecoveryFile)(void*, uint64_t clearGeneration) noexcept = nullptr;
+		// 崩溃恢复接管（C1.6b，PPT）：worker 处理任何请求之前，把旧进程文件里各页的最新完整版本重新写进本服务的新文件，
+		// 并按“已确认、修订 1”初始化目录；之后首次 LoadLane 等同本进程之前放映过这份文稿。pageContext.workspaceGuid
+		// 须设为旧文件的 Workspace GUID。
+		std::vector<draw3::uink::UInkCanvas> adoptPages;
 	};
 
 	// 仅供无窗口测试。
@@ -229,10 +247,20 @@ export namespace Inkeys::Drawing::Draw3
 		PagedInkAdmission LoadPreviousInterval(PagedInkLoadPreviousRequest request) noexcept;
 		std::optional<PagedInkCompletion> Take() noexcept;
 		void Drain();
+		// 离开白板 / 结束放映时调用：排在已准入写入之后做一次不受空闲阈值限制的正序整理，不等待。
+		void RequestOrderedCompact() noexcept;
+		// 桌面 Clear 后调用：排在已准入写入之后关闭当前文件（文件保留），下一次写入建新文件。pageGuid 只作队列身份。
+		// clearGeneration 原样交给 clearRecoveryFile（与桌面 Clear 快照的代次一致）。
+		PagedInkAdmission RotateFile(const draw3::uink::UInkGuid& pageGuid, uint64_t loadGeneration,
+			uint64_t clearGeneration = 0) noexcept;
 		void Close(PagedInkCloseMode mode = PagedInkCloseMode::Drain);
 
 		std::wstring FilePath() const;
 		PagedInkFileState FileState() const noexcept;
+		// C1.6b：会话记录里没有残留的写前登记（恢复读取不会截掉已确认内容）。恢复结算的落盘判定用。
+		bool RecoveryPendingSettled() const noexcept;
+		// C1.6b：本服务启动时接管过旧进程的页（只返回一次 true）。绘制线程据此在当前页有墨迹时切到绘制。
+		bool TakeAdoptedNotice() noexcept;
 		// 成功后必须在实际释放完成时归还许可，持有期间不能调用 Drain 或 Close。
 		// 只有不依赖磁盘的槽可以放宽文件健康要求。
 		bool TryBeginEviction(bool requiresHealthyFile = true) noexcept;

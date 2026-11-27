@@ -1,4 +1,4 @@
-import Inkeys.Helper.CrashHandler;
+﻿import Inkeys.Helper.CrashHandler;
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -7,6 +7,9 @@ import Inkeys.Helper.CrashHandler;
 #include "../../../Launch/IdtSingleInstance.h"
 #include "FailedCleanupDeadline.h"
 #include "FailedCleanupRealCases.h"
+#include "Helper.Fatal.h"
+#include <crtdbg.h>
+#include <stdexcept>
 
 #include <shellapi.h>
 #include <objbase.h>
@@ -1226,7 +1229,8 @@ namespace Inkeys::Shutdown
 				&& read == sizeof(signature) && memcmp(signature, "MDMP", sizeof(signature)) == 0;
 		}
 
-		[[nodiscard]] bool ValidateCrashReport(const std::wstring& path, DWORD pid)
+		[[nodiscard]] bool ValidateCrashReport(const std::wstring& path, DWORD pid,
+			const char* expectedCode = "ExceptionCode: 0xE143C001", const char* expectedReason = nullptr)
 		{
 			Handle file(CreateFileW(path.c_str(), GENERIC_READ,
 				FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
@@ -1240,7 +1244,8 @@ namespace Inkeys::Shutdown
 			if (!ReadFile(file.value, content.data(), static_cast<DWORD>(content.size()), &read, nullptr)
 				|| read != static_cast<DWORD>(content.size())) return false;
 			return content.find("ProcessId: " + std::to_string(pid) + "\r\n") != std::string::npos
-				&& content.find("ExceptionCode: 0xE143C001") != std::string::npos
+				&& content.find(expectedCode) != std::string::npos
+				&& (!expectedReason || content.find(expectedReason) != std::string::npos)
 				&& content.find("DumpGenerated: true\r\n") != std::string::npos
 				&& content.find("DumpFallbackAttempted: ") != std::string::npos
 				&& content.find("DumpPrimaryError: ") != std::string::npos;
@@ -1249,6 +1254,113 @@ namespace Inkeys::Shutdown
 		LONG WINAPI SuppressTestWer(EXCEPTION_POINTERS*) noexcept
 		{
 			return EXCEPTION_EXECUTE_HANDLER;
+		}
+
+		// 教学安全模式：各致命入口在隔离 child 中真实触发，验证都进入生产处理核心并自动重启。
+		enum class FatalEntryTrigger : unsigned char
+		{
+			None, RaiseMain, WatchdogReport, WatchdogHang, Abort, TerminateWorker, NoexceptViolation,
+			InvalidParameter, PureCall
+		};
+
+		struct FatalEntryCase
+		{
+			FatalEntryTrigger trigger;
+			const wchar_t* option;
+			const char* name;
+			const char* reason;
+		};
+
+		constexpr FatalEntryCase kFatalEntryCases[] = {
+			{ FatalEntryTrigger::RaiseMain, L"--fatal-entry-raise-main", "fatal-entry-raise-main", "InkeysFatalReason: DebugInjected" },
+			{ FatalEntryTrigger::WatchdogReport, L"--fatal-entry-watchdog-report", "fatal-entry-watchdog-report", "InkeysFatalReason: DebugInjected" },
+			{ FatalEntryTrigger::WatchdogHang, L"--fatal-entry-watchdog-hang", "fatal-entry-watchdog-hang", "InkeysFatalReason: ThreadHang" },
+			{ FatalEntryTrigger::Abort, L"--fatal-entry-abort", "fatal-entry-abort", "InkeysFatalReason: CrtAbort" },
+			{ FatalEntryTrigger::TerminateWorker, L"--fatal-entry-terminate-worker", "fatal-entry-terminate-worker", "InkeysFatalReason: CrtAbort" },
+			{ FatalEntryTrigger::NoexceptViolation, L"--fatal-entry-noexcept", "fatal-entry-noexcept", "InkeysFatalReason: CrtAbort" },
+			{ FatalEntryTrigger::InvalidParameter, L"--fatal-entry-invalid-parameter", "fatal-entry-invalid-parameter", "InkeysFatalReason: CrtInvalidParameter" },
+			{ FatalEntryTrigger::PureCall, L"--fatal-entry-purecall", "fatal-entry-purecall", "InkeysFatalReason: CrtPureCall" },
+		};
+
+		[[nodiscard]] const FatalEntryCase* FindFatalEntryCase(const wchar_t* option) noexcept
+		{
+			if (!option) return nullptr;
+			for (const auto& entry : kFatalEntryCases)
+				if (wcscmp(option, entry.option) == 0) return &entry;
+			return nullptr;
+		}
+
+		__declspec(noinline) void ThrowForFatalEntryTest()
+		{
+			throw std::runtime_error("fatal-entry-test");
+		}
+
+		__declspec(noinline) void CallThrowingFromNoexcept() noexcept
+		{
+			// 经 volatile 函数指针调用，编译期看不出会抛出；运行期穿过 noexcept 边界触发 terminate。
+			void (*volatile target)() = &ThrowForFatalEntryTest;
+			target();
+		}
+
+		struct PureCallBase
+		{
+			PureCallBase() { CallVirtualDuringConstruction(); }
+			virtual ~PureCallBase() = default;
+			virtual void Pure() = 0;
+			__declspec(noinline) void CallVirtualDuringConstruction() { Pure(); }
+		};
+		struct PureCallDerived final : PureCallBase
+		{
+			void Pure() override {}
+		};
+
+		[[noreturn]] void FireFatalEntryTrigger(FatalEntryTrigger trigger)
+		{
+#ifdef _DEBUG
+			// Debug CRT 的参数校验会先弹断言框；隔离 child 只输出到调试器，再进入处理器。
+			_CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_DEBUG);
+			_CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_DEBUG);
+#endif
+			switch (trigger)
+			{
+			case FatalEntryTrigger::RaiseMain:
+				Inkeys::Fatal::RaiseNow(Inkeys::Fatal::Reason::DebugInjected, 1);
+			case FatalEntryTrigger::WatchdogReport:
+				Inkeys::Fatal::Report(Inkeys::Fatal::Reason::DebugInjected, 2);
+				(void)Inkeys::Fatal::StartWatchdog();
+				break;
+			case FatalEntryTrigger::WatchdogHang:
+				// 模拟工作单元卡住：Beat 后不再推进，看门狗 15 秒后在自己的线程触发。
+				Inkeys::Fatal::Beat(Inkeys::Fatal::Slot::UiScheduler);
+				(void)Inkeys::Fatal::StartWatchdog();
+				break;
+			case FatalEntryTrigger::Abort:
+				abort();
+			case FatalEntryTrigger::TerminateWorker:
+			{
+				std::thread worker([] { ThrowForFatalEntryTest(); });
+				worker.join();
+				break;
+			}
+			case FatalEntryTrigger::NoexceptViolation:
+				CallThrowingFromNoexcept();
+				break;
+			case FatalEntryTrigger::InvalidParameter:
+			{
+				char* volatile destination = nullptr;
+				(void)strcpy_s(destination, 1, "x");
+				break;
+			}
+			case FatalEntryTrigger::PureCall:
+			{
+				PureCallDerived object;
+				object.Pure();
+				break;
+			}
+			default:
+				break;
+			}
+			for (;;) Sleep(INFINITE);
 		}
 
 		[[nodiscard]] FailedArmTestScenario ParseFailedArmTest(const wchar_t* option) noexcept
@@ -1389,8 +1501,9 @@ namespace Inkeys::Shutdown
 				&& wcscmp(argv[6], L"--report-disk-full-once") == 0;
 			const bool autoLostIntentStall = argc == 7
 				&& wcscmp(argv[6], L"--auto-lost-intent-report-stall") == 0;
+			const FatalEntryCase* fatalEntry = argc == 7 ? FindFatalEntryCase(argv[6]) : nullptr;
 			if (argc == 7 && !manualReportStall && !manualHold
-				&& !noRestartStall && !reportDiskFullOnce && !autoLostIntentStall) return 81;
+				&& !noRestartStall && !reportDiskFullOnce && !autoLostIntentStall && !fatalEntry) return 81;
 			unsigned long long pidValue = 0, parentValue = 0, acknowledgeValue = 0;
 			if (!ParseUnsigned(argv[2], pidValue) || pidValue == 0 || pidValue > MAXDWORD
 				|| !ParseUnsigned(argv[3], parentValue) || parentValue == 0
@@ -1468,6 +1581,7 @@ namespace Inkeys::Shutdown
 					CrashHandler::IsolatedUefTestMode::ReportDiskFullOnce);
 			CrashHandler::Initialize();
 			if (!SetEvent(acknowledge)) return 85;
+			if (fatalEntry) FireFatalEntryTrigger(fatalEntry->trigger);
 			// 已授权的测试 child 使用真实生产 UEF，异常不得在正常 C++ catch 中吞掉。
 			RaiseException(0xE143C001, EXCEPTION_NONCONTINUABLE, 0, nullptr);
 			return 86;
@@ -1495,7 +1609,7 @@ namespace Inkeys::Shutdown
 		}
 
 		[[nodiscard]] bool RunRealUefProcessTest(RealUefScenario scenario = RealUefScenario::Auto,
-			bool wrongParentIdentityForTest = false)
+			bool wrongParentIdentityForTest = false, const FatalEntryCase* fatalEntry = nullptr)
 		{
 			const wchar_t* failedArmOption = FailedArmOption(scenario);
 			const bool manualReportStall = scenario == RealUefScenario::ManualStall;
@@ -1557,6 +1671,7 @@ namespace Inkeys::Shutdown
 			if (noRestartStall) arguments += L" --no-restart-report-stall";
 			if (reportDiskFullOnce) arguments += L" --report-disk-full-once";
 			if (autoLostIntentStall) arguments += L" --auto-lost-intent-report-stall";
+			if (fatalEntry) arguments += L" " + std::wstring(fatalEntry->option);
 			if (failedArmOption)
 			{
 				std::wstring launcherImage;
@@ -1655,7 +1770,9 @@ namespace Inkeys::Shutdown
 				L".dmp", dumpPath, dumpBytes) && dumpBytes >= 32 && ValidateDumpFile(dumpPath);
 			const bool report = FindCrashArtifact(crashDirectory, process.dwProcessId,
 				L".txt", reportPath, reportBytes)
-				&& ValidateCrashReport(reportPath, process.dwProcessId);
+				&& ValidateCrashReport(reportPath, process.dwProcessId,
+					fatalEntry ? "ExceptionCode: 0xE1430100" : "ExceptionCode: 0xE143C001",
+					fatalEntry ? fatalEntry->reason : nullptr);
 			WIN32_FIND_DATAW partialFound{};
 			HANDLE partialSearch = FindFirstFileW((crashDirectory + L"\\*_"
 				+ std::to_wstring(process.dwProcessId) + L".dm_").c_str(),
@@ -3075,6 +3192,20 @@ namespace Inkeys::Shutdown
 						exitCode = passed && update && crash ? 0 : 62;
 					}
 					else if (argc == 3 && EqualNoCase(argv[2], L"--startup-failure-only")) exitCode = RunStartupFailureTests();
+					else if ((argc == 3 || argc == 4) && EqualNoCase(argv[2], L"--fatal-entry-only"))
+					{
+						// 教学安全模式：逐个入口在隔离 child 中触发，确认进入生产处理核心、写出原因并自动重启一次。
+						bool passed = true, matched = false;
+						for (const auto& entry : kFatalEntryCases)
+						{
+							if (argc == 4 && !EqualNoCase(argv[3], entry.option + 2)) continue;
+							matched = true;
+							const bool result = RunRealUefProcessTest(RealUefScenario::Auto, false, &entry);
+							PrintTestResult(entry.name, result);
+							passed = result && passed;
+						}
+						exitCode = matched && passed ? 0 : 62;
+					}
 					else if (argc == 4 && EqualNoCase(argv[2], L"--startup-failure-only")
 						&& ParseStartupFailureSite(argv[3]) != StartupFailureSite::None)
 						exitCode = RunStartupFailureTests(ParseStartupFailureSite(argv[3]));

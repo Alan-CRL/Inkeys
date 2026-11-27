@@ -1782,6 +1782,16 @@ namespace Inkeys::Drawing::Draw3
 		autoSaveEnabled_.store(enabled, std::memory_order_release);
 	}
 
+	bool WindowController::CrashRecoverInkEnabled() const noexcept
+	{
+		return crashRecoverInk_.load(std::memory_order_acquire);
+	}
+
+	void WindowController::SetCrashRecoverInkEnabled(bool enabled) noexcept
+	{
+		crashRecoverInk_.store(enabled, std::memory_order_release);
+	}
+
 	void WindowController::SetActivationAllowed(bool enabled) noexcept
 	{
 		activationAllowed_.store(enabled, std::memory_order_release);

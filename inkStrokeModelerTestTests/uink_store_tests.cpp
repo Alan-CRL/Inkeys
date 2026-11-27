@@ -1435,11 +1435,220 @@ namespace
 			!temporary.temporaryPage && !temporary.temporaryLayer);
 		STORE_CHECK(unresolved.provenance.usedTemporaryIdentity && !unresolved.safeAppendOffset);
 	}
+	// C1.6b：续接内容块所用的空页身份与单个内容块。
+	UInkCanvas Identity(UInkCanvas canvas)
+	{
+		canvas.content.clear();
+		return canvas;
+	}
+
+	UInkInk ContinuationInk(uint32_t contentId, uint32_t undoId)
+	{
+		UInkInk ink;
+		ink.contentId = contentId;
+		ink.undoId = undoId;
+		ink.color = { 0x445566, std::nullopt };
+		ink.cap = 1;
+		ink.opacity = 1.0f;
+		ink.points = { { 7.0f, 8.0f, 3.0f, std::nullopt }, { 9.0f, 10.0f, 3.0f, std::nullopt } };
+		return ink;
+	}
+
+	void AppendContentContinuesLastCanvas(TestState& state, const TempDirectory& root)
+	{
+		const Fixture fixture;
+		const UInkCanvas page = fixture.Page(61, 0, 1); // 内容 0..2，末块 undo 3
+		UInkStoreWriteResult created;
+		const auto path = root.At(L"append-content.uink");
+		auto writer = fixture.Create(path, page, created);
+		STORE_REQUIRE(created.success && writer);
+		const uint64_t before = writer->FileBytes();
+
+		const std::array<UInkContent, 1> stroke{ ContinuationInk(3, 4) };
+		STORE_REQUIRE(writer->AppendContent(Identity(page), stroke).success);
+		STORE_CHECK(writer->FileBytes() > before);
+		STORE_CHECK(writer->Directory().nextContentId == 4 && writer->Directory().lastUndoId == 4);
+		// 多部件图形：同一撤回组的连续块一次写入。
+		const std::array<UInkContent, 2> group{ ContinuationInk(4, 5), ContinuationInk(5, 5) };
+		STORE_REQUIRE(writer->AppendContent(Identity(page), group).success);
+		const auto range = writer->Directory().pages.find(page.pageGuid.Bytes());
+		STORE_REQUIRE(range != writer->Directory().pages.end());
+		STORE_CHECK(range->second.offset + range->second.length == writer->FileBytes());
+		STORE_CHECK(range->second.nextContentId == 6 && range->second.lastUndoId == 5 && !range->second.lastIsClear);
+
+		UInkCanvas expected = page;
+		expected.content.emplace_back(ContinuationInk(3, 4));
+		expected.content.emplace_back(ContinuationInk(4, 5));
+		expected.content.emplace_back(ContinuationInk(5, 5));
+		const auto read = ReadUInkPage(path, writer->Directory(), page.pageGuid);
+		STORE_CHECK(ReadMatches(read, expected) && read.diagnostics.empty());
+		const auto full = ReadUInkStoreFile(path);
+		STORE_CHECK(full.status == UInkReadStatus::Complete && full.document &&
+			full.document->canvases.size() == 1 && SameCanvas(full.document->canvases.front(), expected));
+		// 整页版本之后仍可继续续接，编号接新版本。
+		STORE_REQUIRE(writer->AppendPage(page).success);
+		STORE_CHECK(writer->AppendContent(Identity(page), stroke).success);
+	}
+
+	void AppendContentRejectsInvalidRequests(TestState& state, const TempDirectory& root)
+	{
+		const Fixture fixture;
+		const UInkCanvas first = fixture.Page(62, 0, 1);
+		const UInkCanvas second = fixture.Page(63, 1, 1);
+		UInkStoreWriteResult created;
+		auto writer = fixture.Create(root.At(L"append-content-reject.uink"), first, created);
+		STORE_REQUIRE(created.success && writer);
+		STORE_REQUIRE(writer->AppendPage(second).success);
+		const auto directory = writer->Directory();
+		const uint64_t bytes = writer->FileBytes();
+		const std::array<UInkContent, 1> next{ ContinuationInk(3, 4) };
+		const std::array<UInkContent, 1> gap{ ContinuationInk(4, 4) };
+		const std::array<UInkContent, 1> earlierUndo{ ContinuationInk(3, 2) };
+		STORE_CHECK(!writer->AppendContent(Identity(first), next).success);  // 不是最后一个 Canvas
+		STORE_CHECK(!writer->AppendContent(first, next).success);            // 身份带内容
+		STORE_CHECK(!writer->AppendContent(Identity(second), gap).success);  // 编号缺口
+		STORE_CHECK(!writer->AppendContent(Identity(second), earlierUndo).success); // 撤回组倒退
+		STORE_CHECK(!writer->AppendContent(Identity(second), {}).success);   // 空请求
+		// Clear 之后的块不能与 Clear 同组（SAVE-8）。
+		const std::array<UInkContent, 1> clear{ UInkClear{ 3, 4 } };
+		const std::array<UInkContent, 1> sameGroupAfterClear{ ContinuationInk(4, 4) };
+		STORE_CHECK(SameDirectory(writer->Directory(), directory) && writer->FileBytes() == bytes);
+		STORE_REQUIRE(writer->AppendContent(Identity(second), clear).success);
+		STORE_CHECK(writer->Directory().lastIsClear);
+		const uint64_t afterClear = writer->FileBytes();
+		STORE_CHECK(!writer->AppendContent(Identity(second), sameGroupAfterClear).success);
+		STORE_CHECK(writer->FileBytes() == afterClear && !writer->IsSealed());
+	}
+
+	void RelocatePageMakesLastCanvas(TestState& state, const TempDirectory& root)
+	{
+		const Fixture fixture;
+		const UInkCanvas first = fixture.Page(64, 0, 1);
+		const UInkCanvas second = fixture.Page(65, 1, 1);
+		UInkStoreWriteResult created;
+		const auto path = root.At(L"relocate.uink");
+		auto writer = fixture.Create(path, first, created);
+		STORE_REQUIRE(created.success && writer);
+		STORE_REQUIRE(writer->AppendPage(second).success);
+		const auto firstRange = writer->Directory().pages.at(first.pageGuid.Bytes());
+		const uint64_t end = writer->FileBytes();
+
+		// 回翻到第一页：搬到末尾成为最后一个 Canvas，旧页段计入被替代字节。
+		STORE_REQUIRE(writer->RelocatePage(first.pageGuid).success);
+		const auto moved = writer->Directory().pages.at(first.pageGuid.Bytes());
+		STORE_CHECK(writer->Directory().lastPageGuid == first.pageGuid);
+		STORE_CHECK(moved.offset == end && moved.length == firstRange.length);
+		STORE_CHECK(writer->FileBytes() == end + firstRange.length);
+		STORE_CHECK(writer->SupersededBytes() == firstRange.length);
+		STORE_CHECK(writer->Directory().nextContentId == 3 && writer->Directory().lastUndoId == 3);
+		STORE_CHECK(ReadMatches(ReadUInkPage(path, writer->Directory(), first.pageGuid), first));
+		// 已是最后一个时不再复制。
+		STORE_REQUIRE(writer->RelocatePage(first.pageGuid).success);
+		STORE_CHECK(writer->FileBytes() == end + firstRange.length);
+
+		const std::array<UInkContent, 1> stroke{ ContinuationInk(3, 4) };
+		STORE_REQUIRE(writer->AppendContent(Identity(first), stroke).success);
+		UInkCanvas expected = first;
+		expected.content.emplace_back(ContinuationInk(3, 4));
+		const auto full = ReadUInkStoreFile(path);
+		STORE_REQUIRE(full.status == UInkReadStatus::Complete && full.document && full.document->canvases.size() == 2);
+		STORE_CHECK(SameCanvas(full.document->canvases[0], expected) && SameCanvas(full.document->canvases[1], second));
+
+		// 整理按页号正序，之后最后一个 Canvas 是页号最大的页，续接旧页需要再次搬页。
+		STORE_REQUIRE(writer->Compact().success);
+		STORE_CHECK(writer->Directory().lastPageGuid == second.pageGuid && writer->SupersededBytes() == 0);
+		STORE_CHECK(!writer->AppendContent(Identity(first), std::array<UInkContent, 1>{ ContinuationInk(4, 5) }).success);
+		STORE_CHECK(ReadMatches(ReadUInkPage(path, writer->Directory(), first.pageGuid), expected));
+		STORE_CHECK(!writer->RelocatePage(Guid(99)).success);
+	}
+
+	void AppendContentRollbackAndSeal(TestState& state, const TempDirectory& root)
+	{
+		const Fixture fixture;
+		const UInkCanvas page = fixture.Page(66, 0, 1);
+		const std::array<UInkContent, 1> stroke{ ContinuationInk(3, 4) };
+		{
+			UInkStoreWriteResult created;
+			const auto path = root.At(L"append-content-rollback.uink");
+			auto writer = fixture.Create(path, page, created);
+			STORE_REQUIRE(created.success && writer);
+			const auto directory = writer->Directory();
+			const uint64_t bytes = writer->FileBytes();
+			{
+				const ScopedFaults injected({ .shortWrite = true });
+				STORE_CHECK(!writer->AppendContent(Identity(page), stroke).success);
+			}
+			STORE_CHECK(!writer->IsSealed() && SameDirectory(writer->Directory(), directory));
+			const auto observed = ReadBytes(path);
+			STORE_CHECK(observed && observed->size() == bytes && writer->FileBytes() == bytes);
+			STORE_CHECK(writer->AppendContent(Identity(page), stroke).success);
+		}
+		{
+			UInkStoreWriteResult created;
+			auto writer = fixture.Create(root.At(L"append-content-seal.uink"), page, created);
+			STORE_REQUIRE(created.success && writer);
+			{
+				const ScopedFaults injected({ .failFlush = true, .failTruncate = true });
+				STORE_CHECK(!writer->AppendContent(Identity(page), stroke).success);
+			}
+			STORE_CHECK(writer->IsSealed() && writer->IsTailUnconfirmed());
+			STORE_CHECK(!writer->AppendContent(Identity(page), stroke).success);
+		}
+	}
+
+	void PrefixReadDropsPartialWrite(TestState& state, const TempDirectory& root)
+	{
+		const Fixture fixture;
+		const UInkCanvas first = fixture.Page(67, 0, 1);
+		const UInkCanvas latest = fixture.Page(67, 0, 2);
+		UInkStoreWriteResult created;
+		const auto path = root.At(L"prefix-read.uink");
+		auto writer = fixture.Create(path, first, created);
+		STORE_REQUIRE(created.success && writer);
+		const uint64_t pendingStart = writer->FileBytes();
+		STORE_REQUIRE(writer->AppendPage(latest).success);
+		const uint64_t pendingEnd = writer->FileBytes();
+		writer->Close();
+
+		// 写前登记判定未写完：截到登记起点，回退到上一个完整版本。
+		const auto atStart = ReadUInkStoreFilePrefix(path, pendingStart);
+		STORE_CHECK(atStart.status == UInkReadStatus::Complete && atStart.document &&
+			atStart.document->canvases.size() == 1 && SameCanvas(atStart.document->canvases.front(), first));
+		// 停在对象中间：整页新版本可能留下完整的 Canvas 与部分内容块，解码器无法识别（所以整页写入必须写前登记，
+		// 恢复时按登记起点截断）。这里只要求不崩溃、仍得到这一页。
+		const auto midObject = ReadUInkStoreFilePrefix(path, pendingStart + (pendingEnd - pendingStart) / 2);
+		STORE_CHECK(midObject.document && midObject.document->canvases.size() == 1 &&
+			midObject.document->canvases.front().pageGuid == first.pageGuid);
+		// 长度足够时读到最新版本；超过实际长度按实际长度读。
+		const auto whole = ReadUInkStoreFilePrefix(path, pendingEnd + 4096);
+		STORE_CHECK(whole.status == UInkReadStatus::Complete && whole.document &&
+			whole.document->canvases.size() == 1 && SameCanvas(whole.document->canvases.front(), latest));
+		STORE_CHECK(ReadUInkStoreFilePrefix(root.At(L"missing.uink"), 100).status == UInkReadStatus::IoError);
+
+		// 单块续接不登记：停在块中间时残缺块被丢弃，保留续接前的内容。
+		UInkStoreWriteResult appendCreated;
+		const auto appendPath = root.At(L"prefix-read-append.uink");
+		auto appendWriter = fixture.Create(appendPath, first, appendCreated);
+		STORE_REQUIRE(appendCreated.success && appendWriter);
+		const uint64_t blockStart = appendWriter->FileBytes();
+		const std::array<UInkContent, 1> stroke{ ContinuationInk(3, 4) };
+		STORE_REQUIRE(appendWriter->AppendContent(Identity(first), stroke).success);
+		const uint64_t blockEnd = appendWriter->FileBytes();
+		appendWriter->Close();
+		const auto partialBlock = ReadUInkStoreFilePrefix(appendPath, blockStart + (blockEnd - blockStart) / 2);
+		STORE_CHECK(partialBlock.document && partialBlock.document->canvases.size() == 1 &&
+			SameCanvas(partialBlock.document->canvases.front(), first));
+	}
 }
 
 int RunUInkStoreTests()
 {
 	constexpr std::pair<const char*, void (*)(TestState&, const TempDirectory&)> cases[] = {
+		{ "AppendContentContinuesLastCanvas", AppendContentContinuesLastCanvas },
+		{ "AppendContentRejectsInvalidRequests", AppendContentRejectsInvalidRequests },
+		{ "RelocatePageMakesLastCanvas", RelocatePageMakesLastCanvas },
+		{ "AppendContentRollbackAndSeal", AppendContentRollbackAndSeal },
+		{ "PrefixReadDropsPartialWrite", PrefixReadDropsPartialWrite },
 		{ "AppendReplaceCompact", AppendReplaceCompact },
 		{ "PublishDoesNotOverwrite", PublishDoesNotOverwrite },
 		{ "RelativeCreateSurvivesCurrentDirectoryChange", RelativeCreateSurvivesCurrentDirectoryChange },

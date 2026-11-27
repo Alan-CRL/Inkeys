@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "Bar.Presentation.Source.h"
 
@@ -626,7 +626,7 @@ namespace Inkeys::UI::Bar
 			config.Application.Language = 1; config.Application.StartUp = false;
 			config.UI.TopSleepTime = 3; config.UI.Bar.RightClickClose = false;
 			config.Application.TeachingSafetyMode = 0;
-			config.Drawing.PaintDevice = 1; config.Drawing.AutoSave.Enable = true;
+			config.Drawing.PaintDevice = 1;
 			config.PlugIn.SuperTop.Enable = false;
 			auto& shortcuts = config.UI.Bar.ShortcutButton;
 			shortcuts.Appliance.Explorer = false; shortcuts.Appliance.Taskmgr = false; shortcuts.Appliance.Control = false;

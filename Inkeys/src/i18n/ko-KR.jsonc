@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "Inkeys에 문제가 발생했습니다. ‘확인’을 선택하면 Inkeys를 다시 시작하고 복원을 시도합니다."
+      "Body": "Inkeys에 문제가 발생했습니다. ‘확인’을 선택하면 Inkeys를 다시 시작하고 복원을 시도합니다.",
+      "RepeatBody": "Inkeys가 다시 시작된 직후 또 문제가 발생했습니다. Inkeys를 다시 시작하시겠습니까?"
+    },
+    "InkRecovery":
+    {
+      "Title": "잉크 복원",
+      "Desktop": "지난번 Inkeys가 정상적으로 종료되지 않았습니다. 바탕 화면 캔버스의 잉크를 복원하시겠습니까?\n마지막 저장: {}",
+      "Whiteboard": "지난번 Inkeys가 정상적으로 종료되지 않았습니다. 화이트보드의 잉크를 복원하시겠습니까?\n마지막 저장: {}",
+      "Yes": "복원",
+      "No": "복원 안 함"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "불투명도",
       "WindowBehaviorSection": "창 동작",
       "OtherOptionsSection": "기타 옵션",
-      "SafetyRecoverySection": "안전 및 복원",
+      "SafetyRecoverySection": "수업 안전 모드",
       "ShortcutGlobalSection": "전역 조작",
       "ShortcutEditingSection": "주석 편집",
       "ShortcutAuxiliarySection": "보조 조작",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "캔버스 저장",
-        "Enable": "데스크톱 캔버스 자동 저장",
-        "EnableE": "데스크톱 캔버스를 지우거나 프로그램을 종료할 때 내용이 있는 캔버스를 자동 저장하여 나중에 기록에서 복원할 수 있게 합니다.",
         "SaveTime":
         {
           "N": "보관 기간",
@@ -737,9 +744,13 @@
           "E": "Inkeys가 비정상 종료될 때 수행할 동작입니다.",
           "Mode1": "알림 후 다시 시작",
           "Mode2": "알림 없이 다시 시작",
-          "Mode3": "시스템 충돌 처리기에 맡기기",
-          "Mode4": "바로 종료",
+          "Mode3": "바로 종료",
           "Note": "시작 중 발생한 오류는 계속 알림으로 표시합니다."
+        },
+        "RecoverInk":
+        {
+          "N": "충돌 후 다시 시작할 때 잉크 자동 복원",
+          "E": "충돌하거나 비정상 종료된 뒤 다시 시작하면 지난번에 저장되지 않은 잉크를 복원합니다."
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "무작위 테스트 상태를 추가하거나 삭제하여 애니메이션, 긴 텍스트 및 진행률 링을 확인합니다.",
         "Add": "무작위 상태 추가",
         "Remove": "상태 하나 삭제"
+      },
+      "CrashTest":
+      {
+        "Section": "충돌 복원 테스트",
+        "N": "오류 발생시키기",
+        "E": "현재 '충돌 처리 방식'에 따라 처리됩니다. 자동 다시 시작과 잉크 복원 테스트용입니다. 디버거가 연결되어 있으면 'UI 멈춤 재현'은 발동하지 않습니다.",
+        "WildPointer": "잘못된 포인터 충돌",
+        "Draw3Fatal": "그리기 치명적 오류 재현",
+        "UiHang": "UI 멈춤 재현",
+        "ConfirmWildPointer": "잘못된 포인터에 접근해 즉시 충돌시키고 현재 '충돌 처리 방식'에 따라 처리합니다. 계속하시겠습니까?",
+        "ConfirmDraw3Fatal": "그리기 스레드에서 치명적 오류를 발생시켜 중지하고 현재 '충돌 처리 방식'에 따라 처리합니다. 계속하시겠습니까?",
+        "ConfirmUiHang": "UI 스레드를 20초 동안 멈추고 약 15초 후 현재 '충돌 처리 방식'에 따라 처리합니다. 계속하시겠습니까?"
       },
       "ConsoleSection": "진단 로그 출력",
       "CanvasInformation": "캔버스 초기화 정보",

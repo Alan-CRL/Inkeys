@@ -1,4 +1,4 @@
-module;
+﻿module;
 
 #include "../../../IdtMain.h"
 #include "Bar.LogoAppearance.h"
@@ -26,6 +26,7 @@ module;
 #include "Bar.PresentationAlpha.h"
 #include "Bar.PresentationProbe.h"
 #include "Bar.Presentation.Source.h"
+#include "../../Helper/Helper.Fatal.h"
 #include <cstring>
 #include <bit>
 #include "Bar.WindowGeometry.h"
@@ -9368,6 +9369,8 @@ BarRenderLoopStageResult BarRenderLoopCoordinator::CalculateDirtyAndDrawPresent(
 				state.spec.DiscardDeviceResources();
 				return BarRenderLoopStageResult::DeviceLost;
 			}
+			// 真实资源失败（共享设备丢失另计到 UiDeviceRecovery）：持续 10 秒交给教学安全模式。
+			Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::UiBar);
 			return BarRenderLoopStageResult::Continue;
 		}
 		const bool targetSizeChanged =
@@ -12279,6 +12282,7 @@ bool presetButton = button.presetIndex >= 0;
 				state.presentDecision.RecordFailure(Inkeys::UI::Bar::BarPresentFailureClass::DeviceResources,
 					epoch.generation, frameDemandGeneration, state.presentAttemptFrameSerial);
 			const bool deviceLost = Inkeys::UI::Bar::IsBarSharedDeviceLost(endDrawHr);
+			if (FAILED(endDrawHr) && !deviceLost) Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::UiBar);
 			if (endDrawHr == D2DERR_RECREATE_TARGET || deviceLost)
 				state.spec.DiscardDeviceResources();
 			state.barMedia.formatCache->Clean();
@@ -12296,6 +12300,11 @@ bool presetButton = button.presetIndex >= 0;
 			presentAttempt,
 			epoch.generation, frameDemandGeneration,
 			state.presentAttemptFrameSerial);
+		// 四阶段全部成功清除失败计时；GetDC/ULW/ReleaseDC/EndDraw 真实失败开始或延续计时。
+		if (presentCompletion.IsCommitted()) Inkeys::Fatal::RecordSuccess(Inkeys::Fatal::FailureSlot::UiBar);
+		else if (presentCompletion.kind != Inkeys::UI::Bar::BarPresentCompletionKind::Deferred
+			&& !presentAttempt.HasSharedDeviceLoss())
+			Inkeys::Fatal::RecordFailure(Inkeys::Fatal::FailureSlot::UiBar);
 		if (diagnostics)
 		{
 			// 四 API 结束并由决策确认后，先记录戳再发布成功快照。
@@ -12702,6 +12711,7 @@ void BarRenderLoopCoordinator::Unregister() noexcept
 {
 	Inkeys::UI::RenderPipeline::Unregister(
 		Inkeys::UI::RenderPipeline::Client::Bar);
+	Inkeys::Fatal::ClearFailure(Inkeys::Fatal::FailureSlot::UiBar);
 	// 同步Unregister保证该render producer已静止；不在这里碰Interaction普通ledger。
 	if (state_ && state_->finiteObserver) state_->finiteObserver->SealAfterRenderStopped();
 }

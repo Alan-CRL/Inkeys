@@ -1,9 +1,10 @@
-module;
+﻿module;
 
 #include "../../IdtMain.h"
 #include "../../IdtI18n.h"
 #include "../../IdtI18nKeys.g.h"
 #include "ShutdownSupervisor.h"
+#include "Helper.Fatal.h"
 
 #include <dbghelp.h>
 
@@ -99,6 +100,57 @@ namespace
 		}
 		~CrashReportDeadlineGuard() { Cancel(); }
 	};
+
+	// 提示档的建窗截止：报告截止撤销后，提示框在可交互前仍可能卡住（例如崩溃线程持有的 GDI+ 或窗口锁），
+	// 此时永远等不到 Failed。可交互前超过截止就按“提示失败”处理：抢重启意图、建立监督后结束进程。
+	// 只在 UEF 内使用一次，参数放静态存储，线程晚于 UEF 返回读取也安全。
+	constexpr DWORD kCrashPromptCreateDeadlineMs = 15000;
+	constexpr DWORD kCrashPromptTimeoutExitCode = 0xE1430101;
+	struct CrashPromptDeadline
+	{
+		HANDLE ready = nullptr;
+		HANDLE interactive = nullptr;
+		HANDLE cancel = nullptr;
+		bool (*armRestart)() noexcept = nullptr;
+	};
+	CrashPromptDeadline g_crashPromptDeadline;
+	// 截止线程与提示返回方的单次裁决：0 未定、1 提示已返回（UEF 线程负责后续）、2 截止已到（截止线程负责）。
+	// 输家不得结束进程，避免抢在赢家建立重启监督之前杀掉进程。
+	std::atomic<int> g_crashPromptOutcome{ 0 };
+
+	DWORD WINAPI CrashPromptDeadlineThread(void*) noexcept
+	{
+		const HANDLE handles[] = { g_crashPromptDeadline.interactive, g_crashPromptDeadline.cancel };
+		if (!SetEvent(g_crashPromptDeadline.ready)) return ERROR_INVALID_HANDLE;
+		if (WaitForMultipleObjects(2, handles, FALSE, kCrashPromptCreateDeadlineMs) != WAIT_TIMEOUT) return 0;
+		int expected = 0;
+		if (!g_crashPromptOutcome.compare_exchange_strong(expected, 2, std::memory_order_acq_rel)) return 0;
+		// 防循环窗口内的“是否重启”没有重启回调：不占重启意图，直接结束进程。
+		if (g_crashPromptDeadline.armRestart
+			&& Inkeys::Shutdown::TryClaimCrashRestartIntent(GetOffSignalInteropPointer(), 0, true))
+			(void)g_crashPromptDeadline.armRestart();
+		TerminateProcess(GetCurrentProcess(), kCrashPromptTimeoutExitCode);
+		return 0;
+	}
+
+	// 建立并确认截止线程已开始等待；任何一步失败都返回 false，调用方按“提示失败”处理，不再无保护地建窗。
+	bool ArmCrashPromptDeadline(bool (*armRestart)() noexcept) noexcept
+	{
+		g_crashPromptDeadline.ready = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		g_crashPromptDeadline.interactive = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		g_crashPromptDeadline.cancel = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		g_crashPromptDeadline.armRestart = armRestart;
+		if (!g_crashPromptDeadline.ready || !g_crashPromptDeadline.interactive || !g_crashPromptDeadline.cancel)
+			return false;
+		const HANDLE thread = CreateThread(nullptr, 0, CrashPromptDeadlineThread, nullptr, 0, nullptr);
+		if (!thread) return false;
+		const DWORD started = WaitForSingleObject(g_crashPromptDeadline.ready, 500);
+		CloseHandle(thread);
+		if (started == WAIT_OBJECT_0) return true;
+		// loader 锁等原因未就绪：撤销后按提示失败处理。线程稍后醒来会看到取消。
+		SetEvent(g_crashPromptDeadline.cancel);
+		return false;
+	}
 }
 std::atomic<int> CrashHandler::currentUserStateFlag = 0;
 std::atomic<bool> CrashHandler::currentUserIsSecond = false;
@@ -110,8 +162,10 @@ void CrashHandler::Initialize()
 	if (g_filterInstalled) return;
 	PreviousFilter = SetUnhandledExceptionFilter(UnhandledExceptionHandler);
 	g_filterInstalled = true;
-	_set_invalid_parameter_handler(nullptr);
-	_set_purecall_handler(nullptr);
+	// abort/terminate、invalid parameter、purecall 默认会绕过 UEF；改为交给同一处理核心。
+	// 先发布处理核心再装 CRT 入口，入口一旦生效就能进入处理核心。
+	Inkeys::Fatal::RegisterCrashCore(UnhandledExceptionHandler);
+	Inkeys::Fatal::InstallCrtHandlers();
 }
 
 // 设置用户标识
@@ -137,6 +191,9 @@ void CrashHandler::Shutdown()
 {
 	std::scoped_lock lock(g_filterRegistrationMutex);
 	if (!g_filterInstalled) return;
+	// 先撤销 CRT 入口与处理核心，再恢复旧 UEF；此后的致命入口直接结束进程，不再重启。
+	Inkeys::Fatal::RegisterCrashCore(nullptr);
+	Inkeys::Fatal::RestoreCrtHandlers();
 	// 旧处理器为 nullptr 仍表示本处理器已安装，正常退出必须恢复该空值。
 	SetUnhandledExceptionFilter(PreviousFilter);
 	PreviousFilter = nullptr;
@@ -306,6 +363,13 @@ static bool WriteCrashReportTxt(EXCEPTION_POINTERS* pExceptionInfo, const fs::pa
 			sprintf_s(buf, "  Param[%lu]: 0x%p", i, (void*)er->ExceptionInformation[i]);
 			AppendLine(oss, buf);
 		}
+		if (er->ExceptionCode == Inkeys::Fatal::kExceptionCode && er->NumberParameters >= 2) {
+			// 教学安全模式兜底触发（非真实崩溃）：写出原因名与 detail，便于事后区分。
+			const auto reason = static_cast<Inkeys::Fatal::Reason>(er->ExceptionInformation[0]);
+			sprintf_s(buf, "InkeysFatalReason: %s (%lu), detail=%lu", Inkeys::Fatal::ReasonName(reason),
+				static_cast<unsigned long>(er->ExceptionInformation[0]), static_cast<unsigned long>(er->ExceptionInformation[1]));
+			AppendLine(oss, buf);
+		}
 	}
 
 	AppendLine(oss, "");
@@ -459,22 +523,52 @@ static bool WriteCrashReportTxt(EXCEPTION_POINTERS* pExceptionInfo, const fs::pa
 	return success;
 }
 
-// 核心：Windows 回调的异常处理函数
-LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExceptionInfo)
+bool CrashHandler::CrashRestartSuppressed() noexcept
 {
 	// 崩溃拉起后的五分钟内再崩溃，不再次拉起；首帧出现不能证明启动稳定。
 	constexpr ULONGLONG kCrashRetrySuppressionMilliseconds = 5ULL * 60ULL * 1000ULL;
 	const ULONGLONG secondStart = g_secondCrashStartTick.load(std::memory_order_acquire);
-	if (currentUserIsSecond.load(std::memory_order_acquire) && secondStart != 0 &&
-		GetTickCount64() - secondStart < kCrashRetrySuppressionMilliseconds)
-		return EXCEPTION_EXECUTE_HANDLER;
+	return currentUserIsSecond.load(std::memory_order_acquire) && secondStart != 0 &&
+		GetTickCount64() - secondStart < kCrashRetrySuppressionMilliseconds;
+}
 
+// 核心：Windows 回调的异常处理函数
+LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExceptionInfo)
+{
+	// 崩溃拉起后五分钟内再次崩溃：照常写报告与 dump，但按“直接退出”处理，不再拉起（防止课堂上无限循环）。
+	const bool restartSuppressed = CrashRestartSuppressed();
+
+	// 与 RaiseNow 共用一次性接管：另一线程已在处理（可能正在等用户确认）时本线程挂起，由它结束进程；
+	// 处理中同一线程再次出错（递归）时放弃。
+	switch (Inkeys::Fatal::ClaimCrashHandling())
+	{
+	case Inkeys::Fatal::CrashClaim::OtherThread:
+		for (;;) Sleep(INFINITE);
+	case Inkeys::Fatal::CrashClaim::SameThread:
+		OutputDebugStringW(L"!!! CrashHandler: 处理异常时本线程再次出错，放弃处理 !!!\n");
+		return EXCEPTION_CONTINUE_SEARCH;
+	default:
+		break;
+	}
 	bool expected = false;
 	if (!g_isGeneratingDump.compare_exchange_strong(expected, true)) {
 		OutputDebugStringW(L"!!! CrashHandler: 重入异常处理器，放弃处理后续异常 !!!\n");
 		return EXCEPTION_CONTINUE_SEARCH;
 	}
-	const int crashMode = currentUserStateFlag.load(std::memory_order_acquire);
+	int crashMode = currentUserStateFlag.load(std::memory_order_acquire);
+	// 防循环窗口内：提示档改为询问“是否重启”（用户决定，2026-11-27）；静默重启档与直接退出档写报告后直接退出。
+	const bool repeatPrompt = restartSuppressed && crashMode == 0;
+	if (restartSuppressed && crashMode != 0) crashMode = 2;
+	if (restartSuppressed)
+		Inkeys::Log::TryFormat(Inkeys::Log::Level::Critical, Inkeys::Log::Module::Main,
+			"崩溃重启后 5 分钟内再次崩溃：{}", repeatPrompt ? "写入崩溃报告后询问是否重启" : "写入崩溃报告后直接退出，不再拉起");
+	// 运行期已知失败的清理超时由失败清理 owner 定时强退，不能等用户确认：提示档按静默重启处理。
+	if (crashMode == 0 && pExceptionInfo && pExceptionInfo->ExceptionRecord
+		&& pExceptionInfo->ExceptionRecord->ExceptionCode == Inkeys::Fatal::kExceptionCode
+		&& pExceptionInfo->ExceptionRecord->NumberParameters >= 1
+		&& pExceptionInfo->ExceptionRecord->ExceptionInformation[0]
+			== static_cast<ULONG_PTR>(Inkeys::Fatal::Reason::KnownFailureCleanup))
+		crashMode = repeatPrompt ? 2 : 1;
 	// 自动模式在报告前争意图；手动模式待确认后才争，不阻止另一线程正式退出。
 	const bool earlyCrashIntent = Inkeys::Shutdown::TryClaimCrashRestartIntent(
 		GetOffSignalInteropPointer(), crashMode, false);
@@ -630,29 +724,61 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 		InterlockedCompareExchange(GetOffSignalInteropPointer(), 0, 0) == 0)
 	{
 		wstring title = L"Inkeys Error";
-		wstring body = L"Inkeys encountered a problem. Select OK to restart Inkeys and try to recover.";
-		wstring okLabel = L"OK";
+		wstring body = repeatPrompt
+			? L"Inkeys encountered a problem again shortly after restarting. Restart Inkeys?"
+			: L"Inkeys encountered a problem. Select OK to restart Inkeys and try to recover.";
+		wstring okLabel = L"OK", yesLabel = L"Yes", noLabel = L"No";
 		LANGID language = MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
 		I18n::TextSnapshot localized;
 		// 崩溃路径只尝试一次读锁，整组语言/文案必须来自同一快照。
-		if (I18n::capture({ I18nKey.Dialogs.Common.ErrorTitle, I18nKey.Dialogs.Crash.Body,
-			I18nKey.Dialogs.Common.OK }, localized, true))
+		if (I18n::capture({ I18nKey.Dialogs.Common.ErrorTitle,
+			repeatPrompt ? I18nKey.Dialogs.Crash.RepeatBody : I18nKey.Dialogs.Crash.Body,
+			I18nKey.Dialogs.Common.OK, I18nKey.Dialogs.Common.Yes, I18nKey.Dialogs.Common.No }, localized, true)
+			&& localized.text.size() == 5)
 		{
 			title = move(localized.text[0]); body = move(localized.text[1]);
-			okLabel = move(localized.text[2]); language = localized.language;
+			okLabel = move(localized.text[2]); yesLabel = move(localized.text[3]);
+			noLabel = move(localized.text[4]); language = localized.language;
 		}
-		auto request = Inkeys::UI::MessageBox::MakeOkRequest(
-			title.c_str(), body.c_str());
+		// 防循环窗口内问“是否重启”（是/否）；否则只有“确定”，确定后重启。
+		auto request = repeatPrompt
+			? Inkeys::UI::MessageBox::MakeYesNoRequest(title.c_str(), body.c_str())
+			: Inkeys::UI::MessageBox::MakeOkRequest(title.c_str(), body.c_str());
 		request.language = language;
 		request.labels.ok = okLabel.c_str();
+		request.labels.yes = yesLabel.c_str();
+		request.labels.no = noLabel.c_str();
 		request.icon = Inkeys::UI::MessageBox::IconSource::BuiltInError();
 		request.ownerlessTopmostAtCreation = true;
 		request.reliability =
 			Inkeys::UI::MessageBox::Reliability::CriticalNoWait;
 		request.fallback.icon = Inkeys::UI::MessageBox::SystemIcon::Error;
-		if (Inkeys::UI::MessageBox::Show(request)
-			== Inkeys::UI::MessageBox::Result::Ok
-			&& Inkeys::Shutdown::TryClaimCrashRestartIntent(
+		// 系统回退框在建窗前就无法给出“可交互”回执，崩溃提示不用它：自绘失败直接按提示失败重启。
+		request.fallback.enabled = false;
+		// 建窗截止：可交互前卡住超过截止按“提示失败”重启；可交互后才无限等待用户。
+		// 截止建立失败时不再无保护地建窗，直接按提示失败处理。
+		auto shown = Inkeys::UI::MessageBox::Result::Failed;
+		// 防循环窗口内建窗超时按“不重启”结束进程，避免卡死的提示反复拉起。
+		if (ArmCrashPromptDeadline(repeatPrompt ? nullptr : +armCrashRestart))
+		{
+			request.interactiveEvent = g_crashPromptDeadline.interactive;
+			// 确定与关闭都返回 Ok；无法建立提示（如内存不足）返回 Failed 时同样重启，教学现场不能停在不可用状态。
+			shown = Inkeys::UI::MessageBox::Show(request);
+			// 事件句柄不关闭：截止线程可能仍在等待，进程随后结束。
+			SetEvent(g_crashPromptDeadline.cancel);
+		}
+		int expectedOutcome = 0;
+		if (!g_crashPromptOutcome.compare_exchange_strong(expectedOutcome, 1, std::memory_order_acq_rel))
+		{
+			// 截止线程已裁决接管：由它抢意图、建立监督并结束进程，本线程不得先结束进程。
+			for (;;) Sleep(INFINITE);
+		}
+		// 普通提示：确定、关闭或无法提示都重启（教学现场不能停在不可用状态）。
+		// 防循环窗口内：只有用户明确选“是”才重启，选“否”、关闭或无法提示都直接退出。
+		const bool restart = repeatPrompt
+			? shown == Inkeys::UI::MessageBox::Result::Yes
+			: shown == Inkeys::UI::MessageBox::Result::Ok || shown == Inkeys::UI::MessageBox::Result::Failed;
+		if (restart && Inkeys::Shutdown::TryClaimCrashRestartIntent(
 				GetOffSignalInteropPointer(), crashMode, true))
 			(void)armCrashRestart();
 	}
@@ -660,9 +786,7 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 	// 未处理异常后进程应终止；保持一次性门闩，避免旧进程退出前另一线程再次拉起实例。
 
 	// EXCEPTION_EXECUTE_HANDLER: 表示“我处理了异常”，阻止系统默认的错误报告对话框（例如 "xxx 已停止工作"）出现，然后通常进程会终止。
-	// EXCEPTION_CONTINUE_SEARCH: 表示“我没处理（或处理了一部分），让系统继续查找其他处理器”（例如 JIT 调试器或 Windows 错误报告）。
-	// EXCEPTION_CONTINUE_EXECUTION: (极其危险，不推荐) 尝试从异常发生点恢复执行，除非你非常清楚你在做什么并且异常是可恢复的，否则不要用。
-	if (crashMode == 3) return EXCEPTION_CONTINUE_SEARCH;
+	// 三档（0 提示并重启、1 静默重启、2 直接退出）都由本处理器结束进程，不再交给系统 WER。
 	return EXCEPTION_EXECUTE_HANDLER;
 }
 

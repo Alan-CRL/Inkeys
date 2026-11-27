@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "Inkeys 出现问题。选择“确定”以重启 Inkeys 并尝试恢复。"
+      "Body": "Inkeys 出现问题。选择“确定”以重启 Inkeys 并尝试恢复。",
+      "RepeatBody": "Inkeys 在重启后不久再次出现问题。是否重启 Inkeys？"
+    },
+    "InkRecovery":
+    {
+      "Title": "恢复墨迹",
+      "Desktop": "上次 Inkeys 没有正常结束。是否恢复桌面画布上的墨迹？\n最后保存时间：{}",
+      "Whiteboard": "上次 Inkeys 没有正常结束。是否恢复白板中的墨迹？\n最后保存时间：{}",
+      "Yes": "恢复",
+      "No": "不恢复"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "透明度",
       "WindowBehaviorSection": "窗口行为",
       "OtherOptionsSection": "其他选项",
-      "SafetyRecoverySection": "安全与恢复",
+      "SafetyRecoverySection": "教学安全模式",
       "ShortcutGlobalSection": "全局操作",
       "ShortcutEditingSection": "批注编辑",
       "ShortcutAuxiliarySection": "辅助操作",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "画布保存",
-        "Enable": "启用桌面画布自动保存",
-        "EnableE": "清空桌面画布或退出软件时，自动保存非空画布，供后续历史画布恢复使用。",
         "SaveTime":
         {
           "N": "历史画布保留期限",
@@ -735,11 +742,15 @@
         {
           "N": "崩溃处理方式",
           "E": "软件发生崩溃错误时执行的操作。",
-          "Mode1": "弹窗提示并重启软件",
-          "Mode2": "静默重启软件",
-          "Mode3": "交由系统崩溃过滤器处理",
-          "Mode4": "直接关闭软件",
+          "Mode1": "提示并重启",
+          "Mode2": "静默重启",
+          "Mode3": "直接退出",
           "Note": "启动过程发生错误时仍会显示提示。"
+        },
+        "RecoverInk":
+        {
+          "N": "崩溃重启后自动恢复墨迹",
+          "E": "软件崩溃或非正常结束后再次启动时，恢复上次未保存的墨迹。"
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "添加或删除随机测试状态，检查动画、长文字与进度环。",
         "Add": "添加随机状态",
         "Remove": "删除一个状态"
+      },
+      "CrashTest":
+      {
+        "Section": "崩溃恢复测试",
+        "N": "触发故障",
+        "E": "按当前“崩溃处理方式”处理，用于测试自动重启与墨迹恢复。附加调试器时“模拟界面卡死”不会触发。",
+        "WildPointer": "野指针崩溃",
+        "Draw3Fatal": "模拟绘制致命错误",
+        "UiHang": "模拟界面卡死",
+        "ConfirmWildPointer": "将立即访问野指针使软件崩溃，并按当前“崩溃处理方式”处理。确定继续吗？",
+        "ConfirmDraw3Fatal": "将让绘制线程抛出致命错误并停止，软件会按当前“崩溃处理方式”处理。确定继续吗？",
+        "ConfirmUiHang": "将让界面线程卡住 20 秒，约 15 秒后按当前“崩溃处理方式”处理。确定继续吗？"
       },
       "ConsoleSection": "诊断日志输出",
       "CanvasInformation": "画布初始化信息",

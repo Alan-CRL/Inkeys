@@ -293,7 +293,16 @@
     },
     "Crash":
     {
-      "Body": "Inkeys đã gặp sự cố. Chọn OK để khởi động lại Inkeys và thử khôi phục."
+      "Body": "Inkeys đã gặp sự cố. Chọn OK để khởi động lại Inkeys và thử khôi phục.",
+      "RepeatBody": "Inkeys lại gặp sự cố ngay sau khi khởi động lại. Khởi động lại Inkeys?"
+    },
+    "InkRecovery":
+    {
+      "Title": "Khôi phục nét mực",
+      "Desktop": "Lần trước Inkeys không thoát bình thường. Khôi phục nét mực trên khung vẽ màn hình nền?\nLưu lần cuối: {}",
+      "Whiteboard": "Lần trước Inkeys không thoát bình thường. Khôi phục nét mực trên bảng trắng?\nLưu lần cuối: {}",
+      "Yes": "Khôi phục",
+      "No": "Không khôi phục"
     }
   },
   "SettingsUI":
@@ -367,7 +376,7 @@
       "OpacitySection": "Độ mờ đục",
       "WindowBehaviorSection": "Hành vi cửa sổ",
       "OtherOptionsSection": "Tùy chọn khác",
-      "SafetyRecoverySection": "An toàn và khôi phục",
+      "SafetyRecoverySection": "Chế độ an toàn khi dạy học",
       "ShortcutGlobalSection": "Thao tác toàn cục",
       "ShortcutEditingSection": "Chỉnh sửa chú thích",
       "ShortcutAuxiliarySection": "Thao tác phụ",
@@ -450,8 +459,6 @@
       "CanvasSave":
       {
         "N": "Lưu trang vẽ",
-        "Enable": "Tự động lưu trang vẽ màn hình",
-        "EnableE": "Tự động lưu trang vẽ màn hình có nét mực khi xóa hết hoặc thoát ứng dụng, để có thể khôi phục từ lịch sử trang vẽ.",
         "SaveTime":
         {
           "N": "Thời gian giữ lịch sử",
@@ -735,11 +742,15 @@
         {
           "N": "Xử lý sự cố",
           "E": "Chọn thao tác khi ứng dụng gặp sự cố.",
-          "Mode1": "Hiện thông báo lỗi và khởi động lại",
+          "Mode1": "Thông báo và khởi động lại",
           "Mode2": "Khởi động lại im lặng",
-          "Mode3": "Để hệ thống xử lý",
-          "Mode4": "Thoát ngay",
+          "Mode3": "Thoát ngay",
           "Note": "Lỗi khi khởi động vẫn hiển thị thông báo."
+        },
+        "RecoverInk":
+        {
+          "N": "Tự khôi phục nét mực sau khi khởi động lại do sự cố",
+          "E": "Khi mở lại sau sự cố hoặc thoát bất thường, khôi phục nét mực chưa được lưu lần trước."
         },
         "AllowMultipleInstances":
         {
@@ -1556,6 +1567,18 @@
         "E": "Thêm hoặc xóa trạng thái thử ngẫu nhiên để kiểm tra hoạt ảnh, văn bản dài và vòng tiến độ.",
         "Add": "Thêm trạng thái ngẫu nhiên",
         "Remove": "Xóa một trạng thái"
+      },
+      "CrashTest":
+      {
+        "Section": "Kiểm tra khôi phục sau sự cố",
+        "N": "Gây lỗi",
+        "E": "Được xử lý theo cách xử lý sự cố hiện tại; dùng để kiểm tra khởi động lại tự động và khôi phục nét mực. \"Mô phỏng giao diện bị treo\" không kích hoạt khi đang gắn trình gỡ lỗi.",
+        "WildPointer": "Sự cố con trỏ hoang",
+        "Draw3Fatal": "Mô phỏng lỗi nghiêm trọng khi vẽ",
+        "UiHang": "Mô phỏng giao diện bị treo",
+        "ConfirmWildPointer": "Sẽ truy cập ngay con trỏ hoang khiến ứng dụng gặp sự cố, rồi xử lý theo cách hiện tại. Tiếp tục?",
+        "ConfirmDraw3Fatal": "Sẽ khiến luồng vẽ ném lỗi nghiêm trọng và dừng; ứng dụng được xử lý theo cách hiện tại. Tiếp tục?",
+        "ConfirmUiHang": "Sẽ làm luồng giao diện treo 20 giây; sau khoảng 15 giây sẽ xử lý theo cách hiện tại. Tiếp tục?"
       },
       "ConsoleSection": "Đầu ra nhật ký chẩn đoán",
       "CanvasInformation": "Thông tin khởi tạo trang vẽ",

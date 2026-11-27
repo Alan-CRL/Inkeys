@@ -483,7 +483,10 @@ GROUP(UI, \
 		/* Language 为 -1 表示尚未确定，启动时按系统语言补齐；保存值沿用旧地区索引。 */ \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, Language, -1) \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, StartUp, false) \
+		/* 教学安全模式（崩溃处理方式）：0 提示并重启（默认）、1 静默重启、2 直接退出。 */ \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<int>, TeachingSafetyMode, 0) \
+		/* 崩溃重启或非正常结束后再次启动时恢复已持久化的墨迹；开启时三场景逐笔追加写入。 */ \
+		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, CrashRecoverInk, true) \
 		GROUP(Update, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
 			/* 频道随上报信息发送（原 Info.ch）；字符串字段只能经 GetUpdateTarget/SetUpdate* 加锁访问。 */ \
@@ -542,9 +545,6 @@ GROUP(UI, \
 		) \
 		/* 设备性能看板：关闭后绘制线程不累加、不写盘；数据只存本机 Inkeys/Memory，不上传。 */ \
 		X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, DevicePerformanceRecording, true) \
-		GROUP(AutoSave, \
-			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enable, true) \
-		) \
 		/* 画布粒子效果：总开关默认关闭；Direction 0 向左上、1 向右上；Limit 0 低、1 中、2 高、3 极致，默认中；子项保留各自选择。 */ \
 		GROUP(Particles, \
 			X(ConfigUploadMode::NoUpload, "NaN", IdtAtomic<bool>, Enabled, false) \

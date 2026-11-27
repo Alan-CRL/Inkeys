@@ -500,6 +500,7 @@
     <ClInclude Include="Inkeys\Window\Window.ZOrderPolicy.h" />
     <ClInclude Include="Inkeys\Helper\ShutdownSupervisor.h" />
     <ClInclude Include="Inkeys\Helper\FailedCleanupDeadline.h" />
+    <ClInclude Include="Inkeys\Helper\Helper.Fatal.h" />
     <ClInclude Include="Inkeys\Helper\Ui3PresentationFixtureAuth.h" />
     <ClInclude Include="Inkeys\Helper\FailedCleanupRealCases.h" />
     <ClInclude Include="Inkeys\Helper\SecRandom.PipeIo.h" />
@@ -563,6 +564,7 @@
     <ClInclude Include="Inkeys\Log\Log.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.PresentationState.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Product.h" />
+    <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.RecoverySession.h" />
     <ClInclude Include="Inkeys\Drawing\Draw3\Draw3.Shortcut.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.KeyboardShortcuts.h" />
     <ClInclude Include="Inkeys\UI\Bar\Bar.ButtonFrameRing.h" />
@@ -1030,6 +1032,8 @@
     <ClCompile Include="Inkeys\Helper\Helper.CrashHandler.cppm" />
     <ClCompile Include="Inkeys\Helper\ShutdownSupervisor.cpp" />
     <ClCompile Include="Inkeys\Helper\FailedCleanupDeadline.cpp" />
+    <ClCompile Include="Inkeys\Helper\Helper.Fatal.cpp" />
+    <ClCompile Include="Inkeys\Helper\Helper.Fatal.State.cpp" />
     <ClCompile Include="Inkeys\Helper\Ui3PresentationFixtureAuth.cpp" />
     <ClCompile Include="Inkeys\Helper\Helper.Enum.cppm" />
     <ClCompile Include="Inkeys\Helper\Helper.ProcessScheduling.cppm" />
@@ -1232,6 +1236,7 @@
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Presentation.cpp" />
     <ClCompile Include="Inkeys\Business\PptSession.cpp" />
     <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.Product.cpp" />
+    <ClCompile Include="Inkeys\Drawing\Draw3\Draw3.RecoverySession.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Inkeys.rc" />

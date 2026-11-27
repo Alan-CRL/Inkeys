@@ -1307,6 +1307,8 @@ namespace Inkeys::UI::MessageBox::Detail
 				session.HideWindow();
 				return false;
 			}
+			// 首帧已揭示、可交互：通知调用方（崩溃提示据此撤销建窗截止，之后才无限等待用户）。
+			if (session.request->interactiveEvent) SetEvent(session.request->interactiveEvent);
 			return true;
 		}
 

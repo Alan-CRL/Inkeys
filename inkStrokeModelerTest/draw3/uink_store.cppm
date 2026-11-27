@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,8 @@ export namespace draw3::uink
 		// 整理会改变最后一页，保留该页接续所需的编号。
 		uint64_t nextContentId = 0;
 		uint32_t lastUndoId = 0;
+		// 最后一个内容块是否为 Clear：续接内容块时校验 Clear 前后的撤回组规则（SAVE-8）。
+		bool lastIsClear = false;
 	};
 
 	struct UInkPageDirectory
@@ -37,6 +40,7 @@ export namespace draw3::uink
 		std::optional<UInkGuid> lastPageGuid;
 		uint64_t nextContentId = 0;
 		uint32_t lastUndoId = 0;
+		bool lastIsClear = false;
 		UInkStreamContext context;
 	};
 
@@ -82,6 +86,14 @@ export namespace draw3::uink
 
 		// 追加本页的完整版本，落盘后更换目录项。
 		UInkStoreWriteResult AppendPage(const UInkCanvas& canvas) noexcept;
+		// 只向文件中最后一个 Canvas 续接内容块（SAVE-7/8）。pageIdentity 是该页的 Canvas 字段（content 须为空，
+		// 仅用于写前自检）；blocks 的 contentId 必须接在目录的 nextContentId 之后。写入—Flush—失败回截协议同 AppendPage。
+		// 页尚未写过、不是最后一个 Canvas 或追加后超过单页上限时拒绝，由 L4 改用 AppendPage。
+		UInkStoreWriteResult AppendContent(const UInkCanvas& pageIdentity,
+			std::span<const UInkContent> blocks) noexcept;
+		// 把已落盘的这一页最新版本按字节原样追加到文件末尾，使其成为最后一个 Canvas（FILE-8、SAVE-7/10/12）；
+		// 旧页段计入被替代字节。已是最后一个 Canvas 时直接成功。
+		UInkStoreWriteResult RelocatePage(const UInkGuid& pageGuid) noexcept;
 		// 替换失败时保留旧目录；不论替换结果，只要重开失败就封闭写入器。
 		UInkStoreCompactResult Compact() noexcept;
 		void Close() noexcept;
@@ -124,6 +136,10 @@ export namespace draw3::uink
 	UInkReadResult ReadUInkStoreFile(const std::wstring& path,
 		const UInkReadLimits& limits = {}, uint64_t* canvasCountBeforeDeduplication = nullptr,
 		UInkStoreReadFacts* facts = nullptr) noexcept;
+	// 崩溃恢复：只读文件开头 prefixBytes 字节（超过实际长度时按实际长度），整流解码后同样按页去重。
+	// 写前登记判定半页时，用登记的起点截断，使该次未写完的整页或图形组整体不进入解码。
+	UInkReadResult ReadUInkStoreFilePrefix(const std::wstring& path, uint64_t prefixBytes,
+		const UInkReadLimits& limits = {}, UInkStoreReadFacts* facts = nullptr) noexcept;
 
 	// 仅供无窗口测试，每个标志在下一次对应的 IO 上消耗。
 	struct UInkStoreTestFaultInjection
