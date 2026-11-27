@@ -388,7 +388,7 @@ Window Service、Draw3 Host/RTS/透明 presenter 的外层可观察 bool/catch �
 ### 2. Signatures
 
 - 普通头 Helper/FailedCleanupDeadline.h：FailedCleanupDeadline::PrepareOrFatal/Signal/CompleteOrFatal；FailedCleanupSignal::BeginKnownFailure(inheritedGraceDeadline)/FailUnprovenProducerStop。
-- publisher 固定为进程寿命 ULONGLONG(*)() noexcept。PublishFatalFailedCleanupNoWait 只做意图 CAS、原子关门/offSignal、WakeForStop 和取已有更早 ordinary tick；不得 Arm、日志、业务锁、文件、COM、分配或新线程。
+- publisher 固定为进程寿命 ULONGLONG(*)() noexcept。PublishFatalFailedCleanupNoWait 只做意图 CAS、原子关门/offSignal、WakeForStop 和取已有更早 ordinary tick；不得 Arm、日志、业务锁、文件、COM、分配或新线程。运行期（`Fatal::RuntimeArmed()`）且教学安全模式不是“直接退出”、未处于崩溃拉起 5 分钟抑制、意图槽为 0 时，改为只 `Fatal::Report(KnownFailureCleanup)` 并返回已有 tick，不抢 Close；由看门狗线程走 UEF 抢 CrashRestart（见“教学安全模式致命路径合同”）。
 
 ### 3. Contracts
 
@@ -530,3 +530,50 @@ Good：先停 Settings 帧再清常驻资源；Base：正常初始化和隐藏�
 
 Wrong：PostControl(final drain) → wait(drained) → Unregister(Settings)。
 Correct：Unregister(Settings) 并排空在途帧 → PostControl(final drain) → wait(drained) → 业务 FIFO Stop。
+
+## Scenario: 教学安全模式致命路径统一重启（C1.6a，2026-11-26）
+
+### 1. Scope / Trigger
+
+设置“教学安全模式 → 崩溃处理方式”三档（`Application.TeachingSafetyMode`：0 提示并重启默认、1 静默重启、2 直接退出；越界回 0）对两类路径都生效：Windows 崩溃回调（UEF），以及软件内致命错误与卡死。修改 UEF、CRT 回调、`Helper/Helper.Fatal.*`、UI3 调度器或 Draw3 `Run` 的等待/工作单元、任何 UI3 客户端或 Draw3/Freeze 的呈现失败分支时适用。只做进程内拦截：`__fastfail`、栈溢出、堆损坏、被强制结束不保证重启（墨迹由 C1.6b 的非正常结束恢复兜底）。
+
+### 2. Signatures
+
+- `Helper/Helper.Fatal.h`（普通头，不 include `<Windows.h>`）：`Report(Reason, detail)`、`[[noreturn]] RaiseNow(Reason, detail)`、`Beat/Idle(Slot)`、`RecordFailure/RecordSuccess/ClearFailure(FailureSlot)`、`StartWatchdog/StopWatchdog/RuntimeArmed`、`RegisterCrashCore`、`ClaimCrashHandling() -> CrashClaim{First,OtherThread,SameThread}`、`InstallCrtHandlers/RestoreCrtHandlers`；纯函数 `Detail::EvaluateWatchdog(WatchdogInput)`。
+- 异常码 `0xE1430100`，参数 `[0]=Reason`、`[1]=detail`；崩溃报告写 `InkeysFatalReason: <名>`。提示建窗超时退出码 `0xE1430101`。
+- `MessageBox::Request::interactiveEvent`：首帧揭示（或进入系统回退框）时 `SetEvent`。
+- `SubmitFreezeSurface(hwnd, info, whiteboardOwner, bool* apiFailed = nullptr)`：区分 ULW 真实失败与白板接管拒绝。
+
+### 3. Contracts
+
+- 所有触发都汇入同一 UEF 处理核心：`RaiseNow` 合成异常记录后直接调用已注册的核心，返回后 `TerminateProcess`；不靠 `RaiseException` 穿过 C++ 帧（`noexcept` 帧会转 terminate）。核心未注册（未安装/正常退出已撤销）直接结束；意图槽为 Close/Restart 时挂起，交给退出 owner 的 15 秒监督；另一线程已接管时挂起。
+- UEF 入口先 `ClaimCrashHandling`：其他线程挂起由首个处理者结束进程，同线程递归返回 `CONTINUE_SEARCH`。三档都返回 `EXECUTE_HANDLER`，不交给 WER。提示档 `Show()` 返回 `Ok` 或 `Failed` 都重启。
+- 提示档：报告截止撤销后另建 15 秒建窗截止线程（确认就绪后才 `Show`，建立失败直接按提示失败处理）；崩溃提示禁用系统回退框；截止线程与提示返回用单次 CAS 裁决，输家不得结束进程。
+- `CrashHandler::Initialize` 先 `RegisterCrashCore` 再装 CRT（`SIGABRT` 覆盖 `std::terminate`、invalid parameter、purecall，`_set_abort_behavior(0, _WRITE_ABORT_MSG|_CALL_REPORTFAULT)`）；`Shutdown` 先注销核心与还原 CRT，再恢复旧 UEF。`SIGABRT` 处理器入口立即重装。
+- 看门狗：启动门禁完成后启动，500 ms 周期；意图槽非 0、UEF 已接管、附加调试器时不触发；触发前重新取样复验同一原因。计时用 `QueryUnbiasedInterruptTime`（不含睡眠）。
+- 卡死 = 单个工作单元 ≥ 15 s 无进展：每开始一个工作单元 `Beat`，只在真正空闲等待前 `Idle`。UI3：循环顶、每个控制任务、等待返回、帧节拍后、每个客户端回调前 Beat，`wakeEvent` 等待前 Idle。Draw3：`Run` 循环顶与 `processCommandAndReconcile` 入口 Beat，空闲分支 `BeginIdle` 后 Idle，Host 在 `Run()` 返回后 Beat。
+- 持续失败 = 首次失败 ≥ 10 s 且最近一次失败在 5 s 内：只在客户端真实 API 失败分支记录，调度器 `Retry`（延期、退避、等回执、遮挡、owner 竞争）不算；共享设备丢失只计 `UiDeviceRecovery`；成功必须是真实提交（Settings 只认 `S_OK`，Draw3 以 `CommittedPresentCount()` 推进为证，PageControl 要 `pixelsSubmitted`）；隐藏/注销/退休时 `ClearFailure`。四个翻页表面各有一槽。分支清单见 C1.6a `implement.md` 附录。
+- Draw3 运行期意外停止（`RuntimeArmed()` 后）：主循环直接 `RaiseNow(Draw3Stopped)`，不得先 `SetOffSignal(1)`；启动期仍走原受控退出。
+- 运行期已知失败强退：见上节 publisher 规则；UEF 遇 `KnownFailureCleanup` 把提示档按静默重启处理。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 结果 |
+|---|---|
+| 工作单元 14.9 s / 15 s | 不触发 / `ThreadHang` |
+| 失败 9.9 s 后成功 / 持续 10 s 且 5 s 内仍失败 / 最近失败超过 5 s | 清零 / 触发 / 不触发 |
+| 意图槽非 0、UEF 已接管、调试器 | 不触发 |
+| 崩溃拉起后 5 分钟内 | 不再自动拉起；UEF 照常写报告、dump 与 Critical 日志。“提示”档改为“是否重启”（是/否，建窗超时按否），其他档直接退出；强退链不拉起 |
+| 提示框 15 s 内未可交互 | 按提示失败重启 |
+
+### 5. Tests Required
+
+- `InkeysHeadlessTests.exe --fatal-watchdog-only`（判定边界与原子状态）。
+- 仓库根目录运行 `Inkeys.exe --shutdown-supervisor-tests --fatal-entry-only`：8 个入口（主线程 RaiseNow、看门狗报告、15 s 卡死、abort、worker terminate、noexcept 违约、invalid parameter、purecall）各自写报告与 dump 并只重启一次；Debug 与 Release ARM64 都跑。完整 `--shutdown-supervisor-tests` 32 项与 `--crash-filter-lifecycle-test` 不得回归。
+- 实机：调试页三个按钮 × 三档；5 分钟内二次触发：提示档出现“是否重启”，其他档不拉起，均有崩溃报告；无调试器。
+
+### 6. Wrong vs Correct
+
+- Wrong：调度器把 `Retry` 当失败计数（设置窗口被遮挡会一直 Retry）。Correct：只在客户端真实 API 失败分支记录。
+- Wrong：Draw3 停止时先 `SetOffSignal(1)` 再交给 UEF（Close 先占意图槽，永远无法重启）。Correct：直接 `RaiseNow(Draw3Stopped)`。
+- Wrong：在 UI3 调度线程上同步弹确认框（等待本身被判卡死）。Correct：确认框放到业务 worker。

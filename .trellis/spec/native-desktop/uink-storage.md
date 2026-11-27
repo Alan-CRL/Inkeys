@@ -216,3 +216,58 @@ if (permit) ReleasePage(page);
 - 不做 `\\?\` 扩展长度路径（与旧实现一致）。
 - 按页追加时断电：新 Canvas 已写完而内容块不完整时按 FILE-8 会替代旧版本；恢复策略属 C1.6。
 - 外来预设图形以重建结果显示（有意偏离 SHAPE-15）。
+
+## Scenario: 逐笔追加写入与崩溃恢复（C1.6b，2026-11-26）
+
+### 1. Scope / Trigger
+
+“崩溃重启后自动恢复墨迹”（`Application.CrashRecoverInk`，默认开）开启时，桌面、白板、PPT 每次抬笔后异步追加；崩溃重启或非正常结束后的下一次启动按场景恢复。修改 `AppendContent` / `RelocatePage` / 前缀读取、`PagedInkStore` 的 Append / Rotate / 接管、会话记录、绘制线程的提交与恢复装入时适用。开关关闭时三场景保持 C1.4 行为（桌面“启用桌面画布自动保存”已去掉，桌面快照始终写）。
+
+### 2. Signatures
+
+- L1：`EncodeUInkContentBlocks(blocks, firstContentId, previousUndoId, previousWasClear, limits)`。
+- L2：`UInkPagedFileWriter::AppendContent(pageIdentity /*content 为空*/, blocks)`、`RelocatePage(pageGuid)`；`ReadUInkStoreFilePrefix(path, prefixBytes, limits)`；页目录新增 `lastIsClear`。
+- L4：`PagedInkRequestKind::Append`（`PagedInkSaveRequest::baseRevision`）、`Rotate`（`RotateFile`，仅 Desktop）；`PagedInkFileKind::Desktop`（隐式 Workspace，`root\desktop-live\YYYY-MM-DD\HHMMSSmmm_<guid8>.uink`）；`RequestOrderedCompact()`；`PagedInkStoreOptions::adoptPages` 与写前登记钩子 `registerRecoveryFile / registerRecoveryPending / clearRecoveryPending / clearRecoveryFile`；错误 `AppendBaseMismatch`。
+- L3：`Draw3UInkV11PageImportResult::footprintUsed / pageTilesUsed / geometryUsed`（本次导入消耗的页级冷读预算），`kDraw3UInkV11PageGeometryBudget`。
+- 绘制线程 → Host：`DrawingControllerRuntimeObserver::recoveryDurable(context, scene /*0 桌面 1 白板*/, durable)`、`recoveryInkVisible(context)`；`takeDesktopRecovery(context, current&, previous&)`。
+- Host：`HostStartOptions::recoveryEnterDrawing`；`PagedInkStore::RecoveryPendingSettled()`、`TakeAdoptedNotice()`；`RotateFile(pageGuid, loadGeneration, clearGeneration)`，`clearRecoveryFile(context, clearGeneration)`。
+- 会话：`Session::ClearDesktopFile(clearGeneration)`、`RegisterDesktopPreviousInterval(path, clearGeneration?)`、`PublishDesktopPreviousInterval(path, clearGeneration)`（异步，绘制线程可调）、`DesktopClearGeneration()`；记录字段 `desktopClear{generation, cleared, previous, previousGeneration}`。会话方法写盘失败时内存回到写前状态。
+- 会话：`Draw3.RecoverySession.h`（`Session`、`ScanAbandonedSessions`、`ClaimSession`、`ProbeSessionLock`、`FileIdentity`），记录在 `Inkeys\Save\Ink\session\<YYYYMMDD-HHmmssfff>_<pid>_<guid8>.{lock,json,claim}`。
+
+### 3. Contracts
+
+- **Append 等价性**：整页导出按可见历史顺序重编 contentId（=序号）与 undoId（每个可见条目一组）。worker 只在 `confirmed[page].revision == baseRevision`、未降级时续接：单笔导出 → 编号平移到目录 `nextContentId` / `lastUndoId + 1` → 页不是最后一个 Canvas 先 `RelocatePage` → `AppendContent`；页未写过且基准为 0 时 `AppendPage`/`Create`。成功只推进确认修订，不动 Clear 前缀身份。失配、跳过图形或单笔冷读预检失败返回 `AppendBaseMismatch`，绘制线程在在途写入结束后补整页。
+- **冷读预算累计**：`ConfirmedPage::coldUsage` 由整页写入的整页冷读给出（接管时同样计算），续接把单笔用量累加上去；累加后超出任一页预算（足迹访问、页瓦片、几何）或用量未知时返回 `AppendBaseMismatch`，交给整页写入判定降级。
+- **绘制线程**：抬笔与图形构造成功后只做单笔快照与入队（`submitStrokeAppend`）；页还没有盘上版本且无在途写入时改为整页写入。撤回、重做、图形编辑、主题等导致失配的页在无接触的空闲时机补一次整页（每个修订只试一次）。不在输入路径上 `Drain`。
+- **合并**：Full 的合并扫描遇到 Append / Rotate / Clear 即停。
+- **写前登记**：整页写入（已有文件时）、搬页、多块图形追加前登记 `{fileId, start}`（记录只有 `start`，查不到 FileId 视为登记失败），写成功后清除；登记成功到确认清除之间 `RecoveryPendingSettled()` 为 false，清除失败 worker 空闲重试一次；建文件发布前登记候选路径（无身份）、建好与整理替换后登记文件身份；接管逐页走同一协议。登记失败拒绝这次写入；清除失败后之后每次写入（含单块追加）先重新登记，覆盖残留旧起点。开关关闭时不做写前登记（文件登记与清除照常）。恢复读取：文件身份与记录一致且有登记时截到登记起点，否则读全文件（单块残缺由解码器丢弃）。
+- **整理**：离开白板、结束一份放映、退出时仍在其中，排一次不受阈值限制的正序整理（物理整理，保留 pageIndex）；没有被替代字节但物理顺序与页号不一致时同样整理。
+- **桌面**：活动区间文件；Clear 后不建文件，首笔建文件，之后续接；Clear 时（开关关闭也做）`RotateFile` 并递增 epoch（旧区间回执只结算 pendingWrites）。Rotate 先经 `clearRecoveryFile` 持久化“无活动区间文件”与 Clear 代次再关写入器，失败回执 Failed；Rotate 不受文件失败准入限制。换文件成功回执之前（`rotateInFlight` / `rotatePending`）不写新区间；失败下次写入前或空闲时重试（每 epoch 空闲最多 3 次）。最近一次 Clear 快照完整保存后登记为上一区间（按 Clear 代次与 Rotate 配对）。跨 Clear 撤回装回清前区间后推进日志修订并立即补整页。C1.4 的 Clear/退出快照与跨 Clear 冷读不变。
+- **会话**：先 `CREATE_NEW + DELETE_ON_CLOSE` 拿存活锁再发布记录；绘制线程只写原子量（场景、白板页），记录 worker 合并写出（写盘成功才推进序号，失败 500 ms 后重试；白板页 GUID 与索引成对，不一致时不写 GUID）；场景 worker 的登记同步写盘（临时文件 + Flush + `MoveFileExW(WRITE_THROUGH)`）。正常退出且退出屏障完成后写 `clean`。
+- **恢复**（启动时开关开启才扫描，独立线程，DPI 按值传入）：认领最新一份被放弃的会话；较旧的逐个认领，最新会话缺桌面或白板条目而旧会话该场景未结算时借用该条目，最新记录持久化后删除旧记录（文件保留）。崩溃场景是桌面/白板且有墨迹时弹 YesNo（静默重启档的崩溃拉起除外），其他场景静默恢复；PPT 从不弹窗，读出的页只在本次启动内、识别到同一文稿时接管（存储创建时等待扫描最多 3 秒）。桌面只在当前页为空时装入；白板只在未进入且会话为空时热装入（按旧页号与崩溃时的当前页补足空白页，上限 256）并立即写盘，崩溃场景是白板时请求进入白板。最后一次保存距今 ≤5 分钟直接恢复，超过才询问。用户选“否”或无内容即结算；装入成功后等 `recoveryDurable` 报告装入的墨迹已由本进程确认写盘才结算（最多等 2 分钟；正常退出且退出屏障完成时按已落盘结算，其余退出或超时保持未结算）；读不出连续 3 次后结算。合并后的最新记录写成功才删除旧记录；最新会话 Clear 过不借用旧桌面。桌面装入时一并装入上一区间快照作为跨 Clear 撤回点（代次须与最新 Clear 一致；Clear 后尚未落笔时只装撤回点）。恢复的墨迹在当前画面可见时请求切到画笔（桌面装入了墨迹；PPT 接管后当前页加载完成且有墨迹）。
+
+### 4. Validation & Error Matrix
+
+| 情况 | 结果 |
+|---|---|
+| 盘上修订 ≠ 基准 | `AppendBaseMismatch`，补整页 |
+| 回翻页落笔 | 搬页后续接，最后一个 Canvas 是该页 |
+| 整页写到一半断电 | 截到登记起点，回退上一完整版本 |
+| 单块写到一半 | 残缺块丢弃 |
+| 整理替换后记录未更新即崩溃 | 身份不符，按完整文件读 |
+| 会话记录写盘失败（登记起点 / 候选路径） | 拒绝这次写入，绘制线程按失败补写 |
+| 续接后整页超冷读预算 | `AppendBaseMismatch`，补整页（按原规则降级） |
+| 装入后、写盘确认前再次崩溃 | 旧记录未结算；新会话缺该场景时下次扫描借用旧条目 |
+| 恢复时桌面已有内容 / 白板已进入或有编辑 | 不装入，保持未结算 |
+
+### 5. Tests Required
+
+- `inkStrokeModelerTestTests.exe --uink-store-only`：续接、拒绝（非最后 Canvas、编号缺口、撤回组倒退、Clear 同组）、搬页、回截与封闭、前缀读取丢弃半页。
+- `--paged-ink-store-only`：`AppendStrokeContinuesPage`、`AdoptRecoveredPages`、`AppendRecoveryRegistrationFailures`。
+- C1.4 隐藏自检（白板存储、PPT 保留页与 lane、桌面退出）不回归。
+- 实机：三场景 × 三档 × 三种触发（调试页按钮）；任务管理器结束进程后手动启动；回翻落笔；弹窗期间落笔。
+
+### 6. Wrong vs Correct
+
+- Wrong：把抬笔后的整页截取放在绘制线程上逐笔提交。Correct：单笔快照入队，worker 续接；整页只在失配后的空闲时机补。
+- Wrong：恢复时续写旧进程的文件。Correct：读旧写新——桌面/白板装入后由本进程写出，PPT 由存储接管重新编码进新文件。

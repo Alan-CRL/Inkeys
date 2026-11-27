@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/native-desktop/errors-logging-and-resources.md", "reason": "崩溃、日志与资源生命周期合同"}
+{"file": ".trellis/spec/native-desktop/configuration-i18n-and-assets.md", "reason": "配置字段与 i18n 生成链"}
+{"file": ".trellis/spec/native-desktop/settings-navigation.md", "reason": "设置页结构与空页约定"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 约定与并发习惯"}
+{"file": ".trellis/spec/native-desktop/build-and-compatibility.md", "reason": "构建入口与兼容约束"}

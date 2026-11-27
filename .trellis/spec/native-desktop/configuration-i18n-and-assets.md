@@ -13,6 +13,8 @@
 | `DesktopDrawpadBlocker\interaction_configuration.json` | `CaptureDdbInteractionJson` | 外部 DDB 进程读取的交换文件，内容由 `config.PlugIn.DesktopDrawpadBlocker` 与运行时 `ddbInteractionSetList`（版本、哈希、模式、宿主路径）生成；未来另行迁移 |
 
 - `【直接确认】` 新字段规则：在 schema 中声明默认值；需要范围校验的整数在 `Other.Config.cpp` 的读取钩子里按路径校验，越界回默认值；依赖运行环境的缺省（系统语言、程序架构）用哨兵值（`-1` / 空串）表示未确定，在 `IdtMain` 启动迁移后补齐。
+- `Application.TeachingSafetyMode`（2026-11-26 C1.6a 收紧）：设置页“常规 → 基础 → 教学安全模式”的“崩溃处理方式”，只接受 JSON int/uint 且 `isInt()` 的 0..2（0 提示并重启默认、1 静默重启、2 直接退出），越界或类型错误回 0，旧四档配置不迁移；设置页草稿同样 clamp 0..2。原第 4 档“交由系统崩溃过滤器”已删除，i18n 删 `SafeMode.Mode4`。
+- `Application.CrashRecoverInk`（2026-11-26 新增）：`IdtAtomic<bool>`，NoUpload，默认 true，设置项“崩溃重启后自动恢复墨迹”（i18n `SettingsUI.Regular.Tentative.RecoverInk.N/E`）；开启时三场景逐笔追加并在崩溃/非正常结束后恢复（C1.6b）。`Setting.Pages.h` 的 `GeneralDraft` 依赖位置聚合初始化，新字段只能追加在结构末尾。
 - `【直接确认】` 字符串字段与 Config 快照复制共用 `rwMutex`，只能经加锁访问器读写（如 `GetUpdateTarget/SetUpdateChannel/SetUpdateArchitecture`、快捷方式名称访问器），不得直接跨线程读写成员。
 - `【直接确认】` **唯一保存入口**是 `Inkeys::config.Write()`：每次写出调用时最新的完整配置（持 `rwMutex`），后写者不会把别人的新值回退。设置页先改 `Inkeys::config` 再 `QueueConfigWrite()`，由 FIFO worker 在执行时调用 `Inkeys::config.Write()`（DDB / 更新安装器命令同理）；PPT 控件位置先写入 `Inkeys::config`，持久化回调也调用 `Inkeys::config.Write()`。不得再在入队时复制 Config 快照稍后写盘。
 - `【直接确认】` 不得再新建独立 JSON 配置文件或恢复 `SetListStruct` 式的全局结构。

@@ -1,0 +1,31 @@
+## FACTS（已读源码）
+
+文件简写：`DC` = `Draw3.DrawingController.cpp`，`Host` = `Draw3.Host.cpp`，`Paged` = `Draw3.PagedInkStore.cpp`，`Desktop` = `Draw3.DesktopInkSnapshots.cpp`，均在 `Inkeys/Inkeys/Drawing/Draw3/`。`Store`、`Codec`、`Encode`、`Adapter` 分别为 `inkStrokeModelerTest/draw3/` 下的 `uink_store.cpp`、`uink_codec.cpp`、`uink_codec_encode.cpp`、`uink_draw3_v11.cpp`。`Spec`、`Bench` 指 C1.4 归档 `research/` 下的 `uink-v11-spec.md`、`s7b-load-benchmark-20261126.md`。
+
+| 场景 | 当前触发、线程与文件 |
+|---|---|
+| Desktop | `DrawingController` 在 Clear／Redo Clear 前截取当前可见区间，CPU Clear 成功后经 `ObserveDesktopAutoSave` 提交 Host 持有的 `DesktopInkSnapshots`。退出也截取非空的活动或停放桌面，保存受 `AutoSaveEnabled()` 门控。独立 worker 按 FIFO 处理读写，保存逐项执行，导出单页后调用 `PublishUInkSnapshotFile`。文件为 `desktop\YYYY-MM-DD\HHmmssfff_<请求GUID前8位>[_n].uink`，正文无 Clear。跨 Clear 撤回优先用内存，匹配且未降级的落盘回执才释放副本，之后按登记路径冷读。`DC:24398–24426,23700–23709,23088–23100,944–959,24568–24577`，`Host:1698–1704`，`Desktop:82–101,344–409,479–514`，`Store:444–458` |
+| PPT | `CommitPresentationClear` 入队 Clear。放映翻页、离开或切换工作区时由 `saveActivePresentation` → `SavePresentationSlot` 遍历脏页，退出处理活动与停放槽。Host 按 `PresentationKey` 复用 `PagedInkStore`，每份文稿一个 worker 和懒建文件，两个绑定 lane 共用，Canvas 记录 `slideId`、`binding`、保留页和结束页。路径为 `presentation\<文稿名>_<key前8位>\YYYYMMDD-HHmmssfff_<文件GUID前8位>[_n].uink`。`DC:2332–2377,2466–2495,24205,24311,24773,23008–23016,2777–2792`，`Host:118–142`，`Paged:299–320,760–796,1272–1276`，`Store:444–458` |
+| Whiteboard | `DrawingController` 持有 `PagedInkStore`。`CommitWhiteboardClear` 入队 Clear，翻页、离开遍历脏页，退出结算已有写入后再保存仍脏的页。独立 worker 懒建一个文件 `whiteboard\YYYY-MM-DD\HHmmssfff_<文件GUID前8位>[_n].uink`。`DC:2071–2120,22868–22882,19154–19165,24330,24774–24782`，`Paged:299–320,760–796,1272–1276`，`Store:444–458` |
+
+- **快照与提交。** `CaptureCanvasTail` 在绘制线程遍历可见历史，复制点、样式、图形与视口。分页 Clear 保存“上一区间 + Clear”，Full 再带当前区间。已释放的前缀由 worker 按确认边界读回拼接。分页 worker 优先取读请求，有相关待写时返回 `PendingWrite`。Clear 不合并，待执行的同页、同槽、同边界 Full 可合并。worker 负责导出、预检、编码和写盘。`DC:1766–1849,2332–2377`，`Paged:435–471,799–851,940–970,1101–1165`
+- **刷盘与寿命。** 新建和桌面快照写同目录临时文件，`FlushFileBuffers` 后关闭并无覆盖发布，分页文件再打开追加句柄。`AppendPage` 一次 `WriteFile` 并检查短写，Flush 成功后才提交目录与确认修订。失败回截并再刷盘，回退失败则封闭、标记尾部未确认，禁止驱逐。正常退出经 `PrepareExitAutoSave` 排空并关闭，已发布 `.uink` 保留。`Store:210–229,430–458,695–708,735–793,923`，`Paged:331–335,982–1022,1240`，`Desktop:719–733`，`Host:3236–3284`
+- **历史与橡皮。** 普通抬笔成功后追加 `InkStroke` 和运行时历史，PPT／白板推进修订，当前路径没有逐笔保存。Redo 分支保存在运行时，导出仅取可见项。图形编辑记为 `CanvasOperationKind::Replace`。Clear 重建运行时历史，有编辑历史时保留一层热副本。现有橡皮 `StoredInkType::Eraser` 导出为 `UInkInkKind::Erase`，属于 SAVE-9 的 Erase Ink，可追加。INK-16 的切割橡皮须写替代页或完整保存。`DC:644–679,690–719,1745–1796,2832–2875,4881–4906,18968–18982,26849–26885`，`Adapter:91–121`，`Spec:672,679–682,1383–1384`
+- **恢复读端与身份。** `ReadUInkStoreFile` 可按路径读取其他进程留下的文件，整读发生在解码前，封顶 128 MiB，按完整 Canvas 键取最后版本。`ReadUInkPage` 依赖已有目录，单页上限 32 MiB。L1 保留完整前缀，截断尾丢末对象，无法解码处停止，完整但字段无效的块可跳过。符合条件时已有 `safeAppendOffset`，缺的是跨进程目录扫描、重建及实际安全截断。根目录为 `<exe>\Inkeys\Save\Ink`。Header／Extension 写文件 GUID、统计、时间和 Workspace 信息，PPT `hostId` 为路径派生 key，无路径时 key 混入进程身份。现有格式没有通用进程／会话 ID 或正常关闭标记，`Complete` 只说明读到了对象边界。`Inkeys/IdtMain.cpp:4052`，`Store:516–565,589–613,931–955,986–1009`，`uink_model.cppm:67–74,119–137,451–454`，`Codec:3279–3284,3712–3731,3798–3827`，`Adapter:796–821`，`Draw3.Presentation.cpp:135–172`，`Spec:719–732`
+- **抬笔与诊断。** 普通抬笔没有保存快照复制，已有 CPU 提交、可选指标采集及 `[Draw3Diag][lift-path]` 的同步统计和格式化。Clear／离页有同步整页复制，保存准入有互斥锁和节点分配。`[page-save]`、`[page-load]` 也在绘制线程格式化。产品日志 I/O 已异步，`DiagnosticOutput` 经 `Log::TryWrite` 尝试加锁并复制，竞争可丢日志。`penDiagnostics` 回调的额外锁只在隐藏测试启用。`DC:26849–26885,26985–27007,1766–1796,1861–1869,19133–19151,19220–19229`，`Paged:453–471`，`Desktop:627–652`，`Host:1818–1823,2839–2840`，`Draw3.DiagnosticOutput.cpp:226–234,305–316`，`Inkeys/Inkeys/Log/Log.cpp:234–255,270–297,634–638`
+
+## INFERENCES（最小接入方案）
+
+| 接入点 | 建议 |
+|---|---|
+| 绘制端 | 开关开启时，在 `CommitRuntimeStoredStrokeCpu(...NormalUp...)` 成功后交接单笔只读数据及页／区间身份，补上多笔构造图形成功安装的入口。`strokeCompleted` 只传工具类别，且位于触点清理路径。桌面 Clear 排入区间切换，保留撤回所需引用，首笔用 `Create` 写新文件，后续追加。绘制端不等待 worker，热路径避免整页复制、阻塞锁和日志字符串拼装。`DC:23700–23709,26854–26870,27193–27202`，`Draw3.ShapeRuntimeActions.inl:459–467,490–495`，`Host:1626–1632` |
+| `AppendContent` | 目前仅归档预留。复用 `ValidateContent`／`PackContent` 增加纯内容编码入口。worker 用 `lastPageGuid` 校验目标，以 `nextContentId`、`lastUndoId` 续编。空页从 0/0 开始，新撤回组递增，Shape 部件共组，Clear 两侧组分隔。校验编号溢出及追加后整页的字节、块、点数上限。沿用写入、Flush、失败回截协议，成功后更新页段长度、尾编号、文件长度与确认修订。增量任务保序，不按 Full 合并。`design.md:118`，`Encode:652–671,1323–1348,1553–1570`，`Store:462–483,735–793`，`Paged:435–448,982–1022`，`Spec:679–682,730–732` |
+| 回翻与整理 | 回翻只异步记录恢复页，首次修改时若目标已非物理末页，用相同 `pageGuid` 的 `AppendPage` 带上本次修改，后续续块。FILE-8／SAVE-7、10、12 允许，成本只及该页。新页用新 `pageGuid`，首次写入按 SAVE-13 创建 Canvas。每次出队重验末页，其他整页写和空闲整理都可能改变它。现有 `Compact` 已按 `(pageIndex, writeSequence)` 正序复制最新页，保留原页号与 Extension。离开或退出需显式排在最后一笔之后执行整理，现有空闲整理有阈值，关闭会清除待检查。活动页宜单独持久化，因为 `currentPageIndex` 在追加期不更新，现有整理也照抄。`Spec:558,679–700,952`，`Store:485–488,824–858,887–899`，`Paged:1025–1039,1128–1134,1333–1352`，`Draw3.PagedInkStore.cppm:206–207` |
+| 非增量变更 | Undo／Redo、已有图形移动／编辑／删除、Clear 撤回／重做、假设将来有切割橡皮，复用整页快照和 `AppendPage`。首次 Clear 在末页且边界吻合时可追加，已有一个 Clear 时要换整页才能丢弃更早区间。当前普通 Undo／Redo 只推进脏修订，PPT 跨 Clear 撤回已有立即提交整页的入口。基准重页约 2.6–2.7 MB，每次整页追加可按 Release **44 ms 写入段／52 ms worker**、Debug **93／119 ms** 估量，另计绘制端截取与排队。`Spec:682,704–710,2043–2046`，`DC:24609–24647`，`Bench:53–68,73–91` |
+| 跨进程恢复 | 在 L2 增加有界对象扫描，产出页键、范围、最后有效块与可续编号，再按页读取、分批安装。会话记录需持久化文件清单、活动页和干净结束状态。保留 C1.4 的独占写入原则，默认只读旧文件并写到本进程新文件。若允许原地续写，确认独占后按 SAVE-22–23 截断并刷盘，中段损坏走 SAVE-24 完整保存。`Store:73–78,516–565,931–955,986–1008`，`Codec:3815–3825`，`Spec:728–732`，归档 `prd.md:57–58` |
+
+## UNKNOWN / needs runtime test
+
+- **断电承诺。** 页头及若干完整块可能已写入，普通读取会把残缺新版本视为最新页。产品需裁定整页和多块 Shape 是否必须整次恢复，以及 worker 排队、Flush 前最多允许丢多少。用断点注入覆盖页头、块边界、Flush 与整理替换。`Spec:558,719–732`，`Store:750–793,860–899`，归档 `design.md:326`
+- **文件选择与增长。** 多次重启、桌面 Clear 后尚未落笔、撤回 Clear、多个 PPT 文稿和两个绑定 lane 并存时，需要定义哪些文件参与恢复。PPT 改名／移动、无路径、页序变化时需要裁定是否允许自动绑定。连续整页追加需测文件增长和整理积压。`DC:23700–23709,24568–24577`，`Draw3.Presentation.cpp:151–172`，`Spec:695–700,950–952`，归档 `design.md:191–203,329–333`
+- **下一次 Down 延迟。** 用连续 Up→Down、重页回翻、慢盘和日志队列满分别验证绘制端交接耗时、尾延迟与积压恢复。当前保存准入会加锁，整页捕获会复制，基准没有测这条输入路径。本次仅做只读源码调查，未运行测试。`Paged:453–471`，`Desktop:637–652`，`DC:1766–1796,26985–27007`，`Bench:3–11`

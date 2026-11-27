@@ -31,7 +31,8 @@
     "11-24-whiteboard-uink-load-speed",
     "11-24-draw3-phase-c2-canvas-tile-cache",
     "11-24-uink-1-1-adaptation",
-    "11-24-draw3-phase-c13-particle-density"
+    "11-24-draw3-phase-c13-particle-density",
+    "11-26-inkeys-crash-recovery"
   ],
   "parent": null,
   "relatedFiles": [],

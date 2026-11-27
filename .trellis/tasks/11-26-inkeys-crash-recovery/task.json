@@ -1,0 +1,30 @@
+{
+  "id": "inkeys-crash-recovery",
+  "name": "inkeys-crash-recovery",
+  "title": "C1.6 教学安全模式与崩溃自动恢复墨迹",
+  "description": "设置改为教学安全模式；所有崩溃与致命错误路径自动重启；桌面/PPT/白板抬笔异步追加写入并在崩溃重启后自动恢复墨迹；调试页 abort 测试按钮",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-26",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-26-teaching-safety-restart",
+    "11-26-ink-append-recovery",
+    "11-26-debug-abort-button"
+  ],
+  "parent": "11-16-inkeys3-midterm-refactor",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

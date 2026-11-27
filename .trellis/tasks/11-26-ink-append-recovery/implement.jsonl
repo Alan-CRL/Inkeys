@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/native-desktop/uink-storage.md", "reason": "UInk 1.1 存储唯一权威合同"}
+{"file": ".trellis/spec/native-desktop/whiteboard.md", "reason": "白板按页存储与冷读撤回语义"}
+{"file": ".trellis/spec/native-desktop/draw3-integration.md", "reason": "Draw3 生命周期与线程边界"}
+{"file": ".trellis/spec/native-desktop/input-and-ink.md", "reason": "墨迹提交与历史"}
+{"file": ".trellis/spec/native-desktop/settings-navigation.md", "reason": "保存子页留空"}
+{"file": ".trellis/spec/native-desktop/cpp-conventions.md", "reason": "C++ 约定与并发习惯"}
