@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 196
-- **Last Active**: 2026-11-19
+- **Total Sessions**: 199
+- **Last Active**: 2026-11-27
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~708 | Active |
+| `journal-3.md` | ~733 | Active |
 | `journal-2.md` | ~2054 | Archived |
 | `journal-1.md` | ~2615 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 199 | 2026-11-27 | C1.6 教学安全模式与崩溃自动恢复墨迹 | `8def29db`, `de49be90`, `f56a4962`, `1fa8d721` | `refactoring/draw` |
 | 196 | 2026-11-19 | 阶段 E：桌面合成时机对齐 | `4b95186c` | `refactoring/draw` |
 | 194 | 2026-11-19 | 阶段 D：Win7Dwm 手动呈现与回退诊断 | `4a7c4680` | `refactoring/draw` |
 | 192 | 2026-11-16 | Inkeys3 中期重构第0步：统一日志系统重构 | `cfe8329d`, `f8990ad6` | `refactoring/drawpad-ui` |

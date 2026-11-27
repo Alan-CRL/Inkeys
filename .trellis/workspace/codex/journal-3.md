@@ -706,3 +706,28 @@ Migrated live deploy.json/pptcom_configuration.json fields into Inkeys::Config w
 ### Status
 
 [OK] **Completed**
+
+
+## Session 199: C1.6 教学安全模式与崩溃自动恢复墨迹
+<!-- trellis-session: v=2 fp=7dd09fdbbf742e54 -->
+
+**Date**: 2026-11-27
+**Task**: C1.6 教学安全模式与崩溃自动恢复墨迹
+**Branch**: `refactoring/draw`
+
+### Summary
+
+完成 C1.6a 教学安全模式（三档崩溃处理、所有致命路径统一重启、5 分钟防循环窗口内提示改为是否重启）、C1.6b 抬笔异步追加写入与崩溃恢复（UInk 续接、写前登记、会话记录、按场景恢复、≤5 分钟静默恢复、可见时切画笔、桌面恢复后可撤回到上一区间）、C1.6c 调试页崩溃测试按钮；无所有者弹窗周期置顶、崩溃提示前暂停置顶刷新。Codex 五轮审查与一轮独立复审均已处理，两次实机通过；落笔延迟对比与 Win7/兆芯留到最终集成。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8def29db` | feat: add teaching safety mode and crash recovery of ink (C1.6) |
+| `de49be90` | docs(trellis): record C1.6 teaching safety mode and ink recovery |
+| `f56a4962` | fix: harden C1.6 ink recovery settlement and keep crash prompts on top |
+| `1fa8d721` | docs(trellis): record C1.6 review rounds 4-5, dialog z-order and sign-off |
+
+### Status
+
+[OK] **Completed**
