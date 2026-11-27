@@ -18898,6 +18898,7 @@ namespace Inkeys::Drawing::Draw3
 			bool rotatePending = false;
 			bool rotateInFlight = false;
 			std::uint32_t rotateIdleRetries = 0; // 每个 epoch 空闲重试上限 3 次
+			bool confirmedDegraded = false; // 确认的版本冷读会跳过内容：不能用来交接恢复的墨迹
 			draw3::uink::UInkGuid rotateGuid; // Rotate 的队列身份（被清的桌面页）；切到白板/PPT 后仍可重试
 		} desktopJournal;
 		WhiteboardWake desktopJournalWake{ &input_ };
@@ -23206,7 +23207,10 @@ namespace Inkeys::Drawing::Draw3
 					completion->confirmedRevision == identity.revision;
 				if (succeeded && identity.revision > desktopJournal.confirmedRevision.value_or(0) &&
 					identity.revision <= desktopJournal.revision)
+				{
 					desktopJournal.confirmedRevision = identity.revision;
+					desktopJournal.confirmedDegraded = completion->degraded;
+				}
 				else if (!succeeded && completion->result != PagedInkResult::Merged) desktopJournal.saveRequested = true;
 			}
 			if (!rotateFailed && desktopJournal.pendingWrites == 0 && std::exchange(desktopJournal.saveRequested, false))
@@ -23227,7 +23231,7 @@ namespace Inkeys::Drawing::Draw3
 					!desktopJournal.rotatePending && !desktopJournal.rotateInFlight;
 				const bool confirmed = desktopJournal.epoch == desktopRecoveryDurable->epoch &&
 					desktopJournal.confirmedRevision &&
-					*desktopJournal.confirmedRevision >= desktopRecoveryDurable->revision &&
+					*desktopJournal.confirmedRevision >= desktopRecoveryDurable->revision && !desktopJournal.confirmedDegraded &&
 					desktopJournalStore && desktopJournalStore->RecoveryPendingSettled();
 				const bool failed = !desktopJournalStore || desktopJournalStore->FileState().failed;
 				if (cleared || confirmed || failed)
@@ -24161,6 +24165,7 @@ namespace Inkeys::Drawing::Draw3
 				{
 					++desktopJournal.epoch;
 					desktopJournal.confirmedRevision.reset();
+					desktopJournal.confirmedDegraded = false;
 					desktopJournal.saveRequested = false;
 					desktopJournal.rotateInFlight = false;
 					desktopJournal.rotateIdleRetries = 0;
@@ -24369,7 +24374,8 @@ namespace Inkeys::Drawing::Draw3
 			const auto installDesktopRecovery = [&](draw3::uink::Draw3UInkCanvasSnapshot recovered,
 				std::optional<draw3::uink::Draw3UInkCanvasSnapshot> previous) -> bool
 			{
-				if (activeWorkspace != Bridge::Workspace::Desktop || !document_ ||
+				// 本次启动后已经 Clear 过桌面：空页是用户清出来的，不再装入旧墨迹（旧记录保持未结算）。
+				if (activeWorkspace != Bridge::Workspace::Desktop || !document_ || desktopClearGeneration != 0 ||
 					currentPageIndex_ >= pageRuntimeStates.size() || currentPageHasContent()) return false;
 				const InkPage* current = document_->PageAt(currentPageIndex_);
 				if (!current) return false;

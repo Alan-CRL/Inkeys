@@ -325,6 +325,11 @@ namespace Inkeys::Window
 			return running_.load(std::memory_order_acquire);
 		}
 
+		void SuspendTopmostRefresh() noexcept
+		{
+			topmostRefreshSuspended_.store(true, std::memory_order_release);
+		}
+
 		void BeginShutdown() noexcept
 		{
 			// 正式退出意图一经接受就不可撤销；此处不得等待可能已卡住的 HWND owner。
@@ -804,13 +809,15 @@ namespace Inkeys::Window
 			std::function<void()> callback;
 			{
 				std::scoped_lock lock(topmostObserverMutex_);
+				if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return;
 				callback = topmostRefreshObserver_;
 				if (callback) ++topmostObserverActiveCalls_;
 			}
 			if (callback)
 			{
 				topmostObserverExecuting_ = true;
-				try { callback(); }
+				// 同步、异步刷新共用此入口；崩溃提示期间预览也不能重新置顶。
+				try { if (!topmostRefreshSuspended_.load(std::memory_order_acquire)) callback(); }
 				catch (...) {}
 				topmostObserverExecuting_ = false;
 				{
@@ -2485,6 +2492,7 @@ namespace Inkeys::Window
 		[[nodiscard]] bool ReconcileRelativeOverlayGroup(const GroupSnapshot& identity,
 			const Detail::PptZOrder& order, const Command* command = nullptr, bool survivingOnly = false)
 		{
+			if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
 			const auto expected = ExpectedGroupOwners(identity);
 			HWND bandRoot = nullptr;
 			for (std::size_t i = 0; i < GroupRoles.size(); ++i)
@@ -2529,6 +2537,7 @@ namespace Inkeys::Window
 				{
 					if (!Current()) return false;
 					SetLastError(ERROR_SUCCESS);
+					if (service.topmostRefreshSuspended_.load(std::memory_order_acquire)) return false;
 					const auto previous = SetWindowLongPtrW(identity.windows[i], GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(owner));
 					return (previous || GetLastError() == ERROR_SUCCESS) && Current();
 				}
@@ -2537,17 +2546,21 @@ namespace Inkeys::Window
 					if (!Current() || !bandRoot) return false;
 					// 只有固定旧代际 root 显式切 band；其余成员从它继承，不能单独抬到全局 TOPMOST。
 					const HWND after = identity.windows[i] == bandRoot ? (topmost ? HWND_TOPMOST : HWND_NOTOPMOST) : bandRoot;
+					if (service.topmostRefreshSuspended_.load(std::memory_order_acquire)) return false;
 					return SetWindowPos(identity.windows[i], after, 0, 0, 0, 0,
 						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | (noOwner ? SWP_NOOWNERZORDER : 0)) && Current();
 				}
 				bool PlaceAfter(std::size_t i, std::size_t anchor) const
 				{
-					return Current() && SetWindowPos(identity.windows[i], identity.windows[anchor], 0, 0, 0, 0,
+					return Current() && !service.topmostRefreshSuspended_.load(std::memory_order_acquire)
+						&& SetWindowPos(identity.windows[i], identity.windows[anchor], 0, 0, 0, 0,
 						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) && Current();
 				}
 			} operations{ *this, identity, command, survivingOnly, bandRoot };
-			return Detail::ReconcileRelativeOverlayZOrder(identity, expected,
+			const bool reconciled = Detail::ReconcileRelativeOverlayZOrder(identity, expected,
 				overlayTopmost_.load(std::memory_order_acquire) && !WhiteboardWindowMode(), order, operations);
+			// 暂停时中断原生排序，避免触发下一轮校验写入或回滚抬升。
+			return reconciled || topmostRefreshSuspended_.load(std::memory_order_acquire);
 		}
 
 		[[nodiscard]] bool PlaceSelectionOverlayBelowBar(const Command* command = nullptr)
@@ -2557,6 +2570,7 @@ namespace Inkeys::Window
 			const HWND bar = Handle(WindowRole::Bar);
 			if (!bar || (command && !CommandCurrent(*command))) return false;
 			// 新版整组排序完成后，仍让图形编辑层位于画布上方、主栏下方。
+			if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
 			return SetWindowPos(editor, bar, 0, 0, 0, 0,
 				SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER)
 				&& (!command || CommandCurrent(*command));
@@ -2564,6 +2578,7 @@ namespace Inkeys::Window
 
 		[[nodiscard]] bool CommitOverlayGroupPolicy(const Command* command = nullptr, HWND promoted = nullptr)
 		{
+			if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
 			const HWND root = OverlayRoot();
 			if (!root) return false;
 			// mode=false 的离场及重入也只交接物理政策，不依赖前台许可或全局连续性。
@@ -2572,11 +2587,13 @@ namespace Inkeys::Window
 				{ return ReconcileRelativeOverlayGroup(identity, order, command); },
 				[this, root] { ApplyOverlayFullscreen(root); },
 				[this, command] { return !command || CommandCurrent(*command); }, promoted);
-			return succeeded && PlaceSelectionOverlayBelowBar(command);
+			return topmostRefreshSuspended_.load(std::memory_order_acquire)
+				|| (succeeded && PlaceSelectionOverlayBelowBar(command));
 		}
 
 		[[nodiscard]] bool RefreshOverlayGroup(const Command* command = nullptr, HWND promoted = nullptr)
 		{
+			if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
 			if (WhiteboardWindowMode()) return CommitOverlayGroupPolicy(command, promoted);
 			const auto current = [&] { return !command || CommandCurrent(*command); };
 			const bool topmost = overlayTopmost_.load(std::memory_order_acquire) && !WhiteboardWindowMode();
@@ -2600,6 +2617,7 @@ namespace Inkeys::Window
 				}
 			const auto expected = ExpectedGroupOwners(*before);
 			constexpr UINT flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+			// 原生写入可能同步重入；每个改变层级的调用前都复查暂停状态。
 			// 两种 band 都核验完整基础组；失败只进行有限轮次，不转成正常态忙循环。
 			for (unsigned attempt = 0; attempt < 2 && current(); ++attempt)
 			{
@@ -2612,15 +2630,21 @@ namespace Inkeys::Window
 					if (GetWindow(member, GW_OWNER) != expected[i])
 					{
 						SetLastError(ERROR_SUCCESS);
+						if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
 						if (!SetWindowLongPtrW(member, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(expected[i]))
 							&& GetLastError() != ERROR_SUCCESS) return false;
 						if (!current() || GetWindow(member, GW_OWNER) != expected[i]) return false;
 					}
 				}
-				if (!current() || !SetWindowPos(root, topmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, flags)) return false;
 				if (!current()) return false;
-				if (((GetWindowLongPtrW(root, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) != topmost
-					&& !SetWindowPos(root, topmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, flags | SWP_NOOWNERZORDER)) return false;
+				if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
+				if (!SetWindowPos(root, topmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, flags)) return false;
+				if (!current()) return false;
+				if (((GetWindowLongPtrW(root, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) != topmost)
+				{
+					if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
+					if (!SetWindowPos(root, topmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, flags | SWP_NOOWNERZORDER)) return false;
+				}
 				std::array<HWND, 9> order{ before->windows[0], before->windows[1], before->windows[2], before->windows[3] };
 				for (std::size_t i = 0; i < count; ++i) order[4 + i] = ppt[count - i - 1];
 				order[8] = before->windows[8];
@@ -2629,10 +2653,16 @@ namespace Inkeys::Window
 					if (!member) continue;
 					if (!current()) return false;
 					if (member != root && ((GetWindowLongPtrW(member, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) != topmost)
+					{
+						if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
 						if (!SetWindowPos(member, root, 0, 0, 0, 0, flags | SWP_NOOWNERZORDER)) return false;
+					}
 					// 保留 Win32 对合法 owned Setting/辅助窗的传播合同，不统一禁止 owner 联动。
-					if (!current() || !SetWindowPos(member, HWND_TOP, 0, 0, 0, 0, flags)) return false;
+					if (!current()) return false;
+					if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
+					if (!SetWindowPos(member, HWND_TOP, 0, 0, 0, 0, flags)) return false;
 				}
+				if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
 				const auto after = CaptureGroupZOrder();
 				bool ordered = after && GroupMatches(*after, topmost);
 				for (std::size_t i = 1; ordered && i < count; ++i)
@@ -3611,6 +3641,8 @@ namespace Inkeys::Window
 
 		[[nodiscard]] bool RestoreCommandSnapshot(const CommandSnapshot& snapshot, CommandType type, WindowRole role)
 		{
+			// 在途提升超时也可能走回滚，暂停后不再用旧快照抬窗。
+			if (IsTopmostRaiseSuspended(type)) return true;
 			if (snapshot.candidate || snapshot.visibilityOnly)
 			{
 				bool restored = true;
@@ -3674,6 +3706,7 @@ namespace Inkeys::Window
 				if (GetWindow(native.hwnd, GW_OWNER) != native.owner)
 				{
 					SetLastError(ERROR_SUCCESS);
+					if (IsTopmostRaiseSuspended(type)) return true;
 					if (!SetWindowLongPtrW(native.hwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(native.owner)) && GetLastError()) restored = false;
 				}
 				if (actual != style)
@@ -3697,6 +3730,7 @@ namespace Inkeys::Window
 				if (!restored && snapshot.canvas && IsCanvas(native.role)) continue;
 				const bool visible = safetyOverrides_[RoleIndex(native.role)].Visible(native.generation, native.visible)
 					&& !shutdownRequested_.load(std::memory_order_acquire);
+				if (IsTopmostRaiseSuspended(type)) return true;
 				ShowWindow(native.hwnd, visible ? (native.iconic ? SW_SHOWMINNOACTIVE : SW_SHOWNOACTIVATE) : SW_HIDE);
 				RECT actual{};
 				if (!GetWindowRect(native.hwnd, &actual) || !EqualRect(&actual, &native.bounds)
@@ -3861,6 +3895,13 @@ namespace Inkeys::Window
 				safetyOverrides_[RoleIndex(command.role)].AllowInput(records_[RoleIndex(command.role)].generation.load(std::memory_order_acquire));
 		}
 
+		[[nodiscard]] bool IsTopmostRaiseSuspended(CommandType type) const noexcept
+		{
+			return (type == CommandType::RefreshTopmost || type == CommandType::PromotePpt
+				|| type == CommandType::RaiseOwnedSetting)
+				&& topmostRefreshSuspended_.load(std::memory_order_acquire);
+		}
+
 		[[nodiscard]] bool ExecuteTracked(const Command& command, SurfacePresentationLease lease = {}, bool externalLeaseHeld = false)
 		{
 			// 旧命令连缓存失效权也没有；先退休自身，不能伤及后来已提交的窗口凭据。
@@ -3873,6 +3914,22 @@ namespace Inkeys::Window
 					if (!commandApplying_[0]) DrainWorkspaceProgress();
 				}
 				SetLastError(Detail::CommandExpired(command.deadline) ? ERROR_TIMEOUT : ERROR_CANCELLED);
+				return false;
+			}
+			if (IsTopmostRaiseSuspended(command.type))
+			{
+				// 仅完成回执，避免取快照、重试旧事务或把暂停记成原生恢复。
+				if (!command.completion) return true;
+				if (!command.completion->Begin()) return false;
+				// Begin 后意图可能已被替代，旧回执应按取消路径退休。
+				if (!CommandCurrent(command))
+				{
+					command.completion->Cancel();
+					command.completion->Retired();
+					return false;
+				}
+				if (command.completion->Commit(true)) return true;
+				command.completion->Retired();
 				return false;
 			}
 			const auto leaseMask = CommandPresentationMask(command);
@@ -4110,6 +4167,7 @@ namespace Inkeys::Window
 		{
 			// 启动调用已超时的排队刷新不能在 owner 恢复后重新修改窗口层级。
 			if (!CommandCurrent(command)) return false;
+			if (IsTopmostRaiseSuspended(command.type)) return true;
 			if (command.type == CommandType::HideAll)
 				return HideUserWindowsInGroup(IsSetting(command.role));
 			if (shutdownRequested_.load(std::memory_order_acquire))
@@ -4372,9 +4430,11 @@ namespace Inkeys::Window
 				{
 					// 只在实际band失配时从当前根继承；随后TOP将owned恢复到owner上方。
 					SetLastError(ERROR_SUCCESS);
+					if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
 					const bool inherited = SetWindowPos(hwnd, root, 0, 0, 0, 0,
 						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) != FALSE;
 					const DWORD inheritError = inherited ? ERROR_SUCCESS : GetLastError();
+					if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
 					if (!inherited || ((GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) != topmost)
 					{
 						ReportCommandResult(command, false, inheritError ? inheritError : ERROR_GEN_FAILURE, hwnd);
@@ -4383,10 +4443,12 @@ namespace Inkeys::Window
 				}
 				// 不显示、不激活、不改变 owner 的 Z 序；topmost band 继续只由根策略决定。
 				SetLastError(ERROR_SUCCESS);
+				if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
 				const bool succeeded = SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
 					SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER) != FALSE;
 				DWORD error = succeeded ? ERROR_SUCCESS : GetLastError();
 				if (!succeeded && error == ERROR_SUCCESS) error = ERROR_GEN_FAILURE;
+				if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
 				ReportCommandResult(command, succeeded, error, hwnd);
 				return succeeded;
 			}
@@ -4472,6 +4534,7 @@ namespace Inkeys::Window
 				if (command.type == CommandType::PromotePpt && !IsPpt(command.role)) return false;
 				const bool succeeded = RefreshOverlayGroup(&command,
 					command.type == CommandType::PromotePpt ? hwnd : nullptr);
+				if (topmostRefreshSuspended_.load(std::memory_order_acquire)) return true;
 				ReportCommandResult(command, succeeded, succeeded ? ERROR_SUCCESS : GetLastError(), hwnd);
 				return succeeded;
 			}
@@ -4876,6 +4939,7 @@ namespace Inkeys::Window
 		std::array<WindowRecord, RoleCount> records_{};
 		std::atomic_bool running_ = false;
 		std::atomic_bool shutdownRequested_ = false;
+		std::atomic_bool topmostRefreshSuspended_ = false; // 崩溃提示期间不再抬升程序窗口（见 SuspendTopmostRefresh）
 		std::shared_ptr<Detail::ShellFullscreenState> shellFullscreen_;
 		std::jthread overlayThread_;
 		std::jthread settingThread_;
@@ -5080,6 +5144,7 @@ namespace Inkeys::Window
 	void Service::Stop() noexcept { StopAndJoin(); }
 	bool Service::Running() const noexcept { return impl_->Running(); }
 	void Service::BeginShutdown() noexcept { impl_->BeginShutdown(); }
+	void Service::SuspendTopmostRefresh() noexcept { impl_->SuspendTopmostRefresh(); }
 	HWND Service::Handle(WindowRole role) const noexcept { return impl_->Handle(role); }
 	bool Service::Ready(WindowRole role) const noexcept { return impl_->Ready(role); }
 	bool Service::AllReady() const noexcept { return impl_->AllReady(); }

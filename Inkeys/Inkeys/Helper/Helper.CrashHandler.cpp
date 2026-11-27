@@ -757,6 +757,8 @@ LONG WINAPI CrashHandler::UnhandledExceptionHandler(EXCEPTION_POINTERS* pExcepti
 		request.fallback.enabled = false;
 		// 建窗截止：可交互前卡住超过截止按“提示失败”重启；可交互后才无限等待用户。
 		// 截止建立失败时不再无保护地建窗，直接按提示失败处理。
+		// 提示框无所有者、自身周期置顶；先停掉程序窗口的置顶刷新，免得整条置顶链又把它压到后面（只写原子量）。
+		Inkeys::Window::GetService().SuspendTopmostRefresh();
 		auto shown = Inkeys::UI::MessageBox::Result::Failed;
 		// 防循环窗口内建窗超时按“不重启”结束进程，避免卡死的提示反复拉起。
 		if (ArmCrashPromptDeadline(repeatPrompt ? nullptr : +armCrashRestart))

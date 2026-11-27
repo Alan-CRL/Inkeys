@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <condition_variable>
+#include <stop_token>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -285,6 +286,13 @@ namespace Inkeys::Drawing::Draw3
 		void (*afterSave)(void*, const std::wstring& publishedPath) noexcept = nullptr;
 	};
 
+	enum class RecoveryPromptResult : std::uint8_t
+	{
+		Accepted,
+		Declined,
+		Unavailable,
+	};
+
 	struct HostStartOptions
 	{
 		HostPresentationMode requiredPresentationMode = HostPresentationMode::Automatic;
@@ -300,9 +308,10 @@ namespace Inkeys::Drawing::Draw3
 		std::wstring autoSaveRoot;
 		// 崩溃重启后自动恢复墨迹（C1.6b）：启动时的开关值，决定是否建立崩溃恢复会话记录；运行中切换经 ProductState 发布。
 		bool crashRecoverInk = false;
-		// 崩溃恢复弹窗（C1.6b）：在恢复线程上同步调用，返回 true 表示恢复。scene 0 桌面、1 白板；
-		// lastWriteFileTime 为该场景文件最后写入时间（FILETIME）。为空时视同选“是”。
-		bool (*recoveryPrompt)(void* context, int scene, std::uint64_t lastWriteFileTime) = nullptr;
+		// 恢复线程同步询问，scene 0 桌面、1 白板。lastWriteFileTime 为 FILETIME，回调为空时直接恢复。
+		// 只有明确拒绝才结算；无法显示或取消时返回 Unavailable。
+		RecoveryPromptResult (*recoveryPrompt)(void* context, int scene, std::uint64_t lastWriteFileTime,
+			std::stop_token cancellation) = nullptr;
 		void* recoveryPromptContext = nullptr;
 		// 静默重启档的崩溃拉起（-CrashTry 且“静默重启”）：不弹窗，直接按“是”处理。
 		bool recoverySkipPrompt = false;
@@ -502,6 +511,8 @@ namespace Inkeys::Drawing::Draw3
 			HostStartOptions options = {},
 			HostRuntimeCallbacks runtimeCallbacks = {});
 		void Stop() noexcept;
+		// 生命周期 owner 可在 Start 前或 Stop 前调用；与 Start 串行。
+		void CancelInkRecoveryPrompts() noexcept;
 		// 串行 Start/Stop owner 在真 join 后调用；caller 提供新私有绝对路径，旧报告读完再 Start。
 		bool WriteRuntimeMetrics(const wchar_t* absoluteOutputPath) const noexcept;
 		bool Running() const noexcept;

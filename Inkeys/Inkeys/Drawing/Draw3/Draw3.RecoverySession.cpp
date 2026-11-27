@@ -493,6 +493,13 @@ namespace Inkeys::Drawing::Draw3::Recovery
 			clearGeneration = record_.desktopClearGeneration;
 		}
 		if (*clearGeneration < record_.desktopClearGeneration) return false; // 更早一次 Clear 的快照，已过时
+		// 快照登记可能先于该次 Clear 的 Rotate 落盘：代次前进说明活动区间文件是清前的，同一次写盘里一并撤下，
+		// 否则两次写盘之间崩溃会把已清掉的墨迹当作当前区间恢复。
+		if (*clearGeneration > record_.desktopClearGeneration)
+		{
+			record_.desktop.reset();
+			record_.desktopCleared = true;
+		}
 		record_.desktopClearGeneration = *clearGeneration;
 		record_.desktopPreviousInterval = path;
 		record_.desktopPreviousGeneration = *clearGeneration;
@@ -712,13 +719,11 @@ namespace Inkeys::Drawing::Draw3::Recovery
 						return std::find(record->settledPresentations.begin(), record->settledPresentations.end(),
 							presentation.key) != record->settledPresentations.end();
 					});
-				// Clear 后崩溃、还没落新笔时桌面条目为空，但上一区间快照仍可供恢复后撤回；
-				// 只有“已清空”标记的记录也要交给恢复方，挡住借用更旧会话的桌面墨迹。
-				const bool desktopRecoverable = record->desktop || record->desktopCleared ||
+				// 已结算的桌面状态也参与排序，避免越过 Clear 或已处理的区间借回更旧的墨迹。
+				const bool hasDesktopState = record->desktop || record->desktopCleared || record->desktopClearGeneration != 0 ||
 					(record->desktopPreviousInterval && record->desktopPreviousGeneration == record->desktopClearGeneration);
-				const bool fullySettled = (!desktopRecoverable || record->settledDesktop) &&
-					(!record->whiteboard || record->settledWhiteboard) && allPresentationsSettled;
-				if (record->clean || !record->recoverInk || fullySettled)
+				if (record->clean || !record->recoverInk ||
+					(!hasDesktopState && (!record->whiteboard || record->settledWhiteboard) && allPresentationsSettled))
 				{
 					// 已结束且无需恢复的旧记录直接清理；被别的进程认领中的记录跳过删除。
 					if (ProbeSessionLock(directory + L"\\" + base + L".claim") == Liveness::Dead)

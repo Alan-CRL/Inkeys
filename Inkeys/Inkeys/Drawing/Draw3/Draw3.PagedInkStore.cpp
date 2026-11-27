@@ -1460,6 +1460,8 @@ namespace Inkeys::Drawing::Draw3
 							return false;
 						}
 						if (closing) return true;
+						// 清除写前登记失败后的空闲重试（接管等不触发整理检查的路径也要能进来）。
+						if (recoveryClearRetryPending && recoveryPendingStale && writer) return true;
 						if (!compactCheckPending) return false;
 						// 保留挂起检查，最后一份驱逐许可归还时唤醒；期间仍优先处理业务请求。
 						if (activeEvictions == 0) return true;

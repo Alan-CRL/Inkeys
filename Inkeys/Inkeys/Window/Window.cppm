@@ -329,6 +329,9 @@ export namespace Inkeys::Window
 		void Stop() noexcept;
 		[[nodiscard]] bool Running() const noexcept;
 		void BeginShutdown() noexcept;
+		// 崩溃提示前调用（只写原子量，崩溃处理路径可用）：之后置顶刷新与 PPT 提升按成功空操作处理，
+		// 程序窗口不再周期抬到最上层，避免盖住无所有者的崩溃提示框。进程随后结束，不提供恢复。
+		void SuspendTopmostRefresh() noexcept;
 
 		[[nodiscard]] HWND Handle(WindowRole role) const noexcept;
 		[[nodiscard]] bool Ready(WindowRole role) const noexcept;

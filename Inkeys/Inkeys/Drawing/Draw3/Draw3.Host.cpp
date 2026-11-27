@@ -670,6 +670,7 @@ namespace Inkeys::Drawing::Draw3
 		std::optional<bool> whiteboardRecoveryDurable;
 		// 开始停止（退出屏障之前）：恢复线程不再弹窗或交接装入，绘制线程不再取待装入数据。
 		std::atomic<bool> recoveryClosing{ false };
+		std::stop_source recoveryPromptStop; // Stop 入口取消仍在显示的恢复询问，恢复线程才能及时退出
 		std::mutex recoveryMutex;
 		std::condition_variable recoveryCondition;
 		std::optional<draw3::uink::Draw3UInkCanvasSnapshot> pendingDesktopRecovery;
@@ -863,40 +864,67 @@ namespace Inkeys::Drawing::Draw3
 				// 只恢复最新的一份。较旧的被放弃会话先认领：最新会话缺某个场景而旧会话该场景未结算时借用过来
 				// （双重崩溃：上一次恢复装入后、写盘确认前又崩溃），其余旧记录在最新记录持久化后删除（文件留在磁盘上）。
 				std::vector<std::wstring> olderRecords;
+				bool canDeleteOlderRecords = true;
+				enum class CandidatePath { Retained, Missing, Unknown };
+				const auto candidatePath = [&](const std::optional<Recovery::FileEntry>& entry) noexcept
+				{
+					if (!entry || entry->identity.valid || GetFileAttributesW(entry->path.c_str()) != INVALID_FILE_ATTRIBUTES)
+						return CandidatePath::Retained;
+					const auto error = GetLastError();
+					if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) return CandidatePath::Missing;
+					// 权限或 I/O 错误无法确认候选文件是否已发布，保留条目和旧来源供下次扫描。
+					canDeleteOlderRecords = false;
+					return CandidatePath::Unknown;
+				};
+				auto desktopPath = candidatePath(record.desktop);
+				auto whiteboardPath = candidatePath(record.whiteboard);
+				if (desktopPath == CandidatePath::Missing) record.desktop.reset();
+				if (whiteboardPath == CandidatePath::Missing) record.whiteboard.reset();
+				// 桌面只看最近一个带桌面状态的会话，已清空、已结算或未能认领的状态都能挡住更旧条目。
+				bool desktopResolved = record.desktop || record.desktopCleared || record.desktopClearGeneration != 0 ||
+					(record.desktopPreviousInterval && record.desktopPreviousGeneration == record.desktopClearGeneration);
 				for (std::size_t index = 1; index < sessions.size(); ++index)
 				{
+					const auto& older = sessions[index].record;
+					const auto olderDesktopPath = candidatePath(older.desktop);
+					const auto olderWhiteboardPath = candidatePath(older.whiteboard);
+					const bool olderHasDesktopState = (older.desktop && olderDesktopPath != CandidatePath::Missing) ||
+						older.desktopCleared || older.desktopClearGeneration != 0 ||
+						(older.desktopPreviousInterval && older.desktopPreviousGeneration == older.desktopClearGeneration);
 					void* claim = Recovery::ClaimSession(root, sessions[index].baseName);
-					if (!claim) continue;
+					if (!claim)
+					{
+						canDeleteOlderRecords = false;
+						desktopResolved = desktopResolved || olderHasDesktopState;
+						continue;
+					}
 					olderRecoveryClaims.push_back(claim);
 					olderRecords.push_back(sessions[index].recordPath);
-					const auto& older = sessions[index].record;
-					// 最新会话 Clear 过（desktopCleared 或有 Clear 代次）就不借用：旧会话的桌面内容已被清掉。
-					// 旧会话只剩上一区间（Clear 后崩溃）同样可借用，与扫描的“可恢复”判定一致。
-					const bool olderDesktopRecoverable = older.desktop || (older.desktopPreviousInterval &&
-						older.desktopPreviousGeneration == older.desktopClearGeneration);
-					if (!record.desktop && !record.desktopCleared && record.desktopClearGeneration == 0 &&
-						olderDesktopRecoverable && !older.settledDesktop)
+					if (!desktopResolved && olderHasDesktopState)
 					{
-						record.desktop = older.desktop;
+						// 已结算的桌面状态也并入最新记录，防止旧记录只删掉一部分时丢失 Clear 边界。
+						desktopResolved = true;
+						desktopPath = olderDesktopPath;
+						record.desktop = desktopPath == CandidatePath::Missing ? std::nullopt : older.desktop;
 						record.desktopCleared = older.desktopCleared;
 						record.desktopClearGeneration = older.desktopClearGeneration;
 						record.desktopPreviousInterval = older.desktopPreviousInterval;
 						record.desktopPreviousGeneration = older.desktopPreviousGeneration;
-						record.settledDesktop = false;
+						record.settledDesktop = older.settledDesktop;
 					}
-					if (!record.whiteboard && older.whiteboard && !older.settledWhiteboard)
+					if (!record.whiteboard && older.whiteboard && olderWhiteboardPath != CandidatePath::Missing && !older.settledWhiteboard)
 					{
+						whiteboardPath = olderWhiteboardPath;
 						record.whiteboard = older.whiteboard;
 						record.whiteboardPageIndex = older.whiteboardPageIndex;
 						record.whiteboardPageGuid = older.whiteboardPageGuid;
 						record.settledWhiteboard = false;
 					}
 				}
-				// 合并后的最新记录没写成功：保留旧记录（认领锁随进程结束释放），下次启动再试。
-				if (Recovery::WriteSessionRecord(session.recordPath, record))
-					for (const auto& path : olderRecords) DeleteFileW(path.c_str());
 				const bool crashSceneDesktop = record.workspace == Recovery::Workspace::Desktop;
-				// PPT：读出待接管的页，只在本次启动内有效；读完即结算（本进程不再识别到就不再恢复）。
+				// PPT 只在本次启动内待接管；先暂存读出的页，等消费标记尝试落盘后再交给绘制线程。
+				std::map<std::string, PresentationAdopt> presentationAdopt;
+				const auto settledPresentationCount = record.settledPresentations.size();
 				for (const auto& entry : record.presentations)
 				{
 					if (std::find(record.settledPresentations.begin(), record.settledPresentations.end(), entry.key)
@@ -907,18 +935,27 @@ namespace Inkeys::Drawing::Draw3
 						if (read->document->headerExtension && !read->document->headerExtension->workspaces.empty())
 							adopt.workspaceGuid = read->document->headerExtension->workspaces.front().guid;
 						adopt.pages = std::move(read->document->canvases);
-						const std::scoped_lock lock(recoveryMutex);
-						pendingPresentationAdopt[entry.key] = std::move(adopt);
+						presentationAdopt[entry.key] = std::move(adopt);
 					}
 					record.settledPresentations.push_back(entry.key);
 				}
+				const bool mergedPersisted = Recovery::WriteSessionRecord(session.recordPath, record);
 				{
 					const std::scoped_lock lock(recoveryMutex);
+					for (auto& [key, adopt] : presentationAdopt)
+						pendingPresentationAdopt[key] = std::move(adopt);
 					presentationScanDone = true;
 				}
 				recoveryCondition.notify_all();
+				if (!mergedPersisted && record.settledPresentations.size() != settledPresentationCount)
+					DiagnosticOutput::Text(DiagnosticOutput::OutWarn, "[Draw3.Recovery] action=settle_presentations result=not_persisted\n");
+				// 合并未落盘或仍有旧来源时，保留最新记录作为桌面恢复边界。
+				bool olderRecordsDeleted = mergedPersisted && canDeleteOlderRecords;
+				if (olderRecordsDeleted)
+					for (const auto& path : olderRecords)
+						if (!DeleteFileW(path.c_str()) && GetLastError() != ERROR_FILE_NOT_FOUND) olderRecordsDeleted = false;
 				// 白板：崩溃场景且有墨迹时弹窗（静默重启档除外），否则静默恢复数据、界面留在桌面。
-				if (record.whiteboard && !record.settledWhiteboard)
+				if (record.whiteboard && !record.settledWhiteboard && whiteboardPath != CandidatePath::Unknown)
 				{
 					auto read = ReadRecoveredFile(*record.whiteboard);
 					bool hasInk = false;
@@ -931,14 +968,15 @@ namespace Inkeys::Drawing::Draw3
 					else
 					{
 						const bool crashSceneWhiteboard = record.workspace == Recovery::Workspace::Whiteboard;
-						bool accept = true;
+						auto promptResult = RecoveryPromptResult::Accepted;
 						const auto lastWrite = LastWriteFileTime(record.whiteboard->path);
 						if (crashSceneWhiteboard && !options.recoverySkipPrompt && options.recoveryPrompt &&
-							RecoveryNeedsPrompt(lastWrite))
-							accept = options.recoveryPrompt(options.recoveryPromptContext, 1, lastWrite);
-						if (recoveryClosing.load(std::memory_order_acquire)) return;
-						if (!accept) record.settledWhiteboard = true;
-						else
+							RecoveryNeedsPrompt(lastWrite) && !recoveryClosing.load(std::memory_order_acquire))
+							promptResult = options.recoveryPrompt(options.recoveryPromptContext, 1, lastWrite, recoveryPromptStop.get_token());
+						// 退出取消当前场景，仍需收尾并保留已完成的结算。
+						if (recoveryClosing.load(std::memory_order_acquire)) promptResult = RecoveryPromptResult::Unavailable;
+						if (promptResult == RecoveryPromptResult::Declined) record.settledWhiteboard = true;
+						else if (promptResult == RecoveryPromptResult::Accepted)
 						{
 							draw3::uink::Draw3UInkV11ImportOptions importOptions;
 							importOptions.dpiScale = dpiScale;
@@ -983,7 +1021,8 @@ namespace Inkeys::Drawing::Draw3
 				const bool previousValid = record.desktopPreviousInterval &&
 					record.desktopPreviousGeneration == record.desktopClearGeneration;
 				// 已在退出：不再弹窗装入桌面，直接写下白板的结算结果。
-				if ((record.desktop || previousValid) && !record.settledDesktop && !recoveryClosing.load(std::memory_order_acquire))
+				if ((record.desktop || previousValid) && !record.settledDesktop &&
+					desktopPath != CandidatePath::Unknown && !recoveryClosing.load(std::memory_order_acquire))
 				{
 					auto read = record.desktop ? ReadRecoveredFile(*record.desktop) : std::nullopt;
 					const draw3::uink::UInkCanvas* canvas = read ? &read->document->canvases.front() : nullptr;
@@ -1000,15 +1039,16 @@ namespace Inkeys::Drawing::Draw3
 					}
 					else
 					{
-						bool accept = true;
+						auto promptResult = RecoveryPromptResult::Accepted;
 						const auto lastWrite = record.desktop ? LastWriteFileTime(record.desktop->path) : 0;
 						// 只有当前区间有墨迹时才询问；只剩上一区间（Clear 后崩溃）时静默装入撤回点。
 						if (hasCurrent && crashSceneDesktop && !options.recoverySkipPrompt && options.recoveryPrompt &&
-							RecoveryNeedsPrompt(lastWrite))
-							accept = options.recoveryPrompt(options.recoveryPromptContext, 0, lastWrite);
-						if (recoveryClosing.load(std::memory_order_acquire)) return;
-						if (!accept) record.settledDesktop = true;
-						else
+							RecoveryNeedsPrompt(lastWrite) && !recoveryClosing.load(std::memory_order_acquire))
+							promptResult = options.recoveryPrompt(options.recoveryPromptContext, 0, lastWrite, recoveryPromptStop.get_token());
+						// 退出时跳过桌面恢复，继续写回此前的白板结算。
+						if (recoveryClosing.load(std::memory_order_acquire)) promptResult = RecoveryPromptResult::Unavailable;
+						if (promptResult == RecoveryPromptResult::Declined) record.settledDesktop = true;
+						else if (promptResult == RecoveryPromptResult::Accepted)
 						{
 							draw3::uink::Draw3UInkV11ImportOptions importOptions;
 							importOptions.dpiScale = dpiScale;
@@ -1073,10 +1113,11 @@ namespace Inkeys::Drawing::Draw3
 						return std::find(record.settledPresentations.begin(), record.settledPresentations.end(),
 							entry.key) != record.settledPresentations.end();
 					});
-				if ((!(record.desktop || previousValid) || record.settledDesktop) &&
-					(!record.whiteboard || record.settledWhiteboard) && presentationsSettled)
-					DeleteFileW(session.recordPath.c_str());
-				else (void)Recovery::WriteSessionRecord(session.recordPath, record);
+				if (olderRecordsDeleted && (!(record.desktop || previousValid) || record.settledDesktop) &&
+					(!record.whiteboard || record.settledWhiteboard) && presentationsSettled &&
+					(DeleteFileW(session.recordPath.c_str()) || GetLastError() == ERROR_FILE_NOT_FOUND)) return;
+				// 删除未完成时写回最新结算，避免下次启动重复恢复。
+				(void)Recovery::WriteSessionRecord(session.recordPath, record);
 			}
 			catch (...) {}
 		}
@@ -1141,9 +1182,13 @@ namespace Inkeys::Drawing::Draw3
 			{
 				// 扫描完成前识别到的文稿：有界等待（超时按无恢复处理），保证接管先于首次 LoadLane。
 				std::unique_lock lock(self.recoveryMutex);
-				self.recoveryCondition.wait_for(lock, std::chrono::seconds(3), [&] { return self.presentationScanDone; });
+				self.recoveryCondition.wait_for(lock, std::chrono::seconds(3), [&]
+				{
+					return self.presentationScanDone || self.recoveryClosing.load(std::memory_order_acquire);
+				});
+				// 退出唤醒只结束等待，保留待接管页。
 				if (const auto found = self.pendingPresentationAdopt.find(*options.hostId);
-					found != self.pendingPresentationAdopt.end())
+					found != self.pendingPresentationAdopt.end() && !self.recoveryClosing.load(std::memory_order_acquire))
 				{
 					if (found->second.workspaceGuid) options.pageContext.workspaceGuid = *found->second.workspaceGuid;
 					options.adoptPages = std::move(found->second.pages);
@@ -3239,23 +3284,17 @@ namespace Inkeys::Drawing::Draw3
 			if (!options.autoSaveRoot.empty() && !options.enableHiddenTestContactInjection &&
 				!recoverySession.Active() && !recoverySession.Start(options.autoSaveRoot, options.crashRecoverInk))
 				DiagnosticOutput::Text(DiagnosticOutput::OutWarn, "[Draw3.Recovery] action=session_start result=failed\n");
-			// 启动时开关开启才扫描旧会话；扫描、读盘与弹窗都在独立线程上，不占用绘制线程。
-			if (recoverySession.Active() && options.crashRecoverInk && !recoveryThread.joinable())
+			const bool scanRecovery = recoverySession.Active() && options.crashRecoverInk;
+			if (scanRecovery)
 			{
 				recoveryStop.store(false, std::memory_order_release);
 				recoveryClosing.store(false, std::memory_order_release);
-				{
-					const std::scoped_lock lock(recoveryMutex);
-					presentationScanDone = false;
-				}
-				// DPI 按值传入：与绘制线程启动时的 configuration.dpiScale 同一算法、同一窗口，避免读共享字段的数据竞争。
-				const float scanDpiScale = (std::max)(static_cast<float>(QueryCompatibleWindowDpi(hwnd)) / 96.0f, 0.1f);
-				try { recoveryThread = std::thread(&Impl::RunRecoveryScan, this, options.autoSaveRoot, options, scanDpiScale); }
-				catch (...)
-				{
-					const std::scoped_lock lock(recoveryMutex);
-					presentationScanDone = true;
-				}
+				recoveryPromptStop = std::stop_source{};
+			}
+			{
+				// 绘制线程可能先进入 Run，提前设置 PPT 存储是否等待扫描。
+				const std::scoped_lock lock(recoveryMutex);
+				presentationScanDone = !scanRecovery;
 			}
 			devicePerformance.Start(options.devicePerformancePath);
 			input.EnableDiagnostics(options.enableHiddenTestContactInjection || options.enableRuntimeMetrics);
@@ -3785,6 +3824,21 @@ namespace Inkeys::Drawing::Draw3
 		// Subscribe 仍可能抛出；只有 caller 完整 Start 成功后才清失败标记。
 		if (runtimeMetrics.enabled.load(std::memory_order_acquire))
 			runtimeMetrics.startupFailed.store(false, std::memory_order_release);
+		// 启动握手成功后才认领旧会话，失败回退到 ULW 时没有恢复线程或认领锁残留。
+		if (scanRecovery)
+		{
+			// DPI 按值传入，与绘制线程启动时采用相同的窗口和算法。
+			const float scanDpiScale = (std::max)(static_cast<float>(QueryCompatibleWindowDpi(hwnd)) / 96.0f, 0.1f);
+			try { recoveryThread = std::thread(&Impl::RunRecoveryScan, this, options.autoSaveRoot, options, scanDpiScale); }
+			catch (...)
+			{
+				{
+					const std::scoped_lock lock(recoveryMutex);
+					presentationScanDone = true;
+				}
+				recoveryCondition.notify_all();
+			}
+		}
 		return true;
 		}
 
@@ -3821,11 +3875,21 @@ namespace Inkeys::Drawing::Draw3
 			inputRun.store(stopped, std::memory_order_release);
 		}
 
+		void CancelInkRecoveryPrompts() noexcept
+		{
+			// 主线程在报错或退出时可先关准入，绘制线程仍可在退出屏障期间报告落盘结果。
+			{
+				// 与 PPT 等待使用同一把锁，避免退出通知在进入等待前丢失。
+				const std::scoped_lock lock(recoveryMutex);
+				recoveryClosing.store(true, std::memory_order_release);
+			}
+			recoveryCondition.notify_all();
+			recoveryPromptStop.request_stop();
+		}
+
 		void Stop() noexcept
 		{
-			// 先关恢复的弹窗与装入准入；落盘结果仍可在退出屏障期间由绘制线程报告。
-			recoveryClosing.store(true, std::memory_order_release);
-			recoveryCondition.notify_all();
+			CancelInkRecoveryPrompts();
 			hapticClicks.Stop();
 			displaySubscription.Reset(); // 等待回调退出后再拆除输入与窗口。
 			if (!attachedWindow.load(std::memory_order_acquire) &&
@@ -3893,7 +3957,11 @@ namespace Inkeys::Drawing::Draw3
 			presentationStores.Clear();
 			// 恢复线程可能还在等弹窗或装入结果：通知退出后等待（弹窗本身由 MessageBox 自行收口）。
 			// 绘制线程退出前已按各场景的实际回执报告落盘结果（见 settleRecoveryDurable 的退出调用）。
-			recoveryStop.store(true, std::memory_order_release);
+			{
+				// 与等待谓词使用同一把锁，避免退出通知跑在恢复线程真正入等之前。
+				const std::scoped_lock lock(recoveryMutex);
+				recoveryStop.store(true, std::memory_order_release);
+			}
 			recoveryCondition.notify_all();
 			if (recoveryThread.joinable()) recoveryThread.join();
 			// 三个存储服务都已排空关闭（白板随绘制线程退出）：写 clean 后释放存活锁。
@@ -3928,6 +3996,7 @@ namespace Inkeys::Drawing::Draw3
 			runtimeCallbacks);
 	}
 	void Host::Stop() noexcept { impl_->Stop(); }
+	void Host::CancelInkRecoveryPrompts() noexcept { impl_->CancelInkRecoveryPrompts(); }
 	bool Host::WriteRuntimeMetrics(const wchar_t* absoluteOutputPath) const noexcept
 	{
 		return impl_->WriteRuntimeMetrics(absoluteOutputPath);

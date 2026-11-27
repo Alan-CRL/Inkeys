@@ -92,6 +92,12 @@ namespace Inkeys::Drawing::Draw3
 		productStopping.store(false, std::memory_order_release);
 	}
 
+	void CancelInkRecoveryPrompts() noexcept
+	{
+		// 进程级 Host 始终存在，取消期间不等待产品启停锁。
+		productHost.CancelInkRecoveryPrompts();
+	}
+
 	bool ProductRunning() noexcept
 	{
 		return !productStopping.load(std::memory_order_acquire) && productHost.Running();

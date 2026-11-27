@@ -18,6 +18,7 @@ namespace Inkeys::Drawing::Draw3
 		HostStartOptions options = {},
 		HostRuntimeCallbacks runtimeCallbacks = {});
 	void StopProduct() noexcept;
+	void CancelInkRecoveryPrompts() noexcept;
 	bool ProductRunning() noexcept;
 	bool RetryProductCanvasRecovery(const CanvasRecoveryState& expected,
 		const std::function<bool()>& stillDesired = {}) noexcept;

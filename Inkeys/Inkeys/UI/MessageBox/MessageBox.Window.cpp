@@ -44,6 +44,10 @@ namespace Inkeys::UI::MessageBox::Detail
 		using namespace Gdiplus;
 
 		constexpr UINT TestAutomationTimerId = 0x494B4D42;
+		// 无所有者的提示框（启动报错、崩溃提示、无主栏时的恢复询问）周期重新置顶：
+		// 程序自己的置顶链会周期性抬到最上层，只在创建时置顶的框会被压到后面。只动本窗口，不依赖其他线程。
+		constexpr UINT OwnerlessTopmostTimerId = 0x494B544D;
+		constexpr UINT OwnerlessTopmostIntervalMilliseconds = 500;
 		constexpr UINT AbortDialogMessage = WM_APP + 0x4D;
 		constexpr DWORD OwnerHealthTimeoutMilliseconds = 250;
 		constexpr DWORD DwmWindowAttributeCloak = 13;
@@ -1555,8 +1559,14 @@ namespace Inkeys::UI::MessageBox::Detail
 				}
 				return 0;
 			}
-#ifdef INKEYS_MESSAGE_BOX_TESTING
 			case WM_TIMER:
+				if (wParam == OwnerlessTopmostTimerId)
+				{
+					(void)SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+					return 0;
+				}
+#ifdef INKEYS_MESSAGE_BOX_TESTING
 				if (wParam == TestAutomationTimerId)
 				{
 					KillTimer(hwnd, TestAutomationTimerId);
@@ -1568,8 +1578,8 @@ namespace Inkeys::UI::MessageBox::Detail
 						PostMessageW(hwnd, WM_KEYDOWN, VK_RETURN, 0);
 					return 0;
 				}
-				break;
 #endif
+				break;
 			case WM_DESTROY:
 				PostQuitMessage(0);
 				return 0;
@@ -1710,6 +1720,12 @@ namespace Inkeys::UI::MessageBox::Detail
 				SetFocus(hwnd);
 				if (!session->request->owner)
 					session->ownerlessForegroundAcquired = GetForegroundWindow() == hwnd;
+				if (!session->request->owner && session->request->ownerlessTopmostAtCreation)
+				{
+					(void)SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+						SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+					(void)SetTimer(hwnd, OwnerlessTopmostTimerId, OwnerlessTopmostIntervalMilliseconds, nullptr);
+				}
 #ifdef INKEYS_MESSAGE_BOX_TESTING
 				if (session->request->automation.visibleCallback)
 					SetTimer(hwnd, TestAutomationTimerId,

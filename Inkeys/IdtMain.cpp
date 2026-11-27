@@ -168,6 +168,8 @@ namespace
 
 	void ShowStartupMessage(const wchar_t* body) noexcept
 	{
+		// 先取消恢复询问，避免它占住启动报错所需的全局弹窗准入。
+		Inkeys::Drawing::Draw3::CancelInkRecoveryPrompts();
 		if (Inkeys::Shutdown::IsAuthorizedStartupFailureChild())
 		{
 			const auto failure = Inkeys::Startup::ActiveSnapshot();
@@ -547,8 +549,12 @@ namespace
 	}
 
 	// C1.6b 崩溃恢复弹窗：在 Draw3 的恢复线程上同步调用。scene 0 桌面、1 白板；正文给出场景与最后保存时间。
-	bool PromptInkRecovery(void*, int scene, std::uint64_t lastWriteFileTime)
+	Inkeys::Drawing::Draw3::RecoveryPromptResult PromptInkRecovery(
+		void*, int scene, std::uint64_t lastWriteFileTime, std::stop_token cancellation)
 	{
+		using Inkeys::Drawing::Draw3::RecoveryPromptResult;
+		using Inkeys::UI::MessageBox::Result;
+		if (cancellation.stop_requested()) return RecoveryPromptResult::Unavailable;
 		std::wstring title = L"Recover ink";
 		std::wstring body = scene == 1
 			? L"Inkeys did not exit normally last time. Recover the ink in the whiteboard?\nLast saved: {}"
@@ -588,8 +594,24 @@ namespace
 		request.language = language;
 		request.labels.yes = yes.c_str();
 		request.labels.no = no.c_str();
-		request.ownerlessTopmostAtCreation = true;
-		return Inkeys::UI::MessageBox::Show(request) == Inkeys::UI::MessageBox::Result::Yes;
+		// 主栏已建立：与运行中的其他确认框一样挂在主栏下，随置顶链一起保持在上层。
+		// 主栏还没建好时不要求所有者，退回无所有者置顶（MessageBox 会周期重新置顶）。
+		request.cancellation = cancellation; // 程序退出时关闭询问
+		const HWND bar = Inkeys::Window::GetService().Handle(Inkeys::Window::WindowRole::Bar);
+		if (bar && IsWindow(bar)) request.owner = bar;
+		else request.ownerlessTopmostAtCreation = true;
+		auto result = Inkeys::UI::MessageBox::Show(request);
+		if (request.owner && result == Result::Failed && !cancellation.stop_requested())
+		{
+			// 主栏探测或建窗失败时，改用无所有者置顶框重试一次。
+			request.owner = nullptr;
+			request.ownerlessTopmostAtCreation = true;
+			result = Inkeys::UI::MessageBox::Show(request);
+		}
+		if (cancellation.stop_requested()) return RecoveryPromptResult::Unavailable;
+		if (result == Result::Yes) return RecoveryPromptResult::Accepted;
+		if (result == Result::No) return RecoveryPromptResult::Declined;
+		return RecoveryPromptResult::Unavailable;
 	}
 
 	LONG WINAPI CrashFilterLifecycleSentinel(EXCEPTION_POINTERS*)
@@ -4358,7 +4380,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 	{
 		this_thread::sleep_for(chrono::milliseconds(100));
 		// Bar 可能异步发布 B001/B002；先接受退场意图，再进入配置写回等业务工作。
-		if (Inkeys::Startup::ActiveSnapshot().failed) SetOffSignal(1);
+		const bool startupFailed = Inkeys::Startup::ActiveSnapshot().failed;
+		if (offSignal || startupFailed) Inkeys::Drawing::Draw3::CancelInkRecoveryPrompts();
+		if (startupFailed) SetOffSignal(1);
 		if (!offSignal && !Inkeys::Drawing::Draw3::ProductRunning())
 		{
 			if (Inkeys::Fatal::RuntimeArmed())
@@ -4371,6 +4395,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 				Inkeys::Fatal::RaiseNow(Inkeys::Fatal::Reason::Draw3Stopped);
 			}
 			// 意外失去绘图消费者时先阻断旧可见性请求，再由窗口 owner 成对撤下画布。
+			Inkeys::Drawing::Draw3::CancelInkRecoveryPrompts();
 			SetOffSignal(1);
 			auto& service = Inkeys::Window::GetService();
 			const bool pairedHidden = service.SetDrawpadSurfaceVisibility(
@@ -4454,6 +4479,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 					Inkeys::Log::Error(Inkeys::Log::Module::Main,
 						"StartupPreview smoke 超时");
 				}
+				Inkeys::Drawing::Draw3::CancelInkRecoveryPrompts();
 				(void)WriteStartupPreviewSmokeReport(
 					startupPreviewSmokePath, completed, preview, alpha);
 				SetOffSignal(1);
@@ -4462,6 +4488,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		}
 		const auto startupSnapshot = Inkeys::Startup::ActiveSnapshot();
 		if (!startupSnapshot.failed) continue;
+		Inkeys::Drawing::Draw3::CancelInkRecoveryPrompts();
 		SetOffSignal(1);
 		Inkeys::UI::StartupPreview::RequestFailureFrame();
 		(void)Inkeys::UI::StartupPreview::WaitForFailureFrame(
@@ -4476,6 +4503,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR lpC
 		Inkeys::UI::StartupPreview::Stop();
 		break;
 	}
+	// 主循环接收退出后先关恢复询问，避免在后续收口期间继续占用弹窗准入。
+	Inkeys::Drawing::Draw3::CancelInkRecoveryPrompts();
 	// 退出已受理（意图槽非 0）时看门狗本就暂停；这里显式停止，退出卡住由 15 秒监督兜底。
 	Inkeys::Fatal::StopWatchdog();
 	ShutdownTrace::Scope shutdownTrace("main-shutdown");
