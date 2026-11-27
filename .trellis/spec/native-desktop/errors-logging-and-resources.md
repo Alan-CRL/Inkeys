@@ -564,6 +564,7 @@ Correct：Unregister(Settings) 并排空在途帧 → PostControl(final drain) �
 | 失败 9.9 s 后成功 / 持续 10 s 且 5 s 内仍失败 / 最近失败超过 5 s | 清零 / 触发 / 不触发 |
 | 意图槽非 0、UEF 已接管、调试器 | 不触发 |
 | 崩溃拉起后 5 分钟内 | 不再自动拉起；UEF 照常写报告、dump 与 Critical 日志。“提示”档改为“是否重启”（是/否，建窗超时按否），其他档直接退出；强退链不拉起 |
+| 崩溃提示的层级 | 显示前 `Window::Service::SuspendTopmostRefresh()`（只写原子量）；提示框无所有者，MessageBox 对无所有者置顶框每 500 ms 重新置顶。不挂所有者链（所有者线程可能卡住） |
 | 提示框 15 s 内未可交互 | 按提示失败重启 |
 
 ### 5. Tests Required
